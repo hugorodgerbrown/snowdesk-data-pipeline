@@ -35,21 +35,33 @@ from django.urls import include, path
 from public.sitemaps import BulletinSitemap
 from public.views import (
     serve_favicon,
+    serve_llms_full_txt,
     serve_llms_txt,
     serve_manifest,
     serve_robots,
     serve_sw,
+    serve_sw_kill,
 )
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("subscribe/", include("subscriptions.urls")),
+    # /api/telemetry must be listed BEFORE the public api_urls include so
+    # Django resolves it against the analytics namespace rather than
+    # falling through to public.api_urls (which does not define it).
+    # SNOW-381: first-party telemetry receiver (spec §16).
+    path("api/telemetry", include("analytics.urls")),
     path("api/", include("public.api_urls")),
     path("csp/", include("csp.urls")),
     path("sw.js", serve_sw, name="service_worker"),
+    # Kill-switch SW (SNOW-373, spec §6.3 Mechanism B). Always present so
+    # ops can point ``SW_URL=/sw-kill.js`` in Render env when the real SW
+    # needs evicting cohort-wide without a code deploy.
+    path("sw-kill.js", serve_sw_kill, name="service_worker_kill"),
     path("manifest.webmanifest", serve_manifest, name="web_manifest"),
     path("robots.txt", serve_robots, name="robots"),
     path("llms.txt", serve_llms_txt, name="llms_txt"),
+    path("llms-full.txt", serve_llms_full_txt, name="llms_full_txt"),
     path("favicon.ico", serve_favicon, name="favicon_ico"),
     path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
 ]

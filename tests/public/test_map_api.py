@@ -225,6 +225,38 @@ def test_ratings_cache_control_header() -> None:
 
 
 @pytest.mark.django_db
+def test_ratings_emits_freshness_headers_when_data_present() -> None:
+    """SNOW-370: ratings response carries the three freshness headers.
+
+    ``X-Data-Generated-At`` reflects the newest ``updated_at`` across the
+    returned rows (freshest fact in the payload). ``X-Data-Max-Age`` and
+    ``X-Data-Unsafe-After`` are the safety-critical defaults.
+    """
+    _make_ratings_fixture()
+    response = Client().get(reverse("api:ratings"))
+    assert response.status_code == 200
+    assert "X-Data-Generated-At" in response
+    assert "X-Data-Max-Age" in response
+    assert "X-Data-Unsafe-After" in response
+    # Ratings are safety-critical, so both max-age and unsafe-after
+    # are always emitted (spec §5.4).
+    assert int(response["X-Data-Max-Age"]) > 0
+    assert int(response["X-Data-Unsafe-After"]) > int(response["X-Data-Max-Age"])
+
+
+@pytest.mark.django_db
+def test_ratings_emits_freshness_headers_when_empty() -> None:
+    """Empty payload still emits freshness headers using a ``now`` fallback."""
+    response = Client().get(reverse("api:ratings"))
+    assert response.status_code == 200
+    assert response.json() == {}
+    # ``X-Data-Generated-At`` is present even on empty data — a missing
+    # header would signal "server doesn't know the freshness contract"
+    # to the PWA client, which is wrong.
+    assert "X-Data-Generated-At" in response
+
+
+@pytest.mark.django_db
 def test_ratings_vary_accept_encoding_not_cookie() -> None:
     """Vary header includes Accept-Encoding but not Cookie."""
     response = Client().get(reverse("api:ratings"))
@@ -669,6 +701,28 @@ def test_region_summary_unknown_region_returns_404() -> None:
     client = Client()
     response = client.get(reverse("api:region_summary", args=["xx-9999"]))
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_region_summary_emits_freshness_headers() -> None:
+    """SNOW-370: tooltip response carries the three freshness headers."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    sub = SubRegionFactory.create(prefix="CH-41", major=major)
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    RegionDayRatingFactory.create(
+        region=region,
+        date=_RATINGS_DAY_ONE,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+    response = Client().get(
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    assert "X-Data-Generated-At" in response
+    assert "X-Data-Max-Age" in response
+    assert "X-Data-Unsafe-After" in response
 
 
 @pytest.mark.django_db

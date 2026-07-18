@@ -115,6 +115,7 @@ from .season_calendar import (
     build_season_ribbon,
     season_header,
 )
+from .site_environment import PWAEnvironmentIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -1134,8 +1135,14 @@ def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
 # than in settings so the picker UI stays close to the view that renders it.
 _BASEMAP_LABELS: dict[str, Promise] = {
     "openfreemap_liberty": _("Standard"),
-    "swisstopo_winter": _("Winter"),
-    "swisstopo_light": _("Light"),
+    # National mapping-agency basemaps. Each covers only its own country
+    # (blank elsewhere), so labels carry the ISO country suffix to set the
+    # expectation. ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP=
+    # env override but is intentionally omitted here so it no longer appears
+    # in the picker.
+    "swisstopo_winter": _("Swisstopo (CH)"),
+    "ign_plan": _("IGN (FR)"),
+    "basemap_at": _("basemap.at (AT)"),
 }
 
 
@@ -1394,6 +1401,38 @@ def _get_observation_has_user_located(
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
 
 
+def _serve_sw_file(static_relative_path: str) -> HttpResponse:
+    """Read a service-worker script off disk and wrap it in SW-required headers.
+
+    Shared helper for ``serve_sw`` (the real PWA shell SW at ``/sw.js``)
+    and ``serve_sw_kill`` (the kill-switch SW at ``/sw-kill.js``, SNOW-373).
+    Both need identical response headers — the only difference is which
+    file they read.
+
+    Args:
+        static_relative_path: Path relative to the ``static/`` root, e.g.
+            ``"js/sw.js"`` or ``"js/sw-kill.js"``.
+
+    Returns:
+        An ``HttpResponse`` with the SW body, ``Service-Worker-Allowed: /``,
+        and ``Cache-Control: no-cache``.
+
+    Raises:
+        Http404: If the requested file isn't found by the staticfiles
+            finders.
+
+    """
+    path = finders.find(static_relative_path)
+    if path is None:
+        raise Http404("Service worker script not found.")
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    response = HttpResponse(content, content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 def serve_sw(request: HttpRequest) -> HttpResponse:
     """
     Serve the service worker script from the root URL path (``/sw.js``).
@@ -1415,15 +1454,36 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
 
     """
-    path = finders.find("js/sw.js")
-    if path is None:
-        raise Http404("Service worker script not found.")
-    with open(path, encoding="utf-8") as fh:
-        content = fh.read()
-    response = HttpResponse(content, content_type="application/javascript")
-    response["Service-Worker-Allowed"] = "/"
-    response["Cache-Control"] = "no-cache"
-    return response
+    return _serve_sw_file("js/sw.js")
+
+
+def serve_sw_kill(request: HttpRequest) -> HttpResponse:
+    """
+    Serve the kill-switch service worker at ``/sw-kill.js`` (SNOW-373).
+
+    Mechanism B of the two-mechanism kill switch (spec §6.3, §6.4). Ops
+    activates it by pointing ``SW_URL=/sw-kill.js`` in Render env — the
+    ``sw_register.js`` config gate then registers this file instead of
+    the real ``/sw.js``, and on activate it wipes caches + IndexedDB and
+    unregisters itself. See ``static/js/sw-kill.js`` for the full
+    behaviour.
+
+    Same header contract as ``serve_sw`` — root scope, no-cache — because
+    once a client is on this SW it must revalidate on every visit so a
+    subsequent config flip back to the real ``/sw.js`` picks up promptly.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An ``HttpResponse`` with the kill-switch SW script body and the
+        required headers.
+
+    Raises:
+        Http404: If ``js/sw-kill.js`` is not found by staticfiles finders.
+
+    """
+    return _serve_sw_file("js/sw-kill.js")
 
 
 def serve_manifest(request: HttpRequest) -> HttpResponse:
@@ -1441,6 +1501,14 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     env-var (``http://localhost:8000`` in dev, ``https://snowdesk.info``
     in production).
 
+    SNOW-399: the manifest ``name`` / ``short_name`` / ``theme_color`` and
+    the icon ``src`` prefix all key off
+    ``public.site_environment.PWAEnvironmentIdentity.from_settings()`` so
+    a staging install lands on the home screen as ``Snowdesk (Staging)``
+    with an amber icon set — visibly distinct from the production tile.
+    Screenshots stay under ``/static/icons/pwa/screenshots/`` on every
+    environment because they show the actual UI, which is identical.
+
     The response carries ``Content-Type: application/manifest+json`` so
     Chromium honours the manifest spec strictly. ``Cache-Control:
     public, max-age=300`` is short enough that a SITE_BASE_URL change
@@ -1457,9 +1525,11 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
 
     """
     base = settings.SITE_BASE_URL.rstrip("/")
+    identity = PWAEnvironmentIdentity.from_settings()
+    icon_dir = identity.icon_dir.rstrip("/")
     manifest = {
-        "name": "Snowdesk",
-        "short_name": "Snowdesk",
+        "name": identity.name_display,
+        "short_name": identity.short_name,
         "id": f"{base}/",
         "lang": "en",
         "description": "Daily Swiss avalanche bulletins for the alpine region.",
@@ -1468,22 +1538,22 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "scope": f"{base}/",
         "display": "standalone",
         "background_color": "#f4f1e8",
-        "theme_color": "#1a1a1a",
+        "theme_color": identity.theme_color,
         "icons": [
             {
-                "src": "/static/icons/pwa/icon-192.png",
+                "src": f"{icon_dir}/icon-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/icons/pwa/icon-512.png",
+                "src": f"{icon_dir}/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/icons/pwa/icon-maskable-512.png",
+                "src": f"{icon_dir}/icon-maskable-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
@@ -1594,32 +1664,73 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         """Build an absolute URL for a named route under ``SITE_BASE_URL``."""
         return f"{base}{reverse(name)}"
 
+    def bulletin_link(region_id: str, slug: str) -> str:
+        """Build the evergreen bulletin URL for a region under ``SITE_BASE_URL``."""
+        path = reverse(
+            "public:bulletin",
+            kwargs={"region_id": region_id, "slug": slug},
+        )
+        return f"{base}{path}"
+
     # Built line-by-line (rather than one triple-quoted block) so each source
     # line stays within the 88-char limit while the rendered Markdown bullets
     # remain single, unwrapped lines.
     lines = [
         "# Snowdesk",
         "",
-        "> Daily Swiss avalanche bulletins from the SLF (WSL Institute for",
-        "> Snow and Avalanche Research), sourced from the public CAAML API and",
-        "> rendered per micro-region with danger ratings, avalanche problems,",
-        "> and weather context. Bulletin pages carry schema.org JSON-LD; the",
-        "> underlying data is licensed CC BY 4.0 by the SLF.",
+        "> Daily avalanche bulletins for the Alps — Switzerland (SLF / WSL",
+        "> Institute for Snow and Avalanche Research), Austria + South Tyrol +",
+        "> Trentino (ALBINA / EUREGIO avalanche.report), and France",
+        "> (Météo-France). All providers normalised to CAAML v6 and rendered",
+        "> per micro-region with danger ratings, avalanche problems, and",
+        "> weather context. Bulletin pages carry schema.org JSON-LD; the",
+        "> underlying data is licensed by the issuing warning services (SLF",
+        "> CC BY 4.0; others per their own terms).",
         "",
         "## Pages",
         "",
         f"- [Avalanche map]({link('public:home')}): interactive choropleth of "
         "current danger ratings by region; also the site entry point.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
-        "reference guide to the SLF danger scale, avalanche problems, and the "
-        "aspect/elevation rose.",
+        "reference guide to the EAWS danger scale, avalanche problems, and "
+        "the aspect/elevation rose.",
         f"- [Example bulletin]({link('public:examples_random')}): a randomly "
         "selected bulletin rendered in the canonical layout.",
+        "",
+        "## Regions",
+        "",
+        "Snowdesk covers Alpine micro-regions across all four EAWS warning "
+        "zones. Each link below is an evergreen URL — it always renders "
+        "today's bulletin for the region.",
+        "",
+        f"- [Switzerland — Martigny / Verbier]"
+        f"({bulletin_link('ch-4115', 'martigny-verbier')}): "
+        "sample SLF bulletin, Valais.",
+        f"- [Austria — Silvretta Ost]"
+        f"({bulletin_link('at-07-12', 'silvretta-ost')}): "
+        "sample ALBINA bulletin, Tirol.",
+        f"- [Italy — Dolomiti di Gardena]"
+        f"({bulletin_link('it-32-bz-18', 'dolomiti-di-gardena')}): "
+        "sample ALBINA / EUREGIO bulletin, South Tyrol.",
+        f"- [France — Mont-Blanc]"
+        f"({bulletin_link('fr-03', 'mont-blanc')}): "
+        "sample Météo-France bulletin, French Alps.",
         "",
         "## Data",
         "",
         f"- [Sitemap]({link('sitemap')}): XML sitemap of today's published "
         "region bulletins.",
+        f"- [Full URL index]({link('llms_full_txt')}): every micro-region's "
+        "evergreen bulletin URL, sorted by region_id — the low-token full "
+        "index paired with this file (SNOW-393).",
+        f"- [Switzerland — RSS feed]({base}/ch/feed.rss): latest SLF "
+        "bulletins per micro-region (SNOW-396).",
+        f"- [Austria — RSS feed]({base}/at/feed.rss): latest ALBINA "
+        "bulletins per Austrian micro-region.",
+        f"- [Italy — RSS feed]({base}/it/feed.rss): latest ALBINA / EUREGIO "
+        "bulletins per Italian micro-region.",
+        f"- [France — RSS feed]({base}/fr/feed.rss): latest Météo-France "
+        "bulletins per massif.",
         f"- [Region ratings (JSON)]({link('api:ratings')}): current danger "
         "ratings; accepts ?d=YYYY-MM-DD and ?country=ch|fr|at|it.",
         f"- [Regions (GeoJSON)]({link('api:regions_geojson')}): micro-region "
@@ -1627,9 +1738,16 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         f"- [Resorts (GeoJSON)]({link('api:resorts_geojson')}): ski-resort "
         "point locations.",
         "",
+        "## MCP server",
+        "",
+        f"- [MCP JSON-RPC endpoint]({link('api:mcp:endpoint')}): POST-only "
+        "Model Context Protocol server (JSON-RPC 2.0) with tools to search "
+        "regions and resorts, read current conditions, query danger-rating "
+        "history, and list resorts in a region.",
+        "",
         "## Legal",
         "",
-        f"- [Terms & SLF data licence]({link('public:terms')}): SLF CC BY 4.0 "
+        f"- [Terms & data licences]({link('public:terms')}): source-service "
         "attribution and Snowdesk liability disclaimer.",
         f"- [Privacy]({link('public:privacy')}): how subscriber data is handled.",
         f"- [Terms of service]({link('public:terms_of_service')}): conditions of use.",
@@ -1639,6 +1757,63 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
     body = "\n".join(lines)
     response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
     response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_llms_full_txt(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/llms-full.txt`` — the full URL index paired with ``/llms.txt``.
+
+    Follows the llmstxt.org convention: pair the short summary
+    (``/llms.txt``) with a complete machine-readable listing at
+    ``/llms-full.txt``. Each line is one Markdown link — the region's
+    evergreen ``/<region_id>/<slug>/`` URL — with a country and
+    major-region description, sorted by ``region_id`` for stable
+    diffs.
+
+    The queryset joins ``subregion__major`` so country and major-region
+    labels are available without an N+1 query per row. A one-hour
+    ``Cache-Control`` is applied because the micro-region set only
+    changes on fixture ingest, not per-bulletin.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is
+            origin-keyed via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``text/markdown`` llms-full.txt body.
+
+    """
+    # Function-local import to break a public.views ↔ public.api circular
+    # (public.api imports _resolve_region_for_bulletin from this module).
+    from public.api import COUNTRY_NAMES
+
+    base = settings.SITE_BASE_URL.rstrip("/")
+    lines = [
+        "# Snowdesk — full URL index",
+        "",
+        "> Full machine-readable index paired with /llms.txt. One line per",
+        "> Alpine micro-region (SLF / ALBINA / Météo-France coverage), sorted",
+        "> by region_id. Each URL is the evergreen form-2 route that always",
+        "> renders today's bulletin.",
+        "",
+        "## Regions",
+        "",
+    ]
+    regions = MicroRegion.objects.select_related("subregion__major").order_by(
+        "region_id"
+    )
+    for region in regions:
+        url = f"{base}{region.get_absolute_url()}"
+        country_code = region.region_id[:2].upper()
+        country_name = COUNTRY_NAMES.get(country_code, country_code)
+        major = region.subregion.major if region.subregion_id else None
+        major_name = (major.name_en or major.name_native) if major else "—"
+        lines.append(f"- [{region.name}]({url}): {country_name} · {major_name}")
+    lines.append("")
+    body = "\n".join(lines)
+    response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=3600"
     return response
 
 
@@ -2571,6 +2746,64 @@ def _build_structured_data(
         f"{bulletin.valid_from.isoformat()}/{bulletin.valid_to.isoformat()}"
     )
 
+    # SNOW-394: spatialCoverage.geo from MicroRegion.centre. The field
+    # is populated at fixture-ingest time as {"lon": …, "lat": …} and
+    # covers every real region; guarding the lookup keeps the field
+    # optional so a partially-seeded region (dev-only edge) still
+    # renders.
+    spatial_coverage: dict[str, Any] = {
+        "@type": "Place",
+        "name": region.name,
+        "containedInPlace": {
+            "@type": "Place",
+            "name": major_name,
+        },
+    }
+    if isinstance(region.centre, dict):
+        lat = region.centre.get("lat")
+        lon = region.centre.get("lon")
+        if isinstance(lat, int | float) and isinstance(lon, int | float):
+            spatial_coverage["geo"] = {
+                "@type": "GeoCoordinates",
+                "latitude": float(lat),
+                "longitude": float(lon),
+            }
+
+    report: dict[str, Any] = {
+        "@type": "Report",
+        "@id": f"{canonical_url}#report",
+        "name": f"Avalanche bulletin — {region.name}",
+        "datePublished": date_published,
+        # SNOW-394: dateModified reflects the last upsert of the row so
+        # LLMs and freshness-aware crawlers can tell a re-issued
+        # bulletin from a fresh one.
+        "dateModified": bulletin.updated_at.isoformat(),
+        "temporalCoverage": temporal_coverage,
+        "inLanguage": get_language() or "en-gb",
+        "sourceOrganization": {
+            "@type": "Organization",
+            "name": source_name,
+            "url": source_url,
+        },
+        "spatialCoverage": spatial_coverage,
+        "about": {
+            "@type": "DefinedTerm",
+            "name": danger_label,
+            "termCode": danger_number,
+            "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
+        },
+    }
+    # SNOW-394: isBasedOn points at the upstream source document — the
+    # per-bulletin ``pdf_url`` populated at ingest by SLF / ALBINA /
+    # Météo-France fetchers. Stronger citation than sourceOrganization
+    # alone; only emitted when we have a concrete URL to point at.
+    if bulletin.pdf_url:
+        report["isBasedOn"] = {
+            "@type": "CreativeWork",
+            "url": bulletin.pdf_url,
+            "encodingFormat": "application/pdf",
+        }
+
     payload: dict[str, Any] = {
         "@context": "https://schema.org",
         "@type": "WebPage",
@@ -2583,33 +2816,7 @@ def _build_structured_data(
             "name": settings.SITE_NAME,
             "url": settings.SITE_BASE_URL,
         },
-        "mainEntity": {
-            "@type": "Report",
-            "@id": f"{canonical_url}#report",
-            "name": f"Avalanche bulletin — {region.name}",
-            "datePublished": date_published,
-            "temporalCoverage": temporal_coverage,
-            "inLanguage": get_language() or "en-gb",
-            "sourceOrganization": {
-                "@type": "Organization",
-                "name": source_name,
-                "url": source_url,
-            },
-            "spatialCoverage": {
-                "@type": "Place",
-                "name": region.name,
-                "containedInPlace": {
-                    "@type": "Place",
-                    "name": major_name,
-                },
-            },
-            "about": {
-                "@type": "DefinedTerm",
-                "name": danger_label,
-                "termCode": danger_number,
-                "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
-            },
-        },
+        "mainEntity": report,
     }
 
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")

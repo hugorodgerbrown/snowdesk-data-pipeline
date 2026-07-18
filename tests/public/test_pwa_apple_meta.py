@@ -14,7 +14,7 @@ fields entirely; iOS still relies on the legacy ``apple-touch-icon`` +
 from __future__ import annotations
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 
 # Every test in this module hits ``Client().get(reverse("public:home"))``,
@@ -65,3 +65,98 @@ def test_home_declares_apple_web_app_title() -> None:
     body = response.content.decode("utf-8")
     assert 'name="apple-mobile-web-app-title"' in body
     assert 'content="Snowdesk"' in body
+
+
+def test_home_apple_touch_icon_defaults_to_production_directory() -> None:
+    """``apple-touch-icon`` href points at ``/static/icons/pwa/`` on production (SNOW-399).
+
+    iOS ignores the manifest ``icons`` array entirely — the legacy
+    ``apple-touch-icon`` link is the only mechanism for the home-screen
+    tile on iPhone. The production href must resolve to the checked-in
+    production icon, not the staging one.
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert "/static/icons/pwa/apple-touch-icon-180.png" in body
+
+
+def test_home_theme_color_defaults_to_production_hex() -> None:
+    """The ``theme-color`` meta tag matches the production manifest value on production (SNOW-399).
+
+    The tag drives the browser chrome tint on an open tab, and (on iOS)
+    the status-bar tint in a standalone install. Keeping the meta in
+    sync with the manifest ``theme_color`` avoids a jarring colour flip
+    between "opened in browser" and "opened as installed app".
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert '<meta name="theme-color" content="#1a1a1a">' in body
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_home_title_reflects_staging_environment() -> None:
+    """``<title>`` on staging carries the "— Staging" suffix (SNOW-399).
+
+    The suffix rides outside the ``{% block title %}`` block in
+    ``base.html`` so page-specific titles (like the home page's
+    "Snowdesk — Swiss avalanche bulletins") still get flagged as
+    staging in the browser tab and history. Assertion checks the closing
+    ``</title>`` boundary so the suffix isn't accidentally injected
+    mid-title.
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert " — Staging</title>" in body
+
+
+def test_home_title_has_no_suffix_on_production() -> None:
+    """The default production ``<title>`` has no environment suffix (SNOW-399)."""
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert " — Staging</title>" not in body
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_home_apple_web_app_title_reflects_staging_environment() -> None:
+    """``apple-mobile-web-app-title`` on iOS staging says "Snowdesk (Staging)" (SNOW-399).
+
+    On iOS the manifest isn't consulted — this legacy tag is the only
+    override for the home-screen icon label. Without the swap the iOS
+    staging tile would read "Snowdesk" identical to the production tile.
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert 'content="Snowdesk (Staging)"' in body
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_home_apple_touch_icon_swaps_for_staging() -> None:
+    """``apple-touch-icon`` href points at the staging icon set on staging (SNOW-399)."""
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert "/static/icons/pwa-staging/apple-touch-icon-180.png" in body
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_home_theme_color_swaps_for_staging() -> None:
+    """``theme-color`` meta tag renders amber on staging (SNOW-399).
+
+    Matches the manifest ``theme_color`` swap so a staging install has
+    a consistent amber tint across the browser chrome (open tab) and
+    OS chrome (installed PWA).
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert '<meta name="theme-color" content="#b45309">' in body
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_home_og_site_name_reflects_staging_environment() -> None:
+    """``og:site_name`` on staging says "Snowdesk (Staging)" (SNOW-399).
+
+    A staging URL shared into Slack should link-preview as staging so
+    a reader doesn't mistake it for production copy or data.
+    """
+    response = Client().get(reverse("public:home"))
+    body = response.content.decode("utf-8")
+    assert '<meta property="og:site_name" content="Snowdesk (Staging)">' in body

@@ -1,0 +1,392 @@
+"""
+mcp_server/resolvers.py — Region lookup and fuzzy place-name search.
+
+Two entry points consumed by ``mcp_server.tools``:
+
+* ``resolve_region(region_id)`` — exact ``MicroRegion.region_id`` lookup,
+  scoped to what the MCP tools need (the parent major region's name via
+  ``select_related("subregion__major")``); deliberately lighter than the
+  bulletin page's own lookup, which also prefetches ``neighbours`` for a
+  UI panel no tool reads.
+* ``search_places(query)`` — fuzzy name search across resorts and
+  micro/major regions, for callers who only have a place name.
+
+The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``, and
+``MajorRegion``) is cheap to hold in full and is cached in the Django
+default cache, keyed on a fingerprint of the newest ``updated_at`` across
+all three tables — the same pattern as
+``bulletins.services.coverage.covered_region_ids``. Any edit to a region or
+resort changes the fingerprint, which changes the cache key, which is a
+guaranteed miss — no explicit invalidation needed.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+from django.core.cache import cache
+from django.db.models import Max
+from rapidfuzz import fuzz, process
+
+from mcp_server.normalise import normalise
+from regions.models import MajorRegion, MicroRegion, Resort
+
+# Country → provider mapping for the ``find_places_near`` result shape.
+# Static because Snowdesk fetches from exactly one provider per country;
+# the region's own country label is authoritative regardless of whether a
+# bulletin exists on any given day.
+_PROVIDER_BY_COUNTRY: dict[str, str] = {
+    "CH": "slf",
+    "AT": "albina",
+    "IT": "albina",
+    "FR": "meteofrance",
+}
+
+# Approximate mean earth radius in kilometres — good to five significant
+# figures at the mid-latitudes Snowdesk covers, which is well below the
+# accuracy floor of MicroRegion.centre (a single lon/lat pair per region,
+# so distance to any specific point is already a coarse estimate).
+_EARTH_RADIUS_KM = 6371.0088
+
+# How long a built candidate pool stays in cache once computed. The cache
+# *key* already changes whenever underlying data changes (see
+# ``_pool_cache_key``), so this TTL is purely a memory-hygiene bound, not
+# a correctness one.
+_POOL_TTL = 3600
+
+# Score threshold below which a fuzzy match is discarded as noise.
+_SCORE_CUTOFF = 70
+
+# Tie-break order when two candidates score identically: a bulletin
+# region is more directly useful to the other three tools than a broader
+# major region, which is in turn more useful than a single resort.
+_KIND_PRIORITY = {"micro": 0, "major": 1, "resort": 2}
+
+
+def resolve_region(region_id: str) -> MicroRegion | None:
+    """Look up a MicroRegion by ``region_id``, or ``None`` if unknown.
+
+    ``select_related("subregion__major")`` is all the MCP tools need (the
+    parent major region's name); deliberately doesn't prefetch
+    ``neighbours`` — that's only used by the bulletin page's "Adjoining
+    regions" panel, which no MCP tool reads, and at the endpoint's 60/min
+    rate-limit ceiling a redundant prefetch is a real query cost.
+
+    Args:
+        region_id: An SLF-style region identifier, e.g. ``"CH-4115"``.
+            Matched case-insensitively.
+
+    Returns:
+        The MicroRegion, or ``None`` if no region has that id.
+
+    """
+    return (
+        MicroRegion.objects.select_related("subregion__major")
+        .filter(region_id__iexact=region_id)
+        .first()
+    )
+
+
+def _distinct_names(*names: str) -> list[str]:
+    """Return the given names, blank entries dropped and duplicates removed.
+
+    Preserves first-seen order. Used to build one candidate-pool row per
+    *distinct* human name a region or resort carries (e.g. a MajorRegion's
+    ``name_en`` and ``name_native`` are usually different and both worth
+    indexing; a Resort's blank ``name_alt`` contributes nothing).
+
+    Args:
+        *names: Candidate name strings, some of which may be blank.
+
+    Returns:
+        The distinct, non-blank names in first-seen order.
+
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in names:
+        name = raw.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
+def _build_candidate_pool() -> list[dict[str, Any]]:
+    """Build the full search-candidate pool from the database.
+
+    One row per (Resort / MicroRegion / MajorRegion) x distinct human
+    name. Each row carries the ``region_id`` a matching tool call should
+    use, a display ``name``, a ``kind`` (``"micro"``, ``"major"``, or
+    ``"resort"``), a human-readable ``parent`` for context, and the
+    pre-computed ``normalised`` search key.
+
+    Each MajorRegion's representative ``region_id`` (see
+    ``_build_candidate_pool``'s major-region loop below) is derived from
+    the same ``MicroRegion`` rows loaded for the micro-region loop, rather
+    than a second query — ``MicroRegion.Meta.ordering = ["region_id"]``
+    means the loop already visits rows alphabetically, so recording the
+    first ``region_id`` seen per major-region pk reproduces the
+    "alphabetically-first child" representative with no extra table scan.
+
+    Returns:
+        The full candidate-pool list — not cached here; caching is
+        ``_candidate_pool``'s responsibility.
+
+    """
+    rows: list[dict[str, Any]] = []
+    major_reps: dict[int, str] = {}
+
+    for region in MicroRegion.objects.select_related("subregion__major"):
+        major = region.subregion.major
+        parent = major.name_en or major.name_native
+        major_reps.setdefault(major.pk, region.region_id)
+        rows.append(
+            {
+                "region_id": region.region_id,
+                "name": region.name,
+                "kind": "micro",
+                "parent": parent,
+                "normalised": normalise(region.name),
+            }
+        )
+
+    for major_region in MajorRegion.objects.all():
+        region_id = major_reps.get(major_region.pk)
+        if region_id is None:
+            continue  # No MicroRegion children — nothing to resolve to.
+        for name in _distinct_names(major_region.name_en, major_region.name_native):
+            rows.append(
+                {
+                    "region_id": region_id,
+                    "name": name,
+                    "kind": "major",
+                    "parent": major_region.country,
+                    "normalised": normalise(name),
+                }
+            )
+
+    for resort in Resort.objects.select_related("region"):
+        for name in _distinct_names(resort.name, resort.name_alt):
+            rows.append(
+                {
+                    "region_id": resort.region.region_id,
+                    "name": name,
+                    "kind": "resort",
+                    "parent": resort.region.name,
+                    "normalised": normalise(name),
+                }
+            )
+
+    return rows
+
+
+def _pool_cache_key() -> str:
+    """Return a cache key that changes whenever the candidate data changes.
+
+    Fingerprints the pool on the newest ``updated_at`` across
+    ``MicroRegion``, ``MajorRegion``, and ``Resort`` — any create, edit, or
+    delete touches one of those timestamps, which changes the fingerprint,
+    which guarantees the next call is a cache miss. No explicit
+    invalidation call site is needed anywhere else in the codebase.
+
+    Returns:
+        A cache key string unique to the current state of the three
+        source tables.
+
+    """
+    stamps = [
+        MicroRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
+        MajorRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
+        Resort.objects.aggregate(latest=Max("updated_at"))["latest"],
+    ]
+    known = [s for s in stamps if s is not None]
+    fingerprint = max(known).isoformat() if known else "empty"
+    return f"mcp:candidates:{fingerprint}"
+
+
+def _candidate_pool() -> list[dict[str, Any]]:
+    """Return the (possibly cached) full search-candidate pool.
+
+    Returns:
+        The candidate-pool list — see :func:`_build_candidate_pool` for
+        the row shape.
+
+    """
+    return cache.get_or_set(  # type: ignore[return-value]
+        _pool_cache_key(), _build_candidate_pool, timeout=_POOL_TTL
+    )
+
+
+def _match_exact_region_id(
+    query: str, pool: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Short-circuit fuzzy matching when the query is already a region_id.
+
+    Args:
+        query: The raw (not normalised) search query.
+        pool: The candidate pool to search.
+
+    Returns:
+        A single-candidate result dict with ``score`` 100, or ``None`` if
+        the query doesn't match any MicroRegion's ``region_id`` exactly
+        (case-insensitively).
+
+    """
+    query_upper = query.strip().upper()
+    for row in pool:
+        if row["kind"] == "micro" and row["region_id"].upper() == query_upper:
+            return {
+                "region_id": row["region_id"],
+                "name": row["name"],
+                "kind": row["kind"],
+                "parent": row["parent"],
+                "score": 100.0,
+            }
+    return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the great-circle distance in kilometres between two lat/lon pairs.
+
+    Pure-Python haversine (no PostGIS, no Shapely) — mirrors the same
+    dependency-free precedent the request-path point-in-polygon lookup
+    established. Accuracy is ~0.5% at continental distances, far better
+    than the ~10 km scale of a MicroRegion centroid.
+
+    Args:
+        lat1: Latitude of point one, in degrees.
+        lon1: Longitude of point one, in degrees.
+        lat2: Latitude of point two, in degrees.
+        lon2: Longitude of point two, in degrees.
+
+    Returns:
+        The great-circle distance in kilometres.
+
+    """
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+
+
+def find_places_near(
+    lat: float, lon: float, radius_km: float, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Return covered MicroRegions inside a radius of one point, nearest first.
+
+    Args:
+        lat: Query latitude in degrees, in ``[-90, 90]``.
+        lon: Query longitude in degrees, in ``[-180, 180]``.
+        radius_km: Radius bound; only regions within this distance are
+            returned. Callers are expected to enforce their own upper
+            bound (see the ``mcp_server.tools.find_regions_near`` cap).
+        limit: Maximum results to return, nearest first.
+
+    Returns:
+        A list of ``{region_id, name, kind: "micro", distance_km,
+        provider}`` dicts, nearest first. Empty when no MicroRegion has a
+        ``centre`` within ``radius_km`` of the query point.
+
+    """
+    # Small enough (~1500 rows) to hold in memory and iterate — the same
+    # rationale as ``_candidate_pool``. Load with the major-region join
+    # for the country → provider derivation.
+    regions = MicroRegion.objects.select_related("subregion__major").all()
+
+    hits: list[tuple[float, dict[str, Any]]] = []
+    for region in regions:
+        centre = region.centre
+        if not isinstance(centre, dict):
+            continue
+        centre_lat = centre.get("lat")
+        centre_lon = centre.get("lon")
+        if not isinstance(centre_lat, int | float) or not isinstance(
+            centre_lon, int | float
+        ):
+            continue
+        distance = _haversine_km(lat, lon, float(centre_lat), float(centre_lon))
+        if distance > radius_km:
+            continue
+        provider = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country)
+        hits.append(
+            (
+                distance,
+                {
+                    "region_id": region.region_id,
+                    "name": region.name,
+                    "kind": "micro",
+                    "distance_km": round(distance, 2),
+                    "provider": provider,
+                },
+            )
+        )
+
+    hits.sort(key=lambda h: h[0])
+    return [row for _distance, row in hits[:limit]]
+
+
+def search_places(query: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Fuzzy-search resorts and regions by a (possibly misspelled) name.
+
+    Args:
+        query: A free-text place name, or an exact ``region_id`` (e.g.
+            ``"CH-4115"``), which short-circuits straight to a single hit.
+        limit: Maximum number of candidates to return.
+
+    Returns:
+        A list of ``{region_id, name, kind, parent, score}`` dicts, best
+        match first. Ties are broken by kind priority (micro region >
+        major region > resort). Empty when the query is blank or nothing
+        scores at or above the match threshold.
+
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    pool = _candidate_pool()
+
+    exact = _match_exact_region_id(query, pool)
+    if exact is not None:
+        return [exact]
+
+    query_norm = normalise(query)
+    if not query_norm:
+        return []
+
+    choices = {i: row["normalised"] for i, row in enumerate(pool)}
+    matches = process.extract(
+        query_norm,
+        choices,
+        scorer=fuzz.WRatio,
+        score_cutoff=_SCORE_CUTOFF,
+        limit=limit,
+    )
+    ranked = sorted(matches, key=lambda m: (-m[1], _KIND_PRIORITY[pool[m[2]]["kind"]]))
+
+    results: list[dict[str, Any]] = []
+    seen_identities: set[tuple[str, str]] = set()
+    for _matched_text, score, idx in ranked:
+        row = pool[idx]
+        identity = (row["kind"], row["region_id"])
+        if identity in seen_identities:
+            continue
+        seen_identities.add(identity)
+        results.append(
+            {
+                "region_id": row["region_id"],
+                "name": row["name"],
+                "kind": row["kind"],
+                "parent": row["parent"],
+                "score": round(score, 1),
+            }
+        )
+    return results

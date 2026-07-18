@@ -10,7 +10,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "Django>=6.0,<7",
+    "Django>=6.0.7,<7",
     "django-htmx>=1.21.0,<2",
     "python-decouple>=3.8,<4",
     "requests>=2.32.3,<3",
@@ -34,6 +34,7 @@ dependencies = [
     "posthog>=7.16.3,<8",
     "cryptography>=48.0.1,<49",
     "shapely>=2.1.2,<3",
+    "rapidfuzz>=3.14.5,<4",
 ]
 
 [dependency-groups]
@@ -48,7 +49,7 @@ dev = [
     "pytest-cov>=7.1.0,<8",
     "tox>=4.52.1,<5",
     "tox-gh-actions>=3.5.0,<4",
-    "mypy>=2.0,<3",
+    "mypy>=2.0,<2.1",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
     "djangofmt>=0.2.6,<0.3",
     "freezegun>=1.5.5,<2",
     "types-bleach>=6.3.0.20260408,<7",

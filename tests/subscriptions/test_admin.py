@@ -7,6 +7,7 @@ Covers:
     (icontains) through each of the three admins — verifying the SNOW-313
     acceptance criterion that email lookup goes via user__email.
   - PasskeyCredentialAdmin search now goes via user__email (SNOW-334).
+  - PushSubscriptionAdmin surfaces mechanism/inactive_at (SNOW-380).
 """
 
 from typing import Any
@@ -17,10 +18,16 @@ from django.test import RequestFactory
 
 from subscriptions.admin import (
     PasskeyCredentialAdmin,
+    PushSubscriptionAdmin,
     SubscriberAdmin,
     SubscriptionAdmin,
 )
-from subscriptions.models import PasskeyCredential, Subscriber, Subscription
+from subscriptions.models import (
+    PasskeyCredential,
+    PushSubscription,
+    Subscriber,
+    Subscription,
+)
 from tests.factories import (
     MicroRegionFactory,
     PasskeyCredentialFactory,
@@ -180,3 +187,27 @@ class TestPasskeyCredentialAdminSearch:
             "iPhone",
         )
         assert passkey in list(qs)
+
+
+class TestPushSubscriptionAdminConfig:
+    """SNOW-380: PushSubscriptionAdmin surfaces mechanism and inactive_at."""
+
+    def _admin(self) -> PushSubscriptionAdmin:
+        """Return a PushSubscriptionAdmin bound to the default admin site."""
+        return PushSubscriptionAdmin(PushSubscription, AdminSite())
+
+    def test_mechanism_in_list_display(self) -> None:
+        """'mechanism' is a visible column on the changelist."""
+        admin = self._admin()
+        assert "mechanism" in admin.list_display
+
+    def test_inactive_at_in_list_filter(self) -> None:
+        """'inactive_at' is filterable so operators can find dead subscriptions."""
+        admin = self._admin()
+        assert "inactive_at" in admin.list_filter
+
+    def test_mechanism_and_inactive_at_are_readonly(self) -> None:
+        """Both new fields are readonly — the admin is a diagnostic surface only."""
+        admin = self._admin()
+        assert "mechanism" in admin.readonly_fields
+        assert "inactive_at" in admin.readonly_fields

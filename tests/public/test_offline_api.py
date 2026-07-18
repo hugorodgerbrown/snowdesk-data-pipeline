@@ -85,3 +85,62 @@ def test_offline_fallback_page_exists_on_disk() -> None:
     stripped = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
     assert '<link rel="stylesheet"' not in stripped
     assert "<script src=" not in stripped
+
+
+# ---------------------------------------------------------------------------
+# Kill-switch SW (SNOW-373, spec §6.3 Mechanism B)
+# ---------------------------------------------------------------------------
+
+
+def test_serve_sw_kill_returns_200_with_correct_headers() -> None:
+    """``/sw-kill.js`` returns 200 with the same headers as the real SW.
+
+    Root scope + no-cache: once a client is on the kill-switch, we still
+    need every subsequent visit to re-fetch so a config flip back to
+    ``/sw.js`` picks up promptly (spec §6.4).
+    """
+    client = Client()
+    response = client.get("/sw-kill.js")
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("application/javascript")
+    assert response["Service-Worker-Allowed"] == "/"
+    assert response["Cache-Control"] == "no-cache"
+
+
+def test_sw_kill_wipes_caches_and_indexeddb() -> None:
+    """The kill-switch SW source contains the wipe + unregister contract.
+
+    A runtime test isn't possible in pytest (SW only runs in a browser).
+    Instead we verify the static contract that spec §6.3 requires: the
+    activate handler references ``caches.delete``, ``indexedDB.deleteDatabase``,
+    and ``registration.unregister``. Missing any of the three would let a
+    poisoned cache or DB survive a kill-switch activation.
+    """
+    client = Client()
+    response = client.get("/sw-kill.js")
+    body = response.content
+    assert b"activate" in body
+    assert b"caches.delete" in body
+    assert b"deleteDatabase" in body
+    assert b"registration.unregister" in body
+
+
+def test_sw_kill_has_no_fetch_handler() -> None:
+    """The kill-switch SW deliberately has no ``fetch`` listener.
+
+    Absence of a fetch handler makes the browser bypass the SW for all
+    network requests — so the moment this SW activates, the user's page
+    traffic goes straight to the network. Adding a fetch listener would
+    defeat the point of the kill switch.
+    """
+    client = Client()
+    response = client.get("/sw-kill.js")
+    body = response.content.decode("utf-8")
+    assert "addEventListener('fetch'" not in body
+    assert 'addEventListener("fetch"' not in body
+
+
+def test_sw_kill_file_exists_on_disk() -> None:
+    """``static/js/sw-kill.js`` ships in the repo (not templated at request-time)."""
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw-kill.js"
+    assert path.exists()

@@ -39,12 +39,39 @@ and loads home_intro.js in addition to the shared map assets.
     <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {# Per-country RSS/Atom feeds (SNOW-396). Feed readers and LLM crawlers  #}
+    {# pick these up from the page head; the four hrefs cover every country. #}
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Switzerland avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='ch' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Austria avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='at' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Italy avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='it' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — France avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='fr' %}"
+    >
 {% endblock %}
 
 {% block content %}
     {# SNOW-324: off-map notification banner. Hidden by default; map.js reveals #}
-    {# it (toggling hidden↔flex, per the sw-update-banner pattern) when the     #}
-    {# locate pill is tapped while the user is outside the map's bounds. The ×  #}
+    {# it (toggling hidden↔flex — the `flex` utility would otherwise win over   #}
+    {# the HTML5 `hidden` attribute in the cascade) when the locate pill is    #}
+    {# tapped while the user is outside the map's bounds. The ×                #}
     {# and a short timeout dismiss it. Sits between the nav and the map so it   #}
     {# pushes the map down rather than overlaying it.                           #}
     {# Narrow viewports: a full-width banner in flow between the nav and the   #}

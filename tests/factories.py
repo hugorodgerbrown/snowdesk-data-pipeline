@@ -366,6 +366,8 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
     auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")
     user_agent = "Mozilla/5.0 (Test)"
     last_used_at = None
+    mechanism = PushSubscription.Mechanism.SW
+    inactive_at = None
 
 
 class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping]):

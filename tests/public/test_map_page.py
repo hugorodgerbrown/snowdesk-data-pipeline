@@ -110,6 +110,29 @@ def test_map_page_renders_resorts_overlay_toggle() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_micro_regions_overlay_toggle() -> None:
+    """
+    SNOW-390: the Micro regions checkbox is a normal overlay toggle, matching
+    L1 / L2 / L3 / Resorts. Default is ``aria-checked="true"`` — the
+    danger-rating choropleth is visible on first paint — but the button is no
+    longer locked with ``disabled`` / ``aria-disabled`` / a "required" tooltip.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+    assert 'data-overlay-key="l4"' in content
+    l4_btn_idx = content.index('data-overlay-key="l4"')
+    next_li_idx = content.find("<li ", l4_btn_idx)
+    button_scope = (
+        content[l4_btn_idx:next_li_idx] if next_li_idx > 0 else content[l4_btn_idx:]
+    )
+    assert 'aria-checked="true"' in button_scope
+    assert 'aria-disabled="true"' not in button_scope
+    assert "disabled" not in button_scope
+    assert "required" not in button_scope
+
+
+@pytest.mark.django_db
 def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
@@ -159,9 +182,12 @@ def test_map_page_renders_basemap_picker() -> None:
     content = response.content.decode()
     assert 'id="basemap-pill"' in content
     assert 'id="basemap-menu"' in content
-    for key in ("openfreemap_liberty", "swisstopo_winter", "swisstopo_light"):
+    for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
         assert f'data-basemap-key="{key}"' in content
         assert f'data-basemap-url="{settings.BASEMAP_STYLES[key]}"' in content
+    # ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP= env override
+    # but is intentionally excluded from the picker (SNOW-367).
+    assert 'data-basemap-key="swisstopo_light"' not in content
 
 
 @pytest.mark.django_db
@@ -177,7 +203,9 @@ def test_map_view_passes_basemap_catalogue() -> None:
     assert "basemaps" in ctx
     assert "default_basemap_key" in ctx
     keys = [bm["key"] for bm in ctx["basemaps"]]
-    assert keys == ["openfreemap_liberty", "swisstopo_winter", "swisstopo_light"]
+    assert keys == ["openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"]
+    labels = [str(bm["label"]) for bm in ctx["basemaps"]]
+    assert labels == ["Standard", "Swisstopo (CH)", "IGN (FR)", "basemap.at (AT)"]
     assert all({"key", "label", "url"} <= set(bm) for bm in ctx["basemaps"])
     assert ctx["default_basemap_key"] == settings.BASEMAP
 
@@ -258,7 +286,12 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
     content = response.content.decode()
     assert 'id="offline-toggle"' not in content
     assert "data-offline-manifest-url" not in content
-    assert "offline.js" not in content
+    # The SNOW-9 opt-in was ``static/js/offline.js`` — a bare filename with
+    # no prefix. The assertion is anchored on that closing quote so the
+    # newer PWA scripts (``pwa_offline.js``, SNOW-377) whose names happen
+    # to end with ``offline.js`` do not falsely trip it.
+    assert '/offline.js"' not in content
+    assert "'offline.js'" not in content
 
 
 @pytest.mark.django_db

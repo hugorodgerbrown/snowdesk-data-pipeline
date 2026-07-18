@@ -75,6 +75,23 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# the empty-state and the /examples/ pages so search engines collapse #}
     {# duplicate URLs to a single bulletin destination.                    #}
     {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
+    {% if bulletin %}
+        {# SNOW-394: rel=alternate JSON endpoints — the render model plus     #}
+        {# the raw CAAML source, both keyed on bulletin_id. A fetcher that   #}
+        {# lands on the HTML page can pivot to structured data in one hop.  #}
+        <link
+            rel="alternate"
+            type="application/json"
+            title="Render model"
+            href="{% url 'api:bulletin_render_model' bulletin_id=bulletin.bulletin_id %}"
+        >
+        <link
+            rel="alternate"
+            type="application/json"
+            title="CAAML source"
+            href="{% url 'api:bulletin_caaml' bulletin_id=bulletin.bulletin_id %}"
+        >
+    {% endif %}
     {% if prev_date %}<link
             rel="prefetch"
             href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
@@ -85,8 +102,8 @@ reachable via the SNOW-81 deep-link in the masthead.
         {# escape pass (see public/views.py:_build_structured_data) so it is safe  #}
         {# to render unescaped inside a <script type="application/ld+json"> block. #}
         <script type="application/ld+json" nonce="{{ request.csp_nonce }}">
-        {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe #}
-        {{ structured_data_json|safe }}
+            {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe #}
+            {{ structured_data_json|safe }}
         </script>
     {% endif %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
@@ -97,8 +114,8 @@ reachable via the SNOW-81 deep-link in the masthead.
         {# (see public/views.py:_render_with_meta) so it's safe to render unescaped  #}
         {# inside a <script type="application/json"> data block.                     #}
         <script type="application/json" id="bulletin-raw-data" nonce="{{ request.csp_nonce }}">
-        <!-- nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
-        {{ raw_data_json|safe }}
+            <!-- nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+            {{ raw_data_json|safe }}
         </script>
     {% endif %}
 {% endblock %}

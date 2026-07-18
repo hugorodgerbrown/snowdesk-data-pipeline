@@ -10,8 +10,11 @@ Shows one card per subscribed region, ordered by region name. Each card
 shows the region name, region ID, and resort list. A per-region "Remove"
 button POSTs to subscriptions:remove_region via HTMX. A "Choose more
 regions on the map" link routes to /. A passkeys section lists
-registered platform passkeys with delete buttons. A destructive
-"Unsubscribe from all alerts" button hard-deletes the subscriber.
+registered platform passkeys with delete buttons. An "Anonymous usage
+data" section (SNOW-387) hosts a role="switch" toggle bound to
+window.pwaTelemetry.setOptIn/.isOptIn(), with a link to the privacy
+policy. A destructive "Unsubscribe from all alerts" button hard-deletes
+the subscriber.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -232,6 +235,72 @@ registered platform passkeys with delete buttons. A destructive
                 </div>
 
                 {% comment %}
+                    SNOW-378: Reset local data escape hatch.
+                    Discoverable, not hidden. Wipes cached bulletins,
+                    the SW, cache storage, IndexedDB, and web storage;
+                    the server-side subscription is untouched. Copy
+                    lives here in the template so the visible label +
+                    helper line can be translated; the confirmation
+                    dialog message lives in pwa_reset.js.
+                {% endcomment %}
+                <div class="border-t border-border pt-8 flex flex-col gap-2">
+                    <button
+                        type="button"
+                        data-pwa-reset-trigger
+                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                    >
+                        {% trans "Reset local data on this device" %}
+                    </button>
+                    <p class="text-xs text-text-3">
+                        {% blocktrans trimmed %}
+                            Clears cached bulletins, offline data, and saved preferences on this device. Your
+                            subscription is not affected.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+
+                {% comment %}
+                    SNOW-387: Telemetry opt-in/opt-out toggle.
+                    Renders disabled + aria-busy="true" until the inline
+                    script below resolves the persisted preference via
+                    window.pwaTelemetry.isOptIn() — see the binding block
+                    at the bottom of this template. Links to the privacy
+                    policy so the toggle copy and the policy stay
+                    consistent (SNOW-387 also rewrote privacy.html §5/§8).
+                {% endcomment %}
+                <div class="border-t border-border pt-8 flex flex-col gap-2">
+                    <h2 class="text-sm font-semibold text-text-1">
+                        {% trans "Anonymous usage data" %}
+                    </h2>
+                    <div class="flex items-start justify-between gap-4">
+                        {% url 'public:privacy' as privacy_url %}
+                        <p class="text-xs text-text-3 max-w-prose">
+                            {% blocktrans trimmed %}
+                                We collect a small stream of anonymous events (installs, updates, push delivery, errors)
+                                so we can keep the app working across browsers. No bulletin content, no email address,
+                                no location.
+                                <a href="{{ privacy_url }}" class="underline">Read the full policy</a>.
+                            {% endblocktrans %}
+                        </p>
+                        <button
+                            type="button"
+                            data-telemetry-toggle
+                            role="switch"
+                            aria-checked="false"
+                            aria-busy="true"
+                            disabled
+                            class="group relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill border border-border bg-card transition-colors aria-checked:border-ring-selected aria-checked:bg-ring-selected disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-selected"
+                        >
+                            <span class="sr-only">{% trans "Share anonymous usage data" %}</span>
+                            <span
+                                aria-hidden="true"
+                                class="pointer-events-none inline-block h-4 w-4 translate-x-1 rounded-full bg-text-3 shadow transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-card"
+                            ></span>
+                        </button>
+                    </div>
+                </div>
+
+                {% comment %}
                     Destructive account deletion — visually separated,
                     small, muted.  hx-confirm stays here: deleting the
                     whole account is irreversible.
@@ -251,6 +320,8 @@ registered platform passkeys with delete buttons. A destructive
             {% comment %}
                 Passkey + HTMX error handling scripts.
             {% endcomment %}
+            {# SNOW-378: reset-local-data escape hatch — wires the [data-pwa-reset-trigger] button above. #}
+            <script src="{% static 'js/pwa_reset.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
             <script nonce="{{ request.csp_nonce }}">
                 (function () {
@@ -300,6 +371,23 @@ registered platform passkeys with delete buttons. A destructive
                         if (regBtn) regBtn.disabled = false;
                         showFeedback("{% trans "Passkey registration failed. Please try again." %}");
                     });
+
+                    /* Telemetry opt-in/opt-out toggle (SNOW-387). Left disabled
+                       (as rendered) when window.pwaTelemetry is unavailable —
+                       same graceful-degradation posture as pwa_reset.js. */
+                    var telemetryToggle = document.querySelector("[data-telemetry-toggle]");
+                    if (telemetryToggle && window.pwaTelemetry) {
+                        window.pwaTelemetry.isOptIn().then(function (optedIn) {
+                            telemetryToggle.setAttribute("aria-checked", String(optedIn));
+                            telemetryToggle.removeAttribute("aria-busy");
+                            telemetryToggle.disabled = false;
+                        });
+                        telemetryToggle.addEventListener("click", function () {
+                            var next = telemetryToggle.getAttribute("aria-checked") !== "true";
+                            telemetryToggle.setAttribute("aria-checked", String(next));
+                            window.pwaTelemetry.setOptIn(next);
+                        });
+                    }
                 })();
             </script>
         </div>

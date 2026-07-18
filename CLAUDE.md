@@ -372,6 +372,7 @@ Read these when working in the relevant area:
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
+| Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
@@ -391,5 +392,8 @@ Read these when working in the relevant area:
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
+| Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
+| MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
+| IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Worktree DB seeding, dev credentials, test_data coverage | [`docs/worktrees.md`](docs/worktrees.md) |

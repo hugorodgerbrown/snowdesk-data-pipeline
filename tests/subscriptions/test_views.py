@@ -13,7 +13,9 @@ Covers:
                         bad/expired token → 400.
   manage_view         — unauthenticated GET/POST (byte-equal response for known
                         and unknown emails); authenticated GET shows region cards;
-                        non-subscribed regions absent; just_confirmed banner.
+                        non-subscribed regions absent; just_confirmed banner;
+                        telemetry toggle renders with role="switch", explainer
+                        copy, and a link to the privacy policy (SNOW-387).
   remove_region       — removes one region; last region → hard-delete + HX-Redirect;
                         no session → 403; non-HTMX → 400; rate-limit 429.
   delete_account      — hard-deletes subscriber; clears session; HX-Redirect to done;
@@ -1300,6 +1302,31 @@ class TestManageViewAuthenticated:
         assert b'href="#flag-ch"' in response.content
         # Case-preserved region_id appears in the badge
         assert b"CH-4115" in response.content
+
+    def test_shows_telemetry_toggle_with_role_switch(self) -> None:
+        """SNOW-387: the Anonymous usage data section renders a role="switch" toggle."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        assert response.status_code == 200
+        assert b"data-telemetry-toggle" in response.content
+        assert b'role="switch"' in response.content
+
+    def test_telemetry_toggle_explainer_copy_present(self) -> None:
+        """SNOW-387: the telemetry section explains what is (and isn't) collected."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        assert b"Anonymous usage data" in response.content
+        assert b"No bulletin content" in response.content
+
+    def test_telemetry_toggle_links_to_privacy_page(self) -> None:
+        """SNOW-387: the telemetry copy links to the resolved privacy policy URL."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        privacy_url = reverse("public:privacy")
+        assert privacy_url.encode() in response.content
 
 
 # ---------------------------------------------------------------------------

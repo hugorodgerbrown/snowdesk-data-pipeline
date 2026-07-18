@@ -1,8 +1,8 @@
 ---
 name: push-notifications
-description: Web Push — mint_vapid_keypair, VAPID raw-scalar secret on Render, /_push-demo/ smoke test, rotation, troubleshooting
+description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/ smoke test, Declarative Web Push, mechanism/inactive_at lifecycle
 status: current
-last-reviewed: 2026-06-14
+last-reviewed: 2026-07-16
 ---
 
 # Web Push notifications
@@ -13,6 +13,140 @@ last-reviewed: 2026-06-14
 but is not yet exposed to subscribers. The code lives behind
 `@staff_member_required` on `/_push-demo/`. The subscriber-facing CTA,
 fan-out, and ingestion trigger are tracked in SNOW-226.
+
+---
+
+## Declarative Web Push
+
+Apple's Safari 18.4+ (iOS/iPadOS/macOS) supports **Declarative Web Push**: a
+fixed JSON payload shape the OS renders directly into a notification,
+without running the service worker's `push` event handler at all. This
+matters because SW-based push on iOS is fragile — a background SW eviction
+silently drops the notification — whereas a declarative payload is rendered
+by the OS even if the SW is gone.
+
+`subscriptions/models.py::PushSubscription.mechanism` records which path a
+given subscription uses:
+
+- `sw` — the service-worker-parsed path (`{title, body, url}`), used by
+  every browser today except Safari 18.4+.
+- `declarative` — Apple's fixed shape, used when the browser exposes
+  `'declarativePush' in Notification` at subscribe time.
+
+`static/js/push_demo.js::_supportsDeclarativePush()` does the feature
+detection and sends the result as a `"mechanism"` field on the
+`/subscribe/push/register/` POST body.
+
+`subscriptions/push_service.py::dispatch_push` branches the *outgoing wire
+payload* on `sub.mechanism` (see `_build_wire_payload`). For a `declarative`
+subscription, whatever `{title, body, url}`-shaped payload the caller
+passes in is translated to:
+
+```json
+{
+  "web_push": 8030,
+  "notification": {
+    "title": "New bulletin available",
+    "body": "A fresh avalanche bulletin was published for your region.",
+    "navigate": "/bulletins/CH-6-11/"
+  }
+}
+```
+
+`web_push: 8030` is Apple's declarative-push version tag (see
+[the WebKit blog post](https://webkit.org/blog/16535/meet-declarative-web-push/)).
+`notification.navigate` carries what the `sw` shape calls `url` — the page
+opened when the notification is tapped. This is the documented **minimum**
+subset of `notification` keys; Apple's accepted key set has drifted between
+releases, so treat any future field addition (`app_badge`, `silent`,
+`mutable`, …) as a schema change requiring a matching update to
+`_build_wire_payload` and this section.
+
+`sw` subscriptions are unaffected — they still get the plain
+`{title, body, url}` shape the existing service worker `push` handler
+parses.
+
+### Browser support for Declarative Web Push
+
+| Browser / Platform | Declarative Web Push |
+|---------------------|----------------------|
+| Safari 18.4+ (macOS, iOS, iPadOS) | Yes |
+| Chrome, Firefox, Edge, Samsung Internet | No — always `sw` |
+| Safari < 18.4 | No — always `sw` |
+
+---
+
+## `mechanism` field lifecycle
+
+- Defaults to `"sw"` — both on the model (`PushSubscription.Mechanism.SW`)
+  and when `push_register`'s POST body omits the field entirely, so old
+  clients that predate SNOW-380 keep working unchanged.
+- Set from the `"mechanism"` key in the `push_register` POST body, which
+  `static/js/push_demo.js::enablePush` and `::reverifyPushSubscription` both
+  populate via `_supportsDeclarativePush()`. An unrecognised value (outside
+  `PushSubscription.Mechanism.values`) is rejected with `400`.
+- Flips only on a fresh `update_or_create` call against the same endpoint —
+  it is not reconciled retroactively; a device only reports `declarative`
+  once it resubscribes after upgrading to a Declarative-Web-Push-capable
+  browser.
+
+---
+
+## `inactive_at` lifecycle
+
+- `null` on every freshly created or freshly resubscribed row.
+- Set to `timezone.now()` by `dispatch_push` when the push service returns
+  **410 Gone** — the confirmed-dead signal (permission revoked, PWA
+  uninstalled, site data cleared). The row is **not** deleted; it stays
+  around as the record `reverifyPushSubscription` reconciles against on the
+  device's next launch (via the `meta:app` / `push.subscribed_before` flag
+  — see [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)).
+- A **404** (rare transport-layer error, not a confirmed-gone signal) still
+  hard-deletes the row — there's nothing useful to reconcile against a
+  wrong URL.
+- Cleared back to `null` automatically the next time the same endpoint
+  registers — `push_register`'s `update_or_create` always writes
+  `inactive_at=None` into `defaults`. In practice a resubscribe after 410
+  usually produces a **new** endpoint (the push service issues a fresh
+  token), so this typically manifests as a brand-new row rather than the
+  old one flipping back to active — but the reset guards the same-endpoint
+  edge case too.
+- `PushSubscription.objects.active()` filters to `inactive_at__isnull=True`
+  — use this instead of `.all()` wherever a caller only cares about
+  deliverable subscriptions (e.g. a future bulk-dispatch command).
+
+---
+
+## VAPID subject requirement
+
+`push_config.VAPID_CLAIM_EMAIL` is the JWT `sub` claim sent with every
+Web Push dispatch (RFC 8292 §2). It **must** start with `mailto:` or
+`https:` — push services (notably Apple's APNs, which backs Safari/iOS Web
+Push) reject the JWT with a 403 for anything else, and the failure only
+surfaces at dispatch time in production.
+
+`subscriptions/checks.py::check_vapid_claim_email` — registered via
+`subscriptions/apps.py::SubscriptionsConfig.ready()` — fails
+`manage.py check` (error code `subscriptions.push_config.E001`) if
+`VAPID_CLAIM_EMAIL` doesn't start with one of those two prefixes, catching
+a misconfigured environment before it reaches production silently.
+
+---
+
+## Never `unsubscribe()` on logout
+
+Per spec §8.2.5: `PushSubscription.unsubscribe()` (the browser API call,
+distinct from the Django model) must only ever run from an explicit,
+user-initiated "Disable push" action. Signing out of a Subscriber session
+is **not** the same thing as opting out of push, and calling
+`unsubscribe()` from a logout hook would silently break notifications for
+a user who just wanted a fresh session on the same device.
+
+`static/js/push_demo.js::disablePush` is the only call site of
+`sub.unsubscribe()` in the codebase, and carries a `WHY` comment
+documenting this rule directly above the call — enforcement here is
+code-level (the comment plus code review), not a runtime guard, so keep it
+in mind if you ever add a logout flow that touches push state.
 
 ---
 
@@ -150,6 +284,22 @@ Safari on iOS only delivers Web Push in standalone (installed PWA) mode.
    not in Safari).
 4. Navigate to `/_push-demo/` within the PWA and follow steps 3–6 above.
 5. Lock the screen — the notification should appear on the lock screen.
+
+### Declarative Web Push (Safari 18.4+)
+
+1. Follow the iOS PWA steps above on a device running Safari 18.4+ (or
+   macOS Safari 18.4+, non-standalone is fine there).
+2. Before clicking **Enable push**, open the browser console and confirm
+   `'declarativePush' in Notification` returns `true` — this is the same
+   check `_supportsDeclarativePush()` runs client-side.
+3. Click **Enable push**, grant permission, and confirm the register POST
+   in the network tab carries `"mechanism":"declarative"`.
+4. Check `/admin/subscriptions/pushsubscription/` — the new row's
+   **Mechanism** column should read `declarative`.
+5. Send a test push. The OS renders the notification directly from the
+   Declarative Web Push JSON shape — no service worker `push` handler
+   runs for this delivery, so a broken/evicted SW does not prevent the
+   notification appearing.
 
 ---
 

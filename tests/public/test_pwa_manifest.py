@@ -219,6 +219,131 @@ def test_maskable_icon_is_opaque() -> None:
     )
 
 
+def test_manifest_defaults_to_production_name_and_theme() -> None:
+    """Manifest name/short_name/theme_color match production when SITE_ENVIRONMENT is unset (SNOW-399).
+
+    The base settings default is ``"production"``; the manifest view
+    reads this via ``PWAEnvironmentIdentity.from_settings()``. This test
+    guards the production identity contract so a rename of the enum
+    label or a colour tweak surfaces here rather than only on the live
+    install dialog.
+    """
+    manifest = _load_manifest()
+    assert manifest["name"] == "Snowdesk"
+    assert manifest["short_name"] == "Snowdesk"
+    assert manifest["theme_color"] == "#1a1a1a"
+
+
+def test_manifest_icon_srcs_default_to_production_directory() -> None:
+    """Icon ``src`` values live under ``/static/icons/pwa/`` on production (SNOW-399)."""
+    manifest = _load_manifest()
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/static/icons/pwa/"), icon
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_manifest_swaps_name_for_staging() -> None:
+    """Staging install lands with a "Snowdesk (Staging)" home-screen label (SNOW-399).
+
+    Without this the two installs (staging + production) collide on the
+    device home screen — same name, same artwork — and a tester has no
+    way to know which one they're launching without reading the URL bar,
+    which the standalone display mode hides.
+    """
+    manifest = _load_manifest()
+    assert manifest["name"] == "Snowdesk (Staging)"
+    assert manifest["short_name"] == "Snowdesk Staging"
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_manifest_swaps_theme_color_for_staging() -> None:
+    """Staging install tints the OS chrome amber (SNOW-399).
+
+    The amber ``#b45309`` is the shared source of truth for the
+    installed status-bar tint and the browser tab tint, both driven by
+    the manifest ``theme_color`` and the ``<meta name="theme-color">``
+    tag respectively — they must render the same colour.
+    """
+    manifest = _load_manifest()
+    assert manifest["theme_color"] == "#b45309"
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_manifest_swaps_icons_for_staging() -> None:
+    """Every icon ``src`` lives under ``/static/icons/pwa-staging/`` when the environment is staging (SNOW-399).
+
+    The staging icon set is a distinct amber-tiled artwork with a
+    "STAGING" wordmark; pointing at it via a different URL prefix keeps
+    the two files apart on disk so a rebuild of one doesn't disturb the
+    other. It also means the browser can cache both independently by
+    URL when the same device previews both installs.
+    """
+    manifest = _load_manifest()
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/static/icons/pwa-staging/"), icon
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_manifest_screenshots_unchanged_for_staging() -> None:
+    """Screenshots are shared between environments — same UI, same shots (SNOW-399).
+
+    The screenshots feed Chrome's rich install dialog with a preview of
+    the app. Since staging and production render the same UI, the
+    screenshots are identical and stay under ``/static/icons/pwa/``. If
+    the identity refactor accidentally routes them through
+    ``icon_dir`` they would 404 in staging — this test pins that.
+    """
+    manifest = _load_manifest()
+    for shot in manifest.get("screenshots", []):
+        assert shot["src"].startswith("/static/icons/pwa/screenshots/"), shot
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_manifest_staging_icon_files_exist_on_disk() -> None:
+    """The staging PWA icon set is checked in and reachable via STATIC_URL (SNOW-399).
+
+    ``bin/build-pwa-icons`` writes ``/static/icons/pwa-staging/*.png``
+    alongside the production set; every filename referenced from the
+    staging manifest must resolve to a real file, otherwise the
+    "Add to Home Screen" flow shows a broken icon.
+    """
+    manifest = _load_manifest()
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/static/"), icon
+        relative = icon["src"][len("/static/") :]
+        path = Path(settings.BASE_DIR) / "static" / relative
+        assert path.exists(), f"staging manifest icon {icon['src']} missing on disk"
+
+
+@override_settings(SITE_ENVIRONMENT="Production")
+def test_manifest_production_setting_is_case_insensitive() -> None:
+    """``SITE_ENVIRONMENT="Production"`` still resolves to the production identity (SNOW-399).
+
+    Environment variables are notoriously case-fiddly across Render's
+    dashboard, ``.env`` files, and shell exports. The identity resolver
+    normalises the value to lowercase so a case mismatch doesn't
+    silently downgrade a production install into a staging one.
+    """
+    manifest = _load_manifest()
+    assert manifest["name"] == "Snowdesk"
+
+
+@override_settings(SITE_ENVIRONMENT="")
+def test_manifest_empty_setting_falls_back_to_staging() -> None:
+    """An empty ``SITE_ENVIRONMENT`` value surfaces as a staging install (SNOW-399).
+
+    Any non-``"production"`` value maps to the staging identity — this
+    is deliberate. A misconfigured deploy that clears the variable
+    should render an obviously-not-production tile so the mistake is
+    visible at install time rather than silently masquerading as
+    production.
+    """
+    manifest = _load_manifest()
+    assert manifest["name"] == "Snowdesk (Staging)"
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/static/icons/pwa-staging/"), icon
+
+
 @pytest.mark.django_db
 @override_settings(POSTHOG_API_KEY="phc_test")
 def test_manifest_no_cookie_vary_with_analytics_enabled() -> None:

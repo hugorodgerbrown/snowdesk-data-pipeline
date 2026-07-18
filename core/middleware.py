@@ -13,6 +13,12 @@ track per-page query counts in ``perf/query_counts.txt``).
 ``Permissions-Policy`` headers to every response.  Per-view overrides
 (e.g. ``no-referrer`` on token-bearing views) take precedence because
 the middleware sets its value only when the header is absent.
+
+``AppVersionHeaderMiddleware`` stamps ``X-App-Version`` and
+``X-App-Min-Version`` on every response (SNOW-369). The PWA client reads
+these on every response — not just at startup — so mid-session transitions
+into a forced-update state fire the moment the deploy rolls, without
+waiting for the next visit to ``/api/version``.
 """
 
 from __future__ import annotations
@@ -89,4 +95,39 @@ class SecurityHeadersMiddleware:
             response[self._REFERRER_POLICY_HEADER] = self._REFERRER_POLICY_DEFAULT
         if self._PERMISSIONS_POLICY_HEADER not in response:
             response[self._PERMISSIONS_POLICY_HEADER] = self._PERMISSIONS_POLICY_VALUE
+        return response
+
+
+class AppVersionHeaderMiddleware:
+    """Stamp ``X-App-Version`` and ``X-App-Min-Version`` on every response.
+
+    The PWA client compares its own build to ``X-App-Min-Version`` on every
+    response and enters an Update Required state when it falls behind,
+    without needing to poll ``/api/version``. Empty ``APP_MIN_VERSION``
+    (the default) still sends the header — the client treats an empty
+    string as "no minimum enforced", which is safer than an omitted header
+    that could be confused with an older server that never set it.
+    """
+
+    _CURRENT_HEADER = "X-App-Version"
+    _MIN_HEADER = "X-App-Min-Version"
+
+    def __init__(
+        self,
+        get_response: Callable[[HttpRequest], HttpResponse],
+    ) -> None:
+        """Bind the next middleware callable."""
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Run the view, stamp the two headers.
+
+        Values are read from settings at request time (not cached at init)
+        so ``override_settings`` in tests takes effect immediately, and so a
+        settings hot-reload picks up new values without a process restart.
+        The lookup is a bare attribute access on the settings holder — cheap.
+        """
+        response = self.get_response(request)
+        response[self._CURRENT_HEADER] = str(getattr(settings, "APP_VERSION", ""))
+        response[self._MIN_HEADER] = str(getattr(settings, "APP_MIN_VERSION", ""))
         return response

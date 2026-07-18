@@ -8,7 +8,7 @@ read from the environment via python-decouple.
 """
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from decouple import config
@@ -40,6 +40,40 @@ RELEASE_VERSION = config(
     "RELEASE_VERSION",
     default=config("RENDER_GIT_COMMIT", default="dev"),
 )
+
+# ---------------------------------------------------------------------------
+# PWA version + kill-switch contract (SNOW-369, SNOW-372)
+# ---------------------------------------------------------------------------
+# Server-authoritative version + kill-switch state consumed by the PWA:
+#
+#   ``APP_VERSION``     — current build the server is serving. Reuses
+#                         ``RELEASE_VERSION`` so an existing deploy pipeline
+#                         only has to set one env var.
+#   ``APP_MIN_VERSION`` — minimum client build the server will accept.
+#                         Any client below this must force-update. Empty
+#                         string disables the check (default), which is
+#                         the correct behaviour until we have a client
+#                         population to gate against.
+#   ``APP_RELEASED_AT`` — ISO-8601 timestamp of when the current build was
+#                         released. Defaults to process boot time on Render
+#                         (matching deploy time within seconds); an explicit
+#                         env var can override for deterministic tests.
+#   ``SW_URL``          — path the client registers as its service worker.
+#                         Flipping to ``/sw-kill.js`` swaps every client
+#                         onto the kill-switch SW without a deploy
+#                         (spec §6.4 Mechanism A escalation).
+#   ``SW_KILL``         — when true, ``/api/sw-config`` returns kill=true
+#                         and the client unregisters its SW without
+#                         registering a new one.
+
+APP_VERSION: str = RELEASE_VERSION
+APP_MIN_VERSION: str = config("APP_MIN_VERSION", default="")
+APP_RELEASED_AT: str = config(
+    "APP_RELEASED_AT",
+    default=datetime.now(UTC).isoformat(timespec="seconds"),
+)
+SW_URL: str = config("SW_URL", default="/sw.js")
+SW_KILL: bool = config("SW_KILL", default=False, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Application definition
@@ -74,6 +108,7 @@ INSTALLED_APPS = [
     "subscriptions",
     "analytics",
     "observations",
+    "mcp_server",
 ]
 
 MIDDLEWARE = [
@@ -81,6 +116,14 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # Idempotency-Key deduplication for state-changing requests (SNOW-371).
+    # Runs before AuthenticationMiddleware so a cache hit short-circuits
+    # before any auth work, and after CsrfViewMiddleware so a cached
+    # response is not served to a request that would have failed CSRF on
+    # first execution — the original request already passed CSRF when the
+    # row was cached, so a replay of an already-successful mutation is
+    # safe to serve without a second CSRF check.
+    "core.idempotency.IdempotencyMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # django-waffle. Reads request.user (populated by AuthenticationMiddleware
     # immediately above) so per-user / superuser / staff flag targeting works.
@@ -104,6 +147,10 @@ MIDDLEWARE = [
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
     "core.middleware.SecurityHeadersMiddleware",
+    # Stamps X-App-Version and X-App-Min-Version on every response so the
+    # PWA client can detect a forced-update state on any response, not just
+    # a poll of /api/version (SNOW-369, spec §5.3).
+    "core.middleware.AppVersionHeaderMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
     # the Content-Security-Policy(-Report-Only) header. The nonce middleware
@@ -130,6 +177,15 @@ TEMPLATES = [
                 "subscriptions.context_processors.nav_subscriptions",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
                 "public.context_processors.site_base_url",
+                # Injects APP_VERSION / APP_MIN_VERSION into every template so
+                # base.html can bake them into <meta> tags for the client-side
+                # version check (SNOW-374).
+                "public.context_processors.pwa_version",
+                # SNOW-399: injects SITE_ENVIRONMENT and the derived
+                # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
+                # base.html can render a distinct app name, icon, and theme
+                # colour on staging vs production PWA installs.
+                "public.context_processors.site_environment",
             ],
         },
     },
@@ -257,6 +313,7 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # Static public-good documents (config/urls.py) — SNOW-338.
         "/robots.txt",
         "/llms.txt",
+        "/llms-full.txt",
         "/manifest.webmanifest",
         # Favicon has two routes: bare path and trailing-slash variant.
         "/favicon.ico",
@@ -493,6 +550,12 @@ CSP_DEFAULTS = {
     "connect-src": [
         "'self'",
         "https://tiles.openfreemap.org",
+        # swisstopo winter/light styles + tiles.
+        "https://vectortiles.geo.admin.ch",
+        # Regional national basemaps: IGN Plan IGN (France) and
+        # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
+        "https://data.geopf.fr",
+        "https://mapsneu.wien.gv.at",
     ],
     "manifest-src": ["'self'"],
     "report-uri": ["{report_uri}"],
@@ -555,6 +618,14 @@ SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
 # Human-readable site name — used in structured data (JSON-LD), email
 # subjects, and any other context that needs the brand string.
 SITE_NAME = "Snowdesk"
+
+# SNOW-399: environment label used to make a staging PWA install visibly
+# distinct from a production one — different app name, theme colour, and
+# icon set so the two home-screen icons can be told apart at a glance.
+# Anything other than "production" is treated as a non-production install
+# by the PWA manifest view (``public.views.serve_manifest``) and the site
+# ``<head>`` (``public/templates/public/base.html``).
+SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # Set to 1 (the default "example.com" site created by the sites migration).
@@ -623,6 +694,19 @@ BASEMAP_STYLES = {
         "https://vectortiles.geo.admin.ch/styles/"
         "ch.swisstopo.lightbasemap.vt/style.json"
     ),
+    # Regional national basemaps — a per-country equivalent to the
+    # swisstopo styles (which cover CH only). Both are self-contained
+    # MapLibre v8 style JSONs (absolute sprite/glyph URLs), free and
+    # token-less. Coverage is national — outside their country they render
+    # blank, so they are a comparison aid, not a replacement for the global
+    # Standard style. IGN "Plan IGN" covers France; basemap.at covers Austria.
+    # Italy (South Tyrol / Trentino) publishes only raster WMTS, which needs a
+    # hand-built style object rather than a URL, so it is not included here.
+    "ign_plan": (
+        "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/"
+        "PLAN.IGN/standard.json"
+    ),
+    "basemap_at": "https://mapsneu.wien.gv.at/basemapvectorneu/root.json",
 }
 
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")

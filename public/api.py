@@ -35,10 +35,11 @@ import json
 import logging
 import re
 import secrets
-from datetime import date
-from typing import Any
+from datetime import date, datetime
+from typing import Any, cast
 
 import waffle
+from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError
 from django.http import Http404, HttpRequest, JsonResponse
@@ -51,8 +52,10 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
+from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
+from core.freshness import apply_freshness_headers
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -132,7 +135,7 @@ _RATING_TO_INT: dict[str, int] = {
 def _build_ratings_payload(
     parsed_date: date | None,
     country_param: str,
-) -> dict[str, dict[str, int]]:
+) -> tuple[dict[str, dict[str, int]], datetime | None]:
     """
     Build the ``{date_iso: {region_id: rating_int}}`` payload from the DB.
 
@@ -141,25 +144,37 @@ def _build_ratings_payload(
     ISO date string. Called lazily from ``cache.get_or_set`` in the
     ``ratings`` view so the full query only runs once per cache window.
 
+    The paired ``generated_at`` is the newest ``updated_at`` across the
+    returned rows — the moment the freshest fact in this payload was
+    last touched by the pipeline (SNOW-370, spec §5.4). Returns ``None``
+    when the query yielded no rows so the view can emit a "now"
+    fallback rather than lying with a stale timestamp.
+
     Args:
         parsed_date: If set, restrict to rows for this date only.
         country_param: Uppercase ISO-2 country code, e.g. ``"CH"``. Pass
             an empty string to include all countries.
 
     Returns:
-        A dict mapping ISO date string to ``{region_id: rating_int}``.
+        ``(payload, generated_at)`` — the mapping and the newest
+        ``updated_at`` across the returned rows, or ``None`` for empty.
 
     """
-    qs = RegionDayRating.objects.values_list("date", "region__region_id", "max_rating")
+    qs = RegionDayRating.objects.values_list(
+        "date", "region__region_id", "max_rating", "updated_at"
+    )
     if parsed_date:
         qs = qs.filter(date=parsed_date)
     if country_param:
         qs = qs.filter(region__subregion__major__country=country_param)
     qs = qs.order_by("date", "region__region_id")
     payload: dict[str, dict[str, int]] = {}
-    for row_date, region_id, rating in qs:
+    newest: datetime | None = None
+    for row_date, region_id, rating, updated_at in qs:
         payload.setdefault(row_date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
-    return payload
+        if newest is None or updated_at > newest:
+            newest = updated_at
+    return payload, newest
 
 
 @cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
@@ -218,8 +233,11 @@ def ratings(request: HttpRequest) -> JsonResponse:
         except ValueError:
             return JsonResponse({"error": "malformed date"}, status=400)
 
+    # Version prefix bumped for SNOW-370: the cached value is now a
+    # ``(payload, generated_at)`` tuple rather than a bare dict, so a
+    # crossover deploy would otherwise unpack a legacy dict and crash.
     cache_key = (
-        f"ratings:{country_param.lower() or 'all'}:"
+        f"ratings:v2:{country_param.lower() or 'all'}:"
         f"{parsed_date.isoformat() if parsed_date else 'season'}"
     )
     # Use a longer TTL for full-season payloads (no single-date
@@ -227,12 +245,28 @@ def ratings(request: HttpRequest) -> JsonResponse:
     # single-date responses so today's column updates promptly.
     ttl = 300 if parsed_date else 3600
 
-    payload = cache.get_or_set(
-        cache_key,
-        lambda: _build_ratings_payload(parsed_date, country_param),
-        timeout=ttl,
+    # ``cache.get_or_set`` is typed to return ``Any | None``, but the
+    # default here (a lambda that always returns a 2-tuple) guarantees a
+    # non-None result — the cast documents that guarantee to mypy.
+    cached = cast(
+        "tuple[dict[str, dict[str, int]], datetime | None]",
+        cache.get_or_set(
+            cache_key,
+            lambda: _build_ratings_payload(parsed_date, country_param),
+            timeout=ttl,
+        ),
     )
-    return JsonResponse(payload)
+    payload, generated_at = cached
+    response = JsonResponse(payload)
+    # ``generated_at`` is None only when the query returned zero rows —
+    # a rare edge case in production (empty country/date window). Fall
+    # back to "now" so the client still sees a valid timestamp; the
+    # empty body itself communicates the no-data state.
+    apply_freshness_headers(
+        response,
+        generated_at=generated_at or timezone.now(),
+    )
+    return response
 
 
 @cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
@@ -725,7 +759,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
     level = day_rating.max_rating if day_rating else "no_rating"
 
-    return JsonResponse(
+    response = JsonResponse(
         {
             "html": render_to_string(
                 "public/_region_tooltip.html",
@@ -743,6 +777,15 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
             "level": level,
         }
     )
+    # Freshness contract: use the specific day-rating's updated_at when we
+    # have one, else "now" — a no-rating tooltip has no source data to
+    # attach a timestamp to, and the client's freshness dot will show
+    # green off "now" which correctly says "this is the current view".
+    apply_freshness_headers(
+        response,
+        generated_at=day_rating.updated_at if day_rating else timezone.now(),
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -1305,3 +1348,151 @@ def share_create(request: HttpRequest) -> JsonResponse:
         reverse("public:share_redirect", args=[share.token])
     )
     return JsonResponse({"url": url})
+
+
+# ---------------------------------------------------------------------------
+# PWA shell contract — version + kill-switch config (SNOW-369, SNOW-372)
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def version(request: HttpRequest) -> JsonResponse:
+    """Server-authoritative version + kill state for the PWA client.
+
+    Returns the fixed shape the offline-first spec requires so the client
+    can (a) detect a new build to pick up (``current``), (b) enter a forced
+    Update Required state when it falls below ``min_supported``, and (c)
+    trigger the Mechanism-A kill switch when ``kill`` is true.
+
+    The response is cacheable at the CDN for 60 seconds because the values
+    only change on deploy or on an explicit ops flip — the client itself
+    fetches this on cold start and every 15 minutes while active, so a
+    stale entry at the edge is bounded by the polling window.
+    """
+    response = JsonResponse(
+        {
+            "current": settings.APP_VERSION,
+            "min_supported": settings.APP_MIN_VERSION,
+            "released_at": settings.APP_RELEASED_AT,
+            "kill": bool(settings.SW_KILL),
+        }
+    )
+    response["Cache-Control"] = "public, max-age=60"
+    # SNOW-381 (spec §16.2): capture the endpoint hit so the observability
+    # dashboards can chart poll cadence and detect clients that stop
+    # phoning home.
+    # SNOW-384: client_version is read from the X-Client-Version request
+    # header. Client sends this header via static/js/pwa_client_version.js
+    # (SNOW-388) on every same-origin fetch/HTMX request.
+    emit_server_signal(
+        "pwa.version.endpoint.hit",
+        {"client_version": request.headers.get("X-Client-Version", "")},
+    )
+    return response
+
+
+@require_GET
+def sw_config(request: HttpRequest) -> JsonResponse:
+    """Kill-switch and SW-URL config consumed at SW-registration time.
+
+    The client fetches this before ``navigator.serviceWorker.register`` so
+    ops can (a) swap the active SW URL — e.g. from ``/sw.js`` to
+    ``/sw-kill.js`` — without a code deploy, and (b) hard-disable the SW
+    for every installed client by flipping ``SW_KILL=true`` in Render env.
+
+    Never cache this response — the whole point is that the client sees the
+    latest state on every launch. ``no-store`` is stronger than ``no-cache``
+    and correct here because we don't want intermediaries to hold it either.
+    """
+    response = JsonResponse(
+        {
+            "sw_url": settings.SW_URL,
+            "kill": bool(settings.SW_KILL),
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    # SNOW-381 (spec §16.2): capture the endpoint hit so we can spot
+    # SW-registration attempts that never proceed to install/activate.
+    kill = bool(settings.SW_KILL)
+    sw_config_properties: dict[str, object] = {
+        "sw_url": settings.SW_URL,
+        "kill": kill,
+        # SNOW-384: client_version — see the identical note on
+        # ``version()`` above. Client sends this header via
+        # static/js/pwa_client_version.js (SNOW-388).
+        "client_version": request.headers.get("X-Client-Version", ""),
+    }
+    if kill:
+        # SNOW-384: "reason" identifies what drove the kill decision.
+        # ``SW_KILL`` (config/settings/base.py) is the only kill trigger
+        # today, so the reason is a fixed string. If a second trigger is
+        # ever added (e.g. a per-version kill list), give it its own
+        # reason string here rather than overloading this one.
+        sw_config_properties["reason"] = "env_kill_switch"
+    emit_server_signal("pwa.sw_config.hit", sw_config_properties)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Per-bulletin JSON endpoints (SNOW-394)
+# ---------------------------------------------------------------------------
+# Two representations of a single stored bulletin, keyed by ``bulletin_id``
+# (the CharField, not the auto PK). The two shapes are exposed as two
+# distinct URLs — rather than one URL with ``Accept`` content negotiation —
+# so each is advertised on the bulletin HTML page with its own
+# ``<link rel="alternate" type="application/json">``, so generic
+# fetchers (``Accept: */*``) still discover both, and so CDN caches key
+# on URL alone without a ``Vary: Accept`` fragmentation.
+
+
+@require_GET
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+def bulletin_render_model(request: HttpRequest, bulletin_id: str) -> JsonResponse:
+    """
+    Serve the render model for one bulletin as JSON.
+
+    The render model is Snowdesk's canonical, versioned view of the
+    bulletin — the same shape the map tooltip and the season sheet
+    consume. It is the shape a downstream consumer usually wants: no
+    provider-specific CAAML idiosyncrasies, just the presentation-ready
+    fields plus a schema version.
+
+    Args:
+        request: The incoming HTTP request (unused — the response is
+            keyed on ``bulletin_id`` alone).
+        bulletin_id: The public identifier of the bulletin (the
+            ``Bulletin.bulletin_id`` CharField, not the auto PK).
+
+    Returns:
+        A ``JsonResponse`` with the render model as the body, or 404 if
+        no bulletin exists for that id.
+
+    """
+    bulletin = get_object_or_404(Bulletin, bulletin_id=bulletin_id)
+    return JsonResponse(bulletin.render_model or {})
+
+
+@require_GET
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+def bulletin_caaml(request: HttpRequest, bulletin_id: str) -> JsonResponse:
+    """
+    Serve the raw CAAML payload (in its GeoJSON Feature envelope) as JSON.
+
+    The stored shape is the source-of-truth representation for the
+    bulletin — every provider's CAAML v6 JSON wrapped in a
+    ``{"type": "Feature", "geometry": null, "properties": {…}}``
+    envelope (see the ``geojson-feature-envelope`` ADR). Consumers who
+    want just the CAAML take ``.properties``; consumers who want the
+    Feature envelope take the whole payload.
+
+    Args:
+        request: The incoming HTTP request (unused).
+        bulletin_id: The public identifier of the bulletin.
+
+    Returns:
+        A ``JsonResponse`` with the stored raw payload as the body, or
+        404 if no bulletin exists for that id.
+
+    """
+    bulletin = get_object_or_404(Bulletin, bulletin_id=bulletin_id)
+    return JsonResponse(bulletin.raw_data or {})

@@ -1,8 +1,8 @@
 ---
 name: offline-map
-description: PWA shell — sw.js cache strategy, update banner, manifest icons/screenshots, installability checklist, CACHE_VERSION
+description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, _sw_update_banner, icons, CACHE_VERSION, SITE_ENVIRONMENT swap
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-16
 ---
 
 # PWA shell
@@ -22,7 +22,7 @@ manifest icons.
 |------|------|
 | `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
 | `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); network-only for everything else. |
-| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (see "Update strategy" below). |
+| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (rendered from `templates/includes/_sw_update_banner.html`; see "Update strategy" below). |
 | `static/offline.html` | Branded fallback page returned by the SW when an HTML navigation fails AND no cached copy exists (SNOW-118). Inline-styled, zero external assets. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
 | `static/icons/pwa/` | Manifest icons: 192, 512, 512 maskable, and a 180×180 opaque `apple-touch-icon-180.png` for iOS home-screen launching (SNOW-118). Generated from `static/favicon.svg` by `bin/build-pwa-icons`. |
@@ -30,29 +30,48 @@ manifest icons.
 
 ## Update strategy
 
-The SW calls `self.skipWaiting()` on `install` so the new version takes
-over on the next navigation, but it deliberately does **not** call
-`self.clients.claim()`. Pairing `claim()` with a `controllerchange`-based
-auto-reload in `sw_register.js` produced a tight reload loop in dev — every
-navigation re-triggered the SW update check. Without `claim()`, the new SW
-activates immediately but only controls an open tab on its next natural
-navigation.
+The SW deliberately does **not** call `self.skipWaiting()` on `install`
+— a freshly installed worker sits in the `waiting` state until the page
+posts `{ type: 'SKIP_WAITING' }` (which happens when the user clicks
+"Reload" in the update banner). Only then does the worker skip waiting;
+on `activate` it calls `self.clients.claim()` so the new shell takes over
+the currently-open tab, and `sw_register.js` listens for the resulting
+`controllerchange` event and reloads once.
+
+The one-and-only reload is gated on a `userTriggeredUpdate` flag set at
+click-time, so a first-install `clients.claim()` never causes a reload
+on someone's very first visit — and there is no dev reload loop.
 
 To surface the pending update to the user, `sw_register.js` reveals a
-fixed bottom banner (`#sw-update-banner` in `base.html`) whenever a freshly
-installed SW is waiting and the page is still controlled by the old one. The
-banner offers two actions:
+fixed bottom banner (`#sw-update-banner`, rendered by
+`templates/includes/_sw_update_banner.html` and included from `base.html`)
+whenever a freshly installed SW is waiting and the page is still controlled
+by the old one. `pwa_version_check.js` (SNOW-374) reveals the same banner
+on an `X-App-Version` drift. The banner offers two actions:
 
-- **Reload** — navigates the page, picking up the new shell.
+- **Reload** — dispatched by `handleReloadClick` in `sw_register.js`. If a
+  fresh SW is waiting, posts `SKIP_WAITING` to it (the worker activates,
+  `clients.claim()` fires, `controllerchange` fires, `sw_register.js`
+  reloads once). If no worker is waiting (the version-header path), clears
+  the SW shell caches (`snowdesk-shell-*` / `map-shell-*`) and reloads —
+  otherwise the SW's `_networkFirst` handler can hand back the cached
+  HTML with the stale `pwa-app-version` meta tag baked in, and the
+  version-check will re-show the banner in a loop. Also clears
+  `pwa.update.first_shown_at` so the accepted update doesn't later trip
+  the SNOW-374 §3.9 escalation modal.
 - **×** — dismisses the banner for the rest of the tab's lifetime.
 
-Trade-off: in-flight tabs no longer auto-reload on SW activation. The banner
-makes the update visible without the loop.
+Contract, end-user-facing: *if there is an update, you see one "Reload"
+message; if there is no message, you are already on the latest version.*
 
-The banner markup is baked into `public/templates/public/base.html`; every
-user-visible string is wrapped in `{% trans %}`. The JS in `sw_register.js`
-only toggles the `hidden`/`flex` class pair (the HTML5 `hidden` attribute
-would lose to Tailwind's `flex` utility in the cascade).
+The banner uses design tokens (`bg-card`, `border-border`, `rounded-card`,
+`shadow-glass`) so it reads as a first-class Snowdesk surface — matching
+the `_pwa_install_prompt.html` shape rather than a raw status pill. It is
+offset above the mobile timeline scrubber via a `bottom: calc(5.5rem +
+env(safe-area-inset-bottom))` inline style. Reveal is via the `hidden`
+class toggle; the self-injected admin fallback in `sw_register.js`
+mirrors this via `display: flex`/`none` and carries `data-fallback="1"`
+so both reveal-sites use the same branch selector.
 
 ### How the trigger fires
 
@@ -66,14 +85,16 @@ the SW's scope, accelerated by the `Cache-Control: no-cache` header that
 When the bytes differ, the SW lifecycle plays out as:
 
 ```
-fetch /sw.js  →  install (skipWaiting)  →  installed  →  activating  →  activated
-                                              │
-                                              └── statechange listener in
-                                                  sw_register.js fires here.
-                                                  If navigator.serviceWorker.controller
-                                                  is non-null (= an old SW is still
-                                                  controlling the tab), the banner
-                                                  is revealed.
+fetch /sw.js  →  install  →  installed (waiting)  ┈┈┈  user clicks "Reload"
+                                 │                              │
+                                 └── statechange listener       └── SKIP_WAITING message
+                                     in sw_register.js fires;       posted to the waiting
+                                     if a controller exists,        worker → skipWaiting()
+                                     the banner is revealed.        → activating → activated
+                                                                    → clients.claim()
+                                                                    → controllerchange
+                                                                    → sw_register.js reloads
+                                                                      the page once.
 ```
 
 The `controller` check suppresses the banner on first-time installs (when
@@ -128,6 +149,78 @@ map shell + tiles) was retired in SNOW-79 — it didn't deliver any
 benefit until the user clicked, was the source of "stuck on stale
 data" reports, and the install affordance never materialised because
 the manifest had no icons.
+
+## Kill switch
+
+Two-mechanism eviction path for a broken SW deploy. Both are always
+present so the escalation path is one env-var flip, not a code change
+(spec §6, SNOW-372 + SNOW-373).
+
+### Mechanism A — server toggle
+
+`sw_register.js` fetches `/api/sw-config` (`cache: 'no-store'`) before
+it ever calls `register()`. The endpoint reads two settings:
+
+| Setting | Purpose |
+|---------|---------|
+| `SW_URL`  | Path the client registers as its SW. Defaults to `/sw.js`. |
+| `SW_KILL` | When true, `/api/sw-config` returns `{"kill": true}` and the client unregisters every SW on the origin without registering a new one. |
+
+Both are Render env vars — flipping either takes effect on the client's
+next launch, no deploy required. `SW_KILL=true` is the "kill and stop"
+path; setting `SW_URL=/sw-kill.js` is the "kill and wipe" path
+(see Mechanism B). If `/api/sw-config` is unreachable, the client falls
+back to `{sw_url: "/sw.js", kill: false}` — a broken config endpoint
+must never block SW registration on an otherwise-healthy origin.
+
+### Mechanism B — kill-switch SW
+
+`static/js/sw-kill.js` is a pre-tested SW served at `/sw-kill.js`
+(same headers as `/sw.js`: `Service-Worker-Allowed: /`,
+`Cache-Control: no-cache`). It has no `fetch` handler — absence of one
+makes the browser bypass the SW entirely for network requests, so the
+moment it activates page traffic goes straight to the network.
+
+On `activate` it:
+
+1. Deletes every Cache Storage entry.
+2. Deletes every IndexedDB database (spec §6.3 default — Snowdesk has
+   no critical unsynced client-side writes that would warrant the
+   sync-then-wipe variant).
+3. Calls `registration.unregister()` — the next navigation runs with
+   no controller.
+4. `client.navigate(client.url)` on every open tab so the user sees a
+   working page immediately.
+
+### When to use which
+
+| Symptom | Mechanism |
+|---------|-----------|
+| Real SW is fine but you want it gone (bandwidth issue, telemetry cutover) | A — set `SW_KILL=true` |
+| Real SW has poisoned Cache Storage or IndexedDB across the cohort | A + B — set `SW_URL=/sw-kill.js` then `SW_KILL=true` after clients have all rolled through it |
+| Real SW is so broken clients never run `sw_register.js` (rare — the register script is one deferred `<script>` tag) | Deploy a fix as normal; Mechanism B doesn't help here because there's no working script to load it |
+
+### Testing the kill switch
+
+Do this at least once per major SW change in staging (spec §6.5 —
+"Untested kill switches do not exist"):
+
+1. Install the staging PWA on a device.
+2. In Render, flip `SW_KILL=true`. Wait for restart.
+3. Reload the staging page. `sw_register.js` should hit `/api/sw-config`,
+   see `kill: true`, and unregister the SW. DevTools → Application →
+   Service Workers should show no active worker for the origin.
+4. Flip `SW_KILL=false` back. Next reload re-registers the real SW.
+
+For Mechanism B specifically:
+
+1. Install the staging PWA. Populate Cache Storage / IndexedDB with
+   anything (visit a few pages, wait for the SW to cache assets).
+2. Flip `SW_URL=/sw-kill.js` (leave `SW_KILL=false`). Wait for restart.
+3. Reload. `sw_register.js` registers `/sw-kill.js`, which activates
+   and wipes storage — DevTools → Application should show empty
+   caches and no IndexedDB DBs.
+4. Flip `SW_URL=/sw.js` back to recover normal operation.
 
 ## Installability checklist
 
@@ -202,7 +295,12 @@ The SW classifies every fetch into one of three buckets:
   destination `document`). Strategy: **network-first** with a
   per-page cache fallback so an offline reload still surfaces the
   last-seen page, and the pre-cached `/static/offline.html` if the
-  requested URL has never been visited (SNOW-118).
+  requested URL has never been visited (SNOW-118). The offline
+  fallback also does one retry with `cache.match(request, { ignoreSearch:
+  true })` before giving up, so a reload of `/?d=YYYY-MM-DD` — a URL that
+  the map page only ever writes via `history.replaceState` and never
+  fetches from the server — serves the cached `/` shell instead of the
+  offline page.
 
 - **`network`** — everything else: bulletin JSON
   (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar partials,
@@ -263,6 +361,34 @@ Output:
 The PNGs are checked in. There's no Render-side regen step — when
 `favicon.svg` changes, run `npm run build:icons` and commit the new
 PNGs alongside the SVG edit.
+
+### Staging identity swap (SNOW-399)
+
+`bin/build-pwa-icons` also emits a second set into
+`static/icons/pwa-staging/` — same four filenames, amber canvas
+(`#7c2d12`), amber rect fill (`#b45309`), and a `STAGING` wordmark
+composited across the middle of the source SVG. The wordmark sits
+inside the maskable safe zone so Android's adaptive-icon mask never
+crops it.
+
+The manifest view (`public.views.serve_manifest`) and `base.html` both
+read `public.site_environment.PWAEnvironmentIdentity.from_settings()`,
+which resolves `settings.SITE_ENVIRONMENT` to a bundle of identity
+fields — `name_display`, `short_name`, `icon_dir`, `theme_color`. On
+production (`SITE_ENVIRONMENT=production`, the default) the identity
+matches the pre-SNOW-399 hard-coded values. On any other value it
+switches to `Snowdesk (Staging)` / `Snowdesk Staging` / the
+`pwa-staging/` icon directory / amber `#b45309` for both the
+manifest `theme_color` and the `<meta name="theme-color">` tag.
+
+Screenshots live under `/static/icons/pwa/screenshots/` on every
+environment — the screenshots show the actual UI, which is identical
+on both.
+
+On Render, set `SITE_ENVIRONMENT=staging` on the staging web service
+(the production service leaves the default in place). Everything else
+— cache keys, service worker registration, manifest URL — is unchanged
+per environment; only the visible identity fields swap.
 
 ## Regenerating screenshots
 

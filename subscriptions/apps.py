@@ -12,3 +12,7 @@ class SubscriptionsConfig(AppConfig):
 
     default_auto_field = "django.db.models.BigAutoField"
     name = "subscriptions"
+
+    def ready(self) -> None:
+        """Register system checks declared in ``subscriptions/checks.py``."""
+        from . import checks  # noqa: F401 — import side-effect: registers checks

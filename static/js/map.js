@@ -39,6 +39,32 @@ let BOOT_DATE_KEY = null;
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
+// uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
+// (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
+// so nothing paints. Such styles must be fetched and their sources rewritten to
+// absolute tile URLs before ``setStyle`` sees them. IGN and swisstopo publish
+// MapLibre-native styles that load straight from their URL, so this only kicks
+// in for the keys listed here.
+const ESRI_BASEMAP_KEYS = new Set(['basemap_at']);
+
+// Resolve a basemap (key, url) to a value ``setStyle``/the Map constructor
+// accepts. Native basemaps pass through as the URL string. ESRI basemaps are
+// fetched and each vector source's relative ``url`` is swapped for an absolute
+// ``tiles`` template following the ArcGIS VectorTileServer convention
+// (``<service>/tile/{z}/{y}/{x}.pbf``). Returns a Promise in the ESRI case.
+async function resolveBasemapStyle(key, url) {
+  if (!ESRI_BASEMAP_KEYS.has(key)) return url;
+  const style = await (await fetch(url)).json();
+  for (const src of Object.values(style.sources || {})) {
+    if (src && src.type === 'vector' && src.url && !src.tiles) {
+      src.tiles = [src.url.replace(/\/?$/, '/') + 'tile/{z}/{y}/{x}.pbf'];
+      delete src.url;
+    }
+  }
+  return style;
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -57,6 +83,34 @@ const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 // Wire-format int → rating string. Inverse of public/api.py::_RATING_TO_INT.
 // Hoisted so the timelapse and the scrubber share one definition.
 const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
+
+// Canonical ISO date key (YYYY-MM-DD). Used to validate ``?d=`` params and
+// hash-carried dates before they're handed to Date.parse or a URL builder.
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Read the ``?d=YYYY-MM-DD`` query param from the current URL. Returns the
+// validated string or null when the param is missing or malformed. Hoisted so
+// every IIFE that reads it shares one definition of "valid".
+const readUrlDateParam = () => {
+  const d = new URL(location.href).searchParams.get('d');
+  return d && DATE_KEY_RE.test(d) ? d : null;
+};
+
+// localStorage guarded by try/catch — private mode / disabled storage / quota
+// throws are all silently swallowed. Boolean-typed values persist as the
+// strings 'true' / 'false' (readBoolStorage handles the coercion).
+const readStorage = (key) => {
+  try { return localStorage.getItem(key); }
+  catch (_) { return null; }
+};
+const writeStorage = (key, value) => {
+  try { localStorage.setItem(key, value); }
+  catch (_) { /* private mode — choice still applies for this session */ }
+};
+const readBoolStorage = (key, dflt) => {
+  const v = readStorage(key);
+  return v === null ? dflt : v === 'true';
+};
 
 // "2026-04-25" → "APR 25 2026". Locale-friendly, unambiguous (avoids the
 // 04/05 day-vs-month confusion of all-numeric formats). Uppercase to
@@ -220,9 +274,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   }
   const DEFAULT_BASEMAP_KEY = mapEl.dataset.defaultBasemapKey;
-  let storedBasemapKey = null;
-  try { storedBasemapKey = localStorage.getItem(BASEMAP_STORAGE_KEY); }
-  catch (_) { /* private mode / disabled storage — fall through */ }
+  const storedBasemapKey = readStorage(BASEMAP_STORAGE_KEY);
   const initialBasemapKey = (storedBasemapKey && BASEMAP_OPTIONS[storedBasemapKey])
     ? storedBasemapKey
     : DEFAULT_BASEMAP_KEY;
@@ -245,8 +297,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // SNOW-59: EAWS region overlay layers — three tiers stacked above
   // the basemap. L1 (Major) and L2 (Sub) are outline-only line layers;
-  // L4 (Micro) is the data-bearing choropleth and stays on permanently
-  // (the user-facing checkbox is rendered checked-and-disabled).
+  // L4 (Micro) is the data-bearing choropleth and defaults to visible.
   // Visibility is user-driven via the basemap picker popover and
   // persisted in localStorage; the ``style.load`` handler re-applies
   // it after a basemap swap.
@@ -257,21 +308,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
   };
-  // L4 defaults to true and is force-locked below — the choropleth is
-  // the entire point of the page, so toggling it off would leave the
-  // map empty. SNOW-78 resorts default off so the map opens uncluttered.
+  // L4 defaults to visible: hiding it leaves only the basemap and any
+  // active overlay tiers, which is intended. SNOW-78 resorts default off
+  // so the map opens uncluttered.
   // SNOW-323: l3 (bulletin groupings) defaults off so the map opens uncluttered.
   const overlayState = { l1: false, l2: false, l3: false, l4: true, resorts: false };
   for (const key of ['l1', 'l2', 'l3', 'resorts']) {
-    try {
-      overlayState[key] =
-        localStorage.getItem(OVERLAY_STORAGE_KEY[key]) === 'true';
-    } catch (_) { /* private mode — default off */ }
+    overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
-  // Persist the L4 default once so localStorage shows a complete
-  // picture of the popover's state to anyone debugging.
-  try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
-  catch (_) { /* private mode — fall through */ }
+  overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
   // Default: CH on, others off. Each key maps to a boolean (visible/hidden).
@@ -280,10 +325,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const COUNTRY_STORAGE_KEY = (code) => `snowdesk.map.overlay.country.${code}`;
   const countryState = { ch: true, fr: false, at: false, it: false };
   for (const code of COUNTRY_KEYS) {
-    try {
-      const stored = localStorage.getItem(COUNTRY_STORAGE_KEY(code));
-      if (stored !== null) countryState[code] = stored === 'true';
-    } catch (_) { /* private mode — use defaults */ }
+    countryState[code] = readBoolStorage(COUNTRY_STORAGE_KEY(code), countryState[code]);
   }
   // SNOW-236: Mirror the initial state into the module-scope COUNTRY_STATE
   // so the scrubber IIFE can read it for country-aware effective-last computation.
@@ -293,12 +335,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const loadedCountries = new Set();
 
   // SNOW-63: restore auto-zoom preference from localStorage.
-  try { AUTOZOOM = localStorage.getItem('snowdesk.map.autozoom') === 'true'; }
-  catch (_) { /* private mode — default off */ }
+  AUTOZOOM = readBoolStorage('snowdesk.map.autozoom', false);
   // Reflect the persisted overlay state on first paint so the popover
   // matches reality before the click handler at the bottom of the file
-  // takes over. The L4 button is disabled in markup, so we just
-  // confirm aria-checked="true" without making it clickable.
+  // takes over.
   if (basemapMenu) {
     for (const btn of basemapMenu.querySelectorAll(
       '.basemap-menu-item--overlay',
@@ -339,7 +379,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // full-bleed (previously the frame was a fixed 390px phone mock).
   const map = new maplibregl.Map({
     container: 'map',
-    style: initialBasemapUrl,
+    // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
+    // constructor synchronously — boot them with an empty style and swap
+    // the fetched+rewritten style in once it resolves (below). Native
+    // basemaps load directly from their URL.
+    style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
+      ? { version: 8, sources: {}, layers: [] }
+      : initialBasemapUrl,
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
@@ -358,6 +404,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
+
+  // Swap in the resolved ESRI style once fetched (no-op for native
+  // basemaps, which already loaded from their URL in the constructor).
+  if (ESRI_BASEMAP_KEYS.has(initialBasemapKey)) {
+    resolveBasemapStyle(initialBasemapKey, initialBasemapUrl)
+      .then((style) => map.setStyle(style));
+  }
 
   // SNOW-230: render tile attribution inside the unified map-info panel
   // rather than as a separate MapLibre corner control. We walk the active
@@ -439,6 +492,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       id: 'regions-fill',
       type: 'fill',
       source: 'regions',
+      layout: {
+        visibility: overlayState.l4 ? 'visible' : 'none',
+      },
       paint: {
         'fill-color': [
           'case',
@@ -486,6 +542,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       type: 'line',
       source: 'regions',
       layout: {
+        visibility: overlayState.l4 ? 'visible' : 'none',
         'line-join': 'round',
         'line-cap': 'round',
       },
@@ -551,6 +608,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       source: 'regions',
       minzoom: 8.5,
       layout: {
+        visibility: overlayState.l4 ? 'visible' : 'none',
         'text-field': ['get', 'name'],
         'text-font': ['Noto Sans Regular'],
         'text-size': 11,
@@ -1009,10 +1067,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
             // Determine which date is currently being displayed. The
             // currentDisplayedDate var lives in the inner map.on('load') scope,
             // so we read from the URL as a safe cross-scope fallback.
-            const displayDate = (() => {
-              const d = new URL(location.href).searchParams.get('d');
-              return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
-            })();
+            const displayDate = readUrlDateParam();
             // SNOW-236: fall back to bootDateKey (season-end clamped) rather than
             // raw today so post-season country toggles paint a populated frame.
             const paintDate = displayDate || bootDateKey;
@@ -1098,7 +1153,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   };
 
   // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
-  // to l1 / l2 / resorts (l4 / Micro regions is always-on and not lazy).
+  // to l1 / l2 / resorts. l4 is not lazy — its layers are installed
+  // eagerly in installRegionsLayers; the other tiers fetch their
+  // GeoJSON on first enable.
   // Mirrors OVERLAY_LAYER_IDS in basemapPickerInit but scoped here so
   // the snowdesk:overlay-load handler below can reach them without
   // crossing IIFE boundaries.
@@ -1134,9 +1191,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-236: Mirror the mutation into module-scope COUNTRY_STATE so the
     // scrubber IIFE can read the latest state for effective-last computation.
     COUNTRY_STATE[code] = next;
-    try {
-      localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
-    } catch (_) { /* private mode */ }
+    writeStorage(COUNTRY_STORAGE_KEY(code), String(next));
     if (map) {
       if (next) {
         ensureCountryLoaded(code).then(() => {
@@ -1154,17 +1209,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // registered synchronously (before the map's 'load' event fires), making
   // it active in environments where the map never loads (e.g. Playwright
   // offline headless tests).
-  let currentDisplayedDate = (() => {
-    const d = new URL(location.href).searchParams.get('d');
-    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
-  })();
-
-  // Forward reference to the clearTooltip function defined inside
-  // map.on('load'). Populated after the selection machinery is set up.
-  // The default no-op means listeners registered before map load safely
-  // call through — in offline headless environments no selection is ever
-  // active so the no-op is the correct behaviour.
-  let _clearTooltip = () => {};
+  let currentDisplayedDate = readUrlDateParam();
 
   // SNOW-318: Forward reference to the refreshPopupForDate function defined
   // inside map.on('load'). Default no-op so the date-changed listener below
@@ -1386,6 +1431,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return [[w, s], [e, n]];
     };
 
+    // Fit the viewport to a region's bounds. Shared between AUTOZOOM click-fits
+    // and the double-click gesture so both use the same padding, maxZoom, and
+    // duration — the extra top padding leaves room for the popup body above.
+    const zoomToFeatureBounds = (feature) => {
+      map.fitBounds(featureBBox(feature), {
+        padding: { top: 60, right: 40, bottom: 40, left: 40 },
+        maxZoom: 10,
+        duration: 400,
+      });
+    };
+
     // SNOW-318: Return the lng/lat of the region's north edge mid-point.
     // With anchor:'bottom' the popup tip lands on this point and the body
     // floats above it, keeping the entire polygon visible in the viewport
@@ -1553,9 +1609,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       clearSelectionDom();
     };
-    // Publish clearTooltip to the outer-IIFE forwarding variable so the
-    // listener registered before map.on('load') can reach it.
-    _clearTooltip = clearTooltip;
 
     // Push or replace the URL hash to point at ``regionID``. First open
     // of a session pushes a single entry; subsequent region taps replace
@@ -1649,13 +1702,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
       if (AUTOZOOM) {
         const feature = FEATURE_BY_ID[numericId];
-        if (feature) {
-          map.fitBounds(featureBBox(feature), {
-            padding: { top: 60, right: 40, bottom: 40, left: 40 },
-            maxZoom: 10,
-            duration: 400,
-          });
-        }
+        if (feature) zoomToFeatureBounds(feature);
       }
     };
 
@@ -1671,13 +1718,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       e.preventDefault();
       if (!e.features.length) return;
       const feature = FEATURE_BY_ID[e.features[0].id];
-      if (feature) {
-        map.fitBounds(featureBBox(feature), {
-          padding: { top: 60, right: 40, bottom: 40, left: 40 },
-          maxZoom: 10,
-          duration: 400,
-        });
-      }
+      if (feature) zoomToFeatureBounds(feature);
     });
 
     // Deselect the focused region when the user taps empty map area (no region
@@ -2184,8 +2225,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
           { selected: true },
         );
       }
-      const dateKey = new URL(location.href).searchParams.get('d');
-      if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      const dateKey = readUrlDateParam();
+      if (dateKey) {
         getSeasonRatings()
           .then((ratings) => repaintRegionsForDate(dateKey, ratings))
           .catch(() => { /* network fail → leave today's colours */ });
@@ -2400,8 +2441,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // where newEffective === BOOT_DATE_KEY but the pill still shows today.
     const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
     effectiveTodayKey = newEffective;
-    const bootParam = new URL(location.href).searchParams.get('d');
-    if (!bootParam) {
+    if (!readUrlDateParam()) {
       // Snap silently — no history entry, just reposition the thumb and repaint.
       Promise.all([MAP_READY_PROMISE]).then(() => {
         commitDate(newEffective, { silent: true });
@@ -2506,8 +2546,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const ms = Date.parse(dateKey);
     return Number.isFinite(ms) && ms >= seasonStartMs && ms <= seasonEndMs;
   };
-  const bootDate = new URL(location.href).searchParams.get('d');
-  if (bootDate && /^\d{4}-\d{2}-\d{2}$/.test(bootDate) && isInSeason(bootDate)) {
+  const bootDate = readUrlDateParam();
+  if (bootDate && isInSeason(bootDate)) {
     // Defer until both the map style and the ratings cache are ready —
     // commitDate calls repaintRegionsForDate which needs MAP and the
     // regions source up. The thumb position can be set immediately so
@@ -2520,11 +2560,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // ---- Browser back/forward ----
   window.addEventListener('popstate', () => {
-    const d = new URL(location.href).searchParams.get('d');
+    const d = readUrlDateParam();
     // SNOW-236: fall back to effectiveTodayKey (country-aware last populated
     // date) rather than todayKey so back-nav restores a coloured choropleth
     // when today is past the season end.
-    const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : effectiveTodayKey;
+    const target = d && isInSeason(d) ? d : effectiveTodayKey;
     commitDate(target, { silent: true });
   });
 
@@ -2539,8 +2579,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     effectiveTodayKey = newEffective;
     // Only snap if the page is in "today mode" — no explicit ?d= in the URL
     // and the effective date has actually changed.
-    const bootParam = new URL(location.href).searchParams.get('d');
-    if (!bootParam && newEffective !== prevEffective) {
+    if (!readUrlDateParam() && newEffective !== prevEffective) {
       commitDate(newEffective, { silent: true });
     }
   });
@@ -2569,18 +2608,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     toggle.setAttribute('aria-expanded', next === 'expanded' ? 'true' : 'false');
   }
 
-  let initial = 'collapsed';
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'expanded') initial = 'expanded';
-  } catch (_) { /* private mode / disabled storage — fall through */ }
+  const initial = readStorage(STORAGE_KEY) === 'expanded' ? 'expanded' : 'collapsed';
   applyState(initial);
 
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     const next = root.dataset.state === 'expanded' ? 'collapsed' : 'expanded';
     applyState(next);
-    try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
+    writeStorage(STORAGE_KEY, next);
   });
 
   // Outside-tap dismiss: any click outside the legend container collapses
@@ -2590,7 +2625,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (root.dataset.state !== 'expanded') return;
     if (root.contains(e.target)) return;
     applyState('collapsed');
-    try { localStorage.setItem(STORAGE_KEY, 'collapsed'); } catch (_) {}
+    writeStorage(STORAGE_KEY, 'collapsed');
   });
 })();
 
@@ -2922,9 +2957,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // owns a line layer (the outline, where applicable) and a symbol
   // layer (the zoom-banded label) — toggling the overlay flips both in
   // lockstep so a hidden tier never leaves an orphan label floating
-  // with no boundary. L4 is included for completeness even though its
-  // checkbox is disabled — flipping it would also be a no-op against
-  // the disabled-button guard below.
+  // with no boundary.
   //
   // The picker mutates layer visibility via setLayoutProperty rather
   // than reaching into the main IIFE's overlayState — the layer state
@@ -2947,13 +2980,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   };
 
   for (const item of items) {
-    // Disabled menu items (currently just the L4 / Micro regions
-    // checkbox) shouldn't dispatch a click in modern browsers, but
-    // skip the wiring entirely as a belt-and-braces guard. Without
-    // this, a future caller calling .click() programmatically could
-    // sneak past the browser's disabled gate.
-    if (item.disabled) continue;
-
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
@@ -2983,8 +3009,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }
 
         // Tier overlay — toggle layer visibility.
-        try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
-        catch (_) { /* private mode — choice still applies for this session */ }
+        writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
           if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
@@ -3026,8 +3051,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       document.dispatchEvent(new CustomEvent('snowdesk:basemap-changing', {
         detail: { key, url },
       }));
-      try { localStorage.setItem(STORAGE_KEY, key); }
-      catch (_) { /* private mode — choice still applies for this session */ }
+      writeStorage(STORAGE_KEY, key);
       // Only update aria-checked on basemap radios — overlay checkboxes
       // are independent and shouldn't be cleared when the basemap swaps.
       for (const other of items) {
@@ -3038,7 +3062,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         );
       }
       setMenuOpen(false);
-      MAP.setStyle(url);
+      resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
 })();
@@ -3059,8 +3083,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   btn.addEventListener('click', () => {
     AUTOZOOM = !AUTOZOOM;
-    try { localStorage.setItem(STORAGE_KEY, String(AUTOZOOM)); }
-    catch (_) { /* private mode — apply for session only */ }
+    writeStorage(STORAGE_KEY, String(AUTOZOOM));
     sync();
   });
 })();
@@ -3257,16 +3280,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let regionMajorName = ribbonEl.dataset.defaultMajorName || '';
   // Which region tiers are visible on the map (l1=Major, l2=Minor); the chip
   // breadcrumb mirrors these. Seeded from the persisted overlay state, updated
-  // on snowdesk:overlays-changed. l4 (micro) is the always-shown leaf.
-  const readOverlay = (k, dflt) => {
-    try {
-      const v = localStorage.getItem('snowdesk.map.overlay.' + k);
-      return v === null ? dflt : v === 'true';
-    } catch (_) {
-      return dflt;
-    }
+  // on snowdesk:overlays-changed. The leaf is the region name; it remains in
+  // the breadcrumb regardless of the L4 map-layer visibility because it is a
+  // text readout, not the polygon layer.
+  const overlayVisible = {
+    l1: readBoolStorage('snowdesk.map.overlay.l1', false),
+    l2: readBoolStorage('snowdesk.map.overlay.l2', false),
   };
-  const overlayVisible = { l1: readOverlay('l1', false), l2: readOverlay('l2', false) };
 
   // Paint one decorative cell per CALENDAR DAY across [seasonStart, seasonEnd]
   // for the focused region into the scrubber track. One cell per day (not per
