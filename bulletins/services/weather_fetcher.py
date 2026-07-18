@@ -1,7 +1,7 @@
 """
 bulletins/services/weather_fetcher.py — Fetching and persisting Open-Meteo weather data.
 
-Contains five fetch functions, a source resolver, and a background-thread
+Contains seven fetch functions, a source resolver, and a background-thread
 dispatcher used by the bulletin page render:
 
   resolve_weather_source(source)
@@ -46,6 +46,20 @@ dispatcher used by the bulletin page render:
       sync-mode tests' own transaction connection alive). See
       ``docs/async-operations.md``.
 
+  fetch_weather_for_point(point, target_date, *, commit, base_url, on_fetched)
+      Fetches today's (or any single day's) comprehensive daily forecast for
+      one ForecastPoint from the Open-Meteo forecast endpoint, passing the
+      point's ``elevation`` explicitly so the forecast is statistically
+      downscaled to the pin's altitude. Returns ``(ForecastPointWeather,
+      created)`` when ``commit=True``, or ``None`` when ``commit=False``.
+      Points are forecast-only — there is no archive/backfill equivalent
+      (SNOW-416).
+
+  fetch_all_points(target_date, *, commit, base_url, on_fetched)
+      Calls fetch_weather_for_point for every ``ForecastPoint.objects.active()``
+      row (points referenced by at least one Favourite); returns summary
+      counters {created, updated, failed, skipped}.
+
 Uses ``requests`` with a 30-second timeout (matching data_fetcher.py's pattern).
 Per-region HTTP failures bubble up from the single-region functions; the wrapper
 functions catch them, log a warning, and continue so that one bad region does
@@ -73,7 +87,7 @@ from django.conf import settings
 from django.core.management.base import CommandError
 from django.utils import timezone as django_timezone
 
-from bulletins.models import WeatherSnapshot
+from bulletins.models import ForecastPoint, ForecastPointWeather, WeatherSnapshot
 from regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -84,6 +98,19 @@ REQUEST_TIMEOUT = 30  # seconds
 
 SOURCE_LIVE = "live"
 SOURCE_LOCAL_MIRROR = "local-mirror"
+
+# Comprehensive daily variable set requested for ForecastPoint forecasts — a
+# favourited point is rendered as a personal detail card, richer than the
+# region bulletin header (which only needs weather_code/sunrise/sunset).
+POINT_DAILY_VARIABLES = (
+    "weather_code,sunrise,sunset,"
+    "temperature_2m_max,temperature_2m_min,"
+    "apparent_temperature_max,apparent_temperature_min,"
+    "precipitation_sum,snowfall_sum,"
+    "precipitation_probability_max,precipitation_hours,"
+    "wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,"
+    "uv_index_max,daylight_duration,sunshine_duration"
+)
 
 
 def resolve_weather_source(source: str) -> str | None:
@@ -168,6 +195,52 @@ def _build_snapshot_defaults(
         "weather_code": weather_code,
         "sunrise": _parse_dt_preserve_offset(sunrise_str),
         "sunset": _parse_dt_preserve_offset(sunset_str),
+        "fetched_at": django_timezone.now(),
+    }
+
+
+def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
+    """
+    Build the ``defaults`` dict for a ForecastPointWeather update_or_create call.
+
+    Only ``weather_code``, ``sunrise``, and ``sunset`` are treated as
+    required (a KeyError there is a genuine API-shape problem). Every
+    extended daily variable is read via ``.get(key, [None])[idx]`` so an
+    omitted array (Open-Meteo drops some variables depending on the backing
+    weather model) degrades to ``None`` rather than raising.
+
+    Args:
+        daily: The ``"daily"`` block of an Open-Meteo forecast response.
+        idx: Index into each daily array for the target date (``0`` for a
+            single-day forecast request).
+
+    Returns:
+        A dict suitable for passing as ``defaults=`` to update_or_create.
+
+    """
+
+    def _extended(key: str) -> Any:
+        """Return the extended variable at idx, or None if omitted."""
+        return daily.get(key, [None])[idx]
+
+    return {
+        "weather_code": daily["weather_code"][idx],
+        "sunrise": _parse_dt_preserve_offset(daily["sunrise"][idx]),
+        "sunset": _parse_dt_preserve_offset(daily["sunset"][idx]),
+        "temperature_2m_max": _extended("temperature_2m_max"),
+        "temperature_2m_min": _extended("temperature_2m_min"),
+        "apparent_temperature_max": _extended("apparent_temperature_max"),
+        "apparent_temperature_min": _extended("apparent_temperature_min"),
+        "precipitation_sum": _extended("precipitation_sum"),
+        "snowfall_sum": _extended("snowfall_sum"),
+        "precipitation_probability_max": _extended("precipitation_probability_max"),
+        "precipitation_hours": _extended("precipitation_hours"),
+        "wind_speed_10m_max": _extended("wind_speed_10m_max"),
+        "wind_gusts_10m_max": _extended("wind_gusts_10m_max"),
+        "wind_direction_10m_dominant": _extended("wind_direction_10m_dominant"),
+        "uv_index_max": _extended("uv_index_max"),
+        "daylight_duration": _extended("daylight_duration"),
+        "sunshine_duration": _extended("sunshine_duration"),
         "fetched_at": django_timezone.now(),
     }
 
@@ -360,6 +433,205 @@ def fetch_all_regions(
 
     logger.info(
         "fetch_all_regions done: created=%d updated=%d failed=%d skipped=%d",
+        counts["created"],
+        counts["updated"],
+        counts["failed"],
+        counts["skipped"],
+    )
+    return counts
+
+
+def fetch_weather_for_point(
+    point: ForecastPoint,
+    target_date: date,
+    *,
+    commit: bool,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
+) -> tuple[ForecastPointWeather, bool] | None:
+    """
+    Fetch and optionally persist today's comprehensive weather for one ForecastPoint.
+
+    Calls the Open-Meteo forecast endpoint (or a mirror when ``base_url``
+    is set), passing the point's ``elevation`` explicitly so the forecast is
+    statistically downscaled to the pin's altitude rather than the model
+    cell's mean terrain. Extracts the full ``POINT_DAILY_VARIABLES`` set for
+    ``target_date`` (index ``[0]``), then either persists a
+    ForecastPointWeather via update_or_create or returns None if
+    ``commit=False``.
+
+    Points are forecast-only — there is no archive/backfill equivalent of
+    this function.
+
+    Args:
+        point: The ForecastPoint to fetch weather for.
+        target_date: The calendar date to fetch weather for.
+        commit: If True, write the row to the database. If False, the
+            HTTP request still executes (real API probe) but no rows are
+            written and None is returned.
+        base_url: When set, overrides ``FORECAST_URL`` as the endpoint base.
+            The actual request goes to ``f"{base_url}/forecast"``. Defaults
+            to ``None``, which falls back to the module-level
+            ``FORECAST_URL``.
+        on_fetched: Optional callback called once after the response is
+            parsed, with a dict ``{forecast_point_id, date, weather_code,
+            sunrise, sunset, captured_at}``. Defaults to ``None`` (no-op).
+
+    Returns:
+        A ``(ForecastPointWeather, created)`` tuple when ``commit=True``,
+        where ``created`` is True for a new row or False for an update.
+        Returns None when ``commit=False``.
+
+    Raises:
+        requests.HTTPError: If the Open-Meteo API returns a non-2xx status.
+        KeyError: If ``weather_code``, ``sunrise``, or ``sunset`` are absent
+            from the API response.
+
+    """
+    url = f"{base_url}/forecast" if base_url else FORECAST_URL
+    logger.debug(
+        "Fetching forecast weather for point=%s date=%s commit=%s url=%s",
+        point.pk,
+        target_date,
+        commit,
+        url,
+    )
+
+    params: dict[str, str] = {
+        "latitude": str(point.latitude),
+        "longitude": str(point.longitude),
+        "elevation": str(point.elevation),
+        "daily": POINT_DAILY_VARIABLES,
+        "timezone": "auto",
+        # HRB: forecast_days cannot be used with start/end dates.
+        "start_date": target_date.isoformat(),
+        "end_date": target_date.isoformat(),
+    }
+    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    data: dict[str, Any] = response.json()
+
+    daily = data["daily"]
+    weather_code: int = daily["weather_code"][0]
+    sunrise_str: str = daily["sunrise"][0]
+    sunset_str: str = daily["sunset"][0]
+
+    logger.debug(
+        "Open-Meteo forecast: point=%s date=%s code=%d sunrise=%s sunset=%s",
+        point.pk,
+        target_date,
+        weather_code,
+        sunrise_str,
+        sunset_str,
+    )
+
+    if on_fetched is not None:
+        on_fetched(
+            {
+                "forecast_point_id": point.pk,
+                "date": target_date.isoformat(),
+                "weather_code": weather_code,
+                "sunrise": sunrise_str,
+                "sunset": sunset_str,
+                "captured_at": django_timezone.now().isoformat(),
+            }
+        )
+
+    if not commit:
+        return None
+
+    defaults = _build_point_defaults(daily, 0)
+    weather, created = ForecastPointWeather.objects.update_or_create(
+        forecast_point=point,
+        valid_for_date=target_date,
+        defaults=defaults,
+    )
+    action = "Created" if created else "Updated"
+    logger.debug(
+        "%s ForecastPointWeather: point=%s date=%s code=%d",
+        action,
+        point.pk,
+        target_date,
+        weather_code,
+    )
+    return weather, created
+
+
+def fetch_all_points(
+    target_date: date,
+    *,
+    commit: bool,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, int]:
+    """
+    Fetch weather for every active ForecastPoint (referenced by a Favourite).
+
+    Iterates ``ForecastPoint.objects.active()`` — points with no favourites
+    simply fall out of scope (the eviction mechanism; rows are retained,
+    not deleted). Per-point HTTP failures are caught, logged, and counted
+    (counter: ``failed``) — they do not abort the batch. All active points
+    have non-null coordinates and elevation, so ``skipped`` stays ``0``, but
+    the key is kept for counter-shape symmetry with ``fetch_all_regions``.
+
+    Args:
+        target_date: The calendar date to fetch weather for.
+        commit: If True, write rows to the database.
+        base_url: When set, overrides ``FORECAST_URL`` for all per-point
+            calls. Defaults to ``None`` (fall back to ``FORECAST_URL``).
+        on_fetched: Optional callback forwarded to each per-point call.
+            Called once per fetched ``(point, date)`` record. Defaults to
+            ``None`` (no-op).
+
+    Returns:
+        A dict with integer counters:
+          ``created``  — new ForecastPointWeather rows written.
+          ``updated``  — existing ForecastPointWeather rows updated.
+          ``failed``   — points where the HTTP call raised an exception.
+          ``skipped``  — kept for counter-shape symmetry; always 0.
+
+    """
+    counts: dict[str, int] = {
+        "created": 0,
+        "updated": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
+
+    # Materialise once so we can use len() without a second DB round-trip.
+    points = list(ForecastPoint.objects.active().order_by("id"))
+    logger.info(
+        "fetch_all_points: date=%s points=%d commit=%s",
+        target_date,
+        len(points),
+        commit,
+    )
+
+    for point in points:
+        try:
+            result = fetch_weather_for_point(
+                point,
+                target_date,
+                commit=commit,
+                base_url=base_url,
+                on_fetched=on_fetched,
+            )
+            if commit and result is not None:
+                _, created = result
+                if created:
+                    counts["created"] += 1
+                else:
+                    counts["updated"] += 1
+        except Exception:  # noqa: BLE001 — broad catch intentional: per-point failure must not abort the batch
+            logger.exception(
+                "Failed to fetch weather for point=%s date=%s",
+                point.pk,
+                target_date,
+            )
+            counts["failed"] += 1
+
+    logger.info(
+        "fetch_all_points done: created=%d updated=%d failed=%d skipped=%d",
         counts["created"],
         counts["updated"],
         counts["failed"],
