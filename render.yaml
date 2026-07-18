@@ -75,8 +75,6 @@ projects:
               - snowdesk.info
             autoDeployTrigger: checksPass
             envVars:
-              - key: METEOFRANCE_API_KEY
-                sync: false
               - key: CSP_REPORT_ONLY
                 sync: false
               - key: WEBAUTHN_ORIGIN
@@ -106,6 +104,4 @@ projects:
             startCommand: gunicorn config.wsgi
             autoDeployTrigger: checksPass
             envVars:
-              - key: POSTHOG_API_KEY
-                sync: false
               - fromGroup: Staging

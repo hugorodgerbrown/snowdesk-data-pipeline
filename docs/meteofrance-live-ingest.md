@@ -84,45 +84,19 @@ immediately and the massif is counted as a failure.
 
 ## Render deployment — env var wiring
 
-### `render.yaml` declaration
+`METEOFRANCE_API_KEY` lives in the `Production` env-var group in the
+Render dashboard, so every production service that references
+`fromGroup: Production` in [`render.yaml`](../render.yaml) inherits it —
+both `snowdesk-website` and `snowdesk-scheduler`. There is no per-service
+override; a single dashboard edit reaches every consumer of the key.
 
-`METEOFRANCE_API_KEY` is declared in both service blocks that need it:
-
-```yaml
-# snowdesk-website (web service)
-envVars:
-  - key: METEOFRANCE_API_KEY
-    sync: false
-  …
-
-# snowdesk-scheduler (background worker)
-envVars:
-  - key: METEOFRANCE_API_KEY
-    sync: false
-  …
-```
-
-### Env-var values still need a manual dashboard step
-
-Blueprint auto-sync propagates the *shape* of `render.yaml` (services,
-plans, domains, env-var keys) to Render, but values marked `sync: false`
-are deliberately not synced — the key appears in the dashboard as unset
-until an operator supplies the value.
-
-### Operator action required after merge
-
-After this file is merged, you must manually set the env var in the Render
-dashboard for the `snowdesk-scheduler` service:
-
-1. Log in to the [Render dashboard](https://dashboard.render.com).
-2. Navigate to **snowdesk-scheduler** → **Environment**.
-3. Add (or confirm) the key `METEOFRANCE_API_KEY` with the same value
-   already set on `snowdesk-website`.
-4. Save. Render restarts the worker automatically.
-
-Until step 4 is done, every scheduled `fetch_bulletins --source meteofrance`
-invocation in the worker will raise `RuntimeError` for every massif and log
-35 failures per run.
+The key is deliberately dashboard-managed rather than declared in
+`render.yaml`: Blueprint auto-sync does not touch env-group contents, so
+rotating the key is a group edit that never needs a repo change or a
+service restart trigger. If the group entry ever gets removed, every
+scheduled `fetch_bulletins --source meteofrance` run raises
+`RuntimeError` for every massif and logs 35 failures per run — check the
+group first if that appears.
 
 ---
 
