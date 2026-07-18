@@ -1,7 +1,7 @@
 """
 mcp_server/resolvers.py — Region lookup and fuzzy place-name search.
 
-Two entry points consumed by ``mcp_server.tools``:
+Entry points consumed by ``mcp_server.tools``:
 
 * ``resolve_region(region_id)`` — exact ``MicroRegion.region_id`` lookup,
   scoped to what the MCP tools need (the parent major region's name via
@@ -10,6 +10,10 @@ Two entry points consumed by ``mcp_server.tools``:
   UI panel no tool reads.
 * ``search_places(query)`` — fuzzy name search across resorts and
   micro/major regions, for callers who only have a place name.
+* ``list_regions(country, provider)`` — every ``MicroRegion``, optionally
+  filtered by country and/or provider (ANDed); both filter arguments are
+  expected already validated and normalised by the caller
+  (``mcp_server.tools.list_regions``).
 
 The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``, and
 ``MajorRegion``) is cheap to hold in full and is cached in the Django
@@ -26,7 +30,7 @@ import math
 from typing import Any
 
 from django.core.cache import cache
-from django.db.models import Max
+from django.db.models import Max, QuerySet
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
@@ -86,6 +90,35 @@ def resolve_region(region_id: str) -> MicroRegion | None:
         .filter(region_id__iexact=region_id)
         .first()
     )
+
+
+def list_regions(
+    country: str | None = None, provider: str | None = None
+) -> QuerySet[MicroRegion]:
+    """Return MicroRegions filtered by country and/or provider, both ANDed.
+
+    Args:
+        country: An already-normalised ISO-3166-1 alpha-2 country code
+            (e.g. ``"CH"``), or ``None`` for no country filter.
+        provider: An already-normalised ``Bulletin.Source`` value (e.g.
+            ``"slf"``), or ``None`` for no provider filter — resolved to
+            the set of countries that provider serves via
+            ``_PROVIDER_BY_COUNTRY``.
+
+    Returns:
+        A ``MicroRegion`` queryset with ``select_related("subregion__major")``,
+        in the model's default ``region_id`` order. Neither argument is
+        validated here — the caller (``mcp_server.tools.list_regions``)
+        validates and normalises before calling.
+
+    """
+    queryset = MicroRegion.objects.select_related("subregion__major")
+    if country is not None:
+        queryset = queryset.filter(subregion__major__country=country)
+    if provider is not None:
+        countries = [c for c, p in _PROVIDER_BY_COUNTRY.items() if p == provider]
+        queryset = queryset.filter(subregion__major__country__in=countries)
+    return queryset
 
 
 def _distinct_names(*names: str) -> list[str]:
