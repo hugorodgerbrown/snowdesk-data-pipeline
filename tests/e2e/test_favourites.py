@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.urls import reverse
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
@@ -181,6 +182,9 @@ def test_anonymous_add_shows_signin_cta(live_server: LiveServer, page: Page) -> 
     assert signin_link.count() == 1
     href = signin_link.get_attribute("href")
     assert href is not None
+    # Tighten beyond "not None": the CTA must point at the real sign-in route,
+    # so a broken namespace / empty favourites_signin_url is caught here too.
+    assert reverse("accounts:sign_in") in href
 
 
 @override_flag("favourites", active=True)

@@ -829,6 +829,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'text-allow-overlap': true,
       },
       paint: {
+        // Snowdesk link/brand blue — MapLibre paint props can't reference the
+        // CSS ``@theme`` tokens, so the star glyph and its label carry the hex
+        // literal directly (kept in sync with --color-link by hand).
         'text-color': '#1a73e8',
         'text-halo-color': 'rgba(255,255,255,0.95)',
         'text-halo-width': 1.6,

@@ -218,15 +218,29 @@
     // Anonymous users: open the sheet with a sign-in CTA; no map interaction.
     if (!IS_ELIGIBLE) {
       openSheet();
+      // Build the sign-in CTA with createElement (matching buildDetailRow)
+      // rather than innerHTML string concatenation — the same DOM-not-markup
+      // discipline the rest of this module uses for anything URL/name-bearing.
+      sheet.replaceChildren();
       if (SIGNIN_URL) {
-        sheet.innerHTML =
-          '<div class="px-2 py-4">' +
-          '<p class="text-sm text-text-2 mb-3">Sign in to save a favourite.</p>' +
-          '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">Sign in</a>' +
-          '</div>';
+        const wrap = document.createElement('div');
+        wrap.className = 'px-2 py-4';
+        const p = document.createElement('p');
+        p.className = 'text-sm text-text-2 mb-3';
+        p.textContent = 'Sign in to save a favourite.';
+        const a = document.createElement('a');
+        a.setAttribute('href', SIGNIN_URL);
+        a.className =
+          'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
+        a.textContent = 'Sign in';
+        wrap.appendChild(p);
+        wrap.appendChild(a);
+        sheet.appendChild(wrap);
       } else {
-        sheet.innerHTML =
-          '<p class="px-2 py-4 text-sm text-text-2">Sign in to save a favourite.</p>';
+        const p = document.createElement('p');
+        p.className = 'px-2 py-4 text-sm text-text-2';
+        p.textContent = 'Sign in to save a favourite.';
+        sheet.appendChild(p);
       }
       return;
     }

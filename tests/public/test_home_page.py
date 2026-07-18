@@ -618,7 +618,7 @@ class TestFavouritesContext:
 
         The flag gates the feature entirely, regardless of auth state.
         """
-        subscriber = SubscriberFactory.build()
+        subscriber = SubscriberFactory.create()
         ctx = _favourites_context(self._request(user=subscriber.user))
         assert ctx["favourites_visible"] is False
         assert ctx["favourites_eligible"] is False
