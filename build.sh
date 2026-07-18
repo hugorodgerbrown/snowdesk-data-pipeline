@@ -37,4 +37,5 @@ python manage.py loaddata \
     regions/fixtures/eaws_FR.json \
     regions/fixtures/eaws_AT.json \
     regions/fixtures/eaws_IT.json \
-    regions/fixtures/resorts.json
+    regions/fixtures/resorts.json \
+    regions/fixtures/region_aliases.json

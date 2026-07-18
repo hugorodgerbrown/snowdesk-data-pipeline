@@ -83,9 +83,9 @@ Implementation: `mcp_server/resolvers.py::search_places` — NFKD ASCII-fold
 (`mcp_server/normalise.py::normalise`), scored with
 `rapidfuzz.process.extract(scorer=WRatio, score_cutoff=70)`. The candidate
 pool (~1500 rows) is cached in the Django default cache under a key
-fingerprinted on `max(updated_at)` across the three source tables — any
-edit is a guaranteed cache miss, no explicit invalidation call site
-needed.
+fingerprinted on `max(updated_at)` across the four source tables
+(`MicroRegion`, `MajorRegion`, `Resort`, `RegionAlias`) — any edit is a
+guaranteed cache miss, no explicit invalidation call site needed.
 
 ### `get_current_conditions`
 
@@ -333,11 +333,19 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
 
 ## Known v1 limitations
 
-* **No language-pair aliasing.** Fuzzy matching handles accents, typos,
-  punctuation, and whitespace, but not name pairs that share no letters —
-  `Sion` (fr) vs `Sitten` (de), `Coire` (fr) vs `Chur` (de). If usage shows
-  this matters, a curated `RegionAlias` table is the natural follow-up
-  rather than trying to guess these fuzzily.
+* **Language-pair aliasing is curated, not exhaustive.** Fuzzy matching
+  handles accents, typos, punctuation, and whitespace, but not name pairs
+  that share almost no letters (`Sion` (fr) vs `Sitten` (de), `Loèche`
+  (fr) vs `Leuk` (de)). `regions.RegionAlias` (SNOW-409) closes this gap
+  with a hand-curated `(region, alias_text)` table — `search_places` folds
+  its rows into the candidate pool alongside `MicroRegion`/`MajorRegion`/
+  `Resort` names (`mcp_server/resolvers.py::_build_candidate_pool`). Only
+  ~10 rows are seeded so far (see `regions/fixtures/region_aliases.json`)
+  — each was verified against the committed EAWS fixtures before being
+  added, so coverage is intentionally narrow rather than guessed. A query
+  with no curated alias and no letter overlap with the canonical name
+  (e.g. `Coire` for `Chur`) still returns no match; add a row to the
+  fixture as usage surfaces more of these.
 * **Major-region representative.** A `search_regions` hit on a
   `MajorRegion` name (e.g. "Wallis"/"Valais") resolves to one
   alphabetically-first child `MicroRegion`'s `region_id` — a best-effort
