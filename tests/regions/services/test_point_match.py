@@ -456,6 +456,17 @@ class TestRegionForPoint:
         result = region_for_point(5.0, 5.0)
         assert result == region
 
+    def test_argument_order_is_lat_then_lon(self) -> None:
+        """Guards against an accidental re-flip of the (lat, lon) signature.
+
+        The boundary is asymmetric (lon spans 6-10, lat spans 0-4), so
+        swapping the arguments would test (lon=2, lat=8) instead — which
+        falls outside the boundary and the match would fail.
+        """
+        region = self._make_region_with_boundary(6, 0, 10, 4)
+        result = region_for_point(lat=2.0, lon=8.0)
+        assert result == region
+
 
 # ---------------------------------------------------------------------------
 # Drift guard — point_match constants must equal GeoMatchKind choice values

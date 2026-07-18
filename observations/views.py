@@ -125,7 +125,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
 
     if coords is not None:
         lat, lon = coords
-        region = region_for_point(lon, lat)
+        region = region_for_point(lat, lon)
 
     accuracy_m = request.GET.get("accuracy")
     location_source = request.GET.get(
@@ -232,7 +232,7 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
 
     # Best-effort region resolution — no region-required rejection.
-    region = region_for_point(lon, lat)
+    region = region_for_point(lat, lon)
 
     FieldObservation.objects.create(
         user=request.user,

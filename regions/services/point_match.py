@@ -202,8 +202,8 @@ def classify_match(
 # ---------------------------------------------------------------------------
 
 
-def region_for_point(lon: float, lat: float) -> "MicroRegion | None":
-    """Return the MicroRegion that contains the given (lon, lat) point.
+def region_for_point(lat: float, lon: float) -> "MicroRegion | None":
+    """Return the MicroRegion that contains the given (lat, lon) point.
 
     Performs a best-effort, full-scan match against all MicroRegions that
     have a non-null boundary geometry.  Candidates are ordered by the
@@ -223,8 +223,8 @@ def region_for_point(lon: float, lat: float) -> "MicroRegion | None":
     index can be added later if volume grows.
 
     Args:
-        lon: Longitude of the GPS fix (WGS-84).
         lat: Latitude of the GPS fix (WGS-84).
+        lon: Longitude of the GPS fix (WGS-84).
 
     Returns:
         The first MicroRegion whose boundary contains the point, or None
@@ -241,7 +241,7 @@ def region_for_point(lon: float, lat: float) -> "MicroRegion | None":
 
     # Order by squared Euclidean distance from centre (cheap proxy for proximity).
     def _sq_distance(region: "MicroRegion") -> float:
-        """Return the squared distance from the region centre to (lon, lat)."""
+        """Return the squared distance from the region centre to (lat, lon)."""
         centre = region.centre
         if not centre:
             return float("inf")
