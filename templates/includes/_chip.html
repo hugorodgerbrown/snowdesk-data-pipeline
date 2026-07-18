@@ -24,9 +24,7 @@ Context:
 {% if variant == "type-dry" %}
     <span
         class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}
-            data-testid="{{ data_testid }}"
-        {% endif %}
+        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >
         {# ds-lint-allow: inline SVG uses fill="currentColor" — no hex value #}
         <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor" aria-hidden="true">
@@ -42,9 +40,7 @@ Context:
 {% elif variant == "type-wet" %}
     <span
         class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}
-            data-testid="{{ data_testid }}"
-        {% endif %}
+        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >
         {# ds-lint-allow: inline SVG uses fill="currentColor" — no hex value #}
         <svg width="8" height="9" viewBox="0 0 8 9" fill="currentColor" aria-hidden="true">
@@ -55,15 +51,11 @@ Context:
 {% elif variant == "time" %}
     <span
         class="font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}
-            data-testid="{{ data_testid }}"
-        {% endif %}
+        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >{{ text }}</span>
 {% else %}
     <span
         class="font-mono text-chip uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}
-            data-testid="{{ data_testid }}"
-        {% endif %}
+        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >{{ text }}</span>
 {% endif %}

@@ -39,6 +39,7 @@ from bulletins.models import (
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
+    ForecastPoint,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -821,3 +822,21 @@ class BulletinGroupingAdmin(admin.ModelAdmin):
     raw_id_fields = ("bulletin",)
     readonly_fields = ("uuid", "created_at", "updated_at")
     ordering = ("-target_date",)
+
+
+@admin.register(ForecastPoint)
+class ForecastPointAdmin(admin.ModelAdmin):
+    """Admin view for ForecastPoint."""
+
+    list_display = (
+        "id",
+        "latitude",
+        "longitude",
+        "elevation",
+        "lat_cell",
+        "lon_cell",
+        "elevation_band",
+    )
+    list_filter = ("elevation_band",)
+    readonly_fields = ("uuid", "created_at", "updated_at")
+    ordering = ("-created_at",)

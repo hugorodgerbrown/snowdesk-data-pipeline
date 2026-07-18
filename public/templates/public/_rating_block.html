@@ -143,9 +143,7 @@ Renders:
         <div
             class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
             data-testid="aspect-elevation-row"
-            {% if card.core_zone_text %}
-                aria-label="{{ card.core_zone_text }}"
-            {% endif %}
+            {% if card.core_zone_text %}aria-label="{{ card.core_zone_text }}"{% endif %}
         >
             {% if card.aspects %}
                 <div class="flex items-center gap-1.5 shrink-0">

@@ -8,7 +8,5 @@
 {% endcomment %}
 <{{ tag|default:"h2" }}
     class="text-xs font-mono uppercase tracking-widest text-text-3{% if class_extra %} {{ class_extra }}{% endif %}"
-    {% if data_testid %}
-        data-testid="{{ data_testid }}"
-    {% endif %}
+    {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
 >{{ text }}</{{ tag|default:"h2" }}>

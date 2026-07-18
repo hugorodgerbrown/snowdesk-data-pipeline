@@ -8,9 +8,7 @@
 {% endcomment %}
 <p
     class="font-mono uppercase tracking-wider text-caption text-text-3 mb-0.5"
-    {% if data_testid %}
-        data-testid="{{ data_testid }}"
-    {% endif %}
+    {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
 >
     {{ text }}
 </p>

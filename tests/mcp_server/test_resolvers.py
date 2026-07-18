@@ -1,12 +1,15 @@
 """
 tests/mcp_server/test_resolvers.py — Tests for mcp_server.resolvers.
 
-Covers ``resolve_region`` (exact ``region_id`` lookup) and
-``search_places`` (fuzzy name search), including the alpine-name
-misspelling table from the SNOW-391 implementation plan.
+Covers ``resolve_region`` (exact ``region_id`` lookup), ``search_places``
+(fuzzy name search, including the alpine-name misspelling table from the
+SNOW-391 implementation plan), and ``regions_for_scope`` (country /
+major-region scoping for ``get_regional_snapshot``, SNOW-408).
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 from django.core.cache import cache
@@ -15,6 +18,7 @@ from mcp_server import resolvers
 from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
+    RegionAliasFactory,
     ResortFactory,
     SubRegionFactory,
 )
@@ -239,3 +243,216 @@ def test_search_places_misspelling_table(
     results = resolvers.search_places(query)
     assert results, f"expected at least one hit for {query!r}"
     assert results[0]["region_id"] == expected_region_id
+
+
+# ---------------------------------------------------------------------------
+# search_places — RegionAlias integration (SNOW-409)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_search_places_resolves_a_curated_alias(alpine_fixture: dict) -> None:
+    """A query matching a curated alias resolves to the aliased region."""
+    RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
+    results = resolvers.search_places("Sitten")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
+    assert results[0]["kind"] == "micro"
+
+
+@pytest.mark.django_db
+def test_search_places_dedups_alias_against_canonical_name(
+    alpine_fixture: dict,
+) -> None:
+    """A query matching both an alias and the canonical name yields one hit.
+
+    The dedup key is ``(kind, region_id)``; the alias row shares both with
+    its region's canonical ``MicroRegion`` row, so a query that scores
+    both should still return a single result for that region.
+    """
+    region = alpine_fixture["bas_valais"]
+    RegionAliasFactory.create(region=region, alias_text=region.name)
+    results = resolvers.search_places(region.name)
+    matches = [
+        r
+        for r in results
+        if r["region_id"] == region.region_id and r["kind"] == "micro"
+    ]
+    assert len(matches) == 1
+
+
+@pytest.mark.django_db
+def test_search_places_exact_region_id_returns_canonical_name_not_alias(
+    alpine_fixture: dict,
+) -> None:
+    """An exact region_id query still returns the canonical name.
+
+    The RegionAlias loop runs after the MicroRegion loop in
+    ``_build_candidate_pool``, so ``_match_exact_region_id`` — which
+    returns the first ``kind == "micro"`` row matching the id — finds the
+    canonical row before the alias row.
+    """
+    region = alpine_fixture["bas_valais"]
+    RegionAliasFactory.create(region=region, alias_text="Sitten")
+    results = resolvers.search_places(region.region_id)
+    assert len(results) == 1
+    assert results[0]["name"] == region.name
+
+
+@pytest.mark.django_db
+def test_search_places_reflects_a_newly_added_alias(alpine_fixture: dict) -> None:
+    """The cached candidate pool picks up an alias added after the first search.
+
+    Exercises the ``RegionAlias`` term added to ``resolvers._pool_cache_key``
+    — a plain TTL-only cache would still serve the stale pool here.
+    """
+    assert resolvers.search_places("Sitten") == []
+    RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
+    results = resolvers.search_places("Sitten")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
+
+
+@pytest.mark.django_db
+def test_search_places_reflects_an_edited_alias(alpine_fixture: dict) -> None:
+    """Editing an alias's text changes the cache key and is picked up.
+
+    Exercises the ``updated_at`` fingerprint specifically for an *edit*
+    (not just a create) — ``RegionAlias.save()`` bumps ``updated_at`` via
+    ``auto_now``, which changes ``_pool_cache_key``'s fingerprint.
+    """
+    alias = RegionAliasFactory.create(
+        region=alpine_fixture["bas_valais"], alias_text="Original"
+    )
+    assert resolvers.search_places("Original")
+
+    alias.alias_text = "Coire"
+    alias.save()
+
+    assert resolvers.search_places("Original") == []
+    results = resolvers.search_places("Coire")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
+
+
+# ---------------------------------------------------------------------------
+# regions_for_scope
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def scope_fixture() -> dict[str, Any]:
+    """Build a small CH + AT region tree for regions_for_scope tests.
+
+    CH-4 (Valais) has two MicroRegion children; CH-5 has one; AT-07 has
+    one — enough to prove country scoping excludes AT and major-region
+    scoping excludes CH-5.
+    """
+    valais = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    valais_sub = SubRegionFactory.create(prefix="CH-41", major=valais)
+    verbier = MicroRegionFactory.create(
+        region_id="CH-4115", name="Verbier", subregion=valais_sub
+    )
+    zermatt = MicroRegionFactory.create(
+        region_id="CH-4116", name="Zermatt", subregion=valais_sub
+    )
+    chur_major = MajorRegionFactory.create(prefix="CH-5", country="CH")
+    chur_sub = SubRegionFactory.create(prefix="CH-52", major=chur_major)
+    chur = MicroRegionFactory.create(
+        region_id="CH-5210", name="Chur", subregion=chur_sub
+    )
+
+    at_major = MajorRegionFactory.create(prefix="AT-07", country="AT")
+    at_sub = SubRegionFactory.create(prefix="AT-07-19", major=at_major)
+    st_anton = MicroRegionFactory.create(
+        region_id="AT-07-19", name="St. Anton", subregion=at_sub
+    )
+    return {
+        "verbier": verbier,
+        "zermatt": zermatt,
+        "chur": chur,
+        "st_anton": st_anton,
+    }
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_filters_by_country(scope_fixture: dict[str, Any]) -> None:
+    """country='CH' returns only the CH regions, not AT."""
+    result = resolvers.regions_for_scope("CH", None)
+    assert {r.region_id for r in result} == {"CH-4115", "CH-4116", "CH-5210"}
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_country_is_case_insensitive(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """country matching is case-insensitive."""
+    result = resolvers.regions_for_scope("ch", None)
+    assert {r.region_id for r in result} == {"CH-4115", "CH-4116", "CH-5210"}
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_filters_by_major_region_prefix(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """major_region_id='CH-4' scopes to only that major region's children."""
+    result = resolvers.regions_for_scope(None, "CH-4")
+    assert {r.region_id for r in result} == {"CH-4115", "CH-4116"}
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_major_region_is_case_insensitive(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """major_region_id matching is case-insensitive."""
+    result = resolvers.regions_for_scope(None, "ch-4")
+    assert {r.region_id for r in result} == {"CH-4115", "CH-4116"}
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_both_supplied_raises_value_error(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """Supplying both country and major_region_id is invalid."""
+    with pytest.raises(ValueError, match="Exactly one"):
+        resolvers.regions_for_scope("CH", "CH-4")
+
+
+def test_regions_for_scope_neither_supplied_raises_value_error() -> None:
+    """Supplying neither country nor major_region_id is invalid."""
+    with pytest.raises(ValueError, match="Exactly one"):
+        resolvers.regions_for_scope(None, None)
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_unknown_country_raises_value_error(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """An unrecognised ISO-2 country code raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown country"):
+        resolvers.regions_for_scope("XX", None)
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_unknown_major_region_raises_value_error(
+    scope_fixture: dict[str, Any],
+) -> None:
+    """An unrecognised major_region_id raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown major_region_id"):
+        resolvers.regions_for_scope(None, "CH-9999")
+
+
+@pytest.mark.django_db
+def test_regions_for_scope_prefetches_major_region(
+    scope_fixture: dict[str, Any], django_assert_num_queries: Any
+) -> None:
+    """Reading .subregion.major off every result issues no extra queries.
+
+    regions_for_scope's whole point is one indexed lookup for a scope
+    that can be up to 153 regions (AT) — select_related must cover the
+    parent major region so downstream reads don't N+1.
+    """
+    with django_assert_num_queries(1):
+        result = resolvers.regions_for_scope("CH", None)
+        for region in result:
+            assert region.subregion.major.country == "CH"
