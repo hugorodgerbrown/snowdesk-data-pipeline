@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP server at POST /api/mcp/ — search_regions, get_current_conditions, get_avalanche_problems, get_danger_history, list_resorts_in_region
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — ten read-only tools over regions, bulletins, problems, danger trend, geolocation
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -55,12 +55,12 @@ sidesteps standing up an ASGI stack for this one surface.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all five tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all ten tools below with `name`, `description`, `inputSchema`. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
 
 ## Tools
 
-All five are implemented in `mcp_server/tools.py`, composed from services
+All ten are implemented in `mcp_server/tools.py`, composed from services
 that already exist elsewhere in the codebase — no new query logic.
 
 ### `search_regions`
@@ -163,6 +163,115 @@ a single region.
 * **Params:** `region_id` (string, required).
 * **Returns:** `{region_id, region_name, resorts: [{name, latitude,
   longitude, canton}], count, summary}`.
+
+### `get_bulletin_metadata`
+
+Returns provenance metadata for the bulletin covering one region on one
+day — the fields a downstream LLM needs to quote freshness or attribute
+the source without hallucinating.
+
+* **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
+  optional — defaults to today).
+* **Returns:** `{region_id, region_name, date, has_bulletin, bulletin_id,
+  issued_at, valid_from, valid_to, next_update_expected, source_provider
+  ("slf"|"albina"|"meteofrance"|null), source_url, language,
+  language_variants_available, summary}`. `source_url` prefers the
+  bulletin's stored `pdf_url` and falls back to the provider's landing
+  page when none is recorded. `language_variants_available` reports the
+  languages Snowdesk has stored for this bulletin — currently always a
+  single-item list (`Bulletin.bulletin_id` is unique so only one language
+  variant survives per row). When no bulletin covers `date`,
+  `has_bulletin` is `false` and provenance fields are omitted — a
+  structured "no data" result, not an error.
+
+### `get_bulletin_raw`
+
+Escape hatch: returns the full CAAML v6 payload (wrapped in the GeoJSON
+Feature envelope Snowdesk stores) for one region on one day. Use this
+when the flattened tools have dropped a field the caller needs — payload
+is ~10-30 KB per bulletin, so it is not the default.
+
+* **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
+  optional — defaults to today).
+* **Returns:** `{region_id, region_name, date, has_bulletin, provider,
+  issued_at, caaml: {type: "Feature", geometry, properties: {...}},
+  summary}`. When no bulletin covers `date`, `has_bulletin` is `false`
+  and the `caaml` key is omitted.
+
+### `bulk_current_conditions`
+
+Batched fan-out over `get_current_conditions`. Prevents a "show me
+Valais today" prompt from turning into 20+ sequential MCP round-trips
+through a client that is already going through an LLM.
+
+* **Params:** `region_ids` (array of strings, 1..20, required), `date`
+  (`YYYY-MM-DD`, optional — defaults to today).
+* **Returns:** `{query: {region_ids, date}, results: [...], count,
+  summary}`. Each entry in `results` matches
+  `get_current_conditions`'s response shape when the region resolves,
+  or `{region_id, has_bulletin: false, error: "unknown_region",
+  summary}` when it doesn't.
+* **Cost cap:** hard-capped at 20 region_ids per call (see
+  `_BULK_CURRENT_CONDITIONS_CAP`). An empty or over-cap batch is
+  rejected as JSON-RPC `-32602` (invalid params), not silently
+  truncated. Unknown region_ids inside a valid batch are per-item
+  errors — one stale id doesn't wipe out the other 19.
+* **Duplicates** in `region_ids` are allowed and return duplicate
+  entries in `results` — the caller's own bug, not something for the
+  tool to hide.
+
+### `find_regions_near`
+
+Reverse geolocation: given `(lat, lon, radius_km)` return the covered
+avalanche-warning regions inside the radius, nearest first. Skiers know
+their trailhead coordinates from a mapping app but not the SLF region
+slug — `search_regions` covers the opposite direction (place name →
+region).
+
+* **Params:** `lat` (number, required, `[-90, 90]`), `lon` (number,
+  required, `[-180, 180]`), `radius_km` (number, required, positive,
+  capped at 100), `limit` (integer, optional — default 10).
+* **Returns:** `{query: {lat, lon, radius_km}, results: [{region_id,
+  name, kind: "micro", distance_km, provider}], count, summary}`.
+  Nearest first. `provider` is derived from the region's country
+  (`"slf"` / `"albina"` / `"meteofrance"`).
+* **Cost cap:** `radius_km` is hard-capped at 100 km per call (see
+  `_FIND_REGIONS_NEAR_RADIUS_CAP_KM`). Over-cap radius, out-of-range
+  lat/lon, non-positive radius, and non-integer `limit` are all
+  rejected as JSON-RPC `-32602` (invalid params).
+* **Distance:** pure-Python haversine
+  (`mcp_server.resolvers._haversine_km`) against
+  `MicroRegion.centre` — no PostGIS or Shapely dependency, matching
+  the request-path point-in-polygon precedent.
+* **Empty results** when nothing is inside the radius (e.g. a query
+  point outside Snowdesk's coverage) — a legitimate empty response,
+  not an error.
+
+### `get_danger_trend`
+
+Returns the danger rating series for one region over the trailing N
+days plus a computed trend layer — answers "is danger rising or
+falling in Verbier?" in one call.
+
+* **Params:** `region_id` (string, required), `days` (integer,
+  optional — default 14, cap 90).
+* **Returns:** the full `get_danger_history` envelope (season-clamped)
+  plus three fields:
+  - `direction`: `"rising"` / `"stable"` / `"falling"` from a mean-
+    shift comparison of the first vs last third of the window; the
+    threshold is `_TREND_DIRECTION_THRESHOLD` (0.5 rating steps).
+  - `change_point`: `{date, from_rating, to_rating}` for the most
+    recent transition, or `null` if the window is flat.
+  - `current_streak`: `{rating, days}` for the trailing consecutive
+    days at the current peak rating, or `null` if the window is empty.
+* **Cost cap:** window capped at 90 days (see `_TREND_MAX_DAYS`).
+  Non-positive or over-cap `days` values raise a domain-level
+  `isError` — this is the same convention as
+  `get_danger_history`'s `min_rating` rejection (a tool that tried
+  and couldn't satisfy), not a JSON-RPC parameter failure.
+* **Off-season windows** clamp to the season window and return `days:
+  []` with `direction: "stable"`, `change_point: null`,
+  `current_streak: null` — a structured empty result, not an error.
 
 ## Cost caps
 

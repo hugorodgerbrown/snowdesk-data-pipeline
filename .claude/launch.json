@@ -3,27 +3,21 @@
   "configurations": [
     {
       "name": "Django dev server",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["manage.py", "runserver"],
-      "port": 8000
-    },
-    {
-      "name": "Django dev server (preview)",
       "runtimeExecutable": "sh",
       "autoport": true,
-      "runtimeArgs": ["-c", "exec .venv/bin/python manage.py runserver \"0.0.0.0:$PORT\""]
+      "runtimeArgs": [
+        "-c",
+        "trap 'kill 0' EXIT; npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css && npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch & exec .venv/bin/python manage.py runserver \"0.0.0.0:$PORT\""
+      ]
     },
     {
-      "name": "Tailwind CSS watcher",
-      "runtimeExecutable": "npx",
+      "name": "MCP Inspector",
+      "runtimeExecutable": "sh",
       "runtimeArgs": [
-        "@tailwindcss/cli",
-        "-i",
-        "./src/css/main.css",
-        "-o",
-        "./static/css/output.css",
-        "--watch"
-      ]
+        "-c",
+        "DANGEROUSLY_OMIT_AUTH=true MCP_AUTO_OPEN_ENABLED=false exec npx @modelcontextprotocol/inspector"
+      ],
+      "port": 6274
     }
   ]
 }
