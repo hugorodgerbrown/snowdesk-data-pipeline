@@ -192,9 +192,21 @@ common (the binary version is tied to the `playwright` package).
 - **Missing `output.css`**: `static/css/output.css` is gitignored (built by
   the Tailwind CLI).  In CI and in local tox runs where the CSS has not been
   compiled, the browser logs a "Failed to load resource" console error for
-  the missing stylesheet.  This is harmless — the test only captures
-  `pageerror` events (uncaught JS exceptions), not resource-load console
-  messages, so the assertion still passes.
+  the missing stylesheet.  This is harmless to the **current** suite — the
+  tests only capture `pageerror` events (uncaught JS exceptions), not
+  resource-load console messages or layout, so the assertions still pass.
+  Neither the CI e2e workflow (`.github/workflows/e2e.yml`) nor the
+  `tox -e e2e` env compiles the CSS.
+  A layout-dependent test would be a different story: on an unstyled,
+  collapsed page an element can report as "outside the viewport" or as
+  intercepting a click, and the failure message won't point at the missing
+  stylesheet.  If you add such a test, compile the CSS first — a fresh Claude
+  worktree already does this via `bin/init-worktree` (which runs the
+  `npm install` + Tailwind CLI build after seeding the DB; see
+  [`docs/worktrees.md`](worktrees.md)), so locally you get it for free.  A
+  layout-dependent test running in **CI** would additionally need a CSS-build
+  step wired into `.github/workflows/e2e.yml` or the `tox -e e2e` env, which
+  does not exist yet.
 - **Chromium only**: Firefox and WebKit are excluded from scope.  Adding them
   requires extending the `tox -e e2e` command to pass `--browser firefox` etc.
 - **`DJANGO_ALLOW_ASYNC_UNSAFE=true`**: The e2e tox env sets this because

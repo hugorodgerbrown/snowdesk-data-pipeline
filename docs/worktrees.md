@@ -31,6 +31,35 @@ dev DB), causing churn on SNOW-341 and SNOW-342. Seeding from the
 committed fixture guarantees every worktree is identical to CI's data
 environment.
 
+## Compiled CSS
+
+When `static/css/output.css` is absent the script builds it too:
+
+```bash
+npm install
+npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
+```
+
+`output.css` is a gitignored Tailwind build artifact, so it is not shared
+across worktrees — each fresh worktree has to build its own. Without it the
+page 404s the stylesheet and renders unstyled: any browser preview of a
+fresh worktree shows a collapsed layout until the CSS is built.
+
+The current Playwright e2e suite (`tox -e e2e`) passes with or without
+`output.css` — those tests capture uncaught JS (`pageerror`), not layout,
+so a missing stylesheet is harmless to them (see the "Known limitations"
+note in [`docs/client-side-tests.md`](client-side-tests.md)). Neither CI
+(`.github/workflows/e2e.yml`) nor the `tox -e e2e` env compiles the CSS.
+Building it at init-time is about correct browser preview today, and about
+not tripping up any future viewport-dependent e2e test — an unstyled,
+collapsed page makes elements report as "outside the viewport" or as
+intercepting clicks, producing failures whose message doesn't point at the
+missing CSS.
+
+To rebuild after editing `src/css/main.css`, either re-run the command above
+or use the Tailwind watcher under "Running locally" in
+[`CLAUDE.md`](../CLAUDE.md).
+
 ## Dev credentials
 
 `seed_dev_users` creates two well-known accounts. Neither appears in
