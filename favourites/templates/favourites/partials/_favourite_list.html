@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_list.html — Owner favourites list.
+
+Rendered by favourites.views.favourite_list. Lazy-loaded into the manage
+page's "My favourites" section via hx-get on page load (SNOW-415).
+
+Each row reuses the SNOW-413 rename/remove controls
+(favourites/partials/_favourite.html) plus a "Details" button that
+hx-gets favourites:card into the #favourite-card-panel div below, so the
+card renders in-page without leaving the manage page.
+
+Context:
+    favourites : QuerySet[Favourite] — the requesting user's own
+                 favourites (Favourite.objects.for_user()).
+{% endcomment %}
+<div data-testid="favourite-list">
+    {# Target for the "Details" hx-get below — starts empty. #}
+    <div id="favourite-card-panel" class="mb-4" data-testid="favourite-card-panel"></div>
+
+    {% for favourite in favourites %}
+        <div class="flex items-center gap-2 mb-2" data-testid="favourite-list-row">
+            <div class="flex-1">
+                {% include "favourites/partials/_favourite.html" with favourite=favourite %}
+            </div>
+            <button
+                type="button"
+                hx-get="{% url 'favourites:card' favourite.uuid %}"
+                hx-target="#favourite-card-panel"
+                hx-swap="innerHTML"
+                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+            >
+                {% trans "Details" %}
+            </button>
+        </div>
+    {% empty %}
+        <p class="text-sm text-text-2" data-testid="favourite-list-empty">
+            {% trans "You have no saved favourites yet." %}
+        </p>
+    {% endfor %}
+
+    <div class="mt-2">
+        <a
+            href="{% url 'public:map' %}"
+            class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+        >
+            {% trans "View favourites on the map →" %}
+        </a>
+    </div>
+</div>

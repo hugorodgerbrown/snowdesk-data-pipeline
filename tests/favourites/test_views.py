@@ -11,6 +11,16 @@ Covers:
                       name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
                       row survives when a non-owner attempts deletion.
+  favourite_card — owner GET 200; non-owner uuid → 404 (no existence
+                    oracle); anon → 403; flag off → 404; non-HTMX → 400;
+                    region-null → no-coverage note; region + rating →
+                    danger tile + bulletin link; unnamed favourite →
+                    coordinate fallback; no weather snapshot yet →
+                    "coming soon" empty state (SNOW-415).
+  favourite_list — owner sees only their own favourites; another user's
+                    favourites are absent; anon → 403; flag off → 404;
+                    non-HTMX → 400; empty state when the user has none
+                    (SNOW-415).
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; flag off → 404.
@@ -30,10 +40,17 @@ from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from favourites.models import Favourite
-from tests.factories import ForecastPointFactory, UserFactory
+from tests.factories import (
+    FavouriteFactory,
+    ForecastPointFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    UserFactory,
+)
 
 CREATE_URL = "/favourites/partials/create/"
 GEOJSON_URL = "/favourites/favourites.geojson"
+LIST_URL = "/favourites/partials/list/"
 
 HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
@@ -46,6 +63,11 @@ def _rename_url(uuid: object) -> str:
 def _delete_url(uuid: object) -> str:
     """Build the delete URL for a favourite's uuid."""
     return f"/favourites/partials/{uuid}/delete/"
+
+
+def _card_url(uuid: object) -> str:
+    """Build the detail-card URL for a favourite's uuid."""
+    return f"/favourites/partials/{uuid}/card/"
 
 
 def _create_via_service(
@@ -378,6 +400,192 @@ class TestFavouriteDeleteOwnerIsolation:
             _delete_url("00000000-0000-0000-0000-000000000000"), **HTMX_HEADERS
         )
         assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# favourite_card — GET /favourites/partials/<uuid>/card/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteCard:
+    """favourite_card — owner-scoped detail card (SNOW-415)."""
+
+    @override_flag("favourites", active=True)
+    def test_owner_gets_200_with_name_and_altitude(self, client: Client) -> None:
+        """Owner GET renders the card with the favourite's name and altitude."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="My spot", elevation=1834.0)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "My spot" in content
+        assert "1834" in content
+
+    @override_flag("favourites", active=True)
+    def test_unnamed_favourite_falls_back_to_coordinates(self, client: Client) -> None:
+        """An unnamed favourite's title falls back to formatted coordinates."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(
+            user=user, name="", latitude=46.10123, longitude=7.40456
+        )
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "46.10123" in content
+        assert "7.40456" in content
+
+    @override_flag("favourites", active=True)
+    def test_non_owner_uuid_returns_404(self, client: Client) -> None:
+        """A different user's uuid returns 404, not 403 — no existence oracle."""
+        owner = UserFactory.create()
+        other_user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=owner)
+
+        client.force_login(other_user)
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous GET returns 403."""
+        response = client.get(
+            _card_url("00000000-0000-0000-0000-000000000000"), **HTMX_HEADERS
+        )
+        assert response.status_code == 403
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_returns_404(self, client: Client) -> None:
+        """When the favourites flag is inactive, GET returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.get(
+            _card_url("00000000-0000-0000-0000-000000000000"), **HTMX_HEADERS
+        )
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_non_htmx_returns_400(self, client: Client) -> None:
+        """A plain GET without HX-Request returns 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_card_url(favourite.uuid))
+
+        assert response.status_code == 400
+
+    @override_flag("favourites", active=True)
+    def test_region_null_shows_no_coverage_note(self, client: Client) -> None:
+        """A favourite with region=None shows the no-coverage note, no rating."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, region=None)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "No bulletin coverage" in content
+        assert "danger-tile" not in content
+
+    @override_flag("favourites", active=True)
+    def test_region_with_rating_shows_chip_and_bulletin_link(
+        self, client: Client
+    ) -> None:
+        """A favourite with a region + today's rating shows the danger tile and link."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        favourite = FavouriteFactory.create(user=user, region=region)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "danger-tile" in content
+        assert region.get_absolute_url() in content
+
+    @override_flag("favourites", active=True)
+    def test_no_weather_snapshot_shows_coming_soon(self, client: Client) -> None:
+        """Without a ForecastPointWeather snapshot, the weather slot shows 'coming soon'."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "coming soon" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# favourite_list — GET /favourites/partials/list/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteList:
+    """favourite_list — owner-scoped favourites list (SNOW-415)."""
+
+    @override_flag("favourites", active=True)
+    def test_owner_sees_only_own_favourites(self, client: Client) -> None:
+        """Another user's favourites never appear in the requester's list."""
+        user = UserFactory.create()
+        other_user = UserFactory.create()
+        mine = FavouriteFactory.create(user=user, name="Mine")
+        FavouriteFactory.create(user=other_user, name="Theirs")
+
+        client.force_login(user)
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Mine" in content
+        assert "Theirs" not in content
+        assert str(mine.uuid) in content
+
+    @override_flag("favourites", active=True)
+    def test_empty_state_when_no_favourites(self, client: Client) -> None:
+        """A user with no favourites sees the empty-state copy."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert b"no saved favourites" in response.content.lower()
+
+    @override_flag("favourites", active=True)
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous GET returns 403."""
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 403
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_returns_404(self, client: Client) -> None:
+        """When the favourites flag is inactive, GET returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_non_htmx_returns_400(self, client: Client) -> None:
+        """A plain GET without HX-Request returns 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.get(LIST_URL)
+        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------

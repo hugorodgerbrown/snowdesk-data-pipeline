@@ -9,6 +9,8 @@ URL structure:
   favourites/partials/create/               POST — save a new favourite
   favourites/partials/<uuid>/rename/         POST — rename a favourite
   favourites/partials/<uuid>/delete/         POST — delete a favourite
+  favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
+  favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
   favourites/favourites.geojson              GET  — the user's own pins
 """
 
@@ -33,6 +35,16 @@ urlpatterns = [
         "partials/<uuid:uuid>/delete/",
         views.favourite_delete,
         name="delete",
+    ),
+    path(
+        "partials/<uuid:uuid>/card/",
+        views.favourite_card,
+        name="card",
+    ),
+    path(
+        "partials/list/",
+        views.favourite_list,
+        name="list",
     ),
     path(
         "favourites.geojson",

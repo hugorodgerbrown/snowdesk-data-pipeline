@@ -3,8 +3,10 @@ tests/favourites/test_services.py — Tests for favourites.services.
 
 Covers:
   create_favourite — happy path (resolves ForecastPoint, sets elevation
-    from the point, resolves region); region-null when the point falls
-    outside every known boundary; per-user cap enforcement at exactly
+    from the point, resolves region); region_for_point called with
+    latitude first (SNOW-415 regression guard for the SNOW-426 coord-order
+    change); region-null when the point falls outside every known
+    boundary; per-user cap enforcement at exactly
     ``settings.FAVOURITES_MAX_PER_USER``.
   delete_favourite — owner-checked; the linked ForecastPoint row survives
     (PROTECT).
@@ -65,6 +67,27 @@ class TestCreateFavouriteHappyPath:
             favourite = create_favourite(user, 46.1, 7.4)
 
         assert favourite.region == region
+
+    def test_region_for_point_called_with_latitude_first(self) -> None:
+        """region_for_point is called (latitude, longitude) — a SNOW-426 regression guard.
+
+        ``region_for_point``'s signature became ``(lat, lon)`` in SNOW-426;
+        ``create_favourite`` previously called it with the arguments
+        transposed, silently resolving every new favourite's region from
+        swapped coordinates.
+        """
+        user = UserFactory.create()
+        point = ForecastPointFactory.create()
+
+        with (
+            patch("favourites.services.resolve_forecast_point", return_value=point),
+            patch(
+                "favourites.services.region_for_point", return_value=None
+            ) as mock_rfp,
+        ):
+            create_favourite(user, 46.1, 7.4)
+
+        mock_rfp.assert_called_once_with(46.1, 7.4)
 
     def test_name_defaults_to_blank(self) -> None:
         """name defaults to an empty string when not supplied."""
