@@ -47,13 +47,16 @@ dispatcher used by the bulletin page render:
       ``docs/async-operations.md``.
 
   fetch_weather_for_point(point, target_date, *, commit, base_url, on_fetched)
-      Fetches today's (or any single day's) comprehensive daily forecast for
-      one ForecastPoint from the Open-Meteo forecast endpoint, passing the
-      point's ``elevation`` explicitly so the forecast is statistically
-      downscaled to the pin's altitude. Returns ``(ForecastPointWeather,
-      created)`` when ``commit=True``, or ``None`` when ``commit=False``.
-      Points are forecast-only — there is no archive/backfill equivalent
-      (SNOW-416).
+      Fetches a POINT_FORECAST_DAYS-day (7-day) window of comprehensive daily
+      forecast data, plus a POINT_HOURLY_DAYS-day (2-day) near-term hourly
+      series of ski-relevant variables, for one ForecastPoint from the
+      Open-Meteo forecast endpoint, passing the point's ``elevation``
+      explicitly so the forecast is statistically downscaled to the pin's
+      altitude. Persists one ``ForecastPointWeather`` row per day. Returns a
+      list of ``(ForecastPointWeather, created)`` tuples — one per day —
+      when ``commit=True``, or an empty list when ``commit=False``. Points
+      are forecast-only — there is no archive/backfill equivalent (SNOW-416,
+      SNOW-417).
 
   fetch_all_points(target_date, *, commit, base_url, on_fetched)
       Calls fetch_weather_for_point for every ``ForecastPoint.objects.active()``
@@ -79,7 +82,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 import requests
@@ -110,6 +113,35 @@ POINT_DAILY_VARIABLES = (
     "precipitation_probability_max,precipitation_hours,"
     "wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,"
     "uv_index_max,daylight_duration,sunshine_duration"
+)
+
+# How many days of daily forecast to fetch per point (SNOW-417) — a
+# favourited pin gets a week-ahead outlook, not just today.
+POINT_FORECAST_DAYS = 7
+
+# How many of those days also carry an hourly series — bounded to keep the
+# per-row JSON payload small; the near-term days are the ones a skier
+# actually plans an hour-by-hour day around.
+POINT_HOURLY_DAYS = 2
+
+# Ski-relevant hourly variables for the near-term hourly series. Open-Meteo
+# has no daily freezing-level aggregate, so freezing_level_height is only
+# available hourly — the daily column on ForecastPointWeather is derived
+# from this block (see _daily_max_freezing_level below).
+POINT_HOURLY_VARIABLES = (
+    "temperature_2m,snowfall,precipitation,"
+    "wind_speed_10m,wind_gusts_10m,freezing_level_height"
+)
+
+# The hourly variables persisted onto each hourly_series row, in the order
+# they appear on each dict.
+_HOURLY_SERIES_FIELDS = (
+    "temperature_2m",
+    "snowfall",
+    "precipitation",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "freezing_level_height",
 )
 
 
@@ -211,8 +243,8 @@ def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
 
     Args:
         daily: The ``"daily"`` block of an Open-Meteo forecast response.
-        idx: Index into each daily array for the target date (``0`` for a
-            single-day forecast request).
+        idx: Index into each daily array for the target date (``0`` for the
+            first day of a multi-day forecast request).
 
     Returns:
         A dict suitable for passing as ``defaults=`` to update_or_create.
@@ -220,8 +252,11 @@ def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
     """
 
     def _extended(key: str) -> Any:
-        """Return the extended variable at idx, or None if omitted."""
-        return daily.get(key, [None])[idx]
+        """Return the extended variable at idx, or None if omitted/short."""
+        values = daily.get(key)
+        if values is None or idx >= len(values):
+            return None
+        return values[idx]
 
     return {
         "weather_code": daily["weather_code"][idx],
@@ -243,6 +278,68 @@ def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
         "sunshine_duration": _extended("sunshine_duration"),
         "fetched_at": django_timezone.now(),
     }
+
+
+def _hourly_rows_for_day(
+    hourly: dict[str, Any] | None, day: date
+) -> list[dict[str, Any]]:
+    """
+    Return the hourly rows for a single calendar day from an hourly block.
+
+    Args:
+        hourly: The ``"hourly"`` block of an Open-Meteo forecast response
+            (a dict of parallel arrays keyed by variable name, plus
+            ``"time"``), or ``None`` if the response carried no hourly data.
+        day: The calendar date to filter hourly rows to.
+
+    Returns:
+        A list of dicts, one per matching hour, each with keys ``time`` plus
+        every name in ``_HOURLY_SERIES_FIELDS`` (``None`` for an omitted
+        variable at that hour). Empty list if ``hourly`` is ``None`` or no
+        hour falls on ``day``.
+
+    """
+    if not hourly:
+        return []
+    times: list[str] = hourly.get("time", [])
+    rows: list[dict[str, Any]] = []
+    for idx, time_str in enumerate(times):
+        if _parse_dt_preserve_offset(time_str).date() != day:
+            continue
+        row: dict[str, Any] = {"time": time_str}
+        for field in _HOURLY_SERIES_FIELDS:
+            values = hourly.get(field)
+            row[field] = (
+                values[idx] if values is not None and idx < len(values) else None
+            )
+        rows.append(row)
+    return rows
+
+
+def _daily_max_freezing_level(hourly: dict[str, Any] | None, day: date) -> float | None:
+    """
+    Derive a daily-max freezing level height from an hourly block.
+
+    Open-Meteo has no daily freezing-level aggregate, so this rolls up the
+    hourly ``freezing_level_height`` values for the day into a single
+    representative figure.
+
+    Args:
+        hourly: The ``"hourly"`` block of an Open-Meteo forecast response,
+            or ``None`` if the response carried no hourly data.
+        day: The calendar date to derive the maximum for.
+
+    Returns:
+        The maximum hourly freezing level height (metres) for ``day``, or
+        ``None`` if no hourly freezing-level values are available for it.
+
+    """
+    values = [
+        row["freezing_level_height"]
+        for row in _hourly_rows_for_day(hourly, day)
+        if row["freezing_level_height"] is not None
+    ]
+    return max(values) if values else None
 
 
 def fetch_weather_for_region(
@@ -448,39 +545,52 @@ def fetch_weather_for_point(
     commit: bool,
     base_url: str | None = None,
     on_fetched: Callable[[dict[str, Any]], None] | None = None,
-) -> tuple[ForecastPointWeather, bool] | None:
+) -> list[tuple[ForecastPointWeather, bool]]:
     """
-    Fetch and optionally persist today's comprehensive weather for one ForecastPoint.
+    Fetch and optionally persist a 7-day comprehensive forecast for one ForecastPoint.
 
     Calls the Open-Meteo forecast endpoint (or a mirror when ``base_url``
-    is set), passing the point's ``elevation`` explicitly so the forecast is
-    statistically downscaled to the pin's altitude rather than the model
-    cell's mean terrain. Extracts the full ``POINT_DAILY_VARIABLES`` set for
-    ``target_date`` (index ``[0]``), then either persists a
-    ForecastPointWeather via update_or_create or returns None if
-    ``commit=False``.
+    is set) once, passing the point's ``elevation`` explicitly so the
+    forecast is statistically downscaled to the pin's altitude rather than
+    the model cell's mean terrain. Requests ``POINT_FORECAST_DAYS`` days of
+    the ``POINT_DAILY_VARIABLES`` daily set plus an hourly block
+    (``POINT_HOURLY_VARIABLES``) spanning the same window, then persists one
+    ForecastPointWeather row per day via update_or_create — ``idx=0`` is
+    ``target_date``, ``idx=6`` is ``target_date + 6 days``.
+
+    Each row's ``freezing_level_height`` is derived as the daily maximum of
+    that day's hourly values (Open-Meteo has no daily freezing-level
+    aggregate). Each row's ``hourly_series`` is populated with that day's raw
+    hourly rows only for the first ``POINT_HOURLY_DAYS`` days; beyond that it
+    is ``None``, keeping the JSON payload bounded.
+
+    Ships on Open-Meteo's default blended model chain — no ``models=``
+    parameter (MeteoSwiss ICON-CH selection is deferred to a follow-up
+    ticket under the SNOW-411 point-forecast epic).
 
     Points are forecast-only — there is no archive/backfill equivalent of
     this function.
 
     Args:
         point: The ForecastPoint to fetch weather for.
-        target_date: The calendar date to fetch weather for.
-        commit: If True, write the row to the database. If False, the
+        target_date: The first calendar date of the forecast window.
+        commit: If True, write the rows to the database. If False, the
             HTTP request still executes (real API probe) but no rows are
-            written and None is returned.
+            written and an empty list is returned.
         base_url: When set, overrides ``FORECAST_URL`` as the endpoint base.
             The actual request goes to ``f"{base_url}/forecast"``. Defaults
             to ``None``, which falls back to the module-level
             ``FORECAST_URL``.
         on_fetched: Optional callback called once after the response is
-            parsed, with a dict ``{forecast_point_id, date, weather_code,
-            sunrise, sunset, captured_at}``. Defaults to ``None`` (no-op).
+            parsed, with a dict for ``target_date`` (day 0) —
+            ``{forecast_point_id, date, weather_code, sunrise, sunset,
+            captured_at}``. Defaults to ``None`` (no-op).
 
     Returns:
-        A ``(ForecastPointWeather, created)`` tuple when ``commit=True``,
-        where ``created`` is True for a new row or False for an update.
-        Returns None when ``commit=False``.
+        A list of ``(ForecastPointWeather, created)`` tuples — one per day
+        in the forecast window — when ``commit=True``, where ``created`` is
+        True for a new row or False for an update. Returns an empty list
+        when ``commit=False``.
 
     Raises:
         requests.HTTPError: If the Open-Meteo API returns a non-2xx status.
@@ -489,10 +599,12 @@ def fetch_weather_for_point(
 
     """
     url = f"{base_url}/forecast" if base_url else FORECAST_URL
+    end_date = target_date + timedelta(days=POINT_FORECAST_DAYS - 1)
     logger.debug(
-        "Fetching forecast weather for point=%s date=%s commit=%s url=%s",
+        "Fetching forecast weather for point=%s start=%s end=%s commit=%s url=%s",
         point.pk,
         target_date,
+        end_date,
         commit,
         url,
     )
@@ -502,27 +614,31 @@ def fetch_weather_for_point(
         "longitude": str(point.longitude),
         "elevation": str(point.elevation),
         "daily": POINT_DAILY_VARIABLES,
+        "hourly": POINT_HOURLY_VARIABLES,
         "timezone": "auto",
-        # HRB: forecast_days cannot be used with start/end dates.
         "start_date": target_date.isoformat(),
-        "end_date": target_date.isoformat(),
+        "end_date": end_date.isoformat(),
     }
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
     daily = data["daily"]
+    hourly: dict[str, Any] | None = data.get("hourly")
+    num_days = len(daily["time"])
+
     weather_code: int = daily["weather_code"][0]
     sunrise_str: str = daily["sunrise"][0]
     sunset_str: str = daily["sunset"][0]
 
     logger.debug(
-        "Open-Meteo forecast: point=%s date=%s code=%d sunrise=%s sunset=%s",
+        "Open-Meteo forecast: point=%s date=%s code=%d sunrise=%s sunset=%s days=%d",
         point.pk,
         target_date,
         weather_code,
         sunrise_str,
         sunset_str,
+        num_days,
     )
 
     if on_fetched is not None:
@@ -538,23 +654,34 @@ def fetch_weather_for_point(
         )
 
     if not commit:
-        return None
+        return []
 
-    defaults = _build_point_defaults(daily, 0)
-    weather, created = ForecastPointWeather.objects.update_or_create(
-        forecast_point=point,
-        valid_for_date=target_date,
-        defaults=defaults,
-    )
-    action = "Created" if created else "Updated"
-    logger.debug(
-        "%s ForecastPointWeather: point=%s date=%s code=%d",
-        action,
-        point.pk,
-        target_date,
-        weather_code,
-    )
-    return weather, created
+    results: list[tuple[ForecastPointWeather, bool]] = []
+    for idx in range(num_days):
+        day = target_date + timedelta(days=idx)
+        defaults = _build_point_defaults(daily, idx)
+        defaults["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
+        defaults["hourly_series"] = (
+            _hourly_rows_for_day(hourly, day)
+            if hourly and idx < POINT_HOURLY_DAYS
+            else None
+        )
+        weather, created = ForecastPointWeather.objects.update_or_create(
+            forecast_point=point,
+            valid_for_date=day,
+            defaults=defaults,
+        )
+        action = "Created" if created else "Updated"
+        logger.debug(
+            "%s ForecastPointWeather: point=%s date=%s code=%d",
+            action,
+            point.pk,
+            day,
+            defaults["weather_code"],
+        )
+        results.append((weather, created))
+
+    return results
 
 
 def fetch_all_points(
@@ -574,14 +701,18 @@ def fetch_all_points(
     have non-null coordinates and elevation, so ``skipped`` stays ``0``, but
     the key is kept for counter-shape symmetry with ``fetch_all_regions``.
 
+    Each point now writes ``POINT_FORECAST_DAYS`` (7) rows per call, so
+    ``created``/``updated`` sum across every day of every point's window,
+    not one count per point.
+
     Args:
-        target_date: The calendar date to fetch weather for.
+        target_date: The first calendar date of the forecast window.
         commit: If True, write rows to the database.
         base_url: When set, overrides ``FORECAST_URL`` for all per-point
             calls. Defaults to ``None`` (fall back to ``FORECAST_URL``).
         on_fetched: Optional callback forwarded to each per-point call.
-            Called once per fetched ``(point, date)`` record. Defaults to
-            ``None`` (no-op).
+            Called once per fetched point, for day 0 of its window. Defaults
+            to ``None`` (no-op).
 
     Returns:
         A dict with integer counters:
@@ -609,19 +740,19 @@ def fetch_all_points(
 
     for point in points:
         try:
-            result = fetch_weather_for_point(
+            results = fetch_weather_for_point(
                 point,
                 target_date,
                 commit=commit,
                 base_url=base_url,
                 on_fetched=on_fetched,
             )
-            if commit and result is not None:
-                _, created = result
-                if created:
-                    counts["created"] += 1
-                else:
-                    counts["updated"] += 1
+            if commit:
+                for _, created in results:
+                    if created:
+                        counts["created"] += 1
+                    else:
+                        counts["updated"] += 1
         except Exception:  # noqa: BLE001 — broad catch intentional: per-point failure must not abort the batch
             logger.exception(
                 "Failed to fetch weather for point=%s date=%s",

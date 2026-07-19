@@ -15,10 +15,11 @@ Content:
      falls outside every known boundary), a "no bulletin coverage" note
      is shown instead. Copy states plainly the rating is for the whole
      region, not this exact spot.
-  3. Weather — this spot. Renders weather_display (from
-     build_weather_display over the point's own ForecastPointWeather,
-     SNOW-416) when present; otherwise an explicit "coming soon" empty
-     state. Deliberately never falls back to the region's WeatherSnapshot.
+  3. Weather — this spot. Renders forecast_panel (a compact multi-day
+     strip plus expandable hourly detail, from build_point_forecast_panel
+     over the point's own ForecastPointWeather window, SNOW-417) when
+     present; otherwise an explicit "coming soon" empty state.
+     Deliberately never falls back to the region's WeatherSnapshot.
   4. Rename / delete controls — reuses the SNOW-413 row partial so the
      card's controls hit the existing endpoints.
 
@@ -29,7 +30,8 @@ Context:
                        favourite.region is None).
     bulletin_url    : str — evergreen bulletin URL for favourite.region,
                        or "" when favourite.region is None.
-    weather_display : dict | None — from build_weather_display(), or None.
+    forecast_panel  : ForecastPanel | None — from
+                       build_point_forecast_panel(), or None.
 {% endcomment %}
 <div
     id="favourite-card-{{ favourite.uuid }}"
@@ -86,15 +88,8 @@ Context:
     <div class="mt-4 pt-4 border-t border-border">
         {% translate "Weather — this spot" as weather_eyebrow_label %}
         {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" %}
-        {% if weather_display %}
-            <div class="flex items-center gap-2">
-                <img
-                    src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
-                    class="w-10 h-10"
-                    alt=""
-                >
-                <span class="text-sm text-text-1">{{ weather_display.condition_label }}</span>
-            </div>
+        {% if forecast_panel %}
+            {% include "favourites/partials/_favourite_forecast_panel.html" with panel=forecast_panel %}
         {% else %}
             <p class="text-sm text-text-3" data-testid="favourite-card-weather-empty">
                 {% blocktrans trimmed %}
