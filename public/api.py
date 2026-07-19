@@ -932,9 +932,15 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     # Observations are non-safety-critical (unlike ratings) — unsafe_after=None
     # so the freshness state saturates at "stale" and never escalates to
     # "unsafe". Empty result set (no recent reports) falls back to "now".
+    # max_age is pinned to the same value as the Cache-Control header
+    # (_COMMUNITY_CACHE_MAX_AGE) rather than the apply_freshness_headers
+    # default (24h) — the two windows are intentionally aligned so the
+    # client's freshness dot flips to "stale" exactly when a shared CDN
+    # cache would also consider the response stale.
     apply_freshness_headers(
         response,
         generated_at=newest or timezone.now(),
+        max_age=_COMMUNITY_CACHE_MAX_AGE,
         unsafe_after=None,
     )
     return response

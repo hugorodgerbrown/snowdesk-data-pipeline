@@ -79,6 +79,86 @@ def test_overlay_toggle_installs_clustered_source(
 
 @override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
+def test_cluster_tap_does_not_also_select_the_region_underneath(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """A cluster tap must not ALSO select/pop up the region underneath it.
+
+    Regression coverage for the click-routing fix: MapLibre fires every
+    layer-scoped click handler whose layer intersects the tapped point —
+    there is no stopPropagation between them — so without the guard in
+    the regions-fill handler, tapping a community-reports cluster sitting
+    over a rendered region would also select that region and open its
+    popup. Requires ``_load_test_data`` — without region boundary fixtures
+    loaded, ``regions-fill`` renders no features anywhere, and the guard
+    would trivially "pass" without ever being exercised.
+
+    This drives the synthetic click via ``MAP.fire`` (the plain-click
+    pattern ``test_favourites.py`` uses, deterministic in headless
+    Chromium) at the cluster's exact projected point, and asserts on the
+    *absence* of a region popup rather than on the cluster's own
+    zoom-to-expand completing — ``getClusterExpansionZoom`` round-trips
+    through a Web Worker that does not reliably resolve in this headless
+    harness, which is a test-environment limitation unrelated to the
+    click-routing fix under test here.
+    """
+    with django_db_blocker.unblock():
+        # Coordinates inside CH-4115 (Martigny/Verbier — the FieldObservation
+        # factory default territory), which _load_test_data seeds a region
+        # boundary for, so regions-fill actually renders a feature here.
+        # Several near-identical points cluster into one feature at the
+        # map's initial zoom level.
+        for _ in range(5):
+            FieldObservationFactory.create(
+                latitude=46.10,
+                longitude=7.10,
+                observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+            )
+
+    _navigate_home(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    toggle = page.locator('[data-overlay-key="community_reports"]')
+    toggle.wait_for(state="visible")
+    with page.expect_response(lambda r: "/api/community-reports.geojson" in r.url):
+        toggle.click()
+    page.wait_for_function("() => !!MAP.getSource('community-reports')")
+    # queryRenderedFeatures only returns results once the clustered
+    # layer's own render pass has run at the current zoom — poll rather
+    # than a single read.
+    page.wait_for_function(
+        "() => MAP.getLayer('community-reports-clusters') && "
+        "MAP.queryRenderedFeatures({ layers: ['community-reports-clusters'] })"
+        ".length > 0"
+    )
+
+    cluster_point = page.evaluate(
+        "() => {"
+        " const f = MAP.queryRenderedFeatures("
+        "   { layers: ['community-reports-clusters'] })[0];"
+        " const p = MAP.project(f.geometry.coordinates);"
+        " return { lngLat: f.geometry.coordinates, point: [p.x, p.y] };"
+        "}"
+    )
+
+    page.evaluate(
+        "({ lngLat, point }) => MAP.fire('click', {"
+        " lngLat: { lng: lngLat[0], lat: lngLat[1] },"
+        " point: { x: point[0], y: point[1] } })",
+        cluster_point,
+    )
+    # No async condition to await here — the routing guard runs
+    # synchronously inside the click handler itself.
+    page.wait_for_timeout(250)
+
+    assert page.locator(".region-popup").count() == 0
+
+
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_persists_across_reload(
     live_server: LiveServer, page: Page
 ) -> None:

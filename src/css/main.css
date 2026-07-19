@@ -177,6 +177,12 @@
   --color-glass:          rgba(255, 255, 255, 0.85);
   --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.08);
 
+  /* MapLibre Popup glass (SNOW-174) — more translucent than --color-glass
+     so the choropleth still shows through underneath a Popup. Shared by
+     .region-popup and .community-report-popup-wrapper (static/css/map.css,
+     SNOW-419) so the two surfaces can't drift apart. */
+  --color-popup-glass:    rgba(248, 246, 240, 0.65);
+
   /* —— EAWS danger scale ————————————————————
      Exact EAWS specification colours. Do not
      adjust for brand reasons — these are a
@@ -353,6 +359,9 @@
      basemaps / dark UI (SNOW-36). */
   --color-glass:          rgba(20, 22, 26, 0.78);
   --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.35);
+
+  /* MapLibre Popup glass — see the light-mode definition above. */
+  --color-popup-glass:    rgba(20, 22, 26, 0.6);
 }
 
 

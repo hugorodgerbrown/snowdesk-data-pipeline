@@ -2019,6 +2019,20 @@ class TestCommunityReportsGeojson:
             timespec="seconds"
         )
 
+    def test_freshness_max_age_matches_cache_control_max_age(self) -> None:
+        """X-Data-Max-Age is pinned to the same window as Cache-Control.
+
+        Regression coverage: apply_freshness_headers defaults max_age to
+        24h, which would silently diverge from the endpoint's 120s
+        Cache-Control TTL unless passed explicitly.
+        """
+        FieldObservationFactory.create(observed_at=timezone.now())
+        response = Client().get(reverse("api:community_reports_geojson"))
+        cache_control_max_age = response["Cache-Control"].split("max-age=")[1]
+        assert response["X-Data-Max-Age"] == cache_control_max_age == "120"
+        # unsafe_after is deliberately omitted for non-safety-critical data.
+        assert "X-Data-Unsafe-After" not in response
+
     def test_freshness_falls_back_to_now_when_empty(self) -> None:
         """With no rows in the window, freshness falls back to 'now'."""
         before = timezone.now()

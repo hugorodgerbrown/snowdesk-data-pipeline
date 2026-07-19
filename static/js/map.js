@@ -1978,6 +1978,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       if (IS_PLAYING) return;
+      // SNOW-419: MapLibre fires every layer-scoped click handler whose
+      // layer intersects the point — there is no stopPropagation between
+      // them — so a tap on a community-reports cluster sitting over a
+      // region would otherwise ALSO select that region and pop its
+      // tooltip open underneath the cluster-zoom. The cluster has its own
+      // click handler (zoom-to-expand); let it own the tap instead.
+      const clustersLayer = map.getLayer('community-reports-clusters')
+        ? ['community-reports-clusters']
+        : [];
+      if (clustersLayer.length && map.queryRenderedFeatures(e.point, { layers: clustersLayer }).length) {
+        return;
+      }
       selectFeature(e.features[0].id);
     });
 
@@ -2013,8 +2025,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ) {
         return;
       }
+      // SNOW-419: community-reports-clusters is safe to include here — the
+      // regions-fill handler above already defers to it when both are hit,
+      // so listing it just stops a cluster tap from also reading as an
+      // "empty map area" click (which would otherwise deselect the region
+      // and close the popup out from under the cluster-zoom).
       const layers = [
-        'regions-fill', 'resorts-pin', 'favourites-pin', 'community-reports-point',
+        'regions-fill', 'resorts-pin', 'favourites-pin',
+        'community-reports-clusters', 'community-reports-point',
       ].filter((id) => map.getLayer(id));
       if (!layers.length) return;
       const features = map.queryRenderedFeatures(e.point, { layers });
@@ -2083,6 +2101,30 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }
       }).catch(() => {});
     });
+
+    // SNOW-419: tapping a cluster zooms in just far enough to break it
+    // apart (the standard MapLibre clustered-source UX) rather than
+    // opening the per-report popup a lone point would show. Guarded on
+    // the source existing since this listener is registered unconditionally
+    // at load time but the source is only added once the overlay is first
+    // enabled (see installCommunityReportsLayer / ensureOverlayLoaded).
+    // The regions-fill click handler above defers to this layer when a
+    // cluster is under the tap, so the two don't fight over the same click.
+    map.on('click', 'community-reports-clusters', (e) => {
+      if (!e.features.length) return;
+      const source = map.getSource('community-reports');
+      if (!source) return;
+      const clusterId = e.features[0].properties.cluster_id;
+      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+        map.easeTo({
+          center: e.features[0].geometry.coordinates,
+          zoom,
+        });
+      });
+    });
+    map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
 
     // SNOW-419: tapping an unclustered community-report pin opens a small
     // popup with the type label, a coarse relative time, and the region
