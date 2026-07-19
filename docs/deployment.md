@@ -32,6 +32,18 @@ the tip's required checks must already be green (reused from `main`), and
 force-pushes and deletion are blocked, so `release` can only ever move
 forward.
 
+The ruleset requires **only checks that report on a `main`-tip commit via a
+`push` trigger** (`Run tests`, `Static analysis (*)`, `Playwright smoke
+tests`, `Security audit`, and the rest). A `pull_request`-only check —
+notably `Audit public pages` (Lighthouse, see
+[`lighthouse.yml`](../.github/workflows/lighthouse.yml)) — is deliberately
+**excluded** from this ruleset: the fast-forward is a direct push with no PR,
+so that check never reports on the `release` ref and would leave the gate
+permanently at "Expected", forcing a bypass on every release. It stays
+required on the "Main branch rules" ruleset, where PRs into `main` produce
+it, so coverage is unchanged. Do not add PR-only checks to the Release-branch
+ruleset.
+
 ## Why a branch split
 
 Production is three services — the website
@@ -143,4 +155,7 @@ to `main`, or that merge deploys to production.
 4. GitHub: protect `release` with the "Release branch" ruleset — require
    status checks, block force-pushes (`non_fast_forward`) and deletion, and
    do **not** require a pull request (a fast-forward advance is a direct
-   push, not a PR merge).
+   push, not a PR merge). Require only checks that run on a `push` to
+   `main` (so they have a result on the fast-forwarded commit); leave
+   `pull_request`-only checks such as `Audit public pages` off this ruleset
+   — see "Why a branch split" above.
