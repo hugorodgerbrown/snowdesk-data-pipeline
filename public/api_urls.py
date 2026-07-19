@@ -83,6 +83,9 @@ urlpatterns = [
         name="edit_resort_save_coords",
     ),
     # SNOW-391: hosted MCP (Model Context Protocol) JSON-RPC endpoint.
-    # Final URL: POST /api/mcp/; reverses as api:mcp:endpoint.
-    path("mcp/", include(("mcp_server.urls", "mcp"), namespace="mcp")),
+    # Final URLs: POST /api/mcp/ (canonical, reverses as api:mcp:endpoint)
+    # and POST /api/mcp (slash-less alias). Mounted at "" so mcp_server.urls
+    # owns the "mcp" path segment and can register both spellings — see the
+    # module docstring there for why the slash-less alias exists.
+    path("", include(("mcp_server.urls", "mcp"), namespace="mcp")),
 ]

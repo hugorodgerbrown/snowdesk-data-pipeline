@@ -28,6 +28,13 @@ Streamable-HTTP spec permits a POST-only endpoint that returns
 Django view provides, so implementing the JSON-RPC envelope directly
 sidesteps standing up an ASGI stack for this one surface.
 
+* **Trailing slash is optional.** Both `POST /api/mcp/` (canonical) and
+  `POST /api/mcp` route to the same view. The slash-less alias exists
+  because remote MCP connectors POST `initialize` to exactly the URL the
+  user typed, and `APPEND_SLASH` cannot redirect a POST to the canonical
+  URL without dropping the body (the client replays the 301 as a GET → the
+  405 below), so a URL pasted without the slash would otherwise fail to
+  connect. See `mcp_server/urls.py`.
 * **`GET /api/mcp/`** → `405` with `Allow: POST`.
 * **CSRF-exempt** — JSON-RPC clients cannot mint CSRF tokens, and every
   tool is read-only, so the CSRF risk surface is empty. Same rationale as
