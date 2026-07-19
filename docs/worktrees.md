@@ -31,6 +31,21 @@ dev DB), causing churn on SNOW-341 and SNOW-342. Seeding from the
 committed fixture guarantees every worktree is identical to CI's data
 environment.
 
+### Factory-based alternative: `seed_test_data`
+
+`loaddata test_data` remains the bootstrap path (identical to CI). For an
+ad-hoc dev DB you can instead build the same dataset from the FactoryBoy
+factories, which also covers `ForecastPoint`/`ForecastPointWeather`/`Favourite`
+rows the JSON fixture omits:
+
+```bash
+uv run python manage.py loaddata eaws_CH resorts   # region reference data first
+uv run python manage.py seed_test_data --all --commit
+```
+
+It expects an empty/migrated DB and is not part of `bin/init-worktree`. See
+[`management-commands.md`](management-commands.md) for the flag reference.
+
 ## Compiled CSS
 
 When `static/css/output.css` is absent the script builds it too:

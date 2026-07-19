@@ -100,6 +100,39 @@ uv run python manage.py build_test_data --commit
 Flags: `--commit` (write the fixture; omit for a read-only count summary),
 `--output PATH` (default: `bulletins/fixtures/test_data.json`).
 
+### `seed_test_data` — factory-based DB seeder (local dev)
+
+An alternative to `loaddata test_data` that writes the **same dataset** straight
+into the DB named by `DJANGO_SETTINGS_MODULE` by calling the FactoryBoy factories
+in `tests/factories.py` (rather than deserialising the JSON fixture) — so a run
+exercises the factories as a side benefit. It reproduces `build_test_data`'s
+178-row bulletin layer (Bulletin/RegionBulletin/RegionDayRating/WeatherSnapshot,
+render models at `RENDER_MODEL_VERSION`, day ratings via the production service)
+and additionally seeds a small standalone set of `ForecastPoint`,
+`ForecastPointWeather`, and `Favourite` rows that the JSON fixture does not carry.
+
+Region/resort reference data is a **prerequisite** — load it first
+(`loaddata eaws_CH resorts`). The command expects an empty/migrated DB: it creates
+deterministic bulletin IDs and one `WeatherSnapshot` per (region, date), so
+re-seeding a populated DB raises a clean `CommandError`.
+
+```bash
+uv run python manage.py seed_test_data --all --commit
+```
+
+Read-only by default (prints intended counts); `--commit` persists. Exactly one of
+the selection flags is required:
+
+- `--all` — seed every model.
+- `--include MODEL [MODEL ...]` — seed only the named model(s).
+- `--exclude MODEL [MODEL ...]` — seed everything except the named model(s).
+
+Model names are case-insensitive and strongly typed against a `SeedModel`
+enumeration (`bulletin`, `regionbulletin`, `regiondayrating`, `weathersnapshot`,
+`forecastpoint`, `forecastpointweather`, `favourite`); an empty or unknown value
+lists the available models. FK prerequisites of a selected model are pulled in
+automatically even if not named.
+
 ### Region & resort fixtures (auto-loaded on deploy)
 
 `build.sh` and `build_headless.sh` run `loaddata` against all four

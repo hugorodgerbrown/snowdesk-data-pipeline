@@ -23,9 +23,23 @@ from __future__ import annotations
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import override_settings
 
-from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherSnapshot
+from bulletins.models import (
+    Bulletin,
+    ForecastPoint,
+    ForecastPointWeather,
+    RegionBulletin,
+    RegionDayRating,
+    WeatherSnapshot,
+)
 from bulletins.services.render_model import RENDER_MODEL_VERSION
+from favourites.models import Favourite
+
+# Stage-2 additions seeded outside the build_test_data layer.
+_EXPECTED_FORECAST_POINTS = 5
+_EXPECTED_FORECAST_POINT_WEATHER = 150  # 5 points × 30 April dates
+_EXPECTED_FAVOURITES = 5
 
 # The dataset build_test_data produces: 149 map-coverage + 29 CH-4115 detail.
 _EXPECTED_TOTAL = 178
@@ -70,8 +84,17 @@ class TestSelectionValidation:
             "regionbulletin",
             "regiondayrating",
             "weathersnapshot",
+            "forecastpoint",
+            "forecastpointweather",
+            "favourite",
         ):
             assert name in out
+
+    @override_settings(DEBUG=False)
+    def test_refuses_to_run_when_debug_is_false(self) -> None:
+        """The command refuses to touch a non-DEBUG (production) database."""
+        with pytest.raises(CommandError, match="DEBUG=True"):
+            call_command("seed_test_data", "--all", commit=True)
 
 
 @pytest.mark.django_db
@@ -155,6 +178,20 @@ class TestCommit:
         assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
         assert RegionDayRating.objects.count() == _EXPECTED_TOTAL
 
+    def test_include_regiondayrating_produces_ratings(self) -> None:
+        """--include regiondayrating pulls in RegionBulletin so ratings are non-zero.
+
+        apply_bulletin_day_ratings reads bulletin.regions.all() (the RegionBulletin
+        M2M); without those links it would silently create zero ratings.
+        """
+        call_command(
+            "seed_test_data", "--include", "regiondayrating", commit=True, verbosity=0
+        )
+        assert RegionDayRating.objects.count() == _EXPECTED_TOTAL
+        assert Bulletin.objects.count() == _EXPECTED_TOTAL
+        assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
+        assert WeatherSnapshot.objects.count() == 0
+
     def test_include_regionbulletin_pulls_in_bulletin_prerequisite(self) -> None:
         """--include regionbulletin auto-creates the Bulletin prerequisite."""
         call_command(
@@ -171,6 +208,52 @@ class TestCommit:
             "seed_test_data", "--include", "regionbulletin", commit=True, verbosity=1
         )
         assert "bulletin" in capsys.readouterr().out
+
+    def test_all_seeds_the_new_models(self) -> None:
+        """--all seeds the stage-2 ForecastPoint/weather/Favourite layer."""
+        call_command("seed_test_data", "--all", commit=True, verbosity=0)
+        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastPointWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
+        assert Favourite.objects.count() == _EXPECTED_FAVOURITES
+
+    def test_include_forecastpoint_only(self) -> None:
+        """--include forecastpoint seeds points but no weather or favourites."""
+        call_command(
+            "seed_test_data", "--include", "forecastpoint", commit=True, verbosity=0
+        )
+        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastPointWeather.objects.count() == 0
+        assert Favourite.objects.count() == 0
+
+    def test_include_forecastpointweather_pulls_in_forecast_point(self) -> None:
+        """--include forecastpointweather auto-creates its ForecastPoint prerequisite."""
+        call_command(
+            "seed_test_data",
+            "--include",
+            "forecastpointweather",
+            commit=True,
+            verbosity=0,
+        )
+        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastPointWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
+        assert Favourite.objects.count() == 0
+
+    def test_include_favourite_pulls_in_forecast_point(self) -> None:
+        """--include favourite auto-creates the ForecastPoint prerequisite."""
+        call_command(
+            "seed_test_data", "--include", "favourite", commit=True, verbosity=0
+        )
+        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert Favourite.objects.count() == _EXPECTED_FAVOURITES
+        assert ForecastPointWeather.objects.count() == 0
+
+    def test_favourites_reference_seeded_points(self) -> None:
+        """Each Favourite points at a seeded ForecastPoint with matching coords."""
+        call_command("seed_test_data", "--all", commit=True, verbosity=0)
+        seeded_point_ids = set(ForecastPoint.objects.values_list("pk", flat=True))
+        for favourite in Favourite.objects.select_related("forecast_point"):
+            assert favourite.forecast_point.pk in seeded_point_ids
+            assert favourite.latitude == favourite.forecast_point.latitude
 
     def test_reseeding_populated_db_errors_cleanly(self) -> None:
         """Re-seeding a populated DB raises CommandError, not a raw IntegrityError."""
