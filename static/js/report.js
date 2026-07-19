@@ -36,11 +36,32 @@
  *   Tap opens the sheet with a sign-in / sign-up CTA pointing at the
  *   sign-in page (data-signin-url). No geolocation attempt is made.
  *
+ * Submission (SNOW-420 — offline-first via the mutation queue):
+ *   The form's GET (loadForm, above) still goes through HTMX — only the
+ *   POST changed. A document-delegated ``submit`` listener on #report-form
+ *   intercepts the tap (preventDefault — the browser never submits the
+ *   form directly), stamps the hidden observed_at input with the tap-time
+ *   instant, builds the urlencoded body (including observation_type from
+ *   event.submitter, which FormData does not capture once the default
+ *   submission is prevented), and hands it to
+ *   window.pwaMutationQueue.enqueue() (SNOW-376) — captured immediately,
+ *   persisted to IndexedDB, and replayed with a stable Idempotency-Key on
+ *   reconnect. The sheet renders the confirmation partial optimistically
+ *   (cloned from the #report-confirmation-template embedded in the form
+ *   partial) right away; offline, it also reveals the "will sync" line.
+ *
  *   Error handling:
  *     htmx:responseError on the report form → showToast with server message.
+ *     Still relevant for the GET (form-load) path; the POST no longer goes
+ *     through HTMX so it can never trigger this event.
  *
  *   Cleanup:
- *     Sheet close or confirmation swap → remove the draggable marker.
+ *     Sheet close, or the optimistic confirmation render on submit, removes
+ *     the draggable marker and any outstanding MANUAL map-click handler.
+ *     The htmx:afterSwap listener below now only ever sees form-load swaps
+ *     (the confirmation swap it also handled pre-SNOW-420 no longer occurs
+ *     via HTMX) — kept as a harmless no-op rather than removed, since a
+ *     future HTMX-driven swap of #report-sheet would still want it.
  *
  * map.js is unchanged — the snowdesk:locate-request listener already does a
  * plain getCurrentPosition; report.js owns its own marker via the global MAP.
@@ -255,7 +276,81 @@
   }
 
   // ---------------------------------------------------------------------------
-  // HTMX response-error handler (covers 400/403/429 from report_submit).
+  // Report-form submit (SNOW-420) — routed through window.pwaMutationQueue
+  // instead of HTMX, so an offline tap is captured immediately, persisted to
+  // IndexedDB, and replayed with a stable Idempotency-Key on reconnect.
+  // Delegated from document so it survives HTMX swaps (the form itself is
+  // re-rendered by loadForm's HTMX GET).
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('submit', function (event) {
+    if (!event.target || event.target.id !== 'report-form') return;
+    event.preventDefault();
+
+    const form = /** @type {HTMLFormElement} */ (event.target);
+    const submitter = event.submitter;
+    // One-tap UX: every submit is triggered by a problem button carrying
+    // its own observation_type value. No submitter (or no value) means
+    // this wasn't a real problem-button tap — bail rather than send a
+    // bodyless mutation.
+    if (!submitter || !submitter.value) return;
+
+    // Stamp the tap-time instant — this is the moment the user actually
+    // observed the problem, which may differ from whenever the queued
+    // mutation eventually replays (SNOW-420).
+    const observedAtInput = form.querySelector('input[name="observed_at"]');
+    if (observedAtInput) observedAtInput.value = new Date().toISOString();
+
+    // FormData does not include submit-button name/value pairs once the
+    // default submission is prevented (submitter is not a "successful
+    // control" in that case), so observation_type is set explicitly.
+    // Every other field (csrfmiddlewaretoken, lat, lon, location_source,
+    // gps_*, accuracy_m, observed_at) is a plain hidden input FormData
+    // already captures.
+    const params = new URLSearchParams(new FormData(form));
+    params.set('observation_type', submitter.value);
+    const body = params.toString();
+
+    const operation = {
+      method: 'POST',
+      url: form.getAttribute('action'),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        // Mandatory — the replay is a plain fetch, and report_submit is
+        // @require_htmx. CSRF rides via the body's csrfmiddlewaretoken
+        // plus the same-origin session cookie (fetch defaults to
+        // credentials: 'same-origin').
+        'HX-Request': 'true',
+      },
+      body: body,
+    };
+
+    if (!window.pwaMutationQueue) {
+      showToast('Could not save your report on this device — please try again.');
+      return;
+    }
+    window.pwaMutationQueue.enqueue(operation).catch(function () {});
+
+    // Optimistic confirmation — clone the template embedded in the form
+    // partial rather than waiting for the queued mutation to replay.
+    const template = document.getElementById('report-confirmation-template');
+    if (template) {
+      sheet.innerHTML = '';
+      sheet.appendChild(template.content.cloneNode(true));
+      if (!navigator.onLine) {
+        const pending = sheet.querySelector('[data-report-pending]');
+        if (pending) pending.removeAttribute('hidden');
+      }
+    }
+
+    removeMarker();
+    removeMapClickHandler();
+  });
+
+  // ---------------------------------------------------------------------------
+  // HTMX response-error handler (covers non-2xx responses to the form's GET
+  // load). The POST no longer goes through HTMX (see the submit handler
+  // above), so this can now only ever fire for the form-load request.
   // Delegated from document so it survives HTMX swaps.
   // ---------------------------------------------------------------------------
 
@@ -297,8 +392,13 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Confirmation swap cleanup — remove the marker when the thank-you partial
-  // swaps in (HTMX swaps #report-sheet innerHTML).
+  // Confirmation swap cleanup (SNOW-420: now effectively dead but harmless).
+  // Pre-SNOW-420 this covered the confirmation partial swapping in via HTMX;
+  // the confirmation is now rendered by the submit handler above (which does
+  // its own marker/handler cleanup directly), so #report-sheet is only ever
+  // swapped by loadForm's HTMX GET — a form re-render, not a confirmation —
+  // and the branch below never fires in practice. Left in place rather than
+  // removed in case a future HTMX-driven swap of #report-sheet needs it.
   // ---------------------------------------------------------------------------
 
   document.addEventListener('htmx:afterSwap', function (event) {
