@@ -11,8 +11,8 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   Favourite, returns the updated partial.
 - ``favourite_delete`` (POST) — owner-checked deletion of a Favourite.
 - ``favourite_card`` (GET) — owner-checked detail card: name/coords,
-  altitude, the containing region's current danger rating, and the
-  point's weather (SNOW-415).
+  altitude, the containing region's current danger rating, and a 7-day
+  point forecast panel with a near-term hourly detail (SNOW-415, SNOW-417).
 - ``favourite_list`` (GET) — the requesting user's own favourites,
   rendered for the manage page's "My favourites" section (SNOW-415).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
@@ -52,8 +52,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
-from bulletins.models import RegionDayRating
+from bulletins.models import ForecastPointWeather, RegionDayRating
+from bulletins.services.weather_display import build_point_forecast_panel
+from bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
 from core.decorators import require_htmx
+from core.freshness import apply_freshness_headers
 from favourites.models import Favourite
 from favourites.services import (
     FavouriteLimitReached,
@@ -62,7 +65,7 @@ from favourites.services import (
 )
 
 if TYPE_CHECKING:
-    from bulletins.services.weather_display import WeatherDisplay
+    from bulletins.services.weather_display import ForecastPanel
 
 logger = logging.getLogger(__name__)
 
@@ -120,33 +123,42 @@ def _parse_latlon(
         return None
 
 
-def _point_weather_display(
+def _point_forecast_panel(
     favourite: Favourite, now: datetime.datetime
-) -> "WeatherDisplay | None":
-    """Return the point-accurate weather display for a favourite, or None.
+) -> tuple["ForecastPanel | None", datetime.datetime | None]:
+    """Return the multi-day point forecast panel for a favourite, or None.
 
-    A seam for SNOW-416 (``ForecastPointWeather``), which has not landed
-    yet. Always returns ``None`` today, so ``_favourite_card.html`` falls
-    back to its explicit "Forecast coming soon" empty state. Deliberately
-    does **not** fall back to the region-centroid ``WeatherSnapshot`` —
-    that would misrepresent the point's own conditions, which is exactly
-    what this feature exists to fix.
-
-    Once SNOW-416 lands, wire this up to fetch the favourite's
-    ``ForecastPointWeather`` snapshot and pass it through
-    ``bulletins.services.weather_display.build_weather_display``.
+    Queries the forward-looking ``ForecastPointWeather`` window for the
+    favourite's ``forecast_point`` (today onwards, capped at
+    ``POINT_FORECAST_DAYS`` rows) and builds the panel context via
+    ``build_point_forecast_panel``. Deliberately does **not** fall back to
+    the region-centroid ``WeatherSnapshot`` — that would misrepresent the
+    point's own conditions, which is exactly what this feature exists to
+    fix. Returns ``(None, None)`` when no rows have been fetched yet, so
+    ``_favourite_card.html`` falls back to its "Forecast coming soon" empty
+    state.
 
     Args:
-        favourite: The Favourite whose point weather is being resolved.
-        now: The reference instant for the day/night decision (unused
-            today; kept so the SNOW-416 implementation can adopt this
-            signature unchanged).
+        favourite: The Favourite whose point forecast is being resolved.
+        now: The reference instant for each day's day/night icon decision.
 
     Returns:
-        ``None``, always, until SNOW-416 lands.
+        A ``(ForecastPanel | None, latest_fetched_at)`` pair — the panel
+        context (or ``None`` when no rows exist), and the most recent
+        ``fetched_at`` across the queried rows (or ``None`` when there are
+        no rows) for the caller's freshness-header stamp. Computed
+        in-memory from the already-materialised row list rather than a
+        second ``aggregate(Max(...))`` query.
 
     """
-    return None
+    snapshots = list(
+        ForecastPointWeather.objects.forecast_for_point(
+            favourite.forecast_point, timezone.localdate()
+        )[:POINT_FORECAST_DAYS]
+    )
+    panel = build_point_forecast_panel(snapshots, now)
+    latest_fetched_at = max((row.fetched_at for row in snapshots), default=None)
+    return panel, latest_fetched_at
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +308,14 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     the regional danger rating and a link to the evergreen bulletin page.
     When ``region`` is ``None`` (the pin falls outside every known
     boundary), the card renders a "no bulletin coverage here" note
-    instead. The point's own weather comes from
-    ``_point_weather_display``, which returns ``None`` until SNOW-416
-    lands (empty "coming soon" state).
+    instead. The point's own forecast comes from ``_point_forecast_panel``,
+    which returns ``None`` until at least one ``ForecastPointWeather`` row
+    has been fetched for the point (empty "coming soon" state).
+
+    Weather is safety-adjacent, so the response carries the standard
+    freshness headers (``apply_freshness_headers``, default 24h/48h
+    thresholds), stamped with the latest fetched row's ``fetched_at`` — or
+    ``timezone.now()`` when no forecast rows exist yet.
 
     Args:
         request: The incoming HTMX GET request.
@@ -332,18 +349,20 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
         # No date arg — the evergreen "today" bulletin URL.
         bulletin_url = favourite.region.get_absolute_url()
 
-    weather_display = _point_weather_display(favourite, timezone.now())
+    forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, timezone.now())
 
-    return render(
+    response = render(
         request,
         "favourites/partials/_favourite_card.html",
         {
             "favourite": favourite,
             "day_rating": day_rating,
             "bulletin_url": bulletin_url,
-            "weather_display": weather_display,
+            "forecast_panel": forecast_panel,
         },
     )
+    apply_freshness_headers(response, latest_fetched_at or timezone.now())
+    return response
 
 
 @require_htmx

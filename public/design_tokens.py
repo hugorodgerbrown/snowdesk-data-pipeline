@@ -40,6 +40,7 @@ from public._component_fixtures import (
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
+    FAVOURITE_FORECAST_PANEL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1023,6 +1024,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_chip.html",
         variants=CHIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="favourite-forecast-panel",
+        label="Favourite forecast panel",
+        description=(
+            "Multi-day point forecast panel on the favourite detail card "
+            "(SNOW-417): a compact day strip (weekday, icon, hi/lo, "
+            "snowfall chip) plus an expandable hourly detail for the "
+            "near-term days, built from _collapsible_panel.html + _chip.html."
+        ),
+        kind="components",
+        partial="favourites/partials/_favourite_forecast_panel.html",
+        variants=FAVOURITE_FORECAST_PANEL_VARIANTS,
         panel_layout="stack",
     ),
 )
