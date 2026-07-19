@@ -56,13 +56,18 @@ from bulletins.models import ForecastPointWeather, RegionDayRating
 from bulletins.services.weather_display import build_point_forecast_panel
 from bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
 from core.decorators import require_htmx
-from core.freshness import apply_freshness_headers
+from core.freshness import (
+    DEFAULT_UNSAFE_AFTER_SECONDS,
+    apply_freshness_headers,
+    freshness_state as compute_freshness_state,
+)
 from favourites.models import Favourite
 from favourites.services import (
     FavouriteLimitReached,
     create_favourite,
     delete_favourite,
 )
+from public.templatetags.snowdesk_time import danger_level_digit
 
 if TYPE_CHECKING:
     from bulletins.services.weather_display import ForecastPanel
@@ -159,6 +164,106 @@ def _point_forecast_panel(
     panel = build_point_forecast_panel(snapshots, now)
     latest_fetched_at = max((row.fetched_at for row in snapshots), default=None)
     return panel, latest_fetched_at
+
+
+def _card_freshness(
+    day_rating: RegionDayRating | None,
+    weather_fetched_at: datetime.datetime | None = None,
+) -> tuple[datetime.datetime, int | None]:
+    """Resolve the ``(generated_at, unsafe_after)`` freshness pair for a favourite.
+
+    Collects whichever of the rating / weather timestamps is present and
+    uses the OLDER one as ``generated_at`` — a record mixing both
+    constituents is only as fresh as its stalest one. Falls back to
+    ``timezone.now()`` when neither is present (nothing to attach a real
+    timestamp to — a "no coverage, no weather yet" favourite is trivially
+    "current"). ``unsafe_after`` only governs the safety-critical rating
+    half: it is ``DEFAULT_UNSAFE_AFTER_SECONDS`` whenever a rating exists,
+    and ``None`` otherwise (weather is non-safety and never escalates to
+    "unsafe" per the spec's freshness contract).
+
+    Args:
+        day_rating: Today's RegionDayRating for the favourite's region,
+            or None.
+        weather_fetched_at: The latest point-weather ``fetched_at`` (from
+            ``_point_forecast_panel``), or None when no forecast rows exist.
+
+    Returns:
+        ``(generated_at, unsafe_after)``.
+
+    """
+    present = [
+        ts
+        for ts in (
+            day_rating.updated_at if day_rating else None,
+            weather_fetched_at,
+        )
+        if ts is not None
+    ]
+    generated_at = min(present) if present else timezone.now()
+    unsafe_after = DEFAULT_UNSAFE_AFTER_SECONDS if day_rating else None
+    return generated_at, unsafe_after
+
+
+def _build_favourite_cache_record(
+    favourite: Favourite,
+    day_rating: RegionDayRating | None,
+    bulletin_url: str,
+    generated_at: datetime.datetime,
+    unsafe_after: int | None,
+) -> dict[str, Any]:
+    """Build the JSON-serialisable client-cache record for one favourite.
+
+    Shared by ``favourite_card`` and ``favourite_list`` so
+    ``static/js/favourites_offline.js`` sees one consistent shape
+    regardless of which endpoint populated ``data:favourites``. Each
+    record carries its own ``generated_at`` / ``unsafe_after_seconds`` so
+    the offline client can classify every cached pin independently
+    (SNOW-418).
+
+    Args:
+        favourite: The Favourite the record describes.
+        day_rating: Today's RegionDayRating for favourite.region, or None.
+        bulletin_url: Evergreen bulletin URL for favourite.region, or ""
+            when favourite.region is None.
+        generated_at: The freshness ``generated_at`` instant for this
+            record (from ``_card_freshness``).
+        unsafe_after: Seconds after which this record's rating is
+            EXPIRED, or None when there is no rating to expire.
+
+    Returns:
+        A dict matching the SNOW-418 cache-record shape.
+
+    """
+    region_payload: dict[str, Any] | None = None
+    if favourite.region is not None:
+        region_payload = {
+            "id": favourite.region.pk,
+            "name": favourite.region.name,
+            "bulletin_url": bulletin_url,
+        }
+    rating_payload: dict[str, Any] | None = None
+    if day_rating is not None:
+        rating_payload = {
+            "max_rating": day_rating.max_rating,
+            "max_subdivision": day_rating.max_subdivision,
+            "digit": danger_level_digit(day_rating.max_rating),
+        }
+    return {
+        "uuid": str(favourite.uuid),
+        "name": favourite.name,
+        "latitude": favourite.latitude,
+        "longitude": favourite.longitude,
+        "elevation": favourite.elevation,
+        "region": region_payload,
+        "rating": rating_payload,
+        # Offline weather caching is out of scope for SNOW-418: the SNOW-417
+        # forecast panel is re-fetched online only, so the cached record
+        # carries no weather and the offline card omits the forecast.
+        "weather": None,
+        "generated_at": generated_at.isoformat(timespec="seconds"),
+        "unsafe_after_seconds": unsafe_after,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -312,10 +417,16 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     which returns ``None`` until at least one ``ForecastPointWeather`` row
     has been fetched for the point (empty "coming soon" state).
 
-    Weather is safety-adjacent, so the response carries the standard
-    freshness headers (``apply_freshness_headers``, default 24h/48h
-    thresholds), stamped with the latest fetched row's ``fetched_at`` — or
-    ``timezone.now()`` when no forecast rows exist yet.
+    Stamps the ``X-Data-Generated-At`` / ``X-Data-Max-Age`` /
+    ``X-Data-Unsafe-After`` freshness headers (SNOW-370 / SNOW-418) via
+    ``_card_freshness``: ``generated_at`` is the OLDER of the rating's
+    ``updated_at`` and the latest forecast row's ``fetched_at`` (so the
+    stamp is never fresher than the card's stalest part), and
+    ``unsafe_after`` is the 48h horizon only when a safety-critical rating
+    is present. Threads a ``cache_payload`` JSON sidecar + freshness
+    indicator into the template context so
+    ``static/js/favourites_offline.js`` can cache this pin for offline
+    reads.
 
     Args:
         request: The incoming HTMX GET request.
@@ -351,6 +462,15 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, timezone.now())
 
+    # The card mixes a safety-critical rating and (non-safety) point weather.
+    # generated_at is the OLDER of the two present constituents; unsafe_after
+    # is governed by the rating alone (SNOW-418).
+    generated_at, unsafe_after = _card_freshness(day_rating, latest_fetched_at)
+    state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
+    cache_payload = _build_favourite_cache_record(
+        favourite, day_rating, bulletin_url, generated_at, unsafe_after
+    )
+
     response = render(
         request,
         "favourites/partials/_favourite_card.html",
@@ -359,10 +479,12 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
             "day_rating": day_rating,
             "bulletin_url": bulletin_url,
             "forecast_panel": forecast_panel,
+            "cache_payload": cache_payload,
+            "freshness_state": state,
+            "freshness_generated_at": generated_at,
         },
     )
-    apply_freshness_headers(response, latest_fetched_at or timezone.now())
-    return response
+    return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
 
 
 @require_htmx
@@ -372,6 +494,14 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
 
     Powers the manage page's "My favourites" section, which lazy-loads
     this endpoint via ``hx-get`` on page load.
+
+    Batches today's ``RegionDayRating`` lookup for every favourite's
+    region into a single query (never N+1 as the favourite count grows),
+    stamps the freshness headers (SNOW-418) using the oldest present
+    rating's ``updated_at`` (or ``now()`` when none exist), and threads a
+    ``roster_payload`` JSON sidecar into the template context so
+    ``static/js/favourites_offline.js`` can cache the whole list for
+    offline reads.
 
     Args:
         request: The incoming HTMX GET request.
@@ -385,12 +515,49 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
-    favourites = Favourite.objects.for_user(request.user)
+    favourites = list(Favourite.objects.for_user(request.user).select_related("region"))
 
-    return render(
+    today = timezone.localdate()
+    region_ids = [f.region_id for f in favourites if f.region_id is not None]
+    ratings_by_region_id: dict[int, RegionDayRating] = {
+        rating.region_id: rating
+        for rating in RegionDayRating.objects.filter(
+            region_id__in=region_ids, date=today
+        )
+    }
+
+    roster_payload: list[dict[str, Any]] = []
+    present_ratings: list[RegionDayRating] = []
+    for favourite in favourites:
+        day_rating = (
+            ratings_by_region_id.get(favourite.region_id)
+            if favourite.region_id is not None
+            else None
+        )
+        bulletin_url = favourite.region.get_absolute_url() if favourite.region else ""
+        generated_at, unsafe_after = _card_freshness(day_rating)
+        roster_payload.append(
+            _build_favourite_cache_record(
+                favourite, day_rating, bulletin_url, generated_at, unsafe_after
+            )
+        )
+        if day_rating is not None:
+            present_ratings.append(day_rating)
+
+    response_generated_at = (
+        min(rating.updated_at for rating in present_ratings)
+        if present_ratings
+        else timezone.now()
+    )
+    response_unsafe_after = DEFAULT_UNSAFE_AFTER_SECONDS if present_ratings else None
+
+    response = render(
         request,
         "favourites/partials/_favourite_list.html",
-        {"favourites": favourites},
+        {"favourites": favourites, "roster_payload": roster_payload},
+    )
+    return apply_freshness_headers(
+        response, response_generated_at, unsafe_after=response_unsafe_after
     )
 
 
