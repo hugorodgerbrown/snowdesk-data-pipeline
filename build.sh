@@ -18,9 +18,10 @@ uv sync --active --no-dev --frozen
 npm install
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 
-# GeoIP — download GeoLite2-City.mmdb from MaxMind.  No-ops when
-# MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY are unset or when MaxMind is
-# temporarily unreachable and a stale DB already exists on disk.
+# GeoIP — download GeoLite2-City.mmdb from MaxMind. Best-effort: retries
+# transient failures (429 rate-limit / 5xx) with backoff and never blocks
+# the deploy. When credentials are unset or MaxMind stays unreachable it
+# continues with GeoIP disabled (geo fields go empty). See the script header.
 ./bin/fetch-geoip-data
 
 python manage.py collectstatic --no-input
