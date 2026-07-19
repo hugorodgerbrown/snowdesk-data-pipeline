@@ -92,6 +92,13 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.favourite.created",
         "map.favourite.deleted",
         "map.favourite.overlay_toggled",
+        # Community reports overlay (SNOW-419) — anonymised, clustered
+        # FieldObservation pins on /map/. Emitted by static/js/map.js's
+        # overlay-toggle handler and the community-reports-point click
+        # handler. Deliberately no location/identity data on the marker-
+        # tapped event — see the geojson endpoint's anonymisation contract.
+        "map.community_reports.overlay_toggled",
+        "map.community_reports.marker_tapped",
     }
 )
 

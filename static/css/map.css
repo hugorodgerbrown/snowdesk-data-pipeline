@@ -1344,3 +1344,37 @@
     background: var(--color-glass);
     color: var(--color-text-1);
 }
+
+/* SNOW-419: community-reports popup — a small, DOM-built card shown on
+ * tapping an unclustered community-report pin (static/js/map.js). Reuses
+ * the same frosted-glass chrome as .region-popup for visual consistency
+ * with the region tooltip, but has no data-level border colour since a
+ * report has no danger rating. */
+.community-report-popup-wrapper .maplibregl-popup-content {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(248, 246, 240, 0.65);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 2px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    box-shadow: var(--shadow-glass, 0 4px 16px rgba(0, 0, 0, 0.12));
+    color: var(--color-text-1, #1a1a1a);
+    font-family: var(--sans);
+    min-width: 160px;
+}
+
+.dark .community-report-popup-wrapper .maplibregl-popup-content {
+    background: rgba(20, 22, 26, 0.6);
+}
+
+.community-report-popup__type {
+    font-weight: 600;
+    font-size: 14px;
+    padding-right: 20px;
+}
+
+.community-report-popup__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-text-2, #5f5e5a);
+}
