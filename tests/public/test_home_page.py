@@ -24,7 +24,6 @@ import datetime
 import pytest
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import AnonymousUser
-from django.core.management import call_command
 from django.http import HttpRequest
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
@@ -44,6 +43,7 @@ from tests.factories import (
     SubRegionFactory,
     SubscriberFactory,
 )
+from tests.seeding import seed_test_dataset
 
 
 @pytest.mark.django_db
@@ -494,17 +494,17 @@ class TestMapRedirect:
         assert 'id="home-intro"' in content
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_sample_bulletin_url_returns_200() -> None:
     """
     The sample-bulletin URL (CH-4115 2026-02-17) returns HTTP 200 after
-    loading test_data.
+    seeding the test dataset.
 
     This verifies the contract stated in the plan: the CTA link on the
     homepage intro overlay never lands on a 404 or "No bulletin available"
-    page when the fixture data is loaded.
+    page when the dataset is seeded.
     """
-    call_command("loaddata", "test_data", verbosity=0)
+    seed_test_dataset()
     client = Client()
     url = reverse(
         "public:bulletin_date",

@@ -15,13 +15,14 @@ Fixtures defined here:
     handler rejects.
 
 ``_load_test_data``
-    Function-scoped fixture that loads ``bulletins/fixtures/test_data.json``
-    via Django's ``loaddata`` command before each e2e test.  The load
-    happens inside ``django_db_blocker.unblock()`` after the ``transactional_db``
-    fixture has flushed the database (which it does at the start of every
+    Function-scoped fixture that seeds the navigable test dataset (via
+    ``seed_test_dataset`` — ``loaddata eaws_CH resorts`` + ``seed_test_data
+    --all --commit``) before each e2e test.  The seed happens inside
+    ``django_db_blocker.unblock()`` after the ``transactional_db`` fixture has
+    flushed the database (which it does at the start of every
     transaction-enabled test).  The canonical bulletin URL
-    ``/ch-4115/martigny-verbier/2026-04-08/`` is pre-seeded in that
-    fixture and is used by the share-button smoke test.
+    ``/ch-4115/martigny-verbier/2026-04-08/`` is present in the seeded data
+    and is used by the share-button smoke test.
 
     Why function-scoped rather than session-scoped: pytest-django's
     ``transactional_db`` fixture (which ``live_server`` implicitly requests
@@ -64,13 +65,13 @@ import pytest
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.core.management import call_command
 from django.test import Client
 from playwright.sync_api import BrowserContext, Page
 from pytest_django.live_server_helper import LiveServer
 
 from accounts.models import Subscriber
 from tests.factories import SubscriberFactory
+from tests.seeding import seed_test_dataset
 
 # Kept local (not imported from a test file) so this conftest has no
 # dependency on any single test module's internals. Matches the DB name
@@ -94,7 +95,11 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
 
 @pytest.fixture()
 def _load_test_data(django_db_blocker: Any) -> None:
-    """Load the test_data fixture before each e2e test.
+    """Seed the navigable test dataset before each e2e test.
+
+    Builds the dataset via ``seed_test_dataset`` (``loaddata eaws_CH resorts`` +
+    ``seed_test_data --all --commit``) — the factory path that replaced the old
+    ``loaddata test_data`` fixture.
 
     Must be function-scoped because ``transactional_db`` (used implicitly
     by ``live_server``) calls ``flush`` at the start of every test, wiping
@@ -103,7 +108,7 @@ def _load_test_data(django_db_blocker: Any) -> None:
     server thread when the test body executes.
     """
     with django_db_blocker.unblock():
-        call_command("loaddata", "test_data", verbosity=0)
+        seed_test_dataset()
     # The ratings API caches its payload server-side (cache.get_or_set keyed on
     # country/date). LocMemCache persists across tests in one process, so a
     # prior test that hit /api/ratings/ against the empty (pre-load) DB would

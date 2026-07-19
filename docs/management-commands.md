@@ -74,31 +74,47 @@ independently on their own triggers. The weather job fires less frequently
 than bulletin ingestion, so by design the weather backstop typically runs
 after bulletin data has already been refreshed for that hour.
 
-### `test_data` fixture (local dev and CI)
+### `seed_test_data` — build the navigable test dataset (local dev and CI)
 
-A single `loaddata test_data` invocation brings a freshly migrated DB to a
-fully navigable state — no additional steps required. The fixture bundles:
+Building the test dataset with the FactoryBoy factories in `tests/factories.py`
+is **the default** way to populate a fresh dev/CI database (it replaced the old
+`build_test_data` + `loaddata test_data` JSON-fixture path). Running the factories
+against a live DB exercises them as a side benefit.
 
-- All 9 CH MajorRegions, 21 CH SubRegions, 149 CH MicroRegions, and 148
-  CH Resorts.
-- One `Bulletin` + `RegionBulletin` + `RegionDayRating` + `WeatherSnapshot`
-  per MicroRegion for 2026-04-08 (map-coverage layer).
-- Full April 2026 (2026-04-01 – 2026-04-30) for CH-4115 (Martigny-Verbier),
-  giving the calendar a 30-day colour gradient.
-- All bulletins have `render_model_version = 4`; no `rebuild_render_models`
-  step is needed after loading.
-
-The canonical preview URL after loading is `/ch-4115/martigny-verbier/2026-04-08/`.
-
-To regenerate (after a schema change, `RENDER_MODEL_VERSION` bump, or
-fixture-shape change):
+Load the region/resort reference data first, then seed:
 
 ```bash
-uv run python manage.py build_test_data --commit
+uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py seed_test_data --all --commit
 ```
 
-Flags: `--commit` (write the fixture; omit for a read-only count summary),
-`--output PATH` (default: `bulletins/fixtures/test_data.json`).
+This brings a freshly migrated DB to a fully navigable state:
+
+- One `Bulletin` + `RegionBulletin` + `RegionDayRating` + `WeatherSnapshot` per
+  CH MicroRegion for 2026-04-08 (the map-coverage layer), plus full April 2026
+  for CH-4115 (Martigny-Verbier) — 178 of each model.
+- All bulletins carry render models at `RENDER_MODEL_VERSION` (day ratings via the
+  production `apply_bulletin_day_ratings` service); no rebuild step is needed.
+- A small standalone `ForecastPoint` / `ForecastPointWeather` / `Favourite` set.
+
+The canonical preview URL after seeding is `/ch-4115/martigny-verbier/2026-04-08/`.
+
+Read-only by default (prints intended counts); `--commit` persists. It refuses to
+run when `DEBUG=False` and expects an empty/migrated DB — it creates deterministic
+bulletin IDs and one `WeatherSnapshot` per (region, date), so re-seeding a
+populated DB raises a clean `CommandError`. Exactly one selection flag is required:
+
+- `--all` — seed every model.
+- `--include MODEL [MODEL ...]` — seed only the named model(s).
+- `--exclude MODEL [MODEL ...]` — seed everything except the named model(s).
+
+Model names are case-insensitive and strongly typed against a `SeedModel`
+enumeration (`bulletin`, `regionbulletin`, `regiondayrating`, `weathersnapshot`,
+`forecastpoint`, `forecastpointweather`, `favourite`); an empty or unknown value
+lists the available models. FK prerequisites of a selected model are pulled in
+automatically even if not named. The dataset shape (coverage, CAAML template,
+danger gradient) lives in module-level helpers in the command; row values come
+from the factories.
 
 ### Region & resort fixtures (auto-loaded on deploy)
 
@@ -672,9 +688,11 @@ Once complete, open a bulletin page to verify:
 
 ### Fully-offline alternative (no server required)
 
-Load the committed test fixture, which covers the Martigny-Verbier region
-for April 2026 and is suitable for most UI work:
+Seed the navigable dataset from the factories, which covers the
+Martigny-Verbier region for April 2026 plus map-coverage bulletins and is
+suitable for most UI work:
 
 ```bash
-uv run python manage.py loaddata bulletins/fixtures/test_data.json
+uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py seed_test_data --all --commit
 ```

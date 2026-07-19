@@ -168,8 +168,9 @@ from tests using these fixtures:
 
 ### `_load_test_data` (in `conftest.py`)
 
-Function-scoped fixture that runs `call_command("loaddata", "test_data")`
-under `django_db_blocker.unblock()`.  It must be function-scoped (not
+Function-scoped fixture that seeds the navigable dataset via
+`seed_test_dataset()` (`loaddata eaws_CH resorts` + `seed_test_data --all
+--commit`) under `django_db_blocker.unblock()`.  It must be function-scoped (not
 session-scoped) because pytest-django's `transactional_db` fixture (which
 `live_server` implicitly requests) calls `flush` at the start of every test,
 wiping any data loaded at session setup time.

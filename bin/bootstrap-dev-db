@@ -17,9 +17,10 @@
 #   ./bin/bootstrap-dev-db
 #
 # Fully-offline alternative (no server required):
-#   uv run python manage.py loaddata bulletins/fixtures/test_data.json
-# That loads the committed test fixture which covers the Martigny-Verbier
-# region for April 2026 and is suitable for most UI work.
+#   uv run python manage.py loaddata eaws_CH resorts
+#   uv run python manage.py seed_test_data --all --commit
+# That builds the navigable test dataset (Martigny-Verbier for April 2026,
+# plus map-coverage bulletins) from the factories and is suitable for most UI work.
 
 set -o errexit
 
