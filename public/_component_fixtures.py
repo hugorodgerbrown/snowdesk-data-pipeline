@@ -2246,3 +2246,92 @@ RATING_BLOCK_ALBINA_BAND_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
 )
+
+
+# Favourite forecast panel (SNOW-417) ----------------------------------------
+# One variant: a 3-day window mirroring build_point_forecast_panel's shape —
+# two near-term days carry an hourly series (exercising the expandable
+# _collapsible_panel.html detail), the third carries none (exercising the
+# "no hourly" branch of the compact day strip alone).
+
+
+def _build_favourite_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
+    """Build a representative ForecastPanel fixture for the component library."""
+    days = (
+        {
+            "date": datetime.date(2026, 5, 1),
+            "weekday_label": "Fri",
+            "icon_bucket": "light_snow",
+            "icon_filename": "light_snow-day.svg",
+            "condition_label": "Light snow",
+            "temp_max": 4.0,
+            "temp_min": -3.0,
+            "snowfall_sum": 12.0,
+            "freezing_level_height": 1800.0,
+            "hourly": [
+                {
+                    "time": "2026-05-01T06:00",
+                    "temperature_2m": -2.0,
+                    "snowfall": 0.5,
+                    "precipitation": 0.5,
+                    "wind_speed_10m": 10.0,
+                    "wind_gusts_10m": 20.0,
+                    "freezing_level_height": 1700.0,
+                },
+                {
+                    "time": "2026-05-01T12:00",
+                    "temperature_2m": 1.0,
+                    "snowfall": 0.0,
+                    "precipitation": 0.0,
+                    "wind_speed_10m": 14.0,
+                    "wind_gusts_10m": 28.0,
+                    "freezing_level_height": 1800.0,
+                },
+            ],
+        },
+        {
+            "date": datetime.date(2026, 5, 2),
+            "weekday_label": "Sat",
+            "icon_bucket": "clear",
+            "icon_filename": "clear-day.svg",
+            "condition_label": "Clear",
+            "temp_max": 6.0,
+            "temp_min": -1.0,
+            "snowfall_sum": 0.0,
+            "freezing_level_height": 2000.0,
+            "hourly": [
+                {
+                    "time": "2026-05-02T06:00",
+                    "temperature_2m": -1.0,
+                    "snowfall": 0.0,
+                    "precipitation": 0.0,
+                    "wind_speed_10m": 8.0,
+                    "wind_gusts_10m": 16.0,
+                    "freezing_level_height": 1950.0,
+                },
+            ],
+        },
+        {
+            "date": datetime.date(2026, 5, 3),
+            "weekday_label": "Sun",
+            "icon_bucket": "partly_cloudy",
+            "icon_filename": "partly_cloudy-day.svg",
+            "condition_label": "Partly cloudy",
+            "temp_max": 5.0,
+            "temp_min": -2.0,
+            "snowfall_sum": 2.0,
+            "freezing_level_height": 1900.0,
+            "hourly": [],
+        },
+    )
+    return (
+        {
+            "caption": "7-day strip with near-term hourly detail",
+            "context": {"panel": {"days": days}},
+        },
+    )
+
+
+FAVOURITE_FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_favourite_forecast_panel_variants()
+)

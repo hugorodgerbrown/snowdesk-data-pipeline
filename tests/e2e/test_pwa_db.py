@@ -1,9 +1,11 @@
 """
 tests/e2e/test_pwa_db.py — Playwright tests for static/js/db.js (SNOW-375).
 
-Covers the four contracts from the SNOW-375 scoping comment:
+Covers the four contracts from the SNOW-375 scoping comment, plus the
+SNOW-418 schema-v2 bump:
 
-1. Fresh open — all four static object stores exist at version 1.
+1. Fresh open — all five static object stores (including SNOW-418's
+   ``data:favourites``) exist at version 2.
 2. Round-trip — put / get / delete / getAll / count / clear behave on
    ``queue:events``.
 3. ``context()`` returns the expected eight-field envelope with correct
@@ -11,6 +13,9 @@ Covers the four contracts from the SNOW-375 scoping comment:
 4. Reset Required — force a migration failure and assert
    ``isResetRequired()`` becomes true, the overlay is revealed, and the
    next ``open()`` rejects.
+5. Schema upgrade — a pre-existing version-1 DB (missing
+   ``data:favourites``) is migrated to version 2 with the new store
+   added, without disturbing existing stores' data.
 
 All tests navigate to ``/`` (map-as-homepage). db.js is loaded from
 base.html via ``<script defer>`` — Playwright's ``domcontentloaded``
@@ -48,6 +53,8 @@ def browser_type_launch_args(
 
 DB_NAME = "snowdesk-pwa-v1"
 STATIC_STORES = ["queue:mutations", "queue:events", "meta:sync", "meta:app"]
+# SNOW-418 (schema v2) — added alongside the four version-1 stores above.
+V2_STORES = [*STATIC_STORES, "data:favourites"]
 
 
 def _open_and_wait(page: Page, live_server_url: str) -> None:
@@ -93,12 +100,12 @@ def _delete_db(page: Page) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 1. Fresh open creates every static store at version 1.
+# 1. Fresh open creates every static store at version 2.
 # ---------------------------------------------------------------------------
 
 
 def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> None:
-    """After a fresh open() the four static stores exist at version 1."""
+    """After a fresh open() all five stores exist at version 2 (SNOW-418)."""
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
@@ -111,8 +118,8 @@ def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> N
             };
           }"""
     )
-    assert stores["version"] == 1
-    assert stores["names"] == sorted(STATIC_STORES)
+    assert stores["version"] == 2
+    assert stores["names"] == sorted(V2_STORES)
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +286,67 @@ def test_reset_required_on_migration_failure(
           }"""
     )
     assert still_rejected is True
+
+
+# ---------------------------------------------------------------------------
+# 5. Schema upgrade — a pre-existing v1 DB gains data:favourites (SNOW-418).
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_from_v1_adds_data_favourites(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A pre-existing version-1 DB (four stores, no ``data:favourites``) is
+    migrated to version 2 by db.js's own ``_runMigrations`` on the next
+    ``open()`` — the new store is added and the four original stores
+    (with any of their existing data) are left untouched.
+    """
+    _open_and_wait(page, live_server.url)
+    _delete_db(page)
+
+    # Simulate a pre-SNOW-418 client: open at version 1 with only the four
+    # original stores, and write one row into queue:events so we can prove
+    # the upgrade didn't wipe existing data.
+    seeded = page.evaluate(
+        """async (name) => {
+            const db = await new Promise((resolve, reject) => {
+              const req = indexedDB.open(name, 1);
+              req.onupgradeneeded = (evt) => {
+                const d = evt.target.result;
+                d.createObjectStore('queue:mutations', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('queue:events', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('meta:sync', { keyPath: 'resource' });
+                d.createObjectStore('meta:app', { keyPath: 'key' });
+              };
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            const putId = await new Promise((resolve, reject) => {
+              const tx = db.transaction('queue:events', 'readwrite');
+              const req = tx.objectStore('queue:events').put({ event: 'pre-existing' });
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            db.close();
+            return putId;
+          }""",
+        DB_NAME,
+    )
+    assert seeded == 1
+
+    # Now let db.js open the same DB — its _runMigrations upgrade branch
+    # must add data:favourites without disturbing the seeded row.
+    result = page.evaluate(
+        """async () => {
+            const db = await window.pwaDb.open();
+            const row = await window.pwaDb.get('queue:events', 1);
+            return {
+              version: db.version,
+              names: Array.from(db.objectStoreNames).sort(),
+              row,
+            };
+          }"""
+    )
+    assert result["version"] == 2
+    assert result["names"] == sorted(V2_STORES)
+    assert result["row"] == {"id": 1, "event": "pre-existing"}

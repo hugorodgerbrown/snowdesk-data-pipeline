@@ -1,8 +1,8 @@
 ---
 name: weather-header
-description: Weather bulletin header — WeatherSnapshot to WMO buckets via build_weather_display, is_day projection, Meteocons icons
+description: Weather bulletin header and ForecastPanel — WMO buckets via build_weather_display, is_day, Meteocons icons, build_point_forecast_panel
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-19
 ---
 
 # Weather-driven bulletin header
@@ -115,3 +115,35 @@ Meteocons is MIT-licensed. The full licence text and provenance note live in [`s
 * **No snapshot for (region, date)**: `weather_display` is `None`; the unified header still renders with `data-weather-bucket="none"` (neutral dark via `--color-weather-fallback`) — region name, date, and calendar trigger are present but the hero icon and weather metadata strip are omitted.
 * **Snapshot for a different region**: filtered out by the `.filter(region=region)` clause; cannot leak into another region's page.
 * **Unknown WMO code**: falls back to `cloudy` rather than raising. A warning would be over-alert: the data set already includes long-tail codes Open-Meteo occasionally adds, and a single rogue value should not 500 the page.
+
+## ForecastPanel — multi-day point forecast (SNOW-417)
+
+`build_weather_display` also accepts a `ForecastPointWeather` row (a
+favourited pin's per-day forecast) alongside `WeatherSnapshot` — both expose
+the same `weather_code`/`sunrise`/`sunset` trio, so the single-day builder is
+shared unchanged.
+
+For the favourite detail card's multi-day panel, `build_point_forecast_panel(snapshots, now)` in the same module wraps `build_weather_display` per day and layers on the fields a compact day strip + expandable hourly detail need:
+
+```
+[ForecastPointWeather, ...]     build_point_forecast_panel(...)      _favourite_forecast_panel.html
+(7-day window, ascending  ───▶  ┌─ days: [ForecastPanelDay, ...]  ─▶  day strip (weekday, icon,
+ via forecast_for_point())      │    each reusing build_weather_        hi/lo temp, snowfall chip)
+                                │    display's icon_bucket/            + expandable hourly detail
+                                │    icon_filename/condition_label      for the near-term days
+                                │  temp_max/temp_min/snowfall_sum/
+                                │  freezing_level_height/hourly
+                                └─ None when snapshots is empty
+```
+
+`favourites.views.favourite_card` queries
+`ForecastPointWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
+`-valid_for_date`, the opposite of what a forward-looking panel wants),
+slices to `POINT_FORECAST_DAYS`, and passes the panel or `None` into
+`_favourite_card.html` as `forecast_panel`. `None` renders the existing
+"Point forecast coming soon" empty state.
+
+`hourly` on each `ForecastPanelDay` is that row's `hourly_series` (or `[]`)
+— populated for only the first `POINT_HOURLY_DAYS` rows of the fetcher's
+window (see [`docs/management-commands.md`](management-commands.md)), so
+days beyond that render the compact strip only, with no expandable detail.

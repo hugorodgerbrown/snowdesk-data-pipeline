@@ -108,6 +108,19 @@ up `pyproject.toml` dependencies automatically.
   inline from the relevant service function, never via `post_save`
   ([why](docs/decisions/no-signals-for-side-effects.md)).
 
+#### Known non-issues — do not flag
+
+These are correct as written; reporting them as bugs is a false positive.
+
+- **`except A, B:` (comma-separated, no parentheses) is valid Python 3.14
+  syntax** ([PEP 758](https://peps.python.org/pep-0758/)), equivalent to
+  `except (A, B):`. This project pins Python 3.14 and uses the form
+  deliberately (e.g. `favourites/views.py`, `regions/services/point_match.py`).
+  It is **not** Python 2 syntax and **not** a `SyntaxError` — do not report it
+  or "fix" it to the parenthesised form. (A `SyntaxError` from this line means
+  something invoked the system Python 3.9, not the project interpreter; run
+  `uv run python` instead.)
+
 ### Models
 
 Every concrete model ships the full kit — uniformity across models is the

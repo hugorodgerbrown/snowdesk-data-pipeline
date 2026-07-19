@@ -135,6 +135,20 @@ const formatDatePopup = (dateKey) => {
   return `${parseInt(d, 10)} ${POPUP_MONTHS[parseInt(m, 10) - 1]} ${y}`;
 };
 
+// SNOW-419: ISO timestamp -> coarse relative-time string ("2 h ago",
+// "12 min ago", "just now") for the community-reports popup. Deliberately
+// coarse (minutes/hours only, no seconds) to match the server's own
+// 15-minute truncation of observed_at — the popup shouldn't imply more
+// precision than the wire payload actually carries.
+const formatRelativeTime = (isoString) => {
+  const then = new Date(isoString).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMinutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (diffMinutes < 1) return 'just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  return `${Math.round(diffMinutes / 60)} h ago`;
+};
+
 // Lazily-fetched, cached payload from /api/ratings/?country=ch. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
@@ -236,6 +250,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // fetch this endpoint (it 403s, and there's nothing to show anyway).
   const FAVOURITES_URL = mapEl.dataset.favouritesUrl || null;
   const FAVOURITES_ELIGIBLE = mapEl.dataset.favouritesEligible === 'true';
+  // SNOW-419: community-reports GeoJSON — public, anonymised data, so
+  // "eligible" here means only "the flag is on" (no per-user auth gate,
+  // unlike favourites).
+  const COMMUNITY_REPORTS_URL = mapEl.dataset.communityReportsUrl || null;
+  const COMMUNITY_REPORTS_ELIGIBLE = mapEl.dataset.communityReportsEligible === 'true';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -315,6 +334,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
     // key is only ever read/written) when data-favourites-eligible="true".
     favourites: 'snowdesk.map.overlay.favourites',
+    // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
+    // is only ever read/written) when data-community-reports-eligible="true".
+    community_reports: 'snowdesk.map.overlay.community_reports',
   };
   // L4 defaults to visible: hiding it leaves only the basemap and any
   // active overlay tiers, which is intended. SNOW-78 resorts default off
@@ -322,8 +344,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // SNOW-323: l3 (bulletin groupings) defaults off so the map opens uncluttered.
   // SNOW-414: favourites defaults ON — a user's own saved pins should be
   // visible without an extra toggle-hunt, unlike resorts (a public dataset).
-  const overlayState = { l1: false, l2: false, l3: false, l4: true, resorts: false, favourites: true };
-  for (const key of ['l1', 'l2', 'l3', 'resorts']) {
+  // SNOW-419: community_reports defaults OFF — a shared layer of other
+  // people's reports is an opt-in, unlike a user's own favourites.
+  const overlayState = {
+    l1: false, l2: false, l3: false, l4: true, resorts: false,
+    favourites: true, community_reports: false,
+  };
+  for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
@@ -400,7 +427,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
-    maxZoom: 12,
+    // SNOW-442: raised from 12. The swisstopo base vector source
+    // (ch.swisstopo.base.vt) publishes a TileJSON `maxzoom` of 14 and its
+    // style authors layers up to zoom 20; MapLibre overzooms vector tiles
+    // cleanly above 14, so 18 was chosen to allow close-in reading without
+    // exposing genuinely blank overzoomed tiles at the extreme end.
+    maxZoom: 18,
     // (Bounds taken from console.log when ?debug=true)
     // West / south / north match the original Western-European frame
     // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
@@ -862,6 +894,133 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   };
 
+  // SNOW-419: per-OBSERVATION_TYPE text glyph for the unclustered
+  // community-reports pins — mirrors the favourites ★ approach (a
+  // text-field glyph rendered from the style's own font stack, so no
+  // sprite image needs registering). '⚠' is the fallback for any type
+  // value the client doesn't recognise (forward-compatible with a future
+  // OBSERVATION_TYPE addition the server ships before the client updates).
+  const COMMUNITY_REPORT_GLYPHS = {
+    WHUMPFING: '◎',
+    PINWHEELS: '✳',
+    WIND_STRIATIONS: '〰',
+    FRACTURES: '▤',
+    SHOOTING_CRACKS: '⚡',
+  };
+
+  // SNOW-419: age-fade constants. A report's opacity decays linearly from
+  // 1 (just filed) to a floor at the edge of the 48h server-side window,
+  // so the overlay reads as a "heat" of recency rather than an
+  // undifferentiated pile of pins.
+  const COMMUNITY_REPORTS_WINDOW_MS = 48 * 60 * 60 * 1000;
+  const COMMUNITY_REPORTS_MIN_OPACITY = 0.35;
+
+  // SNOW-419: bake a per-feature `_ageOpacity` property into the fetched
+  // FeatureCollection. MapLibre paint expressions have no "now" primitive,
+  // so age-based fade can't be expressed as a live paint expression the
+  // way e.g. zoom-based fades can — computing it once client-side against
+  // Date.now() and reading it back via ['get', '_ageOpacity'] is the
+  // simplest correct approach. Mutates and returns the same object.
+  const withCommunityReportsAgeOpacity = (geojson) => {
+    if (!geojson || !Array.isArray(geojson.features)) return geojson;
+    const now = Date.now();
+    for (const feature of geojson.features) {
+      const observedAt = feature.properties && feature.properties.observed_at;
+      const ageMs = observedAt ? now - new Date(observedAt).getTime() : 0;
+      const fraction = Math.min(Math.max(ageMs / COMMUNITY_REPORTS_WINDOW_MS, 0), 1);
+      feature.properties._ageOpacity = 1 - fraction * (1 - COMMUNITY_REPORTS_MIN_OPACITY);
+    }
+    return geojson;
+  };
+
+  // SNOW-419: install the community-reports (shared, anonymised) overlay.
+  // Unlike favourites/resorts, this source is clustered (`cluster: true`)
+  // — MapLibre computes clusters client-side from the fetched
+  // FeatureCollection as the map zooms, so a busy region doesn't paint as
+  // an unreadable pile of glyphs at low zoom. Three layers: cluster
+  // circles + cluster-count labels (shown while `point_count` is present)
+  // and an unclustered point layer (shown once a cluster has broken apart
+  // enough that a feature stands alone). Idempotent, like
+  // installFavouritesLayer/installResortsLayer — early-returns if the
+  // source already exists, so the styledata re-install handler can call
+  // this safely on every basemap swap.
+  const installCommunityReportsLayer = (geojson) => {
+    if (!geojson || map.getSource('community-reports')) return;
+    map.addSource('community-reports', {
+      type: 'geojson',
+      data: geojson,
+      cluster: true,
+      clusterRadius: 50,
+      clusterMaxZoom: 11,
+    });
+    map.addLayer({
+      id: 'community-reports-clusters',
+      type: 'circle',
+      source: 'community-reports',
+      filter: ['has', 'point_count'],
+      layout: {
+        visibility: overlayState.community_reports ? 'visible' : 'none',
+      },
+      paint: {
+        // Amber — distinct from the favourites blue and the resorts
+        // near-black so the three pin layers read as different kinds of
+        // marker at a glance.
+        'circle-color': '#e8711a',
+        'circle-radius': [
+          'step', ['get', 'point_count'],
+          14, 5, 18, 20, 24,
+        ],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.5,
+        'circle-opacity': 0.85,
+      },
+    });
+    map.addLayer({
+      id: 'community-reports-cluster-count',
+      type: 'symbol',
+      source: 'community-reports',
+      filter: ['has', 'point_count'],
+      layout: {
+        visibility: overlayState.community_reports ? 'visible' : 'none',
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': 12,
+      },
+      paint: {
+        'text-color': '#ffffff',
+      },
+    });
+    map.addLayer({
+      id: 'community-reports-point',
+      type: 'symbol',
+      source: 'community-reports',
+      filter: ['!', ['has', 'point_count']],
+      layout: {
+        visibility: overlayState.community_reports ? 'visible' : 'none',
+        'text-field': [
+          'match', ['get', 'type'],
+          'WHUMPFING', COMMUNITY_REPORT_GLYPHS.WHUMPFING,
+          'PINWHEELS', COMMUNITY_REPORT_GLYPHS.PINWHEELS,
+          'WIND_STRIATIONS', COMMUNITY_REPORT_GLYPHS.WIND_STRIATIONS,
+          'FRACTURES', COMMUNITY_REPORT_GLYPHS.FRACTURES,
+          'SHOOTING_CRACKS', COMMUNITY_REPORT_GLYPHS.SHOOTING_CRACKS,
+          '⚠',
+        ],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': 16,
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': '#e8711a',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.6,
+        // SNOW-419: age fade — baked into each feature by
+        // withCommunityReportsAgeOpacity before install/setData.
+        'text-opacity': ['get', '_ageOpacity'],
+      },
+    });
+  };
+
   // SNOW-323: Install the bulletin-groupings source and line layer.
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
@@ -965,6 +1124,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let majorGeojsonCache = null;
   let subGeojsonCache = null;
   let resortsGeojsonCache = null;
+  // SNOW-419: retained (unlike favouritesGeojsonCache, which doesn't exist —
+  // favourites re-fetches on snowdesk:favourites-changed instead) so the
+  // styledata re-install handler can re-add the community-reports layer
+  // after a basemap swap without a refetch.
+  let communityReportsGeojsonCache = null;
 
   // SNOW-172: Snapshot of each layer's filter expression as set during
   // installRegionsLayers / installOverlayLayers.  applyCountryFilters
@@ -1175,7 +1339,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // errors degrade silently (no layer install), applyCountryFilters is called
   // after install so freshly-added L1/L2 layers respect the active country
   // filter immediately.
-  const overlayLoaded = { l1: false, l2: false, l3: false, resorts: false, favourites: false };
+  const overlayLoaded = {
+    l1: false, l2: false, l3: false, resorts: false, favourites: false,
+    community_reports: false,
+  };
 
   const ensureOverlayLoaded = async (key) => {
     if (overlayLoaded[key]) return;
@@ -1220,6 +1387,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
         .then(r => r.json()).catch(() => null);
       if (!data) return;
       installFavouritesLayer(data);
+    } else if (key === 'community_reports') {
+      // SNOW-419: flag-gated only (no auth eligibility) — guard the fetch
+      // in case this is ever reached some other way (e.g. the eager
+      // boot-time restore below).
+      if (!COMMUNITY_REPORTS_ELIGIBLE || !COMMUNITY_REPORTS_URL) return;
+      const data = await fetch(COMMUNITY_REPORTS_URL)
+        .then(r => r.json()).catch(() => null);
+      if (!data) return;
+      communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
+      installCommunityReportsLayer(communityReportsGeojsonCache);
     }
     overlayLoaded[key] = true;
     // Apply country filters to the freshly-added layers so they
@@ -1242,6 +1419,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l3: ['bulletin-groupings-line'],
     resorts: ['resorts-pin', 'resorts-label'],
     favourites: ['favourites-pin', 'favourites-label'],
+    community_reports: [
+      'community-reports-clusters',
+      'community-reports-cluster-count',
+      'community-reports-point',
+    ],
   };
 
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
@@ -1446,6 +1628,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // !FAVOURITES_ELIGIBLE as a second guard.
     if (FAVOURITES_ELIGIBLE && overlayState.favourites) {
       ensureOverlayLoaded('favourites').catch(() => {});
+    }
+
+    // SNOW-419: restore the community-reports overlay if the user had it
+    // enabled in a prior session. Off by default (unlike favourites), so
+    // this only fires for a returning user who opted in.
+    if (COMMUNITY_REPORTS_ELIGIBLE && overlayState.community_reports) {
+      ensureOverlayLoaded('community_reports').catch(() => {});
     }
 
     // Interaction
@@ -1794,6 +1983,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       if (IS_PLAYING) return;
+      // SNOW-419: MapLibre fires every layer-scoped click handler whose
+      // layer intersects the point — there is no stopPropagation between
+      // them — so a tap on a community-reports cluster sitting over a
+      // region would otherwise ALSO select that region and pop its
+      // tooltip open underneath the cluster-zoom. The cluster has its own
+      // click handler (zoom-to-expand); let it own the tap instead.
+      const clustersLayer = map.getLayer('community-reports-clusters')
+        ? ['community-reports-clusters']
+        : [];
+      if (clustersLayer.length && map.queryRenderedFeatures(e.point, { layers: clustersLayer }).length) {
+        return;
+      }
       selectFeature(e.features[0].id);
     });
 
@@ -1829,9 +2030,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ) {
         return;
       }
-      const layers = ['regions-fill', 'resorts-pin', 'favourites-pin'].filter(
-        (id) => map.getLayer(id),
-      );
+      // SNOW-419: community-reports-clusters is safe to include here — the
+      // regions-fill handler above already defers to it when both are hit,
+      // so listing it just stops a cluster tap from also reading as an
+      // "empty map area" click (which would otherwise deselect the region
+      // and close the popup out from under the cluster-zoom).
+      const layers = [
+        'regions-fill', 'resorts-pin', 'favourites-pin',
+        'community-reports-clusters', 'community-reports-point',
+      ].filter((id) => map.getLayer(id));
       if (!layers.length) return;
       const features = map.queryRenderedFeatures(e.point, { layers });
       if (features.length === 0) {
@@ -1899,6 +2106,73 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }
       }).catch(() => {});
     });
+
+    // SNOW-419: tapping a cluster zooms in just far enough to break it
+    // apart (the standard MapLibre clustered-source UX) rather than
+    // opening the per-report popup a lone point would show. Guarded on
+    // the source existing since this listener is registered unconditionally
+    // at load time but the source is only added once the overlay is first
+    // enabled (see installCommunityReportsLayer / ensureOverlayLoaded).
+    // The regions-fill click handler above defers to this layer when a
+    // cluster is under the tap, so the two don't fight over the same click.
+    map.on('click', 'community-reports-clusters', (e) => {
+      if (!e.features.length) return;
+      const source = map.getSource('community-reports');
+      if (!source) return;
+      const clusterId = e.features[0].properties.cluster_id;
+      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+        map.easeTo({
+          center: e.features[0].geometry.coordinates,
+          zoom,
+        });
+      });
+    });
+    map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-419: tapping an unclustered community-report pin opens a small
+    // popup with the type label, a coarse relative time, and the region
+    // name — built via DOM methods (not setHTML) since these values,
+    // though server-controlled, don't need string-interpolated HTML.
+    // Emits a marker-tapped telemetry signal with only the observation
+    // type — no location or identity data.
+    map.on('click', 'community-reports-point', (e) => {
+      if (!e.features.length) return;
+      const props = e.features[0].properties;
+      const coordinates = e.features[0].geometry.coordinates.slice();
+
+      window.pwaTelemetry?.emit('map.community_reports.marker_tapped', {
+        observation_type: props.type,
+      });
+
+      const container = document.createElement('div');
+      container.className = 'community-report-popup';
+
+      const typeEl = document.createElement('div');
+      typeEl.className = 'community-report-popup__type';
+      typeEl.textContent = props.type_label;
+      container.appendChild(typeEl);
+
+      const metaParts = [formatRelativeTime(props.observed_at)];
+      if (props.region_name) metaParts.push(props.region_name);
+      const metaEl = document.createElement('div');
+      metaEl.className = 'community-report-popup__meta';
+      metaEl.textContent = metaParts.filter(Boolean).join(' · ');
+      container.appendChild(metaEl);
+
+      new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: '240px',
+        className: 'community-report-popup-wrapper',
+      })
+        .setLngLat(coordinates)
+        .setDOMContent(container)
+        .addTo(map);
+    });
+    map.on('mouseenter', 'community-reports-point', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'community-reports-point', () => { map.getCanvas().style.cursor = ''; });
 
     // ---- History wiring (SNOW-39) ----
     //
@@ -2313,6 +2587,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
         installBulletinGroupingsLayer(
           groupingsDrawn ? currentGroupingsFC : EMPTY_FEATURE_COLLECTION,
         );
+      }
+      // SNOW-419: re-install the community-reports layer if it was enabled
+      // before the basemap swap, seeded from the last-fetched cache (no
+      // refetch). Unlike favourites, this overlay IS re-installed here —
+      // omitting it would leave the pins vanished after a basemap swap.
+      if (overlayLoaded.community_reports) {
+        installCommunityReportsLayer(communityReportsGeojsonCache);
       }
 
       // SNOW-172: Re-apply country filters for the freshly-installed layers.
@@ -3091,6 +3372,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l4: ['regions-fill', 'regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
     favourites: ['favourites-pin', 'favourites-label'],
+    community_reports: [
+      'community-reports-clusters',
+      'community-reports-cluster-count',
+      'community-reports-point',
+    ],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
@@ -3099,6 +3385,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
     favourites: 'snowdesk.map.overlay.favourites',
+    community_reports: 'snowdesk.map.overlay.community_reports',
   };
 
   for (const item of items) {
@@ -3134,11 +3421,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (overlayKey === 'favourites') {
           window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: next });
         }
+        // SNOW-419: notify telemetry when the community-reports overlay is
+        // flipped.
+        if (overlayKey === 'community_reports') {
+          window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', { visible: next });
+        }
 
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts' || overlayKey === 'favourites')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE
@@ -3350,6 +3642,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
+})();
+
+// SNOW-442: zoom-level readout — keeps #map-zoom-indicator-value in sync
+// with the live camera zoom. The static "Zoom" label is server-rendered
+// (translatable); this only ever writes the rounded numeric value, mirroring
+// how updateMapAttribution above owns #map-attribution-text's textContent.
+// Bound to 'zoom' (not just 'zoomend') so the readout tracks a live pinch or
+// scroll-wheel gesture rather than only updating once the gesture settles.
+(function zoomIndicatorInit() {
+  const valueEl = document.getElementById('map-zoom-indicator-value');
+  if (!valueEl || !MAP) return;
+
+  const updateZoomIndicator = () => {
+    valueEl.textContent = String(Math.round(MAP.getZoom()));
+  };
+
+  updateZoomIndicator(); // Seed immediately with whatever camera state exists now.
+  MAP.on('zoom', updateZoomIndicator);
+  MAP.on('load', updateZoomIndicator);
+  MAP.on('style.load', updateZoomIndicator);
 })();
 
 // SNOW-314: Season ribbon — the season scrubber's track doubles as the danger

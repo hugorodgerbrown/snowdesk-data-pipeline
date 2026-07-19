@@ -475,12 +475,17 @@ self.addEventListener('message', (event) => {
 /**
  * Open (or lazily create) the shared PWA IndexedDB database directly —
  * a worker has no ``window.pwaDb``. Mirrors ``static/js/db.js``'s
- * ``DB_NAME`` / version exactly so it opens the SAME database a page
- * already created; the ``onupgradeneeded`` branch below is a defensive
- * fallback for the (rare) case a Background Sync fires before any page
- * has ever opened the DB — it creates ONLY the one store this worker
- * needs, mirroring ``db.js::STORES['queue:mutations']``. The page-side
- * ``db.js`` remains the single source of truth for the full schema; see
+ * ``DB_NAME`` exactly so it opens the SAME database a page already
+ * created. It opens WITHOUT a version number so it attaches to whatever
+ * schema version the page most recently migrated to (db.js owns
+ * ``DB_VERSION`` — currently 2 — and bumps it as stores are added; a
+ * hardcoded version here would throw ``VersionError`` the moment db.js
+ * moved ahead). The ``onupgradeneeded`` branch below only fires in the
+ * (rare) case a Background Sync fires before any page has ever opened the
+ * DB, creating a fresh v1 DB with ONLY the one store this worker needs,
+ * mirroring ``db.js::STORES['queue:mutations']``; the next page load
+ * upgrades it to the full schema. The page-side ``db.js`` remains the
+ * single source of truth for the full schema; see
  * docs/indexeddb-scaffolding.md.
  *
  * @returns {Promise<IDBDatabase>}
@@ -489,7 +494,7 @@ function _openMutationsDb() {
   return new Promise((resolve, reject) => {
     let req;
     try {
-      req = indexedDB.open('snowdesk-pwa-v1', 1);
+      req = indexedDB.open('snowdesk-pwa-v1');
     } catch (err) {
       reject(err);
       return;

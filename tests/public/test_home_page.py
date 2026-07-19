@@ -31,7 +31,11 @@ from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
-from public.views import _default_region_label, _favourites_context
+from public.views import (
+    _community_reports_context,
+    _default_region_label,
+    _favourites_context,
+)
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -683,3 +687,69 @@ class TestHomePageFavouritesParity:
         assert 'data-favourites-eligible="true"' in content
         assert 'data-overlay-key="favourites"' in content
         assert reverse("favourites:geojson") in content
+
+
+@pytest.mark.django_db
+class TestCommunityReportsContext:
+    """Unit tests for _community_reports_context() (SNOW-419).
+
+    Called directly (via RequestFactory) rather than through the full
+    home() round-trip — mirrors TestFavouritesContext above. Unlike
+    favourites there is no per-user eligibility split: the overlay shows
+    anonymised, publicly-shared data, so the flag alone controls
+    visibility regardless of authentication state.
+    """
+
+    def _request(self, *, user: "AbstractBaseUser | AnonymousUser") -> HttpRequest:
+        request = RequestFactory().get("/")
+        request.user = user  # type: ignore[assignment]
+        return request
+
+    @override_flag("community_reports", active=False)
+    def test_flag_off_not_visible_no_url(self) -> None:
+        """Flag off: not visible, no geojson URL, regardless of auth state."""
+        ctx = _community_reports_context(self._request(user=AnonymousUser()))
+        assert ctx["community_reports_visible"] is False
+        assert "community_reports_geojson_url" not in ctx
+
+    @override_flag("community_reports", active=True)
+    def test_flag_on_visible_with_url_for_anonymous(self) -> None:
+        """Flag on + anonymous: visible, carries the geojson URL."""
+        ctx = _community_reports_context(self._request(user=AnonymousUser()))
+        assert ctx["community_reports_visible"] is True
+        assert ctx["community_reports_geojson_url"] == reverse(
+            "api:community_reports_geojson"
+        )
+
+    @override_flag("community_reports", active=True)
+    def test_flag_on_visible_with_url_for_authenticated(self) -> None:
+        """Flag on + authenticated: also visible — no eligibility gate."""
+        subscriber = SubscriberFactory.create()
+        ctx = _community_reports_context(self._request(user=subscriber.user))
+        assert ctx["community_reports_visible"] is True
+        assert ctx["community_reports_geojson_url"] == reverse(
+            "api:community_reports_geojson"
+        )
+
+
+@pytest.mark.django_db
+class TestHomePageCommunityReportsParity:
+    """The community-reports map controls render on / per SNOW-419's rules."""
+
+    @override_flag("community_reports", active=False)
+    def test_controls_absent_when_flag_off(self) -> None:
+        """No overlay toggle or #map data-* when the flag is off."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert 'data-overlay-key="community_reports"' not in content
+        assert "data-community-reports-url" not in content
+        assert 'data-community-reports-eligible="false"' in content
+
+    @override_flag("community_reports", active=True)
+    def test_controls_shown_when_flag_on(self) -> None:
+        """Overlay toggle and #map geojson URL render when the flag is on."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert 'data-overlay-key="community_reports"' in content
+        assert 'data-community-reports-eligible="true"' in content
+        assert reverse("api:community_reports_geojson") in content

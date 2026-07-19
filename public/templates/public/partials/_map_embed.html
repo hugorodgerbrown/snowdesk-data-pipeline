@@ -49,6 +49,8 @@ Optional context:
     data-season-end="{{ season_end|date:'Y-m-d' }}"
     {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
+    {% if community_reports_visible %}data-community-reports-url="{{ community_reports_geojson_url }}"{% endif %}
+    data-community-reports-eligible="{{ community_reports_visible|yesno:'true,false' }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -87,6 +89,20 @@ Optional context:
                 aria-expanded="false"
                 role="combobox"
             >
+        </div>
+        {# SNOW-442: always-visible zoom-level readout. A display, not a     #}
+        {# control — no <button> child. Seeded server-side with a safe       #}
+        {# placeholder (the constructor's bounds-derived initial zoom isn't  #}
+        {# known until the map loads); map.js overwrites the numeric value   #}
+        {# on load and on every zoom gesture.                                #}
+        <div class="map-utility-pill map-utility-pill--zoom" id="map-zoom-indicator">
+            <span
+                role="status"
+                aria-live="polite"
+                aria-label='{% trans "Current zoom level" %}'
+            >
+                {% trans "Zoom" %} <span id="map-zoom-indicator-value">–</span>
+            </span>
         </div>
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
@@ -270,6 +286,24 @@ Optional context:
                             aria-checked="true"
                         >
                             {% trans "Favourites" %}
+                        </button>
+                    </li>
+                {% endif %}
+                {# SNOW-419: Community reports overlay — anonymised, clustered   #}
+                {# FieldObservation pins from the last 48 hours. Public data,    #}
+                {# so gated only on the flag (no per-user eligibility split,     #}
+                {# unlike Favourites). Off by default — a user opts in to a     #}
+                {# shared layer rather than having it appear unannounced.        #}
+                {% if community_reports_visible %}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="community_reports"
+                            aria-checked="false"
+                        >
+                            {% trans "Community reports" %}
                         </button>
                     </li>
                 {% endif %}
