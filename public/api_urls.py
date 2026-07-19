@@ -68,6 +68,14 @@ urlpatterns = [
         api.region_summary,
         name="region_summary",
     ),
+    # SNOW-419: community-reports overlay — anonymised, clustered
+    # FieldObservation pins from the last 48 hours. The view inline-gates
+    # on the ``community_reports`` waffle flag and 404s when inactive.
+    path(
+        "community-reports.geojson",
+        api.community_reports_geojson,
+        name="community_reports_geojson",
+    ),
     # SNOW-74 — edit-resorts mode endpoints. Always registered; the
     # views inline-gate on the ``edit_map`` waffle flag (SNOW-86) and
     # 404 when it is inactive for the request user, so non-superusers

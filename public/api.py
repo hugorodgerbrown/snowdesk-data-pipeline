@@ -15,6 +15,9 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
+* ``/api/community-reports.geojson``       — anonymised, clustered
+  ``FieldObservation`` pins from the last 48 hours (SNOW-419). Flag-gated
+  on ``community_reports``.
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
 Flag-gated endpoints powering the in-map resort editor (SNOW-74,
@@ -35,7 +38,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, cast
 
 import waffle
@@ -56,6 +59,7 @@ from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
 from core.freshness import apply_freshness_headers
+from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -105,6 +109,18 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # hits. Pair the decorator with @vary_on_headers("Accept-Encoding") to stop
 # SessionMiddleware from appending Vary: Cookie and killing shared caching.
 _DYNAMIC_CACHE_MAX_AGE = 300
+
+# Cache lifetime for the community-reports overlay (SNOW-419). Shorter than
+# _DYNAMIC_CACHE_MAX_AGE because the 48h inclusion window moves minute-to-
+# minute — a new report should surface reasonably promptly, and the oldest
+# report should drop out of the window without a long stale tail.
+_COMMUNITY_CACHE_MAX_AGE = 120
+
+# Rolling lookback window for the community-reports overlay. Reports older
+# than this are anonymous-by-attrition rather than anonymous-by-design — the
+# overlay only ever shows a recent, ephemeral signal, never a durable map of
+# where reports have historically clustered.
+_COMMUNITY_REPORTS_WINDOW_HOURS = 48
 
 logger = logging.getLogger(__name__)
 
@@ -784,6 +800,142 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     apply_freshness_headers(
         response,
         generated_at=day_rating.updated_at if day_rating else timezone.now(),
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Community reports overlay (SNOW-419) — flag-gated on ``community_reports``
+# ---------------------------------------------------------------------------
+
+
+def _require_community_reports_flag(request: HttpRequest) -> None:
+    """Raise Http404 unless the ``community_reports`` waffle flag is active.
+
+    Mirrors ``_require_edit_map_flag`` below: an unauthorised caller hitting
+    the API directly must see the same 404 the map page's overlay toggle
+    would give them when the flag is inactive for the request user. Flag is
+    seeded with ``superusers=True`` by migration
+    ``observations/migrations/0006_seed_community_reports_flag.py``;
+    extend / disable via ``/admin/waffle/flag/community_reports/``.
+    """
+    if not waffle.flag_is_active(request, "community_reports"):
+        raise Http404("community_reports flag is inactive for this request.")
+
+
+def _truncate_to_quarter_hour(value: datetime) -> datetime:
+    """Floor a timezone-aware datetime to the preceding 15-minute mark.
+
+    Coarsens ``FieldObservation.observed_at`` before it crosses the wire —
+    part of the SNOW-419 anonymisation contract alongside coordinate
+    rounding, so the timestamp alone cannot be combined with other public
+    data to pin down exactly when a specific report was filed.
+
+    Args:
+        value: A timezone-aware datetime.
+
+    Returns:
+        ``value`` with ``minute`` floored to the nearest lower multiple of
+        15, and ``second``/``microsecond`` zeroed. ``tzinfo`` is preserved.
+
+    """
+    floored_minute = (value.minute // 15) * 15
+    return value.replace(minute=floored_minute, second=0, microsecond=0)
+
+
+@cache_control(public=True, max_age=_COMMUNITY_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
+def community_reports_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of anonymised community field reports.
+
+    Covers ``FieldObservation`` rows from the last 48 hours
+    (``_COMMUNITY_REPORTS_WINDOW_HOURS``), rendered as a "Community
+    reports" overlay on ``/map/`` (SNOW-419) — a Waze-like shared layer of
+    clustered pins, gated on the ``community_reports`` waffle flag.
+
+    Anonymisation is applied server-side, once, here — the client never
+    receives full-precision coordinates or anything that identifies the
+    reporting account:
+
+    * ``coordinates`` are ``[longitude, latitude]`` rounded to 3 decimal
+      places (~80-110 m), never the raw ``latitude``/``longitude`` fields.
+    * ``observed_at`` is floored to the nearest 15 minutes.
+    * ``gps_latitude``/``gps_longitude``/``accuracy_radius_km``/``user``/
+      the row's primary key are never serialised.
+
+    Response shape::
+
+        {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": {"type": "Point", "coordinates": [7.123, 46.456]},
+              "properties": {
+                "type": "WHUMPFING",
+                "type_label": "Whumpfing",
+                "observed_at": "2026-07-19T10:15:00+00:00",
+                "region_name": "Martigny-Verbier"
+              }
+            },
+            ...
+          ]
+        }
+
+    Errors:
+        404 — ``community_reports`` waffle flag inactive for this request.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload.
+
+    """
+    _require_community_reports_flag(request)
+
+    since = timezone.now() - timedelta(hours=_COMMUNITY_REPORTS_WINDOW_HOURS)
+    features: list[dict[str, Any]] = []
+    newest: datetime | None = None
+    for obs in (
+        FieldObservation.objects.recent(since).select_related("region").iterator()
+    ):
+        if newest is None or obs.observed_at > newest:
+            newest = obs.observed_at
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    # GeoJSON ordering: [longitude, latitude] per RFC 7946.
+                    # Rounded to 3 dp (~80-110 m) — never the raw field.
+                    "coordinates": [round(obs.longitude, 3), round(obs.latitude, 3)],
+                },
+                "properties": {
+                    "type": obs.observation_type,
+                    "type_label": obs.get_observation_type_display(),
+                    "observed_at": _truncate_to_quarter_hour(
+                        obs.observed_at
+                    ).isoformat(),
+                    "region_name": obs.region.name if obs.region is not None else None,
+                },
+            }
+        )
+
+    response = JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    )
+    # Observations are non-safety-critical (unlike ratings) — unsafe_after=None
+    # so the freshness state saturates at "stale" and never escalates to
+    # "unsafe". Empty result set (no recent reports) falls back to "now".
+    apply_freshness_headers(
+        response,
+        generated_at=newest or timezone.now(),
+        unsafe_after=None,
     )
     return response
 

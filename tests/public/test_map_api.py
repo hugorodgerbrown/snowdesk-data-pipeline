@@ -17,12 +17,17 @@ Covers the endpoints consumed by the /map/ page:
 SNOW-252 — peak semantics:
 * ``api:ratings`` choropleth emits peak (max_rating) for two-period escalating days.
 * ``api:region_summary`` tooltip chip shows peak, not morning, on split days.
+
+SNOW-419:
+* ``api:community_reports_geojson`` — anonymised, 48h-windowed
+  ``FieldObservation`` overlay. Flag-gated on ``community_reports``.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+from typing import Generator
 from unittest.mock import patch
 
 import pytest
@@ -31,10 +36,14 @@ from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
+from observations.models import FieldObservation
 from tests.factories import (
     BulletinGroupingFactory,
+    FieldObservationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -1878,3 +1887,170 @@ def test_region_summary_covered_no_rating_shows_no_bulletin_tooltip() -> None:
     html = response.json()["html"]
     assert 'data-testid="region-tooltip-no-bulletin"' in html
     assert 'data-testid="region-tooltip-uncovered"' not in html
+
+
+# ---------------------------------------------------------------------------
+# community_reports_geojson (SNOW-419)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestCommunityReportsGeojson:
+    """community_reports_geojson — anonymised 48h FieldObservation overlay."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_community_reports_flag(self) -> Generator[None, None, None]:
+        """Force ``community_reports=on`` for every test in this class.
+
+        Per-class ``@override_flag`` decoration would need a
+        ``unittest.TestCase`` subclass; with plain pytest classes we use
+        an autouse fixture that wraps each test in the context manager
+        (mirrors ``TestEditResortsQueue`` in test_edit_resorts_api.py).
+        """
+        with override_flag("community_reports", active=True):
+            yield
+
+    def test_feature_collection_shape(self) -> None:
+        """Returns a FeatureCollection of Point features."""
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        FieldObservationFactory.create(
+            region=region,
+            latitude=46.123456,
+            longitude=7.654321,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+            observed_at=timezone.now(),
+        )
+        response = Client().get(reverse("api:community_reports_geojson"))
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "FeatureCollection"
+        assert len(data["features"]) == 1
+        feature = data["features"][0]
+        assert feature["type"] == "Feature"
+        assert feature["geometry"]["type"] == "Point"
+        assert feature["properties"]["type"] == "WHUMPFING"
+        assert feature["properties"]["type_label"] == "Whumpfing"
+        assert feature["properties"]["region_name"] == "Martigny-Verbier"
+
+    def test_region_name_is_null_when_region_unset(self) -> None:
+        """A report with no resolved region carries region_name: null."""
+        FieldObservationFactory.create(region=None, observed_at=timezone.now())
+        response = Client().get(reverse("api:community_reports_geojson"))
+        data = response.json()
+        assert data["features"][0]["properties"]["region_name"] is None
+
+    def test_includes_report_just_inside_48h_window(self) -> None:
+        """A report 47h59m old is included."""
+        FieldObservationFactory.create(
+            observed_at=timezone.now() - dt.timedelta(hours=47, minutes=59),
+        )
+        response = Client().get(reverse("api:community_reports_geojson"))
+        assert len(response.json()["features"]) == 1
+
+    def test_excludes_report_just_outside_48h_window(self) -> None:
+        """A report 48h01m old is excluded."""
+        FieldObservationFactory.create(
+            observed_at=timezone.now() - dt.timedelta(hours=48, minutes=1),
+        )
+        response = Client().get(reverse("api:community_reports_geojson"))
+        assert response.json()["features"] == []
+
+    def test_coordinates_rounded_to_three_decimal_places(self) -> None:
+        """Coordinates are [lon, lat] rounded to 3 dp — never full precision."""
+        FieldObservationFactory.create(
+            latitude=46.123456789,
+            longitude=7.987654321,
+            observed_at=timezone.now(),
+        )
+        response = Client().get(reverse("api:community_reports_geojson"))
+        coords = response.json()["features"][0]["geometry"]["coordinates"]
+        assert coords == [7.988, 46.123]
+
+    def test_observed_at_truncated_to_nearest_quarter_hour(self) -> None:
+        """observed_at is floored to the nearest 15-minute mark."""
+        observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
+        FieldObservationFactory.create(observed_at=observed_at)
+        response = Client().get(reverse("api:community_reports_geojson"))
+        properties = response.json()["features"][0]["properties"]
+        assert properties["observed_at"] == "2026-07-19T10:30:00+00:00"
+
+    def test_response_never_exposes_raw_coordinates_or_identity(self) -> None:
+        """No full-precision coord, gps_*, user, or pk fields cross the wire."""
+        FieldObservationFactory.create(
+            latitude=46.123456789,
+            longitude=7.987654321,
+            gps_latitude=46.111111,
+            gps_longitude=7.222222,
+            accuracy_radius_km=0.05,
+            observed_at=timezone.now(),
+        )
+        response = Client().get(reverse("api:community_reports_geojson"))
+        body = response.content.decode()
+        # Full-precision coordinates never appear, only the 3dp-rounded pair.
+        assert "46.123456789" not in body
+        assert "7.987654321" not in body
+        assert "46.111111" not in body
+        assert "7.222222" not in body
+        # Forbidden keys never appear in the raw body — a stronger check than
+        # parsing, since it also rules out the key showing up unexpectedly
+        # nested inside "properties".
+        for forbidden_key in (
+            "gps_latitude",
+            "gps_longitude",
+            "accuracy_radius_km",
+            "user",
+            '"id"',
+            '"pk"',
+        ):
+            assert forbidden_key not in body
+        data = response.json()
+        properties = data["features"][0]["properties"]
+        assert set(properties) == {"type", "type_label", "observed_at", "region_name"}
+
+    def test_freshness_headers_present(self) -> None:
+        """X-Data-Generated-At / X-Data-Max-Age headers are set from the newest row."""
+        observed_at = timezone.now() - dt.timedelta(hours=1)
+        FieldObservationFactory.create(observed_at=observed_at)
+        response = Client().get(reverse("api:community_reports_geojson"))
+        assert response.has_header("X-Data-Generated-At")
+        assert response.has_header("X-Data-Max-Age")
+        # apply_freshness_headers truncates to whole seconds.
+        assert response["X-Data-Generated-At"] == observed_at.isoformat(
+            timespec="seconds"
+        )
+
+    def test_freshness_falls_back_to_now_when_empty(self) -> None:
+        """With no rows in the window, freshness falls back to 'now'."""
+        before = timezone.now()
+        response = Client().get(reverse("api:community_reports_geojson"))
+        after = timezone.now()
+        generated_at = dt.datetime.fromisoformat(response["X-Data-Generated-At"])
+        # apply_freshness_headers truncates to whole seconds, so widen the
+        # window by one second on each side rather than asserting exact
+        # microsecond containment.
+        assert before - dt.timedelta(seconds=1) <= generated_at
+        assert generated_at <= after + dt.timedelta(seconds=1)
+
+    def test_cache_control_public_header(self) -> None:
+        """Response carries a public Cache-Control header."""
+        response = Client().get(reverse("api:community_reports_geojson"))
+        cache_control = response.get("Cache-Control", "")
+        assert "public" in cache_control
+        assert "max-age=120" in cache_control
+
+    def test_vary_no_cookie_with_analytics_enabled(self) -> None:
+        """SNOW-299-style regression: Vary: Cookie absent even with PostHog active."""
+        with override_settings(POSTHOG_API_KEY="phc_test"):
+            response = Client().get(reverse("api:community_reports_geojson"))
+        assert response.status_code == 200
+        vary = response.get("Vary", "")
+        assert "Accept-Encoding" in vary
+        assert "Cookie" not in vary
+
+
+@pytest.mark.django_db
+def test_community_reports_geojson_404_when_flag_inactive() -> None:
+    """The endpoint 404s when the community_reports flag is inactive."""
+    with override_flag("community_reports", active=False):
+        response = Client().get(reverse("api:community_reports_geojson"))
+    assert response.status_code == 404
