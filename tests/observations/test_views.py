@@ -937,7 +937,7 @@ class TestReportSubmitRateLimit:
     """Rate limit returns 429 when exceeded."""
 
     @override_flag("field_observations", active=True)
-    def test_rate_limited_branch_returns_429(self, client: Client) -> None:
+    def test_rate_limited_branch_returns_429(self) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
         We test the rate-limit branch directly by calling the view with a
@@ -966,7 +966,7 @@ class TestReportSubmitRateLimit:
         # return type is irrelevant — cast satisfies mypy.
         from django.http import HttpResponse as _HR  # noqa: PLC0415
 
-        htmx_mw = HtmxMiddleware(lambda r: _HR())
+        htmx_mw = HtmxMiddleware(lambda _: _HR())
         htmx_mw(request)
 
         # Exercise the 429 branch by patching the gate helper to pass.
