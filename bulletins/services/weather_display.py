@@ -26,15 +26,25 @@ WMO code reference:
   85, 86      Snow showers
   95          Thunderstorm
   96, 99      Thunderstorm with hail
+
+``build_weather_display`` builds the single-day ``WeatherDisplay`` context
+consumed by the bulletin page header; it accepts either a ``WeatherSnapshot``
+(region) or a ``ForecastPointWeather`` row (favourited point), since both
+expose the same ``weather_code``/``sunrise``/``sunset`` trio.
+
+``build_point_forecast_panel`` (SNOW-417) builds the multi-day
+``ForecastPanel`` context consumed by the favourite detail card's forecast
+panel — a compact day strip plus an expandable near-term hourly detail —
+from a chronologically-ordered list of ``ForecastPointWeather`` rows.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
-    from bulletins.models import WeatherSnapshot
+    from bulletins.models import ForecastPointWeather, WeatherSnapshot
 
 
 # Bucket identifiers — kept short and dash-free so they sit cleanly inside
@@ -207,7 +217,9 @@ def weather_code_icon_bucket(code: int) -> str:
     return _WMO_CODE_TO_ICON_BUCKET.get(code, DEFAULT_ICON_BUCKET)
 
 
-def is_day(weather: "WeatherSnapshot", now: datetime.datetime) -> bool:
+def is_day(
+    weather: "WeatherSnapshot | ForecastPointWeather", now: datetime.datetime
+) -> bool:
     """
     Return ``True`` if the wall-clock ``now`` sits inside the day window.
 
@@ -229,7 +241,8 @@ def is_day(weather: "WeatherSnapshot", now: datetime.datetime) -> bool:
     instants land in night only on the sunset side.
 
     Args:
-        weather: The :class:`bulletins.models.WeatherSnapshot` to evaluate.
+        weather: The :class:`bulletins.models.WeatherSnapshot` or
+            :class:`bulletins.models.ForecastPointWeather` to evaluate.
         now: The reference instant (typically ``timezone.now()``).
 
     Returns:
@@ -248,7 +261,7 @@ class WeatherDisplay(TypedDict):
     + weather-band stack.
     """
 
-    weather: "WeatherSnapshot"
+    weather: "WeatherSnapshot | ForecastPointWeather"
     bucket: str
     is_day: bool
     time_of_day: str  # "day" or "night" — pre-computed for template clarity.
@@ -260,7 +273,8 @@ class WeatherDisplay(TypedDict):
 
 
 def build_weather_display(
-    weather: "WeatherSnapshot | None", now: datetime.datetime
+    weather: "WeatherSnapshot | ForecastPointWeather | None",
+    now: datetime.datetime,
 ) -> WeatherDisplay | None:
     """
     Build the template context for the weather header partial.
@@ -268,11 +282,15 @@ def build_weather_display(
     Returns ``None`` when no snapshot is available so the template can
     short-circuit to its safe fallback. Pre-computes ``bucket`` and
     ``time_of_day`` here (rather than via template tags) to keep the
-    partial dumb — it only emits attributes it is handed.
+    partial dumb — it only emits attributes it is handed. Accepts either a
+    ``WeatherSnapshot`` (region bulletin header) or a
+    ``ForecastPointWeather`` row (favourite forecast panel, SNOW-417) — both
+    expose ``weather_code``/``sunrise``/``sunset``, the only attributes this
+    function reads.
 
     Args:
-        weather: The snapshot for the bulletin's calendar day, or ``None``
-            when none has been fetched yet.
+        weather: The snapshot/row for the calendar day, or ``None`` when
+            none has been fetched yet.
         now: The reference instant for the day/night decision.
 
     Returns:
@@ -305,3 +323,76 @@ def build_weather_display(
         condition_label=_ICON_BUCKET_LABEL[icon_bucket],
         icon_filename=icon_filename,
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-day point forecast panel (SNOW-417)
+# ---------------------------------------------------------------------------
+
+
+class ForecastPanelDay(TypedDict):
+    """One day's worth of context for the favourite forecast panel."""
+
+    date: datetime.date
+    weekday_label: str  # e.g. "Mon" — short, locale-independent for now.
+    icon_bucket: str
+    icon_filename: str
+    condition_label: str
+    temp_max: float | None
+    temp_min: float | None
+    snowfall_sum: float | None
+    freezing_level_height: float | None
+    hourly: list[dict[str, Any]]  # That day's hourly_series rows, or [].
+
+
+class ForecastPanel(TypedDict):
+    """Context dict consumed by ``_favourite_forecast_panel.html`` (SNOW-417)."""
+
+    days: list[ForecastPanelDay]
+
+
+def build_point_forecast_panel(
+    snapshots: list["ForecastPointWeather"], now: datetime.datetime
+) -> ForecastPanel | None:
+    """
+    Build the template context for the favourite-card multi-day forecast panel.
+
+    Reuses :func:`build_weather_display` for the icon/condition-label
+    portion of each day, then layers on the multi-day fields the compact
+    day strip and expandable hourly detail need: hi/lo temperature,
+    snowfall total, derived freezing level, and that day's hourly series
+    (empty list when the row carries none — near-term days only, see
+    ``ForecastPointWeather.hourly_series``).
+
+    Args:
+        snapshots: The forecast window for one point, ordered chronologically
+            (e.g. via ``ForecastPointWeather.objects.forecast_for_point``).
+        now: The reference instant for each day's day/night icon decision.
+
+    Returns:
+        A :class:`ForecastPanel` dict, or ``None`` when ``snapshots`` is
+        empty.
+
+    """
+    if not snapshots:
+        return None
+    days: list[ForecastPanelDay] = []
+    for snapshot in snapshots:
+        display = build_weather_display(snapshot, now)
+        if display is None:
+            continue  # pragma: no cover — unreachable: snapshot is never None here
+        days.append(
+            ForecastPanelDay(
+                date=snapshot.valid_for_date,
+                weekday_label=snapshot.valid_for_date.strftime("%a"),
+                icon_bucket=display["icon_bucket"],
+                icon_filename=display["icon_filename"],
+                condition_label=display["condition_label"],
+                temp_max=snapshot.temperature_2m_max,
+                temp_min=snapshot.temperature_2m_min,
+                snowfall_sum=snapshot.snowfall_sum,
+                freezing_level_height=snapshot.freezing_level_height,
+                hourly=snapshot.hourly_series or [],
+            )
+        )
+    return ForecastPanel(days=days)

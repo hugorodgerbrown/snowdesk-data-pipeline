@@ -9,8 +9,10 @@ Covers:
   - is_day: boundary cases around sunrise (inclusive) and sunset (exclusive),
     plus mid-day and mid-night reference points.
   - build_weather_display: shape of the returned dict, ``None`` short-circuit
-    when no snapshot is supplied, and the new icon_bucket / condition_label /
-    icon_filename fields.
+    when no snapshot is supplied, the new icon_bucket / condition_label /
+    icon_filename fields, and that it also accepts a ForecastPointWeather row.
+  - build_point_forecast_panel (SNOW-417): per-day shape, ``None`` for an
+    empty list, and hourly passthrough.
 """
 
 from __future__ import annotations
@@ -26,12 +28,13 @@ from bulletins.services.weather_display import (
     DEFAULT_ICON_BUCKET,
     WEATHER_BUCKETS,
     WEATHER_ICON_BUCKETS,
+    build_point_forecast_panel,
     build_weather_display,
     is_day,
     weather_code_bucket,
     weather_code_icon_bucket,
 )
-from tests.factories import WeatherSnapshotFactory
+from tests.factories import ForecastPointWeatherFactory, WeatherSnapshotFactory
 
 # ---------------------------------------------------------------------------
 # weather_code_bucket
@@ -331,3 +334,93 @@ class TestBuildWeatherDisplay:
         assert display["icon_filename"] == "cloudy.svg"
         assert "day" not in display["icon_filename"]
         assert "night" not in display["icon_filename"]
+
+    def test_accepts_forecast_point_weather_row(self) -> None:
+        """build_weather_display also accepts a ForecastPointWeather row."""
+        weather = ForecastPointWeatherFactory.create(
+            weather_code=0,
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        display = build_weather_display(weather, now)
+
+        assert display is not None
+        assert display["weather"] is weather
+        assert display["bucket"] == "clear"
+        assert display["is_day"] is True
+
+
+# ---------------------------------------------------------------------------
+# build_point_forecast_panel
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBuildPointForecastPanel:
+    """Tests for the multi-day favourite forecast panel builder (SNOW-417)."""
+
+    def test_empty_list_returns_none(self) -> None:
+        """No snapshots short-circuits to None for the template's empty state."""
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        assert build_point_forecast_panel([], now) is None
+
+    def test_per_day_shape(self) -> None:
+        """Each day carries the icon/label fields plus the multi-day extras."""
+        snapshot = ForecastPointWeatherFactory.create(
+            weather_code=71,  # snowfall
+            valid_for_date=datetime.date(2026, 5, 1),  # a Friday
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+            freezing_level_height=1800.0,
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        panel = build_point_forecast_panel([snapshot], now)
+
+        assert panel is not None
+        assert len(panel["days"]) == 1
+        day = panel["days"][0]
+        assert day["date"] == datetime.date(2026, 5, 1)
+        assert day["weekday_label"] == "Fri"
+        assert day["icon_bucket"] == "light_snow"
+        assert day["condition_label"] == "Light snow"
+        assert day["icon_filename"] == "light_snow-day.svg"
+        assert day["temp_max"] == 4.2
+        assert day["temp_min"] == -3.1
+        assert day["snowfall_sum"] == 12.0
+        assert day["freezing_level_height"] == 1800.0
+        assert day["hourly"] == snapshot.hourly_series
+
+    def test_multiple_days_preserve_order(self) -> None:
+        """Days are emitted in the order the snapshots list is passed in."""
+        day0 = ForecastPointWeatherFactory.create(
+            valid_for_date=datetime.date(2026, 5, 1)
+        )
+        day1 = ForecastPointWeatherFactory.create(
+            forecast_point=day0.forecast_point,
+            valid_for_date=datetime.date(2026, 5, 2),
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        panel = build_point_forecast_panel([day0, day1], now)
+
+        assert panel is not None
+        assert [day["date"] for day in panel["days"]] == [
+            datetime.date(2026, 5, 1),
+            datetime.date(2026, 5, 2),
+        ]
+
+    def test_none_hourly_series_becomes_empty_list(self) -> None:
+        """A row with hourly_series=None surfaces as an empty list, not None."""
+        snapshot = ForecastPointWeatherFactory.create(hourly_series=None)
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        panel = build_point_forecast_panel([snapshot], now)
+
+        assert panel is not None
+        assert panel["days"][0]["hourly"] == []
