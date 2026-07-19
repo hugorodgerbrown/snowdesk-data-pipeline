@@ -291,9 +291,13 @@
     const submitter = event.submitter;
     // One-tap UX: every submit is triggered by a problem button carrying
     // its own observation_type value. No submitter (or no value) means
-    // this wasn't a real problem-button tap — bail rather than send a
-    // bodyless mutation.
-    if (!submitter || !submitter.value) return;
+    // this wasn't a real problem-button tap — surface a toast rather than
+    // silently dropping a bodyless mutation. preventDefault above has
+    // already cancelled the native submit, so there is no fallback path.
+    if (!submitter || !submitter.value) {
+      showToast('Could not submit your report — please tap a signal type.');
+      return;
+    }
 
     // Stamp the tap-time instant — this is the moment the user actually
     // observed the problem, which may differ from whenever the queued
@@ -325,7 +329,17 @@
       body: body,
     };
 
-    if (!window.pwaMutationQueue) {
+    // enqueue() is defensively non-fatal: when IndexedDB is missing or in the
+    // terminal Reset-Required state (SNOW-375/376 contract) it silently drops
+    // the operation and still resolves, so awaiting it can't tell us the
+    // report was persisted. Detect those states up front and surface the
+    // error toast instead of showing a success confirmation for a report that
+    // was never actually queued.
+    const dbUnavailable =
+      typeof window.pwaDb !== 'object' ||
+      (typeof window.pwaDb.isResetRequired === 'function' &&
+        window.pwaDb.isResetRequired());
+    if (!window.pwaMutationQueue || dbUnavailable) {
       showToast('Could not save your report on this device — please try again.');
       return;
     }

@@ -49,6 +49,8 @@ from observations.models import FieldObservation
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, UserFactory
 
+DB_NAME = "snowdesk-pwa-v1"
+
 
 def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     """Load / with navigator.serviceWorker stripped, wait for the map + queue.
@@ -209,3 +211,76 @@ def test_offline_report_submission_syncs_without_duplicate(
 
     with django_db_blocker.unblock():
         assert FieldObservation.objects.count() == 1
+
+
+@override_flag("field_observations", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_reset_required_state_shows_error_toast_not_false_confirmation(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """When IndexedDB is in the terminal Reset-Required state, a report tap
+    must NOT show the optimistic "Thank you" confirmation.
+
+    ``window.pwaMutationQueue.enqueue()`` is defensively non-fatal: in
+    Reset-Required it silently drops the operation and still resolves
+    (SNOW-375/376 contract), so awaiting it cannot tell report.js the report
+    was lost. report.js guards on ``window.pwaDb.isResetRequired()`` up front
+    and surfaces the error toast instead of a success confirmation. Without
+    that guard the user would see "Thank you for your report" for a report
+    that was never persisted and can never sync.
+    """
+    with django_db_blocker.unblock():
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=True)
+
+    _session_login(page.context, live_server.url, user)
+    page.context.grant_permissions(["geolocation"])
+    page.context.set_geolocation({"latitude": 46.10, "longitude": 7.10, "accuracy": 10})
+
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    # Poison the DB to a version above db.js's DB_VERSION, then reload so
+    # db.js's fresh open() hits VersionError → terminal Reset-Required state.
+    # Same failure path as tests/e2e/test_pwa_db.py, driven via reload so
+    # db.js opens the poisoned version from a clean module state.
+    page.evaluate(
+        """async (name) => {
+            await new Promise((resolve) => {
+              const del = indexedDB.deleteDatabase(name);
+              del.onsuccess = del.onerror = del.onblocked = () => resolve();
+            });
+            await new Promise((resolve, reject) => {
+              const req = indexedDB.open(name, 99);
+              req.onsuccess = () => { req.result.close(); resolve(); };
+              req.onerror = () => reject(req.error);
+              req.onupgradeneeded = () => {};
+            });
+          }""",
+        DB_NAME,
+    )
+    page.reload()
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+    _poll(page, "() => window.pwaDb.isResetRequired() === true")
+
+    # Remove the full-screen terminal overlay so it can't intercept the taps
+    # below — this test exercises report.js's guard, not the overlay itself.
+    page.evaluate(
+        "() => { const o = document.getElementById('pwa-reset-required'); "
+        "if (o) o.remove(); }"
+    )
+    page.wait_for_function(
+        "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
+    )
+
+    page.click("#report-btn")
+    page.wait_for_selector("#report-form")
+    page.click('#report-form button[name="observation_type"][value="WHUMPFING"]')
+
+    # The guard fires: the error toast appears, the form stays put (no
+    # optimistic confirmation swapped in), and nothing is claimed as recorded.
+    page.wait_for_selector("#report-toast")
+    assert page.locator("#report-sheet #report-form").count() == 1
+    assert (
+        page.locator('#report-sheet:has-text("Thank you for your report")').count() == 0
+    )
