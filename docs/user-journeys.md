@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-19
 ---
 
 # User personas and core journeys
@@ -140,9 +140,11 @@ homepage) drops an email into the inline form and becomes a subscriber.
   cards (A new, B existing-pending, C active-new-region, D
   active-already).
 - Email — account-access link.
-- `GET /account/access/<token>/` — verifies the token, flips
-  `pending → active`, stamps `confirmed_at`, drops `subscriber_uuid`
-  into the session.
+- `GET /account/access/<token>/` — verifies the token and renders a
+  confirm page with a POST button; no state change and no sign-in on the
+  GET (SNOW-439).
+- `POST /account/access/<token>/` — flips `pending → active`, stamps
+  `confirmed_at`, and signs the subscriber in.
 - `/account/manage/` — the post-confirm destination.
 
 **Key invariants:**

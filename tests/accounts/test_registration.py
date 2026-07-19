@@ -158,9 +158,13 @@ class TestVerifyView:
         assert account.is_verified is False  # GET must not verify
 
     def test_get_sets_referrer_policy(self, client: Client) -> None:
+        """SNOW-438: the confirm page (a POST form) uses same-origin, not
+        no-referrer — under no-referrer the browser sends ``Origin: null`` on
+        the POST and Django's CSRF check rejects it (403) on HTTPS.
+        """
         AccountFactory.create(user__email="v@example.com", is_verified=False)
         response = client.get(self._url("v@example.com"))
-        assert response["Referrer-Policy"] == "no-referrer"
+        assert response["Referrer-Policy"] == "same-origin"
 
     def test_post_verifies_and_logs_in(self, client: Client) -> None:
         account = AccountFactory.create(user__email="v@example.com", is_verified=False)

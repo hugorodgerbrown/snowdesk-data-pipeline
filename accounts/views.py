@@ -30,8 +30,10 @@ Implements the subscription flow built around Django's TimestampSigner:
   remove_region_from_bulletin
                       POST — HTMX: authenticated one-click unsubscribe from the
                             bulletin page. Mirrors remove_region cascade logic.
-  account_view        GET  — verify account-access token; activate subscriber;
-                            log in via Django auth; redirect to /account/manage/.
+  account_view        GET/POST — account-access ("magic link") token. GET shows
+                            a confirm button (no state change, no login); POST
+                            activates the subscriber, logs in via Django auth,
+                            and redirects to /account/manage/.
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
@@ -124,6 +126,21 @@ _TOKEN_BACKEND = "accounts.backends.TokenBackend"  # noqa: S105 — backend path
 
 # Template for the generic link-expired / bad-token error page.
 _LINK_EXPIRED_TEMPLATE = "accounts/link_expired.html"
+
+# Referrer-Policy for token-bearing pages. Both values keep the secret token in
+# the URL path from leaking to third parties; the difference is same-origin
+# behaviour:
+#   - ``no-referrer`` — strips Referer/Origin from *every* request, including
+#     same-origin. Correct for terminal responses (error pages, redirects, done
+#     pages) that carry no POST form.
+#   - ``same-origin`` — sends a valid Origin/Referer for same-origin requests but
+#     nothing cross-origin. **Required** on any GET page that renders a
+#     same-origin POST form: under ``no-referrer`` the browser sends
+#     ``Origin: null`` on the POST, which Django's CSRF middleware rejects with
+#     403 on HTTPS (invisible on local HTTP, where the Origin check is skipped).
+#     See SNOW-438.
+_REFERRER_NO_REFERRER = "no-referrer"
+_REFERRER_CONFIRM_PAGE = "same-origin"
 
 # URL name for the manage page — used in redirects.
 _MANAGE_URL = "/account/manage/"
@@ -378,7 +395,7 @@ def verify_view(request: HttpRequest, token: str) -> HttpResponse:
     if email is None:
         logger.debug("verify_view received an invalid/expired token")
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
     try:
@@ -388,12 +405,12 @@ def verify_view(request: HttpRequest, token: str) -> HttpResponse:
             "verify_view: valid token for unknown email %s", mask_email(email)
         )
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
     if request.method == "GET":
         response = render(request, "accounts/verify.html", {"token": token})
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
     # POST — perform the verification. Create the Account already-verified so a
@@ -411,7 +428,7 @@ def verify_view(request: HttpRequest, token: str) -> HttpResponse:
     logger.info("Account pk=%s verified via registration link", account.pk)
 
     response = redirect("accounts:setup")
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
@@ -578,7 +595,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
     if user is None:
         logger.debug("reset_password_confirm received an invalid/expired/used token")
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
     if request.method == "GET":
@@ -587,7 +604,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
             "accounts/reset_password_confirm.html",
             {"password_form": SnowdeskSetPasswordForm(user)},
         )
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
     form = SnowdeskSetPasswordForm(user, request.POST)
@@ -597,7 +614,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
             "accounts/reset_password_confirm.html",
             {"password_form": form},
         )
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
     form.save()
@@ -606,7 +623,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
     login(request, user, backend=_TOKEN_BACKEND)
     logger.info("Password reset completed for user pk=%s", user.pk)
     response = redirect("accounts:manage")
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
@@ -618,7 +635,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
 def _link_expired(request: HttpRequest) -> HttpResponse:
     """Render the generic link-expired page (400) with Referrer-Policy set."""
     response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
@@ -764,7 +781,7 @@ def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
             "accounts/change_email_confirm.html",
             {"new_email": new_email},
         )
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
     old_email = user.email
@@ -778,7 +795,7 @@ def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
     send_email_change_notice(old_email, stage="completed")
     logger.info("Email change completed for user pk=%s", user.pk)
     response = redirect("accounts:manage")
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
@@ -1295,25 +1312,30 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
 # ---------------------------------------------------------------------------
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def account_view(request: HttpRequest, token: str) -> HttpResponse:
     """
-    Verify an account-access token, activate the subscriber, and log them in.
+    Verify an account-access ("magic link") token and sign the subscriber in.
 
-    On success: if the subscriber is pending, flip to active and stamp
-    ``confirmed_at`` (idempotent — re-clicking the same link does not
-    re-stamp).  Calls ``django.contrib.auth.login()`` to establish the
-    Django session and redirects to ``/account/manage/?just_confirmed=1``.
+    GET renders a confirm page with a single button — it performs **no** state
+    change and does **not** log anyone in, so following the emailed link (or a
+    link-prefetch scanner hitting it) never grants account access on its own
+    (SNOW-439).  Only the POST from that page acts: if the subscriber is
+    pending it flips to active and stamps ``confirmed_at`` (idempotent —
+    re-submitting does not re-stamp), then ``django.contrib.auth.login()``
+    establishes the session and redirects to
+    ``/account/manage/?just_confirmed=1``.
 
-    On failure (bad, tampered, or expired token): renders ``link_expired.html``
-    with status 400.
+    On a bad, tampered, or expired token — or a token for an unknown subscriber
+    — renders ``link_expired.html`` (400) for both verbs.
 
     Args:
-        request: Incoming GET request.
+        request: Incoming HTTP request.
         token: The signed token from the URL path.
 
     Returns:
-        302 redirect to manage page, or link-expired error page.
+        The confirm page (GET), a 302 redirect to manage (POST success), or the
+        link-expired error page.
 
     """
     max_age = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400)
@@ -1321,45 +1343,50 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 
     if email is None:
         logger.debug("account_view received an invalid/expired token")
-        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-    else:
-        try:
-            subscriber = Subscriber.objects.get(user__email=email.lower())
-        except Subscriber.DoesNotExist:
-            logger.warning(
-                "account_view: valid token for unknown email %s", mask_email(email)
-            )
-            response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        else:
-            if subscriber.status == Subscriber.Status.PENDING:
-                subscriber.status = Subscriber.Status.ACTIVE
-                subscriber.confirmed_at = timezone.now()
-                subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
-                logger.info(
-                    "Subscriber pk=%s activated via account link", subscriber.pk
-                )
-                # Emit subscription_confirmed and join the anonymous session
-                # identity to the now-authenticated User PK.
-                hours_since: float = round(
-                    (timezone.now() - subscriber.created_at).total_seconds() / 3600,
-                    2,
-                )
-                analytics.track(
-                    "subscription_confirmed",
-                    str(subscriber.user_id),
-                    {"hours_since_started": hours_since},
-                )
-                anon_id: str | None = request.session.get("analytics_anon_id")
-                if anon_id:
-                    analytics.alias(
-                        distinct_id=str(subscriber.user_id),
-                        alias_id=anon_id,
-                    )
-            login(request, subscriber.user, backend=_TOKEN_BACKEND)
-            response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
+        return _link_expired(request)
 
+    try:
+        subscriber = Subscriber.objects.get(user__email=email.lower())
+    except Subscriber.DoesNotExist:
+        logger.warning(
+            "account_view: valid token for unknown email %s", mask_email(email)
+        )
+        return _link_expired(request)
+
+    if request.method == "GET":
+        # No state change on GET — the token is carried in the form action (the
+        # same URL) so the POST re-verifies it.
+        response = render(request, "accounts/access.html", {"token": token})
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
+        return response
+
+    # POST — activate (if pending) and sign in.
+    if subscriber.status == Subscriber.Status.PENDING:
+        subscriber.status = Subscriber.Status.ACTIVE
+        subscriber.confirmed_at = timezone.now()
+        subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
+        logger.info("Subscriber pk=%s activated via account link", subscriber.pk)
+        # Emit subscription_confirmed and join the anonymous session identity to
+        # the now-authenticated User PK.
+        hours_since: float = round(
+            (timezone.now() - subscriber.created_at).total_seconds() / 3600,
+            2,
+        )
+        analytics.track(
+            "subscription_confirmed",
+            str(subscriber.user_id),
+            {"hours_since_started": hours_since},
+        )
+        anon_id: str | None = request.session.get("analytics_anon_id")
+        if anon_id:
+            analytics.alias(
+                distinct_id=str(subscriber.user_id),
+                alias_id=anon_id,
+            )
+    login(request, subscriber.user, backend=_TOKEN_BACKEND)
+    response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
     # Tokens appear in this view's URL path — suppress Referer leakage.
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
@@ -1618,7 +1645,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     if result is None:
         logger.debug("unsubscribe_view received an invalid token")
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
     email, region_id = result
@@ -1632,7 +1659,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
             "accounts/unsubscribe.html",
             {"email": email, "region": region, "token": token},
         )
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
     # POST — execute unsubscribe.
@@ -1645,7 +1672,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
             mask_email(email),
         )
         response = render(request, "accounts/unsubscribe_done.html", {})
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
     # Capture distinct_id and account_age_days BEFORE any delete.
@@ -1679,7 +1706,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         )
 
     response = render(request, "accounts/unsubscribe_done.html", {})
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 

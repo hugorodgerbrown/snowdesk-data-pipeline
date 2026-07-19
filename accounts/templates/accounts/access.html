@@ -1,0 +1,28 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+accounts/templates/accounts/access.html — Account-access ("magic link") confirm page.
+
+Rendered on GET of /account/access/<token>/ for a valid token. It performs no
+state change and signs nobody in: only the POST from this form activates the
+subscriber (if pending) and establishes the session (safe against link-prefetch
+scanners and GET-only account access). SNOW-439.
+{% endcomment %}
+{% load i18n %}
+
+{% block status_title %}{% trans "Access your account — Snowdesk" %}{% endblock %}
+
+{% block status_meta %}{% trans "Confirm to sign in to your Snowdesk account and manage your avalanche bulletin subscriptions." %}{% endblock %}
+
+{% block status_heading %}{% trans "Access your account" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "Tap the button below to sign in to your Snowdesk account and manage your avalanche bulletin subscriptions." %}
+{% endblock %}
+
+{% block status_cta %}
+    <form method="post" class="mt-6">
+        {% csrf_token %}
+        {% trans "Sign in to my account" as label %}
+        {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+    </form>
+{% endblock %}

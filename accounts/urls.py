@@ -14,7 +14,7 @@ URL map
 /account/verify/<token>/              verify                 GET/POST — verify email
 /account/setup/                       setup                  GET — credential setup
 /account/sign-in/                     sign_in                GET/POST — sign-in page
-/account/access/<token>/              account                GET — account-access token
+/account/access/<token>/              account                GET/POST — access token
 /account/manage/                      manage                 GET — authenticated
 /account/manage/remove/<region_id>/   remove_region          POST HTMX
 /account/manage/delete/               delete_account         POST HTMX

@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account/Subscriber models, registration + email verification, is_verified gate, signed-token salts, /account/ mount
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-19
 ---
 
 # Accounts
@@ -34,7 +34,7 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/account/reset-password/<token>/` | `reset_password_confirm` | GET + POST | Choose a new password from a reset link (SNOW-432) |
 | `/account/change-email/` | `change_email` | GET + POST | Request a change of account email (SNOW-433) |
 | `/account/change-email/<token>/` | `change_email_confirm` | GET + POST | Confirm + apply an email change (SNOW-433) |
-| `/account/access/<token>/` | `account` | GET | Verify account-access token; activate subscriber |
+| `/account/access/<token>/` | `account` | GET + POST | GET shows a confirm button (no state change, no login); POST activates the subscriber and signs in (SNOW-439) |
 | `/account/manage/` | `manage` | GET + POST | Email entry (unauth) or region management (auth) |
 | `/account/manage/remove/<region_id>/` | `remove_region` | POST | HTMX — remove one region from the authenticated subscriber |
 | `/account/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated subscriber and cascade subscriptions |
@@ -78,7 +78,7 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 
 Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit counters are shared across workers. The cache table is created by `accounts/migrations/0002_create_cache_table.py`. Development sets `RATELIMIT_ENABLE = False` so tests are not throttled.
 
-**Account page** — `account_view` is dual-purpose: the first click on a pending subscriber's link flips `status → active` and stamps `confirmed_at`; re-clicks within the 24h window are idempotent (no double-stamp). Stores `subscriber_uuid` in the session so the manage page skips the email-entry step for the same browser session.
+**Account page** — `account_view` mirrors the verify-email flow (SNOW-439): a GET on the account-access ("magic link") URL renders a confirm page (`accounts/access.html`) with a POST button and performs **no** state change and **no** login — so following the emailed link, or a link-prefetch scanner hitting it, never grants account access on a GET verb. The POST from that page activates a pending subscriber (`status → active`, stamps `confirmed_at`) and signs in; re-POSTing within the 24h window is idempotent (no double-stamp). The confirm page carries `Referrer-Policy: same-origin` (not `no-referrer`) so its POST passes Django's CSRF check on HTTPS — see [`docs/decisions/referrer-policy-same-origin-for-csrf.md`](decisions/referrer-policy-same-origin-for-csrf.md) (SNOW-438).
 
 **Passkeys (WebAuthn)** — users can sign in without an email round-trip:
 
