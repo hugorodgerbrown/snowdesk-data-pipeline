@@ -10,5 +10,13 @@
     "@lhci/cli": "^0.14.0",
     "@tailwindcss/cli": "^4.2.2",
     "sharp": "^0.34.0"
+  },
+  "comments": {
+    "overrides": "Force patched versions of vulnerable transitive deps of @lhci/cli (dev-only Lighthouse CI; never shipped to a browser or run in production). The latest @lhci/cli still pins these, and `npm audit fix --force` only offers a breaking downgrade to @lhci/cli@0.1.0 — do not run it. See SNOW-440 / docs/lighthouse.md."
+  },
+  "overrides": {
+    "tmp": "^0.2.6",
+    "uuid": "^11.1.1",
+    "cookie": "^0.7.0"
   }
 }
