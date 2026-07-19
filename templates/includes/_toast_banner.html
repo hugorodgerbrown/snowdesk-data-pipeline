@@ -1,0 +1,59 @@
+{% load i18n %}
+{% comment %}
+  templates/includes/_toast_banner.html — Full-width top-of-page toast (SNOW-376).
+
+  Distinct from templates/includes/_toast.html (a bottom-centred pill used
+  by the SW-update banner and HTMX error banners) — this partial spans the
+  full viewport width and is pinned to the TOP of the page. Purpose-built
+  for the mutation-queue permanent-failure UX (a queued client mutation
+  that a server response has permanently rejected — any 4xx other than
+  408/429, or a row that exhausted its retry budget). Do not repurpose
+  _toast.html for this shape; see its own header comment for why the two
+  are kept separate.
+
+  Optional context:
+    body — Body text (single line). Rendered via {{ }}, auto-escaped.
+           Defaults to a generic "couldn't be saved" message when omitted.
+    id   — DOM id on the outer element. static/js/mutation_queue.js looks
+           up "mutation-queue-toast" by id to reveal/hide/wire the dismiss
+           button; only override this for the component-library variant,
+           which renders statically and doesn't need JS to find it.
+
+  Behaviour (wired in static/js/mutation_queue.js, not here):
+    - Hidden by default (the "hidden" class below).
+    - Revealed by removing "hidden" then flipping the transform/opacity
+      classes — a Tailwind-utility slide-down-from-top reveal, no custom
+      CSS needed.
+    - Auto-dismisses after 10s via a JS timer.
+    - The "×" button (data-action="dismiss") hides it immediately and
+      cancels the auto-dismiss timer.
+
+  ARIA: role="alert" aria-live="assertive" — a permanently-failed mutation
+  is exactly the kind of thing a screen-reader user must be interrupted
+  for, same rationale as the "error"/"warning" kinds in _toast.html.
+{% endcomment %}
+{% with toast_id=id|default:"mutation-queue-toast" %}
+    <div
+        id="{{ toast_id }}"
+        role="alert"
+        aria-live="assertive"
+        data-testid="mutation-queue-toast"
+        class="hidden fixed inset-x-0 top-0 z-50 -translate-y-full opacity-0 transition-all duration-300 ease-out flex w-full items-center justify-center gap-3 bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
+    >
+        <span>
+            {% if body %}
+                {{ body }}
+            {% else %}
+                {% trans "Some changes couldn't be saved and won't be retried." %}
+            {% endif %}
+        </span>
+        <button
+            type="button"
+            data-action="dismiss"
+            aria-label="{% trans 'Dismiss' %}"
+            class="rounded px-1 leading-none text-status-error-text opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-error-text"
+        >
+            ×
+        </button>
+    </div>
+{% endwith %}
