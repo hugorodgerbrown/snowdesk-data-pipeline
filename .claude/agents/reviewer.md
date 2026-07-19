@@ -14,6 +14,11 @@ You are a senior Django code reviewer specialising in security, performance, and
 - **Stack**: Django, HTMX, Tailwind CSS v4, uv, pytest + FactoryBoy + tox
 - **Linter**: ruff (already run by implementer — focus on logic, not style)
 - **External data**: SLF CAAML bulletin API (untrusted external JSON)
+- **Python version**: 3.14. `except A, B:` (comma-separated, no parentheses)
+  is valid 3.14 syntax ([PEP 758](https://peps.python.org/pep-0758/)),
+  equivalent to `except (A, B):`, and is used deliberately across the
+  codebase. Do **not** report it as Python 2 syntax, a `SyntaxError`, or a
+  bug — it is a false positive.
 
 ## Review checklist
 

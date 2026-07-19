@@ -31,6 +31,10 @@ open, what's carried forward under "watching").
 
 - **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, uv,
   pytest + FactoryBoy + tox.
+- **Do not flag** `except A, B:` (comma-separated, no parentheses) — it is
+  valid Python 3.14 syntax ([PEP 758](https://peps.python.org/pep-0758/)),
+  equivalent to `except (A, B):`, used deliberately across the codebase. It
+  is not Python 2 syntax, not a `SyntaxError`, and not a bug.
 - **Apps**: `config/`, `core/`, `regions/`, `bulletins/`, `accounts/`,
   `public/`, plus `analytics/` if present.
 - **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
