@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle operator guide — Flag/Switch/Sample, edit_map/field_observations/favourites inventory, seeding migrations, override_flag tests
+description: django-waffle operator guide — Flag/Switch/Sample, flag inventory (edit_map, favourites, community_reports), seeding migrations
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-19
 ---
 
 # Feature flags (django-waffle)
@@ -53,6 +53,8 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 |------|---------------------|-------|------------|
 | `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
 | `favourites` | `superusers=True` | The saved-map-pin favourites HTMX CRUD endpoints and GeoJSON layer under `/favourites/` (`favourites.views`). | SNOW-413. |
+| `field_observations` | `superusers=True` | The GPS-gated field-report ("Waze-style Report") button on `/map/` and its submission endpoints (`observations.views`). | SNOW-324. |
+| `community_reports` | `superusers=True` | The "Community reports" read overlay on `/map/` — anonymised, clustered pins from the last 48h of `FieldObservation` rows (`api:community_reports_geojson`). Separate from `field_observations` so the read overlay can ship independently of the submission feature. | SNOW-419. |
 
 Keep this table up to date as new flags land.
 
