@@ -34,7 +34,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | `X-App-Min-Version` on every response              | SNOW-369      | Same middleware; reads `settings.APP_MIN_VERSION`                                                 |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `public.api.version_view` at `/api/version/`                                                      |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
-| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. See [`mutation-queue.md`](mutation-queue.md). |
+| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. First real consumer: offline field-report submission (`static/js/report.js` → `observations.views.report_submit`, SNOW-420). See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `core.freshness.apply_freshness_headers`; applied by data-bearing views in `public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
@@ -229,6 +229,12 @@ Shipped from the observability + IndexedDB track:
   backoff, a nav sync badge, a permanent-failure toast, and feature-detected
   Background Sync (Android) behind the `window.pwaMutationQueue` surface
   SNOW-384 stubbed. See [`mutation-queue.md`](mutation-queue.md).
+- **SNOW-420** — First real `window.pwaMutationQueue` consumer: offline
+  field-report submission. `static/js/report.js` routes the report form's
+  POST through the queue instead of `hx-post`, stamping a tap-time
+  `observed_at` before enqueuing so an offline report records when the
+  user actually observed the problem rather than whenever the queued
+  mutation replays. See [`mutation-queue.md`](mutation-queue.md#consumers).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
   `analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,

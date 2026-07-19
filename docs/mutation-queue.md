@@ -13,8 +13,28 @@ behind the `window.pwaMutationQueue` surface first stubbed in SNOW-384
 queue with no call-site changes for any adopter.
 
 **Scope**: this ticket ships the machinery only. The existing HTMX
-(`hx-post`) subscription/push call sites are NOT converted to JS calls —
-the real consumer is future field-observation submission (SNOW-330).
+(`hx-post`) subscription/push call sites are NOT converted to JS calls.
+
+## Consumers
+
+- **`static/js/report.js`** (SNOW-420) — the first real consumer.
+  Field-report submission (`observations.views.report_submit`) is routed
+  through `window.pwaMutationQueue.enqueue()` instead of `hx-post`, so a
+  report tapped offline is captured immediately, persisted, and replayed
+  on reconnect. `report.js` stamps a hidden `observed_at` input with the
+  tap-time instant (`new Date().toISOString()`) before enqueuing — this is
+  what lets a report submitted offline record when the user actually
+  observed the problem rather than whenever the queued mutation happens to
+  replay; `report_submit` validates it (shape + plausibility window) and
+  falls back to the model's `timezone.now` default when absent. The
+  optimistic confirmation is rendered client-side immediately, cloned from
+  a `<template>` embedded in the form partial (server-rendered so
+  copy/i18n/design-tokens live in one place), and reveals a "will sync
+  when you're back online" line when the tap happened offline. See
+  `observations/views.py`'s module docstring for the server-side
+  `observed_at` validation contract, and
+  `tests/e2e/test_offline_observation_submit.py` for the full offline →
+  reconnect journey test.
 
 ## Row shape (`queue:mutations`)
 
@@ -108,10 +128,14 @@ server-side cache/TTL contract.
 
 ### CSRF on replay
 
-The queue does not add a CSRF token automatically. A future JSON-mutation
-consumer (SNOW-330) is responsible for including whatever the target view
-requires in its own `operation.headers` — the queue only ever adds
-`Idempotency-Key` at replay time.
+The queue does not add a CSRF token automatically — each caller is
+responsible for including whatever the target view requires in its own
+`operation.headers` or `operation.body`; the queue only ever adds
+`Idempotency-Key` at replay time. `report.js` (SNOW-420) carries CSRF in
+the urlencoded `operation.body` (`csrfmiddlewaretoken`, read off the
+rendered form by `FormData`) rather than a header — `fetch`'s default
+`credentials: 'same-origin'` sends the session cookie alongside it, which
+is what `report_submit`'s `CsrfViewMiddleware` check needs.
 
 ## Drain triggers
 
@@ -172,7 +196,13 @@ enqueue → online replay, identical Idempotency-Key across retries,
 permanent-4xx immediate failure (toast + telemetry), backoff scheduling
 and the 20-attempt ceiling, the nav badge, and feature-detected
 Background Sync registration. `tests/templates/includes/test_toast_banner.py`
-covers the toast partial's render contract.
+covers the toast partial's render contract. `tests/e2e/test_offline_observation_submit.py`
+(SNOW-420) covers the first real consumer end to end: an offline tap
+enqueues with no network round-trip, the optimistic confirmation +
+sync-pending line + nav badge render immediately, a reconnect drains the
+queue against the real `report_submit` view with the tap-time
+`observed_at` preserved, and a replayed duplicate does not create a second
+row.
 
 ## See also
 

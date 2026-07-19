@@ -10,7 +10,13 @@ the map page (SNOW-324):
   absent the form renders in "choose on map" state (MANUAL path).
 - ``report_submit`` (POST) — validates lat/lon, location_source, and
   observation_type; creates a FieldObservation row; returns the thank-you
-  confirmation fragment.
+  confirmation fragment.  Also accepts an optional client-supplied
+  ``observed_at`` (SNOW-420) — the tap-time instant, stamped client-side by
+  ``report.js`` before the request is handed to the offline mutation queue,
+  so a report submitted while offline records when the user actually
+  observed the problem rather than whenever the queued mutation replays.
+  Validated for shape and plausibility (see ``_parse_observed_at``); falls
+  back to the model's ``timezone.now`` default when absent.
 
 Both endpoints are:
   - flag-gated on ``field_observations`` (404 when inactive);
@@ -25,6 +31,7 @@ and returns 429 when the limit is exceeded.
 
 from __future__ import annotations
 
+import datetime
 import logging
 from typing import cast
 
@@ -33,6 +40,8 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
@@ -42,6 +51,18 @@ from observations.models import FieldObservation
 from regions.services.point_match import region_for_point
 
 logger = logging.getLogger(__name__)
+
+# Sentinel distinguishing "observed_at was supplied but invalid" from
+# "observed_at was absent" — the latter falls back to the model's
+# timezone.now default; the former is a 400.
+_INVALID_OBSERVED_AT = object()
+
+# Plausibility window for a client-supplied observed_at (SNOW-420). Generous
+# enough to absorb clock skew and a genuinely offline device replaying a
+# queued mutation well after the tap, tight enough to reject an obviously
+# wrong client clock.
+_OBSERVED_AT_FUTURE_TOLERANCE = datetime.timedelta(minutes=5)
+_OBSERVED_AT_MAX_AGE = datetime.timedelta(days=30)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +151,63 @@ def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] 
         return None
     try:
         return float(lat_str), float(lon_str)
+    except ValueError, TypeError:
+        return None
+
+
+def _parse_observed_at(raw: str | None) -> datetime.datetime | None | object:
+    """Parse the client-supplied ``observed_at`` field (SNOW-420).
+
+    ``report.js`` stamps this with ``new Date().toISOString()`` at tap time,
+    before handing the request to ``window.pwaMutationQueue`` — so it may
+    reach the server well after the fact, on replay after a reconnect.
+
+    Args:
+        raw: The raw ``observed_at`` POST value, or None/empty when absent.
+
+    Returns:
+        None when ``raw`` is absent — the caller falls back to the model's
+        ``timezone.now`` default. The parsed, timezone-aware ``datetime``
+        when ``raw`` is present, well-formed, and within the accepted
+        plausibility window. ``_INVALID_OBSERVED_AT`` when ``raw`` is
+        present but unparseable, or outside that window (more than
+        ``_OBSERVED_AT_FUTURE_TOLERANCE`` in the future, or older than
+        ``_OBSERVED_AT_MAX_AGE``).
+
+    """
+    if not raw:
+        return None
+
+    parsed = parse_datetime(raw)
+    if parsed is None:
+        return _INVALID_OBSERVED_AT
+
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+
+    now = timezone.now()
+    if parsed > now + _OBSERVED_AT_FUTURE_TOLERANCE:
+        return _INVALID_OBSERVED_AT
+    if parsed < now - _OBSERVED_AT_MAX_AGE:
+        return _INVALID_OBSERVED_AT
+
+    return parsed
+
+
+def _parse_accuracy_radius_km(accuracy_m_str: str | None) -> float | None:
+    """Convert an optional ``accuracy_m`` POST value (metres) to kilometres.
+
+    Args:
+        accuracy_m_str: Raw ``accuracy_m`` string from the request, or None.
+
+    Returns:
+        The value divided by 1000, or None when absent or unparseable.
+
+    """
+    if not accuracy_m_str:
+        return None
+    try:
+        return float(accuracy_m_str) / 1000.0
     except ValueError, TypeError:
         return None
 
@@ -267,14 +345,16 @@ def report_submit(request: HttpRequest) -> HttpResponse:
             status=400,
         )
 
+    # Optional client-supplied observed_at (SNOW-420) — the tap-time instant
+    # stamped by report.js before the request enters the offline mutation
+    # queue. None means absent (fall back to the model default below);
+    # _INVALID_OBSERVED_AT means present but unparseable or implausible.
+    observed_at = _parse_observed_at(request.POST.get("observed_at"))
+    if observed_at is _INVALID_OBSERVED_AT:
+        return HttpResponse("A valid observed_at is required.", status=400)
+
     # Parse optional accuracy (metres → kilometres).
-    accuracy_radius_km: float | None = None
-    accuracy_m_str = request.POST.get("accuracy_m")
-    if accuracy_m_str:
-        try:
-            accuracy_radius_km = float(accuracy_m_str) / 1000.0
-        except ValueError, TypeError:
-            accuracy_radius_km = None
+    accuracy_radius_km = _parse_accuracy_radius_km(request.POST.get("accuracy_m"))
 
     # Parse optional raw GPS fix coords (null on MANUAL path).
     gps_coords = _parse_gps(request.POST.get("gps_lat"), request.POST.get("gps_lon"))
@@ -285,17 +365,23 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     region = region_for_point(lat, lon)
 
     # _auth_gate above guarantees an authenticated User; cast narrows for mypy.
-    FieldObservation.objects.create(
-        user=cast(User, request.user),
-        region=region,
-        latitude=lat,
-        longitude=lon,
-        accuracy_radius_km=accuracy_radius_km,
-        gps_latitude=gps_lat,
-        gps_longitude=gps_lon,
-        location_source=location_source,
-        observation_type=observation_type,
-    )
+    create_kwargs: dict[str, object] = {
+        "user": cast(User, request.user),
+        "region": region,
+        "latitude": lat,
+        "longitude": lon,
+        "accuracy_radius_km": accuracy_radius_km,
+        "gps_latitude": gps_lat,
+        "gps_longitude": gps_lon,
+        "location_source": location_source,
+        "observation_type": observation_type,
+    }
+    # Only set observed_at when the client supplied a valid instant — when
+    # absent, omitting the key lets the model's timezone.now default fire.
+    if isinstance(observed_at, datetime.datetime):
+        create_kwargs["observed_at"] = observed_at
+
+    FieldObservation.objects.create(**create_kwargs)
 
     logger.info(
         "FieldObservation created: user=%s region=%s type=%s source=%s",

@@ -15,17 +15,22 @@ Covers:
                   valid GPS submit → creates row + returns confirmation;
                   GPS_REFINED submit stores differing gps vs report coords;
                   MANUAL submit with out-of-region pin → region=None (not 400);
-                  rate-limit → 429; multiple reports same day allowed.
+                  rate-limit → 429; multiple reports same day allowed;
+                  observed_at (SNOW-420) — valid client instant is stored;
+                  absent → falls back to timezone.now default; malformed,
+                  too-far-future, or too-old → 400 with no row created.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
+from django.utils import timezone
 from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
@@ -774,11 +779,165 @@ class TestReportSubmitSuccess:
 
 
 @pytest.mark.django_db
+class TestReportSubmitObservedAt:
+    """SNOW-420: client-supplied observed_at is validated and stored.
+
+    ``report.js`` stamps ``observed_at`` with the tap-time instant before
+    handing the request to the offline mutation queue, so it may reach the
+    server well after the fact on replay.
+    """
+
+    @override_flag("field_observations", active=True)
+    def test_valid_client_observed_at_is_stored(self, client: Client) -> None:
+        """A valid ISO 8601 instant a few hours in the past is stored verbatim."""
+        user = _verified_user()
+        client.force_login(user)
+
+        observed_at = timezone.now() - timedelta(hours=3)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=user)
+        assert obs.observed_at == observed_at
+
+    @override_flag("field_observations", active=True)
+    def test_absent_observed_at_falls_back_to_now(self, client: Client) -> None:
+        """No observed_at in the POST → the model default (timezone.now) fires."""
+        user = _verified_user()
+        client.force_login(user)
+
+        before = timezone.now()
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+        after = timezone.now()
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=user)
+        assert before <= obs.observed_at <= after
+
+    @override_flag("field_observations", active=True)
+    def test_naive_observed_at_is_made_aware(self, client: Client) -> None:
+        """A naive (no offset) observed_at value is accepted and made aware."""
+        user = _verified_user()
+        client.force_login(user)
+
+        naive_recent = (timezone.now() - timedelta(hours=1)).replace(tzinfo=None)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "observed_at": naive_recent.isoformat(),
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=user)
+        assert timezone.is_aware(obs.observed_at)
+
+    @override_flag("field_observations", active=True)
+    def test_malformed_observed_at_returns_400_and_creates_no_row(
+        self, client: Client
+    ) -> None:
+        """An unparseable observed_at value → 400, no FieldObservation created."""
+        user = _verified_user()
+        client.force_login(user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "observed_at": "not-a-date",
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 400
+        assert FieldObservation.objects.filter(user=user).count() == 0
+
+    @override_flag("field_observations", active=True)
+    def test_future_observed_at_beyond_tolerance_returns_400(
+        self, client: Client
+    ) -> None:
+        """observed_at more than the future-tolerance window ahead → 400, no row."""
+        user = _verified_user()
+        client.force_login(user)
+
+        future = timezone.now() + timedelta(days=1)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "observed_at": future.isoformat().replace("+00:00", "Z"),
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 400
+        assert FieldObservation.objects.filter(user=user).count() == 0
+
+    @override_flag("field_observations", active=True)
+    def test_too_old_observed_at_returns_400(self, client: Client) -> None:
+        """observed_at older than the accepted window (30 days) → 400, no row."""
+        user = _verified_user()
+        client.force_login(user)
+
+        too_old = timezone.now() - timedelta(days=60)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "observed_at": too_old.isoformat().replace("+00:00", "Z"),
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 400
+        assert FieldObservation.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
 class TestReportSubmitRateLimit:
     """Rate limit returns 429 when exceeded."""
 
     @override_flag("field_observations", active=True)
-    def test_rate_limited_branch_returns_429(self, client: Client) -> None:
+    def test_rate_limited_branch_returns_429(self) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
         We test the rate-limit branch directly by calling the view with a
@@ -807,7 +966,7 @@ class TestReportSubmitRateLimit:
         # return type is irrelevant — cast satisfies mypy.
         from django.http import HttpResponse as _HR  # noqa: PLC0415
 
-        htmx_mw = HtmxMiddleware(lambda r: _HR())
+        htmx_mw = HtmxMiddleware(lambda _: _HR())
         htmx_mw(request)
 
         # Exercise the 429 branch by patching the gate helper to pass.
