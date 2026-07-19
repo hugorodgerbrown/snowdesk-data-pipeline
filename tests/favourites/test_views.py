@@ -24,6 +24,14 @@ Covers:
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; flag off → 404.
+  freshness (SNOW-418) — favourite_card / favourite_list stamp
+                        X-Data-Generated-At / -Max-Age / -Unsafe-After;
+                        the card's cache_payload / roster_payload
+                        json_script sidecars carry the expected shape;
+                        the card shows the freshness indicator when a
+                        rating exists; the list's rating lookup is
+                        batched into one query regardless of favourite
+                        count.
 
 The Open-Meteo network call is avoided throughout by patching
 ``favourites.services.resolve_forecast_point``.
@@ -31,11 +39,14 @@ The Open-Meteo network call is avoided throughout by patching
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
@@ -650,3 +661,238 @@ class TestFavouritesGeojson:
         client.force_login(user)
         response = client.get(GEOJSON_URL)
         assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# SNOW-418 — freshness headers + offline-cache sidecars
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteCardFreshness:
+    """favourite_card — freshness headers + cache_payload sidecar (SNOW-418)."""
+
+    @override_flag("favourites", active=True)
+    def test_emits_generated_at_and_unsafe_after_with_rating(
+        self, client: Client
+    ) -> None:
+        """With a rating, headers carry its updated_at and the 48h horizon."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        with freeze_time("2026-01-01T12:00:00Z"):
+            rating = RegionDayRatingFactory.create(
+                region=region, max_rating="considerable"
+            )
+        favourite = FavouriteFactory.create(user=user, region=region)
+
+        with freeze_time("2026-01-01T13:00:00Z"):
+            response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert response["X-Data-Generated-At"] == rating.updated_at.isoformat(
+            timespec="seconds"
+        )
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    @override_flag("favourites", active=True)
+    def test_no_region_omits_unsafe_after_header(self, client: Client) -> None:
+        """A favourite with no region has no rating, so no unsafe-after header."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, region=None)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "X-Data-Generated-At" in response
+        assert "X-Data-Unsafe-After" not in response
+
+    @override_flag("favourites", active=True)
+    def test_cache_payload_sidecar_has_expected_keys(self, client: Client) -> None:
+        """The rendered card carries a favourite-card-cache json_script sidecar."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(
+            region=region, max_rating="considerable", max_subdivision="+"
+        )
+        favourite = FavouriteFactory.create(user=user, region=region, name="My spot")
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="favourite-card-cache"' in content
+
+        payload = _extract_json_script(content, "favourite-card-cache")
+        assert payload["uuid"] == str(favourite.uuid)
+        assert payload["name"] == "My spot"
+        assert payload["region"]["id"] == region.pk
+        assert payload["rating"]["max_rating"] == "considerable"
+        assert payload["rating"]["max_subdivision"] == "+"
+        assert payload["rating"]["digit"] == "3"
+        assert payload["weather"] is None
+        assert payload["unsafe_after_seconds"] == 172800
+        assert "generated_at" in payload
+
+    @override_flag("favourites", active=True)
+    def test_freshness_indicator_shown_when_rating_exists(self, client: Client) -> None:
+        """The card renders the freshness indicator partial when a rating exists."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="low")
+        favourite = FavouriteFactory.create(user=user, region=region)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="freshness-indicator"' in content
+
+    @override_flag("favourites", active=True)
+    def test_no_freshness_indicator_without_rating(self, client: Client) -> None:
+        """No rating for today → no freshness indicator (nothing to date-stamp)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        favourite = FavouriteFactory.create(user=user, region=region)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="freshness-indicator"' not in content
+
+
+@pytest.mark.django_db
+class TestFavouriteListFreshness:
+    """favourite_list — freshness headers + roster_payload sidecar (SNOW-418)."""
+
+    @override_flag("favourites", active=True)
+    def test_no_ratings_omits_unsafe_after_header(self, client: Client) -> None:
+        """With no ratings at all, the response has no unsafe-after header."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, region=None)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "X-Data-Generated-At" in response
+        assert "X-Data-Unsafe-After" not in response
+
+    @override_flag("favourites", active=True)
+    def test_generated_at_is_the_oldest_present_rating(self, client: Client) -> None:
+        """generated_at is the OLDEST rating's updated_at, not the newest."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region_old = MicroRegionFactory.create()
+        region_new = MicroRegionFactory.create()
+
+        with freeze_time("2026-01-01T00:00:00Z"):
+            older = RegionDayRatingFactory.create(region=region_old, max_rating="low")
+        with freeze_time("2026-01-01T06:00:00Z"):
+            RegionDayRatingFactory.create(region=region_new, max_rating="high")
+
+        FavouriteFactory.create(user=user, region=region_old)
+        FavouriteFactory.create(user=user, region=region_new)
+
+        with freeze_time("2026-01-01T12:00:00Z"):
+            response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert response["X-Data-Generated-At"] == older.updated_at.isoformat(
+            timespec="seconds"
+        )
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    @override_flag("favourites", active=True)
+    def test_roster_payload_sidecar_has_expected_keys(self, client: Client) -> None:
+        """The rendered list carries a favourites-roster-cache json_script sidecar."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="high")
+        favourite = FavouriteFactory.create(user=user, region=region, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="favourites-roster-cache"' in content
+
+        roster = _extract_json_script(content, "favourites-roster-cache")
+        assert isinstance(roster, list)
+        [record] = [r for r in roster if r["uuid"] == str(favourite.uuid)]
+        assert record["name"] == "Mine"
+        assert record["rating"]["max_rating"] == "high"
+        assert record["weather"] is None
+        assert "generated_at" in record
+        assert record["unsafe_after_seconds"] == 172800
+
+    @override_flag("favourites", active=True)
+    def test_rating_lookup_is_batched_not_n_plus_one(self, client: Client) -> None:
+        """The rating lookup query count does not scale with favourite count.
+
+        A "warm-up" GET runs uncounted before either capture — the waffle
+        flag lookup and the CSP-rule lookup are each cached in-process
+        after their first hit, so the very first request in a test run
+        always costs a couple more queries than every subsequent one,
+        independent of anything this test is trying to measure. Without
+        the warm-up, that one-off cache-fill cost would be misread as
+        this view's rating lookup scaling with the favourite count.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region_a, max_rating="considerable")
+        RegionDayRatingFactory.create(region=region_b, max_rating="high")
+        FavouriteFactory.create(user=user, region=region_a)
+        FavouriteFactory.create(user=user, region=region_b)
+
+        # Uncounted warm-up — see docstring.
+        client.get(LIST_URL, **HTMX_HEADERS)
+
+        with CaptureQueriesContext(connection) as ctx_small:
+            response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        small_count = len(ctx_small.captured_queries)
+
+        region_c = MicroRegionFactory.create()
+        region_d = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region_c, max_rating="low")
+        RegionDayRatingFactory.create(region=region_d, max_rating="moderate")
+        FavouriteFactory.create(user=user, region=region_c)
+        FavouriteFactory.create(user=user, region=region_d)
+
+        with CaptureQueriesContext(connection) as ctx_large:
+            response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        large_count = len(ctx_large.captured_queries)
+
+        assert large_count == small_count, (
+            "favourite_list's query count scaled with the favourite count — "
+            "the RegionDayRating lookup is no longer batched into one query."
+        )
+
+
+def _extract_json_script(html: str, element_id: str) -> Any:
+    """Parse the JSON body of a Django ``json_script``-rendered ``<script>`` tag.
+
+    Args:
+        html: The full rendered HTML response body.
+        element_id: The ``id`` attribute of the target ``<script>`` tag.
+
+    Returns:
+        The parsed JSON value.
+
+    """
+    marker = f'id="{element_id}"'
+    tag_start = html.index(marker)
+    content_start = html.index(">", tag_start) + 1
+    content_end = html.index("</script>", content_start)
+    return json.loads(html[content_start:content_end])
