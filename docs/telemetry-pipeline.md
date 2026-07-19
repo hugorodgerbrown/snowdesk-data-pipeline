@@ -1,8 +1,8 @@
 ---
 name: telemetry-pipeline
-description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon envelope, server-side pwa.* signals, map.favourite.* events
+description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, pwa.*/map.favourite.*/map.community_reports.* event names
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-19
 ---
 
 # Telemetry pipeline
@@ -114,6 +114,14 @@ change the frozenset + document the property shape here.
   body), `map.favourite.overlay_toggled` with `properties.visible`
   (`static/js/map.js`'s basemap-menu overlay-toggle handler, fired only
   for `data-overlay-key="favourites"`).
+- **Community reports** (SNOW-419 — same `map.*` namespace):
+  `map.community_reports.overlay_toggled` with `properties.visible`
+  (`static/js/map.js`'s basemap-menu overlay-toggle handler, fired only
+  for `data-overlay-key="community_reports"`), and
+  `map.community_reports.marker_tapped` with
+  `properties.observation_type` (the `community-reports-point` layer's
+  click handler — deliberately carries no location or identity data,
+  mirroring the anonymisation contract of `api:community_reports_geojson`).
 
 ### Server-emitted (via `emit_server_signal`)
 
@@ -261,10 +269,12 @@ below the table.
 | `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
 | `static/js/sw_register.js` | `pwa.sw.update_available` (`showUpdateBanner`, once per distinct waiting worker) / `.update_applied` (the SW-driven `controllerchange` reload path) / `pwa.kill_switch.activated` with `properties.mechanism: 'a'` (the pre-register kill fetch — `fetchSwConfig()` returning `kill: true`) |
 | `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
-| `static/js/mutation_queue.js` (stub, SNOW-376 fills in the real queue) | `pwa.mutation.enqueued` / `.drained` / `.failed_permanent` — every method is a no-op today; call sites adopting `window.pwaMutationQueue` now get telemetry for free once SNOW-376 lands |
+| `static/js/mutation_queue.js` (real queue, SNOW-376) | `pwa.mutation.enqueued` (`enqueue`) / `.drained` with the real count of rows a 2xx removed (`drain`) / `.failed_permanent` with `properties.attempts` reflecting the attempt that just failed — a permanent 4xx or the 20th retry (`_markRowFailed`, and `markFailed` for a caller-driven report outside the queue) |
 | `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); `TODO(SNOW-XXX)` in the source marks it for tightening once real eviction cases surface |
 | `static/js/favourites.js` (SNOW-414) | `map.favourite.created` (create-form `htmx:afterSwap` whose response carries `[data-favourite-uuid]`, gated on a module-level "currently creating" flag so a rename doesn't also fire it) / `map.favourite.deleted` (delete's empty-body `htmx:afterSwap`) |
 | `static/js/map.js::basemapPickerInit` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="favourites"` |
+| `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
+| `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 
 **SW → page message bridge** (SNOW-384): `sw.js` and `sw-kill.js` run in
 a service-worker context with no `window`, so they cannot call

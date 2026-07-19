@@ -5,6 +5,9 @@ Covers:
   - Factory produces a valid instance via .create().
   - to_string() / __str__() format.
   - ForecastPointWeatherQuerySet.for_date() filter.
+  - ForecastPointWeatherQuerySet.forecast_for_point() filter/ordering
+    (SNOW-417).
+  - freezing_level_height / hourly_series persistence (SNOW-417).
   - unique_together constraint raises IntegrityError on duplicate
     (forecast_point, date).
   - ordering: newest date first, then forecast_point__id ascending.
@@ -54,6 +57,24 @@ class TestForecastPointWeatherFactory:
         weather = ForecastPointWeatherFactory.create(weather_code=61)
         assert weather.weather_code == 61
 
+    def test_freezing_level_height_and_hourly_series_persist(self) -> None:
+        """freezing_level_height and hourly_series round-trip through the DB."""
+        weather = ForecastPointWeatherFactory.create()
+        weather.refresh_from_db()
+        assert weather.freezing_level_height == 1800.0
+        assert weather.hourly_series is not None
+        assert len(weather.hourly_series) == 2
+        assert weather.hourly_series[0]["temperature_2m"] == -2.0
+
+    def test_freezing_level_height_and_hourly_series_nullable(self) -> None:
+        """Both new fields accept None (Open-Meteo may omit the hourly block)."""
+        weather = ForecastPointWeatherFactory.create(
+            freezing_level_height=None, hourly_series=None
+        )
+        weather.refresh_from_db()
+        assert weather.freezing_level_height is None
+        assert weather.hourly_series is None
+
 
 @pytest.mark.django_db
 class TestForecastPointWeatherStr:
@@ -98,6 +119,64 @@ class TestForecastPointWeatherQuerySet:
         """for_date() returns an empty queryset when no rows match."""
         ForecastPointWeatherFactory.create(valid_for_date=datetime.date(2026, 4, 30))
         result = ForecastPointWeather.objects.for_date(datetime.date(2026, 5, 1))
+        assert result.count() == 0
+
+
+@pytest.mark.django_db
+class TestForecastPointWeatherForecastForPoint:
+    """ForecastPointWeatherQuerySet.forecast_for_point() filters and orders correctly."""
+
+    def test_filters_to_one_point_from_start_date(self) -> None:
+        """Only rows for the given point, from start_date onwards, are returned."""
+        point = ForecastPointFactory.create()
+        other_point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        start = datetime.date(2026, 5, 1)
+        before = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start - datetime.timedelta(days=1)
+        )
+        on_start = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start
+        )
+        after = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start + datetime.timedelta(days=1)
+        )
+        ForecastPointWeatherFactory.create(
+            forecast_point=other_point, valid_for_date=start
+        )
+
+        result = list(ForecastPointWeather.objects.forecast_for_point(point, start))
+
+        assert before not in result
+        assert result == [on_start, after]
+
+    def test_orders_ascending_by_date(self) -> None:
+        """Rows are returned oldest-first, opposite of the model's default ordering."""
+        point = ForecastPointFactory.create()
+        start = datetime.date(2026, 5, 1)
+        day2 = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start + datetime.timedelta(days=2)
+        )
+        day0 = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start
+        )
+        day1 = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start + datetime.timedelta(days=1)
+        )
+
+        result = list(ForecastPointWeather.objects.forecast_for_point(point, start))
+
+        assert result == [day0, day1, day2]
+
+    def test_empty_when_no_rows_at_or_after_start(self) -> None:
+        """Returns an empty queryset when every row predates start_date."""
+        point = ForecastPointFactory.create()
+        start = datetime.date(2026, 5, 1)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=start - datetime.timedelta(days=1)
+        )
+
+        result = ForecastPointWeather.objects.forecast_for_point(point, start)
+
         assert result.count() == 0
 
 

@@ -749,6 +749,10 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
       ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
+      ``community_reports_visible`` — True when the ``community_reports``
+                                flag is active (SNOW-419).
+      ``community_reports_geojson_url`` — URL for the community-reports
+                                GeoJSON endpoint (only when visible).
 
     Args:
         request: The incoming HTTP request.
@@ -809,6 +813,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)
+    community_reports_ctx = _community_reports_context(request)
 
     return render(
         request,
@@ -818,6 +823,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **edit_context,
             **report_ctx,
             **favourites_ctx,
+            **community_reports_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1391,6 +1397,32 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
                 "favourites_signin_url": reverse("accounts:sign_in"),
             }
         )
+    return ctx
+
+
+def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the community-reports map overlay.
+
+    ``community_reports_visible`` is True when the ``community_reports``
+    waffle flag is active — this controls whether the overlay toggle
+    renders at all (seeded with ``superusers=True`` by
+    ``observations/migrations/0006_seed_community_reports_flag.py``).
+    Unlike favourites, there is no per-user eligibility split: the overlay
+    shows anonymised, publicly-shared data, so any request for whom the
+    flag is active sees the toggle.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``community_reports_visible`` and, when visible,
+        ``community_reports_geojson_url``.
+
+    """
+    community_reports_visible = waffle.flag_is_active(request, "community_reports")
+    ctx: dict[str, Any] = {"community_reports_visible": community_reports_visible}
+    if community_reports_visible:
+        ctx["community_reports_geojson_url"] = reverse("api:community_reports_geojson")
     return ctx
 
 

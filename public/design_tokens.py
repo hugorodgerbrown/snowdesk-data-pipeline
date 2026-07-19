@@ -40,6 +40,7 @@ from public._component_fixtures import (
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
+    FAVOURITE_FORECAST_PANEL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -54,6 +55,7 @@ from public._component_fixtures import (
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
+    TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
@@ -746,6 +748,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="toast-banner",
+        label="Toast banner",
+        description=(
+            "Full-width top-of-page toast (SNOW-376) — distinct from the "
+            "bottom-centred Toast above. Purpose-built for the mutation-"
+            "queue permanent-failure UX: a queued client mutation that a "
+            "server response has permanently rejected. Single status-error "
+            "kind; ARIA alert/assertive."
+        ),
+        kind="components",
+        partial="includes/_toast_banner.html",
+        variants=TOAST_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="day-character-callout",
         label="Day character callout",
         description=(
@@ -1023,6 +1040,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_chip.html",
         variants=CHIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="favourite-forecast-panel",
+        label="Favourite forecast panel",
+        description=(
+            "Multi-day point forecast panel on the favourite detail card "
+            "(SNOW-417): a compact day strip (weekday, icon, hi/lo, "
+            "snowfall chip) plus an expandable hourly detail for the "
+            "near-term days, built from _collapsible_panel.html + _chip.html."
+        ),
+        kind="components",
+        partial="favourites/partials/_favourite_forecast_panel.html",
+        variants=FAVOURITE_FORECAST_PANEL_VARIANTS,
         panel_layout="stack",
     ),
 )

@@ -4,7 +4,7 @@
     {
       "name": "Django dev server",
       "runtimeExecutable": "sh",
-      "autoport": true,
+      "autoPort": true,
       "runtimeArgs": [
         "-c",
         "trap 'kill 0' EXIT; npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css && npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch & exec .venv/bin/python manage.py runserver \"0.0.0.0:$PORT\""

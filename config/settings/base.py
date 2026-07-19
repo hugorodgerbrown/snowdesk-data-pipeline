@@ -311,6 +311,10 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
         "/api/bulletin-groupings.geojson",
+        # SNOW-419: community-reports overlay — anonymised, publicly
+        # cacheable FieldObservation pins; must not trigger request.user
+        # access either, for the same reason as the other geojson endpoints.
+        "/api/community-reports.geojson",
         # Static public-good documents (config/urls.py) — SNOW-338.
         "/robots.txt",
         "/llms.txt",

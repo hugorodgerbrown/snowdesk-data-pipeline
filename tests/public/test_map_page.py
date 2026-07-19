@@ -143,6 +143,21 @@ def test_map_page_renders_resorts_legend_entry() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_zoom_indicator() -> None:
+    """
+    SNOW-442: an always-visible zoom-level readout pill sits in the map
+    utility cluster. map.js overwrites #map-zoom-indicator-value's text on
+    load and on every zoom gesture; the server only seeds a placeholder.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+    assert 'id="map-zoom-indicator"' in content
+    assert 'id="map-zoom-indicator-value"' in content
+    assert 'aria-live="polite"' in content
+
+
+@pytest.mark.django_db
 def test_map_page_loads_assets() -> None:
     """The page references the MapLibre library, the map CSS, and map JS."""
     client = Client()

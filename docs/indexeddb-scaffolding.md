@@ -1,8 +1,8 @@
 ---
 name: indexeddb-scaffolding
-description: Client-side IndexedDB wrapper — window.pwaDb, static/js/db.js, schema versioning, queue:events, meta:app, Reset Required state
+description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, Reset Required
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-19
 ---
 
 # IndexedDB scaffolding
@@ -23,7 +23,7 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **1**.
+- Current schema version: **2**.
 
 ## Object stores
 
@@ -33,14 +33,35 @@ never removed.
 
 | Store              | keyPath         | autoIncrement | Consumer                     |
 |--------------------|-----------------|---------------|------------------------------|
-| `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue      |
+| `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
 | `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before` |
+| `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 
-`data:*` is a reserved namespace for cached server-data copies; nothing
-has landed under it yet. When a consumer adds one, bump `DB_VERSION` +
-add a migration branch in `_runMigrations`.
+`data:*` is a reserved namespace for cached server-data copies.
+`data:favourites` (v2) is its first occupant — see
+[`docs/offline-first.md`](offline-first.md) §12.6 for the
+cached-with-explicit-staleness contract it follows. When a further
+consumer adds a store, bump `DB_VERSION` + add a migration branch in
+`_runMigrations`.
+
+### `queue:mutations` row shape (SNOW-376)
+
+No indexes — the consumer filters/orders rows in memory over
+`getAll('queue:mutations')`, exactly as the `queue:events` telemetry
+buffer does.
+
+```js
+{
+  id, idempotency_key, method, url, headers, body, created_at,
+  attempts, status,          // 'queued' | 'retry-scheduled' | 'failed'
+  next_attempt_at,           // epoch ms
+}
+```
+
+Full row-shape rationale, backoff schedule, and Background Sync
+integration: [`mutation-queue.md`](mutation-queue.md).
 
 ## Public API
 
@@ -138,3 +159,5 @@ the wipe covers it even without the enumeration API.
 - [`push-notifications.md`](push-notifications.md) — consumer of
   `meta:app` (`push.subscribed_before` key, SNOW-380) for launch-time
   Web Push subscription re-verification.
+- [`mutation-queue.md`](mutation-queue.md) — the real consumer of
+  `queue:mutations` (SNOW-376).

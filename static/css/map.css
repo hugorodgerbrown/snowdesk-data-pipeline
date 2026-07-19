@@ -259,6 +259,20 @@
     width: min(calc(100vw - 76px), 280px);
 }
 
+/* SNOW-442: zoom-level readout — a plain-text pill (no button child), so
+   unlike the icon pills above it needs its own horizontal padding and a
+   fixed min-width. The min-width stops the pill visibly resizing as the
+   zoom digit count changes between single and double figures. */
+.map-utility-pill--zoom {
+    flex: 0 0 auto;
+    justify-content: center;
+    min-width: 64px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 /* Transparent icon button inside the search pill — also the standalone
    click target when the pill is collapsed. */
 .map-utility-button {
@@ -679,10 +693,14 @@
 .region-popup .maplibregl-popup-content {
     padding: 14px 16px;
     border-radius: 12px;
-    /* More translucent than --color-glass so the choropleth shows
-     * through; blur is bumped to keep text legible against the busy
-     * map background. */
-    background: rgba(248, 246, 240, 0.65);
+    /* --color-popup-glass (src/css/main.css @theme, SNOW-419) is more
+     * translucent than --color-glass so the choropleth shows through;
+     * blur is bumped to keep text legible against the busy map
+     * background. The token flips to its dark-mode value automatically
+     * (redefined inside .dark {} in main.css) — no per-rule .dark
+     * override needed here, same as every other var(--color-glass) use
+     * in this file. */
+    background: var(--color-popup-glass);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
     border: 2px solid var(--color-border, rgba(0, 0, 0, 0.12));
@@ -699,12 +717,6 @@
 .region-popup[data-level="considerable"] .maplibregl-popup-content { border-color: var(--color-eaws-considerable); }
 .region-popup[data-level="high"]         .maplibregl-popup-content { border-color: var(--color-eaws-high); }
 .region-popup[data-level="very_high"]    .maplibregl-popup-content { border-color: var(--color-eaws-very-high); }
-
-.dark .region-popup .maplibregl-popup-content {
-    /* Same translucency story in dark mode — the popup is more
-     * transparent than other glass surfaces by design. */
-    background: rgba(20, 22, 26, 0.6);
-}
 
 .region-popup .maplibregl-popup-close-button {
     font-size: 18px;
@@ -1343,4 +1355,35 @@
 .dark .home-intro-card {
     background: var(--color-glass);
     color: var(--color-text-1);
+}
+
+/* SNOW-419: community-reports popup — a small, DOM-built card shown on
+ * tapping an unclustered community-report pin (static/js/map.js). Reuses
+ * the same frosted-glass chrome as .region-popup (--color-popup-glass,
+ * src/css/main.css @theme) for visual consistency with the region
+ * tooltip, but has no data-level border colour since a report has no
+ * danger rating. */
+.community-report-popup-wrapper .maplibregl-popup-content {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--color-popup-glass);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 2px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    box-shadow: var(--shadow-glass, 0 4px 16px rgba(0, 0, 0, 0.12));
+    color: var(--color-text-1, #1a1a1a);
+    font-family: var(--sans);
+    min-width: 160px;
+}
+
+.community-report-popup__type {
+    font-weight: 600;
+    font-size: 14px;
+    padding-right: 20px;
+}
+
+.community-report-popup__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-text-2, #5f5e5a);
 }

@@ -1133,6 +1133,28 @@ class ForecastPointWeatherQuerySet(models.QuerySet["ForecastPointWeather"]):
         """
         return self.filter(valid_for_date=target_date)
 
+    def forecast_for_point(
+        self, point: "ForecastPoint", start_date: _date
+    ) -> "ForecastPointWeatherQuerySet":
+        """
+        Return the forward-looking forecast window for one point.
+
+        Unlike the model's default ``-valid_for_date`` ordering, this is
+        ascending — a multi-day forecast panel wants chronological order.
+
+        Args:
+            point: The ForecastPoint to filter by.
+            start_date: The earliest calendar date to include (inclusive).
+
+        Returns:
+            A queryset of ForecastPointWeather rows for that point, from
+            start_date onwards, ordered by valid_for_date ascending.
+
+        """
+        return self.filter(
+            forecast_point=point, valid_for_date__gte=start_date
+        ).order_by("valid_for_date")
+
 
 class ForecastPointWeather(BaseModel):
     """
@@ -1249,6 +1271,27 @@ class ForecastPointWeather(BaseModel):
         null=True,
         blank=True,
         help_text="Total sunshine duration, in seconds.",
+    )
+    freezing_level_height = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Daily maximum freezing level height, in metres. Open-Meteo has "
+            "no daily freezing-level aggregate — this is derived as the "
+            "maximum of the hourly freezing_level_height values for the day."
+        ),
+    )
+    hourly_series = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "Near-term hourly detail for this day, as a list of dicts with "
+            "keys time, temperature_2m, snowfall, precipitation, "
+            "wind_speed_10m, wind_gusts_10m, freezing_level_height. Only "
+            "populated for the first POINT_HOURLY_DAYS rows of a fetch; "
+            "None beyond, to keep the JSON payload bounded."
+        ),
     )
 
     objects = ForecastPointWeatherQuerySet.as_manager()

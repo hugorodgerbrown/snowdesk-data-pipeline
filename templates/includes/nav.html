@@ -21,6 +21,13 @@ Staff overlay (separate from subscriber auth):
   Edit map, Django admin.  Rendered in addition to the subscriber avatar — a staff
   user who is also a subscriber sees both.
 
+Sync badge (SNOW-376):
+  A [data-sync-badge] pill sits alongside the avatar/register links, hidden
+  by default. static/js/mutation_queue.js reveals it with the live
+  non-"failed" queue:mutations depth ("N changes queued") and swaps its
+  colour to the status-error tokens when any queued mutation has
+  permanently failed.
+
 Parameters
 ----------
 back_url : str, optional
@@ -103,6 +110,15 @@ Usage
 
         {# ── Right-side auth + admin area ── #}
         <div class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
+            {# SNOW-376: mutation-queue sync badge. Hidden by default;             #}
+            {# static/js/mutation_queue.js reveals it with the live non-"failed"   #}
+            {# queue:mutations count, and swaps the colour to the status-error     #}
+            {# tokens when any row has permanently failed.                        #}
+            <span
+                data-sync-badge
+                data-testid="mutation-queue-badge"
+                class="hidden inline-flex items-center rounded-pill border border-border bg-tag px-2 py-0.5 font-mono text-caption text-text-3"
+            ></span>
             {% if request.user.is_authenticated %}
                 {# ── Subscriber avatar dropdown ── #}
                 <div class="relative" data-subscriber-menu>

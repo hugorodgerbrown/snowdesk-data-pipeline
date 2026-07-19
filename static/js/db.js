@@ -3,9 +3,9 @@
  *
  * Spec §3.8, §7.2. The base layer every subsequent client-side spec
  * item builds on (mutation queue SNOW-376, event buffer SNOW-385, cached
- * bulletin data). One IndexedDB database per app; five object stores
- * declared up front so a schema bump only fires when the store namespace
- * itself changes.
+ * favourites SNOW-418). One IndexedDB database per app; five object
+ * stores declared up front so a schema bump only fires when the store
+ * namespace itself changes.
  *
  * Object stores (spec §7.2)
  * -------------------------
@@ -14,8 +14,10 @@
  *   meta:sync        last-sync timestamps per resource (keyPath: 'resource')
  *   meta:app         install timestamps, first-launch flags, opt-in/out
  *                     (keyPath: 'key')
- *   data:*           reserved namespace for cached server-data copies;
- *                     added on demand by consumers via ensureStore.
+ *   data:favourites  cached favourites + region rating + point weather,
+ *                     for offline reads (SNOW-418; keyPath: 'uuid')
+ *   data:*           reserved namespace for further cached server-data
+ *                     copies; added on demand by consumers.
  *
  * Reset Required
  * --------------
@@ -40,7 +42,11 @@
   const DB_NAME = 'snowdesk-pwa-v1';
   // Schema version. Bump when you add / rename / remove an object store,
   // AND add the corresponding upgrade branch in _runMigrations below.
-  const DB_VERSION = 1;
+  //
+  // v2 (SNOW-418): added 'data:favourites' — the first consumer of the
+  // reserved data:* namespace, caching each favourite's roster/card
+  // record so the manage page can repaint offline.
+  const DB_VERSION = 2;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -50,6 +56,9 @@
     'queue:events': { keyPath: 'id', autoIncrement: true },
     'meta:sync': { keyPath: 'resource' },
     'meta:app': { keyPath: 'key' },
+    // SNOW-418 (v2) — cached favourite roster/card records, keyed by the
+    // favourite's uuid so a card update can upsert a single record.
+    'data:favourites': { keyPath: 'uuid' },
   });
 
   // Session state — single-page-load lifetime.
@@ -231,6 +240,23 @@
           reject(new Error('reset_required'));
           return;
         }
+        // Yield the connection when another connection needs to change the
+        // schema version or delete the DB — a real second tab bumping
+        // DB_VERSION, or a delete/upgrade elsewhere. Without this, the
+        // memoised connection (held open for the whole page lifetime as
+        // soon as any consumer reads on load, e.g. the SNOW-376 mutation
+        // badge) blocks that other connection's open() indefinitely — it
+        // sits on `onblocked` forever. Close and drop the cached promise so
+        // the next consumer re-opens cleanly (re-open surfaces a genuine
+        // VersionError as Reset Required via onerror, as before).
+        req.result.onversionchange = () => {
+          try {
+            req.result.close();
+          } catch (_e) {
+            // Already closed — ignore.
+          }
+          _dbPromise = null;
+        };
         // SNOW-384: cold-start storage-pressure check — fire-and-forget,
         // runs once per successful open() (this handler fires exactly
         // once per indexedDB.open() call; _dbPromise memoisation means
