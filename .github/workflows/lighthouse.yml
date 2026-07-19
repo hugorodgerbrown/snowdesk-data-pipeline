@@ -60,8 +60,10 @@ jobs:
       - name: Run migrations
         run: uv run python manage.py migrate --noinput
 
-      - name: Load fixtures
-        run: uv run python manage.py loaddata test_data
+      - name: Seed the test dataset (factories)
+        run: |
+          uv run python manage.py loaddata eaws_CH resorts
+          uv run python manage.py seed_test_data --all --commit
 
       - name: Check query-count baseline (SNOW-13)
         run: uv run python manage.py monitor_query_counts

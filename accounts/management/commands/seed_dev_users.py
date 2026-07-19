@@ -43,8 +43,8 @@ SUPERUSER_EMAIL = "admin@snowdesk.dev"
 NORMAL_USER_EMAIL = "dev@snowdesk.dev"
 PASSWORD = "snowdesk"  # noqa: S105 — intentional dev-only constant, documented in docs/worktrees.md
 
-# CH-4115 is the canonical test region (Martigny-Verbier) present in
-# test_data.json for all 30 days of April 2026.
+# CH-4115 is the canonical test region (Martigny-Verbier), loaded from the
+# eaws_CH region fixture and seeded with bulletins by seed_test_data.
 SUBSCRIBED_REGION_ID = "CH-4115"
 
 
@@ -124,13 +124,13 @@ class Command(BaseCommand):
         except MicroRegion.DoesNotExist:
             logger.error(
                 "MicroRegion %s not found — run "
-                "'uv run python manage.py loaddata test_data' first.",
+                "'uv run python manage.py loaddata eaws_CH resorts' first.",
                 SUBSCRIBED_REGION_ID,
             )
             raise CommandError(
                 f"MicroRegion {SUBSCRIBED_REGION_ID!r} does not exist. "
-                "Seed the database first: "
-                "uv run python manage.py loaddata test_data"
+                "Load the region fixtures first: "
+                "uv run python manage.py loaddata eaws_CH resorts"
             )
         _subscription, created_sub = Subscription.objects.get_or_create(
             subscriber=subscriber,

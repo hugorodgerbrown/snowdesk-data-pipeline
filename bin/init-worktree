@@ -13,8 +13,9 @@
 #                    every worktree has the same data as CI; avoids drift that
 #                    breaks the SNOW-13 query-count baseline). Recipe:
 #                      1. migrate --noinput
-#                      2. loaddata test_data
-#                      3. seed_dev_users
+#                      2. loaddata eaws_CH resorts
+#                      3. seed_test_data --all --commit
+#                      4. seed_dev_users
 #                    See docs/worktrees.md for credentials and reseed steps.
 #   - output.css   → compiled from src/css/main.css with the Tailwind CLI
 #                    (gitignored build artifact, not shared across worktrees).
@@ -76,9 +77,10 @@ seed_db_if_missing() {
     if [ -e "db.sqlite3" ]; then
         return
     fi
-    echo "init-worktree: seeding db.sqlite3 from fixtures (migrate + loaddata + seed_dev_users)"
+    echo "init-worktree: seeding db.sqlite3 (migrate + region fixtures + seed_test_data + seed_dev_users)"
     uv run python manage.py migrate --noinput
-    uv run python manage.py loaddata test_data
+    uv run python manage.py loaddata eaws_CH resorts
+    uv run python manage.py seed_test_data --all --commit
     uv run python manage.py seed_dev_users
     echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))

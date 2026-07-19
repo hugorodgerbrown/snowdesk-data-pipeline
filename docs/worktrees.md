@@ -1,6 +1,6 @@
 ---
 name: worktrees
-description: init-worktree worktree seed strategy, dev credentials, test_data fixture coverage, reseed procedure
+description: init-worktree worktree seed strategy, dev credentials, seed_test_data dataset coverage, reseed procedure
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -14,37 +14,30 @@ fully-configured worktree is a no-op.
 
 ## Seed recipe
 
-When `db.sqlite3` is absent the script runs three commands in order:
+When `db.sqlite3` is absent the script runs four commands in order:
 
 ```bash
 uv run python manage.py migrate --noinput
-uv run python manage.py loaddata test_data
+uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py seed_test_data --all --commit
 uv run python manage.py seed_dev_users
 ```
+
+The dataset is built from the FactoryBoy factories in `tests/factories.py` by
+`seed_test_data` (the factory-based path that replaced the old
+`loaddata test_data` JSON fixture). It covers the CH region/resort reference
+data, the map-coverage and CH-4115 detail bulletin layer, and a small
+`ForecastPoint`/`ForecastPointWeather`/`Favourite` set. `seed_test_data` refuses
+to run when `DEBUG=False`; worktrees use development settings, so it is safe.
 
 **Why this instead of copying the main repo's DB?**
 
 Copying the live dev DB produces a worktree whose data differs from CI's
-fixture environment. That divergence repeatedly broke the SNOW-13
+seed environment. That divergence repeatedly broke the SNOW-13
 query-count baseline (home=8/map=7 under CI fixtures, lower off a copied
-dev DB), causing churn on SNOW-341 and SNOW-342. Seeding from the
-committed fixture guarantees every worktree is identical to CI's data
+dev DB), causing churn on SNOW-341 and SNOW-342. Seeding deterministically
+from the factories guarantees every worktree is identical to CI's data
 environment.
-
-### Factory-based alternative: `seed_test_data`
-
-`loaddata test_data` remains the bootstrap path (identical to CI). For an
-ad-hoc dev DB you can instead build the same dataset from the FactoryBoy
-factories, which also covers `ForecastPoint`/`ForecastPointWeather`/`Favourite`
-rows the JSON fixture omits:
-
-```bash
-uv run python manage.py loaddata eaws_CH resorts   # region reference data first
-uv run python manage.py seed_test_data --all --commit
-```
-
-It expects an empty/migrated DB and is not part of `bin/init-worktree`. See
-[`management-commands.md`](management-commands.md) for the flag reference.
 
 ## Compiled CSS
 
@@ -77,9 +70,9 @@ or use the Tailwind watcher under "Running locally" in
 
 ## Dev credentials
 
-`seed_dev_users` creates two well-known accounts. Neither appears in
-`test_data.json` so the fixture remains auth-free and CI's query-count
-surface is unaffected.
+`seed_dev_users` creates two well-known accounts. They are separate from the
+single `auth.User` `seed_test_data` creates to own its sample favourites, and
+they do not affect the anonymous home/map query-count surface.
 
 | Role | Email | Password | Notes |
 |------|-------|----------|-------|
@@ -102,33 +95,33 @@ Existing worktrees that were set up before SNOW-345 (when the script
 copied `db.sqlite3`) keep their copied DB until manually reseeded using
 the command above.
 
-## `test_data` fixture coverage
+## Seeded dataset coverage
 
-`bulletins/fixtures/test_data.json` is the single fixture loaded by CI
-and by every fresh worktree. This section documents what it actually
-contains so the fixture can be extended safely.
+`seed_test_data --all --commit` (run after `loaddata eaws_CH resorts`) is the
+dataset loaded by CI and by every fresh worktree. This section documents what it
+contains so it can be relied on and extended safely.
 
 ### Record counts
 
-| Model | Rows |
-|-------|------|
-| `bulletins.bulletin` | 178 |
-| `bulletins.regionbulletin` | 178 |
-| `bulletins.regiondayrating` | 178 |
-| `bulletins.weathersnapshot` | 178 |
-| `regions.microregion` | 149 |
-| `regions.subregion` | 21 |
-| `regions.majorregion` | 9 |
-| `regions.resort` | 148 |
-| `auth.user` | **0** |
-| `bulletins.pipelinerun` | **0** |
-
-Total: 1,039 rows.
+| Model | Rows | Source |
+|-------|------|--------|
+| `regions.majorregion` | 9 | `eaws_CH` fixture |
+| `regions.subregion` | 21 | `eaws_CH` fixture |
+| `regions.microregion` | 149 | `eaws_CH` fixture |
+| `regions.resort` | 148 | `resorts` fixture |
+| `bulletins.bulletin` | 178 | `seed_test_data` |
+| `bulletins.regionbulletin` | 178 | `seed_test_data` |
+| `bulletins.regiondayrating` | 178 | `seed_test_data` |
+| `bulletins.weathersnapshot` | 178 | `seed_test_data` |
+| `bulletins.forecastpoint` | 5 | `seed_test_data` |
+| `bulletins.forecastpointweather` | 150 | `seed_test_data` |
+| `favourites.favourite` | 5 | `seed_test_data` |
+| `auth.user` | 1 | `seed_test_data` (favourite owner) |
 
 ### Data coverage
 
-- **Provider:** SLF only. The `render_model.source` field is `"slf"` on
-  every bulletin. ALBINA and Météo-France are not represented.
+- **Provider:** SLF-shaped payloads only. ALBINA and Météo-France are not
+  represented.
 - **Date span:** 1 April – 30 April 2026 (30 days). All dates fall in the
   spring off-season for Alpine snowpack; no mid-winter elevated-danger days
   are present.
@@ -138,18 +131,20 @@ Total: 1,039 rows.
 - **CH-4115 (Martigny-Verbier):** 30 bulletins, one per day of April 2026.
   This is the canonical bulletin detail URL
   (`/ch-4115/martigny-verbier/2026-04-08/`) used in manual testing.
-- **Danger levels:** all fixtures use `low` (1). No high-danger or
-  `considerable`+ days exist.
-- **Day structure:** all bulletins are `all_day` single-period. No
-  split-day (am/pm separate) bulletins and no banded (ALBINA-style
-  elevation-band) bulletins are present.
-- **Multi-problem days:** no bulletin has more than one trait. Wet-snow
-  problems and dry/wet mixed days are absent.
+- **Danger levels:** map-coverage bulletins are `moderate`; the CH-4115 detail
+  month cycles `low`→`considerable` so the calendar shows a colour gradient.
+- **Day structure:** all bulletins are `all_day` single-period. No split-day
+  (am/pm separate) or banded (ALBINA-style elevation-band) bulletins.
+- **Multi-problem days:** each bulletin carries a single `persistent_weak_layers`
+  problem; wet-snow and dry/wet mixed days are absent.
+- **Point weather / favourites:** 5 `ForecastPoint`s near Verbier, each with a
+  `ForecastPointWeather` per April date, and one `Favourite` per point owned by
+  a single seeded user.
 
 ### Known gaps
 
-The following scenarios cannot be tested with `test_data` alone and
-require either a locally fetched bulletin or an extended fixture:
+The following scenarios are not covered by the seed and require either a
+locally fetched bulletin or additional setup:
 
 - ALBINA provider (multi-region, banded elevation danger, split-day)
 - Météo-France provider (massif-level bulletins)
@@ -157,12 +152,12 @@ require either a locally fetched bulletin or an extended fixture:
 - Wet-snow problem days
 - Split-day (morning/afternoon) danger profiles
 - Off-season "no bulletin" regions
-- `regions.RegionAlias` rows (SNOW-409) — `test_data.json` is CH-only and
-  doesn't include them; some curated aliases target AT/IT regions that
-  don't exist in a fresh worktree DB at all. To exercise
-  `mcp_server.resolvers.search_places` against the curated aliases
-  (e.g. to reproduce a "Sitten" → CH-4121 style query locally), load the
-  EAWS fixtures the alias rows' natural keys depend on first:
+- `regions.RegionAlias` rows (SNOW-409) — the seed is CH-only and does not
+  include them; some curated aliases target AT/IT regions that don't exist in a
+  fresh worktree DB at all. To exercise `mcp_server.resolvers.search_places`
+  against the curated aliases (e.g. to reproduce a "Sitten" → CH-4121 style
+  query locally), load the EAWS fixtures the alias rows' natural keys depend on
+  first:
 
   ```bash
   uv run python manage.py loaddata \
@@ -173,30 +168,16 @@ require either a locally fetched bulletin or an extended fixture:
       regions/fixtures/region_aliases.json
   ```
 
-### Extending the fixture
+### Changing the dataset
 
-Run these commands (all support `--commit` to write; dry-run by default):
+The dataset shape lives in code, not a committed fixture:
 
-```bash
-# Regenerate test_data from scratch (bulletins + weather + region ratings):
-uv run python manage.py build_test_data --commit
+- Bulletin/weather coverage, the CAAML payload template, and the danger
+  gradient are the module-level helpers in
+  `bulletins/management/commands/seed_test_data.py`.
+- Row *values* come from the factories in `tests/factories.py`.
 
-# Regenerate resort → MicroRegion mappings after region changes:
-uv run python manage.py dump_resorts_fixture --commit
-
-# Re-fetch the canonical EAWS MicroRegion boundaries from the EAWS API:
-uv run python manage.py refresh_eaws_fixtures --commit
-```
-
-If you need to snapshot additional models not covered by `build_test_data`,
-use Django's `dumpdata`:
-
-```bash
-uv run python manage.py dumpdata <app_label.ModelName> \
-    --natural-foreign --natural-primary \
-    --indent 2 >> bulletins/fixtures/test_data.json
-```
-
-Commit the updated fixture alongside the PR that requires the new data.
-Always re-run `monitor_query_counts` (read-only) afterwards to verify the
-baseline (home=8, map=7) is unchanged.
+After changing either, re-run `monitor_query_counts` (read-only) to verify the
+baseline (home=8, map=7) is unchanged. To refresh the region reference data
+itself, use `dump_resorts_fixture --commit` (resort → MicroRegion mappings) or
+`refresh_eaws_fixtures --commit` (EAWS MicroRegion boundaries).

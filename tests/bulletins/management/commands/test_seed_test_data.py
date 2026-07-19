@@ -5,17 +5,16 @@ Covers:
   - Selection flags are required and mutually exclusive (--all / --include /
     --exclude); an unknown model name or no selection is rejected.
   - Dry-run (no --commit) writes nothing.
-  - --commit --all creates the full build_test_data dataset (178 of each model)
-    via the factories, once the region fixtures are pre-loaded.
+  - --commit --all creates the full navigable dataset (178 of each bulletin-layer
+    model) via the factories, once the region fixtures are pre-loaded.
   - Every seeded Bulletin has render_model_version == RENDER_MODEL_VERSION.
   - CH-4115 gets the full-April detail layer; a non-detail region gets a single
     map-date snapshot.
   - --include seeds only the named model plus its FK prerequisites; --exclude
     omits the named model.
 
-Like build_test_data, seed_test_data needs the ``eaws_CH`` and ``resorts``
-fixtures pre-loaded (it wires real MicroRegion FKs), so the commit tests load
-them first.
+seed_test_data needs the ``eaws_CH`` and ``resorts`` fixtures pre-loaded (it
+wires real MicroRegion FKs), so the commit tests load them first.
 """
 
 from __future__ import annotations
@@ -36,12 +35,12 @@ from bulletins.models import (
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from favourites.models import Favourite
 
-# Stage-2 additions seeded outside the build_test_data layer.
+# The point-weather layer seeded alongside the bulletin dataset.
 _EXPECTED_FORECAST_POINTS = 5
 _EXPECTED_FORECAST_POINT_WEATHER = 150  # 5 points × 30 April dates
 _EXPECTED_FAVOURITES = 5
 
-# The dataset build_test_data produces: 149 map-coverage + 29 CH-4115 detail.
+# Bulletin-layer total: 149 map-coverage + 29 CH-4115 detail.
 _EXPECTED_TOTAL = 178
 
 
@@ -153,7 +152,7 @@ class TestCommit:
         assert str(snapshots.get().valid_for_date) == "2026-04-08"
 
     def test_weather_snapshots_use_wmo_code_1(self) -> None:
-        """All seeded snapshots use WMO weather code 1, matching build_test_data."""
+        """All seeded snapshots use WMO weather code 1."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         assert set(
             WeatherSnapshot.objects.order_by().values_list("weather_code", flat=True)

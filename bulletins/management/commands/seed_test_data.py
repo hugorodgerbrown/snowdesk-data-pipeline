@@ -1,18 +1,17 @@
 """
 bulletins/management/commands/seed_test_data.py — Factory-based DB seeder.
 
-Populates a database with the same navigable dataset that ``build_test_data``
-bakes into ``bulletins/fixtures/test_data.json``, but by calling the FactoryBoy
-factories in ``tests/factories.py`` to create real objects rather than loading a
-static fixture. Running the factories against a live database exercises them as a
-side benefit.
+Builds a navigable test dataset by calling the FactoryBoy factories in
+``tests/factories.py`` to create real objects in the database — the default way
+to populate a fresh dev/CI database (it replaced the old ``build_test_data``
+JSON-fixture path). Running the factories against a live database exercises them
+as a side benefit.
 
-Unlike ``build_test_data`` (which writes a JSON fixture and rolls the DB back),
-this command writes rows into the database named by ``DJANGO_SETTINGS_MODULE``.
+The command writes rows into the database named by ``DJANGO_SETTINGS_MODULE``.
 It is developer tooling for local/CI dev databases: like ``seed_dev_users`` it
 refuses to run when ``DEBUG`` is ``False`` so it cannot touch a production DB.
 
-Coverage (identical to ``build_test_data`` — the two share the dataset helpers):
+Bulletin-layer coverage:
   - one Bulletin + RegionBulletin + RegionDayRating per CH MicroRegion on the map
     reference date (2026-04-08),
   - CH-4115 (Martigny-Verbier) additionally gets a bulletin per day across April
@@ -21,10 +20,9 @@ Coverage (identical to ``build_test_data`` — the two share the dataset helpers
   - render models built at ``RENDER_MODEL_VERSION`` and day ratings applied via the
     production services, so the seeded DB renders with no rebuild step.
 
-Beyond the ``build_test_data`` layer it also seeds a small standalone set of
-ForecastPoints, a ForecastPointWeather per point per April date, and one Favourite
-per point (all owned by a single seeded user) — none of which appear in the JSON
-fixture.
+It also seeds a small standalone set of ForecastPoints, a ForecastPointWeather per
+point per April date, and one Favourite per point (all owned by a single seeded
+user).
 
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
 *prerequisite*: it must already be loaded (e.g. ``loaddata eaws_CH resorts``). It
@@ -49,22 +47,17 @@ import argparse
 import enum
 import json
 import logging
-from datetime import date
+import uuid
+import zoneinfo
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
+from django.utils import timezone as django_timezone
 
-from bulletins.management.commands.build_test_data import (
-    _EAWS_CH_FIXTURE,
-    APRIL_DATES,
-    DETAIL_REGIONS,
-    MAP_DATE,
-    _danger_for_day,
-    _make_bulletin_params,
-    _make_weather_snapshot_params,
-)
 from bulletins.services.day_rating import apply_bulletin_day_ratings
 from bulletins.services.render_model import RENDER_MODEL_VERSION, build_render_model
 
@@ -73,6 +66,265 @@ if TYPE_CHECKING:
     from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Dataset shape — map-reference date, detail region, and the CAAML payload
+# template. These define the navigable test dataset (149 CH map-coverage
+# bulletins on MAP_DATE plus a full-April detail month for CH-4115).
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_EAWS_CH_FIXTURE = _REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
+
+MAP_DATE = date(2026, 4, 8)
+APRIL_DATES = [date(2026, 4, d) for d in range(1, 31)]
+DETAIL_REGIONS = {"CH-4115": "Martigny-Verbier"}
+
+# Danger ratings to cycle across April so the calendar shows a colour gradient.
+# Indices into APRIL_DATES are mapped to these levels (wrapping).
+_CYCLING_DANGER = [
+    "low",
+    "low",
+    "moderate",
+    "moderate",
+    "moderate",
+    "considerable",
+    "considerable",
+    "moderate",
+    "moderate",
+    "low",
+]
+
+
+def _make_raw_data(
+    bulletin_id: str,
+    region_id: str,
+    region_name: str,
+    valid_from_iso: str,
+    valid_to_iso: str,
+    issued_at_iso: str,
+    danger_value: str = "moderate",
+) -> dict[str, Any]:
+    """
+    Build a minimal but valid CAAML GeoJSON Feature envelope for one bulletin.
+
+    The payload includes enough fields (aggregation, dangerRatings,
+    avalancheProblems, snowpackStructure, weatherForecast) for the render model
+    builder to produce a non-error render_model at the current version.
+
+    Args:
+        bulletin_id: The unique bulletin identifier (UUID-style string).
+        region_id: SLF region ID, e.g. ``"CH-4115"``.
+        region_name: Human-readable region name, e.g. ``"Martigny-Verbier"``.
+        valid_from_iso: ISO 8601 string for validTime.startTime.
+        valid_to_iso: ISO 8601 string for validTime.endTime.
+        issued_at_iso: ISO 8601 string for publicationTime.
+        danger_value: CAAML danger level key, e.g. ``"moderate"``.
+
+    Returns:
+        A GeoJSON Feature dict suitable for storage in ``Bulletin.raw_data``.
+
+    """
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "lang": "en",
+            "bulletinID": bulletin_id,
+            "regions": [{"name": region_name, "regionID": region_id}],
+            "validTime": {
+                "startTime": valid_from_iso,
+                "endTime": valid_to_iso,
+            },
+            "publicationTime": issued_at_iso,
+            "nextUpdate": valid_to_iso,
+            "unscheduled": False,
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {
+                            "category": "dry",
+                            "problemTypes": ["persistent_weak_layers"],
+                            "validTimePeriod": "all_day",
+                        }
+                    ]
+                }
+            },
+            "dangerRatings": [
+                {
+                    "mainValue": danger_value,
+                    "customData": {"CH": {"subdivision": ""}},
+                    "validTimePeriod": "all_day",
+                }
+            ],
+            "avalancheProblems": [
+                {
+                    "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
+                    "comment": (
+                        "Weak layers in the old snowpack represent the main danger."
+                    ),
+                    "elevation": {"lowerBound": "2200"},
+                    "customData": {
+                        "CH": {
+                            "subdivision": "",
+                            "coreZoneText": None,
+                        }
+                    },
+                    "problemType": "persistent_weak_layers",
+                    "validTimePeriod": "all_day",
+                    "dangerRatingValue": danger_value,
+                }
+            ],
+            "snowpackStructure": {
+                "comment": (
+                    "<p>Snowpack conditions are typical for the season. "
+                    "Weak layers exist on shady slopes at high elevation.</p>"
+                )
+            },
+            "weatherForecast": {
+                "comment": (
+                    "<p>Conditions will remain settled with light winds "
+                    "and seasonal temperatures.</p>"
+                )
+            },
+            "tendency": [
+                {
+                    "comment": (
+                        "<p>Avalanche risk is expected to remain similar "
+                        "over the coming days.</p>"
+                    )
+                }
+            ],
+        },
+    }
+
+
+def _bulletin_id_for(region_id: str, target_date: date) -> str:
+    """
+    Generate a deterministic bulletin_id for a (region, date) pair.
+
+    Uses a UUID-5 constructed from a fixed namespace so the same
+    (region, date) always produces the same ID, making the seed
+    fully reproducible on repeated runs.
+
+    Args:
+        region_id: SLF region ID string.
+        target_date: The calendar date for the bulletin.
+
+    Returns:
+        A UUID-style string unique to (region_id, target_date).
+
+    """
+    ns = uuid.UUID("a4020000-0000-0000-0000-000000000000")
+    return str(uuid.uuid5(ns, f"{region_id}:{target_date.isoformat()}"))
+
+
+def _danger_for_day(target_date: date) -> str:
+    """
+    Return a cycling danger level key for the given April date.
+
+    Cycles through ``_CYCLING_DANGER`` using the day-of-month index (mod 10)
+    so the calendar shows a colour gradient across the month.
+
+    Args:
+        target_date: The bulletin's target calendar date.
+
+    Returns:
+        A danger level key string, e.g. ``"moderate"``.
+
+    """
+    idx = (target_date.day - 1) % len(_CYCLING_DANGER)
+    return _CYCLING_DANGER[idx]
+
+
+def _make_bulletin_params(
+    region_id: str,
+    region_name: str,
+    target_date: date,
+    danger_value: str,
+) -> dict[str, Any]:
+    """
+    Return kwargs for creating a Bulletin instance for one (region, date) pair.
+
+    Morning issue: valid_from at 07:00 UTC on ``target_date``.
+
+    Args:
+        region_id: SLF region ID.
+        region_name: Human-readable region name.
+        target_date: The calendar date that this bulletin covers.
+        danger_value: Danger level key to embed in the CAAML payload.
+
+    Returns:
+        A dict of Bulletin model field values.
+
+    """
+    issued_dt = datetime(
+        target_date.year, target_date.month, target_date.day, 6, 50, tzinfo=UTC
+    )
+    valid_from_dt = datetime(
+        target_date.year, target_date.month, target_date.day, 7, 0, tzinfo=UTC
+    )
+    valid_to_dt = datetime(
+        target_date.year, target_date.month, target_date.day, 16, 0, tzinfo=UTC
+    )
+    bid = _bulletin_id_for(region_id, target_date)
+    raw = _make_raw_data(
+        bulletin_id=bid,
+        region_id=region_id,
+        region_name=region_name,
+        valid_from_iso=valid_from_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        valid_to_iso=valid_to_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        issued_at_iso=issued_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        danger_value=danger_value,
+    )
+    return {
+        "bulletin_id": bid,
+        "raw_data": raw,
+        "render_model": {},
+        "render_model_version": 0,
+        "issued_at": issued_dt,
+        "valid_from": valid_from_dt,
+        "valid_to": valid_to_dt,
+        "next_update": valid_to_dt,
+        "lang": "en",
+        "unscheduled": False,
+        "pipeline_run": None,
+    }
+
+
+def _make_weather_snapshot_params(
+    region_id: str,
+    target_date: date,
+) -> dict[str, Any]:
+    """
+    Build kwargs for a deterministic WeatherSnapshot / ForecastPointWeather row.
+
+    Uses WMO code 1 (mainly clear), sunrise 06:30 Europe/Zurich,
+    sunset 18:30 Europe/Zurich for the given date.
+
+    Args:
+        region_id: Accepted for call-site symmetry; not used (sunrise/sunset are
+            derived from ``target_date`` alone).
+        target_date: The calendar date the snapshot applies to.
+
+    Returns:
+        A dict of shared weather field values (region/forecast_point FK excluded).
+
+    """
+    zurich = zoneinfo.ZoneInfo("Europe/Zurich")
+    sunrise = datetime(
+        target_date.year, target_date.month, target_date.day, 6, 30, tzinfo=zurich
+    )
+    sunset = datetime(
+        target_date.year, target_date.month, target_date.day, 18, 30, tzinfo=zurich
+    )
+    return {
+        "valid_for_date": target_date,
+        "weather_code": 1,
+        "sunrise": sunrise,
+        "sunset": sunset,
+        "fetched_at": django_timezone.now(),
+    }
 
 
 class SeedModel(enum.StrEnum):
@@ -140,14 +392,14 @@ class _Rollback(Exception):
 
 
 class Command(BaseCommand):
-    """Seed a database with the ``build_test_data`` dataset via factories.
+    """Seed a database with the navigable test dataset via factories.
 
     Read-only by default; ``--commit`` persists. Exactly one of ``--all``,
     ``--include``, or ``--exclude`` selects which models to seed.
     """
 
     help = (
-        "Seed the DB with the build_test_data dataset using tests/factories.py "
+        "Seed the DB with the navigable test dataset using tests/factories.py "
         "factories. Read-only by default; pass --commit to persist. Requires one "
         "of --all / --include / --exclude."
     )
@@ -342,8 +594,7 @@ class Command(BaseCommand):
         """Build the bulletin and weather coverage plan.
 
         The region set and per-day danger logic are read from the same eaws_CH
-        fixture and helpers as ``build_test_data``, so the two commands produce an
-        identical dataset.
+        eaws_CH fixture (for the region set) and the module-level dataset helpers.
 
         Returns:
             A ``(bulletin_specs, weather_pairs)`` tuple. ``bulletin_specs`` is a
@@ -385,7 +636,7 @@ class Command(BaseCommand):
         Returns:
             A ``region_id -> MicroRegion`` lookup for the regions that exist in the
             DB. Missing regions are silently omitted; seeders skip them with a log
-            warning, matching ``build_test_data``.
+            warning.
 
         """
         from regions.models import MicroRegion
@@ -536,7 +787,7 @@ class Command(BaseCommand):
         try:
             bulletin.render_model = build_render_model(properties)
             bulletin.render_model_version = RENDER_MODEL_VERSION
-        except Exception as exc:  # noqa: BLE001 — mirror build_test_data: never abort the seed
+        except Exception as exc:  # noqa: BLE001 — never abort the seed on one bad render
             logger.warning(
                 "seed_test_data: render model failed for %s: %s",
                 bulletin.bulletin_id,
@@ -603,7 +854,7 @@ class Command(BaseCommand):
         for bulletin in bulletins:
             try:
                 apply_bulletin_day_ratings(bulletin)
-            except Exception as exc:  # noqa: BLE001 — mirror build_test_data
+            except Exception as exc:  # noqa: BLE001 — one bad rating never aborts the seed
                 logger.warning(
                     "seed_test_data: day rating failed for %s: %s",
                     bulletin.bulletin_id,
