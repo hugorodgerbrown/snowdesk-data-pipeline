@@ -400,7 +400,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
-    maxZoom: 12,
+    // SNOW-442: raised from 12. The swisstopo base vector source
+    // (ch.swisstopo.base.vt) publishes a TileJSON `maxzoom` of 14 and its
+    // style authors layers up to zoom 20; MapLibre overzooms vector tiles
+    // cleanly above 14, so 18 was chosen to allow close-in reading without
+    // exposing genuinely blank overzoomed tiles at the extreme end.
+    maxZoom: 18,
     // (Bounds taken from console.log when ?debug=true)
     // West / south / north match the original Western-European frame
     // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
