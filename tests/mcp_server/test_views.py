@@ -69,6 +69,31 @@ def test_every_response_carries_cache_control_no_store(client: Client) -> None:
 
 
 @pytest.mark.django_db
+def test_slashless_url_reaches_the_endpoint_without_a_redirect(client: Client) -> None:
+    """POST /api/mcp (no trailing slash) hits the view directly, no 301.
+
+    Remote MCP connectors POST ``initialize`` to exactly the URL the user
+    typed. Without the slash-less alias, ``APPEND_SLASH`` would turn that
+    POST into a 301 the client cannot replay, breaking the handshake. The
+    alias must resolve straight to the view and return the JSON-RPC result.
+    """
+    response = client.post(
+        "/api/mcp",
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert json.loads(response.content) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+
+
+@pytest.mark.django_db
+def test_canonical_and_slashless_urls_share_one_view(client: Client) -> None:
+    """Both spellings reverse/route to ``mcp_server.views.mcp_endpoint``."""
+    assert reverse("api:mcp:endpoint") == "/api/mcp/"
+    assert reverse("api:mcp:endpoint_noslash") == "/api/mcp"
+
+
+@pytest.mark.django_db
 def test_get_returns_405_with_allow_post_header(client: Client) -> None:
     """GET is rejected with 405 and an Allow: POST header."""
     response = client.get(reverse("api:mcp:endpoint"))
