@@ -3357,6 +3357,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 })();
 
+// SNOW-442: zoom-level readout — keeps #map-zoom-indicator-value in sync
+// with the live camera zoom. The static "Zoom" label is server-rendered
+// (translatable); this only ever writes the rounded numeric value, mirroring
+// how updateMapAttribution above owns #map-attribution-text's textContent.
+// Bound to 'zoom' (not just 'zoomend') so the readout tracks a live pinch or
+// scroll-wheel gesture rather than only updating once the gesture settles.
+(function zoomIndicatorInit() {
+  const valueEl = document.getElementById('map-zoom-indicator-value');
+  if (!valueEl || !MAP) return;
+
+  const updateZoomIndicator = () => {
+    valueEl.textContent = String(Math.round(MAP.getZoom()));
+  };
+
+  updateZoomIndicator(); // Seed immediately with whatever camera state exists now.
+  MAP.on('zoom', updateZoomIndicator);
+  MAP.on('load', updateZoomIndicator);
+  MAP.on('style.load', updateZoomIndicator);
+})();
+
 // SNOW-314: Season ribbon — the season scrubber's track doubles as the danger
 // ribbon. When a region is the focus, one decorative coloured cell per season
 // day is painted into the track (behind the thumb); a persistent readout names
