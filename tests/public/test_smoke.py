@@ -28,7 +28,7 @@ from django.test import Client
 from tests.seeding import seed_test_dataset
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_seed_and_canonical_url_returns_200() -> None:
     """
     seed_test_dataset + GET /ch-4115/martigny-verbier/2026-04-08/ → HTTP 200.
@@ -47,7 +47,7 @@ def test_seed_and_canonical_url_returns_200() -> None:
     )
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_seed_and_ch4115_april_url_returns_200() -> None:
     """
     seed_test_dataset + GET /ch-4115/martigny-verbier/2026-04-02/ → HTTP 200.
@@ -65,7 +65,7 @@ def test_seed_and_ch4115_april_url_returns_200() -> None:
     )
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_seed_and_examples_random_returns_200() -> None:
     """
     seed_test_dataset + GET /examples/random/ → HTTP 200.

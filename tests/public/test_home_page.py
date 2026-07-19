@@ -494,7 +494,7 @@ class TestMapRedirect:
         assert 'id="home-intro"' in content
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_sample_bulletin_url_returns_200() -> None:
     """
     The sample-bulletin URL (CH-4115 2026-02-17) returns HTTP 200 after
