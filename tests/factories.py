@@ -304,6 +304,29 @@ class ForecastPointWeatherFactory(
     uv_index_max = 3.5
     daylight_duration = 46800.0
     sunshine_duration = 30000.0
+    freezing_level_height = 1800.0
+    hourly_series = factory.LazyFunction(
+        lambda: [
+            {
+                "time": "2026-05-01T06:00",
+                "temperature_2m": -2.0,
+                "snowfall": 0.5,
+                "precipitation": 0.5,
+                "wind_speed_10m": 10.0,
+                "wind_gusts_10m": 20.0,
+                "freezing_level_height": 1700.0,
+            },
+            {
+                "time": "2026-05-01T12:00",
+                "temperature_2m": 1.0,
+                "snowfall": 0.0,
+                "precipitation": 0.0,
+                "wind_speed_10m": 14.0,
+                "wind_gusts_10m": 28.0,
+                "freezing_level_height": 1800.0,
+            },
+        ]
+    )
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):

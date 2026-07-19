@@ -16,7 +16,10 @@ Covers:
                     region-null → no-coverage note; region + rating →
                     danger tile + bulletin link; unnamed favourite →
                     coordinate fallback; no weather snapshot yet →
-                    "coming soon" empty state (SNOW-415).
+                    "coming soon" empty state (SNOW-415); with
+                    ForecastPointWeather rows → forecast panel (day strip +
+                    hourly detail) renders, response carries
+                    X-Data-Generated-At (SNOW-417).
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; flag off → 404;
                     non-HTMX → 400; empty state when the user has none
@@ -39,6 +42,7 @@ The Open-Meteo network call is avoided throughout by patching
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Any
 from unittest.mock import patch
@@ -54,6 +58,7 @@ from favourites.models import Favourite
 from tests.factories import (
     FavouriteFactory,
     ForecastPointFactory,
+    ForecastPointWeatherFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     UserFactory,
@@ -537,6 +542,48 @@ class TestFavouriteCard:
         assert response.status_code == 200
         content = response.content.decode()
         assert "coming soon" in content.lower()
+
+    @override_flag("favourites", active=True)
+    def test_forecast_panel_renders_day_strip_and_hourly_detail(
+        self, client: Client
+    ) -> None:
+        """With ForecastPointWeather rows, the day strip + hourly detail render (SNOW-417)."""
+        from django.utils import timezone as django_timezone  # noqa: PLC0415
+
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+        today = django_timezone.localdate()
+        ForecastPointWeatherFactory.create(
+            forecast_point=favourite.forecast_point,
+            valid_for_date=today,
+        )
+        ForecastPointWeatherFactory.create(
+            forecast_point=favourite.forecast_point,
+            valid_for_date=today + datetime.timedelta(days=1),
+        )
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="favourite-forecast-panel"' in content
+        assert 'data-testid="favourite-forecast-day"' in content
+        assert 'data-testid="favourite-forecast-hourly"' in content
+        assert "coming soon" not in content.lower()
+        assert "X-Data-Generated-At" in response
+
+    @override_flag("favourites", active=True)
+    def test_no_forecast_rows_omits_generated_at_fallback(self, client: Client) -> None:
+        """With no ForecastPointWeather rows, freshness headers still stamp (fallback to now)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "X-Data-Generated-At" in response
 
 
 # ---------------------------------------------------------------------------
