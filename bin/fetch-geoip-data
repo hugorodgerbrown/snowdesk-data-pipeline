@@ -5,16 +5,31 @@
 # data/geoip/GeoLite2-City.mmdb.  Idempotent — re-running replaces the file
 # with the latest build.
 #
+# GeoIP is a best-effort enrichment: ``bulletins.services.geoip.geo_lookup``
+# returns ``None`` for every caller when the database is absent, so the app
+# boots and serves fine without it (only RequestLog geo fields go empty).
+# The download must therefore NEVER block a deploy — a transient MaxMind
+# outage or rate-limit is not a reason to fail the whole build.
+#
 # Required environment variables:
 #   MAXMIND_ACCOUNT_ID   Your MaxMind account ID (numeric).
 #   MAXMIND_LICENSE_KEY  Your MaxMind licence key.
 #
-# Exit behaviour:
-#   - Credentials unset → log a warning and exit 0 (no-op; local dev without
-#     an account boots fine; geo fields will be empty).
-#   - curl fails AND a stale database already exists → log a warning and exit 0
-#     (Render reuses the previously-fetched file on the same instance).
-#   - curl fails AND no database exists → exit 1 (fresh install must succeed).
+# Optional environment variables:
+#   MAXMIND_DOWNLOAD_ATTEMPTS  Max download attempts (default 4).
+#
+# Exit behaviour (always exits 0 — GeoIP is optional, see above):
+#   - Credentials unset → warn and exit 0 (local dev without an account boots
+#     fine; geo fields will be empty).
+#   - Download succeeds → install the database and exit 0.
+#   - Download fails after all retries → reuse the existing on-disk database
+#     if present, otherwise warn loudly and exit 0 with GeoIP disabled.
+#
+# Transient failures (HTTP 429 rate-limit, 5xx, or a network error) are
+# retried with exponential backoff plus jitter. The production release
+# deploys three services (web + scheduler + worker) whose builds run this
+# script near-simultaneously with the same licence key, so brief 429 bursts
+# are expected — the backoff spreads the retries out.
 #
 # Usage:
 #   ./bin/fetch-geoip-data
@@ -30,6 +45,11 @@ DEST_DIR="$(cd "$(dirname "$0")/../data/geoip" && pwd)"
 DEST_FILE="${DEST_DIR}/GeoLite2-City.mmdb"
 DOWNLOAD_URL="https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz"
 
+# Number of download attempts before giving up. Kept small — the backoff
+# already spreads them across ~35s and a hard rate-limit won't clear inside a
+# single build regardless.
+MAX_ATTEMPTS="${MAXMIND_DOWNLOAD_ATTEMPTS:-4}"
+
 # ---------------------------------------------------------------------------
 # Credential guard — no-op if credentials are absent
 # ---------------------------------------------------------------------------
@@ -43,7 +63,7 @@ if [[ -z "${ACCOUNT_ID}" || -z "${LICENSE_KEY}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Download
+# Download (with retry/backoff on transient failures)
 # ---------------------------------------------------------------------------
 
 WORK_DIR="$(mktemp -d)"
@@ -51,45 +71,93 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 
 ARCHIVE="${WORK_DIR}/GeoLite2-City.tar.gz"
 
-echo "fetch-geoip-data: downloading GeoLite2-City from MaxMind…"
-
-# --location follows MaxMind's 302 to the CDN that serves the archive.
-# Without it curl writes the redirect-response body (empty / HTML stub) to
-# ${ARCHIVE} and exits 0, and tar then fails on a non-archive file.
-# -w surfaces the final HTTP status so build-log readers can diagnose 401s.
-HTTP_CODE="$(curl --location --silent --show-error \
-        --user "${ACCOUNT_ID}:${LICENSE_KEY}" \
-        --output "${ARCHIVE}" \
-        --write-out "%{http_code}" \
-        "${DOWNLOAD_URL}" || true)"
-
-_fallback_or_abort() {
-    # Called when the download is unusable. Reuses the existing on-disk
-    # database if present (Render persists the working directory between
-    # deploys on the same instance), otherwise aborts the build.
-    if [[ -f "${DEST_FILE}" ]]; then
-        echo "fetch-geoip-data: stale database already exists at ${DEST_FILE} — continuing with it" >&2
-        exit 0
-    fi
-    echo "fetch-geoip-data: no existing database to fall back on — aborting" >&2
-    exit 1
+_is_transient() {
+    # A status worth retrying: rate-limit, gateway/server errors, or a curl
+    # network failure (curl writes 000 to %{http_code} when it got no HTTP
+    # response at all — DNS/connection/timeout).
+    case "${1}" in
+        429 | 500 | 502 | 503 | 504 | 000 | "") return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
-if [[ "${HTTP_CODE}" != "200" ]]; then
-    echo "fetch-geoip-data: download returned HTTP ${HTTP_CODE:-unknown}" >&2
-    _fallback_or_abort
-fi
+_download_ok() {
+    # Attempt one download into ${ARCHIVE}. Returns 0 on a usable gzip
+    # archive; otherwise echoes the observed HTTP status on stdout and
+    # returns 1 so the caller can decide whether to retry.
+    #
+    # --location follows MaxMind's 302 to the CDN that serves the archive.
+    # Without it curl writes the redirect-response body (empty / HTML stub)
+    # to ${ARCHIVE} and exits 0, and tar then fails on a non-archive file.
+    # -w surfaces the final HTTP status so build-log readers can diagnose.
+    local http_code
+    http_code="$(curl --location --silent --show-error \
+            --user "${ACCOUNT_ID}:${LICENSE_KEY}" \
+            --output "${ARCHIVE}" \
+            --write-out "%{http_code}" \
+            "${DOWNLOAD_URL}" || true)"
 
-# Sanity-check the archive is actually gzip (magic bytes 1f 8b) before
-# handing it to tar. A passing HTTP 200 is not enough — a misconfigured
-# auth or proxy can still serve a plaintext error page with status 200.
-if [[ ! -s "${ARCHIVE}" ]] || ! gzip --test "${ARCHIVE}" >/dev/null 2>&1; then
-    BYTES="$(wc -c < "${ARCHIVE}" | tr -d ' ')"
-    FIRST="$(head -c 120 "${ARCHIVE}" 2>/dev/null | tr -d '\0' || true)"
-    echo "fetch-geoip-data: archive is not a valid gzip stream (${BYTES} bytes)" >&2
-    echo "fetch-geoip-data: first bytes: ${FIRST}" >&2
-    _fallback_or_abort
-fi
+    if [[ "${http_code}" != "200" ]]; then
+        echo "${http_code}"
+        return 1
+    fi
+
+    # Sanity-check the archive is actually gzip (magic bytes 1f 8b) before
+    # handing it to tar. A passing HTTP 200 is not enough — a misconfigured
+    # auth or proxy can still serve a plaintext error page with status 200.
+    if [[ ! -s "${ARCHIVE}" ]] || ! gzip --test "${ARCHIVE}" >/dev/null 2>&1; then
+        local bytes first
+        bytes="$(wc -c < "${ARCHIVE}" | tr -d ' ')"
+        first="$(head -c 120 "${ARCHIVE}" 2>/dev/null | tr -d '\0' || true)"
+        echo "fetch-geoip-data: archive is not a valid gzip stream (${bytes} bytes)" >&2
+        echo "fetch-geoip-data: first bytes: ${first}" >&2
+        echo "200-invalid"
+        return 1
+    fi
+
+    return 0
+}
+
+_fallback_or_skip() {
+    # Called when the download is unusable after all retries. Reuses the
+    # existing on-disk database if present (Render persists the working
+    # directory between deploys on the same instance), otherwise leaves
+    # GeoIP disabled — but never fails the build (geo is optional).
+    if [[ -f "${DEST_FILE}" ]]; then
+        echo "fetch-geoip-data: reusing existing database at ${DEST_FILE}" >&2
+        exit 0
+    fi
+    echo "fetch-geoip-data: no database available — continuing with GeoIP disabled (geo fields will be empty)" >&2
+    exit 0
+}
+
+echo "fetch-geoip-data: downloading GeoLite2-City from MaxMind…"
+
+delay=5
+attempt=1
+while true; do
+    if status="$(_download_ok)"; then
+        break
+    fi
+
+    echo "fetch-geoip-data: attempt ${attempt}/${MAX_ATTEMPTS} failed (HTTP ${status:-unknown})" >&2
+
+    if ! _is_transient "${status}"; then
+        echo "fetch-geoip-data: HTTP ${status} is not retryable (check credentials)" >&2
+        _fallback_or_skip
+    fi
+
+    if (( attempt >= MAX_ATTEMPTS )); then
+        echo "fetch-geoip-data: giving up after ${MAX_ATTEMPTS} attempts" >&2
+        _fallback_or_skip
+    fi
+
+    # Exponential backoff with jitter (0-2s) to de-sync concurrent service
+    # builds hammering the same licence key.
+    sleep "$(( delay + RANDOM % 3 ))"
+    delay=$(( delay * 2 ))
+    attempt=$(( attempt + 1 ))
+done
 
 # ---------------------------------------------------------------------------
 # Extract
@@ -107,7 +175,7 @@ EXTRACTED_MMDB="$(find "${WORK_DIR}" -name "GeoLite2-City.mmdb" | head -1)"
 
 if [[ -z "${EXTRACTED_MMDB}" ]]; then
     echo "fetch-geoip-data: GeoLite2-City.mmdb not found in archive" >&2
-    exit 1
+    _fallback_or_skip
 fi
 
 # ---------------------------------------------------------------------------
