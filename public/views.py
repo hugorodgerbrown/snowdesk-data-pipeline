@@ -5086,6 +5086,33 @@ def _get_render_model(
         }
 
 
+def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
+    """
+    Return the enriched problem cards for a bulletin.
+
+    Pure extraction of the render-model → problem-cards steps
+    ``_build_panel_context`` already runs, exposed as a named helper so
+    other surfaces (the favourites card, SNOW-422) can reuse the exact same
+    cards the bulletin page renders without duplicating the resolution
+    logic.
+
+    Args:
+        bulletin: The Bulletin to resolve problem cards for.
+
+    Returns:
+        Flat list of card dicts ready for ``public/_rating_block.html``.
+
+    """
+    props = _get_properties(bulletin)
+    raw_rm = _get_render_model(bulletin, props)
+    render_model = enrich_render_model(raw_rm)
+    traits = render_model.get("traits") or []
+    rm_danger = raw_rm.get("danger") or {}
+    return _resolve_problem_cards(
+        traits, raw_rm.get("danger_patterns") or [], rm_danger.get("ratings") or []
+    )
+
+
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
