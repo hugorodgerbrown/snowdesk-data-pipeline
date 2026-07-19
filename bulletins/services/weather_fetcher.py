@@ -566,7 +566,7 @@ def fetch_weather_for_point(
 
     Ships on Open-Meteo's default blended model chain — no ``models=``
     parameter (MeteoSwiss ICON-CH selection is deferred to a follow-up
-    ticket, SNOW-417).
+    ticket under the SNOW-411 point-forecast epic).
 
     Points are forecast-only — there is no archive/backfill equivalent of
     this function.

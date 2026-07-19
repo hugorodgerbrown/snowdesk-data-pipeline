@@ -39,6 +39,7 @@ from typing import Any
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone as django_timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
@@ -242,7 +243,10 @@ def test_forecast_panel_hourly_detail_expands_and_collapses(
         favourite = FavouriteFactory.create(
             user=favourites_page.subscriber.user, name="Powder Stash"
         )
-        today = favourite.created_at.date()
+        # Match the view's own start_date basis (timezone.localdate()) —
+        # favourite.created_at.date() is a UTC date and would diverge from
+        # it around UTC midnight when TIME_ZONE is ahead of UTC.
+        today = django_timezone.localdate()
         ForecastPointWeatherFactory.create(
             forecast_point=favourite.forecast_point, valid_for_date=today
         )

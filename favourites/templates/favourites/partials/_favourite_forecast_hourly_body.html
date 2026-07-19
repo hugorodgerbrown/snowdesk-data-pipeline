@@ -10,6 +10,10 @@ ForecastPointWeather.hourly_series.
 <ul class="divide-y divide-border text-sm" data-testid="favourite-forecast-hourly-list">
     {% for hour in hourly %}
         <li class="flex items-center justify-between gap-3 py-1.5">
+            {# hour.time is a plain "YYYY-MM-DDTHH:MM" string (Open-Meteo's #}
+            {# hourly.time format, not a datetime), so Django's date/time #}
+            {# filters don't apply — slicing the fixed HH:MM offset is the #}
+            {# simplest correct extraction for this known, stable format. #}
             <span class="font-mono text-text-3 w-12 shrink-0">{{ hour.time|slice:"11:16" }}</span>
             <span class="flex-1 text-text-1">
                 {% if hour.temperature_2m is not None %}{{ hour.temperature_2m|floatformat:0 }}&deg;C{% else %}&mdash;{% endif %}
