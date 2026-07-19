@@ -26,10 +26,12 @@
 #     if present, otherwise warn loudly and exit 0 with GeoIP disabled.
 #
 # Transient failures (HTTP 429 rate-limit, 5xx, or a network error) are
-# retried with exponential backoff plus jitter. The production release
-# deploys three services (web + scheduler + worker) whose builds run this
-# script near-simultaneously with the same licence key, so brief 429 bursts
-# are expected — the backoff spreads the retries out.
+# retried with exponential backoff plus jitter. Only the web service runs
+# this script (via build.sh); the scheduler/worker use build_headless.sh and
+# never fetch GeoIP. Each web deploy re-downloads on a fresh container, and
+# free GeoLite accounts get only 30 downloads per 24h (per account), so a
+# burst of redeploys trips 429 — the retry smooths transient hits, and a
+# genuine rate-limit degrades to GeoIP-disabled rather than failing the build.
 #
 # Usage:
 #   ./bin/fetch-geoip-data
