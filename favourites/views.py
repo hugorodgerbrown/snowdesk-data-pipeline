@@ -62,12 +62,14 @@ from core.freshness import (
     freshness_state as compute_freshness_state,
 )
 from favourites.models import Favourite
+from favourites.relevance import annotate_problem_relevance
 from favourites.services import (
     FavouriteLimitReached,
     create_favourite,
     delete_favourite,
 )
 from public.templatetags.snowdesk_time import danger_level_digit
+from public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 
 if TYPE_CHECKING:
     from bulletins.services.weather_display import ForecastPanel
@@ -417,6 +419,14 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     which returns ``None`` until at least one ``ForecastPointWeather`` row
     has been fetched for the point (empty "coming soon" state).
 
+    When a region and today's default bulletin both resolve, also builds
+    the avalanche-problems section (SNOW-422): the bulletin's problem cards
+    (``public.views.problem_cards_for_bulletin``), each annotated with an
+    altitude verdict relative to ``favourite.elevation``
+    (``favourites.relevance.annotate_problem_relevance``). Every problem the
+    bulletin publishes is always included — the annotation only highlights
+    relevance, it never suppresses a problem.
+
     Stamps the ``X-Data-Generated-At`` / ``X-Data-Max-Age`` /
     ``X-Data-Unsafe-After`` freshness headers (SNOW-370 / SNOW-418) via
     ``_card_freshness``: ``generated_at`` is the OLDER of the rating's
@@ -452,6 +462,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     day_rating = None
     bulletin_url = ""
+    problem_cards: list[dict[str, Any]] = []
     if favourite.region is not None:
         today = timezone.localdate()
         day_rating = RegionDayRating.objects.filter(
@@ -459,6 +470,14 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
         ).first()
         # No date arg — the evergreen "today" bulletin URL.
         bulletin_url = favourite.region.get_absolute_url()
+
+        # Avalanche problems — this location (SNOW-422). Rides today's
+        # default bulletin; highlight-never-suppress, so every card the
+        # bulletin publishes is annotated, never dropped.
+        bulletin = _select_bulletin_for_date(favourite.region, today)
+        if bulletin is not None:
+            cards = problem_cards_for_bulletin(bulletin)
+            problem_cards = annotate_problem_relevance(cards, favourite.elevation)
 
     forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, timezone.now())
 
@@ -479,6 +498,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
             "day_rating": day_rating,
             "bulletin_url": bulletin_url,
             "forecast_panel": forecast_panel,
+            "problem_cards": problem_cards,
             "cache_payload": cache_payload,
             "freshness_state": state,
             "freshness_generated_at": generated_at,

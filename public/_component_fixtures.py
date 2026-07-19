@@ -2335,3 +2335,73 @@ def _build_favourite_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
 FAVOURITE_FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     _build_favourite_forecast_panel_variants()
 )
+
+
+# Favourite problem card (SNOW-422) -------------------------------------------
+# Four variants — one per altitude verdict favourites.relevance can produce
+# (APPLIES / ABOVE / BELOW / unannotated). Reuses _make_rating_card for the
+# underlying _rating_block.html shape (same helper the rating-block entry
+# above uses) and layers on the altitude_relevance key
+# favourites.relevance.annotate_problem_relevance adds at render time — the
+# only thing _favourite_problem.html itself reads before delegating to the
+# shared card partial.
+
+
+def _build_favourite_problem_variants() -> tuple[dict[str, Any], ...]:
+    """Build one favourite-problem card fixture per altitude verdict."""
+    banded_card = _make_rating_card(
+        category="dry",
+        danger_level=3,
+        danger_level_key="considerable",
+        problem_type="wind_slab",
+        time_period="all_day",
+        aspects=["N", "NE", "E"],
+        elevation=_ElevationBounds(
+            lower="2200",
+            upper="",
+            display="above 2200m",
+            bound_type=_ELEVATION_LOWER,
+        ),
+        label="Wind slab",
+        time_period_label="",
+        core_zone_text="N to E aspects, above 2200m",
+        comment_html="<p>Fresh wind slabs on N to E aspects above 2200m.</p>",
+    )
+    unannotated_card = _make_rating_card(
+        category="wet",
+        danger_level=2,
+        danger_level_key="moderate",
+        problem_type="wet_snow",
+        time_period="all_day",
+        aspects=[],
+        elevation=_ElevationBounds(lower="", upper="", display="", bound_type=""),
+        label="Wet snow",
+        time_period_label="",
+        core_zone_text="",
+        comment_html=(
+            "<p>Isolated wet-snow instability with no clear elevation band.</p>"
+        ),
+    )
+    return (
+        {
+            "caption": "Applies at this altitude",
+            "context": {"card": {**banded_card, "altitude_relevance": "APPLIES"}},
+        },
+        {
+            "caption": "Above this location",
+            "context": {"card": {**banded_card, "altitude_relevance": "ABOVE"}},
+        },
+        {
+            "caption": "Below this location",
+            "context": {"card": {**banded_card, "altitude_relevance": "BELOW"}},
+        },
+        {
+            "caption": "Unannotated (no band / treeline)",
+            "context": {"card": {**unannotated_card, "altitude_relevance": None}},
+        },
+    )
+
+
+FAVOURITE_PROBLEM_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_favourite_problem_variants()
+)

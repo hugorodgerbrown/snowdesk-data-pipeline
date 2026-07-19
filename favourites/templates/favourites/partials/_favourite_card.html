@@ -20,7 +20,13 @@ Content:
      over the point's own ForecastPointWeather window, SNOW-417) when
      present; otherwise an explicit "coming soon" empty state.
      Deliberately never falls back to the region's WeatherSnapshot.
-  4. Rename / delete controls — reuses the SNOW-413 row partial so the
+  4. Avalanche problems — this location (SNOW-422). Only rendered when
+     problem_cards is non-empty (region + today's default bulletin both
+     resolved). One _favourite_problem.html per card, each carrying an
+     altitude annotation relative to favourite.elevation — every problem
+     the bulletin publishes is always shown; the annotation only
+     highlights relevance, it never suppresses a card.
+  5. Rename / delete controls — reuses the SNOW-413 row partial so the
      card's controls hit the existing endpoints.
 
 Context:
@@ -33,6 +39,12 @@ Context:
                             is None.
     forecast_panel       : ForecastPanel | None — from
                             build_point_forecast_panel(), or None.
+    problem_cards        : list[dict] — today's bulletin problem cards
+                            (public.views.problem_cards_for_bulletin),
+                            each extended with altitude_relevance
+                            (favourites.relevance.annotate_problem_relevance);
+                            empty list when favourite.region is None or no
+                            default bulletin resolves for today.
     cache_payload        : dict — SNOW-418 offline-cache record for this
                             favourite; written through into
                             data:favourites by favourites_offline.js.
@@ -112,7 +124,18 @@ Context:
         {% endif %}
     </div>
 
-    {# 4. Rename / delete controls #}
+    {# 4. Avalanche problems — this location #}
+    {% if problem_cards %}
+        <div class="mt-4 pt-4 border-t border-border">
+            {% translate "Avalanche problems — this location" as problems_eyebrow_label %}
+            {% include "includes/_eyebrow.html" with text=problems_eyebrow_label class_extra="mb-2" %}
+            {% for card in problem_cards %}
+                {% include "favourites/partials/_favourite_problem.html" with card=card %}
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {# 5. Rename / delete controls #}
     <div class="mt-4 pt-4 border-t border-border">
         {% include "favourites/partials/_favourite.html" with favourite=favourite %}
     </div>

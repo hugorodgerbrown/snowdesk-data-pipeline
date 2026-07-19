@@ -97,9 +97,22 @@ def test_signed_in_add_flow_creates_favourite(
         assert favourite.latitude == pytest.approx(46.2, abs=0.01)
         assert favourite.longitude == pytest.approx(7.6, abs=0.01)
 
-    source_data = page.evaluate("() => MAP.getSource('favourites').serialize().data")
-    names = [f["properties"]["name"] for f in source_data["features"]]
-    assert "Test Peak" in names
+    # The map's favourites source is refreshed asynchronously after create:
+    # favourites.js dispatches ``snowdesk:favourites-changed`` → fetch geojson
+    # → ``source.setData``. Poll until the new feature lands rather than reading
+    # the source once, which races that fetch — reliable locally but flaky in
+    # CI, where the create round-trip (a live Open-Meteo elevation lookup) is
+    # slower and the ``setData`` had not yet run when the read fired.
+    page.wait_for_function(
+        """() => {
+            const src = MAP.getSource('favourites');
+            if (!src) return false;
+            const data = src.serialize().data;
+            return (data.features || []).some(
+                (f) => f.properties && f.properties.name === 'Test Peak',
+            );
+        }"""
+    )
 
 
 @override_flag("favourites", active=True)

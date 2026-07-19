@@ -20,6 +20,13 @@ Covers:
                     ForecastPointWeather rows → forecast panel (day strip +
                     hourly detail) renders, response carries
                     X-Data-Generated-At (SNOW-417).
+  favourite_card problems — elevation-aware avalanche-problem highlighting
+                    (SNOW-422): a region + today's bulletin renders one
+                    rating-block per problem card plus an altitude-relevance
+                    chip; region=None renders no problems section; a
+                    no-elevation-band problem renders unannotated; the
+                    section never contains the word "safe" (safety-sensitive
+                    — copy is altitude-relative only).
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; flag off → 404;
                     non-HTMX → 400; empty state when the user has none
@@ -44,6 +51,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from typing import Any
 from unittest.mock import patch
 
@@ -51,15 +59,19 @@ import pytest
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone as django_timezone
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 from favourites.models import Favourite
 from tests.factories import (
+    BulletinFactory,
     FavouriteFactory,
     ForecastPointFactory,
     ForecastPointWeatherFactory,
     MicroRegionFactory,
+    RegionBulletinFactory,
     RegionDayRatingFactory,
     UserFactory,
 )
@@ -84,6 +96,102 @@ def _delete_url(uuid: object) -> str:
 def _card_url(uuid: object) -> str:
     """Build the detail-card URL for a favourite's uuid."""
     return f"/favourites/partials/{uuid}/card/"
+
+
+def _problem_card_render_model(elevation: dict[str, Any] | None) -> dict[str, Any]:
+    """Build a minimal current-version render_model dict with one dry problem.
+
+    Mirrors the helper pattern in ``tests/public/test_bulletin_page.py``,
+    scoped down to what ``favourite_card``'s problems section needs.
+
+    Args:
+        elevation: A render-model elevation dict (``{"lower", "upper",
+            "treeline"}``), or ``None`` for a problem with no band data.
+
+    Returns:
+        A render_model dict at the current ``RENDER_MODEL_VERSION``.
+
+    """
+    problem = {
+        "problem_type": "wind_slab",
+        "comment_html": "<p>Wind slab comment text.</p>",
+        "aspects": ["N", "NE", "E"],
+        "elevation": elevation,
+        "time_period": "all_day",
+        "core_zone_text": None,
+        "danger_rating_value": "moderate",
+    }
+    return {
+        "version": RENDER_MODEL_VERSION,
+        "source": "slf",
+        "danger": {
+            "key": "moderate",
+            "number": "2",
+            "subdivision": None,
+            "ratings": [],
+        },
+        "danger_patterns": [],
+        "traits": [
+            {
+                "category": "dry",
+                "time_period": "all_day",
+                "title": "Dry avalanches",
+                "geography": {"source": "problems"},
+                "problems": [problem],
+                "prose": None,
+                "danger_level": 2,
+            }
+        ],
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": "2026-03-15T15:00:00+00:00",
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": {
+            "snowpack_structure": "<p>The snowpack is generally stable.</p>",
+            "weather_review": None,
+            "weather_forecast": None,
+            "tendency": [],
+            "avalanche_activity": {"highlights": "", "comment": ""},
+            "tendency_lead": None,
+        },
+    }
+
+
+def _make_todays_bulletin(region: Any, elevation: dict[str, Any] | None = None) -> Any:
+    """Create a Bulletin valid for the whole of today, linked to *region*.
+
+    A full-day (00:00–00:00) validity window always spans "now", so
+    ``_select_bulletin_for_date`` picks it as today's default regardless of
+    the time the test happens to run.
+
+    Args:
+        region: The MicroRegion the bulletin covers.
+        elevation: Elevation dict passed to the single problem's render
+            model entry; ``None`` for a problem with no band data.
+
+    Returns:
+        The created Bulletin.
+
+    """
+    today = django_timezone.localdate()
+    vf = datetime.datetime.combine(today, datetime.time.min, tzinfo=datetime.UTC)
+    vt = vf + datetime.timedelta(days=1)
+    bulletin = BulletinFactory.create(
+        issued_at=vf,
+        valid_from=vf,
+        valid_to=vt,
+        render_model=_problem_card_render_model(elevation),
+        render_model_version=RENDER_MODEL_VERSION,
+    )
+    RegionBulletinFactory.create(
+        bulletin=bulletin, region=region, region_name_at_time=region.name
+    )
+    return bulletin
 
 
 def _create_via_service(
@@ -548,8 +656,6 @@ class TestFavouriteCard:
         self, client: Client
     ) -> None:
         """With ForecastPointWeather rows, the day strip + hourly detail render (SNOW-417)."""
-        from django.utils import timezone as django_timezone  # noqa: PLC0415
-
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
@@ -584,6 +690,97 @@ class TestFavouriteCard:
 
         assert response.status_code == 200
         assert "X-Data-Generated-At" in response
+
+
+# ---------------------------------------------------------------------------
+# favourite_card — avalanche-problems section (SNOW-422)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteCardProblems:
+    """favourite_card — elevation-aware problem highlighting (SNOW-422)."""
+
+    @override_flag("favourites", active=True)
+    def test_region_with_bulletin_renders_one_rating_block_per_card(
+        self, client: Client
+    ) -> None:
+        """A favourite with a today's bulletin renders the problems section."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        _make_todays_bulletin(
+            region, elevation={"lower": 2000, "upper": None, "treeline": False}
+        )
+        favourite = FavouriteFactory.create(user=user, region=region, elevation=2500.0)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Avalanche problems" in content
+        assert content.count('data-testid="rating-block"') == 1
+        assert 'data-testid="altitude-relevance-chip"' in content
+        assert 'data-relevance="APPLIES"' in content
+
+    @override_flag("favourites", active=True)
+    def test_region_less_favourite_has_no_problems_section(
+        self, client: Client
+    ) -> None:
+        """A favourite with region=None never renders the problems section."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, region=None)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Avalanche problems" not in content
+        assert 'data-testid="rating-block"' not in content
+
+    @override_flag("favourites", active=True)
+    def test_problems_section_never_uses_the_word_safe(self, client: Client) -> None:
+        """Copy is altitude-relative only — 'safe' must never appear (safety-sensitive).
+
+        HTML comments are stripped before scanning and the match is on a word
+        boundary, so neither the ``<!-- nosemgrep: ...-with-safe.-... -->``
+        lint-suppression comment nor the unrelated ``unsafe_after_seconds``
+        cache-payload JSON key false-positive the check.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        _make_todays_bulletin(
+            region, elevation={"lower": 2000, "upper": None, "treeline": False}
+        )
+        favourite = FavouriteFactory.create(user=user, region=region, elevation=1500.0)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode().lower()
+        content_without_comments = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+        assert re.search(r"\bsafe\b", content_without_comments) is None
+        assert 'data-relevance="above"' in content
+
+    @override_flag("favourites", active=True)
+    def test_problem_with_no_elevation_band_renders_unannotated(
+        self, client: Client
+    ) -> None:
+        """A problem with no elevation band renders its card with no relevance chip."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        _make_todays_bulletin(region, elevation=None)
+        favourite = FavouriteFactory.create(user=user, region=region, elevation=1500.0)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert content.count('data-testid="rating-block"') == 1
+        assert 'data-testid="altitude-relevance-chip"' not in content
 
 
 # ---------------------------------------------------------------------------

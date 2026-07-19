@@ -41,6 +41,7 @@ from public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_FORECAST_PANEL_VARIANTS,
+    FAVOURITE_PROBLEM_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1054,6 +1055,19 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="favourites/partials/_favourite_forecast_panel.html",
         variants=FAVOURITE_FORECAST_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="favourite-problem",
+        label="Favourite problem",
+        description=(
+            "Altitude-annotated avalanche-problem card on the favourite detail "
+            "card (SNOW-422): the shared _rating_block.html card plus an "
+            "altitude-relevance chip (applies/above/below this location)."
+        ),
+        kind="components",
+        partial="favourites/partials/_favourite_problem.html",
+        variants=FAVOURITE_PROBLEM_VARIANTS,
         panel_layout="stack",
     ),
 )
