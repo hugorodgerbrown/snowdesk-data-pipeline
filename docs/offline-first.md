@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-19
 ---
 
 # Offline-first PWA compliance
@@ -111,6 +111,31 @@ dropped.
 
 Defaults for safety-critical data: 24h `max_age`, 48h `unsafe_after`.
 
+### §12.6 relaxation — cached-with-explicit-staleness (SNOW-418)
+
+The spec's default posture for safety-critical data is network-only: no
+cache, fail closed offline. `favourites/views.py` (`favourite_card`,
+`favourite_list`) documents the one accepted relaxation of that rule —
+cache the response with its freshness envelope, and let the client
+classify staleness itself rather than never caching at all:
+
+- Every favourite roster/card record is written through into the
+  `data:favourites` IndexedDB store (schema v2 — see
+  [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)) by
+  `static/js/favourites_offline.js`, alongside its own `generated_at` +
+  `unsafe_after_seconds` (mirroring the response's freshness headers).
+- Offline, a failed `favourites:list` / `favourites:card` request
+  repaints from that cache with an explicit "as of HH:MM" stamp — never
+  a silent, current-looking render.
+- A cached rating past its `unsafe_after_seconds` horizon (48h) renders
+  as explicitly **EXPIRED** ("Rating expired — reconnect to see today's
+  danger level"), never a stale-looking `danger-tile` chip. Weather
+  (non-safety, `unsafe_after=None`) never expires this way.
+
+This is the first `data:*` consumer under the SNOW-375 reserved
+namespace — see [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)
+for the store's shape.
+
 ## Idempotency (SNOW-371)
 
 `core.idempotency.IdempotencyMiddleware` (mounted immediately after
@@ -201,8 +226,8 @@ Not yet shipped (tracked as separate SNOW-368 children):
 Shipped from the observability + IndexedDB track:
 
 - **SNOW-375** — IndexedDB scaffolding (`static/js/db.js`, one DB per
-  app, four static object stores, schema-versioned migrations, Reset
-  Required overlay). See [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md).
+  app, schema-versioned migrations, Reset Required overlay). See
+  [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
   `analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,
@@ -218,6 +243,10 @@ Shipped from the observability + IndexedDB track:
   re-verification backed by the SNOW-375 `meta:app` store, and a VAPID
   subject Django system check. See
   [`push-notifications.md`](push-notifications.md).
+- **SNOW-418** — First `data:*` consumer: caches favourites, region
+  rating, and (once SNOW-416 lands) point weather in `data:favourites`
+  for offline reads, per the §12.6 relaxation above. See
+  `favourites/views.py` and `static/js/favourites_offline.js`.
 - **SNOW-384** — Wires every remaining `pwa.*` emit call site so the
   eight §16.4 PostHog dashboards are buildable off real signal:
   `client_version` + a self-contained `POSTHOG_API_KEY` gate on every

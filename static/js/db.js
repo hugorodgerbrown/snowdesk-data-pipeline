@@ -3,9 +3,9 @@
  *
  * Spec §3.8, §7.2. The base layer every subsequent client-side spec
  * item builds on (mutation queue SNOW-376, event buffer SNOW-385, cached
- * bulletin data). One IndexedDB database per app; five object stores
- * declared up front so a schema bump only fires when the store namespace
- * itself changes.
+ * favourites SNOW-418). One IndexedDB database per app; five object
+ * stores declared up front so a schema bump only fires when the store
+ * namespace itself changes.
  *
  * Object stores (spec §7.2)
  * -------------------------

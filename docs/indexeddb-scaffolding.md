@@ -1,8 +1,8 @@
 ---
 name: indexeddb-scaffolding
-description: Client-side IndexedDB wrapper — window.pwaDb, static/js/db.js, schema versioning, queue:events, meta:app, Reset Required state
+description: Client-side IndexedDB wrapper — window.pwaDb, static/js/db.js, schema versioning, queue:events, meta:app, data:favourites, Reset Required
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-19
 ---
 
 # IndexedDB scaffolding
@@ -23,7 +23,7 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **1**.
+- Current schema version: **2**.
 
 ## Object stores
 
@@ -37,10 +37,14 @@ never removed.
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
 | `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before` |
+| `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 
-`data:*` is a reserved namespace for cached server-data copies; nothing
-has landed under it yet. When a consumer adds one, bump `DB_VERSION` +
-add a migration branch in `_runMigrations`.
+`data:*` is a reserved namespace for cached server-data copies.
+`data:favourites` (v2) is its first occupant — see
+[`docs/offline-first.md`](offline-first.md) §12.6 for the
+cached-with-explicit-staleness contract it follows. When a further
+consumer adds a store, bump `DB_VERSION` + add a migration branch in
+`_runMigrations`.
 
 ## Public API
 
