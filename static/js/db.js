@@ -14,8 +14,10 @@
  *   meta:sync        last-sync timestamps per resource (keyPath: 'resource')
  *   meta:app         install timestamps, first-launch flags, opt-in/out
  *                     (keyPath: 'key')
- *   data:*           reserved namespace for cached server-data copies;
- *                     added on demand by consumers via ensureStore.
+ *   data:favourites  cached favourites + region rating + point weather,
+ *                     for offline reads (SNOW-418; keyPath: 'uuid')
+ *   data:*           reserved namespace for further cached server-data
+ *                     copies; added on demand by consumers.
  *
  * Reset Required
  * --------------
@@ -40,7 +42,11 @@
   const DB_NAME = 'snowdesk-pwa-v1';
   // Schema version. Bump when you add / rename / remove an object store,
   // AND add the corresponding upgrade branch in _runMigrations below.
-  const DB_VERSION = 1;
+  //
+  // v2 (SNOW-418): added 'data:favourites' — the first consumer of the
+  // reserved data:* namespace, caching each favourite's roster/card
+  // record so the manage page can repaint offline.
+  const DB_VERSION = 2;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -50,6 +56,9 @@
     'queue:events': { keyPath: 'id', autoIncrement: true },
     'meta:sync': { keyPath: 'resource' },
     'meta:app': { keyPath: 'key' },
+    // SNOW-418 (v2) — cached favourite roster/card records, keyed by the
+    // favourite's uuid so a card update can upsert a single record.
+    'data:favourites': { keyPath: 'uuid' },
   });
 
   // Session state — single-page-load lifetime.
