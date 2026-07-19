@@ -511,7 +511,11 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     roster_payload: list[dict[str, Any]] = []
     present_ratings: list[RegionDayRating] = []
     for favourite in favourites:
-        day_rating = ratings_by_region_id.get(favourite.region_id)
+        day_rating = (
+            ratings_by_region_id.get(favourite.region_id)
+            if favourite.region_id is not None
+            else None
+        )
         bulletin_url = favourite.region.get_absolute_url() if favourite.region else ""
         generated_at, unsafe_after = _card_freshness(day_rating)
         roster_payload.append(
