@@ -1047,6 +1047,21 @@ TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+TOAST_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default copy",
+        "context": {"static": True},
+    },
+    {
+        "caption": "Custom body",
+        "context": {
+            "body": "3 changes couldn't be saved and won't be retried.",
+            "static": True,
+        },
+    },
+)
+
+
 CALLOUT_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Warning",

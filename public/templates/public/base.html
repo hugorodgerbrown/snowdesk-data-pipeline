@@ -153,6 +153,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# or the DB refuses to open. The CTA calls the SNOW-378          #}
         {# pwa_reset.js six-step wipe.                                    #}
         {% include "includes/_pwa_reset_required.html" %}
+        {# SNOW-376: full-width mutation-queue permanent-failure toast.   #}
+        {# Hidden by default; revealed by static/js/mutation_queue.js     #}
+        {# when a queued mutation is marked "failed" (a non-408/429 4xx, #}
+        {# or one that exhausted its retry budget).                      #}
+        {% include "includes/_toast_banner.html" %}
         {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}
@@ -171,11 +176,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
         {# the load order is defensive rather than strict.                #}
         <script src="{% static 'js/telemetry.js' %}" defer></script>
-        {# SNOW-384: mutation-queue surface — no-op today (SNOW-376 fills   #}
-        {# in the real queue behind window.pwaMutationQueue), but emits    #}
-        {# telemetry so call sites adopting it now get signal for free.    #}
-        {# Loaded after telemetry.js per the same defensive-load-order     #}
-        {# convention as every other pwaTelemetry consumer below.          #}
+        {# SNOW-376: pure backoff/classification helpers shared by the      #}
+        {# page (below) and the SW's Background Sync self-drain path       #}
+        {# (static/js/sw.js, via importScripts). Must load BEFORE          #}
+        {# mutation_queue.js, which reads window.pwaMutationQueueCore.     #}
+        <script src="{% static 'js/mutation_queue_core.js' %}" defer></script>
+        {# SNOW-376: real client mutation-queue behind window.pwaMutationQueue #}
+        {# (SNOW-384 shipped the no-op stub every existing call site already #}
+        {# adopted). Loaded after telemetry.js per the same defensive-load-  #}
+        {# order convention as every other pwaTelemetry consumer below.      #}
         <script src="{% static 'js/mutation_queue.js' %}" defer></script>
         {# SNOW-79: register the PWA shell SW from every public page.       #}
         {# SNOW-388: dispatches a fetch() synchronously at IIFE-load — must #}

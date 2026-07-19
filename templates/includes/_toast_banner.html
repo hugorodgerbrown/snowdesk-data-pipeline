@@ -18,6 +18,11 @@
            up "mutation-queue-toast" by id to reveal/hide/wire the dismiss
            button; only override this for the component-library variant,
            which renders statically and doesn't need JS to find it.
+    static — Bool; default False. When True the toast renders inline (no
+           "hidden", no "fixed" positioning, no initial transform/opacity)
+           — used only by the component library so the variant is visible
+           in the panel rather than pinned off-screen at the real page's
+           top edge. Same convention as _toast.html's "static" flag.
 
   Behaviour (wired in static/js/mutation_queue.js, not here):
     - Hidden by default (the "hidden" class below).
@@ -38,7 +43,7 @@
         role="alert"
         aria-live="assertive"
         data-testid="mutation-queue-toast"
-        class="hidden fixed inset-x-0 top-0 z-50 -translate-y-full opacity-0 transition-all duration-300 ease-out flex w-full items-center justify-center gap-3 bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
+        class="{% if static %}flex{% else %}hidden fixed inset-x-0 top-0 z-50 -translate-y-full opacity-0{% endif %} w-full items-center justify-center gap-3 transition-all duration-300 ease-out bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
     >
         <span>
             {% if body %}

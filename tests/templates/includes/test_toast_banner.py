@@ -153,3 +153,31 @@ class TestDismissButton:
         """The dismiss button carries an aria-label."""
         html = render()
         assert 'aria-label="Dismiss"' in html
+
+
+class TestStaticFlag:
+    """static=True renders inline (component library); static=False (default) is hidden+fixed."""
+
+    def test_static_true_omits_hidden(self) -> None:
+        """static=True → hidden utility absent."""
+        html = render({"static": True})
+        assert "hidden" not in html
+
+    def test_static_true_omits_fixed_positioning(self) -> None:
+        """static=True → fixed/top-0/inset-x-0 positioning utilities absent."""
+        html = render({"static": True})
+        assert "fixed" not in html
+        assert "top-0" not in html
+        assert "inset-x-0" not in html
+
+    def test_static_true_omits_initial_transform(self) -> None:
+        """static=True → the initial slide-up transform/opacity are absent."""
+        html = render({"static": True})
+        assert "-translate-y-full" not in html
+        assert "opacity-0" not in html
+
+    def test_default_static_uses_hidden_and_fixed(self) -> None:
+        """Omitting static defaults to False → hidden + fixed present."""
+        html = render()
+        assert "hidden" in html
+        assert "fixed" in html
