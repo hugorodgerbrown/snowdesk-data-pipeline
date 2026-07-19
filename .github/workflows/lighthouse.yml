@@ -6,6 +6,14 @@
 # rules" ruleset, so the ``pull_request`` trigger runs on every PR with no
 # path filter — a path-filtered required check never reports on PRs outside
 # its paths and leaves them stuck at "Expected" (SNOW-435).
+#
+# This job is ``pull_request``-only by design and is deliberately NOT a
+# required check on the "Release branch" ruleset. Advancing ``release`` is a
+# fast-forward push (no PR), so this workflow never runs on the ``release``
+# ref; requiring it there would leave every release stuck at "Expected" and
+# force a bypass. The release commit is byte-identical to the ``main`` tip
+# that already passed this audit as a PR — see docs/deployment.md
+# ("Why a branch split"). Do not add this check to the Release-branch ruleset.
 
 name: Lighthouse
 
