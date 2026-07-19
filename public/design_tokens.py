@@ -55,6 +55,7 @@ from public._component_fixtures import (
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
+    TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
@@ -744,6 +745,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_toast.html",
         variants=TOAST_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="toast-banner",
+        label="Toast banner",
+        description=(
+            "Full-width top-of-page toast (SNOW-376) — distinct from the "
+            "bottom-centred Toast above. Purpose-built for the mutation-"
+            "queue permanent-failure UX: a queued client mutation that a "
+            "server response has permanently rejected. Single status-error "
+            "kind; ARIA alert/assertive."
+        ),
+        kind="components",
+        partial="includes/_toast_banner.html",
+        variants=TOAST_BANNER_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

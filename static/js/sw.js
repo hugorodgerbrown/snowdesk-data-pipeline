@@ -69,13 +69,51 @@
  * site. The Service-Worker-Allowed header on the response from
  * ``public.views.serve_sw`` makes that scope explicit.
  *
+ * Background Sync (SNOW-376)
+ * ---------------------------
+ * The ``sync`` event listener below is keyed on the single shared tag
+ * ``static/js/mutation_queue_core.js`` exports as ``SYNC_TAG``
+ * (``'mutation-queue'``), registered by ``static/js/mutation_queue.js`` at
+ * enqueue-time via ``registration.sync.register(...)`` (feature-detected —
+ * a no-op on browsers without ``SyncManager``, e.g. iOS Safari). Two
+ * cases:
+ *
+ *   - A tab is still open → post ``{type: 'drain-mutations'}`` to it;
+ *     ``sw_register.js``'s message bridge calls the REAL
+ *     ``window.pwaMutationQueue.drain()``, which already has ``window.pwaDb``
+ *     / ``window.pwaTelemetry`` wired up, rather than duplicating that
+ *     logic here. This path resolves ``waitUntil`` immediately, before the
+ *     page's own drain has even run — it deliberately does NOT throw to
+ *     get a Background Sync reschedule if that drain leaves retryable
+ *     rows; the page's own 30s timer / ``visibilitychange`` / ``online``
+ *     triggers carry it forward instead (see ``_handleMutationSync``'s
+ *     own docstring for the full rationale).
+ *   - No tab is open (the actual Background-Sync case this API exists
+ *     for) → self-drain directly against IndexedDB using the shared
+ *     ``mutation_queue_core.js`` helpers, since a worker has no
+ *     ``window.pwaDb``. If any row still needs a further retry after this
+ *     pass, the handler THROWS so ``event.waitUntil`` rejects — that's
+ *     what tells the browser to reschedule the sync per its own backoff.
+ *
  * i18n: this worker never renders UI, so there are no translatable
  * strings.
  */
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v8';
+// SNOW-376: pure backoff/classification helpers shared with the page
+// (static/js/mutation_queue.js). A worker has no <script> tags, hence
+// importScripts rather than a second <script src> tag. Wrapped in
+// try/catch so a transient 404 / network hiccup on this one script can't
+// take down SW startup — the ``sync`` handler below falls back to a
+// literal tag string when the global didn't load.
+try {
+  importScripts('/static/js/mutation_queue_core.js');
+} catch (_importErr) {
+  // Non-fatal — see fallback in the 'sync' listener below.
+}
+
+const CACHE_VERSION = 'snowdesk-shell-v9';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -428,6 +466,244 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Background Sync (SNOW-376) — mutation-queue replay
+// ---------------------------------------------------------------------------
+
+/**
+ * Open (or lazily create) the shared PWA IndexedDB database directly —
+ * a worker has no ``window.pwaDb``. Mirrors ``static/js/db.js``'s
+ * ``DB_NAME`` exactly so it opens the SAME database a page already
+ * created. It opens WITHOUT a version number so it attaches to whatever
+ * schema version the page most recently migrated to (db.js owns
+ * ``DB_VERSION`` — currently 2 — and bumps it as stores are added; a
+ * hardcoded version here would throw ``VersionError`` the moment db.js
+ * moved ahead). The ``onupgradeneeded`` branch below only fires in the
+ * (rare) case a Background Sync fires before any page has ever opened the
+ * DB, creating a fresh v1 DB with ONLY the one store this worker needs,
+ * mirroring ``db.js::STORES['queue:mutations']``; the next page load
+ * upgrades it to the full schema. The page-side ``db.js`` remains the
+ * single source of truth for the full schema; see
+ * docs/indexeddb-scaffolding.md.
+ *
+ * @returns {Promise<IDBDatabase>}
+ */
+function _openMutationsDb() {
+  return new Promise((resolve, reject) => {
+    let req;
+    try {
+      req = indexedDB.open('snowdesk-pwa-v1');
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    req.onupgradeneeded = (evt) => {
+      const db = evt.target.result;
+      if (!db.objectStoreNames.contains('queue:mutations')) {
+        db.createObjectStore('queue:mutations', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('idb_open_failed'));
+    req.onblocked = () => reject(new Error('idb_blocked'));
+  });
+}
+
+function _idbGetAll(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const req = tx.objectStore(storeName).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error || new Error('getAll failed'));
+  });
+}
+
+function _idbPut(db, storeName, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const req = tx.objectStore(storeName).put(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('put failed'));
+  });
+}
+
+function _idbDelete(db, storeName, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const req = tx.objectStore(storeName).delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error || new Error('delete failed'));
+  });
+}
+
+/**
+ * One-pass replay of every eligible ``queue:mutations`` row, run directly
+ * against IndexedDB (no open tab to delegate to — see the tag-handler
+ * below for the has-a-tab fast path). Uses the SAME classification /
+ * backoff rules as the page (``self.pwaMutationQueueCore``), and sends
+ * the identical ``Idempotency-Key`` header per row.
+ *
+ * Throws if any row still needs a further retry once this pass completes,
+ * so the caller's ``event.waitUntil`` rejects and the browser reschedules
+ * the Background Sync per its own backoff — per spec, a fulfilled
+ * ``waitUntil`` tells the browser the sync succeeded and it stops
+ * retrying, which would silently strand a row still in backoff.
+ *
+ * @returns {Promise<void>}
+ */
+async function _selfDrainMutations() {
+  // Fall back to a hand-rolled version of the shared helpers if
+  // importScripts failed at startup — keeps this path self-contained
+  // rather than a hard dependency on the earlier try/catch succeeding.
+  const core = self.pwaMutationQueueCore || {
+    MAX_ATTEMPTS: 20,
+    backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
+    classifyStatus: (status) => {
+      if (status >= 200 && status < 300) return 'success';
+      if (status === 408 || status === 429) return 'retry';
+      if (status >= 500) return 'retry';
+      if (status >= 400) return 'permanent';
+      return 'retry';
+    },
+    isRowEligible: (row, now) =>
+      !!row && row.status !== 'failed' && (row.next_attempt_at || 0) <= now,
+  };
+
+  const db = await _openMutationsDb();
+  let rows;
+  try {
+    rows = await _idbGetAll(db, 'queue:mutations');
+  } catch (_e) {
+    // Store may not exist yet on a brand-new DB — nothing to drain.
+    rows = [];
+  }
+  const now = Date.now();
+  let successCount = 0;
+  let retryableRemaining = false;
+
+  for (const row of rows) {
+    if (!core.isRowEligible(row, now)) {
+      if (row.status !== 'failed') retryableRemaining = true;
+      continue;
+    }
+
+    let outcome;
+    try {
+      const headers = Object.assign({}, row.headers || {}, {
+        'Idempotency-Key': row.idempotency_key,
+      });
+      const response = await fetch(row.url, {
+        method: row.method,
+        headers,
+        body: row.body != null ? row.body : undefined,
+      });
+      outcome = core.classifyStatus(response.status);
+    } catch (_networkErr) {
+      outcome = 'retry';
+    }
+
+    if (outcome === 'success') {
+      await _idbDelete(db, 'queue:mutations', row.id);
+      successCount += 1;
+      continue;
+    }
+
+    if (outcome === 'permanent') {
+      // This attempt just happened — increment before persisting/
+      // reporting so `attempts` (and the telemetry it feeds) reflects the
+      // failed attempt rather than reading as "never attempted".
+      row.attempts = (row.attempts || 0) + 1;
+      row.status = 'failed';
+      await _idbPut(db, 'queue:mutations', row);
+      _postTelemetry('pwa.mutation.failed_permanent', {
+        method: row.method,
+        url: row.url,
+        idempotency_key: row.idempotency_key,
+        attempts: row.attempts,
+        reason: 'permanent_4xx',
+      });
+      continue;
+    }
+
+    // 'retry'
+    const attempts = (row.attempts || 0) + 1;
+    row.attempts = attempts;
+    if (attempts >= core.MAX_ATTEMPTS) {
+      row.status = 'failed';
+      await _idbPut(db, 'queue:mutations', row);
+      _postTelemetry('pwa.mutation.failed_permanent', {
+        method: row.method,
+        url: row.url,
+        idempotency_key: row.idempotency_key,
+        reason: 'max_attempts',
+      });
+    } else {
+      row.status = 'retry-scheduled';
+      row.next_attempt_at = now + core.backoffDelayMs(attempts);
+      await _idbPut(db, 'queue:mutations', row);
+      retryableRemaining = true;
+    }
+  }
+
+  try {
+    db.close();
+  } catch (_e) {
+    // Non-fatal.
+  }
+
+  if (successCount > 0) {
+    _postTelemetry('pwa.mutation.drained', { count: successCount, source: 'background_sync' });
+  }
+
+  if (retryableRemaining) {
+    throw new Error('mutation_queue_retry_pending');
+  }
+}
+
+/**
+ * Dispatch one Background Sync firing for the mutation-queue tag: prefer
+ * delegating to an open tab (cheaper, reuses the page's already-wired
+ * ``window.pwaDb`` / ``window.pwaTelemetry``); self-drain directly against
+ * IndexedDB only when no tab is open at all.
+ *
+ * Asymmetric retry-rescheduling by design: the no-tab path below (
+ * ``_selfDrainMutations``) throws when retryable rows remain, so
+ * ``event.waitUntil`` rejects and the browser reschedules the sync itself.
+ * The has-open-tabs path here does NOT do that — it resolves as soon as
+ * the message is posted, before the page's own ``drain()`` has even run,
+ * so there's nothing yet to inspect for "does this need a Background Sync
+ * reschedule?". If that drain leaves retryable rows (still-backing-off
+ * 5xx/429s), the page's OWN lifecycle triggers — the 30s periodic timer,
+ * ``visibilitychange``, and the next ``online`` event — are what carry it
+ * forward, not another Background Sync firing. That's an acceptable gap
+ * (a tab is open, so those triggers are live), not an oversight.
+ *
+ * @returns {Promise<void>}
+ */
+async function _handleMutationSync() {
+  const clientsList = await self.clients.matchAll({
+    includeUncontrolled: true,
+    type: 'window',
+  });
+  if (clientsList.length > 0) {
+    clientsList.forEach((client) => {
+      try {
+        client.postMessage({ type: 'drain-mutations' });
+      } catch (_e) {
+        // A torn-down client — not worth retrying for this one message.
+      }
+    });
+    return;
+  }
+  await _selfDrainMutations();
+}
+
+self.addEventListener('sync', (event) => {
+  const tag = self.pwaMutationQueueCore ? self.pwaMutationQueueCore.SYNC_TAG : 'mutation-queue';
+  if (event.tag !== tag) return;
+  event.waitUntil(_handleMutationSync());
 });
 
 // ---------------------------------------------------------------------------

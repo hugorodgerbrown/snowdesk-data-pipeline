@@ -113,13 +113,32 @@
   // instead post ``{type: 'pwa-telemetry', event, properties}`` to every
   // client they control. This single listener forwards any such message,
   // regardless of which SW script sent it, to ``window.pwaTelemetry.emit``.
+  //
+  // SNOW-376: the same channel also carries ``{type: 'drain-mutations'}``
+  // when a Background Sync fires for the mutation-queue tag while this
+  // tab is open — see static/js/sw.js's ``_handleMutationSync``.
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event.data;
-    if (!data || data.type !== 'pwa-telemetry' || !data.event) return;
-    try {
-      window.pwaTelemetry?.emit(data.event, data.properties || {});
-    } catch (_err) {
-      // Ignore — telemetry must never break the SW message channel.
+    if (!data) return;
+    if (data.type === 'pwa-telemetry' && data.event) {
+      try {
+        window.pwaTelemetry?.emit(data.event, data.properties || {});
+      } catch (_err) {
+        // Ignore — telemetry must never break the SW message channel.
+      }
+      return;
+    }
+    // SNOW-376: a Background Sync fired for the mutation-queue tag while
+    // this tab was open — sw.js delegates to the real
+    // window.pwaMutationQueue.drain() (which already has window.pwaDb /
+    // window.pwaTelemetry wired up) rather than duplicating that logic
+    // in the worker.
+    if (data.type === 'drain-mutations') {
+      try {
+        window.pwaMutationQueue?.drain();
+      } catch (_err) {
+        // Ignore — a broken drain must never break the SW message channel.
+      }
     }
   });
 

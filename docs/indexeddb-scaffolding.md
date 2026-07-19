@@ -1,6 +1,6 @@
 ---
 name: indexeddb-scaffolding
-description: Client-side IndexedDB wrapper — window.pwaDb, static/js/db.js, schema versioning, queue:events, meta:app, data:favourites, Reset Required
+description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, Reset Required
 status: current
 last-reviewed: 2026-07-19
 ---
@@ -33,7 +33,7 @@ never removed.
 
 | Store              | keyPath         | autoIncrement | Consumer                     |
 |--------------------|-----------------|---------------|------------------------------|
-| `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue      |
+| `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
 | `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before` |
@@ -45,6 +45,23 @@ never removed.
 cached-with-explicit-staleness contract it follows. When a further
 consumer adds a store, bump `DB_VERSION` + add a migration branch in
 `_runMigrations`.
+
+### `queue:mutations` row shape (SNOW-376)
+
+No indexes — the consumer filters/orders rows in memory over
+`getAll('queue:mutations')`, exactly as the `queue:events` telemetry
+buffer does.
+
+```js
+{
+  id, idempotency_key, method, url, headers, body, created_at,
+  attempts, status,          // 'queued' | 'retry-scheduled' | 'failed'
+  next_attempt_at,           // epoch ms
+}
+```
+
+Full row-shape rationale, backoff schedule, and Background Sync
+integration: [`mutation-queue.md`](mutation-queue.md).
 
 ## Public API
 
@@ -142,3 +159,5 @@ the wipe covers it even without the enumeration API.
 - [`push-notifications.md`](push-notifications.md) — consumer of
   `meta:app` (`push.subscribed_before` key, SNOW-380) for launch-time
   Web Push subscription re-verification.
+- [`mutation-queue.md`](mutation-queue.md) — the real consumer of
+  `queue:mutations` (SNOW-376).
