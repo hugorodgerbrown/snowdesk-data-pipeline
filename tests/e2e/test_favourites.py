@@ -1,6 +1,7 @@
 """
 tests/e2e/test_favourites.py — Playwright tests for the SNOW-414 favourites
-map surface (add / rename / delete pins + the favourites overlay toggle).
+map surface (add / rename / delete pins + the favourites overlay toggle) and
+the SNOW-417 forecast panel on the favourite detail card.
 
 Uses the ``favourites_page`` fixture (``tests/e2e/conftest.py``) — a plain
 ``page`` + ``live_server`` with a subscriber session, no real service-worker
@@ -23,6 +24,13 @@ Chromium (no WebGL frame-timing dependency):
   docs/map-and-api.md) rather than relying on ``queryRenderedFeatures``
   finding a rendered symbol-layer glyph at a pixel, which requires the
   layer to have actually composited a frame.
+
+The forecast-panel test (SNOW-417) instead drives the manage page's
+"My favourites" list — the "Details" button hx-gets ``favourite_card``
+into ``#favourite-card-panel``, which is where the compact day strip and
+the expandable hourly ``<details>`` actually render (the map pin-tap
+trigger only shows the SNOW-413 rename/delete row, per
+``_favourite_card.html``'s docstring).
 """
 
 from __future__ import annotations
@@ -37,7 +45,7 @@ from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from tests.e2e.conftest import FavouritesPage
-from tests.factories import FavouriteFactory
+from tests.factories import FavouriteFactory, ForecastPointWeatherFactory
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
@@ -215,3 +223,43 @@ def test_overlay_toggle_persists_across_reload(
     toggle = page.locator('[data-overlay-key="favourites"]')
     toggle.wait_for(state="visible")
     assert toggle.get_attribute("aria-checked") == "false"
+
+
+@override_flag("favourites", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_forecast_panel_hourly_detail_expands_and_collapses(
+    favourites_page: FavouritesPage, django_db_blocker: Any
+) -> None:
+    """The near-term hourly <details> on the forecast panel expands/collapses (SNOW-417).
+
+    Opens the manage page's "My favourites" list, clicks "Details" to
+    hx-get the detail card into #favourite-card-panel, then drives the
+    expandable hourly panel's native <details>/<summary> toggle — no
+    HTMX round-trip is involved in the expand/collapse itself, only in
+    getting the card onto the page in the first place.
+    """
+    with django_db_blocker.unblock():
+        favourite = FavouriteFactory.create(
+            user=favourites_page.subscriber.user, name="Powder Stash"
+        )
+        today = favourite.created_at.date()
+        ForecastPointWeatherFactory.create(
+            forecast_point=favourite.forecast_point, valid_for_date=today
+        )
+
+    page = favourites_page.page
+    page.goto(f"{favourites_page.live_server_url}/account/manage/")
+    page.wait_for_selector('[data-testid="favourite-list-row"]')
+
+    page.click('[data-testid="favourite-list-row"] >> text=Details')
+    page.wait_for_selector('[data-testid="favourite-forecast-panel"]')
+
+    hourly_panel = page.locator('[data-testid="favourite-forecast-hourly"]')
+    hourly_panel.wait_for(state="visible")
+    assert hourly_panel.get_attribute("open") is None
+
+    hourly_panel.locator("summary").click()
+    assert hourly_panel.get_attribute("open") is not None
+
+    hourly_panel.locator("summary").click()
+    assert hourly_panel.get_attribute("open") is None
