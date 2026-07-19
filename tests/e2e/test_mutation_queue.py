@@ -205,6 +205,17 @@ def test_enqueue_offline_then_replays_on_online(
     assert call_count["n"] == 0, (
         "enqueue while offline must not attempt a network round-trip"
     )
+    # enqueue() emits pwa.mutation.enqueued with the caller's operation (the
+    # only assertion of that emission now the stub tests in
+    # test_pwa_client_signals.py are retired).
+    enqueued_event = _poll(
+        page,
+        """async () => {
+            const events = await window.pwaDb.getAll('queue:events');
+            return events.find((e) => e.event === 'pwa.mutation.enqueued') || false;
+          }""",
+    )
+    assert enqueued_event["properties"] == {"method": "POST", "url": MUTATION_URL}
 
     page.evaluate(
         """() => {
@@ -647,6 +658,11 @@ def test_background_sync_registered_when_sync_manager_present(
     _load_with_fake_service_worker(page, live_server.url, sync_supported=True)
     _delete_db(page)
 
+    # Mock the endpoint so enqueue()'s immediate online drain replays against
+    # a stub, never an un-routed request to the live server (which under the
+    # file-based e2e SQLite DB can lock the table and deadlock a later test).
+    page.route(f"**{MUTATION_URL}", lambda route: route.fulfill(status=201, body=""))
+
     page.evaluate(
         """async (url) => {
             await window.pwaMutationQueue.enqueue({ method: 'POST', url });
@@ -667,6 +683,11 @@ def test_background_sync_skipped_without_error_when_unsupported(
 
     _load_with_fake_service_worker(page, live_server.url, sync_supported=False)
     _delete_db(page)
+
+    # Mock the endpoint so enqueue()'s immediate online drain replays against
+    # a stub, never an un-routed request to the live server (see the note in
+    # test_background_sync_registered_when_sync_manager_present).
+    page.route(f"**{MUTATION_URL}", lambda route: route.fulfill(status=201, body=""))
 
     page.evaluate(
         """async (url) => {

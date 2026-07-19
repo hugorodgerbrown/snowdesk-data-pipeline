@@ -26,7 +26,12 @@ notes on those). Specifically:
    rendered server-side with Django's template engine and injected into
    a live page (``innerHTML``-inserted ``<script>`` elements are inert,
    so scripts are individually recreated to force execution).
-6. ``window.pwaMutationQueue`` stub methods (``static/js/mutation_queue.js``).
+6. (Moved) ``window.pwaMutationQueue`` behaviour. SNOW-376 replaced the
+   no-op stub with a real queue whose ``enqueue`` performs an actual
+   network drain — coverage moved to ``tests/e2e/test_mutation_queue.py``,
+   which mocks the mutation endpoint. Asserting stub semantics here fired
+   an un-routed POST at the live server, which under the file-based e2e
+   SQLite DB could lock the table and deadlock a later test.
 7. ``pwa.storage.evicted_probable`` heuristic in ``static/js/db.js``,
    forcing the sample-rate gate open by stubbing ``Math.random``.
 8. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
@@ -388,66 +393,15 @@ def test_freshness_indicator_emits(
 
 
 # ---------------------------------------------------------------------------
-# 6. window.pwaMutationQueue stub (static/js/mutation_queue.js)
+# 6. window.pwaMutationQueue — moved to tests/e2e/test_mutation_queue.py
 # ---------------------------------------------------------------------------
-
-
-def test_mutation_queue_stub_emits_enqueued(
-    live_server: LiveServer, page: Page
-) -> None:
-    """enqueue() is a no-op but emits pwa.mutation.enqueued with the operation."""
-    _load(page, live_server.url)
-    _delete_db(page)
-
-    row = page.evaluate(
-        """async () => {
-            await window.pwaTelemetry.setOptIn(true);
-            await window.pwaMutationQueue.enqueue({ method: 'POST', url: '/account/' });
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.find((r) => r.event === 'pwa.mutation.enqueued');
-          }"""
-    )
-    assert row is not None
-    assert row["properties"] == {"method": "POST", "url": "/account/"}
-
-
-def test_mutation_queue_stub_emits_drained(live_server: LiveServer, page: Page) -> None:
-    """drain() is a no-op but emits pwa.mutation.drained with count 0."""
-    _load(page, live_server.url)
-    _delete_db(page)
-
-    row = page.evaluate(
-        """async () => {
-            await window.pwaTelemetry.setOptIn(true);
-            await window.pwaMutationQueue.drain();
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.find((r) => r.event === 'pwa.mutation.drained');
-          }"""
-    )
-    assert row is not None
-    assert row["properties"] == {"count": 0}
-
-
-def test_mutation_queue_stub_emits_failed_permanent(
-    live_server: LiveServer, page: Page
-) -> None:
-    """markFailed() is a critical event — fires even without opt-in."""
-    _load(page, live_server.url)
-    _delete_db(page)
-
-    row = page.evaluate(
-        """async () => {
-            await window.pwaTelemetry.setOptIn(false);
-            await window.pwaMutationQueue.markFailed(
-              { method: 'POST', url: '/account/' }, 'max_retries_exceeded',
-            );
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.find((r) => r.event === 'pwa.mutation.failed_permanent');
-          }"""
-    )
-    assert row is not None
-    assert row["properties"]["reason"] == "max_retries_exceeded"
-    assert row["properties"]["url"] == "/account/"
+# The three former stub tests here asserted no-op semantics that SNOW-376
+# made obsolete: the real enqueue() now performs a network drain, and
+# markFailed() writes a real IndexedDB row and reveals a toast. Exercising
+# those against the live server here fired an un-routed POST /account/ (no
+# page.route), which under the file-based e2e SQLite DB could lock the
+# table and deadlock a later test. The real behaviour — with the mutation
+# endpoint mocked — is now covered by tests/e2e/test_mutation_queue.py.
 
 
 # ---------------------------------------------------------------------------

@@ -231,6 +231,23 @@
           reject(new Error('reset_required'));
           return;
         }
+        // Yield the connection when another connection needs to change the
+        // schema version or delete the DB — a real second tab bumping
+        // DB_VERSION, or a delete/upgrade elsewhere. Without this, the
+        // memoised connection (held open for the whole page lifetime as
+        // soon as any consumer reads on load, e.g. the SNOW-376 mutation
+        // badge) blocks that other connection's open() indefinitely — it
+        // sits on `onblocked` forever. Close and drop the cached promise so
+        // the next consumer re-opens cleanly (re-open surfaces a genuine
+        // VersionError as Reset Required via onerror, as before).
+        req.result.onversionchange = () => {
+          try {
+            req.result.close();
+          } catch (_e) {
+            // Already closed — ignore.
+          }
+          _dbPromise = null;
+        };
         // SNOW-384: cold-start storage-pressure check — fire-and-forget,
         // runs once per successful open() (this handler fires exactly
         // once per indexedDB.open() call; _dbPromise memoisation means
