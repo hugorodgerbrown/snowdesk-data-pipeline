@@ -90,6 +90,20 @@ Optional context:
                 role="combobox"
             >
         </div>
+        {# SNOW-442: always-visible zoom-level readout. A display, not a     #}
+        {# control — no <button> child. Seeded server-side with a safe       #}
+        {# placeholder (the constructor's bounds-derived initial zoom isn't  #}
+        {# known until the map loads); map.js overwrites the numeric value   #}
+        {# on load and on every zoom gesture.                                #}
+        <div class="map-utility-pill map-utility-pill--zoom" id="map-zoom-indicator">
+            <span
+                role="status"
+                aria-live="polite"
+                aria-label='{% trans "Current zoom level" %}'
+            >
+                {% trans "Zoom" %} <span id="map-zoom-indicator-value">–</span>
+            </span>
+        </div>
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
     {# PROTOTYPE (homepage rework): bottom-right control stack — the layers  #}

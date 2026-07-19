@@ -427,7 +427,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
-    maxZoom: 12,
+    // SNOW-442: raised from 12. The swisstopo base vector source
+    // (ch.swisstopo.base.vt) publishes a TileJSON `maxzoom` of 14 and its
+    // style authors layers up to zoom 20; MapLibre overzooms vector tiles
+    // cleanly above 14, so 18 was chosen to allow close-in reading without
+    // exposing genuinely blank overzoomed tiles at the extreme end.
+    maxZoom: 18,
     // (Bounds taken from console.log when ?debug=true)
     // West / south / north match the original Western-European frame
     // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
@@ -3637,6 +3642,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
+})();
+
+// SNOW-442: zoom-level readout — keeps #map-zoom-indicator-value in sync
+// with the live camera zoom. The static "Zoom" label is server-rendered
+// (translatable); this only ever writes the rounded numeric value, mirroring
+// how updateMapAttribution above owns #map-attribution-text's textContent.
+// Bound to 'zoom' (not just 'zoomend') so the readout tracks a live pinch or
+// scroll-wheel gesture rather than only updating once the gesture settles.
+(function zoomIndicatorInit() {
+  const valueEl = document.getElementById('map-zoom-indicator-value');
+  if (!valueEl || !MAP) return;
+
+  const updateZoomIndicator = () => {
+    valueEl.textContent = String(Math.round(MAP.getZoom()));
+  };
+
+  updateZoomIndicator(); // Seed immediately with whatever camera state exists now.
+  MAP.on('zoom', updateZoomIndicator);
+  MAP.on('load', updateZoomIndicator);
+  MAP.on('style.load', updateZoomIndicator);
 })();
 
 // SNOW-314: Season ribbon — the season scrubber's track doubles as the danger

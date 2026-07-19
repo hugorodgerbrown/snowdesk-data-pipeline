@@ -259,6 +259,20 @@
     width: min(calc(100vw - 76px), 280px);
 }
 
+/* SNOW-442: zoom-level readout — a plain-text pill (no button child), so
+   unlike the icon pills above it needs its own horizontal padding and a
+   fixed min-width. The min-width stops the pill visibly resizing as the
+   zoom digit count changes between single and double figures. */
+.map-utility-pill--zoom {
+    flex: 0 0 auto;
+    justify-content: center;
+    min-width: 64px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 /* Transparent icon button inside the search pill — also the standalone
    click target when the pill is collapsed. */
 .map-utility-button {
