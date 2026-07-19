@@ -875,54 +875,91 @@ class TestAccountView:
         """Use in-memory email backend to avoid real dispatch."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-    def test_valid_token_activates_pending_subscriber(self) -> None:
-        """Pending subscriber is activated when a valid token is presented."""
+    def test_get_renders_confirm_page_without_activating(self) -> None:
+        """SNOW-439: GET renders the confirm page and does NOT activate on its own."""
+        SubscriberFactory.create(
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        token = _valid_account_token("pending@example.com")
+        client = Client()
+        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        assert response.status_code == 200
+        # A POST form is present (the actual sign-in action).
+        assert b"<form" in response.content
+        assert b'method="post"' in response.content
+        # No state change.
+        sub = Subscriber.objects.get(user__email="pending@example.com")
+        assert sub.status == Subscriber.Status.PENDING
+        assert sub.confirmed_at is None
+
+    def test_get_does_not_log_in(self) -> None:
+        """SNOW-439: no session is established on GET (no GET-verb account access)."""
         SubscriberFactory.create(
             user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("pending@example.com")
         client = Client()
         client.get(reverse("accounts:account", kwargs={"token": token}))
+        assert client.session.get("_auth_user_id") is None
+
+    def test_get_confirm_page_sets_same_origin_referrer(self) -> None:
+        """SNOW-438: the confirm page carries a same-origin policy so its POST passes CSRF."""
+        SubscriberFactory.create(
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        token = _valid_account_token("pending@example.com")
+        client = Client()
+        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        assert response["Referrer-Policy"] == "same-origin"
+
+    def test_post_activates_pending_subscriber(self) -> None:
+        """POST from the confirm page activates the pending subscriber."""
+        SubscriberFactory.create(
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        token = _valid_account_token("pending@example.com")
+        client = Client()
+        client.post(reverse("accounts:account", kwargs={"token": token}))
         sub = Subscriber.objects.get(user__email="pending@example.com")
         assert sub.status == Subscriber.Status.ACTIVE
         assert sub.confirmed_at is not None
 
-    def test_valid_token_redirects_to_manage_with_just_confirmed(self) -> None:
-        """Successful token click redirects to /account/manage/?just_confirmed=1."""
+    def test_post_redirects_to_manage_with_just_confirmed(self) -> None:
+        """Successful POST redirects to /account/manage/?just_confirmed=1."""
         SubscriberFactory.create(
             user__email="redirect@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("redirect@example.com")
         client = Client()
-        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
         assert response["Location"] == "/account/manage/?just_confirmed=1"
 
-    def test_valid_token_sets_confirmed_at_with_timezone(self) -> None:
+    def test_post_sets_confirmed_at_with_timezone(self) -> None:
         """confirmed_at timestamp has tzinfo set."""
         SubscriberFactory.create(
             user__email="tz@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("tz@example.com")
         client = Client()
-        client.get(reverse("accounts:account", kwargs={"token": token}))
+        client.post(reverse("accounts:account", kwargs={"token": token}))
         sub = Subscriber.objects.get(user__email="tz@example.com")
         assert sub.confirmed_at is not None
         assert sub.confirmed_at.tzinfo is not None
 
-    def test_valid_token_sets_session(self) -> None:
-        """Django auth session is established after successful token click."""
+    def test_post_sets_session(self) -> None:
+        """Django auth session is established after a successful POST."""
         SubscriberFactory.create(
             user__email="session@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("session@example.com")
         client = Client()
-        client.get(reverse("accounts:account", kwargs={"token": token}))
+        client.post(reverse("accounts:account", kwargs={"token": token}))
         sub = Subscriber.objects.get(user__email="session@example.com")
         assert client.session.get("_auth_user_id") == str(sub.user_id)
 
-    def test_idempotent_on_re_click_does_not_re_stamp_confirmed_at(self) -> None:
-        """Re-clicking the same link for an already-active subscriber does not re-stamp confirmed_at."""
+    def test_post_idempotent_on_re_click_does_not_re_stamp_confirmed_at(self) -> None:
+        """Re-POSTing for an already-active subscriber does not re-stamp confirmed_at."""
         sub = SubscriberFactory.create(
             user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
@@ -931,15 +968,15 @@ class TestAccountView:
 
         token = _valid_account_token("active@example.com")
         client = Client()
-        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        response = client.post(reverse("accounts:account", kwargs={"token": token}))
         # Still redirects, not an error
         assert response.status_code == 302
 
         sub.refresh_from_db()
         assert sub.confirmed_at == datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
-    def test_active_subscriber_re_click_also_redirects(self) -> None:
-        """Active subscriber clicking the link again still gets redirected to manage."""
+    def test_post_active_subscriber_re_click_also_redirects(self) -> None:
+        """Active subscriber POSTing the link again still gets redirected to manage."""
         sub = SubscriberFactory.create(
             user__email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
@@ -947,12 +984,12 @@ class TestAccountView:
         sub.save(update_fields=["confirmed_at"])
         token = _valid_account_token("active2@example.com")
         client = Client()
-        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
         assert "/account/manage/" in response["Location"]
 
-    def test_expired_token_returns_400(self) -> None:
-        """Expired token renders link_expired.html with status 400."""
+    def test_get_expired_token_returns_400(self) -> None:
+        """Expired token renders link_expired.html with status 400 on GET."""
         with freeze_time("2026-01-01T00:00:00Z"):
             token = _valid_account_token("expired@example.com")
         future = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC) + timedelta(
@@ -964,10 +1001,18 @@ class TestAccountView:
         assert response.status_code == 400
         assert b"expired" in response.content.lower()
 
-    def test_garbage_token_returns_400(self) -> None:
-        """Garbage token string returns 400."""
+    def test_get_garbage_token_returns_400(self) -> None:
+        """Garbage token string returns 400 on GET."""
         client = Client()
         response = client.get(
+            reverse("accounts:account", kwargs={"token": "garbage-token"})
+        )
+        assert response.status_code == 400
+
+    def test_post_garbage_token_returns_400(self) -> None:
+        """Garbage token string returns 400 on POST — no activation path is reached."""
+        client = Client()
+        response = client.post(
             reverse("accounts:account", kwargs={"token": "garbage-token"})
         )
         assert response.status_code == 400
@@ -977,6 +1022,18 @@ class TestAccountView:
         token = _valid_account_token("ghost@example.com")
         client = Client()
         response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        assert response.status_code == 400
+
+    def test_post_valid_token_unknown_email_returns_400(self) -> None:
+        """A POST with a valid token for a deleted subscriber also returns 400.
+
+        The unknown-subscriber branch runs before the GET/POST dispatch, so
+        POST cannot reach an activation path for a token whose subscriber no
+        longer exists — this pins that guarantee against a future reordering.
+        """
+        token = _valid_account_token("ghost@example.com")
+        client = Client()
+        response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 400
 
     def test_unsubscribe_token_at_account_endpoint_returns_400(self) -> None:
@@ -1836,7 +1893,7 @@ class TestEmailNormalisation:
         )
         token = generate_token("FOO@BAR.com", salt=SALT_ACCOUNT_ACCESS)
         client = Client()
-        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        response = client.post(reverse("accounts:account", kwargs={"token": token}))
         # Should redirect to manage page, not render a link-expired 400.
         assert response.status_code == 302
         assert response["Location"].startswith(reverse("accounts:manage"))
@@ -2266,7 +2323,7 @@ class TestAnalyticsSubscriptionConfirmed:
         token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("accounts.views.analytics.track") as mock_track:
-            client.get(reverse("accounts:account", kwargs={"token": token}))
+            client.post(reverse("accounts:account", kwargs={"token": token}))
         calls = [
             c
             for c in mock_track.call_args_list
@@ -2277,12 +2334,26 @@ class TestAnalyticsSubscriptionConfirmed:
         props = calls[0].args[2]
         assert "hours_since_started" in props
 
+    def test_does_not_fire_on_get(self) -> None:
+        """SNOW-439: GET renders the confirm page only — no confirmation event."""
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
+        token = _valid_account_token(subscriber.user.email)
+        client = Client()
+        with patch("accounts.views.analytics.track") as mock_track:
+            client.get(reverse("accounts:account", kwargs={"token": token}))
+        calls = [
+            c
+            for c in mock_track.call_args_list
+            if c.args[0] == "subscription_confirmed"
+        ]
+        assert len(calls) == 0
+
     def test_does_not_fire_on_already_active(self) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
         token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("accounts.views.analytics.track") as mock_track:
-            client.get(reverse("accounts:account", kwargs={"token": token}))
+            client.post(reverse("accounts:account", kwargs={"token": token}))
         calls = [
             c
             for c in mock_track.call_args_list
@@ -2298,7 +2369,7 @@ class TestAnalyticsSubscriptionConfirmed:
         session["analytics_anon_id"] = "anon-uuid-111"
         session.save()
         with patch("accounts.views.analytics.alias") as mock_alias:
-            client.get(reverse("accounts:account", kwargs={"token": token}))
+            client.post(reverse("accounts:account", kwargs={"token": token}))
         mock_alias.assert_called_once_with(
             distinct_id=str(subscriber.user_id),
             alias_id="anon-uuid-111",
@@ -2309,7 +2380,7 @@ class TestAnalyticsSubscriptionConfirmed:
         token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("accounts.views.analytics.alias") as mock_alias:
-            client.get(reverse("accounts:account", kwargs={"token": token}))
+            client.post(reverse("accounts:account", kwargs={"token": token}))
         mock_alias.assert_not_called()
 
 

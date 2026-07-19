@@ -10,9 +10,13 @@ giving the header to dev / perf environments and to the
 track per-page query counts in ``perf/query_counts.txt``).
 
 ``SecurityHeadersMiddleware`` adds ``Referrer-Policy`` and
-``Permissions-Policy`` headers to every response.  Per-view overrides
-(e.g. ``no-referrer`` on token-bearing views) take precedence because
-the middleware sets its value only when the header is absent.
+``Permissions-Policy`` headers to every response.  Per-view overrides on
+token-bearing views take precedence because the middleware sets its value
+only when the header is absent — ``no-referrer`` on terminal responses
+(error pages, redirects) and ``same-origin`` on GET pages that render a
+same-origin POST form (``same-origin`` is required there so the POST is not
+sent with ``Origin: null``, which Django's CSRF check rejects on HTTPS — see
+SNOW-438).
 
 ``AppVersionHeaderMiddleware`` stamps ``X-App-Version`` and
 ``X-App-Min-Version`` on every response (SNOW-369). The PWA client reads
@@ -70,8 +74,10 @@ class SecurityHeadersMiddleware:
 
     Uses ``strict-origin-when-cross-origin`` as the global Referrer-Policy
     default.  Views that carry tokens in their URL paths (account_view,
-    unsubscribe_view) set ``no-referrer`` themselves; this middleware
-    honours that by only writing the header when it is absent.
+    unsubscribe_view, verify_view, …) set their own value — ``no-referrer``
+    on terminal responses, ``same-origin`` on GET pages with a POST form
+    (SNOW-438) — and this middleware honours that by only writing the header
+    when it is absent.
     """
 
     _REFERRER_POLICY_HEADER = "Referrer-Policy"

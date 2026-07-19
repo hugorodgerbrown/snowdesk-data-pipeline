@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on test_data
 status: current
-last-reviewed: 2026-07-17
+last-reviewed: 2026-07-19
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -286,8 +286,9 @@ both hits appear and the badge makes the distinction obvious.
 | 2 | Type `tester@example.com` into the email field | Text appears in the input field |
 | 3 | Click "Subscribe" | The card is replaced in-place (HTMX, no page reload) with "Check your inbox" and "We've sent you a link to access your account. It expires in 24 hours." |
 | 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
-| 5 | Open the email and click the account link | Browser redirects to http://localhost:8000/account/manage/?just_confirmed=1 |
-| 6 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
+| 5 | Open the email and click the account link | An "Access your account" confirm page loads (no auto sign-in on the GET); it shows a "Sign in to my account" button (SNOW-439) |
+| 6 | Click "Sign in to my account" | Browser POSTs and redirects to http://localhost:8000/account/manage/?just_confirmed=1 |
+| 7 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
 
 ### Scenario 11: One-click add a region from another bulletin page (HTMX)
 

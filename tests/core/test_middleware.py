@@ -68,37 +68,51 @@ def test_permissions_policy_present_on_normal_response() -> None:
 
 
 @pytest.mark.django_db
-def test_account_view_sets_no_referrer() -> None:
-    """account_view overrides Referrer-Policy to no-referrer (token in URL)."""
+def test_account_view_get_sets_same_origin() -> None:
+    """account_view GET confirm page uses same-origin so its POST passes CSRF.
+
+    A ``no-referrer`` policy makes the browser send ``Origin: null`` on the
+    subsequent same-origin POST, which Django's CSRF middleware rejects on
+    HTTPS (SNOW-438). ``same-origin`` still strips the token-bearing URL from
+    any cross-origin request.
+    """
     subscriber = SubscriberFactory.create()
     token = generate_token(subscriber.user.email, salt=SALT_ACCOUNT_ACCESS)
     response = Client().get(f"/account/access/{token}/")
-    # Redirects or error page — both should carry no-referrer.
+    assert response.status_code == 200
+    assert response["Referrer-Policy"] == "same-origin"
+
+
+@pytest.mark.django_db
+def test_account_view_error_keeps_no_referrer() -> None:
+    """The link-expired error page (no POST form) still uses no-referrer."""
+    response = Client().get("/account/access/garbage-token/")
+    assert response.status_code == 400
     assert response["Referrer-Policy"] == "no-referrer"
 
 
 @pytest.mark.django_db
-def test_unsubscribe_view_get_sets_no_referrer() -> None:
-    """unsubscribe_view GET overrides Referrer-Policy to no-referrer."""
+def test_unsubscribe_view_get_sets_same_origin() -> None:
+    """unsubscribe_view GET renders a POST form → same-origin (SNOW-438)."""
     region = MicroRegionFactory.create()
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
     response = Client().get(f"/account/unsubscribe/{token}/")
     assert response.status_code == 200
-    assert response["Referrer-Policy"] == "no-referrer"
+    assert response["Referrer-Policy"] == "same-origin"
 
 
 @pytest.mark.django_db
 def test_view_override_takes_precedence_over_middleware_default() -> None:
-    """A view-set no-referrer survives the middleware (not overwritten)."""
+    """A view-set Referrer-Policy survives the middleware (not overwritten)."""
     region = MicroRegionFactory.create()
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
     response = Client().get(f"/account/unsubscribe/{token}/")
-    # Must be no-referrer, not the middleware default.
-    assert response["Referrer-Policy"] == "no-referrer"
+    # Must be the view-set value, not the middleware default.
+    assert response["Referrer-Policy"] == "same-origin"
     assert response["Referrer-Policy"] != "strict-origin-when-cross-origin"
 
 
