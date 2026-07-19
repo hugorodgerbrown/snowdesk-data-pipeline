@@ -2,7 +2,7 @@
 name: management-commands
 description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-19
 ---
 
 # Management commands
@@ -505,20 +505,29 @@ endpoint; today uses the forecast endpoint. A single invocation therefore
 covers the entire default window correctly regardless of what is already
 in the DB.
 
-**Active-ForecastPoint pass (SNOW-416)** — when the resolved window reaches
-today, the command also fetches today's forecast for every **active**
-`ForecastPoint` (a point referenced by at least one `Favourite`; see
-[`favourites`/`accounts` glossary entries](glossary.md)), passing the
-point's stored `elevation` explicitly so the forecast is statistically
-downscaled to the pin's altitude. Results are written to
-`ForecastPointWeather` — the point analogue of `WeatherSnapshot`, but with
-a comprehensive daily field set (temperature, precipitation, wind, UV)
-since a favourited point renders as a personal detail card. Points are
-**forecast-only**: there is no archive/backfill path for them, and they do
-not participate in `--local-mirror` or `--stash` — both are skipped
-cleanly for the point pass regardless of the flag values. Pass
+**Active-ForecastPoint pass (SNOW-416, widened SNOW-417)** — when the
+resolved window reaches today, the command also fetches a **7-day** window
+(`POINT_FORECAST_DAYS`) of daily forecast data — plus a **2-day**
+(`POINT_HOURLY_DAYS`) near-term hourly series of ski-relevant variables
+(temperature, snowfall, precipitation, wind speed/gusts, freezing level) —
+for every **active** `ForecastPoint` (a point referenced by at least one
+`Favourite`; see [`favourites`/`accounts` glossary entries](glossary.md)),
+passing the point's stored `elevation` explicitly so the forecast is
+statistically downscaled to the pin's altitude. One API call per point
+returns the whole window; one `ForecastPointWeather` row per day is
+persisted. Each row's `freezing_level_height` is derived as the daily
+maximum of that day's hourly values (Open-Meteo has no daily freezing-level
+aggregate); `hourly_series` is populated for the first `POINT_HOURLY_DAYS`
+rows only, `None` beyond, to keep the JSON payload bounded. Ships on
+Open-Meteo's default blended model chain — no `models=` parameter
+(MeteoSwiss ICON-CH selection is deferred to a follow-up ticket). Points
+are **forecast-only**: there is no archive/backfill path for them, and
+they do not participate in `--local-mirror` or `--stash` — both are
+skipped cleanly for the point pass regardless of the flag values. Pass
 `--skip-points` to fetch region weather only. Point failures are merged
-into the same `failed` total that triggers the command's non-zero exit.
+into the same `failed` total that triggers the command's non-zero exit;
+`created`/`updated` counters sum across every day of every point's window,
+not one count per point.
 
 Read-only by default; the API is always called even without `--commit`,
 making a bare invocation a useful connectivity probe.
