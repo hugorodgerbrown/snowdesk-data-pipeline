@@ -114,6 +114,23 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
             location_source__in=user_located_sources,
         ).exists()
 
+    def recent(self, since: datetime.datetime) -> "FieldObservationQuerySet":
+        """Return observations reported at or after ``since``.
+
+        Filters on ``observed_at``, which is ``db_index=True``. Used by the
+        SNOW-419 community-reports map overlay to fetch the last 48 hours
+        of reports.
+
+        Args:
+            since: Timezone-aware cutoff — rows with ``observed_at`` before
+                this instant are excluded.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.filter(observed_at__gte=since)
+
 
 class FieldObservationManager(models.Manager["FieldObservation"]):
     """Manager for FieldObservation exposing the custom queryset."""
@@ -156,6 +173,19 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
 
         """
         return self.get_queryset().user_located_exists_for_region_day(region, day)
+
+    def recent(self, since: datetime.datetime) -> FieldObservationQuerySet:
+        """Delegate to the queryset's recent method.
+
+        Args:
+            since: Timezone-aware cutoff — rows with ``observed_at`` before
+                this instant are excluded.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.get_queryset().recent(since)
 
 
 # ---------------------------------------------------------------------------
