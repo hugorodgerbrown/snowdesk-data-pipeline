@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-19
 ---
 
 # Offline-first PWA compliance
@@ -34,6 +34,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | `X-App-Min-Version` on every response              | SNOW-369      | Same middleware; reads `settings.APP_MIN_VERSION`                                                 |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `public.api.version_view` at `/api/version/`                                                      |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
+| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `core.freshness.apply_freshness_headers`; applied by data-bearing views in `public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
@@ -189,10 +190,6 @@ into the IndexedDB `meta:app` store.
 
 Not yet shipped (tracked as separate SNOW-368 children):
 
-- **SNOW-376** — Client mutation queue with exponential backoff and
-  Background Sync. Now unblocked (SNOW-375 shipped); the
-  `window.pwaMutationQueue` surface it will sit behind is stubbed
-  (SNOW-384 — see below).
 - The actual PostHog dashboard/alert *configuration* (charts, saved
   insights, alert thresholds) building on top of the SNOW-384 signal —
   deliberately out of that ticket's pivoted scope ("plumbing, not
@@ -203,6 +200,10 @@ Shipped from the observability + IndexedDB track:
 - **SNOW-375** — IndexedDB scaffolding (`static/js/db.js`, one DB per
   app, four static object stores, schema-versioned migrations, Reset
   Required overlay). See [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md).
+- **SNOW-376** — Client mutation queue with Idempotency-Key, exponential
+  backoff, a nav sync badge, a permanent-failure toast, and feature-detected
+  Background Sync (Android) behind the `window.pwaMutationQueue` surface
+  SNOW-384 stubbed. See [`mutation-queue.md`](mutation-queue.md).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
   `analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,
@@ -223,17 +224,11 @@ Shipped from the observability + IndexedDB track:
   `client_version` + a self-contained `POSTHOG_API_KEY` gate on every
   server-side signal; the SW→page telemetry message bridge
   (`sw.js` / `sw-kill.js` → `sw_register.js`); the install funnel, kill
-  switch, forced-update, freshness, and reset-forced client emits; and a
-  `window.pwaMutationQueue` no-op stub ahead of SNOW-376. See
+  switch, forced-update, freshness, and reset-forced client emits; and the
+  `window.pwaMutationQueue` no-op stub SNOW-376 later filled in. See
   [`telemetry-pipeline.md`](telemetry-pipeline.md) for the full
   call-site table. PostHog dashboard/alert configuration itself is a
   separate, still-open follow-up.
-
-Non-negotiables the deferred tickets cover:
-
-| §    | Requirement                        | Ticket                  |
-|------|------------------------------------|-------------------------|
-| 12.4 | Mutation queue with Idempotency-Key | SNOW-376                |
 
 ## See also
 
@@ -242,3 +237,5 @@ Non-negotiables the deferred tickets cover:
 - [`decisions/`](decisions/) — architecture-choice notes.
 - [`push-notifications.md`](push-notifications.md) — Web Push (VAPID,
   Render wiring, smoke test).
+- [`mutation-queue.md`](mutation-queue.md) — client mutation queue (row
+  shape, backoff, Background Sync, permanent-failure toast + nav badge).
