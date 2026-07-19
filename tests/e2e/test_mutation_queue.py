@@ -212,14 +212,24 @@ def test_enqueue_offline_then_replays_on_online(
             window.dispatchEvent(new Event('online'));
           }"""
     )
-    _poll(
+    # Fold both conditions into one predicate: the telemetry write is a
+    # separate un-awaited promise chain from the row deletion drain()
+    # itself awaits, so checking queue:events as a follow-up read after
+    # only the row-count condition would be a race (see
+    # test_permanent_4xx_fails_on_first_attempt for the same hazard).
+    drained_event = _poll(
         page,
         """async () => {
             const rows = await window.pwaDb.getAll('queue:mutations');
-            return rows.length === 0;
+            if (rows.length !== 0) return false;
+            const events = await window.pwaDb.getAll('queue:events');
+            return events.find((e) => e.event === 'pwa.mutation.drained') || false;
           }""",
     )
     assert call_count["n"] == 1
+    # The real drained count (1), not the zero-row fallback drain() would
+    # report on a no-op run.
+    assert drained_event["properties"]["count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +345,73 @@ def test_permanent_4xx_fails_on_first_attempt(
     )
     assert row is not None
     assert row["properties"]["reason"] == "permanent_4xx"
+    # The attempt that just failed counts — a permanent 4xx is not "never
+    # attempted".
+    assert row["properties"]["attempts"] == 1
+
+    stored_row = _mutation_rows(page)[0]
+    assert stored_row["attempts"] == 1
+
+
+def test_toast_dismiss_plays_slide_up_before_hiding(
+    live_server: LiveServer, page: Page
+) -> None:
+    """Dismissing the toast reverses the transform/opacity first and only
+    adds ``hidden`` once that transition has actually finished — not in
+    the same synchronous tick (regression test: an earlier version added
+    ``hidden`` immediately, which collapsed the animation to nothing).
+    """
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    page.route(f"**{MUTATION_URL}", lambda route: route.fulfill(status=422, body=""))
+
+    page.evaluate(
+        """async (url) => {
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+          }""",
+        MUTATION_URL,
+    )
+    _poll(
+        page,
+        """() => {
+            const el = document.getElementById('mutation-queue-toast');
+            return !!(el && !el.classList.contains('hidden'));
+          }""",
+    )
+
+    page.evaluate(
+        """() => {
+            document
+              .getElementById('mutation-queue-toast')
+              .querySelector('[data-action="dismiss"]')
+              .click();
+          }"""
+    )
+    # Immediately after the click, the toast must still be un-hidden and
+    # mid-transition (transform reversed) — not vanished outright.
+    immediate = page.evaluate(
+        """() => {
+            const el = document.getElementById('mutation-queue-toast');
+            return {
+                hidden: el.classList.contains('hidden'),
+                translatedUp: el.classList.contains('-translate-y-full'),
+            };
+          }"""
+    )
+    assert immediate["hidden"] is False
+    assert immediate["translatedUp"] is True
+
+    # It does eventually become hidden once the transition (or its
+    # fallback timer) completes.
+    _poll(
+        page,
+        """() => {
+            const el = document.getElementById('mutation-queue-toast');
+            return el ? el.classList.contains('hidden') : true;
+          }""",
+        timeout_s=2.0,
+    )
 
 
 # ---------------------------------------------------------------------------

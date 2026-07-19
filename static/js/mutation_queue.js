@@ -100,6 +100,13 @@
   var TOAST_ID = 'mutation-queue-toast';
   var BADGE_SELECTOR = '[data-sync-badge]';
 
+  // Matches _toast_banner.html's `duration-300` Tailwind class. The
+  // `transitionend` listener is the primary signal that the slide-up has
+  // finished; this is only the fallback for browsers/states where it
+  // doesn't fire (e.g. the element was already mid-transition, or
+  // `prefers-reduced-motion` short-circuits the animation).
+  var TOAST_TRANSITION_MS = 300;
+
   // Drain-in-progress guard — mirrors telemetry.js's _flushInFlight so
   // overlapping triggers (online + visibilitychange + timer all firing
   // close together) can't double-POST the same row.
@@ -109,6 +116,12 @@
   // the first toast is still showing resets the 10s window instead of
   // stacking timers.
   var _toastDismissTimer = null;
+
+  // Handles for the in-progress dismiss transition, so a second dismiss
+  // (or a fresh reveal) while one is already playing cancels the stale
+  // listener/timer rather than piling up duplicates.
+  var _toastHideFallbackTimer = null;
+  var _toastHideTransitionEndHandler = null;
 
   /**
    * Best-effort telemetry emit — never throws.
@@ -161,6 +174,27 @@
   }
 
   /**
+   * Cancel any in-progress dismiss transition — its `transitionend`
+   * listener and fallback timer — without touching the element's classes.
+   * Called before both a fresh reveal and a fresh hide so repeated calls
+   * never leave stale listeners/timers behind.
+   */
+  function _cancelToastHideTransition(el) {
+    if (_toastHideFallbackTimer) {
+      clearTimeout(_toastHideFallbackTimer);
+      _toastHideFallbackTimer = null;
+    }
+    if (_toastHideTransitionEndHandler) {
+      try {
+        el?.removeEventListener('transitionend', _toastHideTransitionEndHandler);
+      } catch (_e) {
+        // Non-fatal.
+      }
+      _toastHideTransitionEndHandler = null;
+    }
+  }
+
+  /**
    * Reveal the permanent-failure toast and (re)arm its 10s auto-dismiss
    * timer. Uses a Tailwind class toggle (not custom CSS) for the
    * slide-down reveal: remove ``hidden`` first, force a layout flush so
@@ -172,6 +206,8 @@
     try {
       var el = _toastEl();
       if (!el) return;
+      // A reveal always wins over an in-progress dismiss.
+      _cancelToastHideTransition(el);
       el.classList.remove('hidden');
       // eslint-disable-next-line no-unused-expressions
       el.offsetWidth; // force layout — see comment above.
@@ -184,6 +220,19 @@
     }
   }
 
+  /**
+   * Dismiss the toast — played from both the "×" button and the 10s
+   * auto-dismiss timer. The reveal and dismiss are symmetric: this plays
+   * the slide-up/fade-out transition FIRST, and only adds ``hidden``
+   * (display:none) once that transition has actually finished — via a
+   * ``transitionend`` listener, with a ``setTimeout`` fallback matching
+   * the template's ``duration-300`` in case ``transitionend`` never fires
+   * (browser quirk, or the element was already mid-transition). Flipping
+   * both class changes in the same tick — as an earlier version of this
+   * function did — collapses the animation to nothing; ``hidden`` sets
+   * ``display: none`` immediately, so the browser never gets a frame in
+   * which to render the transform/opacity in flight.
+   */
   function _hideToast() {
     try {
       var el = _toastEl();
@@ -191,10 +240,19 @@
         clearTimeout(_toastDismissTimer);
         _toastDismissTimer = null;
       }
-      if (!el) return;
-      el.classList.add('-translate-y-full', 'opacity-0');
+      if (!el || el.classList.contains('hidden')) return;
+      _cancelToastHideTransition(el);
+
       el.classList.remove('translate-y-0', 'opacity-100');
-      el.classList.add('hidden');
+      el.classList.add('-translate-y-full', 'opacity-0');
+
+      var finish = function () {
+        _cancelToastHideTransition(el);
+        el.classList.add('hidden');
+      };
+      _toastHideTransitionEndHandler = finish;
+      el.addEventListener('transitionend', finish);
+      _toastHideFallbackTimer = setTimeout(finish, TOAST_TRANSITION_MS + 50);
     } catch (_e) {
       // Non-fatal.
     }
@@ -359,13 +417,18 @@
       return 'success';
     }
 
+    // Both remaining branches represent an attempt that just happened —
+    // increment before persisting/reporting so `attempts` (and the
+    // telemetry it feeds) reflects the failed attempt rather than reading
+    // as "never attempted".
+    var attempts = (row.attempts || 0) + 1;
+
     if (outcome === 'permanent') {
-      await _markRowFailed(row, 'permanent_4xx');
+      await _markRowFailed(Object.assign({}, row, { attempts: attempts }), 'permanent_4xx');
       return 'failed';
     }
 
     // 'retry' — {408, 429}, 5xx, or a network error.
-    var attempts = (row.attempts || 0) + 1;
     if (attempts >= core.MAX_ATTEMPTS) {
       await _markRowFailed(Object.assign({}, row, { attempts: attempts }), 'max_attempts');
       return 'failed';

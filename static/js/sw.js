@@ -81,8 +81,13 @@
  *   - A tab is still open → post ``{type: 'drain-mutations'}`` to it;
  *     ``sw_register.js``'s message bridge calls the REAL
  *     ``window.pwaMutationQueue.drain()``, which already has ``window.pwaDb``
- *     / ``window.pwaTelemetry`` wired up. Cheaper and more consistent than
- *     duplicating that logic here.
+ *     / ``window.pwaTelemetry`` wired up, rather than duplicating that
+ *     logic here. This path resolves ``waitUntil`` immediately, before the
+ *     page's own drain has even run — it deliberately does NOT throw to
+ *     get a Background Sync reschedule if that drain leaves retryable
+ *     rows; the page's own 30s timer / ``visibilitychange`` / ``online``
+ *     triggers carry it forward instead (see ``_handleMutationSync``'s
+ *     own docstring for the full rationale).
  *   - No tab is open (the actual Background-Sync case this API exists
  *     for) → self-drain directly against IndexedDB using the shared
  *     ``mutation_queue_core.js`` helpers, since a worker has no
@@ -601,12 +606,17 @@ async function _selfDrainMutations() {
     }
 
     if (outcome === 'permanent') {
+      // This attempt just happened — increment before persisting/
+      // reporting so `attempts` (and the telemetry it feeds) reflects the
+      // failed attempt rather than reading as "never attempted".
+      row.attempts = (row.attempts || 0) + 1;
       row.status = 'failed';
       await _idbPut(db, 'queue:mutations', row);
       _postTelemetry('pwa.mutation.failed_permanent', {
         method: row.method,
         url: row.url,
         idempotency_key: row.idempotency_key,
+        attempts: row.attempts,
         reason: 'permanent_4xx',
       });
       continue;
@@ -652,6 +662,18 @@ async function _selfDrainMutations() {
  * delegating to an open tab (cheaper, reuses the page's already-wired
  * ``window.pwaDb`` / ``window.pwaTelemetry``); self-drain directly against
  * IndexedDB only when no tab is open at all.
+ *
+ * Asymmetric retry-rescheduling by design: the no-tab path below (
+ * ``_selfDrainMutations``) throws when retryable rows remain, so
+ * ``event.waitUntil`` rejects and the browser reschedules the sync itself.
+ * The has-open-tabs path here does NOT do that — it resolves as soon as
+ * the message is posted, before the page's own ``drain()`` has even run,
+ * so there's nothing yet to inspect for "does this need a Background Sync
+ * reschedule?". If that drain leaves retryable rows (still-backing-off
+ * 5xx/429s), the page's OWN lifecycle triggers — the 30s periodic timer,
+ * ``visibilitychange``, and the next ``online`` event — are what carry it
+ * forward, not another Background Sync firing. That's an acceptable gap
+ * (a tab is open, so those triggers are live), not an oversight.
  *
  * @returns {Promise<void>}
  */

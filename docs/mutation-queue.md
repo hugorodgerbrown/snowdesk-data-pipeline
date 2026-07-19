@@ -36,7 +36,9 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
                         // caller is responsible for CSRF headers too —
                         // see "CSRF on replay" below)
   created_at,           // ISO 8601 timestamp, set at enqueue
-  attempts,             // starts at 0; incremented on every retry
+  attempts,             // starts at 0; incremented for every attempt that
+                        // did NOT get a 2xx — a retry OR a permanent 4xx
+                        // (an attempt was made either way)
   status,               // 'queued' | 'retry-scheduled' | 'failed'
   next_attempt_at,       // epoch ms; row is eligible for replay once
                         // Date.now() >= next_attempt_at
@@ -49,8 +51,15 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
 |------------------------------------|-------------------------------------------------------------------|
 | 2xx                                | Success — row deleted; counts toward the drain's reported count. |
 | `{408, 429}`, any 5xx, network error | Retry — `attempts += 1`, `next_attempt_at = now + backoff(attempts)`, `status = 'retry-scheduled'`. |
-| Any other 4xx (400/401/403/404/409/410/422/…) | Permanent failure on the FIRST attempt — `status = 'failed'`, no further retry. |
+| Any other 4xx (400/401/403/404/409/410/422/…) | Permanent failure on the FIRST attempt — `attempts += 1` (the attempt that just failed), `status = 'failed'`, no further retry. |
 | Retry count reaches `MAX_ATTEMPTS` (20) without a 2xx | Permanent failure — `status = 'failed'`, same as above. |
+
+`attempts` always counts attempts actually made, never attempts still
+pending — a row marked `failed` on the first permanent-4xx response
+carries `attempts: 1`, not `0`, and the `pwa.mutation.failed_permanent`
+telemetry event's `attempts` property reflects the same value (so a
+PostHog query can distinguish "failed on the first attempt" from "never
+attempted").
 
 Classification lives in `static/js/mutation_queue_core.js::classifyStatus`
 — shared, byte-for-byte, between the page drain loop and the service
