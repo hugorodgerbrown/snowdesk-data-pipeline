@@ -40,7 +40,18 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
 def test_overlay_toggle_installs_clustered_source(
     live_server: LiveServer, page: Page, django_db_blocker: Any
 ) -> None:
-    """Enabling the overlay fetches the geojson and installs the clustered source."""
+    """Enabling the overlay fetches the geojson and installs the clustered source.
+
+    SNOW-472: also covers the shared SDF flag icon that replaced the
+    per-OBSERVATION_TYPE text glyphs — asserts the point layer references
+    it and that ``map.addImage`` actually registered it. Does not cover
+    the basemap-swap re-registration path (the riskiest part of that
+    change, since ``setStyle`` wipes registered images and
+    ``installCommunityReportsLayer`` has to re-add it) — a real basemap
+    swap needs a live fetch to the swisstopo/IGN/ESRI style JSON, which
+    isn't available to this harness. First-load registration is exercised
+    here instead.
+    """
     with django_db_blocker.unblock():
         FieldObservationFactory.create(
             latitude=46.2,
@@ -67,6 +78,16 @@ def test_overlay_toggle_installs_clustered_source(
     assert page.evaluate("() => !!MAP.getLayer('community-reports-cluster-count')")
     assert page.evaluate("() => !!MAP.getLayer('community-reports-point')")
 
+    # SNOW-472: the unclustered point layer draws a single shared SDF flag
+    # icon (not a per-OBSERVATION_TYPE text glyph) — assert the layer
+    # references THAT specific icon id (not just "some icon is set"), and
+    # that the icon was actually registered on the style via map.addImage.
+    assert page.evaluate(
+        "() => MAP.getLayoutProperty('community-reports-point', 'icon-image')"
+        " === 'community-report-flag'"
+    )
+    assert page.evaluate("() => MAP.hasImage('community-report-flag')")
+
     source_data = page.evaluate(
         "() => MAP.getSource('community-reports').serialize().data"
     )
@@ -75,6 +96,72 @@ def test_overlay_toggle_installs_clustered_source(
     assert feature["properties"]["type"] == "WHUMPFING"
     # Anonymisation: only the 3dp-rounded pair crosses the wire.
     assert feature["geometry"]["coordinates"] == [7.6, 46.2]
+
+
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_point_tap_popup_shows_type_and_time_without_region(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """Tapping a lone report pin opens a popup with the type + time only.
+
+    SNOW-472: the region name was dropped from the popup — the pin's own
+    position on the map already conveys where the report is, and the FK
+    region can be coarser or cross-border than the visible spot. Assert the
+    popup shows the OBSERVATION_TYPE label and carries no place label: the
+    meta line is the relative time alone, with no ' · ' separator and not
+    the seeded region's name anywhere in the card.
+    """
+    with django_db_blocker.unblock():
+        obs = FieldObservationFactory.create(
+            latitude=46.10,
+            longitude=7.10,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        assert obs.region is not None
+        region_name = obs.region.name
+
+    _navigate_home(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    toggle = page.locator('[data-overlay-key="community_reports"]')
+    toggle.wait_for(state="visible")
+    with page.expect_response(lambda r: "/api/community-reports.geojson" in r.url):
+        toggle.click()
+    page.wait_for_function("() => !!MAP.getLayer('community-reports-point')")
+
+    # Centre on the lone pin at a high zoom, then wait for the point layer's
+    # own render pass.
+    page.evaluate("() => MAP.jumpTo({ center: [7.10, 46.10], zoom: 14 })")
+    page.wait_for_function(
+        "() => MAP.queryRenderedFeatures("
+        "{ layers: ['community-reports-point'] }).length === 1"
+    )
+    # Inflate the icon to a large, forgiving click target. Icon size is
+    # independent of the popup content under test here, so growing it only
+    # de-flakes the hit-test — a ~20px icon is an unreliable mouse target.
+    page.evaluate(
+        "() => MAP.setLayoutProperty('community-reports-point', 'icon-size', 3)"
+    )
+    page.wait_for_timeout(150)
+
+    # The flag icon is anchored bottom-left at the coordinate, so its body
+    # sits up and to the right of the projected point — aim into it, in
+    # viewport coords (the canvas may be offset from the page origin).
+    target = page.evaluate(
+        "() => { const r = MAP.getCanvas().getBoundingClientRect();"
+        " const p = MAP.project([7.10, 46.10]);"
+        " return { x: r.left + p.x + 30, y: r.top + p.y - 45 }; }"
+    )
+    page.mouse.click(target["x"], target["y"])
+
+    popup = page.locator(".community-report-popup")
+    popup.wait_for(state="visible")
+
+    assert page.locator(".community-report-popup__type").inner_text() == "Whumpfing"
+    meta = page.locator(".community-report-popup__meta").inner_text()
+    assert "·" not in meta
+    assert region_name not in popup.inner_text()
 
 
 @override_flag("community_reports", active=True)
