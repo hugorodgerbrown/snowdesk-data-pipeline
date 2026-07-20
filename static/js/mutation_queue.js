@@ -93,8 +93,11 @@
  *      ``<meta name="pwa-user-id">`` principal against the last-seen one
  *      persisted in ``meta:app`` under the key ``mutations.principal``.
  *      On a mismatch it clears the ENTIRE queue (emitting
- *      ``pwa.mutation.discarded`` with ``reason: 'account_change'`` when
- *      at least one row was present) and persists the new principal.
+ *      ``pwa.mutation.discarded`` — ``reason: 'account_change'`` when a
+ *      previous principal was recorded and genuinely differs, or
+ *      ``reason: 'principal_uninitialised'`` when no ``mutations.principal``
+ *      row existed yet — when at least one row was present) and persists
+ *      the new principal.
  *   2. **Drain-guard** — ``_processRow()`` re-checks each row's stamped
  *      ``principal`` against the CURRENT principal immediately before
  *      replay; a mismatch deletes the row without a network request and
@@ -102,7 +105,10 @@
  *      'principal_mismatch'``. This is the race backstop for the window
  *      between an account change and the next reconcile (e.g. a
  *      Background-Sync firing from the service worker — see
- *      ``static/js/sw.js``'s best-effort ``storedPrincipal`` guard).
+ *      ``static/js/sw.js``'s best-effort ``storedPrincipal`` guard, which
+ *      discards silently and does NOT emit telemetry: it only runs with
+ *      no tab open, so ``_postTelemetry``'s ``clients.matchAll`` is a
+ *      guaranteed no-op there).
  *
  * Every method is defensive — wrapped in try/catch, optional chaining on
  * ``window.pwaTelemetry?.emit`` and guarded ``window.pwaDb`` access — so a
@@ -653,6 +659,15 @@
    * ``_processRow()`` is the race backstop, so this must not block
    * wiring the rest of the lifecycle.
    *
+   * The ``pwa.mutation.discarded`` ``reason`` distinguishes two mismatch
+   * causes so a PostHog query can tell them apart: ``'account_change'``
+   * when a ``mutations.principal`` row already existed and genuinely
+   * differs from the current principal, versus
+   * ``'principal_uninitialised'`` when no such row existed yet (first
+   * load after this ticket shipped, or a fresh DB) — any pre-existing,
+   * principal-less row is untrustworthy and cleared on general
+   * principle, not because an actual account change was observed.
+   *
    * Entirely guarded/non-fatal — a failure here leaves the drain-guard
    * as the sole (still airtight, if less proactive) protection.
    *
@@ -665,8 +680,9 @@
       }
       var current = _currentPrincipal();
       var stored = await window.pwaDb.get('meta:app', 'mutations.principal');
-      var storedValue = stored ? stored.value : undefined;
-      if (storedValue === current) {
+      var wasUninitialised = stored === undefined;
+      var storedValue = wasUninitialised ? undefined : stored.value;
+      if (!wasUninitialised && storedValue === current) {
         return;
       }
       var rows = (await window.pwaDb.getAll(STORE)) || [];
@@ -674,7 +690,7 @@
         await clear();
         emitTelemetry('pwa.mutation.discarded', {
           count: rows.length,
-          reason: 'account_change',
+          reason: wasUninitialised ? 'principal_uninitialised' : 'account_change',
         });
       }
       await window.pwaDb.put('meta:app', { key: 'mutations.principal', value: current });

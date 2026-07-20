@@ -24,9 +24,12 @@ Covers the named cases from the SNOW-376 scoping comment:
 7. SNOW-462 account-change principal partitioning: ``clear()`` empties the
    store and hides the badge; ``enqueue()`` stamps the row's ``principal``
    from ``<meta name="pwa-user-id">``; the drain-guard discards (never
-   replays) a row stamped for a different principal than the current one;
-   a fresh page load under a different principal clears the whole queue
-   via the reconcile-on-load path.
+   replays) a row stamped for a different principal than the current one
+   (``reason: 'principal_mismatch'``); a fresh page load under a
+   different principal clears the whole queue via the reconcile-on-load
+   path, reporting ``reason: 'account_change'`` when a prior principal
+   was genuinely recorded and ``reason: 'principal_uninitialised'`` when
+   no baseline existed yet.
 
 Tests 1-5 and 7 use the SIMULATED-SW pattern (``navigator.serviceWorker``
 stripped entirely) — these are about the queue's own logic, not the SW
@@ -735,15 +738,26 @@ def test_reconcile_clears_queue_on_account_change(
     ``_wireLifecycle()`` runs ``_reconcilePrincipal()`` first thing on every
     page load, which must observe the principal mismatch and clear
     everything queued under A before B's session can ever touch it.
+
+    Uses ``_delete_db`` up front (before A's first load) so the very first
+    reconcile pass establishes a REAL ``mutations.principal`` baseline of
+    A — not left absent. That distinction matters for the ``reason`` this
+    test asserts on: a mismatch against an absent baseline reports
+    ``'principal_uninitialised'``, whereas a mismatch against a genuine
+    prior principal (A, here) reports ``'account_change'`` — the case this
+    test is actually named for. Only the ``queue:mutations`` store (not
+    the whole DB) is cleared between A's enqueue and B's sign-in, so that
+    baseline survives.
     """
     with django_db_blocker.unblock():
         user_a = UserFactory.create()
         user_b = UserFactory.create()
 
     _session_login(page.context, live_server.url, user_a)
-    _load(page, live_server.url)
     _delete_db(page)
+    _load(page, live_server.url)
 
+    page.evaluate("""async () => { await window.pwaDb.clear('queue:mutations'); }""")
     page.evaluate(
         """async (url) => {
             Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
@@ -768,6 +782,57 @@ def test_reconcile_clears_queue_on_account_change(
             return events.find(
                 (e) => e.event === 'pwa.mutation.discarded'
                     && e.properties.reason === 'account_change'
+            ) || false;
+          }""",
+    )
+    assert discarded_event["properties"]["count"] == 1
+
+
+def test_reconcile_clears_queue_when_principal_never_recorded(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A fresh DB's first reconcile pass with a pre-existing row reports
+    ``reason: 'principal_uninitialised'`` — distinct from a genuine
+    account change. Seeds a row directly (bypassing ``enqueue()``, whose
+    own reconcile-on-load already ran when the page first loaded) so the
+    NEXT reload's reconcile finds both an absent ``mutations.principal``
+    baseline AND a non-empty queue.
+    """
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    page.evaluate(
+        """async (url) => {
+            await window.pwaDb.put('queue:mutations', {
+                idempotency_key: 'uninitialised-principal-key',
+                method: 'POST',
+                url,
+                headers: {},
+                body: null,
+                created_at: new Date().toISOString(),
+                attempts: 0,
+                status: 'queued',
+                next_attempt_at: 0,
+                principal: null,
+            });
+          }""",
+        MUTATION_URL,
+    )
+
+    _load(page, live_server.url)
+
+    _poll(
+        page,
+        """async () => (await window.pwaDb.getAll('queue:mutations')).length === 0""",
+    )
+
+    discarded_event = _poll(
+        page,
+        """async () => {
+            const events = await window.pwaDb.getAll('queue:events');
+            return events.find(
+                (e) => e.event === 'pwa.mutation.discarded'
+                    && e.properties.reason === 'principal_uninitialised'
             ) || false;
           }""",
     )
