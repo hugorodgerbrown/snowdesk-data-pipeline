@@ -156,7 +156,7 @@ class TestReportFormNoCoords:
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         content = response.content.decode()
-        assert "choose a location on the map" in content
+        assert "move the map to set your location" in content
 
 
 @pytest.mark.django_db
