@@ -96,6 +96,10 @@ This brings a freshly migrated DB to a fully navigable state:
 - All bulletins carry render models at `RENDER_MODEL_VERSION` (day ratings via the
   production `apply_bulletin_day_ratings` service); no rebuild step is needed.
 - A small standalone `ForecastPoint` / `ForecastPointWeather` / `Favourite` set.
+- The two named dev accounts (a superuser and an active, CH-4115-subscribed
+  normal user that owns the favourites — folded in from the former
+  `seed_dev_users` command). Credentials: [`docs/worktrees.md`](worktrees.md).
+  `seed_test_data --include user` seeds just the accounts.
 
 The canonical preview URL after seeding is `/ch-4115/martigny-verbier/2026-04-08/`.
 
@@ -110,7 +114,7 @@ populated DB raises a clean `CommandError`. Exactly one selection flag is requir
 
 Model names are case-insensitive and strongly typed against a `SeedModel`
 enumeration (`bulletin`, `regionbulletin`, `regiondayrating`, `weathersnapshot`,
-`forecastpoint`, `forecastpointweather`, `favourite`); an empty or unknown value
+`forecastpoint`, `forecastpointweather`, `favourite`, `user`); an empty or unknown value
 lists the available models. FK prerequisites of a selected model are pulled in
 automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
@@ -620,22 +624,12 @@ every other command here).
 
   Flags: `--email EMAIL` (required).
 
-- `seed_dev_users` — creates (or updates) two well-known local development
-  accounts in a fresh worktree database: a Django superuser
-  (`admin@snowdesk.dev`) for the `/admin/` interface, and an active
-  region-subscribed normal user (`dev@snowdesk.dev`) with a `Subscription`
-  to CH-4115 (Martigny-Verbier). Both accounts are set to the shared dev
-  password documented in `docs/worktrees.md`. **Writes by design** — this
-  command is the documented carve-out from the "never alter data by default"
-  rule; it exists solely to populate a development database and is gated to
-  `DEBUG=True` so it cannot be invoked in production. Idempotent: safe to
-  re-run. See `docs/worktrees.md` for credentials.
-
-  ```bash
-  uv run python manage.py seed_dev_users
-  ```
-
-  No flags (runs with no arguments; `--verbosity` respected for progress output).
+- The two well-known local dev accounts (superuser `admin@snowdesk.dev` and the
+  active, CH-4115-subscribed normal user `dev@snowdesk.dev`) are seeded by
+  `seed_test_data` as the `user` model — run `seed_test_data --include user` to
+  create just them, or `--all` to get them alongside the full dataset. The former
+  standalone `seed_dev_users` command was folded into `seed_test_data` (SNOW-454).
+  Credentials: `docs/worktrees.md`.
 
 - `mint_vapid_keypair` — generates a VAPID P-256 keypair for Web Push
   and writes the raw private scalar (single-line URL-safe-base64) to the

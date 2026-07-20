@@ -14,21 +14,24 @@ fully-configured worktree is a no-op.
 
 ## Seed recipe
 
-When `db.sqlite3` is absent the script runs four commands in order:
+When `db.sqlite3` is absent the script runs three commands in order:
 
 ```bash
 uv run python manage.py migrate --noinput
 uv run python manage.py loaddata eaws_CH resorts
 uv run python manage.py seed_test_data --all --commit
-uv run python manage.py seed_dev_users
 ```
 
 The dataset is built from the FactoryBoy factories in `tests/factories.py` by
 `seed_test_data` (the factory-based path that replaced the old
 `loaddata test_data` JSON fixture). It covers the CH region/resort reference
-data, the map-coverage and CH-4115 detail bulletin layer, and a small
-`ForecastPoint`/`ForecastPointWeather`/`Favourite` set. `seed_test_data` refuses
-to run when `DEBUG=False`; worktrees use development settings, so it is safe.
+data, the map-coverage and CH-4115 detail bulletin layer, a small
+`ForecastPoint`/`ForecastPointWeather`/`Favourite` set, and the two named dev
+accounts (see [Dev credentials](#dev-credentials) — folded in from the former
+`seed_dev_users` command via `SeedModel.USER`, so `--all` creates them and
+`seed_test_data --include user` seeds just the accounts). `seed_test_data`
+refuses to run when `DEBUG=False`; worktrees use development settings, so it is
+safe.
 
 **Why this instead of copying the main repo's DB?**
 
@@ -70,18 +73,19 @@ or use the Tailwind watcher under "Running locally" in
 
 ## Dev credentials
 
-`seed_dev_users` creates two well-known accounts. They are separate from the
-single `auth.User` `seed_test_data` creates to own its sample favourites, and
-they do not affect the anonymous home/map query-count surface.
+`seed_test_data` creates two well-known accounts (the `SeedModel.USER` layer).
+They are anonymous-surface neutral — home/map are unauthenticated and do not
+query users, so they do not shift the query-count baseline. The normal user also
+owns the sample favourites.
 
 | Role | Email | Password | Notes |
 |------|-------|----------|-------|
 | Superuser | `admin@snowdesk.dev` | `snowdesk` | Full `/admin/` access |
-| Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier) |
+| Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier); owns the seeded favourites |
 
 The constants are defined in
-`accounts/management/commands/seed_dev_users.py` (`SUPERUSER_EMAIL`,
-`NORMAL_USER_EMAIL`, `PASSWORD`).
+`bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
+`NORMAL_USER_EMAIL`, `DEV_USER_PASSWORD`, `SUBSCRIBED_REGION_ID`).
 
 ## Force-reseed procedure
 
@@ -115,8 +119,10 @@ contains so it can be relied on and extended safely.
 | `bulletins.weathersnapshot` | 178 | `seed_test_data` |
 | `bulletins.forecastpoint` | 5 | `seed_test_data` |
 | `bulletins.forecastpointweather` | 150 | `seed_test_data` |
-| `favourites.favourite` | 5 | `seed_test_data` |
-| `auth.user` | 1 | `seed_test_data` (favourite owner) |
+| `favourites.favourite` | 5 | `seed_test_data` (owned by the normal dev user) |
+| `auth.user` | 2 | `seed_test_data` (superuser + subscribed normal user) |
+| `accounts.subscriber` | 1 | `seed_test_data` (the normal dev user) |
+| `accounts.subscription` | 1 | `seed_test_data` (normal dev user → CH-4115) |
 
 ### Data coverage
 
@@ -139,7 +145,9 @@ contains so it can be relied on and extended safely.
   problem; wet-snow and dry/wet mixed days are absent.
 - **Point weather / favourites:** 5 `ForecastPoint`s near Verbier, each with a
   `ForecastPointWeather` per April date, and one `Favourite` per point owned by
-  a single seeded user.
+  the seeded normal dev user (`dev@snowdesk.dev`).
+- **Accounts:** the superuser and the subscribed normal dev user (see
+  [Dev credentials](#dev-credentials)).
 
 ### Known gaps
 

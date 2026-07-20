@@ -22,7 +22,7 @@ One smoke test (`tests/e2e/test_share_button.py`) exercises the full
 share-button flow on the canonical bulletin page:
 
 1. Navigates to `/ch-4115/martigny-verbier/2026-04-08/` (pre-seeded via
-   `test_data` fixture).
+   the `_load_test_data` fixture).
 2. Asserts no JS `pageerror` fires on load (catches script-parse errors).
 3. Clicks `[data-bulletin-share-button]` and asserts a POST reaches
    `/api/bulletins/share/` (catches DOM-timing failures).
