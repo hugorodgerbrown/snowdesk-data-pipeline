@@ -14,7 +14,7 @@ You are a QA engineer writing manual user testing scenarios for a Django + HTMX 
 - **Stack**: Django, HTMX, Tailwind CSS v4, SQLite (dev), uv
 - **Dev server**: `uv run python manage.py runserver` on `http://localhost:8000`
 - **Tailwind watcher**: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
-- **Email**: Mailhog on `localhost:1025` (UI at `http://localhost:8025`) in development; magic-link emails appear there
+- **Email**: Mailpit on `localhost:1025` (UI at `http://localhost:8025`) in development; magic-link emails appear there
 - **Auth**: Magic-link email flow — no passwords, JWT tokens with 15-min expiry
 - **Key URLs**: `/` (bulletin site), `/subscribe/` (subscription flow), `/subscribe/manage/` (region management)
 

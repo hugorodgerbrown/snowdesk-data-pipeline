@@ -653,7 +653,7 @@ SITE_ID = 1
 # Base default: ImmediateBackend — tasks run synchronously in the same process.
 # This is a safe fallback (email is sent, just not off-thread) that prevents
 # silent message loss if a deployment forgets to override to DatabaseBackend.
-# development.py also sets ImmediateBackend explicitly (inline send into Mailhog).
+# development.py also sets ImmediateBackend explicitly (inline send into Mailpit).
 # production.py overrides this to DatabaseBackend for durability + off-thread
 # dispatch (requires a Render Background Worker running ``db_worker``).
 
@@ -674,7 +674,7 @@ WEATHER_FETCH_ASYNC = config(
 )
 
 # ---------------------------------------------------------------------------
-# Email — SMTP everywhere.  Dev uses Mailhog (localhost:1025, no auth, no
+# Email — SMTP everywhere.  Dev uses Mailpit (localhost:1025, no auth, no
 # TLS); prod uses Resend's SMTP relay (smtp.resend.com:587, STARTTLS).
 # ---------------------------------------------------------------------------
 

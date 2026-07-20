@@ -75,7 +75,7 @@ if config("E2E_TEST_DB", default=False, cast=bool):
 RATELIMIT_ENABLE = False
 
 # Use ImmediateBackend in development: tasks run inline so email lands in
-# Mailhog immediately without needing a separate db_worker process.
+# Mailpit immediately without needing a separate db_worker process.
 TASKS = {
     "default": {
         "BACKEND": "django_tasks.backends.immediate.ImmediateBackend",

@@ -92,7 +92,7 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 
 **Email** — Django's standard SMTP backend. No custom backend.
 
-- **Development**: Mailhog on `localhost:1025` (no auth, no TLS). Web inbox at `http://localhost:8025`.
+- **Development**: Mailpit on `localhost:1025` (no auth, no TLS). Web inbox at `http://localhost:8025`.
 - **Production**: Resend SMTP relay — `EMAIL_HOST=smtp.resend.com`, `EMAIL_PORT=587`, `EMAIL_HOST_USER=resend`, `EMAIL_HOST_PASSWORD=<Resend API key>`, `EMAIL_USE_TLS=True`.
 
 **Settings** (all in `.env`):

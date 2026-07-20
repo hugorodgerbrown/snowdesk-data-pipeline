@@ -60,7 +60,17 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 
 # Terminal 2: Django dev server
 uv run python manage.py runserver
+
+# Terminal 3: local email sink — captures all outbound mail (no real delivery)
+mailpit                       # brew install mailpit  (or: docker run -p 1025:1025 -p 8025:8025 axllent/mailpit)
 ```
+
+Email uses Django's SMTP backend everywhere; dev points it at **Mailpit**
+(SMTP on `localhost:1025`, web inbox at <http://localhost:8025>) — the
+actively-maintained successor to the abandoned MailHog. Account-access and
+subscription flows all deliver here in local dev. Tests never open a socket
+to Mailpit — pytest-django's test harness swaps in the in-memory `locmem`
+backend, so email assertions run against `mail.outbox`.
 
 In a Claude worktree `bin/init-worktree` runs automatically and seeds
 `db.sqlite3` from fixtures + dev users — see [`docs/worktrees.md`](docs/worktrees.md)

@@ -31,7 +31,7 @@ Snowdesk uses the third-party `django-tasks` package (PyPI: `django-tasks`,
 inherited by the test settings). Tasks run **inline** in the same process the
 moment `.enqueue()` is called, so:
 
-- Email lands in Mailhog immediately during local dev.
+- Email lands in Mailpit immediately during local dev.
 - `mail.outbox` is populated synchronously during tests — no fixture hacks needed.
 - No `db_worker` process is required.
 

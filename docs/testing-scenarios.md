@@ -10,7 +10,7 @@ last-reviewed: 2026-07-19
 > **Prerequisites**
 >
 > 1. Django dev server running: `uv run python manage.py runserver` at http://localhost:8000
-> 2. Mailhog running on localhost:1025 (web UI at http://localhost:8025)
+> 2. Mailpit running on localhost:1025 (web UI at http://localhost:8025)
 > 3. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
 > 4. Database migrated: `uv run python manage.py migrate`
 > 5. Dataset seeded: `uv run python manage.py loaddata eaws_CH resorts && uv run python manage.py seed_test_data --all --commit`
@@ -286,7 +286,7 @@ both hits appear and the badge makes the distinction obvious.
 | 1 | Navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the bottom of the bulletin | A "Get avalanche alerts" card is visible with an email input (placeholder "your@email.com") and a "Subscribe" button |
 | 2 | Type `tester@example.com` into the email field | Text appears in the input field |
 | 3 | Click "Subscribe" | The card is replaced in-place (HTMX, no page reload) with "Check your inbox" and "We've sent you a link to access your account. It expires in 24 hours." |
-| 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
+| 4 | Open Mailpit at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
 | 5 | Open the email and click the account link | An "Access your account" confirm page loads (no auto sign-in on the GET); it shows a "Sign in to my account" button (SNOW-439) |
 | 6 | Click "Sign in to my account" | Browser POSTs and redirects to http://localhost:8000/account/manage/?just_confirmed=1 |
 | 7 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
@@ -396,7 +396,7 @@ both hits appear and the badge makes the distinction obvious.
 | 2 | Open a new private/incognito window (to clear the session) | Fresh session |
 | 3 | Navigate to http://localhost:8000/account/sign-in/ | Page loads with a "Sign in" heading, the text "Enter your email address and we'll send you a sign-in link.", and (where WebAuthn is available) a "Sign in with a passkey" button |
 | 4 | Enter `tester@example.com` and click "Send sign-in link" | A "Check your inbox" page loads: "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." (the same response is shown whether or not the email is registered) |
-| 5 | Open Mailhog, find the new email, and click the account link | Browser redirects to http://localhost:8000/account/manage/ |
+| 5 | Open Mailpit, find the new email, and click the account link | Browser redirects to http://localhost:8000/account/manage/ |
 | 6 | Verify existing subscriptions | The previously added region card (e.g. CH-4115) is listed with a "Remove" button |
 
 ### Scenario 22: Sign out via the nav account menu
