@@ -65,6 +65,7 @@ from tests.factories import (
     MicroRegionFactory,
     PipelineRunFactory,
     RegionBulletinFactory,
+    RegionDayRatingFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -800,6 +801,83 @@ class TestApplyBulletinDayRatings:
         assert RegionDayRating.objects.filter(
             region=region_b, date=datetime.date(2026, 2, 10)
         ).exists()
+
+    def test_recompute_failure_invalidates_stale_rating_and_counts(self) -> None:
+        """SNOW-461: a failed recompute deletes the stale row and is counted.
+
+        A bulletin that flips a region from low to high, but whose recompute
+        raises, must not leave the old low rating live. The row is invalidated
+        (absence renders as ``no_rating`` downstream) and the failure counted
+        so the caller can mark the run failed.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        target = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating="low",
+            max_rating="low",
+        )
+        vf = datetime.datetime(2026, 1, 15, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(
+            region, vf, vt, traits=[_trait(4, "dry")], headline_key="high"
+        )
+
+        with patch(
+            "bulletins.services.day_rating.recompute_region_day",
+            side_effect=RuntimeError("boom"),
+        ):
+            failures = apply_bulletin_day_ratings(bulletin)
+
+        assert failures == 1
+        # Stale low rating invalidated — the public API can no longer serve it.
+        assert not RegionDayRating.objects.filter(region=region, date=target).exists()
+
+    def test_partial_failure_invalidates_only_the_failed_region(self) -> None:
+        """SNOW-461: one region's failure neither stops nor invalidates others."""
+        region_ok = MicroRegionFactory.create(region_id="CH-1111")
+        region_bad = MicroRegionFactory.create(region_id="CH-2222")
+        target = datetime.date(2026, 2, 10)
+        RegionDayRatingFactory.create(
+            region=region_ok, date=target, min_rating="low", max_rating="low"
+        )
+        RegionDayRatingFactory.create(
+            region=region_bad, date=target, min_rating="low", max_rating="low"
+        )
+        vf = datetime.datetime(2026, 2, 10, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 2, 10, 17, 0, tzinfo=UTC)
+        # Link both regions to one high-danger bulletin.
+        bulletin = _make_bulletin_for_region(
+            region_ok, vf, vt, traits=[_trait(4, "dry")], headline_key="high"
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region_bad, region_name_at_time=region_bad.name
+        )
+
+        real_recompute = recompute_region_day
+
+        def _fail_only_bad_region(
+            region: MicroRegion, day: datetime.date, *, commit: bool = True
+        ) -> None:
+            """Raise for region_bad, run the real recompute for the rest."""
+            if region.region_id == "CH-2222":
+                raise RuntimeError("boom")
+            real_recompute(region, day, commit=commit)
+
+        with patch(
+            "bulletins.services.day_rating.recompute_region_day",
+            side_effect=_fail_only_bad_region,
+        ):
+            failures = apply_bulletin_day_ratings(bulletin)
+
+        assert failures == 1
+        # Failed region invalidated; healthy region recomputed to the new rating.
+        assert not RegionDayRating.objects.filter(
+            region=region_bad, date=target
+        ).exists()
+        ok_row = RegionDayRating.objects.get(region=region_ok, date=target)
+        assert ok_row.max_rating == "high"
 
 
 # ---------------------------------------------------------------------------

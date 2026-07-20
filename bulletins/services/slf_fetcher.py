@@ -394,16 +394,26 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
         len(raw_regions),
     )
 
-    # Refresh day ratings — wrapped in a broad except so that a day-rating
-    # failure never aborts bulletin ingest.  Day ratings are a denormalisation;
-    # the authoritative data lives in Bulletin/RegionBulletin.
+    # Refresh day ratings. Day ratings are a denormalisation — the
+    # authoritative data lives in Bulletin/RegionBulletin — so a rating failure
+    # must not abort ingest. But a failed recompute would otherwise leave a
+    # stale, possibly wrong (e.g. low-when-now-high) rating live, so
+    # apply_bulletin_day_ratings invalidates the affected rows and reports how
+    # many regions failed; we add those to records_failed so the pipeline run
+    # is marked failed and cron/CI surface it (SNOW-461). The broad except is a
+    # backstop for an unexpected wholesale failure (e.g. the region query) —
+    # count it as one failure so the run still fails.
     try:
-        apply_bulletin_day_ratings(bulletin)
+        rating_failures = apply_bulletin_day_ratings(bulletin)
     except Exception:
         logger.exception(
             "apply_bulletin_day_ratings failed for bulletin %s — ingest continues",
             bulletin_id,
         )
+        rating_failures = 1
+    if rating_failures:
+        run.records_failed += rating_failures
+        run.save(update_fields=["records_failed"])
 
     # Compute the dissolved grouping boundary — wrapped identically so that
     # a geometry error never aborts ingest.  The grouping is a denormalisation;
