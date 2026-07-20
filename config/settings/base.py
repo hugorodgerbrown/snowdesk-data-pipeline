@@ -311,10 +311,12 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
         "/api/bulletin-groupings.geojson",
-        # SNOW-419: community-reports overlay — anonymised, publicly
-        # cacheable FieldObservation pins; must not trigger request.user
-        # access either, for the same reason as the other geojson endpoints.
-        "/api/community-reports.geojson",
+        # SNOW-419's community-reports overlay is deliberately NOT listed.
+        # SNOW-459 made it private/no-store (its waffle-flag gate is per-user,
+        # so the response can't be shared-cached), so there is no
+        # Cache-Control: public for Vary: Cookie to defeat — exempting it here
+        # would be dead config. It returns to this set only if the gate
+        # becomes global and public caching is restored (SNOW-469).
         # Static public-good documents (config/urls.py) — SNOW-338.
         "/robots.txt",
         "/llms.txt",

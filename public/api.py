@@ -110,10 +110,12 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # SessionMiddleware from appending Vary: Cookie and killing shared caching.
 _DYNAMIC_CACHE_MAX_AGE = 300
 
-# Cache lifetime for the community-reports overlay (SNOW-419). Shorter than
-# _DYNAMIC_CACHE_MAX_AGE because the 48h inclusion window moves minute-to-
-# minute — a new report should surface reasonably promptly, and the oldest
-# report should drop out of the window without a long stale tail.
+# Client-side freshness window for the community-reports overlay (SNOW-419).
+# The endpoint itself is no-store (per-user flag-gated, SNOW-459), so this is
+# not a shared-cache lifetime — it drives only the client's freshness dot.
+# Shorter than _DYNAMIC_CACHE_MAX_AGE because the 48h inclusion window moves
+# minute-to-minute — a new report should surface promptly and the oldest
+# report drop out without a long stale tail.
 _COMMUNITY_CACHE_MAX_AGE = 120
 
 # Rolling lookback window for the community-reports overlay. Reports older
@@ -843,8 +845,13 @@ def _truncate_to_quarter_hour(value: datetime) -> datetime:
     return value.replace(minute=floored_minute, second=0, microsecond=0)
 
 
-@cache_control(public=True, max_age=_COMMUNITY_CACHE_MAX_AGE)
-@vary_on_headers("Accept-Encoding")
+# SNOW-459: private/no-store, NOT public. The response is gated per-user by
+# the ``community_reports`` waffle flag (superuser/beta targeting), and a
+# per-user decision must never be shared by a CDN or proxy — a cached 200
+# primed by a superuser would leak to anonymous callers, and a cached 404
+# would hide the overlay from enabled users. Public caching can only return
+# here once the gate is global (a waffle Switch) — tracked in SNOW-469.
+@cache_control(private=True, no_store=True)
 def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of anonymised community field reports.
@@ -932,11 +939,12 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     # Observations are non-safety-critical (unlike ratings) — unsafe_after=None
     # so the freshness state saturates at "stale" and never escalates to
     # "unsafe". Empty result set (no recent reports) falls back to "now".
-    # max_age is pinned to the same value as the Cache-Control header
-    # (_COMMUNITY_CACHE_MAX_AGE) rather than the apply_freshness_headers
-    # default (24h) — the two windows are intentionally aligned so the
-    # client's freshness dot flips to "stale" exactly when a shared CDN
-    # cache would also consider the response stale.
+    # max_age is pinned to _COMMUNITY_CACHE_MAX_AGE rather than the
+    # apply_freshness_headers default (24h): it is the client-side freshness
+    # window for the overlay (the dot flips to "stale" after 120s), matching
+    # the cadence at which the 48h inclusion window turns over. The response
+    # itself is no-store (see the decorator) — this window drives only the
+    # client freshness dot, not any shared cache.
     apply_freshness_headers(
         response,
         generated_at=newest or timezone.now(),
