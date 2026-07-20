@@ -132,7 +132,10 @@ try {
 // (v12 was taken by SNOW-462/SNOW-472 on main.)
 // SNOW-445: v14 — map.js click-dispatch rewrite (marker exclusion zone,
 // always-on-top pins, cluster-tap zoom fix).
-const CACHE_VERSION = 'snowdesk-shell-v14';
+// SNOW-445: v15 — design-fixes batch: zoom pill removed (map.js/_map_embed.html),
+// nav Help→footer + full-width wordmark + sync-badge display fix (nav.html),
+// mutation_queue.js inline-flex toggle, off-season full-width bar (_map_embed.html).
+const CACHE_VERSION = 'snowdesk-shell-v15';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that

@@ -33,6 +33,44 @@ Optional context:
 {# subscription manage page can reuse the same symbols without        #}
 {# duplicating the SVG block.                                         #}
 {% include "includes/country_flags_sprite.html" %}
+{% if is_offseason %}
+    {# SNOW-445: off-season archive notice — a full-width, in-flow bar between #}
+    {# the header and the map. Replaces the old bottom-left #map-offseason-note #}
+    {# chip: same honesty guarantee (the danger shown is archive, not live)     #}
+    {# but far more legible. Server-rendered whenever today is past the season  #}
+    {# end and not dismissable, so a returning off-season visitor always sees   #}
+    {# it. Mirrors the offline banner's status-warning treatment               #}
+    {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
+    {# the map down rather than overlaying it.                                  #}
+    <div
+        id="map-offseason-bar"
+        role="note"
+        class="flex items-center gap-2 border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-text"
+    >
+        <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            class="shrink-0"
+        >
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span>
+            {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
+                New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
+            {% endblocktrans %}
+        </span>
+    </div>
+{% endif %}
 {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
 {# fetch to the last populated date when today is past the season end.       #}
 <div
@@ -90,20 +128,10 @@ Optional context:
                 role="combobox"
             >
         </div>
-        {# SNOW-442: always-visible zoom-level readout. A display, not a     #}
-        {# control — no <button> child. Seeded server-side with a safe       #}
-        {# placeholder (the constructor's bounds-derived initial zoom isn't  #}
-        {# known until the map loads); map.js overwrites the numeric value   #}
-        {# on load and on every zoom gesture.                                #}
-        <div class="map-utility-pill map-utility-pill--zoom" id="map-zoom-indicator">
-            <span
-                role="status"
-                aria-live="polite"
-                aria-label='{% trans "Current zoom level" %}'
-            >
-                {% trans "Zoom" %} <span id="map-zoom-indicator-value">–</span>
-            </span>
-        </div>
+        {# SNOW-445: the always-visible zoom-level readout (SNOW-442) was a    #}
+        {# developer/debug artefact and has been removed from the user-facing  #}
+        {# UI. The live zoom is exposed on the console instead — read          #}
+        {# window.snowdeskMap.zoom_level (see zoom exposure in map.js).        #}
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
     {# SNOW-475: fixed centre pin for touch-friendly placement. Shown by     #}
@@ -562,14 +590,9 @@ Optional context:
             </svg>
         </button>
     </div>
-    {% if is_offseason %}
-        {# SNOW-343: persistent off-season archive chip — survives #home-intro #}
-        {# dismissal so a returning off-season visitor is never shown archive  #}
-        {# danger as live. Bottom-left, beside the legend toggle.              #}
-        <div id="map-offseason-note" class="map-offseason-note" role="note">
-            {% trans "Showing 2025/26 season archive" %}
-        </div>
-    {% endif %}
+    {# SNOW-445: the persistent off-season archive notice (SNOW-343) moved out #}
+    {# of #map to a full-width bar above the map (see #map-offseason-bar at the #}
+    {# top of this partial) — it no longer renders as a bottom-left chip here.  #}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
@@ -745,7 +768,10 @@ Optional context:
                     {# Off-season honesty (launch requirement): the data shown is #}
                     {# archive, not live. Carried in the first-visit panel.       #}
                     <p class="home-intro-offseason-ref">
-                        {% trans "Showing the 2025/26 season archive — live bulletins resume in November." %}
+                        {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
+                            Showing the {{ season_label }} season archive — live bulletins resume in
+                            {{ start_month }}.
+                        {% endblocktrans %}
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">

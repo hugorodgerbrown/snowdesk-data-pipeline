@@ -451,6 +451,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
 
+  // SNOW-445: the on-map zoom pill was a debug artefact and has been removed.
+  // Expose the live camera on the console instead — window.snowdeskMap is the
+  // MapLibre instance, with a convenience read-only `zoom_level` getter so a
+  // developer can just read `snowdeskMap.zoom_level` (equivalent to
+  // `snowdeskMap.getZoom()`). Not used by any user-facing code.
+  Object.defineProperty(map, 'zoom_level', {
+    get() {
+      return map.getZoom();
+    },
+  });
+  window.snowdeskMap = map;
+
   // Swap in the resolved ESRI style once fetched (no-op for native
   // basemaps, which already loaded from their URL in the constructor).
   if (ESRI_BASEMAP_KEYS.has(initialBasemapKey)) {
@@ -3857,26 +3869,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
-})();
-
-// SNOW-442: zoom-level readout — keeps #map-zoom-indicator-value in sync
-// with the live camera zoom. The static "Zoom" label is server-rendered
-// (translatable); this only ever writes the rounded numeric value, mirroring
-// how updateMapAttribution above owns #map-attribution-text's textContent.
-// Bound to 'zoom' (not just 'zoomend') so the readout tracks a live pinch or
-// scroll-wheel gesture rather than only updating once the gesture settles.
-(function zoomIndicatorInit() {
-  const valueEl = document.getElementById('map-zoom-indicator-value');
-  if (!valueEl || !MAP) return;
-
-  const updateZoomIndicator = () => {
-    valueEl.textContent = String(Math.round(MAP.getZoom()));
-  };
-
-  updateZoomIndicator(); // Seed immediately with whatever camera state exists now.
-  MAP.on('zoom', updateZoomIndicator);
-  MAP.on('load', updateZoomIndicator);
-  MAP.on('style.load', updateZoomIndicator);
 })();
 
 // SNOW-314: Season ribbon — the season scrubber's track doubles as the danger
