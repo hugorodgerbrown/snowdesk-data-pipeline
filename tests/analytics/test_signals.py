@@ -258,6 +258,7 @@ class TestIdempotencyReplaySignal:
             r = HttpRequest()
             r.method = "POST"
             r.path = "/account/"
+            r._body = b""  # SNOW-463: middleware now reads request.body
             r.META["HTTP_IDEMPOTENCY_KEY"] = key
             return r
 
