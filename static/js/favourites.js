@@ -143,10 +143,12 @@
     header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
     const title = document.createElement('span');
     title.className = 'text-sm font-semibold text-text-1';
+    // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
     title.textContent = titleText;
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.setAttribute('data-action', 'close-favourite-sheet');
+    // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
     closeBtn.textContent = '×';
