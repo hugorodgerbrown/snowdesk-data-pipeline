@@ -2219,10 +2219,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
 
-    // SNOW-419: tapping an unclustered community-report pin opens a small
-    // popup with the type label, a coarse relative time, and the region
-    // name — built via DOM methods (not setHTML) since these values,
-    // though server-controlled, don't need string-interpolated HTML.
+    // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
+    // small popup with the observation type and a relative time — built via
+    // DOM methods (not setHTML) since these values, though server-controlled,
+    // don't need string-interpolated HTML. No region name: the pin's own
+    // position on the map already conveys where the report is, so a place
+    // label is redundant (and, since the FK region can be coarser or
+    // cross-border than the visible spot, occasionally misleading).
     // Emits a marker-tapped telemetry signal with only the observation
     // type — no location or identity data.
     map.on('click', 'community-reports-point', (e) => {
@@ -2242,18 +2245,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
       typeEl.textContent = props.type_label;
       container.appendChild(typeEl);
 
-      const metaParts = [formatRelativeTime(props.observed_at)];
-      if (props.region_name) metaParts.push(props.region_name);
-      const metaEl = document.createElement('div');
-      metaEl.className = 'community-report-popup__meta';
-      metaEl.textContent = metaParts.filter(Boolean).join(' · ');
-      container.appendChild(metaEl);
+      // Relative time is computed live from the absolute observed_at against
+      // Date.now() (formatRelativeTime), so it stays accurate even when the
+      // overlay is served from the offline cache — only the age-fade opacity
+      // is baked at fetch time, not this text.
+      const relative = formatRelativeTime(props.observed_at);
+      if (relative) {
+        const metaEl = document.createElement('div');
+        metaEl.className = 'community-report-popup__meta';
+        metaEl.textContent = relative;
+        container.appendChild(metaEl);
+      }
 
       new maplibregl.Popup({
         closeButton: true,
         closeOnClick: true,
         maxWidth: '240px',
         className: 'community-report-popup-wrapper',
+        // SNOW-472: pin the popup ABOVE the flag. The flag icon is anchored
+        // bottom-left at the coordinate, so it occupies the space up and to
+        // the right of the point; a default-anchored popup sits over it.
+        // Fixing anchor to 'bottom' and lifting the popup by roughly the
+        // flag's rendered height (icon-size 0.6 × 34px ≈ 20px) plus a small
+        // gap puts the popup's tip just above the flag, pointing down at it.
+        anchor: 'bottom',
+        offset: [8, -24],
       })
         .setLngLat(coordinates)
         .setDOMContent(container)

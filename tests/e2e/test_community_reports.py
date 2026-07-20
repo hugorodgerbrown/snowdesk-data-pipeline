@@ -100,6 +100,72 @@ def test_overlay_toggle_installs_clustered_source(
 
 @override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
+def test_point_tap_popup_shows_type_and_time_without_region(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """Tapping a lone report pin opens a popup with the type + time only.
+
+    SNOW-472: the region name was dropped from the popup — the pin's own
+    position on the map already conveys where the report is, and the FK
+    region can be coarser or cross-border than the visible spot. Assert the
+    popup shows the OBSERVATION_TYPE label and carries no place label: the
+    meta line is the relative time alone, with no ' · ' separator and not
+    the seeded region's name anywhere in the card.
+    """
+    with django_db_blocker.unblock():
+        obs = FieldObservationFactory.create(
+            latitude=46.10,
+            longitude=7.10,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        assert obs.region is not None
+        region_name = obs.region.name
+
+    _navigate_home(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    toggle = page.locator('[data-overlay-key="community_reports"]')
+    toggle.wait_for(state="visible")
+    with page.expect_response(lambda r: "/api/community-reports.geojson" in r.url):
+        toggle.click()
+    page.wait_for_function("() => !!MAP.getLayer('community-reports-point')")
+
+    # Centre on the lone pin at a high zoom, then wait for the point layer's
+    # own render pass.
+    page.evaluate("() => MAP.jumpTo({ center: [7.10, 46.10], zoom: 14 })")
+    page.wait_for_function(
+        "() => MAP.queryRenderedFeatures("
+        "{ layers: ['community-reports-point'] }).length === 1"
+    )
+    # Inflate the icon to a large, forgiving click target. Icon size is
+    # independent of the popup content under test here, so growing it only
+    # de-flakes the hit-test — a ~20px icon is an unreliable mouse target.
+    page.evaluate(
+        "() => MAP.setLayoutProperty('community-reports-point', 'icon-size', 3)"
+    )
+    page.wait_for_timeout(150)
+
+    # The flag icon is anchored bottom-left at the coordinate, so its body
+    # sits up and to the right of the projected point — aim into it, in
+    # viewport coords (the canvas may be offset from the page origin).
+    target = page.evaluate(
+        "() => { const r = MAP.getCanvas().getBoundingClientRect();"
+        " const p = MAP.project([7.10, 46.10]);"
+        " return { x: r.left + p.x + 30, y: r.top + p.y - 45 }; }"
+    )
+    page.mouse.click(target["x"], target["y"])
+
+    popup = page.locator(".community-report-popup")
+    popup.wait_for(state="visible")
+
+    assert page.locator(".community-report-popup__type").inner_text() == "Whumpfing"
+    meta = page.locator(".community-report-popup__meta").inner_text()
+    assert "·" not in meta
+    assert region_name not in popup.inner_text()
+
+
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db(transaction=True)
 def test_cluster_tap_does_not_also_select_the_region_underneath(
     live_server: LiveServer,
     page: Page,
