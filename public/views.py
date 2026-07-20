@@ -778,6 +778,16 @@ def home(request: HttpRequest) -> HttpResponse:
     # already narrowed to actual data in _base_map_context().
     season_end: datetime.date = base_ctx["season_end"]
     is_offseason = today > season_end
+    # SNOW-445: label + resume-month for the off-season archive bar and the
+    # intro-card reference. Derived from the *data window's* calendar season
+    # (November → May of the season containing season_end), NOT from `today`
+    # (which drifts into the next calendar season over the summer) nor from
+    # the data-narrowed season_start (the first populated date, not the
+    # Nov 1 boundary). Precomputed here rather than via a template filter chain.
+    archived_season_start, _archived_season_end = _season_date_range(season_end)
+    season_label = (
+        f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
+    )
 
     # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
     # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
@@ -833,6 +843,8 @@ def home(request: HttpRequest) -> HttpResponse:
             "default_major_name": default_major_name,
             "show_intro": True,
             "is_offseason": is_offseason,
+            "season_label": season_label,
+            "archived_season_start": archived_season_start,
             "sample_bulletin_url": sample_bulletin_url,
         },
     )

@@ -96,6 +96,10 @@ bar picks up theme changes for free.
   pages only — the map, homepage, season and history pages don't host a
   calendar.
 - `<nav>` spans the full page width so its `border-bottom` forms an
-  edge-to-edge rule; content sits inside a `max-w-[640px]` inner container
-  that matches the bulletin-family page width.
+  edge-to-edge rule. The inner row is also full-width, constrained only by
+  its `px-4` gutter, so the wordmark pins to the left viewport gutter and the
+  auth cluster to the right (SNOW-445). This deliberately no longer matches
+  the 640px bulletin column: capping the row at `max-w-narrow` left the
+  wordmark floating at the left edge of a centred column on wide screens,
+  which read as a drift bug.
 - No hamburger menu, no secondary links.

@@ -345,6 +345,7 @@
       if (!el) return;
       if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
         el.classList.add('hidden');
+        el.classList.remove('inline-flex');
         return;
       }
       var rows = (await window.pwaDb.getAll(STORE)) || [];
@@ -356,6 +357,7 @@
       });
       if (pending.length === 0) {
         el.classList.add('hidden');
+        el.classList.remove('inline-flex');
         return;
       }
       // i18n: English-only pre-launch (docs/i18n.md) — plain JS string,
@@ -363,7 +365,10 @@
       // string in the PWA layer today.
       el.textContent =
         pending.length === 1 ? '1 change queued' : pending.length + ' changes queued';
+      // SNOW-445: swap `hidden` for `inline-flex` so the two display utilities
+      // are never both present (which would otherwise leak an empty pill).
       el.classList.remove('hidden');
+      el.classList.add('inline-flex');
       if (anyFailed) {
         el.classList.remove('bg-tag', 'text-text-3', 'border-border');
         el.classList.add('bg-status-error-bg', 'text-status-error-text', 'border-status-error-text');

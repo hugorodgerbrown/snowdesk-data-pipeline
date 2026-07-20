@@ -138,9 +138,12 @@ try {
 // SNOW-479: v16 — favourite creation routed through the mutation queue
 // (favourites.js submit interceptor, optimistic pending pin in map.js,
 // drain re-dispatch + failed-permanent event in mutation_queue.js).
-// SNOW-477: v17 — report.js fix for the observation form (verified-only
+// SNOW-445: v17 — design-fixes batch: zoom pill removed (map.js/_map_embed.html),
+// nav Help→footer + full-width wordmark + sync-badge display fix (nav.html),
+// mutation_queue.js inline-flex toggle, off-season full-width bar (_map_embed.html).
+// SNOW-477: v18 — report.js fix for the observation form (verified-only
 // eligibility, unverified-user prompt, form-load error handling).
-const CACHE_VERSION = 'snowdesk-shell-v17';
+const CACHE_VERSION = 'snowdesk-shell-v18';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that

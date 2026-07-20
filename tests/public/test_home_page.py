@@ -141,7 +141,7 @@ class TestHomePageBasic:
 
 @pytest.mark.django_db
 class TestHomePageOffseason:
-    """Tests for the off-season note in the intro overlay and the persistent chip."""
+    """Tests for the off-season note in the intro overlay and the persistent bar."""
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -154,12 +154,47 @@ class TestHomePageOffseason:
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_persistent_chip_present_when_past_season_end(self) -> None:
-        """SNOW-343: persistent #map-offseason-note chip is present on / when off-season."""
+    def test_persistent_bar_present_when_past_season_end(self) -> None:
+        """SNOW-445: full-width #map-offseason-bar is present on / when off-season.
+
+        The bar replaces the old bottom-left #map-offseason-note chip and
+        carries the derived "2025/26"-style season label.
+        """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'id="map-offseason-note"' in content
+        assert 'id="map-offseason-bar"' in content
+        assert "2025/26 season archive" in content
+        assert "New season starts in November" in content
+        # The old chip is gone.
+        assert 'id="map-offseason-note"' not in content
+
+    @freeze_time("2026-07-20")  # summer — past the data window
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_offseason_bar_label_uses_calendar_season_not_data_start(self) -> None:
+        """SNOW-445: the bar names the November→May season, not the first data date.
+
+        With data that starts mid-season (February), the archive label must
+        still read "2025/26" and "starts in November" — derived from the
+        calendar season containing the data window, not the data-narrowed
+        season_start (which is the first populated date, e.g. February).
+        Regression guard: an earlier cut derived the label from season_start
+        and rendered "starts in April — 2026/26".
+        """
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        bulletin = BulletinFactory.create()
+        for day in (datetime.date(2026, 2, 10), datetime.date(2026, 2, 28)):
+            RegionDayRatingFactory.create(
+                region=region, date=day, source_bulletin=bulletin
+            )
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="map-offseason-bar"' in content
+        assert (
+            "New season starts in November — currently showing the 2025/26" in content
+        )
+        assert "2026/26" not in content
 
     @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -188,8 +223,8 @@ class TestHomePageOffseason:
 
     @freeze_time("2026-03-10")  # within active season
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_persistent_chip_absent_during_season(self) -> None:
-        """SNOW-343: persistent #map-offseason-note chip is absent on / when in-season."""
+    def test_persistent_bar_absent_during_season(self) -> None:
+        """SNOW-445: full-width #map-offseason-bar is absent on / when in-season."""
         region = MicroRegionFactory.create(region_id="CH-5500")
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
@@ -200,7 +235,7 @@ class TestHomePageOffseason:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'id="map-offseason-note"' not in content
+        assert 'id="map-offseason-bar"' not in content
 
 
 @pytest.mark.django_db

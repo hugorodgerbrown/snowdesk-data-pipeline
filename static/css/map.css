@@ -259,20 +259,6 @@
     width: min(calc(100vw - 76px), 280px);
 }
 
-/* SNOW-442: zoom-level readout — a plain-text pill (no button child), so
-   unlike the icon pills above it needs its own horizontal padding and a
-   fixed min-width. The min-width stops the pill visibly resizing as the
-   zoom digit count changes between single and double figures. */
-.map-utility-pill--zoom {
-    flex: 0 0 auto;
-    justify-content: center;
-    min-width: 64px;
-    padding: 0 14px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
 /* Transparent icon button inside the search pill — also the standalone
    click target when the pill is collapsed. */
 .map-utility-button {
@@ -531,8 +517,9 @@
    and the SLF data licence. Single (i) entry point so map chrome stays
    uncluttered. The card is absolutely positioned relative to the toggle
    and opens to the right so it never collides with the scrubber.
-   Stacking: scrubber=2, offseason chip=2, legend=3 (also season-ribbon
-   at top-left), utility cluster=4. */
+   Stacking: scrubber=2, legend=3 (also season-ribbon at top-left),
+   utility cluster=4. (The off-season notice is no longer a #map chip — it's
+   the full-width #map-offseason-bar above the map, SNOW-445.) */
 
 .map-legend {
     position: absolute;
@@ -1286,40 +1273,14 @@
     margin: 0 0 12px;
 }
 
-/* SNOW-343: persistent off-season archive chip — bottom-left of #map,
-   beside the 32px (i) legend toggle. Left offset clears the toggle (32px)
-   plus an 8px gap; bottom matches .map-legend so they share a baseline.
-   pointer-events: none so map clicks pass through. */
-.map-offseason-note {
-    position: absolute;
-    left: calc(env(safe-area-inset-left, 0px) + 52px);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
-    z-index: 2;
-    /* Match the 32px legend roundel's height so, sharing the same bottom
-       baseline, the chip is vertically centred on it rather than reading as
-       bottom-anchored to it. */
-    height: 32px;
-    padding: 0 10px;
-    display: inline-flex;
-    align-items: center;
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    box-shadow: var(--shadow-glass);
-    color: var(--color-text-3);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    white-space: nowrap;
-    max-width: calc(100% - 120px);
-    pointer-events: none;
-    user-select: none;
-}
+/* SNOW-445: the persistent off-season archive notice is now a full-width bar
+   above the map (#map-offseason-bar, styled with Tailwind status tokens in
+   _map_embed.html), so the old bottom-left .map-offseason-note chip and its
+   styles were removed. */
 
 /* Off-season reference line inside the intro card — rendered only when
-   is_offseason is True. The persistent chip (.map-offseason-note) is the
-   bottom-left counterpart that survives #home-intro dismissal. */
+   is_offseason is True. The full-width #map-offseason-bar above the map is
+   the persistent counterpart that survives #home-intro dismissal. */
 .home-intro-offseason-ref {
     font-size: 11px;
     line-height: 1.4;
