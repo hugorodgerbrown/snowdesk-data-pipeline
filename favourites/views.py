@@ -55,6 +55,7 @@ from django_ratelimit.decorators import ratelimit
 from bulletins.models import ForecastPointWeather, RegionDayRating
 from bulletins.services.weather_display import build_point_forecast_panel
 from bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
+from core.coordinates import validate_coordinates
 from core.decorators import require_htmx
 from core.freshness import (
     DEFAULT_UNSAFE_AFTER_SECONDS,
@@ -125,9 +126,14 @@ def _parse_latlon(
     if not lat_str or not lon_str:
         return None
     try:
-        return float(lat_str), float(lon_str)
+        lat, lon = float(lat_str), float(lon_str)
+        # Rejects NaN/±Inf and out-of-range values before the Open-Meteo
+        # elevation lookup and DB write (InvalidCoordinatesError is a
+        # ValueError, caught below). SNOW-464.
+        validate_coordinates(lat, lon)
     except ValueError, TypeError:
         return None
+    return lat, lon
 
 
 def _point_forecast_panel(

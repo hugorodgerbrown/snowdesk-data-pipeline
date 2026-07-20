@@ -438,6 +438,72 @@ class TestReportSubmitGpsGate:
 
 
 @pytest.mark.django_db
+class TestReportSubmitInvalidCoordinates:
+    """SNOW-464: non-finite / out-of-range coordinates are rejected with 400."""
+
+    @pytest.mark.parametrize(
+        ("lat", "lon"),
+        [
+            ("nan", "7.1"),
+            ("46.1", "inf"),
+            ("46.1", "-inf"),
+            ("95", "7.1"),  # latitude > 90
+            ("-95", "7.1"),  # latitude < -90
+            ("46.1", "200"),  # longitude > 180
+            ("46.1", "-200"),  # longitude < -180
+        ],
+    )
+    @override_flag("field_observations", active=True)
+    def test_invalid_coordinates_return_400_and_create_no_row(
+        self, client: Client, lat: str, lon: str
+    ) -> None:
+        """A non-finite or out-of-range lat/lon is rejected before any write."""
+        user = _verified_user()
+        client.force_login(user)
+        with patch("observations.views.region_for_point") as mock_region:
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 400
+        assert FieldObservation.objects.count() == 0
+        # The region lookup runs only after coordinates parse — never reached.
+        mock_region.assert_not_called()
+
+    @override_flag("field_observations", active=True)
+    def test_negative_accuracy_is_dropped_not_persisted(self, client: Client) -> None:
+        """A present-but-invalid accuracy is dropped to None, never stored.
+
+        Accuracy is optional, so — like an unparseable value — a negative or
+        non-finite accuracy is discarded rather than 400'd; the row is created
+        with ``accuracy_radius_km=None``, so no invalid value is persisted.
+        """
+        user = _verified_user()
+        client.force_login(user)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "accuracy_m": "-5",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=user)
+        assert obs.accuracy_radius_km is None
+
+
+@pytest.mark.django_db
 class TestReportSubmitLocationSourceGate:
     """Missing or invalid location_source returns 400."""
 

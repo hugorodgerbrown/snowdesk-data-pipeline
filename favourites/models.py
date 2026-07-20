@@ -115,6 +115,19 @@ class Favourite(BaseModel):
         """Model metadata."""
 
         ordering = ["-created_at"]
+        # WGS-84 range guards (SNOW-464). A range check also rejects NaN/±Inf,
+        # so a bad value can't land via a path that bypasses the view-layer
+        # validators (admin, shell).
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(latitude__gte=-90, latitude__lte=90),
+                name="favourite_latitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__gte=-180, longitude__lte=180),
+                name="favourite_longitude_within_wgs84",
+            ),
+        ]
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this favourite.

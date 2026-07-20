@@ -331,6 +331,34 @@ class FieldObservation(BaseModel):
         """Model metadata."""
 
         ordering = ["-observed_at"]
+        # WGS-84 range guards (SNOW-464). A range check also rejects NaN/±Inf
+        # (which compare false against the bounds), so a bad value can't land
+        # via a path that bypasses the view-layer validators (admin, shell).
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(latitude__gte=-90, latitude__lte=90),
+                name="fieldobservation_latitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__gte=-180, longitude__lte=180),
+                name="fieldobservation_longitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(gps_latitude__isnull=True)
+                | models.Q(gps_latitude__gte=-90, gps_latitude__lte=90),
+                name="fieldobservation_gps_latitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(gps_longitude__isnull=True)
+                | models.Q(gps_longitude__gte=-180, gps_longitude__lte=180),
+                name="fieldobservation_gps_longitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(accuracy_radius_km__isnull=True)
+                | models.Q(accuracy_radius_km__gte=0),
+                name="fieldobservation_accuracy_radius_km_non_negative",
+            ),
+        ]
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this observation.

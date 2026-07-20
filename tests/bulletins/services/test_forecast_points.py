@@ -18,6 +18,7 @@ seam so no HTTP mocking leaks into these DB-level resolution tests.
 
 from __future__ import annotations
 
+import math
 from contextlib import AbstractContextManager
 from unittest.mock import MagicMock, patch
 
@@ -25,6 +26,7 @@ import pytest
 
 from bulletins.models import ForecastPoint
 from bulletins.services.forecast_points import resolve_forecast_point
+from core.coordinates import InvalidCoordinatesError
 from tests.factories import ForecastPointFactory
 
 
@@ -138,3 +140,25 @@ class TestForecastPointGetOrCreateConvergence:
         assert created_second is False
         assert first.pk == second.pk
         assert ForecastPoint.objects.count() == 1
+
+
+class TestResolveForecastPointInvalidCoordinates:
+    """SNOW-464: invalid coordinates raise before the Open-Meteo elevation call."""
+
+    @pytest.mark.parametrize(
+        ("latitude", "longitude"),
+        [
+            (math.nan, 7.4),
+            (46.1, math.inf),
+            (95.0, 7.4),  # latitude > 90
+            (46.1, 200.0),  # longitude > 180
+        ],
+    )
+    def test_invalid_coords_raise_before_elevation_call(
+        self, latitude: float, longitude: float
+    ) -> None:
+        """resolve_forecast_point rejects bad coords without calling fetch_elevation."""
+        with _patch_elevation(1500.0) as mock_fetch:
+            with pytest.raises(InvalidCoordinatesError):
+                resolve_forecast_point(latitude, longitude)
+        mock_fetch.assert_not_called()

@@ -46,6 +46,7 @@ from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
 from accounts.models import Account
+from core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from core.decorators import require_htmx
 from observations.models import FieldObservation
 from regions.services.point_match import region_for_point
@@ -150,9 +151,13 @@ def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] 
     if not lat_str or not lon_str:
         return None
     try:
-        return float(lat_str), float(lon_str)
+        lat, lon = float(lat_str), float(lon_str)
+        # Rejects NaN/±Inf and out-of-range values (InvalidCoordinatesError is
+        # a ValueError, so the except below catches it). SNOW-464.
+        validate_coordinates(lat, lon)
     except ValueError, TypeError:
         return None
+    return lat, lon
 
 
 def _parse_observed_at(raw: str | None) -> datetime.datetime | None | object:
@@ -207,9 +212,12 @@ def _parse_accuracy_radius_km(accuracy_m_str: str | None) -> float | None:
     if not accuracy_m_str:
         return None
     try:
-        return float(accuracy_m_str) / 1000.0
+        accuracy_km = float(accuracy_m_str) / 1000.0
+        # Rejects NaN/±Inf and negative accuracy (SNOW-464).
+        validate_accuracy_radius_km(accuracy_km)
     except ValueError, TypeError:
         return None
+    return accuracy_km
 
 
 # ---------------------------------------------------------------------------
