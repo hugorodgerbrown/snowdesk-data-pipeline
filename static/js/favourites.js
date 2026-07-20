@@ -11,20 +11,22 @@
  *   data-favourite-rename-url-template="<url>"   — __UUID__-templated rename endpoint.
  *   data-favourite-delete-url-template="<url>"   — __UUID__-templated delete endpoint.
  *
- * Flow when eligible (authenticated), mirroring report.js's placeMarker
- * pattern (SNOW-333) rather than inventing new marker-drop mechanics:
- *   1. Tap #favourite-add-btn — arms one-shot placement mode and opens the
- *      sheet with a "tap the map" prompt.
- *   2. Next MAP click drops a draggable maplibregl.Marker at that point and
- *      swaps in the create form (cloned from #favourite-create-template,
- *      which carries a real {% csrf_token %} rendered server-side — there is
- *      no per-request form-load endpoint here, unlike report_form_url).
- *   3. Marker dragend updates the form's hidden lat/lon inputs.
- *   4. Save submits the form's own hx-post to favourite_create_url. On
+ * Flow when eligible (authenticated), using the shared place-picker
+ * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
+ * which on touch screens is occluded by the dragging finger:
+ *   1. Tap #favourite-add-btn — opens the sheet, shows the create form
+ *      immediately (cloned from #favourite-create-template, which carries a
+ *      real {% csrf_token %} rendered server-side — there is no per-request
+ *      form-load endpoint here, unlike report_form_url), seeded from the
+ *      map's current centre, and arms PlacePicker.activate() so the fixed
+ *      centre pin appears and the form's coords track every pan.
+ *   2. writeCreateCoords (PlacePicker's onChange) keeps the form's hidden
+ *      lat/lon inputs in sync with the map centre.
+ *   3. Save submits the form's own hx-post to favourite_create_url. On
  *      success (the swapped-in content carries [data-favourite-uuid]) we
  *      dispatch snowdesk:favourites-changed for map.js to refresh the
- *      overlay, emit telemetry, remove the marker, and close the sheet.
- *      On the favourites-cap response (_favourite_limit.html, no
+ *      overlay, emit telemetry, deactivate the place-picker, and close the
+ *      sheet. On the favourites-cap response (_favourite_limit.html, no
  *      [data-favourite-uuid]) the sheet is left open showing the message.
  *
  * Pin-detail flow (existing favourite, tapped on the map):
@@ -61,11 +63,8 @@
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
   // ---------------------------------------------------------------------------
-  // Module-level draggable-marker state and one-shot placement-mode handler.
+  // Module-level create-flow state.
   // ---------------------------------------------------------------------------
-
-  /** @type {maplibregl.Marker|null} */
-  let favouriteMarker = null;
 
   /** True from the moment #favourite-add-btn is tapped until create succeeds
    * or the sheet is cancelled — distinguishes the create afterSwap branch
@@ -73,33 +72,12 @@
    * @type {boolean} */
   let creatingFavourite = false;
 
-  /** One-shot MAP click handler registered while placement mode is armed.
-   * @type {((e: any) => void)|null} */
-  let armedMapClickHandler = null;
-
   /** Return the global MAP object if available, else null. Guards against
    * the case where map.js has not yet initialised.
    * @returns {maplibregl.Map|null}
    */
   function getMap() {
     return typeof MAP !== 'undefined' ? MAP : null; // eslint-disable-line no-undef
-  }
-
-  /** Remove the draggable pin from the map, if one exists. */
-  function removeMarker() {
-    if (favouriteMarker) {
-      favouriteMarker.remove();
-      favouriteMarker = null;
-    }
-  }
-
-  /** Disarm the one-shot placement-mode map-click listener, if registered. */
-  function disarmPlacement() {
-    const map = getMap();
-    if (map && armedMapClickHandler) {
-      map.off('click', armedMapClickHandler);
-      armedMapClickHandler = null;
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -148,8 +126,7 @@
   }
 
   function closeSheet() {
-    removeMarker();
-    disarmPlacement();
+    window.PlacePicker?.deactivate();
     creatingFavourite = false;
     sheet.setAttribute('hidden', '');
     sheet.innerHTML = '';
@@ -165,7 +142,7 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Create flow — arm placement, drop marker, show the create form.
+  // Create flow — show the create form and arm the place-picker (SNOW-475).
   // ---------------------------------------------------------------------------
 
   /** Write lat/lon into the create form's hidden inputs.
@@ -192,26 +169,6 @@
     if (typeof htmx !== 'undefined') htmx.process(sheet); // eslint-disable-line no-undef
     const nameInput = document.getElementById('favourite-name-input');
     if (nameInput) nameInput.focus();
-  }
-
-  /** Drop a draggable MapLibre marker at (lat, lon); dragend re-seeds the
-   * create form's hidden coords so the user can fine-tune the pin.
-   * @param {number} lat
-   * @param {number} lon
-   */
-  function placeMarker(lat, lon) {
-    const map = getMap();
-    if (!map) return;
-
-    removeMarker();
-    favouriteMarker = new maplibregl.Marker({ draggable: true }) // eslint-disable-line no-undef
-      .setLngLat([lon, lat])
-      .addTo(map);
-
-    favouriteMarker.on('dragend', function () {
-      const lngLat = favouriteMarker.getLngLat();
-      writeCreateCoords(lngLat.lat, lngLat.lng);
-    });
   }
 
   btn.addEventListener('click', function () {
@@ -249,18 +206,14 @@
     if (!map) return;
 
     openSheet();
-    sheet.innerHTML = '<p class="py-4 text-center text-sm text-text-2">Tap the map to place your pin…</p>';
     creatingFavourite = true;
 
-    disarmPlacement(); // guard against a stray previous arm.
-    armedMapClickHandler = function onMapClick(e) {
-      disarmPlacement(); // self-deregister: first click consumes the handler.
-      const lat = e.lngLat.lat;
-      const lon = e.lngLat.lng;
-      placeMarker(lat, lon);
-      showCreateForm(lat, lon);
-    };
-    map.on('click', armedMapClickHandler);
+    // SNOW-475: show the create form immediately, seeded from the map's
+    // current centre, then arm the shared place-picker so the fixed centre
+    // pin appears and writeCreateCoords tracks every pan.
+    const centre = map.getCenter();
+    showCreateForm(centre.lat, centre.lng);
+    window.PlacePicker?.activate({ onChange: writeCreateCoords });
   });
 
   // ---------------------------------------------------------------------------
@@ -349,8 +302,7 @@
     if (!favUuid) return;
 
     creatingFavourite = false;
-    disarmPlacement();
-    removeMarker();
+    window.PlacePicker?.deactivate();
 
     sheet.innerHTML = '';
 

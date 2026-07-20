@@ -106,6 +106,20 @@ Optional context:
         </div>
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
+    {# SNOW-475: fixed centre pin for touch-friendly placement. Shown by     #}
+    {# place_picker.js while placing a favourite/observation; the map pans   #}
+    {# underneath it and the coord is read from the map centre.              #}
+    <div id="map-place-pin" class="map-place-pin text-status-info-text" hidden aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+                d="M12 22s7-7.163 7-12A7 7 0 1 0 5 10c0 4.837 7 12 7 12Z"
+                fill="currentColor"
+                stroke="currentColor"
+                stroke-width="1"
+            />
+            <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
+        </svg>
+    </div>
     {# PROTOTYPE (homepage rework): bottom-right control stack — the layers  #}
     {# and locate pills move to the conventional map-control corner, stacked #}
     {# above the report roundel. map.js binds these by their own ids, so the #}

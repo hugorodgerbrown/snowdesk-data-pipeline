@@ -1,6 +1,8 @@
 """
 tests/e2e/test_community_reports.py — Playwright tests for the SNOW-419
-"Community reports" map overlay toggle.
+"Community reports" map overlay toggle, plus (SNOW-475) a regression test
+for the field-report submission form's MANUAL centre-pin path — both live
+here since they share the ``observations.FieldObservation`` model.
 
 Uses plain ``page`` + ``live_server`` fixtures (no signed-in session
 needed — unlike favourites, the overlay shows anonymised, publicly-shared
@@ -10,6 +12,14 @@ seeded ``superusers=True`` in production and the test client is
 anonymous; ``override_flag`` mutates the ``Flag.everyone`` DB column,
 visible to the live-server thread since pytest-django's ``live_server``
 runs in-process (mirrors ``test_favourites.py``).
+
+The SNOW-475 test below is signed-in (``field_observations`` requires
+authentication + a verified account — see ``observations.views._auth_gate``)
+and drives the MANUAL location-source path by dispatching
+``snowdesk:geolocate-error`` directly rather than waiting on a real
+(ungranted) geolocation permission — deterministic in headless Chromium,
+and mirrors the explicit-dispatch technique ``test_favourites.py`` uses for
+``snowdesk:favourite-selected``.
 """
 
 from __future__ import annotations
@@ -22,7 +32,8 @@ from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
-from tests.factories import FieldObservationFactory
+from tests.e2e.conftest import _session_login
+from tests.factories import AccountFactory, FieldObservationFactory, UserFactory
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
@@ -271,3 +282,62 @@ def test_overlay_toggle_persists_across_reload(
     toggle = page.locator('[data-overlay-key="community_reports"]')
     toggle.wait_for(state="visible")
     assert toggle.get_attribute("aria-checked") == "true"
+
+
+@override_flag("field_observations", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_report_manual_path_uses_centre_pin_without_a_map_click(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """SNOW-475: the MANUAL report path enables submission via the
+    place-picker's centre pin, with no map click required.
+
+    Routes to MANUAL by dispatching ``snowdesk:geolocate-error`` directly
+    (deterministic in headless Chromium — no real, ungranted geolocation
+    permission to race). Once the form settles, the centre pin must be
+    visible and the problem buttons enabled without any synthetic map
+    click; panning the map (``MAP.setCenter``) must then update the form's
+    hidden lat/lon to the new centre — proving the pin itself stays fixed
+    at the viewport centre while the map moves underneath it.
+    """
+    with django_db_blocker.unblock():
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=True)
+
+    _session_login(page.context, live_server.url, user)
+    _navigate_home(page, live_server.url)
+
+    page.click("#report-btn")
+    page.wait_for_selector("#report-sheet:not([hidden])")
+
+    # Force the MANUAL branch deterministically rather than waiting on a
+    # real (ungranted) geolocation permission to resolve or time out.
+    page.evaluate(
+        "() => document.dispatchEvent(new CustomEvent('snowdesk:geolocate-error'))"
+    )
+    page.wait_for_selector("#report-form")
+
+    # The centre pin appears, and the problem buttons unblock immediately —
+    # the place-picker's onChange fires once on activation with the current
+    # (always-valid) map centre, with no "tap the map" step in between.
+    page.wait_for_selector("#map-place-pin:not([hidden])")
+    page.wait_for_function(
+        "() => !document.querySelector("
+        "'#report-form button[name=observation_type]').disabled"
+    )
+
+    # Pan the map — MAP.setCenter fires 'moveend', the same event a real
+    # pan would. The pin's CSS keeps it fixed at 50%/50% of the viewport
+    # throughout; only the coordinate captured below moves.
+    page.evaluate("() => MAP.setCenter([7.6, 46.2])")
+    page.wait_for_function(
+        "() => { "
+        "const el = document.querySelector('#report-form input[name=lat]'); "
+        "return el && Math.abs(parseFloat(el.value) - 46.2) < 0.01; "
+        "}"
+    )
+    lat = page.eval_on_selector("#report-form input[name=lat]", "el => el.value")
+    lon = page.eval_on_selector("#report-form input[name=lon]", "el => el.value")
+    assert float(lat) == pytest.approx(46.2, abs=0.01)
+    assert float(lon) == pytest.approx(7.6, abs=0.01)
+    assert page.locator("#map-place-pin:not([hidden])").count() == 1
