@@ -2147,14 +2147,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // (the standard MapLibre clustered-source UX) rather than opening a
     // per-report popup. Guarded on the source existing since the overlay is
     // lazy-installed (see installCommunityReportsLayer / ensureOverlayLoaded).
+    //
+    // SNOW-445: MapLibre (this bundle is v4+) removed the old
+    // getClusterExpansionZoom(clusterId, callback) signature — it now takes
+    // just the clusterId and RETURNS A PROMISE. The previous callback form was
+    // silently ignored, so the easeTo never fired and cluster taps did nothing.
     const activateCommunityCluster = (feature) => {
       const source = map.getSource('community-reports');
       if (!source) return;
       const clusterId = feature.properties.cluster_id;
-      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err) return;
-        map.easeTo({ center: feature.geometry.coordinates, zoom });
-      });
+      source.getClusterExpansionZoom(clusterId)
+        .then((zoom) => {
+          map.easeTo({ center: feature.geometry.coordinates, zoom });
+        })
+        .catch(() => {});
     };
 
     // SNOW-414: tapping a favourite pin opens the rename/delete detail sheet
