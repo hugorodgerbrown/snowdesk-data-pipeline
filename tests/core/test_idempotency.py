@@ -1,5 +1,6 @@
 """
-Tests for ``core.idempotency.IdempotencyMiddleware`` (SNOW-371).
+Tests for ``core.idempotency.IdempotencyMiddleware`` (SNOW-371, fingerprint
+hardening SNOW-463).
 
 Covers the spec §5.5 / §12.3 contract:
 
@@ -12,6 +13,12 @@ Covers the spec §5.5 / §12.3 contract:
 * 5xx responses → not cached.
 * Malformed keys (too long, non-ASCII, non-printable) → not cached and a
   warning is logged.
+
+And the SNOW-463 fingerprint contract:
+
+* Same key, different path/body/principal → ``409``, view not re-run,
+  cached row untouched.
+* Same key, identical method/path/principal/body → cache hit as before.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.test import Client
 from django.utils import timezone
@@ -30,6 +38,7 @@ from core.idempotency import (
     IdempotencyMiddleware,
 )
 from core.models import IdempotencyRecord
+from tests.factories import UserFactory
 
 # ---------------------------------------------------------------------------
 # Middleware-level tests — drive the middleware directly with a stub view.
@@ -55,11 +64,27 @@ class _CountingView:
         )
 
 
-def _post(path: str = "/account/", key: str | None = None) -> HttpRequest:
-    """Build a bare-bones POST request with an optional Idempotency-Key."""
+def _post(
+    path: str = "/account/",
+    key: str | None = None,
+    body: bytes = b"",
+    user: User | None = None,
+) -> HttpRequest:
+    """Build a bare-bones POST request with an optional Idempotency-Key.
+
+    ``body`` seeds ``request._body`` so the middleware's ``request.body``
+    read (via ``_body_hash``) works without a real WSGI environ. ``user``
+    sets ``request.user`` so ``_principal`` can read it — bare
+    ``HttpRequest`` objects otherwise lack the attribute at all, matching
+    a request that reached the middleware before ``AuthenticationMiddleware``
+    ran (defensive branch), and a passed-in user matches the ordinary case.
+    """
     request = HttpRequest()
     request.method = "POST"
     request.path = path
+    request._body = body
+    if user is not None:
+        request.user = user
     if key is not None:
         request.META["HTTP_IDEMPOTENCY_KEY"] = key
     return request
@@ -232,6 +257,95 @@ def test_concurrent_race_swallows_integrity_error() -> None:
     assert view.calls == 1
     assert response.status_code == 200
     assert IdempotencyRecord.objects.filter(key="racy").count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint tests (SNOW-463) — key reuse across a different path, body, or
+# principal is rejected rather than served the wrong cached response.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_identical_fingerprint_replays_as_before() -> None:
+    """Same key, method, path, principal, and body → cache hit as before."""
+    view = _CountingView(status=201, body=b"created")
+    middleware = IdempotencyMiddleware(view)
+    user = UserFactory.create()
+
+    first = middleware(
+        _post(path="/account/", key="fp-match", body=b"payload", user=user)
+    )
+    second = middleware(
+        _post(path="/account/", key="fp-match", body=b"payload", user=user)
+    )
+
+    assert view.calls == 1
+    assert first.status_code == second.status_code == 201
+    assert first.content == second.content == b"created"
+    assert IdempotencyRecord.objects.filter(key="fp-match").count() == 1
+
+
+@pytest.mark.django_db
+def test_reused_key_different_path_returns_409() -> None:
+    """Same key, different path → 409, view not re-run, row untouched."""
+    view = _CountingView(status=201, body=b"created")
+    middleware = IdempotencyMiddleware(view)
+
+    middleware(_post(path="/account/", key="fp-path"))
+    response = middleware(_post(path="/favourites/", key="fp-path"))
+
+    assert view.calls == 1
+    assert response.status_code == 409
+    record = IdempotencyRecord.objects.get(key="fp-path")
+    assert record.path == "/account/"
+
+
+@pytest.mark.django_db
+def test_reused_key_different_body_returns_409() -> None:
+    """Same key, different body → 409, view not re-run, row untouched."""
+    view = _CountingView(status=201, body=b"created")
+    middleware = IdempotencyMiddleware(view)
+
+    middleware(_post(key="fp-body", body=b"first-payload"))
+    response = middleware(_post(key="fp-body", body=b"second-payload"))
+
+    assert view.calls == 1
+    assert response.status_code == 409
+    record = IdempotencyRecord.objects.get(key="fp-body")
+    assert record.response_body == b"created"
+
+
+@pytest.mark.django_db
+def test_reused_key_different_principal_returns_409() -> None:
+    """Same key, different authenticated user → 409, view not re-run."""
+    view = _CountingView(status=201, body=b"created")
+    middleware = IdempotencyMiddleware(view)
+    user_a = UserFactory.create()
+    user_b = UserFactory.create()
+
+    middleware(_post(key="fp-principal", body=b"payload", user=user_a))
+    response = middleware(_post(key="fp-principal", body=b"payload", user=user_b))
+
+    assert view.calls == 1
+    assert response.status_code == 409
+    record = IdempotencyRecord.objects.get(key="fp-principal")
+    assert record.principal == str(user_a.pk)
+
+
+@pytest.mark.django_db
+def test_fingerprint_mismatch_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """A fingerprint mismatch logs ``pwa.idempotency.fingerprint_mismatch``."""
+    view = _CountingView()
+    middleware = IdempotencyMiddleware(view)
+
+    middleware(_post(path="/account/", key="fp-log"))
+    with caplog.at_level(logging.WARNING, logger="core.idempotency"):
+        middleware(_post(path="/favourites/", key="fp-log"))
+
+    assert any(
+        "pwa.idempotency.fingerprint_mismatch" in record.message
+        for record in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------
