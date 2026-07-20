@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, favourites/community-reports overlays, /api/ endpoints (ratings, geojson, summary, groupings)
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-20
 ---
 
 # Map page and JSON API
@@ -87,6 +87,37 @@ reconstructed client-side from the `__UUID__`-templated
 vars — the same reverse-with-a-dummy-id-then-string-replace trick
 `public/views.py::home()` uses for `edit_save_url_template`
 (`api:edit_resort_save_coords`).
+
+**Marker exclusion zone (SNOW-445)**: favourite, community-observation,
+and report-cluster markers sit on top of the region choropleth. MapLibre
+has no `stopPropagation` between layer-scoped click handlers, so a tap on a
+marker used to fire *both* the marker's handler and the region-fill handler,
+selecting the region (and popping its tooltip) underneath the marker — a
+jarring double-action. All click routing is now consolidated into a single
+generic `map.on('click')` dispatcher in `static/js/map.js` (the per-layer
+`click` handlers were removed; only their `mouseenter`/`mouseleave`
+cursor affordances remain). Priority is **overlay controls → markers →
+resort pin → region fill → empty-area deselect**. A marker owns an
+"exclusion zone" — a padded pixel radius (`MARKER_EXCLUSION_RADIUS_PX`,
+default 22) around its glyph, resolved by `markerNearPoint()`; a tap inside
+it activates the nearest marker (`activateMarker()`) and never selects the
+region. **Resort pins are deliberately excluded** from this set — a resort
+pin is a proxy for its parent region, so tapping one still selects that
+region. Because the dispatcher is a plain (non-layer-scoped) listener, it is
+also the one handler a synthetic `MAP.fire('click', …)` reaches, which is
+how the e2e suite (`tests/e2e/test_map_marker_exclusion.py`) drives it
+deterministically.
+
+The same markers are also kept **always on top** of every other layer.
+MapLibre paints layers in insertion order and the overlays are
+lazy-installed at unpredictable times (a polygon overlay toggled on after
+the pins exist, or the whole style re-added after a basemap swap), so a pin
+can otherwise end up buried. `raiseMarkerLayers()` (in `static/js/map.js`)
+re-lifts the favourite and community-observation layers to the top and is
+called at the end of **every** layer-install path (`installRegionsLayers`,
+`installOverlayLayers`, `installResortsLayer`, `installFavouritesLayer`,
+`installCommunityReportsLayer`, `installBulletinGroupingsLayer`) — so any new
+install must keep that call, or a later overlay will paint over the pins.
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns

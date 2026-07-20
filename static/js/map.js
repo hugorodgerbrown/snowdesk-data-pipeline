@@ -39,6 +39,14 @@ let BOOT_DATE_KEY = null;
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// SNOW-445: radius (device-independent CSS px) of the "exclusion zone"
+// around favourite / community-observation / report-cluster markers. A tap
+// within this distance of a marker glyph is claimed by that marker and never
+// selects the region underneath — see markerNearPoint() in the main IIFE.
+// Sized a touch larger than the ★ glyph (text-size 18) so the target is
+// finger-friendly on touch without swallowing genuine region taps nearby.
+const MARKER_EXCLUSION_RADIUS_PX = 22;
+
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
 // uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
 // (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
@@ -507,6 +515,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
 
+  // SNOW-445: single-point location markers (favourite pins and community
+  // observation pins/clusters) must always render ABOVE every other layer —
+  // never behind a region fill, an overlay polygon (e.g. bulletin groupings),
+  // or a basemap label. MapLibre paints layers in insertion order, and these
+  // overlays are lazy-installed at unpredictable times (a polygon overlay
+  // toggled on after the pins already exist, or the whole style re-added after
+  // a basemap swap), so without this the pins can end up buried. Every install
+  // path calls raiseMarkerLayers() at its end to lift the pins back to the top.
+  // Listed lowest -> highest: moveLayer() with no beforeId moves a layer to the
+  // very top, so the last id in this list ends up topmost.
+  const ALWAYS_ON_TOP_MARKER_LAYERS = [
+    'community-reports-clusters',
+    'community-reports-cluster-count',
+    'community-reports-point',
+    'favourites-label',
+    'favourites-pin',
+  ];
+  const raiseMarkerLayers = () => {
+    for (const id of ALWAYS_ON_TOP_MARKER_LAYERS) {
+      if (map.getLayer(id)) map.moveLayer(id);
+    }
+  };
+
   // SNOW-58: source + layer install, factored out so it can be re-applied
   // after MAP.setStyle() wipes the style. Idempotent — refuses to re-add
   // if the source is still around (defensive, MapLibre normally drops
@@ -667,6 +698,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       },
     });
     BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
+    raiseMarkerLayers();
   };
 
   // SNOW-59: install the L1 / L2 outline overlays plus their labels.
@@ -771,6 +803,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       });
       BASE_LAYER_FILTERS['major-regions-label'] = map.getFilter('major-regions-label') ?? null;
     }
+    raiseMarkerLayers();
   };
 
   // SNOW-78: install the resorts pin layer. Filled circles above the L4
@@ -840,6 +873,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'text-halo-width': 1.4,
       },
     });
+    raiseMarkerLayers();
   };
 
   // SNOW-414: install the favourites (saved-pin) layer. A star glyph text
@@ -895,6 +929,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'text-halo-width': 1.4,
       },
     });
+    raiseMarkerLayers();
   };
 
   // SNOW-472: shared flag-icon id for every unclustered community-report
@@ -1107,6 +1142,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'icon-opacity': ['get', '_ageOpacity'],
       },
     });
+    raiseMarkerLayers();
   };
 
   // SNOW-323: Install the bulletin-groupings source and line layer.
@@ -1155,6 +1191,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     );
     BASE_LAYER_FILTERS['bulletin-groupings-line'] =
       map.getFilter('bulletin-groupings-line') ?? null;
+    raiseMarkerLayers();
   };
 
   // SNOW-323: L3 boundaries are fetched one day at a time, lazily, and only
@@ -2068,159 +2105,81 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     };
 
-    map.on('click', 'regions-fill', (e) => {
-      if (!e.features.length) return;
-      if (IS_PLAYING) return;
-      // SNOW-419: MapLibre fires every layer-scoped click handler whose
-      // layer intersects the point — there is no stopPropagation between
-      // them — so a tap on a community-reports cluster sitting over a
-      // region would otherwise ALSO select that region and pop its
-      // tooltip open underneath the cluster-zoom. The cluster has its own
-      // click handler (zoom-to-expand); let it own the tap instead.
-      const clustersLayer = map.getLayer('community-reports-clusters')
-        ? ['community-reports-clusters']
-        : [];
-      if (clustersLayer.length && map.queryRenderedFeatures(e.point, { layers: clustersLayer }).length) {
-        return;
-      }
-      selectFeature(e.features[0].id);
-    });
-
-    // Double-click always zooms to the region regardless of AUTOZOOM setting,
-    // and prevents the default map double-click zoom so we control the target.
-    map.on('dblclick', 'regions-fill', (e) => {
-      e.preventDefault();
-      if (!e.features.length) return;
-      const feature = FEATURE_BY_ID[e.features[0].id];
-      if (feature) zoomToFeatureBounds(feature);
-    });
-
-    // Deselect the focused region when the user taps empty map area (no region
-    // or resort feature under the cursor). This is the generic map click —
-    // MapLibre fires it AFTER layer-scoped clicks, so by the time it runs the
-    // layer handler has already called selectFeature. queryRenderedFeatures
-    // returns non-empty for those clicks, so this handler only fires for true
-    // empty-area taps.
+    // SNOW-445: favourite / community-observation / report-cluster markers sit
+    // ON TOP of the region choropleth. MapLibre has no stopPropagation between
+    // layer-scoped click handlers, so without a carve-out a tap on a marker
+    // would BOTH activate the marker AND select the region under it — a jarring
+    // double-action. These markers therefore own an "exclusion zone": a padded
+    // pixel radius (MARKER_EXCLUSION_RADIUS_PX) around each glyph within which
+    // the marker claims the tap and the region is never selected. Resort pins
+    // are deliberately NOT in this set — a resort pin is a proxy for its parent
+    // region, so tapping one is meant to select that region.
     //
-    // SNOW-235: the resorts-pin layer is now lazy-installed, so it may not
-    // exist at query time. queryRenderedFeatures throws on any unknown layer
-    // id, so filter the list to layers currently present on the map.
-    map.on('click', (e) => {
-      // SNOW-314: clicks that originate on an overlaid UI control (the
-      // scrubber/timeline, legend, search/basemap cluster, intro card) are not
-      // map-area taps — they must never deselect the focused region. The
-      // timeline lives over the map, so without this guard a scrub-tap would
-      // read as an empty-map click and drop the selection.
-      const tgt = e.originalEvent && e.originalEvent.target;
-      if (
-        tgt && tgt.closest &&
-        // SNOW-457: #map-help-overlay added — the coachmark tooltip's
-        // Back/Next/Skip buttons sit over the map, same reasoning as the
-        // other overlays above.
-        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro, #map-help-overlay')
-      ) {
-        return;
-      }
-      // SNOW-419: community-reports-clusters is safe to include here — the
-      // regions-fill handler above already defers to it when both are hit,
-      // so listing it just stops a cluster tap from also reading as an
-      // "empty map area" click (which would otherwise deselect the region
-      // and close the popup out from under the cluster-zoom).
-      const layers = [
-        'regions-fill', 'resorts-pin', 'favourites-pin',
-        'community-reports-clusters', 'community-reports-point',
-      ].filter((id) => map.getLayer(id));
-      if (!layers.length) return;
-      const features = map.queryRenderedFeatures(e.point, { layers });
-      if (features.length === 0) {
-        // Genuine tap on empty map area (outside any region) — the only gesture
-        // that both closes the popup AND deselects the region (greys the ribbon,
-        // drops the readout to date-only, removes the highlight).
-        // SNOW-318: close the popup before clearTooltip/clearSelectionDom
-        // deselects the region. Sequencing matters: clearTooltip resets
-        // activePopup/activePopupRegion, so closePopupOnly must run first to
-        // fire the 'close' teardown while those references are still live.
-        closePopupOnly();
-        clearTooltip();
-        document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-          detail: { region_id: null, region_name: null },
-        }));
-      }
-    });
+    // The layer order below is the priority order: it breaks ties when two
+    // markers fall inside the same tap radius (cluster > favourite > report).
+    const MARKER_EXCLUSION_LAYERS = [
+      'community-reports-clusters',
+      'favourites-pin',
+      'community-reports-point',
+    ];
 
-    map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
+    // Return the single highest-priority marker whose glyph lies within
+    // MARKER_EXCLUSION_RADIUS_PX of the tap point, or null. Nearest glyph wins;
+    // MARKER_EXCLUSION_LAYERS order breaks sub-pixel ties. Filters to layers
+    // actually present because these overlays are lazy-installed and
+    // queryRenderedFeatures throws on an unknown layer id.
+    const markerNearPoint = (point) => {
+      const layers = MARKER_EXCLUSION_LAYERS.filter((id) => map.getLayer(id));
+      if (!layers.length) return null;
+      const r = MARKER_EXCLUSION_RADIUS_PX;
+      const box = [
+        [point.x - r, point.y - r],
+        [point.x + r, point.y + r],
+      ];
+      let best = null;
+      let bestDist = Infinity;
+      let bestPriority = Infinity;
+      for (const f of map.queryRenderedFeatures(box, { layers })) {
+        const coords = f.geometry && f.geometry.coordinates;
+        if (!coords) continue;
+        const p = map.project(coords);
+        const dist = Math.hypot(p.x - point.x, p.y - point.y);
+        const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
+        if (
+          dist < bestDist - 0.5 ||
+          (Math.abs(dist - bestDist) <= 0.5 && priority < bestPriority)
+        ) {
+          best = f;
+          bestDist = dist;
+          bestPriority = priority;
+        }
+      }
+      return best;
+    };
 
-    // SNOW-78: tapping a resort pin focuses the resort's parent region,
-    // which updates the readout and triggers the ribbon repaint.
-    map.on('click', 'resorts-pin', (e) => {
-      if (!e.features.length) return;
-      const regionID = e.features[0].properties.region_id;
-      if (!regionID) return;
-      const feature = FEATURE_BY_REGION_ID[regionID];
-      if (feature) selectFeature(feature.id);
-    });
-    map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
+    // SNOW-419: tapping a cluster zooms in just far enough to break it apart
+    // (the standard MapLibre clustered-source UX) rather than opening a
+    // per-report popup. Guarded on the source existing since the overlay is
+    // lazy-installed (see installCommunityReportsLayer / ensureOverlayLoaded).
+    const activateCommunityCluster = (feature) => {
+      const source = map.getSource('community-reports');
+      if (!source) return;
+      const clusterId = feature.properties.cluster_id;
+      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+        map.easeTo({ center: feature.geometry.coordinates, zoom });
+      });
+    };
 
     // SNOW-414: tapping a favourite pin opens the rename/delete detail sheet
-    // (favourites.js listens for this event) — mirrors the resort-pin
-    // handler above rather than focusing a region, since a favourite isn't
-    // necessarily inside a known EAWS region.
-    map.on('click', 'favourites-pin', (e) => {
-      if (!e.features.length) return;
-      const props = e.features[0].properties;
+    // (favourites.js listens for this event) rather than focusing a region,
+    // since a favourite isn't necessarily inside a known EAWS region.
+    const activateFavourite = (feature) => {
+      const props = feature.properties;
       document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
         detail: { uuid: props.uuid, name: props.name },
       }));
-    });
-    map.on('mouseenter', 'favourites-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'favourites-pin', () => { map.getCanvas().style.cursor = ''; });
-
-    // SNOW-414: favourites.js dispatches this after a successful
-    // create/rename/delete so the map's own pin layer reflects the change
-    // without a full page reload. Installs the layer first if this is the
-    // very first favourite the user has ever saved (overlayLoaded.favourites
-    // is only true once ensureOverlayLoaded('favourites') has run, which
-    // requires at least one prior fetch — install here covers the case
-    // where an ineligible-at-boot state doesn't apply, since the toggle
-    // itself is eligible-gated).
-    document.addEventListener('snowdesk:favourites-changed', () => {
-      if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
-      fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
-        const source = map.getSource('favourites');
-        if (source) {
-          source.setData(fc);
-        } else {
-          installFavouritesLayer(fc);
-          overlayLoaded.favourites = true;
-        }
-      }).catch(() => {});
-    });
-
-    // SNOW-419: tapping a cluster zooms in just far enough to break it
-    // apart (the standard MapLibre clustered-source UX) rather than
-    // opening the per-report popup a lone point would show. Guarded on
-    // the source existing since this listener is registered unconditionally
-    // at load time but the source is only added once the overlay is first
-    // enabled (see installCommunityReportsLayer / ensureOverlayLoaded).
-    // The regions-fill click handler above defers to this layer when a
-    // cluster is under the tap, so the two don't fight over the same click.
-    map.on('click', 'community-reports-clusters', (e) => {
-      if (!e.features.length) return;
-      const source = map.getSource('community-reports');
-      if (!source) return;
-      const clusterId = e.features[0].properties.cluster_id;
-      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err) return;
-        map.easeTo({
-          center: e.features[0].geometry.coordinates,
-          zoom,
-        });
-      });
-    });
-    map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
+    };
 
     // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
     // small popup with the observation type and a relative time — built via
@@ -2231,10 +2190,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // cross-border than the visible spot, occasionally misleading).
     // Emits a marker-tapped telemetry signal with only the observation
     // type — no location or identity data.
-    map.on('click', 'community-reports-point', (e) => {
-      if (!e.features.length) return;
-      const props = e.features[0].properties;
-      const coordinates = e.features[0].geometry.coordinates.slice();
+    const activateCommunityReport = (feature) => {
+      const props = feature.properties;
+      const coordinates = feature.geometry.coordinates.slice();
 
       window.pwaTelemetry?.emit('map.community_reports.marker_tapped', {
         observation_type: props.type,
@@ -2277,7 +2235,152 @@ const repaintRegionsForDate = (dateKey, cache) => {
         .setLngLat(coordinates)
         .setDOMContent(container)
         .addTo(map);
+    };
+
+    // Dispatch a marker the exclusion zone claimed to its activation, by layer.
+    const activateMarker = (feature) => {
+      switch (feature.layer.id) {
+        case 'community-reports-clusters':
+          activateCommunityCluster(feature);
+          break;
+        case 'favourites-pin':
+          activateFavourite(feature);
+          break;
+        case 'community-reports-point':
+          activateCommunityReport(feature);
+          break;
+      }
+    };
+
+    // Double-click always zooms to the region regardless of AUTOZOOM setting,
+    // and prevents the default map double-click zoom so we control the target.
+    map.on('dblclick', 'regions-fill', (e) => {
+      e.preventDefault();
+      if (!e.features.length) return;
+      const feature = FEATURE_BY_ID[e.features[0].id];
+      if (feature) zoomToFeatureBounds(feature);
     });
+
+    // SNOW-445: single map click dispatcher. MapLibre fires this generic
+    // (non-layer-scoped) click after any layer-scoped handlers, and — unlike
+    // layer-scoped handlers — it also fires for synthetic MAP.fire('click')
+    // calls, so it is the one reliable seam for both real taps and the e2e
+    // harness. Consolidating region/resort/marker/empty-area intent here (the
+    // per-layer click handlers were removed) means one place decides
+    // marker-vs-region, with no cross-handler ordering races.
+    //
+    // Priority: overlay controls > markers (exclusion zone) > resort pin >
+    // region fill > empty-area deselect.
+    map.on('click', (e) => {
+      // SNOW-314: clicks that originate on an overlaid UI control (the
+      // scrubber/timeline, legend, search/basemap cluster, intro card, help
+      // coachmark) are not map-area taps — they must never select or deselect
+      // a region. Without this guard a scrub-tap would read as an empty-map
+      // click and drop the selection.
+      const tgt = e.originalEvent && e.originalEvent.target;
+      if (
+        tgt && tgt.closest &&
+        // SNOW-457: #map-help-overlay — the coachmark tooltip's Back/Next/Skip
+        // buttons sit over the map, same reasoning as the other overlays.
+        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro, #map-help-overlay')
+      ) {
+        return;
+      }
+
+      // SNOW-445: a marker inside its exclusion zone owns the tap outright —
+      // activate it and never fall through to region select/deselect. This is
+      // what stops a favourite/observation tap from also selecting (and popping
+      // the tooltip of) the region underneath it. Markers stay tappable during
+      // timelapse playback, matching the pre-consolidation behaviour.
+      const marker = markerNearPoint(e.point);
+      if (marker) {
+        activateMarker(marker);
+        return;
+      }
+
+      // No marker claimed the tap. Resolve region intent from the fill layer
+      // and the resort pins. SNOW-235: both are lazy-installed, so filter to
+      // present layers — queryRenderedFeatures throws on an unknown layer id.
+      const layers = ['regions-fill', 'resorts-pin'].filter((id) => map.getLayer(id));
+      const features = layers.length
+        ? map.queryRenderedFeatures(e.point, { layers })
+        : [];
+
+      if (features.length === 0) {
+        // Genuine tap on empty map area (outside any region) — the only gesture
+        // that both closes the popup AND deselects the region (greys the ribbon,
+        // drops the readout to date-only, removes the highlight). Runs even
+        // during playback (unchanged from before).
+        // SNOW-318: close the popup before clearTooltip deselects the region.
+        // Sequencing matters: clearTooltip resets activePopup/activePopupRegion,
+        // so closePopupOnly must run first to fire the 'close' teardown while
+        // those references are still live.
+        closePopupOnly();
+        clearTooltip();
+        document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+          detail: { region_id: null, region_name: null },
+        }));
+        return;
+      }
+
+      // A region or resort was tapped. Timelapse playback suppresses selection
+      // changes (mirrors the old regions-fill IS_PLAYING guard).
+      if (IS_PLAYING) return;
+
+      // SNOW-78: a resort pin is a proxy for its parent region — prefer its
+      // region_id so a resort near a border selects the region it belongs to,
+      // not merely the polygon rendered under the tap. Falls through to the
+      // fill feature when no resort pin is under the point.
+      const resort = features.find((f) => f.layer.id === 'resorts-pin');
+      if (resort) {
+        const regionID = resort.properties.region_id;
+        const feature = regionID ? FEATURE_BY_REGION_ID[regionID] : null;
+        if (feature) selectFeature(feature.id);
+        return;
+      }
+
+      const region = features.find((f) => f.layer.id === 'regions-fill');
+      if (region) selectFeature(region.id);
+    });
+
+    map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
+
+    map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
+
+    map.on('mouseenter', 'favourites-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'favourites-pin', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-414: favourites.js dispatches this after a successful
+    // create/rename/delete so the map's own pin layer reflects the change
+    // without a full page reload. Installs the layer first if this is the
+    // very first favourite the user has ever saved (overlayLoaded.favourites
+    // is only true once ensureOverlayLoaded('favourites') has run, which
+    // requires at least one prior fetch — install here covers the case
+    // where an ineligible-at-boot state doesn't apply, since the toggle
+    // itself is eligible-gated).
+    document.addEventListener('snowdesk:favourites-changed', () => {
+      if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
+      fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
+        const source = map.getSource('favourites');
+        if (source) {
+          source.setData(fc);
+        } else {
+          installFavouritesLayer(fc);
+          overlayLoaded.favourites = true;
+        }
+      }).catch(() => {});
+    });
+
+    // SNOW-445: the community-reports cluster and point taps are now dispatched
+    // through the single generic click handler above (activateCommunityCluster /
+    // activateCommunityReport), so both markers get the same exclusion-zone
+    // treatment as favourites. Only the hover-cursor affordances stay bound per
+    // layer here.
+    map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
+
     map.on('mouseenter', 'community-reports-point', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'community-reports-point', () => { map.getCanvas().style.cursor = ''; });
 
