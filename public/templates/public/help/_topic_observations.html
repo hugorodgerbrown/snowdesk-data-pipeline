@@ -1,0 +1,24 @@
+{% comment %}
+public/templates/public/help/_topic_observations.html — "Field observations" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html. The whole
+panel is gated on report_visible in help.html — this copy is only ever
+rendered for users who can see the feature.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Field observations are quick, one-tap reports of what you've actually seen out on the snow &mdash; recent
+            avalanche activity, snowpack signs, or general conditions &mdash; for the region you're viewing.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Sign in, then use the Report button on the map or a bulletin page to submit one. Reports feed into the
+            community-reports overlay so other users can see recent, real-world observations alongside the official
+            bulletin.
+        {% endblocktrans %}
+    </p>
+</div>

@@ -1,0 +1,24 @@
+{% comment %}
+public/templates/public/help/_topic_favourites.html — "Favourites" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html. The whole
+panel is gated on favourites_visible in help.html — this copy is only
+ever rendered for users who can see the feature, so it carries no
+"if enabled" hedging.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Favourites let you pin specific spots &mdash; a resort, a trailhead, a favourite line &mdash; directly on
+            the map. Sign in, then use "Add a favourite pin" to drop a pin at any point.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Each favourite carries its own multi-day point forecast &mdash; temperature, snowfall, and conditions for
+            that exact location &mdash; alongside the region's avalanche bulletin, so you can see both together.
+        {% endblocktrans %}
+    </p>
+</div>
