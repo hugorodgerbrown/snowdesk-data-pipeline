@@ -17,10 +17,12 @@ All Open-Meteo network calls are avoided by patching
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.db import connection
 from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.models import ForecastPoint
@@ -183,6 +185,70 @@ class TestCreateFavouriteCap:
             mock_for_user.return_value.count.side_effect = [0, 1]
             with pytest.raises(FavouriteLimitReached):
                 create_favourite(user, 46.1, 7.4)
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.skipif(
+        connection.vendor != "postgresql",
+        reason=(
+            "select_for_update row-locking is a no-op on SQLite; this race is "
+            "only reproducible on PostgreSQL — enabled once SNOW-470 adds a "
+            "Postgres test database."
+        ),
+    )
+    def test_concurrent_creates_cannot_exceed_the_cap(
+        self, settings: SettingsWrapper
+    ) -> None:
+        """Two concurrent creates at cap-1 → exactly one success, one rejected.
+
+        Without the user-row lock, both transactions could count below the cap
+        under READ COMMITTED and both insert. select_for_update() serialises
+        them, so the second sees the first's insert and raises.
+        """
+        settings.FAVOURITES_MAX_PER_USER = 2
+        user = UserFactory.create()
+        # Seed one existing favourite — one slot left under the cap of 2.
+        existing_point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        with (
+            patch(
+                "favourites.services.resolve_forecast_point",
+                return_value=existing_point,
+            ),
+            patch("favourites.services.region_for_point", return_value=None),
+        ):
+            create_favourite(user, 46.1, 7.4)
+
+        point = ForecastPointFactory.create(latitude=48.0, longitude=9.0)
+        barrier = threading.Barrier(2)
+        outcomes: list[str] = []
+        outcomes_lock = threading.Lock()
+
+        def worker(offset: float) -> None:
+            """Attempt one concurrent create, recording the outcome."""
+            try:
+                barrier.wait(timeout=5)
+                create_favourite(user, 48.0 + offset, 9.0 + offset)
+                with outcomes_lock:
+                    outcomes.append("created")
+            except FavouriteLimitReached:
+                with outcomes_lock:
+                    outcomes.append("rejected")
+            finally:
+                connection.close()
+
+        threads = [
+            threading.Thread(target=worker, args=(offset,)) for offset in (0.1, 0.2)
+        ]
+        with (
+            patch("favourites.services.resolve_forecast_point", return_value=point),
+            patch("favourites.services.region_for_point", return_value=None),
+        ):
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+
+        assert sorted(outcomes) == ["created", "rejected"]
+        assert Favourite.objects.for_user(user).count() == 2
 
 
 @pytest.mark.django_db

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from bulletins.services.forecast_points import resolve_forecast_point
@@ -46,7 +47,8 @@ def create_favourite(
     kept outside any transaction) and a best-effort ``MicroRegion`` before
     writing the row. The per-user cap is checked once up front — to avoid
     an unnecessary Open-Meteo call when already over the limit — and again
-    inside the transaction to narrow the race window.
+    inside the transaction after locking the user row, which serialises
+    concurrent creators so the cap can't be exceeded under a race (SNOW-465).
 
     Args:
         user: The authenticated user creating the favourite.
@@ -78,8 +80,13 @@ def create_favourite(
     region = region_for_point(latitude, longitude)
 
     with transaction.atomic():
-        # Re-check the cap inside the transaction to narrow the race window
-        # between the first check and this write.
+        # Lock the user row before the cap re-check so concurrent creators
+        # serialise here. A bare count() takes no lock, so under PostgreSQL
+        # READ COMMITTED two requests could both read below the cap and both
+        # insert, exceeding it. select_for_update() makes the second
+        # transaction block until the first commits, so its count reflects the
+        # first insert. On SQLite (tests) FOR UPDATE is a silent no-op.
+        get_user_model().objects.select_for_update().get(pk=user.pk)
         if Favourite.objects.for_user(user).count() >= settings.FAVOURITES_MAX_PER_USER:
             raise FavouriteLimitReached(
                 f"User {user.pk} has reached the "
