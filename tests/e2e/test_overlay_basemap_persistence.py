@@ -110,7 +110,9 @@ def test_runtime_enabled_tier_survives_basemap_swap(
 
     _reload_style_and_wait_for_regions(page)
 
-    page.wait_for_function("() => !!MAP.getLayer('resorts-pin')")
+    # The install fns run synchronously within the styledata handler, so once
+    # the regions source is back the resorts layer exists too; assert its
+    # re-seeded visibility directly (the bug left it 'none').
     assert (
         page.evaluate("() => MAP.getLayoutProperty('resorts-pin', 'visibility')")
         == "visible"

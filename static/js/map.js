@@ -350,6 +350,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l1: false, l2: false, l3: false, l4: true, resorts: false,
     favourites: true, community_reports: false,
   };
+  // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
+  // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
+  // an overlay key.
   for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
@@ -2571,6 +2574,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // layer visibility from it after a basemap swap would revert every tier to
       // its boot value. Re-sync from the localStorage shadow (the source of truth
       // the picker keeps current) before any install fn reads overlayState.
+      // Mirrors the boot-seed near line 350 — keep the two in sync when adding
+      // an overlay key.
       for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
