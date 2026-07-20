@@ -408,18 +408,31 @@
   // Guard against re-entrant taps while a fix is pending.
   let locating = false;
 
+  // SNOW-474: persistent × header for states built as innerHTML strings
+  // (the anonymous sign-in CTA below), mirroring templates/includes/
+  // _sheet_header.html and favourites.js's buildSheetHeader() exactly.
+  // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
+  const SHEET_HEADER_HTML =
+    '<div class="flex items-center justify-between px-2 pt-1 pb-3">' +
+    '<span class="text-sm font-semibold text-text-1">Report</span>' +
+    '<button type="button" data-action="close-report-sheet" aria-label="Close" ' +
+    'class="text-text-2 hover:text-text-1 text-lg leading-none px-1">×</button>' +
+    '</div>';
+
   btn.addEventListener('click', function () {
     // Anonymous users: open the sheet with a sign-in CTA; no geolocation.
     if (!IS_ELIGIBLE) {
       openSheet();
       if (SIGNIN_URL) {
         sheet.innerHTML =
+          SHEET_HEADER_HTML +
           '<div class="px-2 py-4">' +
           '<p class="text-sm text-text-2 mb-3">Sign in to submit a field observation.</p>' +
           '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">Sign in</a>' +
           '</div>';
       } else {
         sheet.innerHTML =
+          SHEET_HEADER_HTML +
           '<p class="px-2 py-4 text-sm text-text-2">Sign in to submit a field observation.</p>';
       }
       return;

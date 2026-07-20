@@ -72,6 +72,25 @@ def test_report_form_close_button_hides_sheet(
 
 
 @override_flag("field_observations", active=True)
+def test_anonymous_signin_cta_has_close_button(
+    live_server: LiveServer, page: Page
+) -> None:
+    """The anonymous sign-in CTA state also carries the persistent × (SNOW-474)."""
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    page.click("#report-btn")
+    page.wait_for_selector("#report-sheet:not([hidden])")
+
+    close_btn = page.locator(
+        '#report-sheet [data-action="close-report-sheet"]', has_text="×"
+    )
+    assert close_btn.count() == 1
+    close_btn.click()
+
+    page.wait_for_selector("#report-sheet[hidden]", state="attached")
+
+
+@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_escape_key_closes_report_sheet(
     live_server: LiveServer, page: Page, django_db_blocker: Any
