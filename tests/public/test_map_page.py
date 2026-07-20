@@ -23,6 +23,7 @@ from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from tests.factories import (
+    AccountFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     SubscriberFactory,
@@ -464,6 +465,9 @@ def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
     assert "report-btn" in content
     # report_eligible must be false so JS branches to the CTA path.
     assert 'data-report-eligible="false"' in content
+    # report_unverified must be false — anonymous users get the sign-in CTA, not
+    # the "verify your email" prompt (SNOW-477).
+    assert 'data-report-unverified="false"' in content
     # sign-in URL must be present so JS can build the CTA link.
     assert "data-signin-url" in content
 
@@ -496,12 +500,40 @@ def test_report_js_not_loaded_when_flag_off() -> None:
 
 @pytest.mark.django_db
 @override_flag("field_observations", active=True)
-def test_report_eligible_true_for_authenticated_user() -> None:
-    """Authenticated user has report_eligible=True in the rendered button (SNOW-333)."""
+def test_report_eligible_true_for_verified_user() -> None:
+    """A verified user has report_eligible=True in the rendered button.
+
+    Eligibility requires both authentication and a verified ``Account`` — the
+    same gate the server enforces (SNOW-477) — so a bare authenticated user is
+    not enough.
+    """
     user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=True)
     client = Client()
     client.force_login(user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report-btn" in content
     assert 'data-report-eligible="true"' in content
+    assert 'data-report-unverified="false"' in content
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=True)
+def test_report_unverified_for_authenticated_unverified_user() -> None:
+    """An authenticated-but-unverified user is not eligible but is flagged unverified.
+
+    This is the SNOW-477 case: the client used to mark them eligible (auth
+    only), so ``report.js`` fired the form-load GET which the server 403'd.
+    ``report_eligible`` is now False and ``report_unverified`` is True so the
+    sheet shows a "verify your email" prompt instead.
+    """
+    user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=False)
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert 'data-report-eligible="false"' in content
+    assert 'data-report-unverified="true"' in content

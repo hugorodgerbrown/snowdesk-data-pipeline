@@ -36,6 +36,7 @@ from public.views import (
     _favourites_context,
 )
 from tests.factories import (
+    AccountFactory,
     BulletinFactory,
     MajorRegionFactory,
     MicroRegionFactory,
@@ -614,19 +615,46 @@ class TestHomePageReportButtonParity:
         content = client.get(reverse("public:home")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="false"' in content
+        # Anonymous users are not "unverified" — they get the sign-in CTA, not
+        # the "verify your email" prompt (SNOW-477).
+        assert 'data-report-unverified="false"' in content
         # Anonymous users carry the sign-in URL so report.js can render the
         # sign-in CTA in place of the report form.
         assert "data-signin-url" in content
 
     @override_flag("field_observations", active=True)
-    def test_report_button_eligible_for_subscriber(self) -> None:
-        """Homepage marks the button eligible for a logged-in subscriber."""
+    def test_report_button_eligible_for_verified_subscriber(self) -> None:
+        """Homepage marks the button eligible for a logged-in, verified subscriber.
+
+        Eligibility requires a verified ``Account`` (matching the server gate,
+        SNOW-477) — confirmed subscribers are backfilled to verified, so a
+        verified account is the realistic state for an eligible user.
+        """
         subscriber = SubscriberFactory.create()
+        AccountFactory.create(user=subscriber.user, is_verified=True)
         client = Client(SERVER_NAME="localhost")
         client.force_login(subscriber.user)
         content = client.get(reverse("public:home")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="true"' in content
+        assert 'data-report-unverified="false"' in content
+
+    @override_flag("field_observations", active=True)
+    def test_report_button_unverified_for_unverified_subscriber(self) -> None:
+        """Homepage marks the button unverified for a logged-in, unverified user.
+
+        A subscriber whose email is not verified is not eligible; the button
+        carries ``data-report-unverified="true"`` so report.js shows the
+        "verify your email" prompt (SNOW-477).
+        """
+        subscriber = SubscriberFactory.create()
+        AccountFactory.create(user=subscriber.user, is_verified=False)
+        client = Client(SERVER_NAME="localhost")
+        client.force_login(subscriber.user)
+        content = client.get(reverse("public:home")).content.decode()
+        assert "report-btn" in content
+        assert 'data-report-eligible="false"' in content
+        assert 'data-report-unverified="true"' in content
 
 
 @pytest.mark.django_db

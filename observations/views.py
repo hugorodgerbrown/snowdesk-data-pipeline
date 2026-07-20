@@ -45,7 +45,7 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
-from accounts.models import Account
+from accounts.models import user_is_verified
 from core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from core.decorators import require_htmx
 from observations.models import FieldObservation
@@ -92,34 +92,16 @@ def _require_field_observations_flag(request: HttpRequest) -> None:
         raise Http404("field_observations flag is inactive for this request.")
 
 
-def _is_verified(user: object) -> bool:
-    """Return True when ``user`` has a verified ``Account`` profile (SNOW-430).
-
-    Field reports require a verified email address: an authenticated user with
-    no ``Account`` row, or an unverified one, is rejected.  Existing confirmed
-    subscribers are backfilled to verified by the
-    ``backfill_verified_accounts`` command.
-
-    Args:
-        user: The ``request.user`` to check.
-
-    Returns:
-        True when the user has an ``Account`` with ``is_verified=True``.
-
-    """
-    try:
-        account = user.account  # type: ignore[attr-defined]
-    except Account.DoesNotExist:
-        return False
-    return bool(account.is_verified)
-
-
 def _auth_gate(request: HttpRequest) -> HttpResponse | None:
     """Return a 403 response when the user may not submit field reports.
 
     Field reports require an authenticated user (403 for anonymous) whose
     email has been verified (403 for an unverified / account-less user,
-    SNOW-430).  Returns ``None`` when the user passes both checks.
+    SNOW-430).  The verification check is the shared
+    ``accounts.models.user_is_verified`` — the same one that drives the
+    client-side ``report_eligible`` flag in ``public/views.py`` — so the gate
+    and the flag cannot drift (SNOW-477).  Returns ``None`` when the user
+    passes both checks.
 
     Args:
         request: The current HTTP request.
@@ -130,7 +112,7 @@ def _auth_gate(request: HttpRequest) -> HttpResponse | None:
     """
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
-    if not _is_verified(request.user):
+    if not user_is_verified(request.user):
         return HttpResponse("Email verification required.", status=403)
     return None
 

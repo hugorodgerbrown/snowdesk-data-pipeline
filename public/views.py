@@ -73,7 +73,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
 import analytics
-from accounts.models import Subscription
+from accounts.models import Subscription, user_is_verified
 from bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -1435,8 +1435,15 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
 
     ``report_visible`` is True when the ``field_observations`` waffle flag is
     active — this controls whether the roundel and sheet are rendered at all.
-    ``report_eligible`` is True when the user is authenticated — eligible users
-    get the report flow; anonymous users get a sign-in CTA.
+    ``report_eligible`` is True only when the user is authenticated **and** has
+    a verified ``Account`` — eligible users get the report flow.  This mirrors
+    the server-side gate in ``observations/views.py`` exactly (both call
+    ``accounts.models.user_is_verified``) so the client affordance can never
+    invite a request the server will 403 (SNOW-477).  ``report_unverified`` is
+    True for an authenticated-but-unverified user — the sheet shows them a
+    "verify your email" prompt rather than the anonymous sign-in CTA or a
+    silent stall.  Anonymous users are neither eligible nor unverified and get
+    the sign-in CTA.
 
     When ``report_visible`` is True the dict also includes the HTMX endpoint
     URLs and a sign-in URL for the anonymous CTA.
@@ -1445,15 +1452,18 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``report_visible``, ``report_eligible``, and (when visible)
-        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
+        Dict with ``report_visible``, ``report_eligible``,
+        ``report_unverified``, and (when visible) ``report_form_url``,
+        ``report_submit_url``, ``report_signin_url``.
 
     """
     report_visible = waffle.flag_is_active(request, "field_observations")
-    report_eligible = request.user.is_authenticated
+    report_eligible = user_is_verified(request.user)
+    report_unverified = request.user.is_authenticated and not report_eligible
     ctx: dict[str, Any] = {
         "report_visible": report_visible,
         "report_eligible": report_eligible,
+        "report_unverified": report_unverified,
     }
     if report_visible:
         ctx.update(

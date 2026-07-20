@@ -10,10 +10,17 @@ import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 
 from accounts.aaguids import lookup as aaguid_lookup
-from accounts.models import Account, PasskeyCredential, Subscriber, Subscription
+from accounts.models import (
+    Account,
+    PasskeyCredential,
+    Subscriber,
+    Subscription,
+    user_is_verified,
+)
 from tests.factories import (
     AccountFactory,
     MicroRegionFactory,
@@ -541,6 +548,37 @@ class TestAccountModel:
         account.clear_pending_email()
         assert account.pending_email is None
         assert account.pending_email_requested_at is None
+
+
+@pytest.mark.django_db
+class TestUserIsVerified:
+    """Tests for the shared ``user_is_verified`` helper (SNOW-477).
+
+    This is the single definition behind both the server-side field-report gate
+    (``observations/views.py``) and the client-side ``report_eligible`` flag
+    (``public/views.py``).
+    """
+
+    def test_false_for_anonymous_user(self) -> None:
+        """An anonymous user is never verified."""
+        assert user_is_verified(AnonymousUser()) is False
+
+    def test_false_for_authenticated_user_without_account(self) -> None:
+        """An authenticated user with no Account row is not verified."""
+        user = UserFactory.create()
+        assert user_is_verified(user) is False
+
+    def test_false_for_unverified_account(self) -> None:
+        """An authenticated user with an unverified Account is not verified."""
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=False)
+        assert user_is_verified(user) is False
+
+    def test_true_for_verified_account(self) -> None:
+        """An authenticated user with a verified Account is verified."""
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=True)
+        assert user_is_verified(user) is True
 
 
 @pytest.mark.django_db
