@@ -1,7 +1,8 @@
 """
 tests/e2e/test_favourites.py — Playwright tests for the SNOW-414 favourites
-map surface (add / rename / delete pins + the favourites overlay toggle) and
-the SNOW-417 forecast panel on the favourite detail card.
+map surface (add / rename / delete pins + the favourites overlay toggle),
+the SNOW-417 forecast panel on the favourite detail card, and the SNOW-474
+persistent close (×) control / Esc dismissal on the favourite sheet.
 
 Uses the ``favourites_page`` fixture (``tests/e2e/conftest.py``) — a plain
 ``page`` + ``live_server`` with a subscriber session, no real service-worker
@@ -254,6 +255,66 @@ def test_overlay_toggle_persists_across_reload(
     toggle = page.locator('[data-overlay-key="favourites"]')
     toggle.wait_for(state="visible")
     assert toggle.get_attribute("aria-checked") == "false"
+
+
+@override_flag("favourites", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_create_form_close_button_hides_sheet(
+    favourites_page: FavouritesPage,
+) -> None:
+    """The persistent × in the create-form header closes the sheet (SNOW-474)."""
+    page = favourites_page.page
+    _navigate_home(page, favourites_page.live_server_url)
+
+    page.click("#favourite-add-btn")
+    page.wait_for_selector("#favourite-sheet:not([hidden])")
+    page.wait_for_selector("#favourite-create-form")
+
+    # The Cancel button also carries data-action="close-favourite-sheet" —
+    # filter on the × glyph to target the header control specifically.
+    close_btn = page.locator(
+        '#favourite-sheet [data-action="close-favourite-sheet"]', has_text="×"
+    )
+    assert close_btn.count() == 1
+    close_btn.click()
+
+    page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
+
+
+@override_flag("favourites", active=True)
+def test_anonymous_signin_cta_has_close_button(
+    live_server: LiveServer, page: Page
+) -> None:
+    """The anonymous sign-in CTA state also carries the persistent × (SNOW-474)."""
+    _navigate_home(page, live_server.url)
+
+    page.click("#favourite-add-btn")
+    page.wait_for_selector("#favourite-sheet:not([hidden])")
+
+    close_btn = page.locator(
+        '#favourite-sheet [data-action="close-favourite-sheet"]', has_text="×"
+    )
+    assert close_btn.count() == 1
+    close_btn.click()
+
+    page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
+
+
+@override_flag("favourites", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_escape_key_closes_favourite_sheet(
+    favourites_page: FavouritesPage,
+) -> None:
+    """Esc dismisses an open favourite sheet (SNOW-474)."""
+    page = favourites_page.page
+    _navigate_home(page, favourites_page.live_server_url)
+
+    page.click("#favourite-add-btn")
+    page.wait_for_selector("#favourite-sheet:not([hidden])")
+    page.wait_for_selector("#favourite-create-form")
+
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
 
 
 @override_flag("favourites", active=True)
