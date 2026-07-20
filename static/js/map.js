@@ -896,10 +896,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // SNOW-472: shared flag-icon id for every unclustered community-report
   // pin, regardless of OBSERVATION_TYPE. Replaced the earlier SNOW-419
-  // per-type text glyphs (a Font-Awesome-adjacent unicode zoo that read as
-  // inconsistent weight/size across types) with one hand-drawn SDF icon —
-  // see installCommunityReportsLayer for the canvas build + registration.
+  // per-type text glyphs (a unicode zoo that read as inconsistent
+  // weight/size across types) with one SDF flag icon — see
+  // buildCommunityReportFlagImageData for the canvas build + registration.
   const COMMUNITY_REPORT_ICON_ID = 'community-report-flag';
+
+  // SNOW-472: Font Awesome Free v7.3.1 "flag" (solid) path and its viewBox.
+  // Licensed CC BY 4.0 (https://fontawesome.com/license/free), Copyright
+  // 2026 Fonticons, Inc. — attribution retained here to satisfy the licence.
+  //
+  // This is the solid fill: the outer pole-plus-cloth contour of Font
+  // Awesome's flag glyph, with the regular variant's inner cloth cutout
+  // (its second subpath) omitted so the cloth fills solid. A solid
+  // silhouette reads boldly at the ~18px on-map icon size where the
+  // outline variant washes out to thin strokes. Rendered as a single
+  // colour because the icon is registered `sdf: true` (below): SDF discards
+  // colour and keeps only the alpha mask, which is what lets `icon-color`
+  // recolour the flag to the amber layer tint per-layer (a multi-colour
+  // asset could not be an SDF).
+  const COMMUNITY_REPORT_FLAG_VIEWBOX = { width: 448, height: 512 };
+  const COMMUNITY_REPORT_FLAG_PATH =
+    'M48 24C48 10.7 37.3 0 24 0S0 10.7 0 24L0 488c0 13.3 10.7 24 24 24s24-10.7 ' +
+    '24-24l0-100 80.3-20.1c41.1-10.3 84.6-5.5 122.5 13.4 44.2 22.1 95.5 24.8 ' +
+    '141.7 7.4l34.7-13c12.5-4.7 20.8-16.6 20.8-30l0-279.7c0-23-24.2-38-44.8-27.7' +
+    'l-9.6 4.8c-46.3 23.2-100.8 23.2-147.1 0-35.1-17.6-75.4-22-113.5-12.5L48 52 ' +
+    '48 24z';
 
   // SNOW-419: age-fade constants. A report's opacity decays linearly from
   // 1 (just filed) to a floor at the edge of the 48h server-side window,
@@ -927,12 +948,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
   };
 
   // SNOW-472: draw the shared community-report flag icon on an offscreen
-  // canvas and hand MapLibre its alpha mask as an SDF image. A pole (thin
-  // rectangle) plus a pennant (a wedge-shaped quadrilateral) drawn in
-  // opaque black on a transparent canvas — solid colour is irrelevant
-  // here since `sdf: true` only reads the alpha channel and recolours it
-  // per-layer via `icon-color`. Building it by hand avoids adding a
-  // Font Awesome (or any sprite-sheet) dependency for a single icon.
+  // canvas and hand MapLibre its alpha mask as an SDF image. The shape is
+  // the Font Awesome "flag" path (COMMUNITY_REPORT_FLAG_PATH above), filled
+  // in opaque black on a transparent canvas — the solid colour is
+  // irrelevant since `sdf: true` reads only the alpha channel and recolours
+  // it per-layer via `icon-color`. `Path2D` fills the SVG path string
+  // synchronously (no `Image`/data-URI round-trip), which keeps the whole
+  // build synchronous — an async decode would let `addLayer` run before the
+  // image id exists (see installCommunityReportsLayer).
   //
   // `size` is the LOGICAL (CSS-pixel) icon footprint; the canvas backing
   // store is scaled up by `pixelRatio` so the mask supersamples cleanly
@@ -942,29 +965,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // the caller passes the matching `pixelRatio` to `map.addImage` so
   // MapLibre knows how to map the (now larger) physical bitmap back to
   // the logical icon size.
+  //
+  // The 448x512 viewBox is fitted preserving aspect ratio, flush to the
+  // left and bottom edges with a little top/right padding: the flag's pole
+  // runs down the left edge to y=512, so drawing it flush-left-and-bottom
+  // lets `icon-anchor: 'bottom-left'` on the layer plant the pole's base on
+  // the feature coordinate ("the flag is here"), with the cloth flying up
+  // and to the right the way a real planted flag does.
   const buildCommunityReportFlagImageData = (pixelRatio) => {
-    const size = 32;
+    const size = 34;
+    const padTop = 2;
+    const padRight = 3;
     const canvas = document.createElement('canvas');
     canvas.width = size * pixelRatio;
     canvas.height = size * pixelRatio;
     const ctx = canvas.getContext('2d');
     ctx.scale(pixelRatio, pixelRatio);
+    // Uniform scale that fits both the padded width and the padded height,
+    // so neither the cloth (width) nor the pole (height) is clipped.
+    const scale = Math.min(
+      (size - padRight) / COMMUNITY_REPORT_FLAG_VIEWBOX.width,
+      (size - padTop) / COMMUNITY_REPORT_FLAG_VIEWBOX.height,
+    );
+    // Bottom-align the pole base to the canvas bottom edge; keep it flush
+    // left so 'bottom-left' anchoring lands on the pole rather than dead
+    // space to its left.
+    ctx.translate(0, size - COMMUNITY_REPORT_FLAG_VIEWBOX.height * scale);
+    ctx.scale(scale, scale);
     ctx.fillStyle = '#000000';
-    // Pole: a slim vertical bar down the left-of-centre, running almost
-    // to the bottom edge — `icon-anchor: 'bottom'` on the layer below
-    // anchors the pole's base (not the icon's visual centre) to the
-    // feature's coordinate, so the pole needs to reach close to y=size
-    // for that anchor to read as "the flag is planted here" rather than
-    // floating above the point.
-    ctx.fillRect(11, 4, 3, 27);
-    // Pennant: a triangular-ish wedge flying from the top of the pole,
-    // tapering to a point so it reads as a flag rather than a rectangle.
-    ctx.beginPath();
-    ctx.moveTo(14, 5);
-    ctx.lineTo(27, 9);
-    ctx.lineTo(14, 15);
-    ctx.closePath();
-    ctx.fill();
+    ctx.fill(new Path2D(COMMUNITY_REPORT_FLAG_PATH));
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
   };
 
@@ -1057,13 +1086,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // still read from `props.type`/`type_label` by the click-popup
         // handler below; only the pin's visual mark is unified.
         'icon-image': COMMUNITY_REPORT_ICON_ID,
-        'icon-size': 0.55,
+        'icon-size': 0.6,
         'icon-allow-overlap': true,
-        // The mask is drawn pole-down (see buildCommunityReportFlagImageData) —
-        // anchoring at the pole's base rather than the icon's visual
-        // centre (the default) makes the feature's coordinate read as
-        // "the flag is planted here", matching the usual pin affordance.
-        'icon-anchor': 'bottom',
+        // The mask is drawn flush left-and-bottom with the pole down the
+        // left edge (see buildCommunityReportFlagImageData) — anchoring at
+        // the pole's base (bottom-left) rather than the icon's visual centre
+        // (the default) makes the feature's coordinate read as "the flag is
+        // planted here", matching the usual pin affordance.
+        'icon-anchor': 'bottom-left',
       },
       paint: {
         // Amber — same as the cluster circles, so a lone flag reads as
