@@ -51,6 +51,7 @@ from public._component_fixtures import (
     REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
+    SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
@@ -1041,6 +1042,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_chip.html",
         variants=CHIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="sheet-header",
+        label="Sheet header",
+        description=(
+            "Shared title + persistent × close control for the favourites "
+            "and report map fly-out sheets (SNOW-474). The × carries the "
+            "close_action value as its data-action attribute, so it "
+            "triggers the owning sheet's existing delegated close listener."
+        ),
+        kind="components",
+        partial="includes/_sheet_header.html",
+        variants=SHEET_HEADER_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

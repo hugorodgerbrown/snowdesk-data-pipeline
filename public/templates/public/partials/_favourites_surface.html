@@ -41,6 +41,8 @@ Context expected:
             hx-swap="innerHTML"
             class="flex flex-col gap-3 px-2 py-4"
         >
+            {% trans "Add favourite" as favourite_create_title %}
+            {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="close-favourite-sheet" %}
             {% csrf_token %}
             <input type="hidden" name="lat">
             <input type="hidden" name="lon">
