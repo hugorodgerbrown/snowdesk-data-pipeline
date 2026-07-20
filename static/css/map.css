@@ -1393,14 +1393,14 @@
 }
 
 @keyframes map-help-ring-pulse {
-    0%, 100% { box-shadow: 0 0 0 4px var(--ink); }
-    50%      { box-shadow: 0 0 0 8px var(--ink); }
+    0%, 100% { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12); }
+    50%      { box-shadow: 0 0 0 5px rgba(0, 0, 0, 0.05); }
 }
 
 #map-help-ring {
     position: fixed;
-    border: 2px solid var(--ink);
-    box-shadow: 0 0 0 4px var(--ink);
+    border: 1.5px solid var(--ink);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
     pointer-events: none;
     animation: map-help-ring-pulse 1.8s ease-in-out infinite;
     transition:
