@@ -40,7 +40,18 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
 def test_overlay_toggle_installs_clustered_source(
     live_server: LiveServer, page: Page, django_db_blocker: Any
 ) -> None:
-    """Enabling the overlay fetches the geojson and installs the clustered source."""
+    """Enabling the overlay fetches the geojson and installs the clustered source.
+
+    SNOW-472: also covers the shared SDF flag icon that replaced the
+    per-OBSERVATION_TYPE text glyphs — asserts the point layer references
+    it and that ``map.addImage`` actually registered it. Does not cover
+    the basemap-swap re-registration path (the riskiest part of that
+    change, since ``setStyle`` wipes registered images and
+    ``installCommunityReportsLayer`` has to re-add it) — a real basemap
+    swap needs a live fetch to the swisstopo/IGN/ESRI style JSON, which
+    isn't available to this harness. First-load registration is exercised
+    here instead.
+    """
     with django_db_blocker.unblock():
         FieldObservationFactory.create(
             latitude=46.2,
@@ -66,6 +77,15 @@ def test_overlay_toggle_installs_clustered_source(
     assert page.evaluate("() => !!MAP.getLayer('community-reports-clusters')")
     assert page.evaluate("() => !!MAP.getLayer('community-reports-cluster-count')")
     assert page.evaluate("() => !!MAP.getLayer('community-reports-point')")
+
+    # SNOW-472: the unclustered point layer draws a single shared SDF flag
+    # icon (not a per-OBSERVATION_TYPE text glyph) — assert the layer
+    # references it and that the icon was actually registered on the
+    # style via map.addImage.
+    assert page.evaluate(
+        "() => !!MAP.getLayer('community-reports-point').layout['icon-image']"
+    )
+    assert page.evaluate("() => MAP.hasImage('community-report-flag')")
 
     source_data = page.evaluate(
         "() => MAP.getSource('community-reports').serialize().data"
