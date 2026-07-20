@@ -6,6 +6,8 @@ URL structure:
   /map/                                        Permanent 301 redirect to /.
   /terms/                                      SLF data-licence acknowledgement
                                                + Snowdesk liability disclaimer.
+  /help/                                        Plain-language "how it works"
+                                               help page (SNOW-456).
   /examples/random/                            Renders a random bulletin inline
                                                using the canonical view.
   /examples/category/<danger_level>/           Renders a random bulletin matching
@@ -68,6 +70,10 @@ urlpatterns = [
         views.how_to_read_bulletin,
         name="how_to_read_bulletin",
     ),
+    # Plain-language "how it works" help page (SNOW-456) — registered before
+    # the generic <region_id:region_id>/ patterns so "help" never resolves
+    # as a region id.
+    path("help/", views.help_page, name="help"),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(
