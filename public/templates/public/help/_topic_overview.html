@@ -1,0 +1,23 @@
+{% comment %}
+public/templates/public/help/_topic_overview.html — "What Snowdesk is" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Snowdesk brings together official avalanche bulletins from three providers &mdash; SLF (Switzerland), ALBINA
+            (Austria/EUREGIO), and Météo-France &mdash; onto a single interactive map, with a consistent layout for
+            every region and every day.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            You don't need an account to browse: pick a region on the map, read today's danger rating and avalanche
+            problems, or scrub back through the season to see how conditions have evolved. Signing in unlocks extras
+            such as email alerts and saved favourite locations.
+        {% endblocktrans %}
+    </p>
+</div>

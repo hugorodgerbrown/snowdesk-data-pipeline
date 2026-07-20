@@ -1,0 +1,67 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/help.html — Plain-language "how it works" help page.
+
+Introduced for SNOW-456. Distinct from how_to_read_bulletin.html, which
+teaches the avalanche domain; this page documents the product itself —
+the map, the weather header, favourites, field observations, the season
+timeline, accounts, and PWA install/offline behaviour — as a set of
+collapsible panels reusing includes/_collapsible_panel.html. Each panel's
+body copy lives in its own small content partial under
+public/templates/public/help/.
+
+The Favourites and Field-observations panels, plus a handful of sentences
+inside the Map panel, are gated on the per-user waffle booleans computed
+by public.views.help_page (favourites_visible / report_visible /
+community_reports_visible) — a user never sees documentation for a
+feature they cannot use.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "Help" %} &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% trans "Plain-language guide to how Snowdesk works: the map, bulletins, weather, favourites, and more." %}
+{% endblock %}
+
+{% block content %}
+    <main class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1">
+        <h1 class="text-2xl font-semibold tracking-tight mb-6" data-testid="help-heading">
+            {% trans "Help & how it works" %}
+        </h1>
+        <p class="text-sm leading-prose text-text-2 mb-6">
+            {% trans "A plain-language guide to what Snowdesk does and how to use each part of it." %}
+        </p>
+
+        {% translate "What Snowdesk is" as t_overview %}
+        {% include "includes/_collapsible_panel.html" with title=t_overview data_testid="help-topic-overview" body_template="public/help/_topic_overview.html" %}
+
+        {% translate "Reading a bulletin" as t_bulletins %}
+        {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" body_template="public/help/_topic_bulletins.html" %}
+
+        {% translate "The weather header" as t_weather %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" body_template="public/help/_topic_weather.html" %}
+
+        {% translate "The map" as t_map %}
+        {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
+
+        {% if favourites_visible %}
+            {% translate "Favourites" as t_favourites %}
+            {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" body_template="public/help/_topic_favourites.html" %}
+        {% endif %}
+
+        {% if report_visible %}
+            {% translate "Field observations" as t_observations %}
+            {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
+        {% endif %}
+
+        {% translate "The season timeline & calendar" as t_timeline %}
+        {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
+
+        {% translate "Accounts & subscriptions" as t_accounts %}
+        {% include "includes/_collapsible_panel.html" with title=t_accounts data_testid="help-topic-accounts" body_template="public/help/_topic_accounts.html" %}
+
+        {% translate "Install & offline" as t_install %}
+        {% include "includes/_collapsible_panel.html" with title=t_install data_testid="help-topic-install" body_template="public/help/_topic_install.html" %}
+    </main>
+{% endblock %}

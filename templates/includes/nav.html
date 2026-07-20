@@ -110,6 +110,9 @@ Usage
 
         {# ── Right-side auth + admin area ── #}
         <div class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
+            <a href="{% url 'public:help' %}" class="text-sm text-text-2 hover:text-text-1">
+                {% trans "Help" %}
+            </a>
             {# SNOW-376: mutation-queue sync badge. Hidden by default;             #}
             {# static/js/mutation_queue.js reveals it with the live non-"failed"   #}
             {# queue:mutations count, and swaps the colour to the status-error     #}

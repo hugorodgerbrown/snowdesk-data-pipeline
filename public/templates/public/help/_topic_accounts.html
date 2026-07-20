@@ -1,0 +1,23 @@
+{% comment %}
+public/templates/public/help/_topic_accounts.html — "Accounts & subscriptions" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Snowdesk accounts are passwordless by default: enter your email address and follow the link that's sent to
+            you &mdash; no password to remember. You can optionally set a password, or register a passkey on your
+            device, from the account setup page.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Once signed in, subscribe to a region from its bulletin page to get an email whenever a new bulletin is
+            published for it. Manage or remove your subscribed regions at any time from the account menu, or unsubscribe
+            with one click from any alert email.
+        {% endblocktrans %}
+    </p>
+</div>

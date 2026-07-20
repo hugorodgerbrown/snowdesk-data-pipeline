@@ -1,0 +1,22 @@
+{% comment %}
+public/templates/public/help/_topic_weather.html — "The weather header" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The band at the top of every bulletin page shows the region name, the date, and a weather icon and condition
+            label &mdash; clear, cloudy, snowing, and so on &mdash; for that day. Its colour and icon shift between day
+            and night styling to match the actual sunrise and sunset for the region.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            When you scrub back to a past date, the header shows the day or night look based on your current clock time
+            in the region's timezone &mdash; not the time of day when that bulletin was first issued.
+        {% endblocktrans %}
+    </p>
+</div>

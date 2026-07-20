@@ -17,12 +17,14 @@ Visual weight should not compete with page content.
     data-testid="site-footer"
 >
     <p>
+        {% url 'public:help' as help_url %}
         {% url 'public:terms' as terms_url %}
         {% url 'public:colophon' as colophon_url %}
         {% url 'public:privacy' as privacy_url %}
         {% url 'public:terms_of_service' as tos_url %}
         {% blocktrans trimmed %}
-            Avalanche data:
+            <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
+            &middot; Avalanche data:
             <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
             &middot;
             <a

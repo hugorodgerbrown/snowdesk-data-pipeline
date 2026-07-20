@@ -1137,6 +1137,37 @@ def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
     return render(request, "public/how_to_read_bulletin.html", _build_guide_examples())
 
 
+def help_page(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /help page.
+
+    Plain-language "how it works" reference explaining every user-facing
+    feature (SNOW-456) — distinct from ``how_to_read_bulletin``, which
+    teaches the avalanche domain rather than the product. Named
+    ``help_page`` rather than ``help`` to avoid shadowing the ``help``
+    builtin. The three per-user waffle booleans control which topic
+    panels render, mirroring the flags checked on the map page itself
+    (``_favourites_context``, ``_report_context``,
+    ``_community_reports_context``) so a user never sees documentation
+    for a feature they cannot use.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered help page.
+
+    """
+    context = {
+        "favourites_visible": waffle.flag_is_active(request, "favourites"),
+        "report_visible": waffle.flag_is_active(request, "field_observations"),
+        "community_reports_visible": waffle.flag_is_active(
+            request, "community_reports"
+        ),
+    }
+    return render(request, "public/help.html", context)
+
+
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
