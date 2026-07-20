@@ -618,6 +618,12 @@ Optional context:
     {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
     {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
     <ul id="map-help-steps" hidden>
+        <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
+            {% trans "Shows the date and region selected." %}
+        </li>
+        <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
+            {% trans "Click through to the bulletin detail page." %}
+        </li>
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
             {% trans "Search by name to jump straight to a region." %}
         </li>
@@ -633,17 +639,11 @@ Optional context:
         <li data-help-target="#report-btn" data-help-title='{% trans "Report conditions" %}'>
             {% trans "Share a quick field observation with other visitors." %}
         </li>
-        <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
-            {% trans "See today's danger-scale key and the data attribution." %}
-        </li>
-        <li data-help-target="#season-ribbon" data-help-title='{% trans "Season ribbon" %}'>
-            {% trans "Every day this season, coloured by peak danger — tap a day to jump to it." %}
-        </li>
         <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
-            {% trans "Drag or play through the season day by day." %}
+            {% trans "Run through the season day by day." %}
         </li>
-        <li data-help-target="#map-zoom-indicator" data-help-title='{% trans "Zoom level" %}'>
-            {% trans "Shows how far you've zoomed in on the map." %}
+        <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
+            {% trans "View attribution and EAWS danger level key." %}
         </li>
     </ul>
     {# SNOW-457 (review): aria-describedby points at the step title + body so #}
