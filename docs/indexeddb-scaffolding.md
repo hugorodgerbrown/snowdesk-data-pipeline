@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, Reset Required
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-20
 ---
 
 # IndexedDB scaffolding
@@ -36,7 +36,7 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before` |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 
 `data:*` is a reserved namespace for cached server-data copies.

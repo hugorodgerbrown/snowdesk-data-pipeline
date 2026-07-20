@@ -76,6 +76,12 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "pwa.mutation.enqueued",
         "pwa.mutation.drained",
         "pwa.mutation.failed_permanent",
+        # SNOW-462: a queued row discarded, never replayed, because its
+        # stamped principal no longer matches the current one — either an
+        # account change (reason: account_change, whole-queue clear) or a
+        # single row caught by the drain-guard (reason:
+        # principal_mismatch).
+        "pwa.mutation.discarded",
         # Reset flow (spec §3.10, §16.4 dashboard 8).
         "pwa.reset.user_initiated",
         "pwa.reset.forced",

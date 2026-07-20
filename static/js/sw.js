@@ -95,6 +95,20 @@
  *     pass, the handler THROWS so ``event.waitUntil`` rejects — that's
  *     what tells the browser to reschedule the sync per its own backoff.
  *
+ * Account-change guard (SNOW-462)
+ * --------------------------------
+ * ``_selfDrainMutations()`` only fires with no tab open, so it cannot read
+ * ``<meta name="pwa-user-id">`` — there is no page. Instead it best-effort
+ * reads the last-seen principal persisted by the page in ``meta:app``
+ * (key ``mutations.principal``, written by
+ * ``static/js/mutation_queue.js``'s ``_reconcilePrincipal()``) and
+ * discards (deletes, does not replay) any row whose stamped ``principal``
+ * doesn't match it. This is a best-effort backstop, not the airtight
+ * guarantee — the page-side drain-guard in ``mutation_queue.js``'s
+ * ``_processRow()`` is what makes the property hold whenever a tab is
+ * open; SNOW-463 is the server-side backstop that makes it hold
+ * regardless.
+ *
  * i18n: this worker never renders UI, so there are no translatable
  * strings.
  */
@@ -113,9 +127,10 @@ try {
   // Non-fatal — see fallback in the 'sync' listener below.
 }
 
-// SNOW-475: v12 — new static/js/place_picker.js, favourites.js/report.js
+// SNOW-475: v13 — new static/js/place_picker.js, favourites.js/report.js
 // rewritten to use it, and _map_embed.html's markup gained #map-place-pin.
-const CACHE_VERSION = 'snowdesk-shell-v12';
+// (v12 was taken by SNOW-462/SNOW-472 on main.)
+const CACHE_VERSION = 'snowdesk-shell-v13';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -581,11 +596,43 @@ async function _selfDrainMutations() {
     // Store may not exist yet on a brand-new DB — nothing to drain.
     rows = [];
   }
+
+  // SNOW-462: best-effort tab-closed principal guard — see the header
+  // comment's "Account-change guard" section. ``meta:app`` may not exist
+  // on a worker-created DB (the onupgradeneeded branch above only
+  // creates ``queue:mutations``); the try/catch below handles that by
+  // leaving ``storedPrincipal`` undefined, which skips the guard entirely
+  // rather than discarding every row.
+  let storedPrincipal;
+  try {
+    const meta = await _idbGetAll(db, 'meta:app');
+    const row = meta.find((r) => r.key === 'mutations.principal');
+    storedPrincipal = row ? row.value : undefined;
+  } catch (_e) {
+    storedPrincipal = undefined;
+  }
+
   const now = Date.now();
   let successCount = 0;
   let retryableRemaining = false;
 
   for (const row of rows) {
+    // SNOW-462: discard (do not replay) a row stamped for a different
+    // principal than the last one the page saw. Skipped entirely when
+    // storedPrincipal is undefined (meta:app unavailable) rather than
+    // guessing. The delete is wrapped — a rejection here must not
+    // propagate to event.waitUntil, which would reschedule the
+    // Background Sync and risk an indefinite discard-retry loop; mirrors
+    // the page-side _processRow's own guarded delete.
+    if (storedPrincipal !== undefined && row.principal !== storedPrincipal) {
+      try {
+        await _idbDelete(db, 'queue:mutations', row.id);
+      } catch (_e) {
+        // Non-fatal.
+      }
+      continue;
+    }
+
     if (!core.isRowEligible(row, now)) {
       if (row.status !== 'failed') retryableRemaining = true;
       continue;

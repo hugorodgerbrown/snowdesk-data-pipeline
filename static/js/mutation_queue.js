@@ -19,11 +19,15 @@
  * Row shape (``queue:mutations``, see docs/mutation-queue.md):
  *
  *   { id, idempotency_key, method, url, headers, body, created_at,
- *     attempts, status, next_attempt_at }
+ *     attempts, status, next_attempt_at, principal }
  *
  *   status ∈ 'queued' | 'retry-scheduled' | 'failed'
  *   next_attempt_at — epoch ms; the row is eligible for replay once
  *   ``Date.now() >= next_attempt_at``.
+ *   principal — the ``<meta name="pwa-user-id">`` value (or ``null`` for
+ *   anonymous) at ENQUEUE time (SNOW-462). Stamped so a mutation queued
+ *   by one account can never replay under a different one on the same
+ *   browser — see "Account-change partitioning" below.
  *
  * Classification / backoff (static/js/mutation_queue_core.js):
  *
@@ -49,7 +53,8 @@
  * Public API — attached to ``window.pwaMutationQueue``:
  *
  *   enqueue(operation)            Persist one mutation to the queue,
- *                                  mint its Idempotency-Key, emit
+ *                                  mint its Idempotency-Key, stamp the
+ *                                  enqueue-time principal, emit
  *                                  ``pwa.mutation.enqueued``, drain
  *                                  immediately if online, and
  *                                  feature-detect a Background Sync
@@ -63,12 +68,47 @@
  *                                  ``pwa.mutation.failed_permanent`` and
  *                                  reveals the same toast + badge state
  *                                  as an internally-failed row.
+ *   clear()                       Empty the entire ``queue:mutations``
+ *                                  store and refresh the nav badge
+ *                                  (SNOW-462) — used internally by the
+ *                                  account-change reconcile below, and
+ *                                  available to any other caller that
+ *                                  needs to discard the whole queue.
  *
  * ``operation`` is caller-supplied metadata describing the mutation (e.g.
  * ``{method: 'POST', url: '/account/', headers: {...}, body: '...'}``).
  * Callers must not include any of the PII keys the server-side telemetry
  * receiver blocks (``email``, ``ip``, ``token``, ``credential_id``) — the
  * same rule as every other ``window.pwaTelemetry.emit`` call site.
+ *
+ * Account-change partitioning (SNOW-462)
+ * ---------------------------------------
+ * Offline mutations carry no principal binding by default, so a browser
+ * shared across a sign-out/sign-in — user A queues offline, signs out,
+ * user B signs in before reconnect — could otherwise replay A's mutation
+ * attributed to B. Defence in depth, two layers:
+ *
+ *   1. **Reconcile on load** — ``_reconcilePrincipal()`` runs first thing
+ *      in ``_wireLifecycle()`` (fire-and-forget). It compares the current
+ *      ``<meta name="pwa-user-id">`` principal against the last-seen one
+ *      persisted in ``meta:app`` under the key ``mutations.principal``.
+ *      On a mismatch it clears the ENTIRE queue (emitting
+ *      ``pwa.mutation.discarded`` — ``reason: 'account_change'`` when a
+ *      previous principal was recorded and genuinely differs, or
+ *      ``reason: 'principal_uninitialised'`` when no ``mutations.principal``
+ *      row existed yet — when at least one row was present) and persists
+ *      the new principal.
+ *   2. **Drain-guard** — ``_processRow()`` re-checks each row's stamped
+ *      ``principal`` against the CURRENT principal immediately before
+ *      replay; a mismatch deletes the row without a network request and
+ *      emits ``pwa.mutation.discarded`` with ``reason:
+ *      'principal_mismatch'``. This is the race backstop for the window
+ *      between an account change and the next reconcile (e.g. a
+ *      Background-Sync firing from the service worker — see
+ *      ``static/js/sw.js``'s best-effort ``storedPrincipal`` guard, which
+ *      discards silently and does NOT emit telemetry: it only runs with
+ *      no tab open, so ``_postTelemetry``'s ``clients.matchAll`` is a
+ *      guaranteed no-op there).
  *
  * Every method is defensive — wrapped in try/catch, optional chaining on
  * ``window.pwaTelemetry?.emit`` and guarded ``window.pwaDb`` access — so a
@@ -133,6 +173,25 @@
       window.pwaTelemetry?.emit(event, properties || {});
     } catch (_err) {
       // Ignore — telemetry must never break a mutation call site.
+    }
+  }
+
+  /**
+   * The current principal — the ``<meta name="pwa-user-id">`` value read
+   * via ``window.pwaDb.context().user_id``, normalised so an empty
+   * string / ``undefined`` reads as ``null`` (anonymous), matching the
+   * value a signed-out session stamps on a queued row. Guarded end to
+   * end: returns ``null`` on any throw, or when ``window.pwaDb`` isn't
+   * available at all (this file loads on admin pages too).
+   * @returns {string|null}
+   */
+  function _currentPrincipal() {
+    try {
+      if (typeof window.pwaDb !== 'object') return null;
+      var userId = window.pwaDb.context().user_id;
+      return userId === undefined || userId === '' ? null : userId;
+    } catch (_e) {
+      return null;
     }
   }
 
@@ -380,13 +439,35 @@
   }
 
   /**
-   * Replay one eligible row. Returns ``'success' | 'failed' | 'retry'``
-   * describing the outcome so ``drain()`` can count real successes.
+   * Replay one eligible row. Returns
+   * ``'success' | 'failed' | 'retry' | 'discarded'`` describing the
+   * outcome so ``drain()`` can count real successes — a ``'discarded'``
+   * row never left this device, so it must not count as either.
    *
    * @param {object} row
-   * @returns {Promise<'success'|'failed'|'retry'>}
+   * @returns {Promise<'success'|'failed'|'retry'|'discarded'>}
    */
   async function _processRow(row) {
+    // SNOW-462 drain-guard: the row's enqueue-time principal must still
+    // match the current one — the race backstop for the window between
+    // an account change and the next reconcile (see _reconcilePrincipal
+    // and the module header's "Account-change partitioning" section).
+    if (row.principal !== _currentPrincipal()) {
+      try {
+        await window.pwaDb.delete(STORE, row.id);
+      } catch (_e) {
+        // Non-fatal — still report the discard below even if the delete
+        // itself couldn't be persisted.
+      }
+      emitTelemetry('pwa.mutation.discarded', {
+        method: row.method,
+        url: row.url,
+        idempotency_key: row.idempotency_key,
+        reason: 'principal_mismatch',
+      });
+      return 'discarded';
+    }
+
     var core = window.pwaMutationQueueCore;
     if (!core) {
       // The shared helper script didn't load — treat as a transient
@@ -472,6 +553,7 @@
         attempts: 0,
         status: 'queued',
         next_attempt_at: Date.now(),
+        principal: _currentPrincipal(),
       };
       await window.pwaDb.put(STORE, row);
       await _updateBadge();
@@ -542,11 +624,89 @@
     await _updateBadge().catch(function () {});
   }
 
+  /**
+   * Empty the entire ``queue:mutations`` store and refresh the nav
+   * badge. Guarded/non-fatal — used internally by
+   * ``_reconcilePrincipal()`` on an account change, and available to any
+   * other caller that needs to discard the whole queue outright.
+   *
+   * @returns {Promise<void>}
+   */
+  async function clear() {
+    try {
+      if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
+        return;
+      }
+      await window.pwaDb.clear(STORE);
+      await _updateBadge();
+    } catch (_e) {
+      // Non-fatal — clear() must never throw for the caller.
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // Account-change reconcile (SNOW-462) — see the module header's
+  // "Account-change partitioning" section.
+  // -------------------------------------------------------------------
+
+  /**
+   * Compare the current principal against the last-seen one persisted in
+   * ``meta:app`` (key ``mutations.principal``). On a mismatch — the
+   * browser signed in as someone else since the last page load — clear
+   * the whole queue (so nothing queued under the previous principal can
+   * ever replay) and persist the new principal. Run first thing in
+   * ``_wireLifecycle()``, fire-and-forget: the drain-guard in
+   * ``_processRow()`` is the race backstop, so this must not block
+   * wiring the rest of the lifecycle.
+   *
+   * The ``pwa.mutation.discarded`` ``reason`` distinguishes two mismatch
+   * causes so a PostHog query can tell them apart: ``'account_change'``
+   * when a ``mutations.principal`` row already existed and genuinely
+   * differs from the current principal, versus
+   * ``'principal_uninitialised'`` when no such row existed yet (first
+   * load after this ticket shipped, or a fresh DB) — any pre-existing,
+   * principal-less row is untrustworthy and cleared on general
+   * principle, not because an actual account change was observed.
+   *
+   * Entirely guarded/non-fatal — a failure here leaves the drain-guard
+   * as the sole (still airtight, if less proactive) protection.
+   *
+   * @returns {Promise<void>}
+   */
+  async function _reconcilePrincipal() {
+    try {
+      if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
+        return;
+      }
+      var current = _currentPrincipal();
+      var stored = await window.pwaDb.get('meta:app', 'mutations.principal');
+      var wasUninitialised = stored === undefined;
+      var storedValue = wasUninitialised ? undefined : stored.value;
+      if (!wasUninitialised && storedValue === current) {
+        return;
+      }
+      var rows = (await window.pwaDb.getAll(STORE)) || [];
+      if (rows.length > 0) {
+        await clear();
+        emitTelemetry('pwa.mutation.discarded', {
+          count: rows.length,
+          reason: wasUninitialised ? 'principal_uninitialised' : 'account_change',
+        });
+      }
+      await window.pwaDb.put('meta:app', { key: 'mutations.principal', value: current });
+    } catch (_e) {
+      // Non-fatal — see the docstring above.
+    }
+  }
+
   // -------------------------------------------------------------------
   // Lifecycle triggers — mirrors telemetry.js's _wireLifecycle.
   // -------------------------------------------------------------------
 
   function _wireLifecycle() {
+    // SNOW-462: fire-and-forget — must not block wiring the rest of the
+    // lifecycle. The drain-guard in _processRow is the race backstop.
+    _reconcilePrincipal().catch(() => {});
     try {
       window.addEventListener('online', () => {
         drain().catch(() => {});
@@ -578,7 +738,7 @@
   }
 
   Object.defineProperty(window, 'pwaMutationQueue', {
-    value: Object.freeze({ enqueue, drain, markFailed }),
+    value: Object.freeze({ enqueue, drain, markFailed, clear }),
     writable: false,
     configurable: false,
   });

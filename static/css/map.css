@@ -1589,7 +1589,9 @@
  * tooltip, but has no data-level border colour since a report has no
  * danger rating. */
 .community-report-popup-wrapper .maplibregl-popup-content {
-    padding: 12px 14px;
+    /* Extra right padding reserves room for the absolutely-positioned close
+     * button so the type label never runs under it. */
+    padding: 10px 34px 10px 14px;
     border-radius: 12px;
     background: var(--color-popup-glass);
     -webkit-backdrop-filter: blur(14px);
@@ -1598,17 +1600,40 @@
     box-shadow: var(--shadow-glass, 0 4px 16px rgba(0, 0, 0, 0.12));
     color: var(--color-text-1, #1a1a1a);
     font-family: var(--sans);
-    min-width: 160px;
+    min-width: 0;
+}
+
+/* Close button: mirror .region-popup's treatment — a small, muted glyph
+ * pinned to the top-right, vertically centred against the type label rather
+ * than floating in the corner (SNOW-472). */
+.community-report-popup-wrapper .maplibregl-popup-close-button {
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+    border-radius: 6px;
+    color: var(--color-text-2, #5f5e5a);
+}
+
+.community-report-popup-wrapper .maplibregl-popup-close-button:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--color-text-1, #1a1a1a);
 }
 
 .community-report-popup__type {
     font-weight: 600;
     font-size: 14px;
-    padding-right: 20px;
+    line-height: 1.25;
 }
 
 .community-report-popup__meta {
-    margin-top: 4px;
+    margin-top: 2px;
     font-size: 12px;
     color: var(--color-text-2, #5f5e5a);
 }

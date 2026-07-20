@@ -897,19 +897,33 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   };
 
-  // SNOW-419: per-OBSERVATION_TYPE text glyph for the unclustered
-  // community-reports pins — mirrors the favourites ★ approach (a
-  // text-field glyph rendered from the style's own font stack, so no
-  // sprite image needs registering). '⚠' is the fallback for any type
-  // value the client doesn't recognise (forward-compatible with a future
-  // OBSERVATION_TYPE addition the server ships before the client updates).
-  const COMMUNITY_REPORT_GLYPHS = {
-    WHUMPFING: '◎',
-    PINWHEELS: '✳',
-    WIND_STRIATIONS: '〰',
-    FRACTURES: '▤',
-    SHOOTING_CRACKS: '⚡',
-  };
+  // SNOW-472: shared flag-icon id for every unclustered community-report
+  // pin, regardless of OBSERVATION_TYPE. Replaced the earlier SNOW-419
+  // per-type text glyphs (a unicode zoo that read as inconsistent
+  // weight/size across types) with one SDF flag icon — see
+  // buildCommunityReportFlagImageData for the canvas build + registration.
+  const COMMUNITY_REPORT_ICON_ID = 'community-report-flag';
+
+  // SNOW-472: Font Awesome Free v7.3.1 "flag" (solid) path and its viewBox.
+  // Licensed CC BY 4.0 (https://fontawesome.com/license/free), Copyright
+  // 2026 Fonticons, Inc. — attribution retained here to satisfy the licence.
+  //
+  // This is the solid fill: the outer pole-plus-cloth contour of Font
+  // Awesome's flag glyph, with the regular variant's inner cloth cutout
+  // (its second subpath) omitted so the cloth fills solid. A solid
+  // silhouette reads boldly at the ~18px on-map icon size where the
+  // outline variant washes out to thin strokes. Rendered as a single
+  // colour because the icon is registered `sdf: true` (below): SDF discards
+  // colour and keeps only the alpha mask, which is what lets `icon-color`
+  // recolour the flag to the amber layer tint per-layer (a multi-colour
+  // asset could not be an SDF).
+  const COMMUNITY_REPORT_FLAG_VIEWBOX = { width: 448, height: 512 };
+  const COMMUNITY_REPORT_FLAG_PATH =
+    'M48 24C48 10.7 37.3 0 24 0S0 10.7 0 24L0 488c0 13.3 10.7 24 24 24s24-10.7 ' +
+    '24-24l0-100 80.3-20.1c41.1-10.3 84.6-5.5 122.5 13.4 44.2 22.1 95.5 24.8 ' +
+    '141.7 7.4l34.7-13c12.5-4.7 20.8-16.6 20.8-30l0-279.7c0-23-24.2-38-44.8-27.7' +
+    'l-9.6 4.8c-46.3 23.2-100.8 23.2-147.1 0-35.1-17.6-75.4-22-113.5-12.5L48 52 ' +
+    '48 24z';
 
   // SNOW-419: age-fade constants. A report's opacity decays linearly from
   // 1 (just filed) to a floor at the edge of the 48h server-side window,
@@ -936,19 +950,89 @@ const repaintRegionsForDate = (dateKey, cache) => {
     return geojson;
   };
 
+  // SNOW-472: draw the shared community-report flag icon on an offscreen
+  // canvas and hand MapLibre its alpha mask as an SDF image. The shape is
+  // the Font Awesome "flag" path (COMMUNITY_REPORT_FLAG_PATH above), filled
+  // in opaque black on a transparent canvas — the solid colour is
+  // irrelevant since `sdf: true` reads only the alpha channel and recolours
+  // it per-layer via `icon-color`. `Path2D` fills the SVG path string
+  // synchronously (no `Image`/data-URI round-trip), which keeps the whole
+  // build synchronous — an async decode would let `addLayer` run before the
+  // image id exists (see installCommunityReportsLayer).
+  //
+  // `size` is the LOGICAL (CSS-pixel) icon footprint; the canvas backing
+  // store is scaled up by `pixelRatio` so the mask supersamples cleanly
+  // on Retina/HiDPI displays instead of blurring when MapLibre upscales
+  // a 1x bitmap. `ctx.scale(pixelRatio, pixelRatio)` lets the drawing
+  // calls below stay in logical-pixel coordinates regardless of ratio —
+  // the caller passes the matching `pixelRatio` to `map.addImage` so
+  // MapLibre knows how to map the (now larger) physical bitmap back to
+  // the logical icon size.
+  //
+  // The 448x512 viewBox is fitted preserving aspect ratio, flush to the
+  // left and bottom edges with a little top/right padding: the flag's pole
+  // runs down the left edge to y=512, so drawing it flush-left-and-bottom
+  // lets `icon-anchor: 'bottom-left'` on the layer plant the pole's base on
+  // the feature coordinate ("the flag is here"), with the cloth flying up
+  // and to the right the way a real planted flag does.
+  const buildCommunityReportFlagImageData = (pixelRatio) => {
+    const size = 34;
+    const padTop = 2;
+    const padRight = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * pixelRatio;
+    canvas.height = size * pixelRatio;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(pixelRatio, pixelRatio);
+    // Uniform scale that fits both the padded width and the padded height,
+    // so neither the cloth (width) nor the pole (height) is clipped.
+    const scale = Math.min(
+      (size - padRight) / COMMUNITY_REPORT_FLAG_VIEWBOX.width,
+      (size - padTop) / COMMUNITY_REPORT_FLAG_VIEWBOX.height,
+    );
+    // Bottom-align the pole base to the canvas bottom edge; keep it flush
+    // left so 'bottom-left' anchoring lands on the pole rather than dead
+    // space to its left.
+    ctx.translate(0, size - COMMUNITY_REPORT_FLAG_VIEWBOX.height * scale);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#000000';
+    ctx.fill(new Path2D(COMMUNITY_REPORT_FLAG_PATH));
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  };
+
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
   // Unlike favourites/resorts, this source is clustered (`cluster: true`)
   // — MapLibre computes clusters client-side from the fetched
   // FeatureCollection as the map zooms, so a busy region doesn't paint as
-  // an unreadable pile of glyphs at low zoom. Three layers: cluster
+  // an unreadable pile of pins at low zoom. Three layers: cluster
   // circles + cluster-count labels (shown while `point_count` is present)
   // and an unclustered point layer (shown once a cluster has broken apart
   // enough that a feature stands alone). Idempotent, like
   // installFavouritesLayer/installResortsLayer — early-returns if the
   // source already exists, so the styledata re-install handler can call
   // this safely on every basemap swap.
+  //
+  // SNOW-472: `map.addImage` is registered here too, guarded by
+  // `hasImage` (addImage, unlike addSource, throws on a duplicate id
+  // rather than silently no-opping). This has to live inside this
+  // function rather than run once at boot: `map.setStyle()` on a basemap
+  // swap wipes every registered image along with sources and layers, and
+  // this is the one function re-invoked on every fresh style (from the
+  // `styledata` handler below) — so the icon re-registers in lockstep
+  // with the layer that references it. The mask is built synchronously
+  // from canvas paths (see buildCommunityReportFlagImageData) rather than
+  // via `map.loadImage(url)` — an async fetch would let `addLayer` below
+  // run before the image id exists, throwing.
   const installCommunityReportsLayer = (geojson) => {
     if (!geojson || map.getSource('community-reports')) return;
+    if (!map.hasImage(COMMUNITY_REPORT_ICON_ID)) {
+      const pixelRatio = window.devicePixelRatio || 1;
+      map.addImage(
+        COMMUNITY_REPORT_ICON_ID,
+        buildCommunityReportFlagImageData(pixelRatio),
+        { sdf: true, pixelRatio },
+      );
+    }
     map.addSource('community-reports', {
       type: 'geojson',
       data: geojson,
@@ -1000,26 +1084,27 @@ const repaintRegionsForDate = (dateKey, cache) => {
       filter: ['!', ['has', 'point_count']],
       layout: {
         visibility: overlayState.community_reports ? 'visible' : 'none',
-        'text-field': [
-          'match', ['get', 'type'],
-          'WHUMPFING', COMMUNITY_REPORT_GLYPHS.WHUMPFING,
-          'PINWHEELS', COMMUNITY_REPORT_GLYPHS.PINWHEELS,
-          'WIND_STRIATIONS', COMMUNITY_REPORT_GLYPHS.WIND_STRIATIONS,
-          'FRACTURES', COMMUNITY_REPORT_GLYPHS.FRACTURES,
-          'SHOOTING_CRACKS', COMMUNITY_REPORT_GLYPHS.SHOOTING_CRACKS,
-          '⚠',
-        ],
-        'text-font': ['Noto Sans Bold'],
-        'text-size': 16,
-        'text-allow-overlap': true,
+        // SNOW-472: one shared flag icon for every OBSERVATION_TYPE —
+        // replaced the earlier per-type text glyphs. The type itself is
+        // still read from `props.type`/`type_label` by the click-popup
+        // handler below; only the pin's visual mark is unified.
+        'icon-image': COMMUNITY_REPORT_ICON_ID,
+        'icon-size': 0.6,
+        'icon-allow-overlap': true,
+        // The mask is drawn flush left-and-bottom with the pole down the
+        // left edge (see buildCommunityReportFlagImageData) — anchoring at
+        // the pole's base (bottom-left) rather than the icon's visual centre
+        // (the default) makes the feature's coordinate read as "the flag is
+        // planted here", matching the usual pin affordance.
+        'icon-anchor': 'bottom-left',
       },
       paint: {
-        'text-color': '#e8711a',
-        'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.6,
+        // Amber — same as the cluster circles, so a lone flag reads as
+        // the same "kind" of marker as a broken-apart cluster.
+        'icon-color': '#e8711a',
         // SNOW-419: age fade — baked into each feature by
         // withCommunityReportsAgeOpacity before install/setData.
-        'text-opacity': ['get', '_ageOpacity'],
+        'icon-opacity': ['get', '_ageOpacity'],
       },
     });
   };
@@ -2137,10 +2222,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     map.on('mouseenter', 'community-reports-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'community-reports-clusters', () => { map.getCanvas().style.cursor = ''; });
 
-    // SNOW-419: tapping an unclustered community-report pin opens a small
-    // popup with the type label, a coarse relative time, and the region
-    // name — built via DOM methods (not setHTML) since these values,
-    // though server-controlled, don't need string-interpolated HTML.
+    // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
+    // small popup with the observation type and a relative time — built via
+    // DOM methods (not setHTML) since these values, though server-controlled,
+    // don't need string-interpolated HTML. No region name: the pin's own
+    // position on the map already conveys where the report is, so a place
+    // label is redundant (and, since the FK region can be coarser or
+    // cross-border than the visible spot, occasionally misleading).
     // Emits a marker-tapped telemetry signal with only the observation
     // type — no location or identity data.
     map.on('click', 'community-reports-point', (e) => {
@@ -2160,18 +2248,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
       typeEl.textContent = props.type_label;
       container.appendChild(typeEl);
 
-      const metaParts = [formatRelativeTime(props.observed_at)];
-      if (props.region_name) metaParts.push(props.region_name);
-      const metaEl = document.createElement('div');
-      metaEl.className = 'community-report-popup__meta';
-      metaEl.textContent = metaParts.filter(Boolean).join(' · ');
-      container.appendChild(metaEl);
+      // Relative time is computed live from the absolute observed_at against
+      // Date.now() (formatRelativeTime), so it stays accurate even when the
+      // overlay is served from the offline cache — only the age-fade opacity
+      // is baked at fetch time, not this text.
+      const relative = formatRelativeTime(props.observed_at);
+      if (relative) {
+        const metaEl = document.createElement('div');
+        metaEl.className = 'community-report-popup__meta';
+        metaEl.textContent = relative;
+        container.appendChild(metaEl);
+      }
 
       new maplibregl.Popup({
         closeButton: true,
         closeOnClick: true,
         maxWidth: '240px',
         className: 'community-report-popup-wrapper',
+        // SNOW-472: pin the popup ABOVE the flag. The flag icon is anchored
+        // bottom-left at the coordinate, so it occupies the space up and to
+        // the right of the point; a default-anchored popup sits over it.
+        // Fixing anchor to 'bottom' and lifting the popup by roughly the
+        // flag's rendered height (icon-size 0.6 × 34px ≈ 20px) plus a small
+        // gap puts the popup's tip just above the flag, pointing down at it.
+        anchor: 'bottom',
+        offset: [8, -24],
       })
         .setLngLat(coordinates)
         .setDOMContent(container)
