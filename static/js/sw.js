@@ -617,9 +617,16 @@ async function _selfDrainMutations() {
     // SNOW-462: discard (do not replay) a row stamped for a different
     // principal than the last one the page saw. Skipped entirely when
     // storedPrincipal is undefined (meta:app unavailable) rather than
-    // guessing.
+    // guessing. The delete is wrapped — a rejection here must not
+    // propagate to event.waitUntil, which would reschedule the
+    // Background Sync and risk an indefinite discard-retry loop; mirrors
+    // the page-side _processRow's own guarded delete.
     if (storedPrincipal !== undefined && row.principal !== storedPrincipal) {
-      await _idbDelete(db, 'queue:mutations', row.id);
+      try {
+        await _idbDelete(db, 'queue:mutations', row.id);
+      } catch (_e) {
+        // Non-fatal.
+      }
       continue;
     }
 
