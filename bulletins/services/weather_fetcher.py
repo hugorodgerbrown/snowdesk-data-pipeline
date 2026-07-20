@@ -538,6 +538,45 @@ def fetch_all_regions(
     return counts
 
 
+def _point_daily_dates(daily: dict[str, Any], point_pk: int) -> list[date]:
+    """Parse and validate the ``daily.time`` array for a point forecast.
+
+    Returns the provider-supplied forecast dates as ``date`` objects. The
+    caller must key each stored row off these dates rather than inventing
+    consecutive dates from ``target_date`` — a shifted, gapped, or reordered
+    Open-Meteo response would otherwise attach weather to the wrong calendar
+    day (SNOW-466).
+
+    Args:
+        daily: The ``"daily"`` block of an Open-Meteo forecast response.
+        point_pk: The ForecastPoint pk, for error messages only.
+
+    Returns:
+        The parsed provider dates, in response order.
+
+    Raises:
+        ValueError: If ``time`` is empty, or a required per-day array
+            (``weather_code`` / ``sunrise`` / ``sunset``) does not align 1:1
+            with ``time`` — a misaligned batch must not be stored.
+        KeyError: If a required array is absent entirely (existing contract).
+
+    """
+    dates = [date.fromisoformat(d) for d in daily["time"]]
+    if not dates:
+        raise ValueError(
+            f"Open-Meteo point forecast for point={point_pk}: empty 'time' array."
+        )
+    for name in ("weather_code", "sunrise", "sunset"):
+        arr = daily[name]
+        if len(arr) != len(dates):
+            raise ValueError(
+                f"Open-Meteo point forecast for point={point_pk}: '{name}' has "
+                f"{len(arr)} entries but 'time' has {len(dates)} — refusing to "
+                f"store misaligned data."
+            )
+    return dates
+
+
 def fetch_weather_for_point(
     point: ForecastPoint,
     target_date: date,
@@ -596,6 +635,9 @@ def fetch_weather_for_point(
         requests.HTTPError: If the Open-Meteo API returns a non-2xx status.
         KeyError: If ``weather_code``, ``sunrise``, or ``sunset`` are absent
             from the API response.
+        ValueError: If ``daily.time`` is empty or a required per-day array
+            does not align 1:1 with it — the batch is rejected rather than
+            stored under invented dates (SNOW-466).
 
     """
     url = f"{base_url}/forecast" if base_url else FORECAST_URL
@@ -625,7 +667,10 @@ def fetch_weather_for_point(
 
     daily = data["daily"]
     hourly: dict[str, Any] | None = data.get("hourly")
-    num_days = len(daily["time"])
+    # Key rows off the provider's own dates, validated to align with the
+    # per-day arrays — never target_date + idx (SNOW-466).
+    dates = _point_daily_dates(daily, point.pk)
+    num_days = len(dates)
 
     weather_code: int = daily["weather_code"][0]
     sunrise_str: str = daily["sunrise"][0]
@@ -634,7 +679,7 @@ def fetch_weather_for_point(
     logger.debug(
         "Open-Meteo forecast: point=%s date=%s code=%d sunrise=%s sunset=%s days=%d",
         point.pk,
-        target_date,
+        dates[0],
         weather_code,
         sunrise_str,
         sunset_str,
@@ -645,7 +690,7 @@ def fetch_weather_for_point(
         on_fetched(
             {
                 "forecast_point_id": point.pk,
-                "date": target_date.isoformat(),
+                "date": dates[0].isoformat(),
                 "weather_code": weather_code,
                 "sunrise": sunrise_str,
                 "sunset": sunset_str,
@@ -658,7 +703,7 @@ def fetch_weather_for_point(
 
     results: list[tuple[ForecastPointWeather, bool]] = []
     for idx in range(num_days):
-        day = target_date + timedelta(days=idx)
+        day = dates[idx]
         defaults = _build_point_defaults(daily, idx)
         defaults["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
         defaults["hourly_series"] = (

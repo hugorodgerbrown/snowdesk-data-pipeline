@@ -601,3 +601,81 @@ class TestFetchAllPoints:
         assert counts["created"] == 0
         assert counts["updated"] == 0
         assert ForecastPointWeather.objects.count() == 0
+
+
+@pytest.mark.django_db
+class TestFetchWeatherForPointProviderDates:
+    """SNOW-466: rows are keyed off provider dates, not target_date + idx."""
+
+    def test_shifted_dates_stored_under_provider_dates(self) -> None:
+        """A response shifted a day forward stores rows under the provider dates."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        # Provider returns May 2..8 even though we requested from May 1.
+        api_data = _make_full_point_response(start_date="2026-05-02")
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        stored = list(
+            ForecastPointWeather.objects.filter(forecast_point=point)
+            .order_by("valid_for_date")
+            .values_list("valid_for_date", flat=True)
+        )
+        assert stored == [
+            datetime.date(2026, 5, 2) + datetime.timedelta(days=idx)
+            for idx in range(POINT_FORECAST_DAYS)
+        ]
+        # The requested-but-not-returned date must never be invented.
+        assert datetime.date(2026, 5, 1) not in stored
+
+    def test_gapped_dates_do_not_fabricate_the_missing_day(self) -> None:
+        """A gap in the provider dates is stored as-is, never back-filled."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_full_point_response()  # 7 aligned arrays
+        gapped = [
+            "2026-05-01",
+            "2026-05-02",
+            "2026-05-04",  # May 3 skipped
+            "2026-05-05",
+            "2026-05-06",
+            "2026-05-07",
+            "2026-05-08",
+        ]
+        api_data["daily"]["time"] = gapped
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        stored = list(
+            ForecastPointWeather.objects.filter(forecast_point=point)
+            .order_by("valid_for_date")
+            .values_list("valid_for_date", flat=True)
+        )
+        assert [d.isoformat() for d in stored] == gapped
+        assert datetime.date(2026, 5, 3) not in stored
+
+    def test_misaligned_array_lengths_raise_and_write_nothing(self) -> None:
+        """A required array shorter than time raises and writes no rows."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_full_point_response()
+        api_data["daily"]["weather_code"].pop()  # 6 codes vs 7 dates
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
+            ),
+            pytest.raises(ValueError, match="misaligned"),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
