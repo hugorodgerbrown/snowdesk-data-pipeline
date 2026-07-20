@@ -473,6 +473,43 @@ class TestUpsertBulletin:
         )
         assert region_ids == ["CH-4115", "CH-7111"]
 
+    def test_rating_failures_increment_records_failed(self) -> None:
+        """SNOW-461: day-rating recompute failures are added to records_failed.
+
+        A failed recompute invalidates the stale rating (no stale data served)
+        but the run must still be marked failed so cron/CI surface it —
+        upsert_bulletin adds the count reported by apply_bulletin_day_ratings.
+        """
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+        with patch(
+            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            return_value=2,
+        ):
+            upsert_bulletin(raw, run)
+
+        run.refresh_from_db()
+        assert run.records_failed == 2
+
+    def test_rating_exception_increments_records_failed(self) -> None:
+        """SNOW-461: a wholesale day-rating failure still fails the run.
+
+        Even if apply_bulletin_day_ratings raises outright, ingest continues
+        (the bulletin persists) but records_failed is bumped by one so the run
+        is marked failed.
+        """
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+        with patch(
+            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            side_effect=RuntimeError("boom"),
+        ):
+            created = upsert_bulletin(raw, run)
+
+        assert created is True
+        run.refresh_from_db()
+        assert run.records_failed == 1
+
     def test_handles_missing_next_update(self) -> None:
         """Bulletin without nextUpdate stores None."""
         run = PipelineRunFactory.create()

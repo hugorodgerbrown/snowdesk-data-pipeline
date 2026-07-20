@@ -325,9 +325,12 @@ class Command(BaseCommand):
         if run.records_failed > 0:
             raise CommandError(
                 f"{source.name} run #{run.pk} completed with "
-                f"{run.records_failed} render-model failure(s). "
-                f"Bulletins were stored with version=0 error sentinels. "
-                f"Run 'rebuild_render_models' after fixing the issue."
+                f"{run.records_failed} failed record(s) — a render-model build "
+                f"and/or a day-rating recompute failed. Affected bulletins may "
+                f"carry version=0 render-model sentinels, and affected day "
+                f"ratings were invalidated (dropped to 'no rating'). Check the "
+                f"run logs, then re-run 'rebuild_render_models' and/or re-ingest "
+                f"after fixing the cause."
             )
 
     def _resolve_dates(
