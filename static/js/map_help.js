@@ -59,7 +59,7 @@
 
   const STORAGE_KEY = 'snowdesk.map.help';
   const DISMISSED_VALUE = 'seen';
-  const RING_PADDING = 8;
+  const RING_PADDING = 4;
   const TOOLTIP_MARGIN = 12;
 
   // Respect prefers-reduced-motion: skip the ring pulse and the position
