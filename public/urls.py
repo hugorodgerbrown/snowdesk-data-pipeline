@@ -8,6 +8,8 @@ URL structure:
                                                + Snowdesk liability disclaimer.
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
+  /observations/                                Signed-in stream of recent
+                                               field observations (SNOW-476).
   /examples/random/                            Renders a random bulletin inline
                                                using the canonical view.
   /examples/category/<danger_level>/           Renders a random bulletin matching
@@ -74,6 +76,10 @@ urlpatterns = [
     # the generic <region_id:region_id>/ patterns so "help" never resolves
     # as a region id.
     path("help/", views.help_page, name="help"),
+    # Recent field-observations stream (SNOW-476) — registered before the
+    # generic <region_id:region_id>/ patterns so "observations" never
+    # resolves as a region id.
+    path("observations/", views.observations_list, name="observations"),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(
