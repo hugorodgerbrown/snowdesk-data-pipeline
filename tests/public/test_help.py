@@ -76,6 +76,10 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-observations"' not in response.content
 
+    def test_recent_observations_panel_absent_by_default(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-recent-observations"' not in response.content
+
     def test_map_favourites_sentence_absent_by_default(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-map-favourites"' not in response.content
@@ -117,15 +121,22 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-map-community"' in response.content
 
+    @override_flag("observations_page", active=True)
+    def test_recent_observations_panel_present_when_flag_active(
+        self, client: Client
+    ) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-recent-observations"' in response.content
+
 
 @pytest.mark.django_db
 class TestHelpPageDiscoverability:
-    """The homepage links to /help/ from both the footer and the top nav.
+    """The homepage links to /help/ from the footer; the top nav does not.
 
-    The two links are asserted independently (split on the footer's
-    ``data-testid`` marker) so removing either one is caught by its own
-    regression test rather than a single combined assertion masking which
-    link broke.
+    SNOW-445 removed the header Help link to declutter the nav bar — the
+    footer link is now the sole entry point. The footer link is asserted
+    positively and the nav's absence negatively, each as its own regression
+    test so a reintroduced nav link or a dropped footer link is caught.
     """
 
     def test_footer_links_to_help(self, client: Client) -> None:
@@ -134,8 +145,9 @@ class TestHelpPageDiscoverability:
         footer_start = content.index(b'data-testid="site-footer"')
         assert reverse("public:help").encode() in content[footer_start:]
 
-    def test_nav_links_to_help(self, client: Client) -> None:
+    def test_nav_does_not_link_to_help(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         content = response.content
-        footer_start = content.index(b'data-testid="site-footer"')
-        assert reverse("public:help").encode() in content[:footer_start]
+        nav_start = content.index(b"<nav")
+        nav_end = content.index(b"</nav>", nav_start)
+        assert reverse("public:help").encode() not in content[nav_start:nav_end]

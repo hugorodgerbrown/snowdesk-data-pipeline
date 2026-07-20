@@ -994,6 +994,23 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Sheet header (SNOW-474) -----------------------------------------------------
+# Shared title + persistent × close control for the favourites/report map
+# sheets. Both context vars are required (title, close_action) — supplying
+# them here keeps the include from erroring on a missing var.
+
+SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Report sheet",
+        "context": {"title": "Report", "close_action": "close-report-sheet"},
+    },
+    {
+        "caption": "Favourite sheet",
+        "context": {"title": "Favourite", "close_action": "close-favourite-sheet"},
+    },
+)
+
+
 TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Error (HTMX banner shape) — no CTA, not dismissible",
@@ -1214,7 +1231,11 @@ TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
 # bare logo, back-link variant, season-trigger variant, and authed subscriber.
 # ``request.user`` and ``nav_subscriptions`` are overridden via SimpleNamespace
 # so the partial's auth-area branches can be exercised without touching the
-# context processor.
+# context processor. ``GET={}`` is required (SNOW-476) — nav.html's
+# ``{% flag "observations_page" %}`` tag calls waffle's ``flag_is_active``,
+# which reads ``request.GET`` unconditionally when ``WAFFLE_OVERRIDE`` is set
+# (true in development/test settings); without it, rendering this fixture
+# raises ``AttributeError``.
 
 _NAV_REGION = SimpleNamespace(region_id="CH-VS-3431", name="Bex-Villars")
 
@@ -1229,6 +1250,7 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
+                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1245,6 +1267,7 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
+                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1260,6 +1283,7 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
+                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1274,6 +1298,7 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="alice@example.com",
                 ),
                 csp_nonce="",
+                GET={},
             ),
             "nav_subscriptions": [
                 SimpleNamespace(region=_NAV_REGION),

@@ -73,7 +73,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
 import analytics
-from accounts.models import Subscription
+from accounts.models import Subscription, user_is_verified
 from bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -104,6 +104,7 @@ from bulletins.services.weather_fetcher import (
 from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
+from observations.models import FieldObservation
 from regions.models import MicroRegion
 
 from .decorators import lowercase_region_id
@@ -777,6 +778,16 @@ def home(request: HttpRequest) -> HttpResponse:
     # already narrowed to actual data in _base_map_context().
     season_end: datetime.date = base_ctx["season_end"]
     is_offseason = today > season_end
+    # SNOW-445: label + resume-month for the off-season archive bar and the
+    # intro-card reference. Derived from the *data window's* calendar season
+    # (November → May of the season containing season_end), NOT from `today`
+    # (which drifts into the next calendar season over the summer) nor from
+    # the data-narrowed season_start (the first populated date, not the
+    # Nov 1 boundary). Precomputed here rather than via a template filter chain.
+    archived_season_start, _archived_season_end = _season_date_range(season_end)
+    season_label = (
+        f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
+    )
 
     # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
     # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
@@ -832,6 +843,8 @@ def home(request: HttpRequest) -> HttpResponse:
             "default_major_name": default_major_name,
             "show_intro": True,
             "is_offseason": is_offseason,
+            "season_label": season_label,
+            "archived_season_start": archived_season_start,
             "sample_bulletin_url": sample_bulletin_url,
         },
     )
@@ -1164,8 +1177,87 @@ def help_page(request: HttpRequest) -> HttpResponse:
         "community_reports_visible": waffle.flag_is_active(
             request, "community_reports"
         ),
+        "observations_page_visible": waffle.flag_is_active(
+            request, "observations_page"
+        ),
     }
     return render(request, "public/help.html", context)
+
+
+def observations_list(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /observations page — a signed-in stream of recent reports.
+
+    Gated on the ``observations_page`` waffle flag (SNOW-476); raises
+    Http404 when inactive so the route doesn't exist for users without
+    access. Shows FieldObservation rows from the last 48 hours, newest
+    first. An anonymous visitor sees a sign-in call to action instead of
+    the list. A signed-in viewer always sees their own reports; other
+    users' reports are included only when the ``community_reports`` flag
+    is active for them — mirroring the eligibility rule for the map's
+    community-reports overlay.
+
+    Other users' timestamps are floored to the preceding 15-minute mark
+    (the same anonymisation the map overlay applies) via
+    ``public.api._truncate_to_quarter_hour``, imported at function level
+    to avoid a module-level import cycle between ``public.views`` and
+    ``public.api``. Own timestamps render at full precision.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered observations page.
+
+    """
+    if not waffle.flag_is_active(request, "observations_page"):
+        raise Http404("Observations page is not enabled.")
+
+    from public.api import _truncate_to_quarter_hour
+
+    window_hours = 48
+    since = timezone.now() - datetime.timedelta(hours=window_hours)
+    rows: list[dict[str, Any]] = []
+
+    if request.user.is_authenticated:
+        show_others = waffle.flag_is_active(request, "community_reports")
+        queryset = FieldObservation.objects.recent(since).select_related(
+            "region", "user"
+        )
+        if not show_others:
+            queryset = queryset.filter(user=request.user)
+
+        for observation in queryset:
+            is_own = observation.user_id == request.user.pk
+            rows.append(
+                {
+                    "type_label": observation.get_observation_type_display(),
+                    "region_name": (
+                        observation.region.name
+                        if observation.region is not None
+                        else "unknown region"
+                    ),
+                    "region_url": (
+                        observation.region.get_absolute_url()
+                        if observation.region is not None
+                        else None
+                    ),
+                    "observed_at": (
+                        observation.observed_at
+                        if is_own
+                        else _truncate_to_quarter_hour(observation.observed_at)
+                    ),
+                    "is_own": is_own,
+                }
+            )
+
+    context = {
+        "rows": rows,
+        "viewer_authenticated": request.user.is_authenticated,
+        "signin_url": reverse("accounts:sign_in"),
+        "window_hours": window_hours,
+    }
+    return render(request, "public/observations.html", context)
 
 
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
@@ -1343,8 +1435,15 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
 
     ``report_visible`` is True when the ``field_observations`` waffle flag is
     active — this controls whether the roundel and sheet are rendered at all.
-    ``report_eligible`` is True when the user is authenticated — eligible users
-    get the report flow; anonymous users get a sign-in CTA.
+    ``report_eligible`` is True only when the user is authenticated **and** has
+    a verified ``Account`` — eligible users get the report flow.  This mirrors
+    the server-side gate in ``observations/views.py`` exactly (both call
+    ``accounts.models.user_is_verified``) so the client affordance can never
+    invite a request the server will 403 (SNOW-477).  ``report_unverified`` is
+    True for an authenticated-but-unverified user — the sheet shows them a
+    "verify your email" prompt rather than the anonymous sign-in CTA or a
+    silent stall.  Anonymous users are neither eligible nor unverified and get
+    the sign-in CTA.
 
     When ``report_visible`` is True the dict also includes the HTMX endpoint
     URLs and a sign-in URL for the anonymous CTA.
@@ -1353,15 +1452,18 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``report_visible``, ``report_eligible``, and (when visible)
-        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
+        Dict with ``report_visible``, ``report_eligible``,
+        ``report_unverified``, and (when visible) ``report_form_url``,
+        ``report_submit_url``, ``report_signin_url``.
 
     """
     report_visible = waffle.flag_is_active(request, "field_observations")
-    report_eligible = request.user.is_authenticated
+    report_eligible = user_is_verified(request.user)
+    report_unverified = request.user.is_authenticated and not report_eligible
     ctx: dict[str, Any] = {
         "report_visible": report_visible,
         "report_eligible": report_eligible,
+        "report_unverified": report_unverified,
     }
     if report_visible:
         ctx.update(

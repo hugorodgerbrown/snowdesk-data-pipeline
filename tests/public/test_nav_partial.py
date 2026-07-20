@@ -22,6 +22,7 @@ from django.contrib.auth.models import AnonymousUser, User
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.urls import reverse
+from waffle.testutils import override_flag
 
 from tests.factories import UserFactory
 
@@ -74,3 +75,23 @@ class TestNavAdminMenu:
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)
         assert 'id="admin-menu"' not in html
+
+
+@pytest.mark.django_db
+class TestNavObservationsLink:
+    """SNOW-476: the Observations link is gated on the observations_page flag."""
+
+    def test_link_absent_by_default(self, rf: RequestFactory) -> None:
+        """The link is absent when the flag is inactive."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("public:observations") not in html
+
+    @override_flag("observations_page", active=True)
+    def test_link_present_when_flag_active(self, rf: RequestFactory) -> None:
+        """The link appears once the flag is active for the viewer."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("public:observations") in html

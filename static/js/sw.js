@@ -127,10 +127,26 @@ try {
   // Non-fatal — see fallback in the 'sync' listener below.
 }
 
-// SNOW-478: v14 — static/js/map.js now derives overlay label fonts from the
+// SNOW-475: v13 — new static/js/place_picker.js, favourites.js/report.js
+// rewritten to use it, and _map_embed.html's markup gained #map-place-pin.
+// (v12 was taken by SNOW-462/SNOW-472 on main.)
+// SNOW-445: v14 — map.js click-dispatch rewrite (marker exclusion zone,
+// always-on-top pins, cluster-tap zoom fix).
+// SNOW-474: v15 — persistent close (×) controls added to the favourites
+// and report map sheets: new templates/includes/_sheet_header.html partial,
+// plus Esc/click-outside dismissal wired into favourites.js/report.js.
+// SNOW-479: v16 — favourite creation routed through the mutation queue
+// (favourites.js submit interceptor, optimistic pending pin in map.js,
+// drain re-dispatch + failed-permanent event in mutation_queue.js).
+// SNOW-445: v17 — design-fixes batch: zoom pill removed (map.js/_map_embed.html),
+// nav Help→footer + full-width wordmark + sync-badge display fix (nav.html),
+// mutation_queue.js inline-flex toggle, off-season full-width bar (_map_embed.html).
+// SNOW-477: v18 — report.js fix for the observation form (verified-only
+// eligibility, unverified-user prompt, form-load error handling).
+// SNOW-478: v19 — static/js/map.js now derives overlay label fonts from the
 // active basemap and draws the favourites pin as an SDF icon (fixes glyph
 // 404s on swisstopo/IGN/basemap.at basemaps).
-const CACHE_VERSION = 'snowdesk-shell-v14';
+const CACHE_VERSION = 'snowdesk-shell-v19';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
