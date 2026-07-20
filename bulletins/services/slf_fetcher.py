@@ -39,6 +39,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
+from django.db import transaction
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin
 from bulletins.services.day_rating import apply_bulletin_day_ratings
@@ -250,6 +251,40 @@ def _get_region(region_id: str) -> MicroRegion:
         ) from exc
 
 
+def _resolve_bulletin_regions(
+    raw_regions: list[dict[str, str]],
+) -> tuple[list[tuple[MicroRegion, str]], list[str]]:
+    """Resolve raw region entries to ``(region, name)`` pairs before any write.
+
+    Returns the resolvable ``(MicroRegion, region_name_at_time)`` pairs plus
+    the region_ids skipped because they are not in the fixtures. Raises
+    ``KeyError`` if a region entry is missing ``regionID`` or ``name`` — this
+    surfaces malformed provider data *before* the caller mutates the DB, so a
+    bad entry can never leave a bulletin with a half-written link set
+    (SNOW-460).
+
+    Args:
+        raw_regions: The ``regions`` list from a raw bulletin dict.
+
+    Returns:
+        ``(resolved, skipped)`` where ``resolved`` is a list of
+        ``(MicroRegion, region_name_at_time)`` pairs and ``skipped`` is the
+        list of unresolved (unknown) region_ids.
+
+    """
+    resolved: list[tuple[MicroRegion, str]] = []
+    skipped: list[str] = []
+    for raw_region in raw_regions:
+        region_id = raw_region["regionID"]
+        try:
+            region = _get_region(region_id)
+        except UnknownRegionError:
+            skipped.append(region_id)
+            continue
+        resolved.append((region, raw_region["name"]))
+    return resolved, skipped
+
+
 def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
@@ -312,30 +347,33 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
         "pdf_url": pdf_url,
     }
 
-    bulletin, created = Bulletin.objects.update_or_create(
-        bulletin_id=bulletin_id,
-        defaults=defaults,
-    )
+    # Resolve every region *before* touching the DB (SNOW-460): a malformed
+    # entry raises here, before the delete-and-recreate below, so it can never
+    # leave a bulletin with a truncated link set. Unknown-but-well-formed
+    # regions are skipped as before (absent from the fixtures, not an error).
+    resolved_regions, skipped_regions = _resolve_bulletin_regions(raw_regions)
 
-    # Link regions — clear existing links on update to stay in sync.
-    if not created:
-        RegionBulletin.objects.filter(bulletin=bulletin).delete()
-
-    linked_count = 0
-    skipped_regions: list[str] = []
-    for raw_region in raw_regions:
-        region_id = raw_region["regionID"]
-        try:
-            region = _get_region(region_id)
-        except UnknownRegionError:
-            skipped_regions.append(region_id)
-            continue
-        RegionBulletin.objects.create(
-            bulletin=bulletin,
-            region=region,
-            region_name_at_time=raw_region["name"],
+    # Replace the bulletin and its region links in one transaction so a
+    # failure can never commit a bulletin with a half-written link set — the
+    # bulletin and its associations move between consistent versions atomically.
+    with transaction.atomic():
+        bulletin, created = Bulletin.objects.update_or_create(
+            bulletin_id=bulletin_id,
+            defaults=defaults,
         )
-        linked_count += 1
+
+        # Clear existing links on update to stay in sync.
+        if not created:
+            RegionBulletin.objects.filter(bulletin=bulletin).delete()
+
+        for region, region_name_at_time in resolved_regions:
+            RegionBulletin.objects.create(
+                bulletin=bulletin,
+                region=region,
+                region_name_at_time=region_name_at_time,
+            )
+
+    linked_count = len(resolved_regions)
 
     if skipped_regions:
         logger.warning(
