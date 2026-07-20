@@ -66,6 +66,12 @@ def test_signed_in_add_flow_creates_favourite(
     """Add -> pan the map -> name -> Save creates a Favourite row at the
     map's centre, and the map's favourites source picks it up (SNOW-475:
     the place-picker, not a draggable marker, is what places the pin).
+
+    SNOW-479: Save is now routed through the client mutation queue rather
+    than htmx. Online, enqueue triggers an immediate drain that replays the
+    POST and creates the row; the sheet shows the optimistic confirmation
+    (it no longer auto-hides), and the successful drain re-dispatches
+    ``snowdesk:favourites-changed`` so the authoritative pin lands.
     """
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
@@ -103,10 +109,45 @@ def test_signed_in_add_flow_creates_favourite(
     assert page.locator("#map-place-pin:not([hidden])").count() == 1
 
     page.fill("#favourite-name-input", "Test Peak")
+
+    # SNOW-479: create is routed through the client mutation queue, not htmx —
+    # wait for the queue + IndexedDB wrapper to be ready before submitting.
+    page.wait_for_function("() => typeof window.pwaMutationQueue === 'object'")
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
     page.click("#favourite-create-form button[type=submit]")
 
-    page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
+    # The optimistic confirmation renders immediately in the sheet (which stays
+    # open showing it — it no longer auto-hides), and the place-picker
+    # deactivates so the centre pin disappears. Online, the "will sync" line
+    # stays hidden.
+    page.wait_for_selector('#favourite-sheet:has-text("Pin saved")')
+    assert (
+        page.locator("#favourite-sheet [data-favourite-pending]:not([hidden])").count()
+        == 0
+    )
     assert page.locator("#map-place-pin:not([hidden])").count() == 0
+
+    # Online, enqueue triggers an immediate drain that replays the POST; on
+    # success the queue re-dispatches ``snowdesk:favourites-changed`` → fetch
+    # geojson → ``source.setData``. Poll until the authoritative (non-pending)
+    # feature lands rather than reading the source once, which races that fetch
+    # — reliable locally but flaky in CI, where the create round-trip (a live
+    # Open-Meteo elevation lookup) is slower. This also proves the optimistic
+    # ``pending`` feature was replaced by the real server pin. The create is now
+    # asynchronous (queue → drain → replay), so this poll must precede the DB
+    # assertion below — the confirmation renders optimistically, before the row
+    # exists server-side.
+    page.wait_for_function(
+        """() => {
+            const src = MAP.getSource('favourites');
+            if (!src) return false;
+            const data = src.serialize().data;
+            return (data.features || []).some(
+                (f) => f.properties && f.properties.name === 'Test Peak'
+                       && !f.properties.pending,
+            );
+        }"""
+    )
 
     with django_db_blocker.unblock():
         favourite = Favourite.objects.get(
@@ -114,23 +155,6 @@ def test_signed_in_add_flow_creates_favourite(
         )
         assert favourite.latitude == pytest.approx(46.2, abs=0.01)
         assert favourite.longitude == pytest.approx(7.6, abs=0.01)
-
-    # The map's favourites source is refreshed asynchronously after create:
-    # favourites.js dispatches ``snowdesk:favourites-changed`` → fetch geojson
-    # → ``source.setData``. Poll until the new feature lands rather than reading
-    # the source once, which races that fetch — reliable locally but flaky in
-    # CI, where the create round-trip (a live Open-Meteo elevation lookup) is
-    # slower and the ``setData`` had not yet run when the read fired.
-    page.wait_for_function(
-        """() => {
-            const src = MAP.getSource('favourites');
-            if (!src) return false;
-            const data = src.serialize().data;
-            return (data.features || []).some(
-                (f) => f.properties && f.properties.name === 'Test Peak',
-            );
-        }"""
-    )
 
 
 @override_flag("favourites", active=True)
