@@ -83,7 +83,7 @@ def test_overlay_toggle_installs_clustered_source(
     # references it and that the icon was actually registered on the
     # style via map.addImage.
     assert page.evaluate(
-        "() => !!MAP.getLayer('community-reports-point').layout['icon-image']"
+        "() => !!MAP.getLayoutProperty('community-reports-point', 'icon-image')"
     )
     assert page.evaluate("() => MAP.hasImage('community-report-flag')")
 
