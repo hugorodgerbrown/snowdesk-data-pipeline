@@ -147,12 +147,25 @@ replaying:
    applies the same guard best-effort (it reads the `mutations.principal`
    `meta:app` row directly, since a worker has no `<meta>` tag to read;
    skipped entirely if that store is unavailable on a worker-created DB
-   rather than guessing).
+   rather than guessing). The SW-side guard runs ONLY when no tab is
+   open (that's the whole point of Background Sync's self-drain path —
+   see `static/js/sw.js`'s header docstring), so it never emits
+   `pwa.mutation.discarded`: `_postTelemetry` posts to
+   `self.clients.matchAll(...)`, which is a guaranteed no-op with zero
+   open clients. It silently deletes the mismatched row instead.
 
-Both discard paths emit the `pwa.mutation.discarded` telemetry event —
-`reason: 'account_change'` (with a `count` of rows cleared) from the
-reconcile path, `reason: 'principal_mismatch'` (with the row's
-`method`/`url`/`idempotency_key`) from the drain-guard.
+The page-side drain-guard and the reconcile-on-load clear both emit the
+`pwa.mutation.discarded` telemetry event; the SW-side guard does not,
+for the reason above. Three `reason` values:
+
+| `reason`                  | Emitted from     | Meaning                                                                 |
+|----------------------------|------------------|--------------------------------------------------------------------------|
+| `principal_uninitialised`  | Reconcile on load | The `mutations.principal` `meta:app` row didn't exist yet (first load after this ticket shipped, or a fresh DB) — any pre-existing, principal-less row is untrustworthy and cleared on general principle, not because an account change was actually observed. |
+| `account_change`           | Reconcile on load | A `mutations.principal` row DID exist and its value differs from the current principal — a genuine account change. |
+| `principal_mismatch`       | Drain-guard       | A single row's own stamped `principal` doesn't match the current one at replay time (the race backstop). |
+
+Both reconcile-path reasons carry a `count` of rows cleared; the
+drain-guard reason carries the row's `method`/`url`/`idempotency_key`.
 
 `window.pwaMutationQueue.clear()` empties `queue:mutations` and
 refreshes the nav badge — used internally by the reconcile above, and
