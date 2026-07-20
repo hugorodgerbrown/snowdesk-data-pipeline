@@ -21,8 +21,14 @@ Covers the named cases from the SNOW-376 scoping comment:
 6. ``registration.sync.register('mutation-queue')`` is feature-detected —
    called when ``SyncManager`` is present, skipped without error
    otherwise.
+7. SNOW-462 account-change principal partitioning: ``clear()`` empties the
+   store and hides the badge; ``enqueue()`` stamps the row's ``principal``
+   from ``<meta name="pwa-user-id">``; the drain-guard discards (never
+   replays) a row stamped for a different principal than the current one;
+   a fresh page load under a different principal clears the whole queue
+   via the reconcile-on-load path.
 
-Tests 1-5 use the SIMULATED-SW pattern (``navigator.serviceWorker``
+Tests 1-5 and 7 use the SIMULATED-SW pattern (``navigator.serviceWorker``
 stripped entirely) — these are about the queue's own logic, not the SW
 lifecycle, per ``docs/client-side-tests.md``'s "SW-lifecycle tests: real
 vs simulated" guidance. Test 6 needs a stubbed ``navigator.serviceWorker``
@@ -62,6 +68,9 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
+
+from tests.e2e.conftest import _session_login
+from tests.factories import UserFactory
 
 DB_NAME = "snowdesk-pwa-v1"
 MUTATION_URL = "/api/test-mutation"
@@ -595,6 +604,170 @@ def test_nav_badge_singular_form(live_server: LiveServer, page: Page) -> None:
         MUTATION_URL,
     )
     assert badge_text == "1 change queued"
+
+
+# ---------------------------------------------------------------------------
+# 7. SNOW-462 — account-change principal partitioning.
+# ---------------------------------------------------------------------------
+
+
+def test_clear_empties_store_and_hides_badge(
+    live_server: LiveServer, page: Page
+) -> None:
+    """clear() empties queue:mutations and hides the nav sync badge."""
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    page.evaluate(
+        """async (url) => {
+            Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+          }""",
+        MUTATION_URL,
+    )
+    assert len(_mutation_rows(page)) == 2
+
+    page.evaluate("""async () => { await window.pwaMutationQueue.clear(); }""")
+
+    assert _mutation_rows(page) == []
+    badge_hidden = page.evaluate(
+        """() => {
+            const el = document.querySelector('[data-sync-badge]');
+            return el ? el.classList.contains('hidden') : true;
+          }"""
+    )
+    assert badge_hidden is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_enqueue_stamps_principal_from_meta_tag(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """enqueue() stamps the row's principal from <meta name="pwa-user-id">."""
+    with django_db_blocker.unblock():
+        user = UserFactory.create()
+
+    _session_login(page.context, live_server.url, user)
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    page.evaluate(
+        """async (url) => {
+            Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+          }""",
+        MUTATION_URL,
+    )
+    row = _mutation_rows(page)[0]
+    assert row["principal"] == str(user.pk)
+
+
+def test_drain_guard_discards_row_with_mismatched_principal(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A row stamped for a different principal than the current one is
+    discarded on drain — deleted, never replayed against the server.
+    """
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    call_count = {"n": 0}
+
+    def handler(route: Route) -> None:
+        call_count["n"] += 1
+        route.fulfill(status=201, body="")
+
+    page.route(f"**{MUTATION_URL}", handler)
+
+    # The current page is anonymous (principal None) — seed a row stamped
+    # for a different principal directly, bypassing enqueue()'s own stamp.
+    page.evaluate(
+        """async (url) => {
+            await window.pwaDb.put('queue:mutations', {
+                idempotency_key: 'mismatched-principal-key',
+                method: 'POST',
+                url,
+                headers: {},
+                body: null,
+                created_at: new Date().toISOString(),
+                attempts: 0,
+                status: 'queued',
+                next_attempt_at: 0,
+                principal: 'SOMEONE_ELSE',
+            });
+          }""",
+        MUTATION_URL,
+    )
+    page.evaluate("""async () => { await window.pwaMutationQueue.drain(); }""")
+
+    _poll(
+        page,
+        """async () => (await window.pwaDb.getAll('queue:mutations')).length === 0""",
+    )
+    assert call_count["n"] == 0, (
+        "a principal-mismatched row must never reach the server"
+    )
+
+    discarded_event = _poll(
+        page,
+        """async () => {
+            const events = await window.pwaDb.getAll('queue:events');
+            return events.find((e) => e.event === 'pwa.mutation.discarded') || false;
+          }""",
+    )
+    assert discarded_event["properties"]["reason"] == "principal_mismatch"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reconcile_clears_queue_on_account_change(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """A fresh page load under a different principal clears the WHOLE queue.
+
+    Simulates the reconcile-on-load path directly (rather than driving the
+    private ``_reconcilePrincipal`` function, which isn't exposed): queue a
+    row while signed in as user A, sign in as user B instead, and reload —
+    ``_wireLifecycle()`` runs ``_reconcilePrincipal()`` first thing on every
+    page load, which must observe the principal mismatch and clear
+    everything queued under A before B's session can ever touch it.
+    """
+    with django_db_blocker.unblock():
+        user_a = UserFactory.create()
+        user_b = UserFactory.create()
+
+    _session_login(page.context, live_server.url, user_a)
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    page.evaluate(
+        """async (url) => {
+            Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+          }""",
+        MUTATION_URL,
+    )
+    assert len(_mutation_rows(page)) == 1
+
+    _session_login(page.context, live_server.url, user_b)
+    _load(page, live_server.url)
+
+    _poll(
+        page,
+        """async () => (await window.pwaDb.getAll('queue:mutations')).length === 0""",
+    )
+
+    discarded_event = _poll(
+        page,
+        """async () => {
+            const events = await window.pwaDb.getAll('queue:events');
+            return events.find(
+                (e) => e.event === 'pwa.mutation.discarded'
+                    && e.properties.reason === 'account_change'
+            ) || false;
+          }""",
+    )
+    assert discarded_event["properties"]["count"] == 1
 
 
 # ---------------------------------------------------------------------------
