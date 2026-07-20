@@ -6,7 +6,7 @@ Covers:
                       rate-limited → 429; invalid lat/lon → 400;
                       name over max_length → 400;
                       valid submit → 200 + creates row;
-                      cap reached → 200 with the limit-reached partial.
+                      cap reached → 409 with the limit-reached partial.
   favourite_rename — owner isolation (user A cannot rename user B's pin);
                       name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
@@ -343,13 +343,18 @@ class TestFavouriteCreateSuccess:
 
 @pytest.mark.django_db
 class TestFavouriteCreateCap:
-    """Reaching the per-user cap renders the limit-reached partial at 200."""
+    """Reaching the per-user cap renders the limit-reached partial at 409."""
 
     @override_flag("favourites", active=True)
-    def test_cap_reached_returns_200_with_limit_partial(
+    def test_cap_reached_returns_409_with_limit_partial(
         self, client: Client, settings: Any
     ) -> None:
-        """When the cap is reached, the create endpoint returns 200 with the error."""
+        """When the cap is reached, the create endpoint returns 409 with the error.
+
+        409 (not the transient 429 or a swap-friendly 200) is what the client
+        mutation queue needs to classify the doomed create as a permanent
+        failure and stop retrying it — see SNOW-479 and ``favourite_create``.
+        """
         settings.FAVOURITES_MAX_PER_USER = 1
         user = UserFactory.create()
         client.force_login(user)
@@ -364,7 +369,7 @@ class TestFavouriteCreateCap:
                 CREATE_URL, {"lat": "47.0", "lon": "8.0"}, **HTMX_HEADERS
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 409
         assert Favourite.objects.filter(user=user).count() == 1
         content = response.content.decode()
         assert "limit" in content.lower()

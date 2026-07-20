@@ -104,6 +104,7 @@ from bulletins.services.weather_fetcher import (
 from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
+from observations.models import FieldObservation
 from regions.models import MicroRegion
 
 from .decorators import lowercase_region_id
@@ -1164,8 +1165,87 @@ def help_page(request: HttpRequest) -> HttpResponse:
         "community_reports_visible": waffle.flag_is_active(
             request, "community_reports"
         ),
+        "observations_page_visible": waffle.flag_is_active(
+            request, "observations_page"
+        ),
     }
     return render(request, "public/help.html", context)
+
+
+def observations_list(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /observations page — a signed-in stream of recent reports.
+
+    Gated on the ``observations_page`` waffle flag (SNOW-476); raises
+    Http404 when inactive so the route doesn't exist for users without
+    access. Shows FieldObservation rows from the last 48 hours, newest
+    first. An anonymous visitor sees a sign-in call to action instead of
+    the list. A signed-in viewer always sees their own reports; other
+    users' reports are included only when the ``community_reports`` flag
+    is active for them — mirroring the eligibility rule for the map's
+    community-reports overlay.
+
+    Other users' timestamps are floored to the preceding 15-minute mark
+    (the same anonymisation the map overlay applies) via
+    ``public.api._truncate_to_quarter_hour``, imported at function level
+    to avoid a module-level import cycle between ``public.views`` and
+    ``public.api``. Own timestamps render at full precision.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered observations page.
+
+    """
+    if not waffle.flag_is_active(request, "observations_page"):
+        raise Http404("Observations page is not enabled.")
+
+    from public.api import _truncate_to_quarter_hour
+
+    window_hours = 48
+    since = timezone.now() - datetime.timedelta(hours=window_hours)
+    rows: list[dict[str, Any]] = []
+
+    if request.user.is_authenticated:
+        show_others = waffle.flag_is_active(request, "community_reports")
+        queryset = FieldObservation.objects.recent(since).select_related(
+            "region", "user"
+        )
+        if not show_others:
+            queryset = queryset.filter(user=request.user)
+
+        for observation in queryset:
+            is_own = observation.user_id == request.user.pk
+            rows.append(
+                {
+                    "type_label": observation.get_observation_type_display(),
+                    "region_name": (
+                        observation.region.name
+                        if observation.region is not None
+                        else "unknown region"
+                    ),
+                    "region_url": (
+                        observation.region.get_absolute_url()
+                        if observation.region is not None
+                        else None
+                    ),
+                    "observed_at": (
+                        observation.observed_at
+                        if is_own
+                        else _truncate_to_quarter_hour(observation.observed_at)
+                    ),
+                    "is_own": is_own,
+                }
+            )
+
+    context = {
+        "rows": rows,
+        "viewer_authenticated": request.user.is_authenticated,
+        "signin_url": reverse("accounts:sign_in"),
+        "window_hours": window_hours,
+    }
+    return render(request, "public/observations.html", context)
 
 
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the

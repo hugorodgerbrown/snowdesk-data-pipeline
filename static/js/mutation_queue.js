@@ -434,6 +434,19 @@
       attempts: updated.attempts,
       reason: reason,
     });
+    // Generic DOM signal so a consumer can undo its optimistic UI for the
+    // failed mutation (SNOW-479: favourites.js drops the pending pin when a
+    // queued create is permanently rejected, e.g. the 409 at the favourites
+    // cap). Kept queue-neutral — the payload names the row, consumers filter.
+    try {
+      document.dispatchEvent(
+        new CustomEvent('pwa:mutation-failed-permanent', {
+          detail: { method: row.method, url: row.url, reason: reason },
+        }),
+      );
+    } catch (_e) {
+      // Non-fatal — the toast + badge below are the primary user signal.
+    }
     _revealToast();
     _updateBadge().catch(function () {});
   }
@@ -598,6 +611,22 @@
         // Non-fatal — a drain failure must never break the caller.
       } finally {
         emitTelemetry('pwa.mutation.drained', { count: drained });
+        // SNOW-479: once ≥1 row synced we are online and server state has
+        // moved, so tell the map to refetch its favourites overlay — this is
+        // what replaces an offline-created pin's synthetic "pending" marker
+        // with the authoritative server pin. Kept queue-neutral (fires for any
+        // successful drain, not just favourites); map.js's listener is
+        // eligible-gated and a no-op when nothing changed, so a report-only
+        // drain harmlessly triggers one cheap favourites refetch.
+        if (drained > 0) {
+          try {
+            document.dispatchEvent(
+              new CustomEvent('snowdesk:favourites-changed'),
+            );
+          } catch (_e2) {
+            // Non-fatal — the drain itself already succeeded.
+          }
+        }
         _drainInFlight = null;
         _updateBadge().catch(function () {});
       }

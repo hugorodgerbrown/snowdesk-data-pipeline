@@ -76,6 +76,10 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-observations"' not in response.content
 
+    def test_recent_observations_panel_absent_by_default(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-recent-observations"' not in response.content
+
     def test_map_favourites_sentence_absent_by_default(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-map-favourites"' not in response.content
@@ -116,6 +120,13 @@ class TestHelpPageFlagGating:
     ) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-map-community"' in response.content
+
+    @override_flag("observations_page", active=True)
+    def test_recent_observations_panel_present_when_flag_active(
+        self, client: Client
+    ) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-recent-observations"' in response.content
 
 
 @pytest.mark.django_db

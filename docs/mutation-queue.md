@@ -36,6 +36,36 @@ queue with no call-site changes for any adopter.
   `tests/e2e/test_offline_observation_submit.py` for the full offline →
   reconnect journey test.
 
+- **`static/js/favourites.js`** (SNOW-479) — the second consumer.
+  Favourite *creation* (`favourites.views.favourite_create`) is routed
+  through `window.pwaMutationQueue.enqueue()` instead of `hx-post`, so a
+  pin saved offline is captured immediately and replayed on reconnect
+  (rename/delete stay online-only `hx-post`). On enqueue `favourites.js`
+  dispatches `snowdesk:favourite-pending {lat, lon, name}`; `static/js/map.js`
+  draws a synthetic half-opacity `pending` marker (no uuid) so the save is
+  visible at once. That pending pin becomes the authoritative server pin
+  when the drain re-dispatches `snowdesk:favourites-changed` (see "Drain →
+  favourites refresh" below). Because *all* creates now go through the
+  queue via `fetch`, the favourites-cap case can no longer render its
+  `_favourite_limit.html` inline: `favourite_create` returns **409** at the
+  cap (a non-retry 4xx, so the queue treats it as an immediate permanent
+  failure — see the state machine), which fires the standard failure toast
+  + nav badge; `favourites.js`'s `pwa:mutation-failed-permanent` listener
+  drops the now-doomed pending pin. See
+  `tests/e2e/test_offline_favourite_submit.py` for the full journey +
+  cap-failure test.
+
+### Drain → favourites refresh (SNOW-479)
+
+`drain()` dispatches a `snowdesk:favourites-changed` DOM event whenever a
+pass syncs ≥1 row. This is how an offline-created favourite's optimistic
+`pending` pin is swapped for the real server pin: `map.js` re-fetches the
+authoritative favourites collection (now online) and `setData`s it,
+replacing the whole feature set. The event is deliberately queue-neutral —
+it fires for *any* successful drain, not just favourite rows — so a
+report-only drain harmlessly triggers one cheap, eligible-gated favourites
+refetch rather than the queue needing to know which consumer owned each row.
+
 ## Row shape (`queue:mutations`)
 
 Declared in `static/js/db.js::STORES` (SNOW-375, keyPath `id`,
@@ -113,6 +143,11 @@ A row that lands in `status: 'failed'` (either branch above):
    (singular/plural), hidden entirely when that count is zero, and swaps
    to the `bg-status-error-bg` / `text-status-error-text` tokens when any
    row in the store has `status: 'failed'`.
+4. Dispatches a queue-neutral `pwa:mutation-failed-permanent` DOM event
+   (`{method, url, reason}`) so a consumer can undo its optimistic UI for
+   the failed mutation (SNOW-479: `favourites.js` filters on the create
+   URL and drops the pending pin when a queued favourite-create is
+   permanently rejected — notably the 409 at the favourites cap).
 
 `window.pwaMutationQueue.markFailed(operation, reason)` is the same
 surface for a caller-driven report (a mutation attempted outside the
