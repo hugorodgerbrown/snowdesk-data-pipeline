@@ -596,6 +596,55 @@ def test_nav_badge_reflects_pending_count_and_hides_when_empty(
     )
 
 
+def test_nav_badge_toggles_inline_flex_display(
+    live_server: LiveServer, page: Page
+) -> None:
+    """SNOW-445: the badge carries `inline-flex` only while it has a count.
+
+    At rest the pill is `hidden` with no `inline-flex`, so the two display
+    utilities are never both present (which leaked an empty pill between the
+    nav links). Enqueuing swaps `hidden` for `inline-flex`; draining reverts it.
+    """
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    # At rest: hidden, not inline-flex, and no rendered box.
+    at_rest = page.evaluate(
+        """() => {
+            const el = document.querySelector('[data-sync-badge]');
+            return {
+              hidden: el.classList.contains('hidden'),
+              inlineFlex: el.classList.contains('inline-flex'),
+              display: getComputedStyle(el).display,
+            };
+          }"""
+    )
+    assert at_rest == {"hidden": True, "inlineFlex": False, "display": "none"}
+
+    # With a pending row: `inline-flex` replaces `hidden` and the pill renders.
+    # The badge is a flex *item* (child of a flex nav cluster), so CSS
+    # blockification computes its `inline-flex` as `flex` — the assertion
+    # checks the class swap and a visible (non-`none`) box, not the token.
+    shown = page.evaluate(
+        """async (url) => {
+            Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url });
+            const el = document.querySelector('[data-sync-badge]');
+            return {
+              hidden: el.classList.contains('hidden'),
+              inlineFlex: el.classList.contains('inline-flex'),
+              displayIsNone: getComputedStyle(el).display === 'none',
+            };
+          }""",
+        MUTATION_URL,
+    )
+    assert shown == {
+        "hidden": False,
+        "inlineFlex": True,
+        "displayIsNone": False,
+    }
+
+
 def test_nav_badge_singular_form(live_server: LiveServer, page: Page) -> None:
     """A single pending row reads "1 change queued" (not "1 changes queued")."""
     _load(page, live_server.url)
