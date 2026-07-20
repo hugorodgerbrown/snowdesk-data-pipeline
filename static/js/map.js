@@ -2566,6 +2566,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!geojsonCache) return;          // initial load — handled above
       if (map.getSource('regions')) return;  // still installed on this style
 
+      // SNOW-473: overlayState is seeded once at boot and never updated by the
+      // picker (which writes localStorage + the live layer only), so re-seeding
+      // layer visibility from it after a basemap swap would revert every tier to
+      // its boot value. Re-sync from the localStorage shadow (the source of truth
+      // the picker keeps current) before any install fn reads overlayState.
+      for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
+        overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
+      }
+      overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+      overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+
       // setStyle wipes every source and layer we added, including the
       // merged multi-country caches. The per-install BASE_LAYER_FILTERS
       // snapshot is also stale (it referenced layers that no longer exist).
