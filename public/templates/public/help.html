@@ -10,11 +10,11 @@ collapsible panels reusing includes/_collapsible_panel.html. Each panel's
 body copy lives in its own small content partial under
 public/templates/public/help/.
 
-The Favourites and Field-observations panels, plus a handful of sentences
-inside the Map panel, are gated on the per-user waffle booleans computed
-by public.views.help_page (favourites_visible / report_visible /
-community_reports_visible) — a user never sees documentation for a
-feature they cannot use.
+The Favourites, Field-observations, and Recent-observations panels, plus
+a handful of sentences inside the Map panel, are gated on the per-user
+waffle booleans computed by public.views.help_page (favourites_visible /
+report_visible / community_reports_visible / observations_page_visible)
+— a user never sees documentation for a feature they cannot use.
 {% endcomment %}
 {% load i18n %}
 
@@ -53,6 +53,11 @@ feature they cannot use.
         {% if report_visible %}
             {% translate "Field observations" as t_observations %}
             {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
+        {% endif %}
+
+        {% if observations_page_visible %}
+            {% translate "Recent observations" as t_recent_observations %}
+            {% include "includes/_collapsible_panel.html" with title=t_recent_observations data_testid="help-topic-recent-observations" body_template="public/help/_topic_recent_observations.html" %}
         {% endif %}
 
         {% translate "The season timeline & calendar" as t_timeline %}

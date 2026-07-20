@@ -47,7 +47,7 @@ Usage
     {% include "includes/nav.html" with back_url="/" back_label="Map" %}
     {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=True %}
 {% endcomment %}
-{% load i18n %}
+{% load i18n waffle_tags %}
 <nav class="border-b border-border">
     <div class="mx-auto max-w-narrow flex items-center gap-3 px-4 py-2.5">
         {% if back_url %}
@@ -113,6 +113,11 @@ Usage
             <a href="{% url 'public:help' %}" class="text-sm text-text-2 hover:text-text-1">
                 {% trans "Help" %}
             </a>
+            {% flag "observations_page" %}
+            <a href="{% url 'public:observations' %}" class="text-sm text-text-2 hover:text-text-1">
+                {% trans "Observations" %}
+            </a>
+            {% endflag %}
             {# SNOW-376: mutation-queue sync badge. Hidden by default;             #}
             {# static/js/mutation_queue.js reveals it with the live non-"failed"   #}
             {# queue:mutations count, and swaps the colour to the status-error     #}
