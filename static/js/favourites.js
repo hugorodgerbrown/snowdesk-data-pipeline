@@ -22,12 +22,18 @@
  *      centre pin appears and the form's coords track every pan.
  *   2. writeCreateCoords (PlacePicker's onChange) keeps the form's hidden
  *      lat/lon inputs in sync with the map centre.
- *   3. Save submits the form's own hx-post to favourite_create_url. On
- *      success (the swapped-in content carries [data-favourite-uuid]) we
- *      dispatch snowdesk:favourites-changed for map.js to refresh the
- *      overlay, emit telemetry, deactivate the place-picker, and close the
- *      sheet. On the favourites-cap response (_favourite_limit.html, no
- *      [data-favourite-uuid]) the sheet is left open showing the message.
+ *   3. Save is intercepted (SNOW-479) and routed through
+ *      window.pwaMutationQueue.enqueue() instead of htmx — so an offline tap
+ *      is captured immediately, persisted to IndexedDB, and replayed with a
+ *      stable Idempotency-Key on reconnect (mirrors static/js/report.js). On
+ *      enqueue we dispatch snowdesk:favourite-pending for map.js to draw an
+ *      optimistic "pending" pin, emit telemetry, show the optimistic
+ *      confirmation (with a "will sync" line when offline), and deactivate the
+ *      place-picker. The pending pin becomes the real server pin when the
+ *      queue drains and re-dispatches snowdesk:favourites-changed; a permanent
+ *      failure on replay (e.g. the 409 at the favourites cap) fires the
+ *      queue's own toast + nav badge and drops the pending pin via the
+ *      pwa:mutation-failed-permanent listener below.
  *
  * Pin-detail flow (existing favourite, tapped on the map):
  *   map.js dispatches snowdesk:favourite-selected {uuid, name} on a
@@ -63,14 +69,8 @@
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
   // ---------------------------------------------------------------------------
-  // Module-level create-flow state.
+  // Module-level helpers.
   // ---------------------------------------------------------------------------
-
-  /** True from the moment #favourite-add-btn is tapped until create succeeds
-   * or the sheet is cancelled — distinguishes the create afterSwap branch
-   * from a rename afterSwap (both responses carry [data-favourite-uuid]).
-   * @type {boolean} */
-  let creatingFavourite = false;
 
   /** Return the global MAP object if available, else null. Guards against
    * the case where map.js has not yet initialised.
@@ -127,7 +127,6 @@
 
   function closeSheet() {
     window.PlacePicker?.deactivate();
-    creatingFavourite = false;
     sheet.setAttribute('hidden', '');
     sheet.innerHTML = '';
   }
@@ -253,7 +252,6 @@
     if (!map) return;
 
     openSheet();
-    creatingFavourite = true;
 
     // SNOW-475: show the create form immediately, seeded from the map's
     // current centre, then arm the shared place-picker so the fixed centre
@@ -348,7 +346,6 @@
     const favUuid = detail.uuid;
     if (!favUuid) return;
 
-    creatingFavourite = false;
     window.PlacePicker?.deactivate();
 
     sheet.innerHTML = '';
@@ -360,20 +357,19 @@
   });
 
   // ---------------------------------------------------------------------------
-  // htmx response handling — create/rename success, delete success, cap error.
+  // htmx response handling — rename success, delete success.
   //
-  // Two-step: mark on htmx:beforeRequest whether the element making the
-  // request lives inside #favourite-sheet (checked *before* any swap runs,
-  // so elt.closest() sees a properly attached tree — outerHTML swaps like
-  // the delete form's own row removal detach the element by the time a
-  // later event fires), then act on htmx:afterRequest (last event in
-  // htmx's lifecycle, so any swap has already completed) by inspecting
-  // #favourite-sheet's current contents rather than the swap target —
-  // the create form swaps into #favourite-sheet itself while the detail
-  // row's rename/delete forms swap into #favourite-<uuid> (mirroring
-  // favourites/partials/_favourite.html's own hx-target), so checking
-  // "what's in the sheet now" covers both without caring which target
-  // each form used.
+  // Create is no longer htmx-driven: SNOW-479 routes it through the client
+  // mutation queue (see the #favourite-create-form submit interceptor below).
+  // Only the pin-detail rename/delete forms built by buildDetailRow() still use
+  // hx-post. Two-step: mark on htmx:beforeRequest whether the element making the
+  // request lives inside #favourite-sheet (checked *before* any swap runs, so
+  // elt.closest() sees a properly attached tree — outerHTML swaps like the
+  // delete form's own row removal detach the element by the time a later event
+  // fires), then act on htmx:afterRequest (last event in htmx's lifecycle, so
+  // any swap has already completed) by inspecting #favourite-sheet's current
+  // contents. A rename swaps its _favourite.html (carrying [data-favourite-uuid])
+  // back into #favourite-<uuid> inside the sheet; a delete empties the row.
   // ---------------------------------------------------------------------------
 
   let sheetRequestPending = false;
@@ -390,22 +386,12 @@
 
     const favouriteRow = sheet.querySelector('[data-favourite-uuid]');
     if (favouriteRow) {
-      // Created (create form) or renamed (detail row) successfully.
+      // Renamed successfully (the detail row's _favourite.html swapped back in).
       document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-      if (creatingFavourite) {
-        window.pwaTelemetry?.emit('map.favourite.created', {});
-        closeSheet();
-      }
       return;
     }
-
-    if (creatingFavourite) {
-      // The favourites-cap message (_favourite_limit.html) swapped into the
-      // sheet instead of a favourite row — leave it displayed.
-      return;
-    }
-    // Detail-sheet path with no row left in the sheet => delete succeeded
-    // (favourites:delete returns an empty 200 body, removing the row).
+    // No row left in the sheet => delete succeeded (favourites:delete returns
+    // an empty 200 body, removing the row).
     window.pwaTelemetry?.emit('map.favourite.deleted', {});
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
     closeSheet();
@@ -419,5 +405,107 @@
       (event.detail.xhr && event.detail.xhr.responseText) ||
       'Something went wrong — please try again.';
     showToast(message);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Create submit (SNOW-479) — routed through window.pwaMutationQueue instead
+  // of htmx, so an offline "Save" tap is captured immediately, persisted to
+  // IndexedDB, and replayed with a stable Idempotency-Key on reconnect. Mirrors
+  // static/js/report.js's report-form submit. Delegated from document so it
+  // survives the sheet being re-rendered on every open.
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('submit', function (event) {
+    if (!event.target || event.target.id !== 'favourite-create-form') return;
+    // preventDefault unconditionally — the endpoint is @require_htmx, so a
+    // native form POST would 400; there is no meaningful no-JS fallback here.
+    event.preventDefault();
+    if (!IS_ELIGIBLE || !CREATE_URL) return;
+
+    const form = /** @type {HTMLFormElement} */ (event.target);
+
+    // enqueue() is defensively non-fatal: when IndexedDB is missing or in the
+    // terminal Reset-Required state it silently drops the operation and still
+    // resolves, so detect those states up front and surface a toast rather than
+    // showing a success confirmation for a pin that was never queued.
+    const dbUnavailable =
+      typeof window.pwaDb !== 'object' ||
+      (typeof window.pwaDb.isResetRequired === 'function' &&
+        window.pwaDb.isResetRequired());
+    if (!window.pwaMutationQueue || dbUnavailable) {
+      showToast('Could not save this pin on this device — please try again.');
+      return;
+    }
+
+    // Every field (csrfmiddlewaretoken, lat, lon, name) is a plain input that
+    // FormData captures — there is no submit-button value to patch in (unlike
+    // report.js's problem buttons). CSRF rides in the body plus the same-origin
+    // session cookie (fetch defaults to credentials: 'same-origin').
+    const body = new URLSearchParams(new FormData(form)).toString();
+
+    window.pwaMutationQueue
+      .enqueue({
+        method: 'POST',
+        url: CREATE_URL,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // favourite_create is @require_htmx; the replay is a plain fetch.
+          'HX-Request': 'true',
+        },
+        body: body,
+      })
+      .catch(function () {});
+
+    // Optimistic pin — map.js draws a synthetic "pending" marker at the saved
+    // coordinate so the save is visible immediately, offline or on. It is
+    // replaced by the authoritative server pin once the queue drains and
+    // re-dispatches snowdesk:favourites-changed (mutation_queue.js).
+    const latInput = form.querySelector('input[name="lat"]');
+    const lonInput = form.querySelector('input[name="lon"]');
+    const nameInput = form.querySelector('input[name="name"]');
+    const lat = latInput ? parseFloat(latInput.value) : NaN;
+    const lon = lonInput ? parseFloat(lonInput.value) : NaN;
+    if (!isNaN(lat) && !isNaN(lon)) {
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:favourite-pending', {
+          detail: { lat: lat, lon: lon, name: nameInput ? nameInput.value : '' },
+        }),
+      );
+    }
+
+    window.pwaTelemetry?.emit('map.favourite.created', {
+      offline: !navigator.onLine,
+    });
+
+    // Optimistic confirmation — clone the template embedded in the surface
+    // partial rather than waiting for the queued mutation to replay.
+    const template = document.getElementById('favourite-confirmation-template');
+    if (template) {
+      sheet.innerHTML = '';
+      sheet.appendChild(template.content.cloneNode(true));
+      if (!navigator.onLine) {
+        const pending = sheet.querySelector('[data-favourite-pending]');
+        if (pending) pending.removeAttribute('hidden');
+      }
+    }
+
+    window.PlacePicker?.deactivate();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Permanent-failure cleanup (SNOW-479) — if a queued favourite-create is
+  // permanently rejected on replay (notably the 409 the server returns once the
+  // user is at their favourites cap), the optimistic pending pin must not
+  // linger. A permanent 4xx means the server replied, so we are online: re-
+  // dispatching snowdesk:favourites-changed makes map.js refetch the
+  // authoritative collection, which drops the synthetic pending feature. The
+  // queue's own toast + nav badge already tell the user the save failed.
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('pwa:mutation-failed-permanent', function (event) {
+    const url = (event.detail && event.detail.url) || '';
+    if (CREATE_URL && url.indexOf(CREATE_URL) !== -1) {
+      document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+    }
   });
 }());

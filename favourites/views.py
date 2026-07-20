@@ -292,8 +292,13 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
     - Rate-limited to 10 creations per minute per user (429 on excess).
 
     When the user has reached ``settings.FAVOURITES_MAX_PER_USER``, renders
-    ``_favourite_limit.html`` at HTTP 200 (so HTMX swaps the error message
-    into the target) instead of creating a row.
+    ``_favourite_limit.html`` at HTTP 409 instead of creating a row. Creation
+    is submitted through the client mutation queue (``static/js/favourites.js``
+    → ``window.pwaMutationQueue``, SNOW-479), which classifies any non-retry
+    4xx as a permanent failure; a favourites cap is permanent (only deleting a
+    pin clears it), so 409 — not the transient 429 or a swap-friendly 200 — is
+    what stops the queue retrying a doomed create and surfaces its
+    permanent-failure toast.
 
     Args:
         request: The incoming HTMX POST request.
@@ -329,7 +334,7 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
     except FavouriteLimitReached:
         logger.info("Favourite create blocked: user=%s hit the cap", request.user.pk)
         return render(
-            request, "favourites/partials/_favourite_limit.html", {}, status=200
+            request, "favourites/partials/_favourite_limit.html", {}, status=409
         )
 
     return render(

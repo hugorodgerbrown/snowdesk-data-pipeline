@@ -135,7 +135,10 @@ try {
 // SNOW-474: v15 — persistent close (×) controls added to the favourites
 // and report map sheets: new templates/includes/_sheet_header.html partial,
 // plus Esc/click-outside dismissal wired into favourites.js/report.js.
-const CACHE_VERSION = 'snowdesk-shell-v15';
+// SNOW-479: v16 — favourite creation routed through the mutation queue
+// (favourites.js submit interceptor, optimistic pending pin in map.js,
+// drain re-dispatch + failed-permanent event in mutation_queue.js).
+const CACHE_VERSION = 'snowdesk-shell-v16';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that

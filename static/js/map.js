@@ -877,6 +877,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // snowdesk:favourites-changed refresh can call this safely too.
   const installFavouritesLayer = (geojson) => {
     if (!geojson || map.getSource('favourites')) return;
+    favouritesGeojsonCache = geojson;
     map.addSource('favourites', { type: 'geojson', data: geojson });
     map.addLayer({
       id: 'favourites-pin',
@@ -896,6 +897,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'text-color': '#1a73e8',
         'text-halo-color': 'rgba(255,255,255,0.95)',
         'text-halo-width': 1.6,
+        // SNOW-479: an offline-created pin not yet synced carries
+        // ``properties.pending: true`` and renders at half opacity so it reads
+        // as provisional; server pins (no ``pending``) stay fully opaque.
+        'text-opacity': ['case', ['==', ['get', 'pending'], true], 0.5, 1],
       },
     });
     // Favourite labels — zoom-banded like the resort labels, but shown a
@@ -1241,10 +1246,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let majorGeojsonCache = null;
   let subGeojsonCache = null;
   let resortsGeojsonCache = null;
-  // SNOW-419: retained (unlike favouritesGeojsonCache, which doesn't exist —
-  // favourites re-fetches on snowdesk:favourites-changed instead) so the
-  // styledata re-install handler can re-add the community-reports layer
-  // after a basemap swap without a refetch.
+  // SNOW-479: the current favourites FeatureCollection, retained so an
+  // offline-created pin can be appended optimistically (snowdesk:favourite-
+  // pending) without a network refetch — which would fail offline. Kept in
+  // sync wherever favourites data is set (installFavouritesLayer and the
+  // snowdesk:favourites-changed refetch). Null until the first favourite.
+  let favouritesGeojsonCache = null;
+  // SNOW-419: retained so the styledata re-install handler can re-add the
+  // community-reports layer after a basemap swap without a refetch.
   let communityReportsGeojsonCache = null;
 
   // SNOW-172: Snapshot of each layer's filter expression as set during
@@ -2355,6 +2364,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     document.addEventListener('snowdesk:favourites-changed', () => {
       if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
       fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
+        // Authoritative server state replaces the whole collection — this is
+        // what drops any optimistic ``pending`` feature once the real pin
+        // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
+        // append starts from current truth.
+        favouritesGeojsonCache = fc;
         const source = map.getSource('favourites');
         if (source) {
           source.setData(fc);
@@ -2363,6 +2377,46 @@ const repaintRegionsForDate = (dateKey, cache) => {
           overlayLoaded.favourites = true;
         }
       }).catch(() => {});
+    });
+
+    // SNOW-479: favourites.js dispatches this the instant an offline (or
+    // online) create is enqueued on the mutation queue, so the saved pin is
+    // visible immediately without waiting for the queued POST to replay. We
+    // append a synthetic ``pending`` feature (no uuid) to the current
+    // collection and setData; installing the layer first if this is the user's
+    // very first favourite. The pending pin is replaced by the authoritative
+    // server pin when the queue drains and re-dispatches
+    // snowdesk:favourites-changed above (or dropped there on a permanent
+    // failure). Renders at half opacity via the favourites-pin text-opacity
+    // expression.
+    document.addEventListener('snowdesk:favourite-pending', (event) => {
+      if (!FAVOURITES_ELIGIBLE) return;
+      const detail = (event && event.detail) || {};
+      const lat = Number(detail.lat);
+      const lon = Number(detail.lon);
+      if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+
+      const feature = {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lon, lat] },
+        properties: { name: detail.name || '', pending: true },
+      };
+      const base =
+        favouritesGeojsonCache && Array.isArray(favouritesGeojsonCache.features)
+          ? favouritesGeojsonCache.features
+          : [];
+      favouritesGeojsonCache = {
+        type: 'FeatureCollection',
+        features: base.concat([feature]),
+      };
+
+      const source = map.getSource('favourites');
+      if (source) {
+        source.setData(favouritesGeojsonCache);
+      } else {
+        installFavouritesLayer(favouritesGeojsonCache);
+        overlayLoaded.favourites = true;
+      }
     });
 
     // SNOW-445: the community-reports cluster and point taps are now dispatched
