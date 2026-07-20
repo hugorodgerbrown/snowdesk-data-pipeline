@@ -26,7 +26,7 @@ features they can actually see on the map.
         {% endblocktrans %}
     </p>
     {% if favourites_visible %}
-        <p class="mb-3 last:mb-0">
+        <p class="mb-3 last:mb-0" data-testid="help-map-favourites">
             {% blocktrans trimmed %}
                 An overlay toggle shows your saved favourite pins directly on the map, alongside the resorts layer.
             {% endblocktrans %}
@@ -41,7 +41,7 @@ features they can actually see on the map.
         </p>
     {% endif %}
     {% if report_visible %}
-        <p class="mb-3 last:mb-0">
+        <p class="mb-3 last:mb-0" data-testid="help-map-report">
             {% blocktrans trimmed %}
                 The Report button lets you submit a quick field observation &mdash; conditions you've seen in person
                 &mdash; for the region you're viewing.
