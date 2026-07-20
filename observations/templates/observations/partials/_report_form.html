@@ -45,6 +45,9 @@ Context:
     {% if gps_lat is not None %}<input type="hidden" name="gps_lat" value="{{ gps_lat }}">{% endif %}
     {% if gps_lon is not None %}<input type="hidden" name="gps_lon" value="{{ gps_lon }}">{% endif %}
 
+    {% trans "Report" as report_form_title %}
+    {% include "includes/_sheet_header.html" with title=report_form_title close_action="close-report-sheet" %}
+
     <div class="flex items-start justify-between gap-2 text-sm">
         <span class="text-text-2">
             {% if has_coords %}
