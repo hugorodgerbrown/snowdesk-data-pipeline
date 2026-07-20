@@ -5,9 +5,10 @@ map marker "exclusion zone".
 A tap on a favourite / community-observation marker must activate that marker
 and must NOT also select (and pop the tooltip of) the region polygon beneath
 it. The click dispatch was consolidated into a single generic
-``map.on('click')`` handler that decides marker-vs-region by a padded pixel
-radius around each marker glyph (``markerNearPoint`` in ``static/js/map.js``);
-these tests exercise both branches of that decision.
+``map.on('click')`` handler that decides marker-vs-region by point-testing the
+marker glyph under the tap (``markerUnderPoint`` in ``static/js/map.js`` — an
+exact-point ``queryRenderedFeatures``, the same hit-test that drives the
+pointer cursor); these tests exercise both branches of that decision.
 
 Testing notes:
 
@@ -15,7 +16,7 @@ Testing notes:
   stub rather than relying on the ★ symbol layer compositing a frame in
   headless Chromium (the same WebGL-timing limitation ``test_favourites.py``
   calls out). The stub returns the favourite only for the marker-layer query
-  ``markerNearPoint`` issues, delegating every other query to the real
+  ``markerUnderPoint`` issues, delegating every other query to the real
   implementation, so the production routing code runs unchanged — only the
   glyph-hit-test input is made deterministic.
 - The region-baseline branch needs no stub: ``regions-fill`` reliably renders
@@ -95,12 +96,12 @@ def test_favourite_tap_does_not_select_region_underneath(
 
     # The favourites overlay is eager + default-on for eligible users, so the
     # pin layer installs at boot once the boot fetch returns this favourite.
-    # markerNearPoint only queries layers that are actually present, so the
+    # markerUnderPoint only queries layers that are actually present, so the
     # layer must exist for the stubbed feature to be considered.
     page.wait_for_function("() => !!MAP.getLayer('favourites-pin')")
 
     # Make the glyph hit-test deterministic: return the favourite for the
-    # marker-layer query markerNearPoint issues, delegate everything else.
+    # marker-layer query markerUnderPoint issues, delegate everything else.
     page.evaluate(
         """(uuid) => {
             const orig = MAP.queryRenderedFeatures.bind(MAP);
@@ -165,7 +166,7 @@ def test_region_tap_still_selects_when_no_marker_near(
 
     Guards the other half of the consolidated dispatcher: the exclusion carve-
     out must not swallow ordinary region taps. No favourites/observations are
-    present, so markerNearPoint returns null and the click falls through to
+    present, so markerUnderPoint returns null and the click falls through to
     selectFeature.
     """
     _navigate_home(page, live_server.url)
@@ -182,7 +183,7 @@ def test_region_tap_still_selects_when_no_marker_near(
     # hit-test deterministic by returning it for the region query the handler
     # issues — headless Chromium doesn't reliably composite the fill layer for a
     # genuine pixel hit-test (the WebGL-timing limitation test_favourites.py
-    # documents). No marker overlays are present, so markerNearPoint returns
+    # documents). No marker overlays are present, so markerUnderPoint returns
     # null without querying and the click falls through to the region branch.
     region_id = page.evaluate(
         """() => {

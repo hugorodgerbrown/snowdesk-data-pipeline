@@ -97,11 +97,13 @@ jarring double-action. All click routing is now consolidated into a single
 generic `map.on('click')` dispatcher in `static/js/map.js` (the per-layer
 `click` handlers were removed; only their `mouseenter`/`mouseleave`
 cursor affordances remain). Priority is **overlay controls → markers →
-resort pin → region fill → empty-area deselect**. A marker owns an
-"exclusion zone" — a padded pixel radius (`MARKER_EXCLUSION_RADIUS_PX`,
-default 22) around its glyph, resolved by `markerNearPoint()`; a tap inside
-it activates the nearest marker (`activateMarker()`) and never selects the
-region. **Resort pins are deliberately excluded** from this set — a resort
+resort pin → region fill → empty-area deselect**. A tap on a marker glyph
+(`markerUnderPoint()`) activates that marker (`activateMarker()`) and never
+selects the region. The hotspot is the glyph's own rendered hit-area — an
+exact-point `queryRenderedFeatures`, the same hit-test that drives the
+desktop pointer cursor via the `mouseenter` handlers — so the tappable area
+matches the affordance the user sees and honours each icon's anchor/offset
+(no padding box). **Resort pins are deliberately excluded** from this set — a resort
 pin is a proxy for its parent region, so tapping one still selects that
 region. Because the dispatcher is a plain (non-layer-scoped) listener, it is
 also the one handler a synthetic `MAP.fire('click', …)` reaches, which is

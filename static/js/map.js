@@ -39,14 +39,6 @@ let BOOT_DATE_KEY = null;
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
-// SNOW-445: radius (device-independent CSS px) of the "exclusion zone"
-// around favourite / community-observation / report-cluster markers. A tap
-// within this distance of a marker glyph is claimed by that marker and never
-// selects the region underneath — see markerNearPoint() in the main IIFE.
-// Sized a touch larger than the ★ glyph (text-size 18) so the target is
-// finger-friendly on touch without swallowing genuine region taps nearby.
-const MARKER_EXCLUSION_RADIUS_PX = 22;
-
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
 // uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
 // (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
@@ -2109,48 +2101,42 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // ON TOP of the region choropleth. MapLibre has no stopPropagation between
     // layer-scoped click handlers, so without a carve-out a tap on a marker
     // would BOTH activate the marker AND select the region under it — a jarring
-    // double-action. These markers therefore own an "exclusion zone": a padded
-    // pixel radius (MARKER_EXCLUSION_RADIUS_PX) around each glyph within which
-    // the marker claims the tap and the region is never selected. Resort pins
-    // are deliberately NOT in this set — a resort pin is a proxy for its parent
-    // region, so tapping one is meant to select that region.
+    // double-action. These markers therefore own their tap: a click on a marker
+    // glyph activates the marker and never selects the region beneath it.
+    //
+    // The hotspot is the glyph's own rendered hit-area — exactly the region
+    // MapLibre uses to switch the desktop cursor to a pointer (the per-layer
+    // mouseenter handlers below). markerUnderPoint() point-tests the same way,
+    // so the exclusion zone lines up precisely with the pointer affordance: no
+    // padding, and it honours each icon's anchor/offset (e.g. the flag glyph
+    // anchored bottom-left) rather than a symmetric box around the cursor.
+    //
+    // Resort pins are deliberately NOT in this set — a resort pin is a proxy
+    // for its parent region, so tapping one is meant to select that region.
     //
     // The layer order below is the priority order: it breaks ties when two
-    // markers fall inside the same tap radius (cluster > favourite > report).
+    // marker glyphs overlap under the tap (cluster > favourite > report).
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
       'community-reports-point',
     ];
 
-    // Return the single highest-priority marker whose glyph lies within
-    // MARKER_EXCLUSION_RADIUS_PX of the tap point, or null. Nearest glyph wins;
-    // MARKER_EXCLUSION_LAYERS order breaks sub-pixel ties. Filters to layers
-    // actually present because these overlays are lazy-installed and
-    // queryRenderedFeatures throws on an unknown layer id.
-    const markerNearPoint = (point) => {
+    // Return the highest-priority marker whose rendered glyph is under the tap
+    // point, or null. Uses an exact-point queryRenderedFeatures — the same
+    // hit-test that drives the pointer cursor — so the tappable area matches
+    // what the user sees. Filters to layers actually present because these
+    // overlays are lazy-installed and queryRenderedFeatures throws on an
+    // unknown layer id.
+    const markerUnderPoint = (point) => {
       const layers = MARKER_EXCLUSION_LAYERS.filter((id) => map.getLayer(id));
       if (!layers.length) return null;
-      const r = MARKER_EXCLUSION_RADIUS_PX;
-      const box = [
-        [point.x - r, point.y - r],
-        [point.x + r, point.y + r],
-      ];
       let best = null;
-      let bestDist = Infinity;
       let bestPriority = Infinity;
-      for (const f of map.queryRenderedFeatures(box, { layers })) {
-        const coords = f.geometry && f.geometry.coordinates;
-        if (!coords) continue;
-        const p = map.project(coords);
-        const dist = Math.hypot(p.x - point.x, p.y - point.y);
+      for (const f of map.queryRenderedFeatures(point, { layers })) {
         const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
-        if (
-          dist < bestDist - 0.5 ||
-          (Math.abs(dist - bestDist) <= 0.5 && priority < bestPriority)
-        ) {
+        if (priority < bestPriority) {
           best = f;
-          bestDist = dist;
           bestPriority = priority;
         }
       }
@@ -2287,12 +2273,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
         return;
       }
 
-      // SNOW-445: a marker inside its exclusion zone owns the tap outright —
-      // activate it and never fall through to region select/deselect. This is
-      // what stops a favourite/observation tap from also selecting (and popping
-      // the tooltip of) the region underneath it. Markers stay tappable during
-      // timelapse playback, matching the pre-consolidation behaviour.
-      const marker = markerNearPoint(e.point);
+      // SNOW-445: a tap on a marker glyph owns the tap outright — activate it
+      // and never fall through to region select/deselect. This is what stops a
+      // favourite/observation tap from also selecting (and popping the tooltip
+      // of) the region underneath it. Markers stay tappable during timelapse
+      // playback, matching the pre-consolidation behaviour.
+      const marker = markerUnderPoint(e.point);
       if (marker) {
         activateMarker(marker);
         return;
