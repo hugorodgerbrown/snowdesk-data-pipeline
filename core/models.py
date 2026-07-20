@@ -355,6 +355,8 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
         key: str,
         method: str,
         path: str,
+        principal: str,
+        body_hash: str,
         response: HttpResponse,
         ttl: timedelta,
     ) -> "IdempotencyRecord":
@@ -363,8 +365,11 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
         Args:
             key: The Idempotency-Key header value from the request.
             method: HTTP method (POST/PATCH/PUT/DELETE).
-            path: Request path — stored for diagnostic value only, never
-                used in cache lookup.
+            path: Request path — used both diagnostically and as part of
+                the replay fingerprint (see ``matches_fingerprint``).
+            principal: ``str(request.user.pk)`` for an authenticated
+                requester, or ``""`` for anonymous.
+            body_hash: sha256 hex digest of the raw request body.
             response: The completed response to cache. Non-streaming
                 only; the middleware filters streaming responses out
                 upstream.
@@ -381,6 +386,8 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
             key=key,
             method=method,
             path=path[:2048],
+            principal=principal,
+            body_hash=body_hash,
             response_status=response.status_code,
             response_body=body,
             response_content_type=content_type[:255],
@@ -422,6 +429,25 @@ class IdempotencyRecord(BaseModel):
         blank=True,
         default="",
         help_text="Request path of the original request, for diagnostic use.",
+    )
+    principal = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "str(request.user.pk) of the original requester, or '' for an "
+            "anonymous request. Server-derived — never taken from client "
+            "input — so it cannot be spoofed. Part of the replay fingerprint."
+        ),
+    )
+    body_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "sha256 hex digest of the original request's raw body. Part of "
+            "the replay fingerprint."
+        ),
     )
     response_status = models.PositiveSmallIntegerField(
         help_text="HTTP status code of the cached response.",
@@ -466,6 +492,30 @@ class IdempotencyRecord(BaseModel):
     def is_live(self) -> bool:
         """Return True when the record has not yet expired."""
         return self.expires_at > timezone.now()
+
+    def matches_fingerprint(
+        self,
+        *,
+        method: str,
+        path: str,
+        principal: str,
+        body_hash: str,
+    ) -> bool:
+        """Return True when the passed fingerprint matches this record.
+
+        Compares ``method``, ``path``, ``principal``, and ``body_hash``
+        against the values stored on this row. The middleware calls this
+        on a cache hit to distinguish a
+        legitimate replay (same request, retried) from a reused key
+        (different method, path, requester, or payload) — the latter
+        must be rejected rather than served the wrong cached response.
+        """
+        return (
+            self.method == method
+            and self.path == path
+            and self.principal == principal
+            and self.body_hash == body_hash
+        )
 
     def build_response(self) -> HttpResponse:
         """Return a fresh HttpResponse reconstructed from the cached row.

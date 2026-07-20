@@ -117,17 +117,20 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    # Idempotency-Key deduplication for state-changing requests (SNOW-371).
-    # Runs before AuthenticationMiddleware so a cache hit short-circuits
-    # before any auth work, and after CsrfViewMiddleware so a cached
-    # response is not served to a request that would have failed CSRF on
-    # first execution — the original request already passed CSRF when the
-    # row was cached, so a replay of an already-successful mutation is
-    # safe to serve without a second CSRF check.
-    "core.idempotency.IdempotencyMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Idempotency-Key deduplication for state-changing requests (SNOW-371,
+    # fingerprint hardening SNOW-463). Runs after AuthenticationMiddleware
+    # so the principal fingerprint (request.user.pk) is available — the
+    # cached record is only replayed when method, path, principal, and
+    # body hash all match the original request. Still after
+    # CsrfViewMiddleware, so a cached response is not served to a request
+    # that would have failed CSRF on first execution — the original
+    # request already passed CSRF when the row was cached, so a replay of
+    # an already-successful mutation is safe to serve without a second
+    # CSRF check.
+    "core.idempotency.IdempotencyMiddleware",
     # django-waffle. Reads request.user (populated by AuthenticationMiddleware
-    # immediately above) so per-user / superuser / staff flag targeting works.
+    # above) so per-user / superuser / staff flag targeting works.
     # Adds ``request.waffles`` for view-side flag checks; mounts no URL conf
     # because we don't expose a wafflejs endpoint (no JS-side flag checks
     # yet). See ``docs/feature-flags.md``.

@@ -24,6 +24,13 @@ Design notes
   existing HTMX callers that don't yet mint keys.
 * The cached record stores the raw body + status + content type. Reading
   is a single indexed lookup on ``key`` with an ``expires_at`` filter.
+* Fingerprint hardening (SNOW-463): a key match alone is not sufficient
+  to replay a cached response. The middleware also compares method,
+  path, principal (``str(request.user.pk)``, server-derived so it can't
+  be spoofed), and a sha256 hash of the raw request body against the
+  values stored at cache-write time. A mismatch — reusing a key across a
+  different path, body, or user — returns ``409`` instead of serving the
+  wrong cached response or running the view again.
 
 The retention window is 24h in ``IDEMPOTENCY_RECORD_TTL_SECONDS``.
 Cleanup of expired rows is not automated in this ticket — the table is
@@ -32,6 +39,7 @@ small (one row per unique key) and can be purged by a follow-up job.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Callable
 from datetime import timedelta
@@ -105,8 +113,25 @@ class IdempotencyMiddleware:
         # is ready.
         from core.models import IdempotencyRecord  # noqa: PLC0415
 
+        principal = _principal(request)
+        body_hash = _body_hash(request)
+
         cached = IdempotencyRecord.objects.get_live(key)
         if cached is not None:
+            if not cached.matches_fingerprint(
+                method=request.method or "",
+                path=request.path,
+                principal=principal,
+                body_hash=body_hash,
+            ):
+                logger.warning(
+                    "pwa.idempotency.fingerprint_mismatch method=%s view=%s key=%s",
+                    request.method,
+                    _view_name(request),
+                    _redact_key(key),
+                )
+                return HttpResponse(status=409)
+
             logger.info(
                 "pwa.idempotency.hit method=%s view=%s key=%s status=%d",
                 request.method,
@@ -151,6 +176,8 @@ class IdempotencyMiddleware:
                     key=key,
                     method=request.method or "",
                     path=request.path,
+                    principal=principal,
+                    body_hash=body_hash,
                     response=response,
                     ttl=timedelta(seconds=IDEMPOTENCY_RECORD_TTL_SECONDS),
                 )
@@ -207,6 +234,35 @@ def _redact_key(key: str) -> str:
     if len(key) <= 8:
         return key
     return f"{key[:8]}…"
+
+
+def _principal(request: HttpRequest) -> str:
+    """Return the server-derived principal fingerprint component.
+
+    ``str(request.user.pk)`` for an authenticated requester, or ``""``
+    for anonymous. Read from ``request.user`` (populated by
+    ``AuthenticationMiddleware``, which now runs before this middleware)
+    rather than any client-supplied value, so it cannot be spoofed.
+    Defensive against bare ``HttpRequest`` objects in unit tests, which
+    have no ``user`` attribute at all.
+    """
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return str(user.pk)
+    return ""
+
+
+def _body_hash(request: HttpRequest) -> str:
+    """Return the sha256 hex digest of the raw request body.
+
+    Hashes ``request.body`` verbatim — not canonicalised JSON — because
+    the PWA mutation queue replays stored bytes exactly, so a legitimate
+    retry is byte-identical and matches. Accessing ``request.body`` here
+    caches it on the request object; the view can still read
+    ``request.POST`` afterwards since Django re-parses form/multipart
+    data from the cached body.
+    """
+    return hashlib.sha256(request.body).hexdigest()
 
 
 def _view_name(request: HttpRequest) -> str:
