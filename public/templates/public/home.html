@@ -155,6 +155,8 @@ and loads home_intro.js in addition to the shared map assets.
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
+    {# SNOW-457: map help / coachmark tour #}
+    <script defer src="{% static 'js/map_help.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}
     {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
 {% endblock %}
