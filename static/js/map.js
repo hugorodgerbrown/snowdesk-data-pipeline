@@ -2026,7 +2026,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       const tgt = e.originalEvent && e.originalEvent.target;
       if (
         tgt && tgt.closest &&
-        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro')
+        // SNOW-457: #map-help-overlay added — the coachmark tooltip's
+        // Back/Next/Skip buttons sit over the map, same reasoning as the
+        // other overlays above.
+        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro, #map-help-overlay')
       ) {
         return;
       }

@@ -111,6 +111,34 @@ Optional context:
     {# above the report roundel. map.js binds these by their own ids, so the #}
     {# relocation is DOM-only; #map-controls-br is added to the click guard.  #}
     <div class="map-controls-br" id="map-controls-br">
+        {# SNOW-457: help / coachmark tour roundel — opens a first-run          #}
+        {# walkthrough of the map's controls (see #map-help-overlay below).    #}
+        {# Sits at the top of the stack so it reads as "the way to find out    #}
+        {# what everything does" rather than another control to learn.        #}
+        <div class="map-utility-pill map-utility-pill--help">
+            <button
+                id="map-help-toggle"
+                type="button"
+                class="map-utility-button"
+                aria-label='{% trans "How to use the map" %}'
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+            </button>
+        </div>
         {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
         {# pill that opens a popover of basemap options. Choice persists in   #}
         {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
@@ -582,6 +610,107 @@ Optional context:
             </button>
         </div>
     {% endif %}
+    {# SNOW-457: help / coachmark tour — step definitions are server-rendered   #}
+    {# as hidden <li> nodes so every string is translatable via {% trans %};   #}
+    {# static/js/map_help.js reads them, drops any step whose data-help-target #}
+    {# selector matches nothing in the DOM (the flag-gated favourite/report    #}
+    {# controls), then sequences a highlight ring + tooltip over each one.     #}
+    {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
+    {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
+    <ul id="map-help-steps" hidden>
+        <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
+            {% trans "Shows the date and region selected." %}
+        </li>
+        <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
+            {% trans "Click through to the bulletin detail page." %}
+        </li>
+        <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
+            {% trans "Search by name to jump straight to a region." %}
+        </li>
+        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Basemap and layers" %}'>
+            {% trans "Switch base maps and toggle country outlines, region overlays and resorts." %}
+        </li>
+        <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
+            {% trans "Centre the map on your current position." %}
+        </li>
+        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
+            {% trans "Pin a spot to your favourites for quick access later." %}
+        </li>
+        <li data-help-target="#report-btn" data-help-title='{% trans "Report conditions" %}'>
+            {% trans "Share a quick field observation with other visitors." %}
+        </li>
+        <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
+            {% trans "Run through the season day by day." %}
+        </li>
+        <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
+            {% trans "View attribution and EAWS danger level key." %}
+        </li>
+    </ul>
+    {# SNOW-457 (review): aria-describedby points at the step title + body so #}
+    {# a screen reader announces the *current* step alongside the dialog's   #}
+    {# static aria-label when focus enters — both nodes' text changes on     #}
+    {# every Back/Next via map_help.js, so the announcement stays live.      #}
+    <div
+        id="map-help-overlay"
+        hidden
+        role="dialog"
+        aria-modal="false"
+        aria-label='{% trans "Map help" %}'
+        aria-describedby="map-help-tooltip-title map-help-tooltip-body"
+    >
+        <div id="map-help-ring" aria-hidden="true"></div>
+        {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
+        {# is for a set of related form controls, which this isn't; the outer  #}
+        {# #map-help-overlay's role="dialog" already scopes the whole widget.  #}
+        <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
+            {# SNOW-457: "×" close in the top-right — the universal dismiss     #}
+            {# affordance. Replaces the former "Skip" text button; persists the #}
+            {# dismissed state exactly as Escape does.                          #}
+            <button
+                type="button"
+                id="map-help-close"
+                class="map-help-close"
+                aria-label='{% trans "Close" %}'
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
+            <p class="map-help-tooltip-step" id="map-help-step-count" aria-live="polite"></p>
+            <span id="map-help-step-template" hidden>{% trans "Step {n} of {total}" %}</span>
+            <h3 class="map-help-tooltip-title" id="map-help-tooltip-title"></h3>
+            <p class="map-help-tooltip-body" id="map-help-tooltip-body"></p>
+            <div class="map-help-tooltip-actions">
+                <button
+                    type="button"
+                    id="map-help-back"
+                    class="map-help-btn map-help-btn--text"
+                >
+                    {% trans "Back" %}
+                </button>
+                <button
+                    type="button"
+                    id="map-help-next"
+                    class="map-help-btn map-help-btn--primary"
+                    data-label-next='{% trans "Next" %}'
+                    data-label-done='{% trans "Done" %}'
+                >
+                    {% trans "Next" %}
+                </button>
+            </div>
+        </div>
+    </div>
     {% if show_intro %}
         {# SNOW-314: Homepage intro overlay — absolutely positioned over #map.  #}
         {# Dismissed by clicking the overlay or a button; localStorage key      #}

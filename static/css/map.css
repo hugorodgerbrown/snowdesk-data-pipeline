@@ -1357,6 +1357,208 @@
     color: var(--color-text-1);
 }
 
+/* —————————————————————————————————————————————————————————
+   SNOW-457 — Map help / coachmark tour (#map-help-overlay)
+   A first-run walkthrough of the map's controls: a highlight ring plus a
+   tooltip card that steps through each control in turn. static/js/map_help.js
+   positions the ring/tooltip against getBoundingClientRect() of the current
+   target in viewport coordinates, so both use position: fixed rather than
+   tracking #map's own offset parent. No backdrop dimming — a passive ring,
+   not a spotlight, so the map stays fully visible and interactive underneath.
+   No .dark override needed: --color-glass/--color-text-* already resolve to
+   the dark-mode values via the .dark body class (see main.css @theme).
+   ————————————————————————————————————————————————————————— */
+
+.map-utility-pill--help {
+    width: 40px;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-utility-pill--help:hover {
+    filter: brightness(1.04);
+}
+
+#map-help-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    /* The overlay itself never intercepts pointer events — only the
+       tooltip card (below) opts back in for its buttons. */
+    pointer-events: none;
+}
+
+#map-help-overlay[hidden] {
+    display: none;
+}
+
+@keyframes map-help-ring-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.22); }
+    50%      { box-shadow: 0 0 0 7px rgba(0, 0, 0, 0.10); }
+}
+
+#map-help-ring {
+    position: fixed;
+    border: 1.5px solid var(--ink);
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.22);
+    pointer-events: none;
+    animation: map-help-ring-pulse 1.8s ease-in-out infinite;
+    transition:
+        top 160ms ease,
+        left 160ms ease,
+        width 160ms ease,
+        height 160ms ease,
+        border-radius 160ms ease;
+}
+
+.map-help--no-motion #map-help-ring {
+    animation: none;
+    transition: none;
+}
+
+.map-help-tooltip {
+    position: fixed;
+    z-index: 7;
+    pointer-events: auto;
+    max-width: 300px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 0.5px solid var(--color-border);
+    box-shadow: var(--shadow-glass);
+    border-radius: var(--radius-card, 12px);
+    padding: 16px 18px;
+    color: var(--color-text-1);
+    font-family: var(--sans);
+    transition: top 160ms ease, left 160ms ease;
+}
+
+.map-help--no-motion .map-help-tooltip {
+    transition: none;
+}
+
+.map-help-tooltip:focus {
+    outline: none;
+}
+
+/* SNOW-457: "×" close button, top-right of the tooltip card. The card is
+   position: fixed, so this absolute child anchors to its corner. The step
+   label and title reserve right padding so their text never runs under it. */
+.map-help-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-text-3);
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+}
+
+.map-help-close:hover {
+    color: var(--color-text-1);
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.map-help--no-motion .map-help-close {
+    transition: none;
+}
+
+.map-help-close:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+
+.map-help-tooltip-step {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+    margin: 0 0 6px;
+    padding-right: 28px;
+}
+
+.map-help-tooltip-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    padding-right: 28px;
+    color: var(--color-text-1);
+}
+
+.map-help-tooltip-body {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-2);
+    margin: 0 0 14px;
+}
+
+/* SNOW-457: Back + Next sit right-aligned. "Skip" moved out to the "×"
+   close button, so the row no longer needs space-between. */
+.map-help-tooltip-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.map-help-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--sans);
+    transition: opacity 120ms ease;
+}
+
+.map-help--no-motion .map-help-btn {
+    transition: none;
+}
+
+/* Primary (Next / Done) reuses the same dark-pill look as .home-intro-dismiss. */
+.map-help-btn--primary {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-help-btn--primary:hover {
+    opacity: 0.85;
+}
+
+.map-help-btn--text {
+    background: transparent;
+    color: var(--color-text-2);
+    padding: 6px 10px;
+}
+
+.map-help-btn--text:hover {
+    color: var(--color-text-1);
+}
+
+.map-help-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+}
+
+.map-help-btn:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+
 /* SNOW-419: community-reports popup — a small, DOM-built card shown on
  * tapping an unclustered community-report pin (static/js/map.js). Reuses
  * the same frosted-glass chrome as .region-popup (--color-popup-glass,

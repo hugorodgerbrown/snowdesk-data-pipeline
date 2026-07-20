@@ -567,7 +567,10 @@ class TestHomePageReportButtonParity:
         """No report button on the homepage when the flag is inactive."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
-        assert "report-btn" not in content
+        # SNOW-457: the map-help coachmark always references "#report-btn" as
+        # a step target selector, so a bare substring check would be a false
+        # positive here — assert on the button's own id attribute instead.
+        assert 'id="report-btn"' not in content
 
     @override_flag("field_observations", active=True)
     def test_report_button_shown_for_anonymous_with_flag(self) -> None:
@@ -657,7 +660,11 @@ class TestHomePageFavouritesParity:
         """No Add-favourite control, overlay toggle, or #map data-* when the flag is off."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
-        assert "favourite-add-btn" not in content
+        # SNOW-457: the map-help coachmark always references
+        # "#favourite-add-btn" as a step target selector, so a bare
+        # substring check would be a false positive — assert on the
+        # button's own id attribute instead.
+        assert 'id="favourite-add-btn"' not in content
         assert 'data-overlay-key="favourites"' not in content
         assert "data-favourites-url" not in content
 
