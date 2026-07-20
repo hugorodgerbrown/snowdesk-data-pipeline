@@ -145,6 +145,27 @@
     }
   });
 
+  // Esc dismisses the sheet.
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    if (sheet.hasAttribute('hidden')) return;
+    closeSheet();
+  });
+
+  // Click-outside dismisses the sheet — but not while the user is
+  // interacting with the map or place-picker to position a pin, and not
+  // on the opening trigger itself (which has its own click handler).
+  document.addEventListener('click', function (event) {
+    if (sheet.hasAttribute('hidden')) return;
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (target.closest('#report-sheet')) return;
+    if (target.closest('#report-btn')) return;
+    if (target.closest('#map')) return;
+    if (target.closest('[data-place-picker]')) return;
+    closeSheet();
+  });
+
   // ---------------------------------------------------------------------------
   // Form-coord helpers — written by the place-picker's onChange (SNOW-475).
   // ---------------------------------------------------------------------------

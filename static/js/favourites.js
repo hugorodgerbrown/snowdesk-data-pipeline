@@ -132,6 +132,29 @@
     sheet.innerHTML = '';
   }
 
+  /** Build a sheet-header row (title + persistent × close button), mirroring
+   * templates/includes/_sheet_header.html for states built via DOM APIs
+   * rather than server-rendered markup (pin-detail, anonymous sign-in CTA).
+   * @param {string} titleText
+   * @returns {HTMLDivElement}
+   */
+  function buildSheetHeader(titleText) {
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
+    const title = document.createElement('span');
+    title.className = 'text-sm font-semibold text-text-1';
+    title.textContent = titleText;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('data-action', 'close-favourite-sheet');
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
+    closeBtn.textContent = '×';
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    return header;
+  }
+
   // Delegate close from Cancel / Close buttons inside the sheet — survives
   // every htmx swap since it's bound on document (mirrors report.js).
   document.addEventListener('click', function (event) {
@@ -139,6 +162,27 @@
     if (target && target.closest && target.closest('[data-action="close-favourite-sheet"]')) {
       closeSheet();
     }
+  });
+
+  // Esc dismisses the sheet, matching report.js.
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    if (sheet.hasAttribute('hidden')) return;
+    closeSheet();
+  });
+
+  // Click-outside dismisses the sheet — but not while the user is
+  // interacting with the map or place-picker to position a pin, and not
+  // on the opening trigger itself (which has its own click handler).
+  document.addEventListener('click', function (event) {
+    if (sheet.hasAttribute('hidden')) return;
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (target.closest('#favourite-sheet')) return;
+    if (target.closest('#favourite-add-btn')) return;
+    if (target.closest('#map')) return;
+    if (target.closest('[data-place-picker]')) return;
+    closeSheet();
   });
 
   // ---------------------------------------------------------------------------
@@ -179,6 +223,7 @@
       // rather than innerHTML string concatenation — the same DOM-not-markup
       // discipline the rest of this module uses for anything URL/name-bearing.
       sheet.replaceChildren();
+      sheet.appendChild(buildSheetHeader('Favourite'));
       if (SIGNIN_URL) {
         const wrap = document.createElement('div');
         wrap.className = 'px-2 py-4';
@@ -306,21 +351,7 @@
 
     sheet.innerHTML = '';
 
-    const header = document.createElement('div');
-    header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
-    const title = document.createElement('span');
-    title.className = 'text-sm font-semibold text-text-1';
-    title.textContent = 'Favourite';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('data-action', 'close-favourite-sheet');
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
-    closeBtn.textContent = '×';
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-
-    sheet.appendChild(header);
+    sheet.appendChild(buildSheetHeader('Favourite'));
     sheet.appendChild(buildDetailRow(favUuid, detail.name || ''));
     if (typeof htmx !== 'undefined') htmx.process(sheet); // eslint-disable-line no-undef
     openSheet();
