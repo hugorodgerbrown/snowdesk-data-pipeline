@@ -2019,17 +2019,18 @@ class TestCommunityReportsGeojson:
             timespec="seconds"
         )
 
-    def test_freshness_max_age_matches_cache_control_max_age(self) -> None:
-        """X-Data-Max-Age is pinned to the same window as Cache-Control.
+    def test_freshness_max_age_is_the_community_window(self) -> None:
+        """X-Data-Max-Age is the 120s community window.
 
         Regression coverage: apply_freshness_headers defaults max_age to
-        24h, which would silently diverge from the endpoint's 120s
-        Cache-Control TTL unless passed explicitly.
+        24h, which would silently diverge from the intended 120s freshness
+        window unless passed explicitly. The window is independent of
+        Cache-Control now that the response is no-store (SNOW-459) and no
+        longer carries a max-age.
         """
         FieldObservationFactory.create(observed_at=timezone.now())
         response = Client().get(reverse("api:community_reports_geojson"))
-        cache_control_max_age = response["Cache-Control"].split("max-age=")[1]
-        assert response["X-Data-Max-Age"] == cache_control_max_age == "120"
+        assert response["X-Data-Max-Age"] == "120"
         # unsafe_after is deliberately omitted for non-safety-critical data.
         assert "X-Data-Unsafe-After" not in response
 
@@ -2045,21 +2046,30 @@ class TestCommunityReportsGeojson:
         assert before - dt.timedelta(seconds=1) <= generated_at
         assert generated_at <= after + dt.timedelta(seconds=1)
 
-    def test_cache_control_public_header(self) -> None:
-        """Response carries a public Cache-Control header."""
+    def test_cache_control_prevents_shared_caching(self) -> None:
+        """SNOW-459: response is private/no-store, never public.
+
+        The overlay is gated per-user by the ``community_reports`` flag, so a
+        shared cache must not be able to replay one user's flag decision to
+        another. ``public`` must be absent; ``no-store`` present.
+        """
         response = Client().get(reverse("api:community_reports_geojson"))
         cache_control = response.get("Cache-Control", "")
-        assert "public" in cache_control
-        assert "max-age=120" in cache_control
+        assert "no-store" in cache_control
+        assert "private" in cache_control
+        assert "public" not in cache_control
 
-    def test_vary_no_cookie_with_analytics_enabled(self) -> None:
-        """SNOW-299-style regression: Vary: Cookie absent even with PostHog active."""
+    def test_not_shared_cacheable_with_analytics_enabled(self) -> None:
+        """SNOW-459: no-store holds even when PostHog would add Vary: Cookie.
+
+        Unlike the SNOW-299 public endpoints, this one must never be
+        shared-cached regardless of Vary — so the bypass is closed by
+        no-store, not by suppressing Vary: Cookie.
+        """
         with override_settings(POSTHOG_API_KEY="phc_test"):
             response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
-        vary = response.get("Vary", "")
-        assert "Accept-Encoding" in vary
-        assert "Cookie" not in vary
+        assert "no-store" in response.get("Cache-Control", "")
 
 
 @pytest.mark.django_db
