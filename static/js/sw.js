@@ -127,10 +127,11 @@ try {
   // Non-fatal — see fallback in the 'sync' listener below.
 }
 
-// SNOW-475: v13 — new static/js/place_picker.js, favourites.js/report.js
-// rewritten to use it, and _map_embed.html's markup gained #map-place-pin.
-// (v12 was taken by SNOW-462/SNOW-472 on main.)
-const CACHE_VERSION = 'snowdesk-shell-v13';
+// SNOW-474: v14 — persistent close (×) controls added to the favourites
+// and report map sheets: new templates/includes/_sheet_header.html partial,
+// plus Esc/click-outside dismissal wired into favourites.js/report.js.
+// (v13 was taken by SNOW-475 on main.)
+const CACHE_VERSION = 'snowdesk-shell-v14';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
