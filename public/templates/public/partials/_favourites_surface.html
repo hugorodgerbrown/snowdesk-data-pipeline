@@ -30,17 +30,22 @@ Context expected:
     >
     </div>
     {# Create-form template — cloned by favourites.js once a pin has been  #}
-    {# placed/dragged into position. Carries a real {% csrf_token %} so the #}
-    {# hx-post submit is valid; lat/lon are written into the hidden inputs  #}
-    {# by favourites.js before the form is shown.                          #}
+    {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}
+    {# submit is intercepted by favourites.js and routed through the client #}
+    {# mutation queue (SNOW-479), NOT htmx, so an offline save is captured  #}
+    {# and replayed on reconnect; the CSRF token rides in the urlencoded    #}
+    {# body. lat/lon are written into the hidden inputs by favourites.js    #}
+    {# before the form is shown. ``action`` is a degraded no-JS target      #}
+    {# only (the endpoint is @require_htmx, so a native submit 400s).       #}
     <template id="favourite-create-template">
         <form
             id="favourite-create-form"
-            hx-post="{{ favourite_create_url }}"
-            hx-target="#favourite-sheet"
-            hx-swap="innerHTML"
+            method="post"
+            action="{{ favourite_create_url }}"
             class="flex flex-col gap-3 px-2 py-4"
         >
+            {% trans "Add favourite" as favourite_create_title %}
+            {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="close-favourite-sheet" %}
             {% csrf_token %}
             <input type="hidden" name="lat">
             <input type="hidden" name="lon">
@@ -71,6 +76,34 @@ Context expected:
                 </button>
             </div>
         </form>
+    </template>
+    {# Optimistic-confirmation template (SNOW-479) — cloned into            #}
+    {# #favourite-sheet by favourites.js the instant a create is enqueued  #}
+    {# on the mutation queue, before the queued mutation has replayed.      #}
+    {# favourites.js reveals the [data-favourite-pending] line only when    #}
+    {# the tap happened offline; online, the pin round-trips near-instantly #}
+    {# so the "will sync" reassurance would be misleading. Mirrors          #}
+    {# observations/partials/_report_confirmation.html.                     #}
+    <template id="favourite-confirmation-template">
+        <div class="flex flex-col items-center gap-4 py-4 text-center">
+            <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
+            <p class="text-base font-medium text-text-1">{% trans "Pin saved!" %}</p>
+            <p class="text-sm text-text-2">
+                {% trans "Your favourite has been saved to this device." %}
+            </p>
+            {# Hidden by default; favourites.js reveals this on the optimistic #}
+            {# clone only when the tap happened offline.                       #}
+            <p data-favourite-pending hidden class="text-sm text-text-2">
+                {% trans "Saved — will sync when you're back online." %}
+            </p>
+            <button
+                type="button"
+                data-action="close-favourite-sheet"
+                class="rounded-tag border border-text-3/30 px-4 py-2 text-sm font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
+            >
+                {% trans "Close" %}
+            </button>
+        </div>
     </template>
     {# SNOW-475: shared touch-friendly place-picker — must precede           #}
     {# favourites.js in document order (both are defer, so document-order   #}
