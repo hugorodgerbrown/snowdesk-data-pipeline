@@ -235,6 +235,9 @@ def test_concurrent_race_swallows_integrity_error() -> None:
     middleware = IdempotencyMiddleware(view)
 
     # Seed a live row so the record() call inside the middleware collides.
+    # principal/body_hash are left at their "" defaults — get_live is patched
+    # to return None below, so the fingerprint comparison is never reached and
+    # the seeded values are irrelevant to what this test exercises.
     IdempotencyRecord.objects.create(
         key="racy",
         method="POST",
