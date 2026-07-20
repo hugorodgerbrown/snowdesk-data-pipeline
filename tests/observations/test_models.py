@@ -18,6 +18,7 @@ import datetime
 from datetime import UTC
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from observations.models import FieldObservation
@@ -437,3 +438,32 @@ class TestUserLocatedExistsForRegionDay:
             region, self._day()
         )
         assert result is False
+
+
+@pytest.mark.django_db
+class TestFieldObservationCoordinateConstraints:
+    """SNOW-464: DB check constraints reject out-of-range / negative values.
+
+    Belt-and-braces for a write path that bypasses the view-layer validators
+    (admin, shell, a future API).
+    """
+
+    def test_latitude_out_of_range_raises_integrity_error(self) -> None:
+        """A latitude beyond WGS-84 bounds is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(latitude=999.0)
+
+    def test_longitude_out_of_range_raises_integrity_error(self) -> None:
+        """A longitude beyond WGS-84 bounds is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(longitude=999.0)
+
+    def test_gps_latitude_out_of_range_raises_integrity_error(self) -> None:
+        """An out-of-range raw GPS latitude is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(gps_latitude=999.0)
+
+    def test_negative_accuracy_raises_integrity_error(self) -> None:
+        """A negative accuracy radius is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(accuracy_radius_km=-1.0)

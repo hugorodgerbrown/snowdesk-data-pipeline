@@ -289,6 +289,30 @@ class TestFavouriteCreateValidation:
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
 
+    @pytest.mark.parametrize(
+        ("lat", "lon"),
+        [
+            ("nan", "7.4"),
+            ("46.1", "inf"),
+            ("95", "7.4"),  # latitude > 90
+            ("46.1", "200"),  # longitude > 180
+        ],
+    )
+    @override_flag("favourites", active=True)
+    def test_invalid_coordinates_return_400_no_row_no_external_call(
+        self, client: Client, lat: str, lon: str
+    ) -> None:
+        """SNOW-464: non-finite / out-of-range coords are rejected before the
+        Open-Meteo elevation lookup and any write.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        with patch("favourites.services.resolve_forecast_point") as mock_resolve:
+            response = client.post(CREATE_URL, {"lat": lat, "lon": lon}, **HTMX_HEADERS)
+        assert response.status_code == 400
+        assert not Favourite.objects.filter(user=user).exists()
+        mock_resolve.assert_not_called()
+
 
 @pytest.mark.django_db
 class TestFavouriteCreateSuccess:

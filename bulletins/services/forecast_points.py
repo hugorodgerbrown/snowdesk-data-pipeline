@@ -31,6 +31,7 @@ import math
 
 from bulletins.models import ForecastPoint
 from bulletins.services.elevation import fetch_elevation
+from core.coordinates import validate_coordinates
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +194,16 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
         The resolved (existing or newly created) ForecastPoint.
 
     Raises:
+        InvalidCoordinatesError: If the coordinates are non-finite or out of
+            range (defensive — callers should validate at the view layer, but
+            this must never reach the Open-Meteo call or the DB). SNOW-464.
         requests.HTTPError: If the elevation lookup fails.
 
     """
+    # Defence in depth: reject NaN/±Inf / out-of-range coords before the
+    # external elevation lookup and any DB write.
+    validate_coordinates(latitude, longitude)
+
     elevation = fetch_elevation(latitude, longitude)
 
     lat_cell = quantise_lat(latitude)

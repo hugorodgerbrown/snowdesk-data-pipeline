@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from favourites.models import Favourite
@@ -75,3 +76,21 @@ class TestFavouriteOrdering:
 
         result = list(Favourite.objects.for_user(user))
         assert result == [late, early]
+
+
+@pytest.mark.django_db
+class TestFavouriteCoordinateConstraints:
+    """SNOW-464: DB check constraints reject out-of-range coordinates.
+
+    Belt-and-braces for a write path that bypasses the view-layer validator.
+    """
+
+    def test_latitude_out_of_range_raises_integrity_error(self) -> None:
+        """A latitude beyond WGS-84 bounds is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FavouriteFactory.create(latitude=999.0)
+
+    def test_longitude_out_of_range_raises_integrity_error(self) -> None:
+        """A longitude beyond WGS-84 bounds is rejected at the DB layer."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FavouriteFactory.create(longitude=999.0)
