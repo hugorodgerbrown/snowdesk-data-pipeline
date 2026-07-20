@@ -646,15 +646,23 @@ Optional context:
             {% trans "Shows how far you've zoomed in on the map." %}
         </li>
     </ul>
+    {# SNOW-457 (review): aria-describedby points at the step title + body so #}
+    {# a screen reader announces the *current* step alongside the dialog's   #}
+    {# static aria-label when focus enters — both nodes' text changes on     #}
+    {# every Back/Next via map_help.js, so the announcement stays live.      #}
     <div
         id="map-help-overlay"
         hidden
         role="dialog"
         aria-modal="false"
         aria-label='{% trans "Map help" %}'
+        aria-describedby="map-help-tooltip-title map-help-tooltip-body"
     >
         <div id="map-help-ring" aria-hidden="true"></div>
-        <div id="map-help-tooltip" class="map-help-tooltip" role="group" tabindex="-1">
+        {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
+        {# is for a set of related form controls, which this isn't; the outer  #}
+        {# #map-help-overlay's role="dialog" already scopes the whole widget.  #}
+        <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
             <p class="map-help-tooltip-step" id="map-help-step-count" aria-live="polite"></p>
             <span id="map-help-step-template" hidden>{% trans "Step {n} of {total}" %}</span>
             <h3 class="map-help-tooltip-title" id="map-help-tooltip-title"></h3>

@@ -310,17 +310,23 @@
       return;
     }
     if (e.key === 'Tab') {
-      // Focus trap: cycle within the tooltip's enabled buttons only.
+      // Focus trap: cycle within the tooltip's enabled buttons only. Focus
+      // starts on the tooltip container itself (it's the tabindex="-1"
+      // element .focus()'d on open, before any button has been touched), so
+      // Shift+Tab must also wrap from there — otherwise a keyboard user who
+      // presses Shift+Tab first escapes the trap backward before ever
+      // reaching a button.
       const focusable = Array.from(
         tooltip.querySelectorAll('button:not([disabled])'),
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === tooltip)) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
+      } else if (!e.shiftKey && active === last) {
         e.preventDefault();
         first.focus();
       }

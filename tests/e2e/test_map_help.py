@@ -170,6 +170,10 @@ def test_help_button_opens_tour_on_step_one(
     _navigate_home(page, live_server.url)
     _clear_storage(page, _STORAGE_KEY)
 
+    # auto-start is suppressed because #home-intro is visible on a fresh
+    # browser context, so this only asserts the toggle-driven open path
+    # below, not map_help.js's auto-start guard (see
+    # test_autostart_skipped_while_home_intro_is_showing for that).
     assert _overlay_is_hidden(page), "overlay should start hidden"
 
     _open_tour(page)
