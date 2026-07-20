@@ -424,4 +424,4 @@ Read these when working in the relevant area:
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
-| Worktree DB seeding, dev credentials, test_data coverage | [`docs/worktrees.md`](docs/worktrees.md) |
+| Worktree DB seeding, dev credentials, seed_test_data dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |

@@ -8,8 +8,8 @@ JSON-fixture path). Running the factories against a live database exercises them
 as a side benefit.
 
 The command writes rows into the database named by ``DJANGO_SETTINGS_MODULE``.
-It is developer tooling for local/CI dev databases: like ``seed_dev_users`` it
-refuses to run when ``DEBUG`` is ``False`` so it cannot touch a production DB.
+It is developer tooling for local/CI dev databases: it refuses to run when
+``DEBUG`` is ``False`` so it cannot touch a production DB.
 
 Bulletin-layer coverage:
   - one Bulletin + RegionBulletin + RegionDayRating per CH MicroRegion on the map
@@ -20,9 +20,10 @@ Bulletin-layer coverage:
   - render models built at ``RENDER_MODEL_VERSION`` and day ratings applied via the
     production services, so the seeded DB renders with no rebuild step.
 
-It also seeds a small standalone set of ForecastPoints, a ForecastPointWeather per
-point per April date, and one Favourite per point (all owned by a single seeded
-user).
+It also seeds two named dev accounts (a superuser and an active, CH-4115-subscribed
+normal user — folded in from the former ``seed_dev_users`` command) plus a small
+standalone set of ForecastPoints, a ForecastPointWeather per point per April date,
+and one Favourite per point (all owned by the seeded normal dev user).
 
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
 *prerequisite*: it must already be loaded (e.g. ``loaddata eaws_CH resorts``). It
@@ -62,6 +63,8 @@ from bulletins.services.day_rating import apply_bulletin_day_ratings
 from bulletins.services.render_model import RENDER_MODEL_VERSION, build_render_model
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
     from bulletins.models import Bulletin, ForecastPoint
     from regions.models import MicroRegion
 
@@ -94,6 +97,25 @@ _CYCLING_DANGER = [
     "moderate",
     "low",
 ]
+
+# ---------------------------------------------------------------------------
+# Dev/test user accounts (folded in from the former ``seed_dev_users`` command).
+# Seeded by ``SeedModel.USER``. The two named accounts let a freshly-seeded DB be
+# used for manual testing immediately: a superuser for ``/admin/`` and an active,
+# region-subscribed normal user for the full subscription journey. The normal
+# user also owns the seeded Favourites. The shared password is documented in
+# docs/worktrees.md.
+# ---------------------------------------------------------------------------
+
+SUPERUSER_EMAIL = "admin@snowdesk.dev"
+NORMAL_USER_EMAIL = "dev@snowdesk.dev"
+# Intentional dev-only constant; the command is DEBUG-gated in handle() so it can
+# never touch a production DB. Documented in docs/worktrees.md.
+DEV_USER_PASSWORD = "snowdesk"  # noqa: S105 — dev-only constant, DEBUG-gated (see handle)
+
+# CH-4115 (Martigny-Verbier) is the canonical detail region; the normal dev user
+# is subscribed to it. It must already be loaded (loaddata eaws_CH resorts).
+SUBSCRIBED_REGION_ID = "CH-4115"
 
 
 def _make_raw_data(
@@ -341,6 +363,7 @@ class SeedModel(enum.StrEnum):
     FORECASTPOINT = "forecastpoint"
     FORECASTPOINTWEATHER = "forecastpointweather"
     FAVOURITE = "favourite"
+    USER = "user"
 
 
 # FK prerequisites — selecting a model pulls in these even when unnamed, because
@@ -355,7 +378,9 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     SeedModel.WEATHERSNAPSHOT: (),
     SeedModel.FORECASTPOINT: (),
     SeedModel.FORECASTPOINTWEATHER: (SeedModel.FORECASTPOINT,),
-    SeedModel.FAVOURITE: (SeedModel.FORECASTPOINT,),
+    # Favourites are owned by the seeded normal dev user, so USER is a prerequisite.
+    SeedModel.FAVOURITE: (SeedModel.FORECASTPOINT, SeedModel.USER),
+    SeedModel.USER: (),
 }
 
 # Dependency-safe seeding order, split into the two independent families the run
@@ -372,6 +397,9 @@ _POINT_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.FORECASTPOINTWEATHER,
     SeedModel.FAVOURITE,
 )
+# The account layer has no cross-dependencies on the other families and is seeded
+# first, because Favourites (point family) are owned by the seeded normal user.
+_ACCOUNT_FAMILY: tuple[SeedModel, ...] = (SeedModel.USER,)
 
 _CHOICES: list[str] = [m.value for m in SeedModel]
 
@@ -672,13 +700,115 @@ class Command(BaseCommand):
 
         """
         counts: dict[str, int] = {}
+        account_counts, dev_user = self._seed_account_family(resolved, verbosity)
+        counts.update(account_counts)
         counts.update(
             self._seed_bulletin_family(
                 resolved, specs, weather_pairs, micro_map, verbosity
             )
         )
-        counts.update(self._seed_point_family(resolved, verbosity))
+        counts.update(self._seed_point_family(resolved, dev_user, verbosity))
         return counts
+
+    def _seed_account_family(
+        self, resolved: "set[SeedModel]", verbosity: int
+    ) -> "tuple[dict[str, int], User | None]":
+        """Seed the account-layer models (the two named dev users).
+
+        Args:
+            resolved: Models to seed (already expanded with prerequisites).
+            verbosity: Verbosity level.
+
+        Returns:
+            A ``(counts, normal_user)`` tuple. ``normal_user`` is the subscribed
+            dev user that owns the seeded Favourites, or ``None`` when USER is not
+            in the selection.
+
+        """
+        counts: dict[str, int] = {}
+        dev_user: User | None = None
+        for model in _ACCOUNT_FAMILY:
+            if model not in resolved:
+                continue
+            if model is SeedModel.USER:
+                counts[model.value], dev_user = self._seed_users(verbosity)
+        return counts, dev_user
+
+    def _seed_users(self, verbosity: int) -> "tuple[int, User]":
+        """Create the two named dev accounts and return the subscribed normal user.
+
+        Folded in from the former ``seed_dev_users`` command: a superuser for
+        ``/admin/`` and an active, CH-4115-subscribed normal user. Idempotent
+        (``update_or_create`` / ``get_or_create``), so ``--include user`` can be
+        re-run safely even though the rest of the command expects an empty DB.
+
+        Args:
+            verbosity: Verbosity level.
+
+        Returns:
+            A ``(count, normal_user)`` tuple: the number of accounts ensured (2)
+            and the subscribed normal dev user (owns the seeded Favourites).
+
+        Raises:
+            CommandError: If the CH-4115 MicroRegion is not loaded.
+
+        """
+        from django.contrib.auth import get_user_model
+
+        from accounts.models import Subscriber, Subscription
+        from regions.models import MicroRegion
+
+        user_model = get_user_model()
+
+        # Superuser for /admin/.
+        email_super = SUPERUSER_EMAIL.lower()
+        user_super, _ = user_model.objects.update_or_create(
+            username=email_super,
+            defaults={
+                "email": email_super,
+                "is_staff": True,
+                "is_superuser": True,
+            },
+        )
+        user_super.set_password(DEV_USER_PASSWORD)
+        user_super.save()
+
+        # Active, region-subscribed normal user.
+        email_dev = NORMAL_USER_EMAIL.lower()
+        subscriber, _ = Subscriber.objects.get_or_create_for_email(
+            email_dev,
+            defaults={
+                "status": Subscriber.Status.ACTIVE,
+                "confirmed_at": django_timezone.now(),
+            },
+        )
+        # get_or_create_for_email leaves an unusable password; set it explicitly
+        # so the account is immediately usable for manual testing.
+        subscriber.user.set_password(DEV_USER_PASSWORD)
+        subscriber.user.save()
+        if subscriber.status != Subscriber.Status.ACTIVE:
+            subscriber.status = Subscriber.Status.ACTIVE
+            if subscriber.confirmed_at is None:
+                subscriber.confirmed_at = django_timezone.now()
+            subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
+
+        try:
+            region = MicroRegion.objects.get(region_id=SUBSCRIBED_REGION_ID)
+        except MicroRegion.DoesNotExist as exc:
+            raise CommandError(
+                f"MicroRegion {SUBSCRIBED_REGION_ID!r} does not exist. Load the "
+                "region fixtures first: "
+                "uv run python manage.py loaddata eaws_CH resorts"
+            ) from exc
+        Subscription.objects.get_or_create(
+            subscriber=subscriber,
+            region=region,
+            defaults={"geo_match_kind": Subscription.GeoMatchKind.IN_REGION},
+        )
+
+        if verbosity >= 2:
+            self.stdout.write(f"  Created dev accounts: {email_super}, {email_dev}")
+        return 2, subscriber.user
 
     def _seed_bulletin_family(
         self,
@@ -722,12 +852,15 @@ class Command(BaseCommand):
         return counts
 
     def _seed_point_family(
-        self, resolved: "set[SeedModel]", verbosity: int
+        self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int
     ) -> dict[str, int]:
         """Seed the point-layer models (ForecastPoint/ForecastPointWeather/Favourite).
 
         Args:
             resolved: Models to seed (already expanded with prerequisites).
+            dev_user: The seeded normal user that owns Favourites. Guaranteed
+                non-``None`` whenever FAVOURITE is seeded, because FAVOURITE
+                depends on USER (see ``_DEPENDENCIES``).
             verbosity: Verbosity level.
 
         Returns:
@@ -747,7 +880,14 @@ class Command(BaseCommand):
                     forecast_points, verbosity
                 )
             elif model is SeedModel.FAVOURITE:
-                counts[model.value] = self._seed_favourites(forecast_points, verbosity)
+                if dev_user is None:  # pragma: no cover — FAVOURITE pulls in USER
+                    raise CommandError(
+                        "Favourite seeding requires the USER model, which should "
+                        "have been pulled in as a prerequisite."
+                    )
+                counts[model.value] = self._seed_favourites(
+                    forecast_points, dev_user, verbosity
+                )
         return counts
 
     def _seed_bulletins(
@@ -971,29 +1111,33 @@ class Command(BaseCommand):
         return created
 
     def _seed_favourites(
-        self, forecast_points: "list[ForecastPoint]", verbosity: int
+        self,
+        forecast_points: "list[ForecastPoint]",
+        owner: "User",
+        verbosity: int,
     ) -> int:
-        """Create one Favourite per ForecastPoint, all owned by one seeded user.
+        """Create one Favourite per ForecastPoint, all owned by the dev user.
 
         Each Favourite references a seeded ForecastPoint (so its coordinates line
         up with real point weather) rather than letting the factory synthesise a
-        fresh point.
+        fresh point. Ownership is the seeded normal dev user (``owner``) so the
+        Favourites appear on that account during manual testing.
 
         Args:
             forecast_points: The seeded ForecastPoint instances.
+            owner: The seeded normal dev user that owns the Favourites.
             verbosity: Verbosity level.
 
         Returns:
             The number of Favourite rows created.
 
         """
-        from tests.factories import FavouriteFactory, UserFactory
+        from tests.factories import FavouriteFactory
 
-        user = UserFactory.create()
         created = 0
         for point in forecast_points:
             FavouriteFactory.create(
-                user=user,
+                user=owner,
                 forecast_point=point,
                 latitude=point.latitude,
                 longitude=point.longitude,

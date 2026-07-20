@@ -12,6 +12,9 @@ Covers:
     map-date snapshot.
   - --include seeds only the named model plus its FK prerequisites; --exclude
     omits the named model.
+  - --include user seeds the two named dev accounts (superuser + subscribed
+    normal user, folded in from the former seed_dev_users command); --all
+    includes them and the seeded Favourites are owned by the normal dev user.
 
 seed_test_data needs the ``eaws_CH`` and ``resorts`` fixtures pre-loaded (it
 wires real MicroRegion FKs), so the commit tests load them first.
@@ -20,10 +23,18 @@ wires real MicroRegion FKs), so the commit tests load them first.
 from __future__ import annotations
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
+from accounts.models import Subscriber, Subscription
+from bulletins.management.commands.seed_test_data import (
+    DEV_USER_PASSWORD,
+    NORMAL_USER_EMAIL,
+    SUBSCRIBED_REGION_ID,
+    SUPERUSER_EMAIL,
+)
 from bulletins.models import (
     Bulletin,
     ForecastPoint,
@@ -34,6 +45,8 @@ from bulletins.models import (
 )
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from favourites.models import Favourite
+
+User = get_user_model()
 
 # The point-weather layer seeded alongside the bulletin dataset.
 _EXPECTED_FORECAST_POINTS = 5
@@ -86,6 +99,7 @@ class TestSelectionValidation:
             "forecastpoint",
             "forecastpointweather",
             "favourite",
+            "user",
         ):
             assert name in out
 
@@ -100,11 +114,18 @@ class TestSelectionValidation:
 class TestDryRun:
     """Without --commit the command writes nothing."""
 
+    @pytest.fixture(autouse=True)
+    def _load_region_fixtures(self) -> None:
+        """Pre-load region data — --all seeds the USER model, which needs CH-4115."""
+        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+
     def test_dry_run_writes_no_rows(self) -> None:
-        """--all without --commit leaves the DB untouched."""
+        """--all without --commit leaves the DB untouched (incl. the seeded users)."""
         call_command("seed_test_data", "--all", verbosity=0)
         assert Bulletin.objects.count() == 0
         assert WeatherSnapshot.objects.count() == 0
+        # The USER layer is rolled back with everything else in dry-run.
+        assert User.objects.count() == 0
 
     def test_dry_run_prints_read_only_banner(
         self, capsys: pytest.CaptureFixture
@@ -262,4 +283,104 @@ class TestCommit:
         with pytest.raises(CommandError, match="empty database"):
             call_command(
                 "seed_test_data", "--include", "bulletin", commit=True, verbosity=0
+            )
+
+
+@pytest.mark.django_db
+class TestUserSeeding:
+    """The USER model seeds the two named dev accounts (from seed_dev_users).
+
+    Region fixtures are pre-loaded because the normal user is subscribed to the
+    CH-4115 MicroRegion.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load_region_fixtures(self) -> None:
+        """Pre-load the region reference data the CH-4115 subscription needs."""
+        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+
+    def test_include_user_creates_superuser(self) -> None:
+        """--include user creates a superuser with is_staff and is_superuser."""
+        call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
+        user = User.objects.get(username=SUPERUSER_EMAIL.lower())
+        assert user.is_staff
+        assert user.is_superuser
+        assert user.email == SUPERUSER_EMAIL.lower()
+        assert user.check_password(DEV_USER_PASSWORD)
+
+    def test_include_user_creates_subscribed_normal_user(self) -> None:
+        """--include user creates an ACTIVE normal user subscribed to CH-4115."""
+        call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
+        user = User.objects.get(username=NORMAL_USER_EMAIL.lower())
+        assert not user.is_staff
+        assert user.email == NORMAL_USER_EMAIL.lower()
+        assert user.check_password(DEV_USER_PASSWORD)
+        subscriber = Subscriber.objects.get(user=user)
+        assert subscriber.status == Subscriber.Status.ACTIVE
+        sub = Subscription.objects.get(
+            subscriber=subscriber, region__region_id=SUBSCRIBED_REGION_ID
+        )
+        assert sub.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+
+    def test_include_user_seeds_nothing_else(self) -> None:
+        """--include user creates only the accounts, no bulletin/point rows."""
+        call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
+        assert Bulletin.objects.count() == 0
+        assert ForecastPoint.objects.count() == 0
+        assert Favourite.objects.count() == 0
+
+    def test_include_user_is_idempotent(self) -> None:
+        """--include user twice creates no duplicate users or subscriptions.
+
+        User seeding uses update_or_create / get_or_create, so unlike the
+        bulletin layer it can be re-run without hitting the empty-DB guard.
+        """
+        call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
+        call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
+        assert User.objects.filter(username=SUPERUSER_EMAIL.lower()).count() == 1
+        assert User.objects.filter(username=NORMAL_USER_EMAIL.lower()).count() == 1
+        subscriber = Subscriber.objects.get(user__username=NORMAL_USER_EMAIL.lower())
+        assert (
+            Subscription.objects.filter(
+                subscriber=subscriber, region__region_id=SUBSCRIBED_REGION_ID
+            ).count()
+            == 1
+        )
+
+    def test_all_seeds_dev_users(self) -> None:
+        """--all includes the two named dev accounts."""
+        call_command("seed_test_data", "--all", commit=True, verbosity=0)
+        assert User.objects.filter(username=SUPERUSER_EMAIL.lower()).exists()
+        assert User.objects.filter(username=NORMAL_USER_EMAIL.lower()).exists()
+
+    def test_include_favourite_pulls_in_user_as_owner(self) -> None:
+        """--include favourite pulls in USER and the dev user owns the Favourites."""
+        call_command(
+            "seed_test_data", "--include", "favourite", commit=True, verbosity=0
+        )
+        dev_user = User.objects.get(username=NORMAL_USER_EMAIL.lower())
+        favourites = Favourite.objects.select_related("user")
+        assert favourites.exists()
+        for favourite in favourites:
+            assert favourite.user == dev_user
+
+    def test_favourite_prerequisite_note_reports_user(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """--include favourite reports USER among the pulled-in prerequisites."""
+        call_command(
+            "seed_test_data", "--include", "favourite", commit=True, verbosity=1
+        )
+        assert "user" in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+class TestUserSeedingWithoutRegion:
+    """USER seeding requires the CH-4115 MicroRegion to exist."""
+
+    def test_missing_ch4115_region_errors_cleanly(self) -> None:
+        """--include user without region fixtures raises a clear CommandError."""
+        with pytest.raises(CommandError, match=SUBSCRIBED_REGION_ID):
+            call_command(
+                "seed_test_data", "--include", "user", commit=True, verbosity=0
             )

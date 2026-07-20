@@ -1,6 +1,6 @@
 ---
 name: testing-scenarios
-description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on test_data
+description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on seed_test_data data
 status: current
 last-reviewed: 2026-07-19
 ---

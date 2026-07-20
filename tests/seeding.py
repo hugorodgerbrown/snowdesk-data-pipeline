@@ -3,9 +3,9 @@ tests/seeding.py — Shared helper to build the navigable test dataset.
 
 Replaces the old ``loaddata test_data`` fixture path: loads the CH region/resort
 reference data, then runs ``seed_test_data --all --commit`` to build the full
-bulletin/weather/point/favourite dataset from the factories. Used by the smoke,
-home-page, and e2e tests that need a navigable database rather than a handful of
-hand-built factory rows.
+bulletin/weather/point/favourite dataset (and the two named dev accounts) from the
+factories. Used by the smoke, home-page, and e2e tests that need a navigable
+database rather than a handful of hand-built factory rows.
 """
 
 from __future__ import annotations
