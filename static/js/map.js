@@ -933,16 +933,30 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // here since `sdf: true` only reads the alpha channel and recolours it
   // per-layer via `icon-color`. Building it by hand avoids adding a
   // Font Awesome (or any sprite-sheet) dependency for a single icon.
-  const buildCommunityReportFlagImageData = () => {
+  //
+  // `size` is the LOGICAL (CSS-pixel) icon footprint; the canvas backing
+  // store is scaled up by `pixelRatio` so the mask supersamples cleanly
+  // on Retina/HiDPI displays instead of blurring when MapLibre upscales
+  // a 1x bitmap. `ctx.scale(pixelRatio, pixelRatio)` lets the drawing
+  // calls below stay in logical-pixel coordinates regardless of ratio —
+  // the caller passes the matching `pixelRatio` to `map.addImage` so
+  // MapLibre knows how to map the (now larger) physical bitmap back to
+  // the logical icon size.
+  const buildCommunityReportFlagImageData = (pixelRatio) => {
     const size = 32;
     const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+    canvas.width = size * pixelRatio;
+    canvas.height = size * pixelRatio;
     const ctx = canvas.getContext('2d');
+    ctx.scale(pixelRatio, pixelRatio);
     ctx.fillStyle = '#000000';
-    // Pole: a slim vertical bar down the left-of-centre, leaving a little
-    // padding top/bottom so the SDF has room to anti-alias.
-    ctx.fillRect(11, 4, 3, 24);
+    // Pole: a slim vertical bar down the left-of-centre, running almost
+    // to the bottom edge — `icon-anchor: 'bottom'` on the layer below
+    // anchors the pole's base (not the icon's visual centre) to the
+    // feature's coordinate, so the pole needs to reach close to y=size
+    // for that anchor to read as "the flag is planted here" rather than
+    // floating above the point.
+    ctx.fillRect(11, 4, 3, 27);
     // Pennant: a triangular-ish wedge flying from the top of the pole,
     // tapering to a point so it reads as a flag rather than a rectangle.
     ctx.beginPath();
@@ -951,7 +965,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     ctx.lineTo(14, 15);
     ctx.closePath();
     ctx.fill();
-    return ctx.getImageData(0, 0, size, size);
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
   };
 
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
@@ -980,10 +994,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const installCommunityReportsLayer = (geojson) => {
     if (!geojson || map.getSource('community-reports')) return;
     if (!map.hasImage(COMMUNITY_REPORT_ICON_ID)) {
+      const pixelRatio = window.devicePixelRatio || 1;
       map.addImage(
         COMMUNITY_REPORT_ICON_ID,
-        buildCommunityReportFlagImageData(),
-        { sdf: true },
+        buildCommunityReportFlagImageData(pixelRatio),
+        { sdf: true, pixelRatio },
       );
     }
     map.addSource('community-reports', {
@@ -1044,6 +1059,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'icon-image': COMMUNITY_REPORT_ICON_ID,
         'icon-size': 0.55,
         'icon-allow-overlap': true,
+        // The mask is drawn pole-down (see buildCommunityReportFlagImageData) —
+        // anchoring at the pole's base rather than the icon's visual
+        // centre (the default) makes the feature's coordinate read as
+        // "the flag is planted here", matching the usual pin affordance.
+        'icon-anchor': 'bottom',
       },
       paint: {
         // Amber — same as the cluster circles, so a lone flag reads as

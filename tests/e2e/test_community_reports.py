@@ -80,10 +80,11 @@ def test_overlay_toggle_installs_clustered_source(
 
     # SNOW-472: the unclustered point layer draws a single shared SDF flag
     # icon (not a per-OBSERVATION_TYPE text glyph) — assert the layer
-    # references it and that the icon was actually registered on the
-    # style via map.addImage.
+    # references THAT specific icon id (not just "some icon is set"), and
+    # that the icon was actually registered on the style via map.addImage.
     assert page.evaluate(
-        "() => !!MAP.getLayoutProperty('community-reports-point', 'icon-image')"
+        "() => MAP.getLayoutProperty('community-reports-point', 'icon-image')"
+        " === 'community-report-flag'"
     )
     assert page.evaluate("() => MAP.hasImage('community-report-flag')")
 
