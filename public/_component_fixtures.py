@@ -994,6 +994,23 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Sheet header (SNOW-474) -----------------------------------------------------
+# Shared title + persistent × close control for the favourites/report map
+# sheets. Both context vars are required (title, close_action) — supplying
+# them here keeps the include from erroring on a missing var.
+
+SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Report sheet",
+        "context": {"title": "Report", "close_action": "close-report-sheet"},
+    },
+    {
+        "caption": "Favourite sheet",
+        "context": {"title": "Favourite", "close_action": "close-favourite-sheet"},
+    },
+)
+
+
 TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Error (HTMX banner shape) — no CTA, not dismissible",
