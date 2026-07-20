@@ -25,6 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.db import IntegrityError
 
 from bulletins.models import WeatherSnapshot
 from bulletins.services.weather_fetcher import (
@@ -488,11 +489,15 @@ class TestFetchArchiveForRegion:
         region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 1)
         end = datetime.date(2026, 4, 30)
+        # The response must cover the requested range (SNOW-467 validation runs
+        # on the dry-run/telemetry path too), so build the full month.
+        n = (end - start).days + 1
+        dates = [(start + datetime.timedelta(days=i)).isoformat() for i in range(n)]
         api_data = _make_archive_response(
-            dates=[d.isoformat() for d in [datetime.date(2026, 4, 1)]],
-            weather_codes=[0],
-            sunrises=["2026-04-01T06:00+02:00"],
-            sunsets=["2026-04-01T20:00+02:00"],
+            dates=dates,
+            weather_codes=[0] * n,
+            sunrises=["2026-04-01T06:00+02:00"] * n,
+            sunsets=["2026-04-01T20:00+02:00"] * n,
         )
         mock = _mock_get(api_data)
 
@@ -502,6 +507,141 @@ class TestFetchArchiveForRegion:
         params = mock.call_args[1]["params"]
         assert params["start_date"] == "2026-04-01"
         assert params["end_date"] == "2026-04-30"
+
+
+# ---------------------------------------------------------------------------
+# fetch_archive_for_region — array-alignment validation (SNOW-467)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchArchiveForRegionValidation:
+    """SNOW-467: inconsistent archive responses are rejected before any write."""
+
+    _START = datetime.date(2026, 4, 28)
+    _END = datetime.date(2026, 4, 30)
+
+    def _sun(self, n: int) -> list[str]:
+        """Return n identical sunrise/sunset strings."""
+        return ["2026-04-28T05:40+02:00"] * n
+
+    def test_misaligned_arrays_raise_and_leave_existing_row_unchanged(self) -> None:
+        """A short array is rejected, and a pre-existing row is left untouched.
+
+        This is the finding's scenario: a response short by one array would
+        otherwise zip()-truncate, write a partial batch, and leave the dropped
+        day's older row as stale mixed-generation data.
+        """
+        region = MicroRegionFactory.create()
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=self._END, weather_code=42
+        )
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-29", "2026-04-30"],
+            weather_codes=[0, 1, 2],
+            sunrises=self._sun(3),
+            sunsets=self._sun(2),  # one short
+        )
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            pytest.raises(ValueError, match="differ in length"),
+        ):
+            fetch_archive_for_region(region, self._START, self._END, commit=True)
+
+        assert WeatherSnapshot.objects.filter(region=region).count() == 1
+        row = WeatherSnapshot.objects.get(region=region, valid_for_date=self._END)
+        assert row.weather_code == 42
+
+    def test_on_fetched_not_called_when_validation_fails(self) -> None:
+        """The telemetry callback never fires for a rejected response."""
+        region = MicroRegionFactory.create()
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-29", "2026-04-30"],
+            weather_codes=[0, 1],  # short
+            sunrises=self._sun(3),
+            sunsets=self._sun(3),
+        )
+        collected: list[dict[str, Any]] = []
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            pytest.raises(ValueError),
+        ):
+            fetch_archive_for_region(
+                region, self._START, self._END, commit=True, on_fetched=collected.append
+            )
+        assert collected == []
+
+    def test_gap_in_dates_raises(self) -> None:
+        """Equal-length arrays that skip an interior day are rejected."""
+        region = MicroRegionFactory.create()
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-30"],  # 04-29 missing
+            weather_codes=[0, 2],
+            sunrises=self._sun(2),
+            sunsets=self._sun(2),
+        )
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            pytest.raises(ValueError, match="contiguously"),
+        ):
+            fetch_archive_for_region(region, self._START, self._END, commit=True)
+        assert WeatherSnapshot.objects.filter(region=region).count() == 0
+
+    def test_out_of_order_dates_raise(self) -> None:
+        """Reordered provider dates are rejected."""
+        region = MicroRegionFactory.create()
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-30", "2026-04-29"],  # reordered
+            weather_codes=[0, 2, 1],
+            sunrises=self._sun(3),
+            sunsets=self._sun(3),
+        )
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            pytest.raises(ValueError, match="contiguously"),
+        ):
+            fetch_archive_for_region(region, self._START, self._END, commit=True)
+
+    def test_write_failure_rolls_back_the_whole_batch(self) -> None:
+        """A failure mid-loop leaves zero rows — the batch is atomic."""
+        region = MicroRegionFactory.create()
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-29", "2026-04-30"],
+            weather_codes=[0, 1, 2],
+            sunrises=self._sun(3),
+            sunsets=self._sun(3),
+        )
+        real_uoc = WeatherSnapshot.objects.update_or_create
+        call_count = {"n": 0}
+
+        def _fail_on_second(*args: Any, **kwargs: Any) -> Any:
+            """Let the first write succeed, fail the second."""
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise IntegrityError("simulated snapshot write failure")
+            return real_uoc(*args, **kwargs)
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            patch.object(
+                WeatherSnapshot.objects, "update_or_create", side_effect=_fail_on_second
+            ),
+            pytest.raises(IntegrityError),
+        ):
+            fetch_archive_for_region(region, self._START, self._END, commit=True)
+
+        # The first write rolled back with the failed one — nothing persisted.
+        assert WeatherSnapshot.objects.filter(region=region).count() == 0
 
 
 # ---------------------------------------------------------------------------

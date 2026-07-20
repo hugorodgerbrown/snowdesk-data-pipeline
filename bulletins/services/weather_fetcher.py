@@ -88,6 +88,7 @@ from typing import Any, cast
 import requests
 from django.conf import settings
 from django.core.management.base import CommandError
+from django.db import transaction
 from django.utils import timezone as django_timezone
 
 from bulletins.models import ForecastPoint, ForecastPointWeather, WeatherSnapshot
@@ -771,6 +772,68 @@ def fetch_all_points(
     return counts
 
 
+def _archive_daily_dates(
+    dates: list[str],
+    weather_codes: list[int],
+    sunrises: list[str],
+    sunsets: list[str],
+    *,
+    region_id: str,
+    start_date: date,
+    end_date: date,
+) -> list[date]:
+    """Validate the archive ``daily`` arrays and return the parsed dates.
+
+    ``zip()`` over the four parallel arrays silently truncates to the shortest,
+    so a response short by one array (e.g. 10 dates but 9 sunsets) would write
+    a partial batch and leave an older row for the dropped day as stale
+    mixed-generation data. This validates first: the four arrays must share one
+    length, and the parsed dates must cover ``[start_date, end_date]``
+    inclusive, contiguously and in order (SNOW-467).
+
+    Args:
+        dates: The ``daily.time`` array (ISO date strings).
+        weather_codes: The ``daily.weather_code`` array.
+        sunrises: The ``daily.sunrise`` array.
+        sunsets: The ``daily.sunset`` array.
+        region_id: The region identifier, for error messages only.
+        start_date: First requested date (inclusive).
+        end_date: Last requested date (inclusive).
+
+    Returns:
+        The parsed provider dates, one per day, in order.
+
+    Raises:
+        ValueError: If the arrays differ in length, or the dates do not cover
+            the requested range contiguously and in order.
+
+    """
+    lengths = {
+        "time": len(dates),
+        "weather_code": len(weather_codes),
+        "sunrise": len(sunrises),
+        "sunset": len(sunsets),
+    }
+    if len(set(lengths.values())) != 1:
+        raise ValueError(
+            f"Open-Meteo archive for region={region_id}: daily arrays differ in "
+            f"length {lengths} — refusing to store a partial batch."
+        )
+
+    parsed = [date.fromisoformat(d) for d in dates]
+    expected = [
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+    ]
+    if parsed != expected:
+        raise ValueError(
+            f"Open-Meteo archive for region={region_id}: daily dates do not "
+            f"cover {start_date}..{end_date} contiguously and in order "
+            f"(got {len(parsed)} date(s)) — refusing to store."
+        )
+    return parsed
+
+
 def fetch_archive_for_region(
     region: MicroRegion,
     start_date: date,
@@ -810,6 +873,9 @@ def fetch_archive_for_region(
         requests.HTTPError: If the Open-Meteo archive API returns a non-2xx
             status.
         KeyError: If the expected fields are absent from the API response.
+        ValueError: If the daily arrays differ in length or the dates do not
+            cover the requested range contiguously and in order — the batch is
+            rejected rather than written partially (SNOW-467).
 
     """
     centre: Centre = cast(Centre, region.centre)
@@ -841,6 +907,18 @@ def fetch_archive_for_region(
     sunrises: list[str] = daily["sunrise"]
     sunsets: list[str] = daily["sunset"]
 
+    # Reject a truncated / inconsistent response before emitting or writing
+    # anything — never zip() the parallel arrays unvalidated (SNOW-467).
+    parsed_dates = _archive_daily_dates(
+        dates,
+        weather_codes,
+        sunrises,
+        sunsets,
+        region_id=region.region_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
     captured_at = django_timezone.now().isoformat()
 
     if on_fetched is not None:
@@ -867,25 +945,27 @@ def fetch_archive_for_region(
         return []
 
     snapshots: list[tuple[WeatherSnapshot, bool]] = []
-    for date_str, code, sunrise_str, sunset_str in zip(
-        dates, weather_codes, sunrises, sunsets
-    ):
-        day = date.fromisoformat(date_str)
-        defaults = _build_snapshot_defaults(code, sunrise_str, sunset_str)
-        snapshot, created = WeatherSnapshot.objects.update_or_create(
-            region=region,
-            valid_for_date=day,
-            defaults=defaults,
-        )
-        action = "Created" if created else "Updated"
-        logger.debug(
-            "%s WeatherSnapshot: region=%s date=%s code=%d",
-            action,
-            region.region_id,
-            day,
-            code,
-        )
-        snapshots.append((snapshot, created))
+    # One transaction for the whole batch so a mid-loop failure can't commit a
+    # partial date range (SNOW-467).
+    with transaction.atomic():
+        for day, code, sunrise_str, sunset_str in zip(
+            parsed_dates, weather_codes, sunrises, sunsets
+        ):
+            defaults = _build_snapshot_defaults(code, sunrise_str, sunset_str)
+            snapshot, created = WeatherSnapshot.objects.update_or_create(
+                region=region,
+                valid_for_date=day,
+                defaults=defaults,
+            )
+            action = "Created" if created else "Updated"
+            logger.debug(
+                "%s WeatherSnapshot: region=%s date=%s code=%d",
+                action,
+                region.region_id,
+                day,
+                code,
+            )
+            snapshots.append((snapshot, created))
 
     return snapshots
 
