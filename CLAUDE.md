@@ -381,6 +381,7 @@ Read these when working in the relevant area:
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
+| Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
