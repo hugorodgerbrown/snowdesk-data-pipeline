@@ -33,7 +33,8 @@ from core.models import BaseModel
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from django.contrib.auth.models import User
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser, User
 
 logger = logging.getLogger(__name__)
 
@@ -422,6 +423,38 @@ class Account(BaseModel):
         self.pending_email = None
         self.pending_email_requested_at = None
         return self
+
+
+def user_is_verified(user: AbstractBaseUser | AnonymousUser) -> bool:
+    """Return True when ``user`` has a verified ``Account`` profile.
+
+    Verified-only actions — submitting a field observation (SNOW-430), and
+    favourites later — require a confirmed email address.  An anonymous user,
+    an authenticated user with no ``Account`` row, and an unverified account
+    all return False.
+
+    This is the single definition shared by the server-side gate in
+    ``observations/views.py`` (``_auth_gate``) and the client-eligibility flag
+    built in ``public/views.py`` (``_report_context``).  Keeping one function
+    stops the two from drifting — the drift between them was the root cause of
+    SNOW-477, where an authenticated-but-unverified user was marked eligible
+    client-side but 403'd server-side.
+
+    Args:
+        user: The ``request.user`` to check.
+
+    Returns:
+        True only when ``user`` is authenticated and its ``Account`` has
+        ``is_verified=True``.
+
+    """
+    if not user.is_authenticated:
+        return False
+    try:
+        account = user.account  # type: ignore[attr-defined]
+    except Account.DoesNotExist:
+        return False
+    return bool(account.is_verified)
 
 
 # ---------------------------------------------------------------------------
