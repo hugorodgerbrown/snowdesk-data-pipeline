@@ -443,7 +443,10 @@ def test_report_button_not_shown_when_flag_off() -> None:
     client.force_login(subscriber.user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
-    assert "report-btn" not in content
+    # SNOW-457: the map-help coachmark always references "#report-btn" as a
+    # step target selector, so a bare substring check would be a false
+    # positive here — assert on the button's own id attribute instead.
+    assert 'id="report-btn"' not in content
 
 
 @pytest.mark.django_db
