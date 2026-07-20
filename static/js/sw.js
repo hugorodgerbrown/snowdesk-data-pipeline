@@ -127,10 +127,10 @@ try {
   // Non-fatal — see fallback in the 'sync' listener below.
 }
 
-// SNOW-475: v13 — new static/js/place_picker.js, favourites.js/report.js
-// rewritten to use it, and _map_embed.html's markup gained #map-place-pin.
-// (v12 was taken by SNOW-462/SNOW-472 on main.)
-const CACHE_VERSION = 'snowdesk-shell-v13';
+// SNOW-478: v14 — static/js/map.js now derives overlay label fonts from the
+// active basemap and draws the favourites pin as an SDF icon (fixes glyph
+// 404s on swisstopo/IGN/basemap.at basemaps).
+const CACHE_VERSION = 'snowdesk-shell-v14';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
