@@ -11,19 +11,17 @@ lifecycle (the favourites surface doesn't need one). Every test still needs
 ``override_flag`` mutates ``Flag.everyone`` in the DB, which the live-server
 thread sees immediately (pytest-django's ``live_server`` runs in-process).
 
-Two interactions are driven synthetically rather than via a literal
-Playwright mouse click on the MapLibre canvas, for determinism in headless
-Chromium (no WebGL frame-timing dependency):
+Placing a favourite (SNOW-475) drives the touch-friendly place-picker
+rather than a canvas click: ``MAP.setCenter([lon, lat])`` inside
+``page.evaluate`` fires the same 'moveend' the picker listens for as a real
+pan would, without depending on WebGL frame-timing in headless Chromium.
 
-- Placing a favourite: ``MAP.fire('click', {lngLat, point})`` — the
-  placement handler is a plain (non-layer-scoped) ``map.on('click', ...)``,
-  so a synthetic fire drives the exact same code path a real canvas click
-  would.
-- Selecting an existing pin: dispatching ``snowdesk:favourite-selected``
-  directly (the documented contract between map.js and favourites.js — see
-  docs/map-and-api.md) rather than relying on ``queryRenderedFeatures``
-  finding a rendered symbol-layer glyph at a pixel, which requires the
-  layer to have actually composited a frame.
+Selecting an existing pin is driven synthetically too, for the same
+determinism reason: dispatching ``snowdesk:favourite-selected`` directly
+(the documented contract between map.js and favourites.js — see
+docs/map-and-api.md) rather than relying on ``queryRenderedFeatures``
+finding a rendered symbol-layer glyph at a pixel, which requires the layer
+to have actually composited a frame.
 
 The forecast-panel test (SNOW-417) instead drives the manage page's
 "My favourites" list — the "Details" button hx-gets ``favourite_card``
@@ -64,31 +62,50 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
 def test_signed_in_add_flow_creates_favourite(
     favourites_page: FavouritesPage, django_db_blocker: Any
 ) -> None:
-    """Add -> synthetic map click -> name -> Save creates a Favourite row
-    and the map's favourites source picks it up.
+    """Add -> pan the map -> name -> Save creates a Favourite row at the
+    map's centre, and the map's favourites source picks it up (SNOW-475:
+    the place-picker, not a draggable marker, is what places the pin).
     """
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
     page.click("#favourite-add-btn")
     page.wait_for_selector("#favourite-sheet:not([hidden])")
-
-    # Synthetic map click — drives the same plain map.on('click', ...)
-    # handler a real canvas tap would, without depending on WebGL frame
-    # timing in headless Chromium.
-    page.evaluate(
-        "() => MAP.fire('click', {"
-        " lngLat: { lng: 7.6, lat: 46.2 },"
-        " point: MAP.project([7.6, 46.2]) })"
-    )
     page.wait_for_selector("#favourite-create-form")
-    assert page.locator(".maplibregl-marker").count() == 1
+
+    # The centre pin is shown the moment the create form appears — no
+    # separate "tap the map" step.
+    page.wait_for_selector("#map-place-pin:not([hidden])")
+
+    # Pan the map to a known centre — MAP.setCenter fires 'moveend', the
+    # same event a real drag/pinch pan would, without depending on WebGL
+    # frame timing in headless Chromium. The pin itself never moves; only
+    # the map underneath it does (the actual bug this ticket fixes).
+    page.evaluate("() => MAP.setCenter([7.6, 46.2])")
+    page.wait_for_function(
+        "() => { "
+        "const el = document.querySelector('#favourite-create-form input[name=lat]'); "
+        "return el && Math.abs(parseFloat(el.value) - 46.2) < 0.01; "
+        "}"
+    )
+    lat = page.eval_on_selector(
+        "#favourite-create-form input[name=lat]", "el => el.value"
+    )
+    lon = page.eval_on_selector(
+        "#favourite-create-form input[name=lon]", "el => el.value"
+    )
+    assert float(lat) == pytest.approx(46.2, abs=0.01)
+    assert float(lon) == pytest.approx(7.6, abs=0.01)
+    # The pin stays visually centred (its CSS keeps it fixed at 50%/50% of
+    # the viewport) across the pan — the coordinate above tracking the new
+    # centre while the pin itself never left is what proves it.
+    assert page.locator("#map-place-pin:not([hidden])").count() == 1
 
     page.fill("#favourite-name-input", "Test Peak")
     page.click("#favourite-create-form button[type=submit]")
 
     page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
-    assert page.locator(".maplibregl-marker").count() == 0
+    assert page.locator("#map-place-pin:not([hidden])").count() == 0
 
     with django_db_blocker.unblock():
         favourite = Favourite.objects.get(
