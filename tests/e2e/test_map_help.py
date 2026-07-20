@@ -95,8 +95,8 @@ def _click_back(page: Page) -> None:
     page.dispatch_event("#map-help-back", "click")
 
 
-def _click_skip(page: Page) -> None:
-    page.dispatch_event("#map-help-skip", "click")
+def _click_close(page: Page) -> None:
+    page.dispatch_event("#map-help-close", "click")
 
 
 def _tooltip_title(page: Page) -> str:
@@ -219,11 +219,11 @@ def test_next_and_back_advance_and_retreat(
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
-def test_skip_dismisses_and_persists_to_storage(
+def test_close_dismisses_and_persists_to_storage(
     live_server: LiveServer,
     page: Page,
 ) -> None:
-    """Skip hides the overlay and writes the dismissed flag to localStorage."""
+    """The × close hides the overlay and writes the dismissed flag to localStorage."""
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
@@ -232,12 +232,12 @@ def test_skip_dismisses_and_persists_to_storage(
     _open_tour(page)
     page.wait_for_timeout(100)
 
-    _click_skip(page)
+    _click_close(page)
     page.wait_for_timeout(100)
 
-    assert _overlay_is_hidden(page), "overlay should be hidden after Skip"
+    assert _overlay_is_hidden(page), "overlay should be hidden after close"
     assert _get_storage_value(page, _STORAGE_KEY) == _DISMISSED_VALUE, (
-        f"localStorage['{_STORAGE_KEY}'] should be '{_DISMISSED_VALUE}' after Skip"
+        f"localStorage['{_STORAGE_KEY}'] should be '{_DISMISSED_VALUE}' after close"
     )
     assert page_errors == [], f"JS errors: {page_errors}"
 
@@ -246,7 +246,7 @@ def test_reload_with_dismissed_flag_does_not_autostart(
     live_server: LiveServer,
     page: Page,
 ) -> None:
-    """A page reload after Skip does not re-open the overlay automatically."""
+    """A page reload after closing the tour does not re-open the overlay."""
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
@@ -254,7 +254,7 @@ def test_reload_with_dismissed_flag_does_not_autostart(
     _clear_storage(page, _STORAGE_KEY)
     _open_tour(page)
     page.wait_for_timeout(100)
-    _click_skip(page)
+    _click_close(page)
     page.wait_for_timeout(100)
 
     page.reload()
@@ -281,9 +281,9 @@ def test_help_button_reopens_tour_after_dismissal(
     page.wait_for_timeout(100)
     _click_next(page)
     page.wait_for_timeout(100)
-    _click_skip(page)
+    _click_close(page)
     page.wait_for_timeout(100)
-    assert _overlay_is_hidden(page), "precondition: overlay hidden after Skip"
+    assert _overlay_is_hidden(page), "precondition: overlay hidden after close"
 
     _open_tour(page)
     page.wait_for_timeout(100)

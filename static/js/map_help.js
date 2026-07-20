@@ -17,8 +17,9 @@
  *     automatically when the active step list is built.
  *   - The "?" roundel (#map-help-toggle) re-opens the tour from step 1 at
  *     any time, regardless of stored state.
- *   - Back / Next / Skip control the sequence; Next becomes "Done" on the
- *     final step. Skip and Done both persist the dismissed state.
+ *   - Back / Next control the sequence; Next becomes "Done" on the final
+ *     step. The "×" close button, Escape and Done all persist the dismissed
+ *     state.
  *   - a11y: Escape closes (persists); Left/Right arrow move between steps;
  *     Tab/Shift+Tab are trapped within the tooltip's buttons while open;
  *     focus returns to #map-help-toggle (or whatever had focus before
@@ -45,12 +46,12 @@
   const stepTemplateEl = document.getElementById('map-help-step-template');
   const backBtn = document.getElementById('map-help-back');
   const nextBtn = document.getElementById('map-help-next');
-  const skipBtn = document.getElementById('map-help-skip');
+  const closeBtn = document.getElementById('map-help-close');
   const toggleBtn = document.getElementById('map-help-toggle');
 
   if (
     !stepsList || !ring || !tooltip || !titleEl || !bodyEl ||
-    !stepCountEl || !backBtn || !nextBtn || !skipBtn
+    !stepCountEl || !backBtn || !nextBtn || !closeBtn
   ) {
     // Malformed/partial markup — nothing sensible to drive. Fail silently
     // rather than throwing, matching home_intro.js's early-return guard.
@@ -280,7 +281,7 @@
 
   backBtn.addEventListener('click', () => advance(-1));
   nextBtn.addEventListener('click', () => advance(1));
-  skipBtn.addEventListener('click', () => close(true));
+  closeBtn.addEventListener('click', () => close(true));
 
   if (toggleBtn) {
     // Re-opens from step 1 regardless of stored state — this is the

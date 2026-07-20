@@ -663,6 +663,30 @@ Optional context:
         {# is for a set of related form controls, which this isn't; the outer  #}
         {# #map-help-overlay's role="dialog" already scopes the whole widget.  #}
         <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
+            {# SNOW-457: "×" close in the top-right — the universal dismiss     #}
+            {# affordance. Replaces the former "Skip" text button; persists the #}
+            {# dismissed state exactly as Escape does.                          #}
+            <button
+                type="button"
+                id="map-help-close"
+                class="map-help-close"
+                aria-label='{% trans "Close" %}'
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
             <p class="map-help-tooltip-step" id="map-help-step-count" aria-live="polite"></p>
             <span id="map-help-step-template" hidden>{% trans "Step {n} of {total}" %}</span>
             <h3 class="map-help-tooltip-title" id="map-help-tooltip-title"></h3>
@@ -670,29 +694,20 @@ Optional context:
             <div class="map-help-tooltip-actions">
                 <button
                     type="button"
-                    id="map-help-skip"
+                    id="map-help-back"
                     class="map-help-btn map-help-btn--text"
                 >
-                    {% trans "Skip" %}
+                    {% trans "Back" %}
                 </button>
-                <div class="map-help-tooltip-nav">
-                    <button
-                        type="button"
-                        id="map-help-back"
-                        class="map-help-btn map-help-btn--text"
-                    >
-                        {% trans "Back" %}
-                    </button>
-                    <button
-                        type="button"
-                        id="map-help-next"
-                        class="map-help-btn map-help-btn--primary"
-                        data-label-next='{% trans "Next" %}'
-                        data-label-done='{% trans "Done" %}'
-                    >
-                        {% trans "Next" %}
-                    </button>
-                </div>
+                <button
+                    type="button"
+                    id="map-help-next"
+                    class="map-help-btn map-help-btn--primary"
+                    data-label-next='{% trans "Next" %}'
+                    data-label-done='{% trans "Done" %}'
+                >
+                    {% trans "Next" %}
+                </button>
             </div>
         </div>
     </div>
