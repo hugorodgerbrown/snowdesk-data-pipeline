@@ -894,19 +894,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   };
 
-  // SNOW-419: per-OBSERVATION_TYPE text glyph for the unclustered
-  // community-reports pins — mirrors the favourites ★ approach (a
-  // text-field glyph rendered from the style's own font stack, so no
-  // sprite image needs registering). '⚠' is the fallback for any type
-  // value the client doesn't recognise (forward-compatible with a future
-  // OBSERVATION_TYPE addition the server ships before the client updates).
-  const COMMUNITY_REPORT_GLYPHS = {
-    WHUMPFING: '◎',
-    PINWHEELS: '✳',
-    WIND_STRIATIONS: '〰',
-    FRACTURES: '▤',
-    SHOOTING_CRACKS: '⚡',
-  };
+  // SNOW-472: shared flag-icon id for every unclustered community-report
+  // pin, regardless of OBSERVATION_TYPE. Replaced the earlier SNOW-419
+  // per-type text glyphs (a Font-Awesome-adjacent unicode zoo that read as
+  // inconsistent weight/size across types) with one hand-drawn SDF icon —
+  // see installCommunityReportsLayer for the canvas build + registration.
+  const COMMUNITY_REPORT_ICON_ID = 'community-report-flag';
 
   // SNOW-419: age-fade constants. A report's opacity decays linearly from
   // 1 (just filed) to a floor at the edge of the 48h server-side window,
@@ -933,19 +926,66 @@ const repaintRegionsForDate = (dateKey, cache) => {
     return geojson;
   };
 
+  // SNOW-472: draw the shared community-report flag icon on an offscreen
+  // canvas and hand MapLibre its alpha mask as an SDF image. A pole (thin
+  // rectangle) plus a pennant (a wedge-shaped quadrilateral) drawn in
+  // opaque black on a transparent canvas — solid colour is irrelevant
+  // here since `sdf: true` only reads the alpha channel and recolours it
+  // per-layer via `icon-color`. Building it by hand avoids adding a
+  // Font Awesome (or any sprite-sheet) dependency for a single icon.
+  const buildCommunityReportFlagImageData = () => {
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000000';
+    // Pole: a slim vertical bar down the left-of-centre, leaving a little
+    // padding top/bottom so the SDF has room to anti-alias.
+    ctx.fillRect(11, 4, 3, 24);
+    // Pennant: a triangular-ish wedge flying from the top of the pole,
+    // tapering to a point so it reads as a flag rather than a rectangle.
+    ctx.beginPath();
+    ctx.moveTo(14, 5);
+    ctx.lineTo(27, 9);
+    ctx.lineTo(14, 15);
+    ctx.closePath();
+    ctx.fill();
+    return ctx.getImageData(0, 0, size, size);
+  };
+
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
   // Unlike favourites/resorts, this source is clustered (`cluster: true`)
   // — MapLibre computes clusters client-side from the fetched
   // FeatureCollection as the map zooms, so a busy region doesn't paint as
-  // an unreadable pile of glyphs at low zoom. Three layers: cluster
+  // an unreadable pile of pins at low zoom. Three layers: cluster
   // circles + cluster-count labels (shown while `point_count` is present)
   // and an unclustered point layer (shown once a cluster has broken apart
   // enough that a feature stands alone). Idempotent, like
   // installFavouritesLayer/installResortsLayer — early-returns if the
   // source already exists, so the styledata re-install handler can call
   // this safely on every basemap swap.
+  //
+  // SNOW-472: `map.addImage` is registered here too, guarded by
+  // `hasImage` (addImage, unlike addSource, throws on a duplicate id
+  // rather than silently no-opping). This has to live inside this
+  // function rather than run once at boot: `map.setStyle()` on a basemap
+  // swap wipes every registered image along with sources and layers, and
+  // this is the one function re-invoked on every fresh style (from the
+  // `styledata` handler below) — so the icon re-registers in lockstep
+  // with the layer that references it. The mask is built synchronously
+  // from canvas paths (see buildCommunityReportFlagImageData) rather than
+  // via `map.loadImage(url)` — an async fetch would let `addLayer` below
+  // run before the image id exists, throwing.
   const installCommunityReportsLayer = (geojson) => {
     if (!geojson || map.getSource('community-reports')) return;
+    if (!map.hasImage(COMMUNITY_REPORT_ICON_ID)) {
+      map.addImage(
+        COMMUNITY_REPORT_ICON_ID,
+        buildCommunityReportFlagImageData(),
+        { sdf: true },
+      );
+    }
     map.addSource('community-reports', {
       type: 'geojson',
       data: geojson,
@@ -997,26 +1037,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
       filter: ['!', ['has', 'point_count']],
       layout: {
         visibility: overlayState.community_reports ? 'visible' : 'none',
-        'text-field': [
-          'match', ['get', 'type'],
-          'WHUMPFING', COMMUNITY_REPORT_GLYPHS.WHUMPFING,
-          'PINWHEELS', COMMUNITY_REPORT_GLYPHS.PINWHEELS,
-          'WIND_STRIATIONS', COMMUNITY_REPORT_GLYPHS.WIND_STRIATIONS,
-          'FRACTURES', COMMUNITY_REPORT_GLYPHS.FRACTURES,
-          'SHOOTING_CRACKS', COMMUNITY_REPORT_GLYPHS.SHOOTING_CRACKS,
-          '⚠',
-        ],
-        'text-font': ['Noto Sans Bold'],
-        'text-size': 16,
-        'text-allow-overlap': true,
+        // SNOW-472: one shared flag icon for every OBSERVATION_TYPE —
+        // replaced the earlier per-type text glyphs. The type itself is
+        // still read from `props.type`/`type_label` by the click-popup
+        // handler below; only the pin's visual mark is unified.
+        'icon-image': COMMUNITY_REPORT_ICON_ID,
+        'icon-size': 0.55,
+        'icon-allow-overlap': true,
       },
       paint: {
-        'text-color': '#e8711a',
-        'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.6,
+        // Amber — same as the cluster circles, so a lone flag reads as
+        // the same "kind" of marker as a broken-apart cluster.
+        'icon-color': '#e8711a',
         // SNOW-419: age fade — baked into each feature by
         // withCommunityReportsAgeOpacity before install/setData.
-        'text-opacity': ['get', '_ageOpacity'],
+        'icon-opacity': ['get', '_ageOpacity'],
       },
     });
   };
