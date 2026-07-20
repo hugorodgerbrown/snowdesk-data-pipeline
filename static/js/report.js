@@ -16,18 +16,26 @@
  *      ``snowdesk:locate-request`` and awaiting the position it broadcasts on
  *      ``snowdesk:geolocate`` (or ``snowdesk:geolocate-error``).
  *
- * Location-source state machine (eligible path):
+ * Location-source state machine (eligible path). Both branches below use
+ * the shared place-picker (SNOW-475 — static/js/place_picker.js) rather
+ * than a draggable marker, which on touch screens is occluded by the
+ * dragging finger: a pin fixed at the map's viewport centre, with the
+ * coordinate read live from MAP.getCenter() as the user pans underneath it.
+ *
  *   GPS path (fix obtained):
  *     snowdesk:geolocate → loadForm(lat, lon, accuracy, 'GPS', gpsLat, gpsLon)
  *     Form renders with "Using current GPS location" + Refine button.
- *     Refine click → drop draggable marker at current point; on dragend
- *       write hidden lat/lon + set location_source=GPS_REFINED (keep gps_*).
+ *     Refine click → PlacePicker.activate({ recenterTo: [lon, lat], onChange })
+ *       re-centres the map on the current point and writes hidden lat/lon +
+ *       location_source=GPS_REFINED on every pan (keep gps_*).
  *
  *   MANUAL path (GPS denied/unavailable):
  *     snowdesk:geolocate-error → loadForm(null, null, null, 'MANUAL')
- *     Form renders with "GPS not available — choose a location on the map".
- *     Problem buttons are disabled. Wire a one-time MAP.click that drops
- *     a draggable marker; on drop enable buttons + update status text.
+ *     Form renders with "GPS not available — move the map to set your
+ *     location". Problem buttons start disabled; PlacePicker.activate()
+ *     reveals the centre pin and its immediate onChange call — the centre
+ *     is always a valid coordinate — writes the form's coords and enables
+ *     the buttons right away, no separate "tap to place" step needed.
  *
  *   Safety-net timeout (20 s with no GPS answer):
  *     Route into MANUAL path rather than closing the sheet.
@@ -56,15 +64,16 @@
  *     through HTMX so it can never trigger this event.
  *
  *   Cleanup:
- *     Sheet close, or the optimistic confirmation render on submit, removes
- *     the draggable marker and any outstanding MANUAL map-click handler.
- *     The htmx:afterSwap listener below now only ever sees form-load swaps
- *     (the confirmation swap it also handled pre-SNOW-420 no longer occurs
- *     via HTMX) — kept as a harmless no-op rather than removed, since a
- *     future HTMX-driven swap of #report-sheet would still want it.
+ *     Sheet close, or the optimistic confirmation render on submit, calls
+ *     PlacePicker.deactivate() to hide the centre pin and stop tracking the
+ *     map. The htmx:afterSwap listener below now only ever sees form-load
+ *     swaps (the confirmation swap it also handled pre-SNOW-420 no longer
+ *     occurs via HTMX) — kept as a harmless no-op rather than removed,
+ *     since a future HTMX-driven swap of #report-sheet would still want it.
  *
  * map.js is unchanged — the snowdesk:locate-request listener already does a
- * plain getCurrentPosition; report.js owns its own marker via the global MAP.
+ * plain getCurrentPosition; report.js drives the place-picker via the
+ * global MAP.
  */
 
 (function () {
@@ -77,38 +86,6 @@
   const FORM_URL = btn.dataset.reportFormUrl;
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.reportEligible === 'true';
-
-  // ---------------------------------------------------------------------------
-  // Module-level draggable marker state and MANUAL map-click handler.
-  // ---------------------------------------------------------------------------
-
-  /** @type {maplibregl.Marker|null} */
-  let reportMarker = null;
-
-  /**
-   * Module-level reference to the MANUAL map-click handler so that
-   * closeSheet() can remove it via MAP.off even after the error-branch
-   * closure that registered it has gone out of scope.
-   * @type {((e: any) => void)|null}
-   */
-  let activeMapClickHandler = null;
-
-  /** Remove the draggable pin from the map, if one exists. */
-  function removeMarker() {
-    if (reportMarker) {
-      reportMarker.remove();
-      reportMarker = null;
-    }
-  }
-
-  /** Remove the MANUAL map-click listener from MAP, if one is registered. */
-  function removeMapClickHandler() {
-    const map = getMap();
-    if (map && activeMapClickHandler) {
-      map.off('click', activeMapClickHandler);
-      activeMapClickHandler = null;
-    }
-  }
 
   // ---------------------------------------------------------------------------
   // Toast helper — reuses the project-wide toast markup conventions.
@@ -155,8 +132,7 @@
   }
 
   function closeSheet() {
-    removeMarker();
-    removeMapClickHandler();
+    window.PlacePicker?.deactivate();
     sheet.setAttribute('hidden', '');
     sheet.innerHTML = '';
   }
@@ -170,17 +146,8 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Marker helpers — drop a draggable pin on the global MAP.
+  // Form-coord helpers — written by the place-picker's onChange (SNOW-475).
   // ---------------------------------------------------------------------------
-
-  /**
-   * Return the global MAP object if available, else null.
-   * Guards against the case where map.js has not yet initialised.
-   * @returns {maplibregl.Map|null}
-   */
-  function getMap() {
-    return typeof MAP !== 'undefined' ? MAP : null; // eslint-disable-line no-undef
-  }
 
   /**
    * Write lat/lon into the report form's hidden inputs, mutating the values
@@ -220,35 +187,6 @@
     });
   }
 
-  /**
-   * Place a draggable MapLibre marker at (lat, lon).
-   * On dragend, updates the form's hidden lat/lon and optional location_source.
-   * @param {number} lat
-   * @param {number} lon
-   * @param {string|null} dragLocationSource — value to write on dragend, or null to skip
-   * @returns {maplibregl.Marker|null}
-   */
-  function placeMarker(lat, lon, dragLocationSource) {
-    const map = getMap();
-    if (!map) return null;
-
-    removeMarker(); // Clean up any previous pin.
-
-    reportMarker = new maplibregl.Marker({ draggable: true }) // eslint-disable-line no-undef
-      .setLngLat([lon, lat])
-      .addTo(map);
-
-    reportMarker.on('dragend', function () {
-      const lngLat = reportMarker.getLngLat();
-      writeFormCoords(lngLat.lat, lngLat.lng);
-      if (dragLocationSource) {
-        writeFormLocationSource(dragLocationSource);
-      }
-    });
-
-    return reportMarker;
-  }
-
   // ---------------------------------------------------------------------------
   // HTMX form load
   // ---------------------------------------------------------------------------
@@ -261,6 +199,10 @@
    * @param {string} locationSource — 'GPS', 'GPS_REFINED', or 'MANUAL'
    * @param {number|null} gpsLat — raw device fix latitude (null on MANUAL path)
    * @param {number|null} gpsLon — raw device fix longitude (null on MANUAL path)
+   * @returns {Promise<any>} resolves once the request has completed and the
+   *   swap has settled — htmx.ajax()'s own promise. The MANUAL onError
+   *   branch chains off this so PlacePicker.activate() only writes into the
+   *   form once it actually exists in the DOM.
    */
   function loadForm(lat, lon, accuracy, locationSource, gpsLat, gpsLon) {
     const params = new URLSearchParams({ location_source: locationSource });
@@ -269,7 +211,7 @@
     if (accuracy != null) params.set('accuracy', accuracy);
     if (gpsLat != null) params.set('gps_lat', gpsLat);
     if (gpsLon != null) params.set('gps_lon', gpsLon);
-    htmx.ajax('GET', FORM_URL + '?' + params.toString(), { // eslint-disable-line no-undef
+    return htmx.ajax('GET', FORM_URL + '?' + params.toString(), { // eslint-disable-line no-undef
       target: '#report-sheet',
       swap: 'innerHTML',
     });
@@ -357,8 +299,7 @@
       }
     }
 
-    removeMarker();
-    removeMapClickHandler();
+    window.PlacePicker?.deactivate();
   });
 
   // ---------------------------------------------------------------------------
@@ -400,16 +341,24 @@
     const lon = parseFloat(lonInput.value);
     if (isNaN(lat) || isNaN(lon)) return;
 
-    // Drop a draggable marker; on dragend write updated coords and mark source
-    // as GPS_REFINED (the raw gps_lat/gps_lon hidden inputs stay unchanged).
-    placeMarker(lat, lon, 'GPS_REFINED');
+    // Re-centre the map on the current GPS fix and arm the place-picker; the
+    // pin starts on that point, and every subsequent pan writes updated
+    // coords with location_source=GPS_REFINED (the raw gps_lat/gps_lon
+    // hidden inputs stay unchanged).
+    window.PlacePicker?.activate({
+      recenterTo: [lon, lat],
+      onChange: function (la, lo) {
+        writeFormCoords(la, lo);
+        writeFormLocationSource('GPS_REFINED');
+      },
+    });
   });
 
   // ---------------------------------------------------------------------------
   // Confirmation swap cleanup (SNOW-420: now effectively dead but harmless).
   // Pre-SNOW-420 this covered the confirmation partial swapping in via HTMX;
-  // the confirmation is now rendered by the submit handler above (which does
-  // its own marker/handler cleanup directly), so #report-sheet is only ever
+  // the confirmation is now rendered by the submit handler above (which
+  // deactivates the place-picker directly), so #report-sheet is only ever
   // swapped by loadForm's HTMX GET — a form re-render, not a confirmation —
   // and the branch below never fires in practice. Left in place rather than
   // removed in case a future HTMX-driven swap of #report-sheet needs it.
@@ -418,12 +367,11 @@
   document.addEventListener('htmx:afterSwap', function (event) {
     const elt = event.detail && event.detail.target;
     if (elt && elt.id === 'report-sheet') {
-      // If the swap was a confirmation (not the form re-render), clean up the
-      // marker and any outstanding MANUAL map-click listener.
+      // If the swap was a confirmation (not the form re-render), deactivate
+      // the place-picker.
       const form = elt.querySelector('#report-form');
       if (!form) {
-        removeMarker();
-        removeMapClickHandler();
+        window.PlacePicker?.deactivate();
       }
     }
   });
@@ -480,35 +428,21 @@
 
     function onError() {
       cleanup();
-      // MANUAL path: load the form in "choose on map" state — do NOT close the
-      // sheet or show an error toast. The form will prompt the user to tap a pin.
-      loadForm(null, null, null, 'MANUAL', null, null);
-
-      // Wire a one-time MAP click to drop a draggable marker.
-      // Store the handler at module scope so closeSheet() can remove it if the
-      // user cancels before placing a pin (BLOCKER 2 fix).
-      const map = getMap();
-      if (!map) return;
-
-      activeMapClickHandler = function onMapClick(e) {
-        // Self-deregister: first click consumes the handler.
-        removeMapClickHandler();
-
-        const lat = e.lngLat.lat;
-        const lon = e.lngLat.lng;
-
-        // Write coords into the form's hidden inputs.
-        writeFormCoords(lat, lon);
-        writeFormLocationSource('MANUAL');
-
-        // Drop a draggable marker so the user can fine-tune.
-        placeMarker(lat, lon, 'MANUAL');
-
-        // Enable the problem buttons now that a location is set.
+      // MANUAL path: load the form in "move the map" state — do NOT close
+      // the sheet or show an error toast. Once the swap settles, arm the
+      // place-picker: its immediate onChange call (the centre is always a
+      // valid coordinate) writes the form's coords and location_source
+      // straight away, and enableProblemButtons() unblocks submission —
+      // no separate "tap to place" step, unlike the old marker flow.
+      loadForm(null, null, null, 'MANUAL', null, null).then(function () {
+        window.PlacePicker?.activate({
+          onChange: function (la, lo) {
+            writeFormCoords(la, lo);
+            writeFormLocationSource('MANUAL');
+          },
+        });
         enableProblemButtons();
-      };
-
-      map.on('click', activeMapClickHandler);
+      });
     }
 
     document.addEventListener('snowdesk:geolocate', onLocate);

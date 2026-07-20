@@ -28,6 +28,10 @@ Context expected:
         aria-label='{% trans "Field observation report" %}'
     >
     </div>
+    {# SNOW-475: shared touch-friendly place-picker — must precede          #}
+    {# report.js in document order (both are defer, so document-order      #}
+    {# defer execution guarantees window.PlacePicker exists first).        #}
+    <script defer src="{% static 'js/place_picker.js' %}"></script>
     {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
     {# Deferred so it executes in document order after the map assets.      #}
     <script defer src="{% static 'js/report.js' %}"></script>

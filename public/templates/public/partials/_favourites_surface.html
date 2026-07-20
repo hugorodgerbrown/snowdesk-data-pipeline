@@ -72,6 +72,10 @@ Context expected:
             </div>
         </form>
     </template>
+    {# SNOW-475: shared touch-friendly place-picker — must precede           #}
+    {# favourites.js in document order (both are defer, so document-order   #}
+    {# defer execution guarantees window.PlacePicker exists first).         #}
+    <script defer src="{% static 'js/place_picker.js' %}"></script>
     {# SNOW-414: saved-pin add/rename/delete JS. #}
     <script defer src="{% static 'js/favourites.js' %}"></script>
 {% endif %}
