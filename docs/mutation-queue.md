@@ -1,8 +1,8 @@
 ---
 name: mutation-queue
-description: Client mutation queue — window.pwaMutationQueue, queue:mutations shape, Idempotency-Key, backoff, Background Sync, sync badge, failure toast
+description: Client mutation queue — window.pwaMutationQueue, queue:mutations shape, Idempotency-Key, backoff, Background Sync, principal partitioning
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-20
 ---
 
 # Client mutation queue
@@ -62,6 +62,9 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
   status,               // 'queued' | 'retry-scheduled' | 'failed'
   next_attempt_at,       // epoch ms; row is eligible for replay once
                         // Date.now() >= next_attempt_at
+  principal,             // <meta name="pwa-user-id"> value (or null for
+                        // anonymous) at ENQUEUE time — see "Account-change
+                        // partitioning" below (SNOW-462)
 }
 ```
 
@@ -115,6 +118,63 @@ A row that lands in `status: 'failed'` (either branch above):
 surface for a caller-driven report (a mutation attempted outside the
 queue) — it fires the same telemetry event and reveals the same
 toast/badge state without needing a stored row.
+
+## Account-change partitioning (SNOW-462)
+
+Offline mutations carry no principal binding by default: if user A
+queues a mutation offline, signs out, and user B signs in on the same
+browser before reconnect, a naive replay would attribute A's mutation to
+B. Every row is stamped `principal` at enqueue time
+(`<meta name="pwa-user-id">`, `null` for anonymous — see the row shape
+above), and two defence-in-depth layers keep a stale principal from ever
+replaying:
+
+1. **Reconcile on load** — `_reconcilePrincipal()` runs first thing in
+   `_wireLifecycle()` (fire-and-forget, so it never blocks wiring the
+   rest of the lifecycle). It compares the current principal against the
+   last-seen one persisted in the `meta:app` store under the key
+   `mutations.principal` (`{key: 'mutations.principal', value: <pk-or-
+   null>}`). On a mismatch it calls `clear()` — wiping the ENTIRE queue,
+   not just rows belonging to the old principal, since a queue with no
+   principal binding predates this ticket and any leftover row is
+   untrustworthy — and persists the new principal.
+2. **Drain-guard** — `_processRow()` re-checks each row's stamped
+   `principal` against the CURRENT principal immediately before replay.
+   A mismatch deletes the row without a network request. This is the
+   race backstop for the window between an account change and the next
+   reconcile — notably a Background Sync firing from the service worker
+   with no tab open, where `static/js/sw.js`'s `_selfDrainMutations()`
+   applies the same guard best-effort (it reads the `mutations.principal`
+   `meta:app` row directly, since a worker has no `<meta>` tag to read;
+   skipped entirely if that store is unavailable on a worker-created DB
+   rather than guessing). The SW-side guard runs ONLY when no tab is
+   open (that's the whole point of Background Sync's self-drain path —
+   see `static/js/sw.js`'s header docstring), so it never emits
+   `pwa.mutation.discarded`: `_postTelemetry` posts to
+   `self.clients.matchAll(...)`, which is a guaranteed no-op with zero
+   open clients. It silently deletes the mismatched row instead.
+
+The page-side drain-guard and the reconcile-on-load clear both emit the
+`pwa.mutation.discarded` telemetry event; the SW-side guard does not,
+for the reason above. Three `reason` values:
+
+| `reason`                  | Emitted from     | Meaning                                                                 |
+|----------------------------|------------------|--------------------------------------------------------------------------|
+| `principal_uninitialised`  | Reconcile on load | The `mutations.principal` `meta:app` row didn't exist yet (first load after this ticket shipped, or a fresh DB) — any pre-existing, principal-less row is untrustworthy and cleared on general principle, not because an account change was actually observed. |
+| `account_change`           | Reconcile on load | A `mutations.principal` row DID exist and its value differs from the current principal — a genuine account change. |
+| `principal_mismatch`       | Drain-guard       | A single row's own stamped `principal` doesn't match the current one at replay time (the race backstop). |
+
+Both reconcile-path reasons carry a `count` of rows cleared; the
+drain-guard reason carries the row's `method`/`url`/`idempotency_key`.
+
+`window.pwaMutationQueue.clear()` empties `queue:mutations` and
+refreshes the nav badge — used internally by the reconcile above, and
+available to any other caller that needs to discard the whole queue.
+
+This client-side partitioning is a best-effort layer that reduces the
+attack surface for a shared-device account change; SNOW-463
+(`core/idempotency.py`'s method/path/principal/body fingerprint) is the
+airtight server-side backstop that holds regardless of client state.
 
 ## Idempotency-Key
 
@@ -181,8 +241,8 @@ relying entirely on the page-lifecycle drain triggers above instead.
 | File | Role |
 |------|------|
 | `static/js/mutation_queue_core.js` | Pure backoff/classification/eligibility helpers, shared by the page and the SW (`self.pwaMutationQueueCore`). |
-| `static/js/mutation_queue.js` | `window.pwaMutationQueue` — enqueue/drain/markFailed, lifecycle triggers, toast + badge wiring, Background Sync registration. |
-| `static/js/sw.js` | `sync` event listener — delegate-to-tab or self-drain. |
+| `static/js/mutation_queue.js` | `window.pwaMutationQueue` — enqueue/drain/markFailed/clear, principal reconcile-on-load + drain-guard, lifecycle triggers, toast + badge wiring, Background Sync registration. |
+| `static/js/sw.js` | `sync` event listener — delegate-to-tab or self-drain, plus the best-effort principal discard guard. |
 | `static/js/sw_register.js` | `drain-mutations` message bridge (tab-open fast path). |
 | `templates/includes/_toast_banner.html` | Full-width top-of-page permanent-failure toast. |
 | `templates/includes/nav.html` | `[data-sync-badge]` pill. |
@@ -202,7 +262,11 @@ enqueues with no network round-trip, the optimistic confirmation +
 sync-pending line + nav badge render immediately, a reconnect drains the
 queue against the real `report_submit` view with the tap-time
 `observed_at` preserved, and a replayed duplicate does not create a second
-row.
+row. `tests/e2e/test_mutation_queue_account_change.py` (SNOW-462) covers
+the headline account-change regression: user A queues a real
+`report_submit` mutation offline, user B signs in on the same browser
+before reconnect, and B's account ends up with zero
+`FieldObservation` rows.
 
 ## See also
 

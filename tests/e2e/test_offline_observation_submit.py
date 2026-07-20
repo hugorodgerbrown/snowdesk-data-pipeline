@@ -189,6 +189,10 @@ def test_offline_report_submission_syncs_without_duplicate(
     # Idempotency: re-insert a row carrying the SAME Idempotency-Key/body
     # and drain again — the server must not create a second row
     # (core.idempotency.IdempotencyMiddleware dedupes the replay).
+    # principal: row.principal preserves the original enqueue-time stamp so
+    # the SNOW-462 drain-guard doesn't discard this row before it reaches
+    # the server (which would make the assertion below pass for the wrong
+    # reason).
     page.evaluate(
         """(row) => window.pwaDb.put('queue:mutations', {
             idempotency_key: row.idempotency_key,
@@ -200,6 +204,7 @@ def test_offline_report_submission_syncs_without_duplicate(
             attempts: 0,
             status: 'queued',
             next_attempt_at: Date.now(),
+            principal: row.principal,
         })""",
         queued_row,
     )
