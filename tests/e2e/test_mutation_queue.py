@@ -502,6 +502,9 @@ def test_row_fails_after_max_attempts(live_server: LiveServer, page: Page) -> No
 
     Seeds the row directly at attempts=19 (rather than replaying 19 real
     retries) so the test doesn't depend on the real backoff schedule.
+    ``principal: null`` matches the current (anonymous) session so the
+    SNOW-462 drain-guard doesn't discard the seeded row before it can be
+    replayed.
     """
     _load(page, live_server.url)
     _delete_db(page)
@@ -520,6 +523,7 @@ def test_row_fails_after_max_attempts(live_server: LiveServer, page: Page) -> No
                 attempts: 19,
                 status: 'retry-scheduled',
                 next_attempt_at: 0,
+                principal: null,
             });
             await window.pwaMutationQueue.drain();
           }""",
