@@ -257,6 +257,81 @@ def test_cluster_tap_does_not_also_select_the_region_underneath(
 
 @override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
+def test_cluster_tap_zooms_to_expansion_level(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """Tapping a cluster eases the map to that cluster's expansion zoom.
+
+    Regression coverage for a MapLibre v4 API break: ``getClusterExpansionZoom``
+    no longer accepts a ``(clusterId, callback)`` — it takes just the clusterId
+    and RETURNS A PROMISE. The old callback form was silently ignored, so the
+    ``easeTo`` never fired and cluster taps did nothing.
+
+    The real ``getClusterExpansionZoom`` round-trips a Web Worker that does not
+    reliably resolve in headless Chromium, so it is stubbed to a resolved
+    Promise and ``easeTo`` is spied — the assertion is purely that the click
+    *consumes the Promise and eases*, which is exactly what the old callback
+    form failed to do.
+    """
+    with django_db_blocker.unblock():
+        for _ in range(5):
+            FieldObservationFactory.create(
+                latitude=46.10,
+                longitude=7.10,
+                observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+            )
+
+    _navigate_home(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    toggle = page.locator('[data-overlay-key="community_reports"]')
+    toggle.wait_for(state="visible")
+    with page.expect_response(lambda r: "/api/community-reports.geojson" in r.url):
+        toggle.click()
+    page.wait_for_function("() => !!MAP.getSource('community-reports')")
+    page.wait_for_function(
+        "() => MAP.getLayer('community-reports-clusters') && "
+        "MAP.queryRenderedFeatures({ layers: ['community-reports-clusters'] })"
+        ".length > 0"
+    )
+
+    # Stub the Web-Worker round-trip to a fixed zoom and spy on easeTo, so the
+    # assertion isolates "the click consumed the Promise and eased".
+    page.evaluate(
+        """() => {
+            const src = MAP.getSource('community-reports');
+            src.getClusterExpansionZoom = () => Promise.resolve(15);
+            window.__easeCalls = [];
+            const orig = MAP.easeTo.bind(MAP);
+            MAP.easeTo = (opts) => { window.__easeCalls.push(opts); return orig(opts); };
+        }"""
+    )
+
+    cluster_point = page.evaluate(
+        "() => {"
+        " const f = MAP.queryRenderedFeatures("
+        "   { layers: ['community-reports-clusters'] })[0];"
+        " const p = MAP.project(f.geometry.coordinates);"
+        " return { lngLat: f.geometry.coordinates, point: [p.x, p.y] };"
+        "}"
+    )
+    page.evaluate(
+        "({ lngLat, point }) => MAP.fire('click', {"
+        " lngLat: { lng: lngLat[0], lat: lngLat[1] },"
+        " point: { x: point[0], y: point[1] } })",
+        cluster_point,
+    )
+
+    # The click must consume the expansion-zoom Promise and ease to zoom 15.
+    page.wait_for_function("() => (window.__easeCalls || []).length > 0")
+    assert page.evaluate("() => window.__easeCalls[0].zoom") == 15
+
+
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_persists_across_reload(
     live_server: LiveServer, page: Page
 ) -> None:
