@@ -553,6 +553,81 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // the regions-fill paint below, keyed on the static ``covered`` property.
   const UNCOVERED_FILL_COLOUR = '#b5b5b5';
 
+  // SNOW-478: the text-font every overlay symbol layer we add uses. MapLibre
+  // resolves glyphs against the *active basemap style's* single ``glyphs`` URL,
+  // so an overlay label can only use a font that basemap's glyph server serves.
+  // Basemaps ship different fonts (openfreemap → Noto Sans; swisstopo →
+  // Frutiger Neue; IGN / basemap.at → their own), so a hardcoded font 404s on
+  // every basemap that doesn't host it — the bug this fixes. Instead the font is
+  // derived from the active basemap at style-load time (see deriveOverlayTextFont)
+  // so overlay labels both resolve against the current glyph server AND match the
+  // basemap's own typography. Seeded to the Noto Sans fallback; overwritten
+  // before the first install on every style by the load / styledata handlers.
+  const FALLBACK_TEXT_FONT = ['Noto Sans Regular'];
+  let overlayTextFont = FALLBACK_TEXT_FONT;
+
+  // SNOW-478: pick a font stack the active basemap style itself declares, so it
+  // is guaranteed served by that basemap's glyph server. Walks every ``symbol``
+  // layer's ``text-font`` and tallies the concrete font stacks it references —
+  // both the common literal form (``["Frutiger Neue Condensed Regular"]``) and
+  // the ``["literal", [...]]`` stacks nested inside a data-driven expression
+  // (e.g. swisstopo's ``["match", ["get","class"], …]`` label fonts). Only a
+  // ``literal``'s argument is treated as a stack, never an arbitrary all-string
+  // array, so expression operands like ``["get","class"]`` are not misread. The
+  // most-used stack (the basemap's dominant label font) wins; ``FALLBACK_TEXT_FONT``
+  // only if the style declares none (openfreemap declares Noto Sans, so the
+  // default basemap keeps its current look).
+  //
+  // Limitation: "most-used" assumes the modal font is a regular body/label
+  // weight — true for all five current basemaps. A future basemap whose modal
+  // font is a display/condensed variant would push that variant onto our
+  // labels; harmless (it still resolves against the glyph server) but a style
+  // mismatch worth revisiting if a new basemap trips it.
+  const collectFontStacks = (node, out, topLevel) => {
+    if (!Array.isArray(node)) return;
+    if (topLevel && node.length && node.every((v) => typeof v === 'string')) {
+      out.push(node);
+      return;
+    }
+    if (
+      node[0] === 'literal'
+      && Array.isArray(node[1])
+      && node[1].length
+      && node[1].every((v) => typeof v === 'string')
+    ) {
+      out.push(node[1]);
+      return;
+    }
+    for (const child of node) collectFontStacks(child, out, false);
+  };
+  const deriveOverlayTextFont = () => {
+    let style;
+    try {
+      style = map.getStyle();
+    } catch (_err) {
+      return FALLBACK_TEXT_FONT;
+    }
+    const stacks = [];
+    for (const layer of (style && style.layers) || []) {
+      if (layer.type !== 'symbol') continue;
+      const textFont = layer.layout && layer.layout['text-font'];
+      if (textFont) collectFontStacks(textFont, stacks, true);
+    }
+    const counts = new Map();
+    let best = null;
+    let bestCount = 0;
+    for (const stack of stacks) {
+      const key = JSON.stringify(stack);
+      const next = (counts.get(key) || 0) + 1;
+      counts.set(key, next);
+      if (next > bestCount) {
+        best = stack;
+        bestCount = next;
+      }
+    }
+    return best || FALLBACK_TEXT_FONT;
+  };
+
   const installRegionsLayers = (geojson) => {
     if (map.getSource('regions')) return;
     map.addSource('regions', { type: 'geojson', data: geojson });
@@ -691,7 +766,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       layout: {
         visibility: overlayState.l4 ? 'visible' : 'none',
         'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Regular'],
+        'text-font': overlayTextFont,
         'text-size': 11,
         'text-allow-overlap': false,
       },
@@ -753,7 +828,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         layout: {
           visibility: overlayState.l2 ? 'visible' : 'none',
           'text-field': ['get', 'name_en'],
-          'text-font': ['Noto Sans Bold'],
+          'text-font': overlayTextFont,
           'text-size': 12,
           'text-allow-overlap': false,
           'text-padding': 4,
@@ -794,7 +869,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         layout: {
           visibility: overlayState.l1 ? 'visible' : 'none',
           'text-field': ['get', 'name_en'],
-          'text-font': ['Noto Sans Bold'],
+          'text-font': overlayTextFont,
           'text-size': 14,
           'text-allow-overlap': false,
           'text-padding': 6,
@@ -863,7 +938,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       layout: {
         visibility: overlayState.resorts ? 'visible' : 'none',
         'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Regular'],
+        'text-font': overlayTextFont,
         'text-size': 10,
         'text-letter-spacing': 0.05,
         'text-allow-overlap': false,
@@ -880,15 +955,73 @@ const repaintRegionsForDate = (dateKey, cache) => {
     raiseMarkerLayers();
   };
 
-  // SNOW-414: install the favourites (saved-pin) layer. A star glyph text
-  // symbol rather than a sprite image — MapLibre can render a text-field
-  // glyph from the style's own font stack, so no icon image needs
-  // registering. Distinct colour + halo from the resort circles so a
-  // user's own pins read as a different kind of marker. Idempotent, like
-  // installResortsLayer — early-returns if the source already exists so a
-  // snowdesk:favourites-changed refresh can call this safely too.
+  // SNOW-478: the favourites pin is drawn as an SDF icon image, not a ``★``
+  // text glyph. A text glyph is resolved from the active basemap's glyph
+  // server, and that server may not carry the ``★`` codepoint (U+2605) —
+  // swisstopo's does not, so the old glyph 404'd on every load. An icon image
+  // is rendered from a canvas path here and never touches the glyph server, so
+  // the star always paints regardless of basemap. Mirrors the SNOW-472
+  // community-report flag icon: shared id, SDF mask recoloured per-layer via
+  // ``icon-color``.
+  const FAVOURITE_STAR_ICON_ID = 'favourite-star';
+
+  // SNOW-478: Font Awesome Free v7.3.1 "star" (solid) path and its viewBox.
+  // Licensed CC BY 4.0 (https://fontawesome.com/license/free), Copyright
+  // 2026 Fonticons, Inc. — attribution retained here to satisfy the licence.
+  // Registered ``sdf: true`` (below) so ``icon-color`` recolours the alpha mask
+  // to the favourites blue, exactly as the old ``text-color`` did to the glyph.
+  const FAVOURITE_STAR_VIEWBOX = { width: 576, height: 512 };
+  const FAVOURITE_STAR_PATH =
+    'M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 ' +
+    '1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 ' +
+    '12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9' +
+    '-19.3 12.9-31.3L442.2 329 546.6 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9' +
+    '-25.7-21.7L385.1 150.3 316.9 18z';
+
+  // SNOW-478: build the favourites star as an SDF alpha mask, same technique as
+  // buildCommunityReportFlagImageData — a synchronous canvas fill so the image
+  // id exists before addLayer references it (an async map.loadImage would race).
+  // The star is centred in a square ``size`` footprint so the default
+  // ``icon-anchor: 'center'`` plants it on the feature coordinate, matching the
+  // old centred ``★`` glyph.
+  const buildFavouriteStarImageData = (pixelRatio) => {
+    const size = 20;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * pixelRatio;
+    canvas.height = size * pixelRatio;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(pixelRatio, pixelRatio);
+    const scale = Math.min(
+      size / FAVOURITE_STAR_VIEWBOX.width,
+      size / FAVOURITE_STAR_VIEWBOX.height,
+    );
+    ctx.translate(
+      (size - FAVOURITE_STAR_VIEWBOX.width * scale) / 2,
+      (size - FAVOURITE_STAR_VIEWBOX.height * scale) / 2,
+    );
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#000000';
+    ctx.fill(new Path2D(FAVOURITE_STAR_PATH));
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  };
+
+  // SNOW-414: install the favourites (saved-pin) layer. Distinct colour + halo
+  // from the resort circles so a user's own pins read as a different kind of
+  // marker. Idempotent, like installResortsLayer — early-returns if the source
+  // already exists so a snowdesk:favourites-changed refresh can call this safely
+  // too. SNOW-478: the pin is an SDF icon image (registered here, guarded by
+  // hasImage — addImage throws on a duplicate id, and setStyle wipes images on a
+  // basemap swap so it must re-register in lockstep with the layer).
   const installFavouritesLayer = (geojson) => {
     if (!geojson || map.getSource('favourites')) return;
+    if (!map.hasImage(FAVOURITE_STAR_ICON_ID)) {
+      const pixelRatio = window.devicePixelRatio || 1;
+      map.addImage(
+        FAVOURITE_STAR_ICON_ID,
+        buildFavouriteStarImageData(pixelRatio),
+        { sdf: true, pixelRatio },
+      );
+    }
     favouritesGeojsonCache = geojson;
     map.addSource('favourites', { type: 'geojson', data: geojson });
     map.addLayer({
@@ -897,22 +1030,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
       source: 'favourites',
       layout: {
         visibility: overlayState.favourites ? 'visible' : 'none',
-        'text-field': '★',
-        'text-font': ['Noto Sans Bold'],
-        'text-size': 18,
-        'text-allow-overlap': true,
+        'icon-image': FAVOURITE_STAR_ICON_ID,
+        'icon-size': 1,
+        'icon-allow-overlap': true,
       },
       paint: {
         // Snowdesk link/brand blue — MapLibre paint props can't reference the
-        // CSS ``@theme`` tokens, so the star glyph and its label carry the hex
+        // CSS ``@theme`` tokens, so the star icon and its label carry the hex
         // literal directly (kept in sync with --color-link by hand).
-        'text-color': '#1a73e8',
-        'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.6,
+        'icon-color': '#1a73e8',
+        'icon-halo-color': 'rgba(255,255,255,0.95)',
+        'icon-halo-width': 1.6,
         // SNOW-479: an offline-created pin not yet synced carries
         // ``properties.pending: true`` and renders at half opacity so it reads
         // as provisional; server pins (no ``pending``) stay fully opaque.
-        'text-opacity': ['case', ['==', ['get', 'pending'], true], 0.5, 1],
+        // SNOW-478: the pin is now an SDF icon, so this is icon-opacity (was
+        // text-opacity when the star was a glyph).
+        'icon-opacity': ['case', ['==', ['get', 'pending'], true], 0.5, 1],
       },
     });
     // Favourite labels — zoom-banded like the resort labels, but shown a
@@ -925,7 +1059,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       layout: {
         visibility: overlayState.favourites ? 'visible' : 'none',
         'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Regular'],
+        'text-font': overlayTextFont,
         'text-size': 11,
         'text-allow-overlap': false,
         'text-offset': [0, 1.1],
@@ -1114,7 +1248,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       layout: {
         visibility: overlayState.community_reports ? 'visible' : 'none',
         'text-field': ['get', 'point_count_abbreviated'],
-        'text-font': ['Noto Sans Bold'],
+        'text-font': overlayTextFont,
         'text-size': 12,
       },
       paint: {
@@ -1703,6 +1837,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
 
     geojsonCache = geojson;
+    // SNOW-478: derive the overlay label font from the just-loaded basemap
+    // before installing any overlay symbol layer, so labels resolve against
+    // this basemap's glyph server. Must run before the first install below.
+    overlayTextFont = deriveOverlayTextFont();
     // SNOW-235: majorGeojsonCache / subGeojsonCache / resortsGeojsonCache
     // remain null until the user first enables that overlay tier; they are
     // populated by ensureOverlayLoaded below.
@@ -2399,7 +2537,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // very first favourite. The pending pin is replaced by the authoritative
     // server pin when the queue drains and re-dispatches
     // snowdesk:favourites-changed above (or dropped there on a permanent
-    // failure). Renders at half opacity via the favourites-pin text-opacity
+    // failure). Renders at half opacity via the favourites-pin icon-opacity
     // expression.
     document.addEventListener('snowdesk:favourite-pending', (event) => {
       if (!FAVOURITES_ELIGIBLE) return;
@@ -2843,6 +2981,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
       overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+
+      // SNOW-478: the new basemap has its own glyph server and fonts, so
+      // re-derive the overlay label font before re-installing any layer.
+      overlayTextFont = deriveOverlayTextFont();
 
       // setStyle wipes every source and layer we added, including the
       // merged multi-country caches. The per-install BASE_LAYER_FILTERS

@@ -143,7 +143,10 @@ try {
 // mutation_queue.js inline-flex toggle, off-season full-width bar (_map_embed.html).
 // SNOW-477: v18 — report.js fix for the observation form (verified-only
 // eligibility, unverified-user prompt, form-load error handling).
-const CACHE_VERSION = 'snowdesk-shell-v18';
+// SNOW-478: v19 — static/js/map.js now derives overlay label fonts from the
+// active basemap and draws the favourites pin as an SDF icon (fixes glyph
+// 404s on swisstopo/IGN/basemap.at basemaps).
+const CACHE_VERSION = 'snowdesk-shell-v19';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
