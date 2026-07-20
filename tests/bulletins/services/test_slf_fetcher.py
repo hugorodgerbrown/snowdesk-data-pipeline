@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.db import IntegrityError
 from django.test import override_settings
 
 from bulletins.models import (
@@ -403,6 +404,74 @@ class TestUpsertBulletin:
         rb = RegionBulletin.objects.first()
         assert rb is not None
         assert rb.region.region_id == "CH-9999"
+
+    def test_malformed_region_leaves_existing_bulletin_unchanged(self) -> None:
+        """SNOW-460: a malformed region aborts before any DB write.
+
+        A region dict missing ``name`` raises ``KeyError`` during the
+        up-front resolution pass, before the bulletin row is touched — so a
+        prior bulletin and its links are left exactly as they were, never
+        half-rewritten.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(), run)
+        original_issued_at = Bulletin.objects.get(bulletin_id="test-001").issued_at
+
+        # Re-ingest with a changed field and a malformed second region.
+        raw_bad = _make_raw_bulletin(
+            publication_time="2025-03-15T12:00:00Z",
+            regions=[
+                {"regionID": "CH-4115", "name": "Piz Buin"},
+                {"regionID": "CH-7111"},  # missing "name" — malformed
+            ],
+        )
+        with pytest.raises(KeyError):
+            upsert_bulletin(raw_bad, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.issued_at == original_issued_at
+        region_ids = list(
+            bulletin.regions.order_by("region_id").values_list("region_id", flat=True)
+        )
+        assert region_ids == ["CH-4115", "CH-7111"]
+
+    def test_region_link_failure_rolls_back_bulletin_update(self) -> None:
+        """SNOW-460: a failure inside the write loop rolls back the whole update.
+
+        Even a failure that surfaces *during* the delete-and-recreate (not a
+        malformed payload caught up front) must leave the prior bulletin and
+        links intact — the replacement is wrapped in a single transaction.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(), run)
+        original_issued_at = Bulletin.objects.get(bulletin_id="test-001").issued_at
+
+        raw_updated = _make_raw_bulletin(publication_time="2025-03-15T12:00:00Z")
+        real_create = RegionBulletin.objects.create
+        call_count = {"n": 0}
+
+        def _fail_on_second_link(*args: Any, **kwargs: Any) -> Any:
+            """Let the first link write succeed, fail the second."""
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise IntegrityError("simulated link write failure")
+            return real_create(*args, **kwargs)
+
+        with (
+            patch.object(
+                RegionBulletin.objects, "create", side_effect=_fail_on_second_link
+            ),
+            pytest.raises(IntegrityError),
+        ):
+            upsert_bulletin(raw_updated, run)
+
+        # The bulletin update and the link delete/recreate all rolled back.
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.issued_at == original_issued_at
+        region_ids = list(
+            bulletin.regions.order_by("region_id").values_list("region_id", flat=True)
+        )
+        assert region_ids == ["CH-4115", "CH-7111"]
 
     def test_handles_missing_next_update(self) -> None:
         """Bulletin without nextUpdate stores None."""
