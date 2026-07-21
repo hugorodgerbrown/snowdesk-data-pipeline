@@ -1,6 +1,6 @@
 ---
 name: telemetry-pipeline
-description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, pwa.*/map.favourite.*/map.community_reports.* event names
+description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
 last-reviewed: 2026-07-19
 ---
@@ -156,6 +156,33 @@ second trigger should add its own reason string).
 
 ## Rollout / off-switch
 
+### Master switch — `PWA_TELEMETRY_ENABLED` (default `True`)
+
+A single operator-level env var silences the **whole** pipeline, not just
+PostHog forwarding. Set `PWA_TELEMETRY_ENABLED=False` (via `.env` /
+python-decouple; `config/settings/base.py`) and:
+
+- **Client** — `static/js/telemetry.js` becomes an inert no-op. The
+  server renders `<meta name="pwa-telemetry-enabled" content="0">`
+  (via `public.context_processors.pwa_telemetry`); the script reads it
+  once at load and skips all buffering, `sendBeacon`, `/api/telemetry`
+  POSTs, and the flush-trigger listeners. `window.pwaTelemetry` still
+  exists (its `emit`/`flush` just return early) so every
+  `window.pwaTelemetry?.emit(...)` call site stays safe.
+- **Receiver** — `/api/telemetry` accepts and drops before parsing,
+  still returning `204` so a shell rendered before the flag flipped
+  drains its local `queue:events` cleanly instead of retrying.
+- **Server signals** — `emit_server_signal` no-ops.
+
+This is the switch to reach for when running locally. It is **distinct**
+from the two gates below (which only stop *forwarding* to PostHog) and
+from the per-user opt-in (spec §16.6): the master switch silences the
+operational-safety "critical" events too, because the operator has
+turned the pipeline off entirely rather than a user declining
+identification.
+
+### PostHog key gate (forwarding only)
+
 - `emit_server_signal` (`analytics/signals.py`) checks
   `settings.POSTHOG_API_KEY` itself before calling `analytics.track()`
   — logged at DEBUG, no-op when unset. The `/api/telemetry` receiver
@@ -191,6 +218,14 @@ window.pwaTelemetry = {
   SAMPLE_RATES,                   // read-only object
 };
 ```
+
+### Master-switch guard
+
+Before any of the below runs, `emit()`, `flush()`, and the lifecycle
+wiring short-circuit when the `pwa-telemetry-enabled` meta tag reads
+`"0"` (server-set from `settings.PWA_TELEMETRY_ENABLED` — see the
+off-switch section). A missing tag is treated as enabled, so pages that
+don't render it keep the historical behaviour.
 
 ### Buffer + flush
 

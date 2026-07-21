@@ -59,6 +59,19 @@ def _error(status: int, code: str) -> JsonResponse:
     return JsonResponse({"error": code}, status=status)
 
 
+def _telemetry_enabled() -> bool:
+    """Return True unless ``settings.PWA_TELEMETRY_ENABLED`` is explicitly False.
+
+    The operator-level master switch for the whole PWA telemetry pipeline
+    (docs/telemetry-pipeline.md). Read at call time (not import time) so
+    ``@override_settings`` in tests takes effect immediately — matches the
+    pattern used by ``_posthog_configured`` and
+    ``analytics.signals.emit_server_signal``. Defaults to True when unset
+    so an environment that never configured the flag keeps ingesting.
+    """
+    return bool(getattr(settings, "PWA_TELEMETRY_ENABLED", True))
+
+
 def _posthog_configured() -> bool:
     """Return True when ``settings.POSTHOG_API_KEY`` is a non-empty string.
 
@@ -152,7 +165,8 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
         request: The incoming POST request.
 
     Returns:
-        204 No Content on success, when rate-limited, or when the
+        204 No Content on success, when rate-limited, when telemetry is
+        disabled via ``settings.PWA_TELEMETRY_ENABLED``, or when the
         PostHog API key is unset. 400 / 413 / 415 on malformed input.
         The rate-limit short-circuit runs *before* input validation, so
         a rate-limited request with a bad content-type still gets 204
@@ -161,6 +175,15 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     """
     if getattr(request, "limited", False):
         logger.info("telemetry rate-limited ip=%s", _client_ip(request))
+        return HttpResponse(status=204)
+
+    # Master switch off (e.g. local dev via PWA_TELEMETRY_ENABLED=False):
+    # accept and drop. Still 204 — never surface an error to the client,
+    # so a shell rendered before the flag flipped drains its local
+    # ``queue:events`` cleanly instead of retrying forever. Checked before
+    # parsing so a disabled deploy spends nothing on validation.
+    if not _telemetry_enabled():
+        logger.debug("telemetry dropped (PWA_TELEMETRY_ENABLED false)")
         return HttpResponse(status=204)
 
     error_response, maybe_events = _parse_events(request)

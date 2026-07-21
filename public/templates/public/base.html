@@ -96,6 +96,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
         {# Empty content for anonymous requests — db.js treats it as null. #}
         <meta name="pwa-user-id" content="{% if request.user.is_authenticated %}{{ request.user.pk }}{% endif %}">
+        {# Telemetry master switch (settings.PWA_TELEMETRY_ENABLED). "0"   #}
+        {# turns static/js/telemetry.js into an inert no-op — no buffering, #}
+        {# no sendBeacon, no /api/telemetry POSTs. Set                      #}
+        {# PWA_TELEMETRY_ENABLED=False in .env to silence telemetry when    #}
+        {# running locally (docs/telemetry-pipeline.md).                    #}
+        <meta name="pwa-telemetry-enabled" content="{{ PWA_TELEMETRY_ENABLED|yesno:'1,0' }}">
 
         {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
         {# Screen" on iPhone produces a screenshot icon and a non-         #}

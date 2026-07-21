@@ -25,6 +25,7 @@ import os
 from typing import Any, cast
 
 import pytest
+from django.test import override_settings
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
 
@@ -302,3 +303,55 @@ def test_setoptin_writes_through(live_server: LiveServer, page: Page) -> None:
     )
     assert result["stored"]["value"] is True
     assert result["read"] is True
+
+
+# ---------------------------------------------------------------------------
+# 5. Master switch — PWA_TELEMETRY_ENABLED=False turns the client inert.
+# ---------------------------------------------------------------------------
+
+
+@override_settings(PWA_TELEMETRY_ENABLED=False)
+def test_master_switch_off_makes_emit_a_noop(
+    live_server: LiveServer, page: Page
+) -> None:
+    """With the server-rendered ``pwa-telemetry-enabled`` meta at "0",
+    neither a standard nor a critical emit() writes to the queue or fires
+    ``sendBeacon`` — the whole pipeline is silenced regardless of opt-in.
+
+    ``@override_settings`` is visible to the in-process live-server thread
+    (same mechanism the favourites e2e tests rely on for ``override_flag``),
+    so the context processor renders ``content="0"`` for this test's page
+    load.
+    """
+    _load(page, live_server.url)
+    _delete_db(page)
+
+    result = cast(
+        dict[str, Any],
+        page.evaluate(
+            """async () => {
+                // The meta tag the client keys off must say "0".
+                const meta = document.querySelector(
+                  'meta[name="pwa-telemetry-enabled"]'
+                );
+                const beacons = [];
+                navigator.sendBeacon = function (url, body) {
+                  beacons.push(url);
+                  return true;
+                };
+                // Opt IN so opt-out can't be the reason nothing enqueues.
+                await window.pwaTelemetry.setOptIn(true);
+                await window.pwaTelemetry.emit('pwa.install.prompted');
+                await window.pwaTelemetry.emit('pwa.kill_switch.activated');
+                const depth = await window.pwaDb.count('queue:events');
+                return {
+                  metaContent: meta ? meta.getAttribute('content') : null,
+                  depth,
+                  beacons: beacons.length,
+                };
+              }"""
+        ),
+    )
+    assert result["metaContent"] == "0"
+    assert result["depth"] == 0, "no event should be buffered while disabled"
+    assert result["beacons"] == 0, "critical events must not beacon while disabled"

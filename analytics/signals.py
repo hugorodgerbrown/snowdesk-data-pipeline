@@ -65,6 +65,16 @@ def emit_server_signal(event: str, properties: dict[str, object] | None = None) 
     # @override_settings in tests takes effect immediately.
     from django.conf import settings  # noqa: PLC0415 — intentional late import
 
+    # Operator-level master switch — silences the server-emitted §16.2
+    # signals along with the rest of the pipeline (docs/telemetry-pipeline.md).
+    # Checked before the key so PWA_TELEMETRY_ENABLED=False is a full off
+    # switch even where POSTHOG_API_KEY is populated.
+    if not bool(getattr(settings, "PWA_TELEMETRY_ENABLED", True)):
+        logger.debug(
+            "emit_server_signal no-op (PWA_TELEMETRY_ENABLED false): event=%s", event
+        )
+        return
+
     api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
     if not api_key:
         logger.debug(
