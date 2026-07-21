@@ -164,7 +164,9 @@ try {
 // cached region overlays still paint instead of a blank canvas; retried
 // on the next ``online`` event.
 // SNOW-482: v21 — stamp X-SW-Cache on cache-served responses.
-const CACHE_VERSION = 'snowdesk-shell-v21';
+// SNOW-486: v22 — overlay primitives consolidation touched shell JS/CSS
+// (overlays.js, the toast/banner/modal/sheet partials, z-index tokens).
+const CACHE_VERSION = 'snowdesk-shell-v22';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
