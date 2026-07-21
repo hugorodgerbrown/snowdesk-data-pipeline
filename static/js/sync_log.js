@@ -103,5 +103,12 @@
     }
   }
 
-  render();
+  // Deferred scripts execute in DOCUMENT ORDER, and this one's <script>
+  // tag (inside the manage.html content block) appears BEFORE db.js's
+  // (declared in base.html, after the content block) — so calling
+  // render() eagerly here would race window.pwaDb into existence.
+  // DOMContentLoaded fires only once every deferred script, db.js
+  // included, has already run, which is what actually guarantees
+  // window.pwaDb is defined by the time render() executes.
+  document.addEventListener('DOMContentLoaded', render);
 })();

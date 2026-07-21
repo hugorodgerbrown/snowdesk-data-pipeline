@@ -301,10 +301,15 @@ def test_reset_required_on_migration_failure(
 def test_upgrade_from_v1_adds_data_favourites(
     live_server: LiveServer, page: Page
 ) -> None:
-    """A pre-existing version-1 DB (four stores, no ``data:favourites``) is
-    migrated to version 2 by db.js's own ``_runMigrations`` on the next
-    ``open()`` — the new store is added and the four original stores
-    (with any of their existing data) are left untouched.
+    """A pre-existing version-1 DB (four stores) is migrated straight to
+    the current version by db.js's own ``_runMigrations`` on the next
+    ``open()`` — every missing store (``data:favourites`` from SNOW-418,
+    ``log:sync`` from SNOW-482) is added in the single combined upgrade
+    transaction, and the four original stores (with any of their
+    existing data) are left untouched. ``_runMigrations`` has no
+    per-version branches — it just creates whatever's missing from
+    ``STORES`` — so a client jumping several versions in one ``open()``
+    behaves the same as one jumping a single version.
     """
     _open_and_wait(page, live_server.url)
     _delete_db(page)
@@ -340,7 +345,8 @@ def test_upgrade_from_v1_adds_data_favourites(
     assert seeded == 1
 
     # Now let db.js open the same DB — its _runMigrations upgrade branch
-    # must add data:favourites without disturbing the seeded row.
+    # must add every missing store, up to the current version, without
+    # disturbing the seeded row.
     result = page.evaluate(
         """async () => {
             const db = await window.pwaDb.open();
@@ -352,8 +358,8 @@ def test_upgrade_from_v1_adds_data_favourites(
             };
           }"""
     )
-    assert result["version"] == 2
-    assert result["names"] == sorted(V2_STORES)
+    assert result["version"] == 3
+    assert result["names"] == sorted(V3_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}
 
 

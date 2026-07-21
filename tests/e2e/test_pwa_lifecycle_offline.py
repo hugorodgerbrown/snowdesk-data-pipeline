@@ -148,8 +148,10 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     ``/api/regions.geojson`` is one of ``sw.js``'s stale-while-revalidate
     ``STATIC_PATHS`` — a real first fetch populates the SW cache; an
     immediate second fetch of the SAME URL is served from that cache with
-    ``X-SW-Cache: hit``. A cache-busting query string keeps this test's
-    URL distinct from anything ``pwa_page``'s earlier navigations may have
+    ``X-SW-Cache: hit``. Requires ``?country=ch`` (the endpoint 400s
+    without it, and ``_staleWhileRevalidate`` only caches ``response.ok``
+    responses); a cache-busting query param keeps this test's URL
+    distinct from anything ``pwa_page``'s earlier navigations may have
     already warmed.
     """
     page = pwa_page.page
@@ -157,14 +159,23 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     page.wait_for_load_state("load")
 
     cache_bust = uuid.uuid4().hex
-    geojson_url = f"/api/regions.geojson?e2e={cache_bust}"
+    geojson_url = f"/api/regions.geojson?country=ch&e2e={cache_bust}"
 
     # First fetch: real network round-trip, no cache entry yet — advances
-    # the sync clock and appends a log:sync row.
+    # the sync clock and appends a log:sync row. sw.js's
+    # stale-while-revalidate strategy writes to Cache Storage as a
+    # fire-and-forget promise (not awaited before the response is
+    # returned), so this polls for the cache entry to land before
+    # returning — otherwise the second fetch below can race it and miss
+    # the cache too.
     first = page.evaluate(
         """async (url) => {
             const res = await fetch(url);
             await res.arrayBuffer();
+            for (let i = 0; i < 50; i++) {
+              if (await caches.match(url)) break;
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
             return {
               cacheHit: res.headers.get('X-SW-Cache'),
               syncedAt: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
