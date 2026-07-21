@@ -539,7 +539,13 @@ OPENFREEMAP_STYLE_URL = config(
     default="https://tiles.openfreemap.org/styles/liberty",
 )
 _ofm_parts = urlsplit(OPENFREEMAP_STYLE_URL)
+if not _ofm_parts.scheme or not _ofm_parts.netloc:
+    raise ImproperlyConfigured(
+        f"OPENFREEMAP_STYLE_URL={OPENFREEMAP_STYLE_URL!r} must be an absolute "
+        f"URL (e.g. https://tiles.openfreemap.org/styles/liberty)."
+    )
 OPENFREEMAP_ORIGIN = f"{_ofm_parts.scheme}://{_ofm_parts.netloc}"
+del _ofm_parts
 
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
