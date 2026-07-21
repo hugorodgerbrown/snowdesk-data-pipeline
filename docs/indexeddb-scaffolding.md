@@ -37,7 +37,7 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning) |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 

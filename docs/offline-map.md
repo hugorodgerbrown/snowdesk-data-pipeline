@@ -313,8 +313,17 @@ The SW classifies every fetch into one of four buckets:
   basemap picker's `data-basemap-url` attributes — a service worker has
   no DOM, so it cannot read those itself. Every basemap in the picker is
   included, not just the active one, so switching basemap mid-session is
-  covered. Strategy: **stale-while-revalidate** against a dedicated
-  `snowdesk-basemap-v1` cache (`BASEMAP_CACHE`), kept separate from the
+  covered. SNOW-487: `map.js` also mirrors the same origin list into the
+  durable `meta:app` IndexedDB store under the key `basemap.origins`,
+  because the in-memory `_basemapOrigins` Set does not survive the
+  browser terminating an idle worker — a later `fetch` event runs in a
+  fresh global with an empty Set even though `BASEMAP_CACHE` still holds
+  previously-cached tiles. `_classify()` lazily rehydrates
+  `_basemapOrigins` from that `meta:app` row (`_hydrateBasemapOrigins()`,
+  memoised per worker instance) before deciding a cross-origin request's
+  strategy, so the allowlist is durable across worker restarts rather
+  than purely in-memory. Strategy: **stale-while-revalidate** against a
+  dedicated `snowdesk-basemap-v1` cache (`BASEMAP_CACHE`), kept separate from the
   shell's `CACHE_VERSION` cache so bumping the shell version on an
   unrelated change never evicts previously-cached basemap tiles. Only
   `ok`, `type: 'cors'` (readable) responses are cached — `opaque`
