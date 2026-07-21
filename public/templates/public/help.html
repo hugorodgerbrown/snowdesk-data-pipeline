@@ -10,11 +10,12 @@ collapsible panels reusing includes/_collapsible_panel.html. Each panel's
 body copy lives in its own small content partial under
 public/templates/public/help/.
 
-The Favourites, Field-observations, and Recent-observations panels, plus
-a handful of sentences inside the Map panel, are gated on the per-user
-waffle booleans computed by public.views.help_page (favourites_visible /
-report_visible / community_reports_visible / observations_page_visible)
-— a user never sees documentation for a feature they cannot use.
+The Favourites, Field-observations, Recent-observations, and Sync-log
+panels, plus a handful of sentences inside the Map panel, are gated on
+the per-user waffle booleans computed by public.views.help_page
+(favourites_visible / report_visible / community_reports_visible /
+observations_page_visible / sync_log_visible) — a user never sees
+documentation for a feature they cannot use.
 {% endcomment %}
 {% load i18n %}
 
@@ -68,5 +69,10 @@ report_visible / community_reports_visible / observations_page_visible)
 
         {% translate "Install & offline" as t_install %}
         {% include "includes/_collapsible_panel.html" with title=t_install data_testid="help-topic-install" body_template="public/help/_topic_install.html" %}
+
+        {% if sync_log_visible %}
+            {% translate "Sync log" as t_sync_log %}
+            {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="help-topic-sync-log" body_template="public/help/_topic_sync_log.html" %}
+        {% endif %}
     </main>
 {% endblock %}
