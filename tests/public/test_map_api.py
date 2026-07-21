@@ -1968,11 +1968,17 @@ class TestCommunityReportsGeojson:
 
     def test_observed_at_truncated_to_nearest_quarter_hour(self) -> None:
         """observed_at is floored to the nearest 15-minute mark."""
-        observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
+        # Anchor to a recent, in-window instant (the endpoint drops anything
+        # older than 48h) with a fixed non-quarter minute so the flooring is
+        # observable; derive the expected value rather than hard-coding a date.
+        observed_at = (timezone.now() - dt.timedelta(hours=2)).replace(
+            minute=37, second=42, microsecond=0
+        )
         FieldObservationFactory.create(observed_at=observed_at)
         response = Client().get(reverse("api:community_reports_geojson"))
         properties = response.json()["features"][0]["properties"]
-        assert properties["observed_at"] == "2026-07-19T10:30:00+00:00"
+        expected = observed_at.replace(minute=30, second=0).isoformat()
+        assert properties["observed_at"] == expected
 
     def test_response_never_exposes_raw_coordinates_or_identity(self) -> None:
         """No full-precision coord, gps_*, user, or pk fields cross the wire."""
