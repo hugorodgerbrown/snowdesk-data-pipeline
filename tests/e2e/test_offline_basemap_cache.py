@@ -448,6 +448,17 @@ def test_trim_cache_caps_basemap_cache_at_max_entries(pwa_page: PwaPage) -> None
     small over-the-cap batch — ``Cache.keys()`` returns insertion order,
     and the trim deletes the earliest ``length - max`` keys regardless of
     scale, so 10 entries trimmed to 6 proves the same algorithm 600 would.
+
+    Runs against a dedicated throwaway cache, NOT the live ``BASEMAP_CACHE``:
+    this fixture drives the real service worker, whose
+    ``_basemapStaleWhileRevalidate`` writes genuine basemap tiles into
+    ``BASEMAP_CACHE`` as the map paints. One of those real ``cache.put``s
+    landing during this evaluate polluted the cache with a non-``tile-*``
+    URL, so the parse below raised ``IndexError`` (and, when the intruder
+    landed last, stole a survivor slot from the trim). ``_trimCache(cache,
+    max)`` is cache-agnostic — it takes the cache as an argument and never
+    names ``BASEMAP_CACHE`` — so a private cache exercises the identical
+    algorithm with no interference from the worker's own writes.
     """
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -455,8 +466,9 @@ def test_trim_cache_caps_basemap_cache_at_max_entries(pwa_page: PwaPage) -> None
 
     remaining = worker.evaluate(
         """async () => {
-            const cache = await caches.open(BASEMAP_CACHE);
-            for (const key of await cache.keys()) await cache.delete(key);
+            const TEST_CACHE = 'snow484-trim-test-cache';
+            await caches.delete(TEST_CACHE);
+            const cache = await caches.open(TEST_CACHE);
             for (let i = 0; i < 10; i++) {
               await cache.put(
                 `https://snow484-trim-test.invalid/tile-${i}.pbf`,
@@ -464,7 +476,9 @@ def test_trim_cache_caps_basemap_cache_at_max_entries(pwa_page: PwaPage) -> None
               );
             }
             await _trimCache(cache, 6);
-            return (await cache.keys()).map((k) => k.url);
+            const urls = (await cache.keys()).map((k) => k.url);
+            await caches.delete(TEST_CACHE);
+            return urls;
           }"""
     )
 
