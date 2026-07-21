@@ -511,7 +511,21 @@ def test_fetch_stamps_client_version_on_same_origin_request(
 def test_fetch_omits_client_version_on_third_party_request(
     live_server: LiveServer, page: Page
 ) -> None:
-    """A cross-origin fetch() call does NOT carry X-Client-Version."""
+    """A cross-origin fetch() call does NOT carry X-Client-Version.
+
+    ``_disable_real_sw`` is essential here, not just tidy: localhost is a
+    secure context, so without it the real ``sw.js`` registers and — once
+    it claims the page at non-deterministic timing — its ``fetch`` handler
+    routes this cross-origin GET through ``_classifyCrossOriginGet``. That
+    origin isn't a registered basemap, so the SW re-issues the request with
+    its own ``fetch(request)``, which Playwright's ``page.route`` cannot see
+    (a service worker's own script fetches bypass page/context interception)
+    — it escapes to the real network, ``tiles.example.com`` doesn't resolve,
+    and the page's ``fetch()`` rejects, failing the ``page.evaluate`` before
+    the header assertion is ever reached. Disabling the SW keeps the request
+    native, so the route interceptor fulfils it deterministically.
+    """
+    _disable_real_sw(page)
     _load(page, live_server.url)
 
     captured: dict[str, str] = {}

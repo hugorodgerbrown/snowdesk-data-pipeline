@@ -89,15 +89,54 @@ def _open_and_wait(page: Page, live_server_url: str) -> None:
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
 
 
+def _block_map_data_feeds(page: Page) -> None:
+    """Abort the map homepage's background ``/api/**`` fetches.
+
+    The ``log:sync`` tests assert on the *exact* set of rows they write, but
+    ``/`` is the map-as-homepage: map.js fires ``/api/ratings/`` plus five
+    ``*.geojson`` feeds on load, and ``pwa_offline.js``'s wrapped
+    ``window.fetch`` appends a ``log:sync`` row for every un-cached
+    same-origin, non-static response (``.geojson`` is not a static-asset
+    extension, so the feeds qualify too). Those async appends race the
+    test's own writes: any that resolve *after* ``_delete_db`` land in the
+    fresh DB and survive the newest-100 trim, so the surviving set is
+    polluted with ``/api/ratings/`` / ``*.geojson`` rows and the assertion
+    is non-deterministic. db.js loads from ``/static/`` (never ``/api``) and
+    the load event doesn't wait on these XHR/fetch calls, so aborting them
+    removes the pollution source without affecting ``window.pwaDb`` or page
+    load. Must be armed before ``_open_and_wait`` navigates.
+    """
+    page.route("**/api/**", lambda route: route.abort())
+
+
 def _delete_db(page: Page) -> None:
-    """Delete the PWA DB so each test starts from a clean slate."""
+    """Delete the PWA DB and wait for the deletion to actually complete.
+
+    ``onblocked`` must NOT resolve this promise: it fires while the delete
+    is still *pending*, blocked by a live connection — not done. db.js
+    memoises its connection for the page's whole lifetime as soon as any
+    on-load consumer reads (pwa_offline's clock hydration, the mutation-badge
+    read, telemetry context), and it yields that connection on
+    ``versionchange`` (see ``static/js/db.js`` ``open()``), so a blocked
+    delete unblocks itself and ``onsuccess`` still fires — but if db.js has an
+    in-flight transaction when ``deleteDatabase`` runs, ``onblocked`` fires
+    first. The old helper resolved there, returning before the DB was gone;
+    the schema-upgrade tests then reopened at a *lower* version against the
+    still-present v3 DB and hit ``VersionError: The requested version (1) is
+    less than the existing version (3)`` (flaky — it only bites when db.js is
+    mid-transaction at delete time, which CI's slower, more contended run
+    hits far more often than a local one). Waiting for ``onsuccess`` makes the
+    clean slate real before the next open. A genuine indefinite block (db.js
+    failing to yield) surfaces as the evaluate's own timeout rather than a
+    silent, incomplete delete.
+    """
     page.evaluate(
         """(name) => new Promise((resolve) => {
             try {
               const req = indexedDB.deleteDatabase(name);
               req.onsuccess = () => resolve();
               req.onerror = () => resolve();
-              req.onblocked = () => resolve();
+              // Deliberately no onblocked handler — see the docstring.
             } catch (_e) { resolve(); }
           })""",
         DB_NAME,
@@ -464,6 +503,7 @@ def test_append_sync_log_trims_to_newest_100(
     surviving rows are the newest 100 (paths "sync-1".."sync-100"), not
     the oldest.
     """
+    _block_map_data_feeds(page)
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
@@ -484,6 +524,7 @@ def test_append_sync_log_trims_to_newest_100(
 
 def test_get_sync_log_returns_newest_first(live_server: LiveServer, page: Page) -> None:
     """getSyncLog reads back rows newest-first, honouring ``limit``."""
+    _block_map_data_feeds(page)
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
