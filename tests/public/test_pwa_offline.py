@@ -176,11 +176,17 @@ def test_freshness_indicator_label_formatted() -> None:
 
 @pytest.mark.django_db
 def test_offline_banner_ships_hidden_on_home_page() -> None:
-    """The banner renders on every page and is hidden by default."""
+    """The banner renders on every page, hidden by default and in-flow.
+
+    SNOW-482: the banner is deliberately NOT ``fixed`` — it sits in the
+    normal document flow above ``includes/nav.html`` so a revealed
+    banner pushes the nav down instead of overlapping it.
+    """
     response = Client().get("/")
     body = response.content.decode("utf-8")
     assert 'id="pwa-offline-banner"' in body
-    assert 'class="hidden fixed top-0' in body
+    assert 'class="hidden w-full' in body
+    assert "fixed top-0" not in body
 
 
 @pytest.mark.django_db
