@@ -44,7 +44,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
@@ -53,7 +52,11 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
-from regions.fixture_utils import build_entries_from_eaws_dir
+from regions.fixture_utils import (
+    build_entries_from_eaws_dir,
+    diff_against_existing,
+    write_fixture,
+)
 from regions.names import lookup
 
 logger = logging.getLogger(__name__)
@@ -116,7 +119,7 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write(f"Built: L1={l1_count} L2={l2_count} L4={l4_count}")
 
-        changes = _diff_against_existing(_ITALY_FIXTURE, entries)
+        changes = diff_against_existing(_ITALY_FIXTURE, entries)
 
         if verbosity >= 1:
             self.stdout.write(f"Change(s) vs existing fixture: {changes}")
@@ -128,7 +131,7 @@ class Command(BaseCommand):
                 )
             return
 
-        _write_fixture(_ITALY_FIXTURE, entries)
+        write_fixture(_ITALY_FIXTURE, entries)
 
         if verbosity >= 1:
             self.stdout.write(
@@ -285,59 +288,3 @@ def _derive_l2_prefix(region_id: str, l1_code: str) -> str:
     parts = region_id.split("-")
     candidate = "-".join(parts[:-1])
     return region_id if candidate == l1_code else candidate
-
-
-# ---------------------------------------------------------------------------
-# Fixture I/O
-# ---------------------------------------------------------------------------
-
-
-def _load_fixture(path: Path) -> list[dict[str, Any]]:
-    """Read an existing Django fixture file; return an empty list if absent."""
-    if not path.exists():
-        return []
-    return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
-
-
-def _write_fixture(path: Path, data: list[dict[str, Any]]) -> None:
-    """Write a Django fixture file in the project's canonical format."""
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    logger.info("Wrote %s (%d entries)", path, len(data))
-
-
-def _diff_against_existing(path: Path, new_data: list[dict[str, Any]]) -> int:
-    """Return the number of entries that differ from the on-disk fixture.
-
-    Args:
-        path: Path to the existing fixture file.
-        new_data: Newly generated fixture entry list.
-
-    Returns:
-        Count of changed / added / removed entries.
-
-    """
-    existing = _load_fixture(path)
-    new_str = json.dumps(new_data, indent=2, ensure_ascii=False)
-    old_str = json.dumps(existing, indent=2, ensure_ascii=False)
-    if new_str == old_str:
-        return 0
-    new_by_key = {_entry_key(e): json.dumps(e, sort_keys=True) for e in new_data}
-    old_by_key = {_entry_key(e): json.dumps(e, sort_keys=True) for e in existing}
-    all_keys = set(new_by_key) | set(old_by_key)
-    return sum(1 for k in all_keys if new_by_key.get(k) != old_by_key.get(k))
-
-
-def _entry_key(entry: dict[str, Any]) -> str:
-    """Return a stable string key for a fixture entry (model + natural PK field)."""
-    model: str = entry["model"]
-    fields: dict[str, Any] = entry["fields"]
-    if model == "regions.majorregion":
-        return f"{model}:{fields['prefix']}"
-    if model == "regions.subregion":
-        return f"{model}:{fields['prefix']}"
-    if model == "regions.microregion":
-        return f"{model}:{fields['region_id']}"
-    return f"{model}:{json.dumps(fields, sort_keys=True)}"
