@@ -42,34 +42,12 @@ Optional context:
     {# it. Mirrors the offline banner's status-warning treatment               #}
     {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
     {# the map down rather than overlaying it.                                  #}
-    <div
-        id="map-offseason-bar"
-        role="note"
-        class="flex items-center gap-2 border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-text"
-    >
-        <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            class="shrink-0"
-        >
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-        <span>
-            {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
-                New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
-            {% endblocktrans %}
-        </span>
-    </div>
+    {# SNOW-486: markup delegated to the shared banner primitive               #}
+    {# (includes/_overlay_banner.html, "strip" variant).                        #}
+    {% blocktrans asvar map_offseason_bar_body trimmed with start_month=archived_season_start|date:"F" %}
+        New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
+    {% endblocktrans %}
+    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body %}
 {% endif %}
 {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
 {# fetch to the last populated date when today is past the season end.       #}

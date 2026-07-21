@@ -323,16 +323,22 @@
             deferredPrompt = null;
           }
         });
-      android
-        .querySelector('[data-action="dismiss"]')
-        ?.addEventListener('click', () => dismissBanner('pwa-install-banner'));
     }
-    const ios = document.getElementById('pwa-install-ios');
-    if (ios) {
-      ios
-        .querySelector('[data-action="dismiss"]')
-        ?.addEventListener('click', () => dismissBanner('pwa-install-ios'));
-    }
+    // SNOW-486: the "×" on both banners is [data-action="dismiss"] inside
+    // a [data-overlay] element, so static/js/overlays.js's shared delegated
+    // handler now owns the actual hide (classList.add('hidden')) — this
+    // module only needs to run the cool-off-stamp + telemetry side effect
+    // that dismissBanner() previously did inline. The accept-button
+    // failure/rejection paths above still call dismissBanner() directly
+    // (they need the hide too, and there's no click on a data-overlay
+    // descendant to delegate from there).
+    document.addEventListener('overlay:dismissed', (event) => {
+      const el = event.detail && event.detail.overlay;
+      if (!el) return;
+      if (el.id !== 'pwa-install-banner' && el.id !== 'pwa-install-ios') return;
+      writeItem(DISMISS_KEY, String(Date.now()));
+      emitTelemetry('pwa.install.dismissed', { banner: el.id });
+    });
   }
 
   /**

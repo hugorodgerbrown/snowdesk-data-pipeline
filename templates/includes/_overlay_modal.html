@@ -33,7 +33,7 @@ static/js/db.js), matching every other shell-chrome overlay.
 {% endcomment %}
 <div
     id="{{ id }}"
-    role='{{ role|default:"alertdialog" }}'
+    role="{{ role|default:'alertdialog' }}"
     aria-modal="true"
     aria-labelledby="{{ title_id }}"
     aria-describedby="{{ body_id }}"
