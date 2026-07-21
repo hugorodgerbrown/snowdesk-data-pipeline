@@ -8,6 +8,9 @@ Covers the ``refresh_eaws_fixtures`` command:
   - The SNOW-59 ``_boundary_from_children`` helper: adjacent L4 polygons
     collapse to one Polygon; disjoint ones produce a MultiPolygon;
     output is json-safe (lists, not tuples).
+  - The SNOW-489 ``_bbox_from_children`` / ``_iter_coords`` regression: the
+    real L4 fixtures are MultiPolygons, so the bbox walk must descend the
+    extra nesting level rather than assuming Polygon coordinates.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from django.core.management import call_command
@@ -196,13 +200,172 @@ class TestBoundaryFromChildren:
         assert "0 change(s)" in out.getvalue()
 
 
+class TestBboxFromChildren:
+    """SNOW-489 regression tests for the bbox / coordinate-walk helpers.
+
+    The real L4 microregion boundaries in ``eaws_CH.json`` are all
+    MultiPolygons. ``_iter_coords`` previously assumed Polygon nesting and
+    crashed with ``ValueError: too many values to unpack`` on the real data.
+    """
+
+    def test_bbox_from_multipolygon_children(self) -> None:
+        """A MultiPolygon boundary yields the correct union bbox (no crash)."""
+        from regions.management.commands.refresh_eaws_fixtures import (
+            _bbox_from_children,
+        )
+
+        children = [
+            {
+                "boundary": {
+                    "type": "MultiPolygon",
+                    "coordinates": [
+                        # First polygon.
+                        [
+                            [
+                                [6.8, 46.4],
+                                [7.0, 46.4],
+                                [7.0, 46.5],
+                                [6.8, 46.5],
+                                [6.8, 46.4],
+                            ]
+                        ],
+                        # Second, disjoint polygon extends the extents.
+                        [
+                            [
+                                [7.3, 46.2],
+                                [7.5, 46.2],
+                                [7.5, 46.6],
+                                [7.3, 46.6],
+                                [7.3, 46.2],
+                            ]
+                        ],
+                    ],
+                }
+            }
+        ]
+
+        bbox = _bbox_from_children(children)
+
+        assert bbox == [6.8, 46.2, 7.5, 46.6]
+
+    def test_bbox_from_polygon_children(self) -> None:
+        """A plain Polygon boundary still yields the correct bbox."""
+        from regions.management.commands.refresh_eaws_fixtures import (
+            _bbox_from_children,
+        )
+
+        children = [
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [6.8, 46.4],
+                            [7.0, 46.4],
+                            [7.0, 46.5],
+                            [6.8, 46.5],
+                            [6.8, 46.4],
+                        ]
+                    ],
+                }
+            }
+        ]
+
+        bbox = _bbox_from_children(children)
+
+        assert bbox == [6.8, 46.4, 7.0, 46.5]
+
+    def test_mixed_polygon_and_multipolygon_children(self) -> None:
+        """Polygon and MultiPolygon children in one call share a union bbox."""
+        from regions.management.commands.refresh_eaws_fixtures import (
+            _bbox_from_children,
+        )
+
+        children: list[dict[str, Any]] = [
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [6.8, 46.4],
+                            [7.0, 46.4],
+                            [7.0, 46.5],
+                            [6.8, 46.5],
+                            [6.8, 46.4],
+                        ]
+                    ],
+                }
+            },
+            {
+                "boundary": {
+                    "type": "MultiPolygon",
+                    "coordinates": [
+                        [
+                            [
+                                [7.3, 46.2],
+                                [7.5, 46.2],
+                                [7.5, 46.6],
+                                [7.3, 46.6],
+                                [7.3, 46.2],
+                            ]
+                        ],
+                    ],
+                }
+            },
+        ]
+
+        bbox = _bbox_from_children(children)
+
+        assert bbox == [6.8, 46.2, 7.5, 46.6]
+
+    def test_unsupported_geometry_type_raises(self) -> None:
+        """A non-(Multi)Polygon boundary raises a clear error, not a crash."""
+        from regions.management.commands.refresh_eaws_fixtures import (
+            _bbox_from_children,
+        )
+
+        children = cast(
+            "list[dict[str, Any]]",
+            [{"boundary": {"type": "Point", "coordinates": [6.9, 46.5]}}],
+        )
+
+        with pytest.raises(ValueError, match="Unsupported boundary geometry type"):
+            _bbox_from_children(children)
+
+    def test_commit_populates_bbox_for_multipolygon_children(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: --commit works against MultiPolygon L4 children.
+
+        Mirrors the real fixture shape (all L4 boundaries are MultiPolygons),
+        which the Polygon-only seed in the other tests never exercised — the
+        exact gap that let the SNOW-489 crash reach production data.
+        """
+        tmp_eaws = _seed_tmp_eaws_fixture(tmp_path, multipolygon=True)
+        _patch_fixture_paths(monkeypatch, tmp_eaws)
+
+        call_command("refresh_eaws_fixtures", "--commit", stdout=StringIO())
+
+        entries = json.loads(tmp_eaws.read_text())
+        majors = [e for e in entries if e["model"] == "regions.majorregion"]
+        subs = [e for e in entries if e["model"] == "regions.subregion"]
+        assert majors[0]["fields"]["bbox"] is not None
+        assert len(majors[0]["fields"]["bbox"]) == 4
+        assert subs[0]["fields"]["bbox"] is not None
+        assert len(subs[0]["fields"]["bbox"]) == 4
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _seed_tmp_eaws_fixture(tmp_path: Path) -> Path:
-    """Write a minimal three-section EAWS fixture under ``tmp_path``."""
+def _seed_tmp_eaws_fixture(tmp_path: Path, *, multipolygon: bool = False) -> Path:
+    """Write a minimal three-section EAWS fixture under ``tmp_path``.
+
+    When ``multipolygon`` is set, the L4 children carry MultiPolygon
+    boundaries, mirroring the real ``eaws_CH.json`` shape (SNOW-489).
+    """
     path = tmp_path / "eaws_CH.json"
     entries = [
         _major_entry("CH-1", centre=None, bbox=None),
@@ -219,6 +382,7 @@ def _seed_tmp_eaws_fixture(tmp_path: Path) -> Path:
                     [6.8, 46.4],
                 ]
             ],
+            multipolygon=multipolygon,
         ),
         _region_entry(
             "CH-1112",
@@ -232,6 +396,7 @@ def _seed_tmp_eaws_fixture(tmp_path: Path) -> Path:
                     [7.0, 46.4],
                 ]
             ],
+            multipolygon=multipolygon,
         ),
     ]
     path.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
@@ -244,8 +409,23 @@ def _seed_tmp_fixture(path: Path, entries: list[dict]) -> Path:
     return path
 
 
-def _region_entry(region_id: str, centre: dict, boundary_poly: list) -> dict:
-    """Build a minimal regions.microregion fixture entry."""
+def _region_entry(
+    region_id: str,
+    centre: dict,
+    boundary_poly: list,
+    *,
+    multipolygon: bool = False,
+) -> dict:
+    """Build a minimal regions.microregion fixture entry.
+
+    ``boundary_poly`` is a Polygon ``coordinates`` value (a list of rings).
+    When ``multipolygon`` is set, it is wrapped one level deeper into a
+    single-polygon MultiPolygon, matching the real fixture shape.
+    """
+    if multipolygon:
+        boundary = {"type": "MultiPolygon", "coordinates": [boundary_poly]}
+    else:
+        boundary = {"type": "Polygon", "coordinates": boundary_poly}
     return {
         "model": "regions.microregion",
         "fields": {
@@ -254,7 +434,7 @@ def _region_entry(region_id: str, centre: dict, boundary_poly: list) -> dict:
             "slug": region_id.lower(),
             "subregion": [region_id[:5]],
             "centre": centre,
-            "boundary": {"type": "Polygon", "coordinates": boundary_poly},
+            "boundary": boundary,
             "created_at": "2026-04-24T00:00:00Z",
             "updated_at": "2026-04-24T00:00:00Z",
         },

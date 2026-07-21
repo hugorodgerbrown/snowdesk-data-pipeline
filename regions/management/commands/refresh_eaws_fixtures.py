@@ -180,13 +180,31 @@ def _centre_from_children(children: list[dict[str, Any]]) -> dict[str, float]:
 
 
 def _iter_coords(children: list[dict[str, Any]]) -> Any:
-    """Yield every (lon, lat) tuple from the children's polygon rings."""
+    """Yield every ``[lon, lat]`` position from the children's polygon rings.
+
+    Handles both GeoJSON ``Polygon`` (``coordinates`` is ``[ring][position]``)
+    and ``MultiPolygon`` (``coordinates`` is ``[polygon][ring][position]``)
+    boundaries — the L4 microregion fixtures are MultiPolygons. Any other
+    geometry type raises, rather than silently yielding a malformed shape
+    that would surface as an opaque unpacking error downstream.
+    """
     for child in children:
         boundary = child.get("boundary")
         if not boundary:
             continue
-        for ring in boundary["coordinates"]:
-            yield from ring
+        geom_type = boundary["type"]
+        if geom_type == "Polygon":
+            polygons = [boundary["coordinates"]]
+        elif geom_type == "MultiPolygon":
+            polygons = boundary["coordinates"]
+        else:
+            raise ValueError(
+                f"Unsupported boundary geometry type {geom_type!r}; "
+                "expected Polygon or MultiPolygon."
+            )
+        for polygon in polygons:
+            for ring in polygon:
+                yield from ring
 
 
 def _bbox_from_children(children: list[dict[str, Any]]) -> list[float]:
