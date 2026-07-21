@@ -76,33 +76,6 @@ def _bootstrap_django() -> None:
     django.setup()
 
 
-def _fixup_envelope(properties: object, slug_to_code: dict[str, int]) -> str | None:
-    """Delegate to the service-layer fixup for backward compatibility.
-
-    This shim preserves the signature expected by
-    ``tests/scripts/meteofrance_archive/test_load_archive.py``.
-
-    Args:
-        properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
-        slug_to_code: Slug → integer code mapping (unused; the service layer
-            imports ``SLUG_TO_CODE`` directly).
-
-    Returns:
-        The synthesised ``bulletinID`` on success, or ``None`` on failure.
-
-    """
-    from bulletins.services.meteofrance_archive_loader import (
-        _fixup_envelope as _svc_fixup,
-    )
-
-    # The service-layer version no longer takes slug_to_code as an argument;
-    # it imports SLUG_TO_CODE internally.  Cast here to keep the existing
-    # test suite happy with the old call signature.
-    if not isinstance(properties, dict):
-        return None
-    return _svc_fixup(properties)
-
-
 def load_archive(
     input_path: Path,
     *,
