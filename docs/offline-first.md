@@ -1,8 +1,8 @@
 ---
 name: offline-first
-description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry
+description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry + sync log
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-21
 ---
 
 # Offline-first PWA compliance
@@ -159,7 +159,7 @@ can retry after connectivity blips without duplicating side effects.
 The cache table (`core.IdempotencyRecord`) is a plain Django model
 with an admin surface for operator inspection / manual purge.
 
-## Offline UX (SNOW-377)
+## Offline UX (SNOW-377 / SNOW-482)
 
 `static/js/pwa_offline.js` runs alongside `pwa_version_check.js` on
 every public page. Its responsibilities:
@@ -169,12 +169,44 @@ every public page. Its responsibilities:
 - Reveal the banner on any fetch network failure or HTMX `sendError`
   event, so slow / patchy connections show the banner even when the
   browser still reports `onLine === true`.
-- Absorb `X-Data-Generated-At` off every response into a page-scoped
-  freshness ledger; the banner's timestamp suffix reads from that
-  ledger.
+- Track **two distinct clocks** and persist both to IndexedDB
+  `meta:app` (SNOW-482), read back on init so a cold offline launch
+  shows real values instead of resetting to blank:
+  - `sync.last_at` — wall-clock time of the most recent successful
+    same-origin response that did NOT carry `X-SW-Cache: hit` (a real
+    network round-trip, not a Cache-Storage replay). The banner shows
+    this as "Synced HH:MM DD/MM".
+  - `freshness.last_generated_at` — newest `X-Data-Generated-At`
+    header seen, absorbed regardless of cache-hit status. The banner
+    shows this as "data from HH:MM DD/MM".
+  - Off-season these can differ substantially: a device that synced
+    minutes ago can still be showing a rating generated weeks earlier.
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
+
+### `X-SW-Cache` header (SNOW-482)
+
+`static/js/sw.js` stamps every response it serves from Cache Storage —
+the stale-while-revalidate cache hit and all three `_networkFirst`
+cache-fallback branches — with `X-SW-Cache: hit`, via a
+`_stampCacheHit()` helper that rebuilds the (otherwise header-immutable)
+cached `Response`. This is the only reliable signal the page has to
+distinguish a Cache-Storage replay from a genuine server round-trip;
+`pwa_offline.js` reads it to decide whether a response advances
+`sync.last_at` and appends a `log:sync` row.
+
+### Sync log (SNOW-482)
+
+Qualifying responses (same-origin, un-cached, not a static asset —
+`/api/*` calls and HTML partials/navigations) append a row to the
+`log:sync` IndexedDB store via `window.pwaDb.appendSyncLog()`, trimmed
+to the newest 100. The manage page's "Sync log" panel — and a matching
+`/help/` section — read it back via `window.pwaDb.getSyncLog()`
+(`static/js/sync_log.js`), both gated on the `sync_log` waffle flag
+(see [`feature-flags.md`](feature-flags.md)). The SNOW-378 reset wipes
+the whole IndexedDB database, so the log clears along with everything
+else. Store shape: [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md#logsync-row-shape-snow-482).
 
 ## Reset local data (SNOW-378)
 
@@ -264,6 +296,14 @@ Shipped from the observability + IndexedDB track:
   [`telemetry-pipeline.md`](telemetry-pipeline.md) for the full
   call-site table. PostHog dashboard/alert configuration itself is a
   separate, still-open follow-up.
+- **SNOW-482** — Splits the single in-memory freshness ledger into two
+  persisted `meta:app` clocks (`sync.last_at` /
+  `freshness.last_generated_at`), stamps cache-served responses with
+  `X-SW-Cache: hit` (`static/js/sw.js`) so the two can be told apart,
+  and adds a `log:sync` IndexedDB store (schema v3) with a manage-page
+  read-out panel and matching `/help/` section behind the `sync_log`
+  waffle flag. Clears the SNOW-377 "IndexedDB-backed persistence"
+  deferred bullet.
 
 ## See also
 

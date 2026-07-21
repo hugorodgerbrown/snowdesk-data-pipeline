@@ -1,8 +1,8 @@
 ---
 name: indexeddb-scaffolding
-description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, Reset Required
+description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, log:sync, Reset Required
 status: current
-last-reviewed: 2026-07-20
+last-reviewed: 2026-07-21
 ---
 
 # IndexedDB scaffolding
@@ -23,7 +23,8 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **2**.
+- Current schema version: **3** (SNOW-482 added `log:sync`; v2 added
+  `data:favourites`).
 
 ## Object stores
 
@@ -38,6 +39,7 @@ never removed.
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
 | `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
+| `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 
 `data:*` is a reserved namespace for cached server-data copies.
 `data:favourites` (v2) is its first occupant — see
@@ -45,6 +47,28 @@ never removed.
 cached-with-explicit-staleness contract it follows. When a further
 consumer adds a store, bump `DB_VERSION` + add a migration branch in
 `_runMigrations`.
+
+### `log:sync` row shape (SNOW-482)
+
+Written by `static/js/pwa_offline.js`'s `appendSyncLogEntry` for every
+same-origin, non-static-asset response that did NOT carry
+`X-SW-Cache: hit` (i.e. a real network round-trip, not a Cache-Storage
+replay served by `static/js/sw.js`):
+
+```js
+{
+  id,     // autoIncrement primary key
+  at,     // ISO 8601 timestamp
+  path,   // request pathname, e.g. "/api/ratings/"
+}
+```
+
+`appendSyncLog(entry)` writes the row then trims the store to the
+newest 100 by deleting the lowest ids via a cursor — `getAll(store,
+limit)` would return the wrong end (lowest ids first), so trim and the
+newest-first `getSyncLog(limit)` read both walk a cursor instead. Read
+out by the manage-page sync-log panel (`static/js/sync_log.js`) behind
+the `sync_log` waffle flag.
 
 ### `queue:mutations` row shape (SNOW-376)
 
@@ -74,6 +98,8 @@ window.pwaDb = {
   getAll(store, limit),       // Promise<value[]>  (limit optional)
   count(store),               // Promise<number>
   clear(store),               // Promise<void>
+  appendSyncLog(entry),        // Promise<void> — put + trim to newest 100 (log:sync, SNOW-482)
+  getSyncLog(limit),           // Promise<value[]> — newest first (log:sync, SNOW-482)
   context(),                  // eight-field envelope context (see below)
   isResetRequired(),          // boolean — true after a migration failure
   DB_NAME, DB_VERSION, STORE_NAMES,   // read-only introspection
@@ -142,13 +168,18 @@ the wipe covers it even without the enumeration API.
 
 `tests/e2e/test_pwa_db.py` covers:
 
-1. Fresh open — all four static stores exist at version 1.
+1. Fresh open — all static stores exist at the current version
+   (currently 3), including `log:sync`.
 2. Round-trip — `put/get/delete/getAll/count/clear` on `queue:events`.
 3. `context()` returns the expected seven envelope-context keys with
    sane defaults.
 4. Reset Required state — arrange a pre-existing higher-version DB,
    assert `pwaDb.open()` rejects, the flag flips, and the overlay is
    revealed.
+5. v1→v2 and v2→v3 migrations — open an older-version DB, upgrade, and
+   assert the new store(s) exist without disturbing existing rows.
+6. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
+   order.
 
 ## See also
 
