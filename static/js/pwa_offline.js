@@ -83,24 +83,66 @@
   let freshnessLastGeneratedAt = null;
 
   /**
-   * Format a Date / ISO string as "HH:MM DD/MM" without pulling Intl.
-   * Falls back to an empty string on parse failure so we don't render
-   * "Invalid Date" in the UI.
+   * Coerce a Date / ISO string to a valid Date, or null on failure so
+   * callers can fall back rather than render "Invalid Date".
+   *
+   * @param {string | Date | null} value
+   * @returns {Date | null}
+   */
+  function toDate(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.valueOf()) ? null : d;
+  }
+
+  /**
+   * Format the sync clock as a naturalistic relative phrase — e.g.
+   * "6 minutes ago", "2 hours ago", "now" — using the largest sensible
+   * unit. Locale-aware via ``Intl.RelativeTimeFormat`` so it localises
+   * for free once the UI gains other languages.
    *
    * @param {string | Date | null} value
    * @returns {string}
    */
-  function formatShort(value) {
-    if (!value) return '';
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.valueOf())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  function formatRelative(value) {
+    const d = toDate(value);
+    if (!d) return '';
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    const diffSeconds = Math.round((d.getTime() - Date.now()) / 1000);
+    const units = [
+      ['day', 86400],
+      ['hour', 3600],
+      ['minute', 60],
+    ];
+    for (const [unit, secs] of units) {
+      if (Math.abs(diffSeconds) >= secs) {
+        return rtf.format(Math.round(diffSeconds / secs), unit);
+      }
+    }
+    return rtf.format(Math.round(diffSeconds), 'second');
   }
 
   /**
-   * Fill the banner's freshness disclosure with the two clocks, one per
-   * ``<dd>`` cell, degrading to an em dash when a clock is unknown.
+   * Format the data clock as a long absolute date — e.g. "05 June 2026".
+   * Locale-aware via ``Intl.DateTimeFormat``.
+   *
+   * @param {string | Date | null} value
+   * @returns {string}
+   */
+  function formatLongDate(value) {
+    const d = toDate(value);
+    if (!d) return '';
+    return new Intl.DateTimeFormat(undefined, {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(d);
+  }
+
+  /**
+   * Fill the banner's freshness disclosure with the two clocks — the
+   * sync clock as a relative phrase, the data clock as a long date —
+   * degrading to an em dash when a clock is unknown.
    *
    * @param {HTMLElement} banner
    * @returns {void}
@@ -108,8 +150,8 @@
   function renderFreshnessCells(banner) {
     const syncedCell = banner.querySelector('[data-role="synced-at"]');
     const dataCell = banner.querySelector('[data-role="data-at"]');
-    if (syncedCell) syncedCell.textContent = formatShort(syncLastAt) || '—';
-    if (dataCell) dataCell.textContent = formatShort(freshnessLastGeneratedAt) || '—';
+    if (syncedCell) syncedCell.textContent = formatRelative(syncLastAt) || '—';
+    if (dataCell) dataCell.textContent = formatLongDate(freshnessLastGeneratedAt) || '—';
   }
 
   /**

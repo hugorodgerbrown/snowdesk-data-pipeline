@@ -9,16 +9,19 @@ static/js/pwa_offline.js when:
   * a fetch / HTMX request just failed with a network error.
 
 The banner is a ``<details>`` disclosure (SNOW-482). The summary row
-carries the offline message and a caret; opening it reveals a ``<dl>``
-with two distinct clocks so neither crowds the summary line:
+carries the offline message and a caret; opening it reveals two
+naturalistic sentences describing two distinct clocks so neither crowds
+the summary line:
 
-  * ``Synced`` — when this device last reached the server
-    (``sync.last_at``, persisted to IndexedDB ``meta:app``);
-  * ``Latest data`` — when the server generated the data it last
-    returned (read from ``X-Data-Generated-At``, SNOW-370, persisted as
-    ``freshness.last_generated_at``).
+  * "App last synced <relative>." — when this device last reached the
+    server (``sync.last_at``, persisted to IndexedDB ``meta:app``),
+    rendered as a relative phrase ("6 minutes ago");
+  * "Data shown dates from <date>." — when the server generated the
+    data it last returned (read from ``X-Data-Generated-At``, SNOW-370,
+    persisted as ``freshness.last_generated_at``), rendered as a long
+    date ("05 June 2026").
 
-``static/js/pwa_offline.js`` fills the two ``<dd>`` cells
+``static/js/pwa_offline.js`` fills the two value spans
 (``data-role="synced-at"`` / ``data-role="data-at"``) from those clocks,
 falling back to an em dash when a clock is unknown.
 
@@ -66,13 +69,11 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
         </svg>
     </summary>
-    {# ``hidden group-open:grid`` — an explicit ``display`` on details content #}
-    {# overrides the UA rule that hides a closed <details>, so we drive the    #}
-    {# collapse ourselves: display:none when closed, grid only when open.       #}
-    <dl class="hidden group-open:grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 max-w-4xl mx-auto px-4 pb-2 pl-10 font-mono text-xs">
-        <dt class="opacity-70">{% trans "Synced" %}</dt>
-        <dd data-role="synced-at">—</dd>
-        <dt class="opacity-70">{% trans "Latest data" %}</dt>
-        <dd data-role="data-at">—</dd>
-    </dl>
+    {# ``hidden group-open:block`` — an explicit ``display`` on details content #}
+    {# overrides the UA rule that hides a closed <details>, so we drive the     #}
+    {# collapse ourselves: display:none when closed, block only when open.       #}
+    <div class="hidden group-open:block max-w-4xl mx-auto px-4 pb-2 pl-10 text-xs opacity-90">
+        <p>{% trans "App last synced" %} <span data-role="synced-at" class="font-medium">—</span>.</p>
+        <p>{% trans "Data shown dates from" %} <span data-role="data-at" class="font-medium">—</span>.</p>
+    </div>
 </details>

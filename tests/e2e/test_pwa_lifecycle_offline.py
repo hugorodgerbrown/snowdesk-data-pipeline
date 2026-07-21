@@ -230,9 +230,10 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     assert third["after"] != third["before"]
 
     # The offline banner reads the persisted clock — going offline fills the
-    # disclosure's "Synced" cell from the value the fetches above already
-    # wrote, with no further network activity required. The cell holds a
-    # formatted "HH:MM DD/MM" stamp, not the em-dash placeholder.
+    # "App last synced …" sentence from the value the fetches above already
+    # wrote, with no further network activity required. The clock resolves
+    # to a relative phrase (Intl.RelativeTimeFormat, e.g. "now" or
+    # "5 seconds ago"), never the em-dash placeholder.
     page.context.set_offline(True)
     try:
         page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
@@ -242,7 +243,8 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     finally:
         page.context.set_offline(False)
     assert synced_text is not None
-    assert re.fullmatch(r"\d{2}:\d{2} \d{2}/\d{2}", synced_text.strip())
+    assert synced_text.strip() not in ("", "—")
+    assert re.search(r"\bago\b|\bnow\b", synced_text.strip())
 
 
 # ---------------------------------------------------------------------------
