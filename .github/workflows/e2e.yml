@@ -9,6 +9,9 @@
 # path filter — a path-filtered required check never reports on PRs outside
 # its paths and leaves them stuck at "Expected" (SNOW-435). The ``push``
 # trigger keeps a path filter: pushes to main/release are not merge-gated.
+# Docs-only PRs skip the test job via the ``changes`` gate — a job-level
+# skip still reports a (skipped) check run that satisfies the ruleset, so
+# the SNOW-435 trap does not apply (SNOW-481).
 #
 # The Playwright binary cache is keyed on uv.lock so a new cache entry
 # is created only when the Playwright package version changes.  Cache misses
@@ -38,9 +41,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect docs-only diff
+    runs-on: ubuntu-latest
+    outputs:
+      # "true" unless this is a docs-only pull request; push runs skip the
+      # filter step and fall through to "true".
+      code: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - name: Check the PR diff for non-docs files
+        id: filter
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail open: an empty file list (API error) runs the full suite.
+          files="$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')" || files=""
+          code=false
+          [ -n "$files" ] || code=true
+          while IFS= read -r f; do
+            case "$f" in
+              "" | *.md | docs/* | .claude/*) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "docs-only filter -> code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   e2e:
     name: Playwright smoke tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - name: Check out the repository
