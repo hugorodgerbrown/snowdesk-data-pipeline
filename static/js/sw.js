@@ -457,9 +457,13 @@ function _hydrateBasemapOrigins() {
         _basemapOrigins = new Set(row.value);
       }
     } catch (_err) {
-      // meta:app missing (fresh worker-created DB) or the DB open
-      // failed — leave _basemapOrigins empty; the cross-origin request
-      // just falls through to network-only, same as before SNOW-487.
+      // meta:app missing (fresh worker-created DB), or a transient DB
+      // open/read failure (blocked by a concurrent version upgrade, lock
+      // contention) — leave _basemapOrigins empty; the cross-origin
+      // request just falls through to network-only, same as before
+      // SNOW-487. A transient failure memoises this empty result for the
+      // worker's lifetime; recovery comes from the next live page's
+      // register-basemap-origins message, which resets _basemapHydration.
     } finally {
       if (db) {
         try {
@@ -503,14 +507,33 @@ function _classifySync(request, url) {
 }
 
 /**
+ * Async portion of classification: the cross-origin GET case, split out
+ * so the ``fetch`` listener can call it with the ``URL`` it has already
+ * parsed rather than re-parsing and re-running ``_classifySync()``.
+ * SNOW-484 opportunistic basemap caching — any other cross-origin request
+ * (an unregistered CDN, etc.) stays network-only, unchanged from before
+ * SNOW-484. ``_hydrateBasemapOrigins()`` (SNOW-487) may need to rehydrate
+ * ``_basemapOrigins`` from IndexedDB before the allowlist check can run.
+ *
+ * @param {URL} url
+ * @returns {Promise<'basemap' | 'network'>}
+ */
+async function _classifyCrossOriginGet(url) {
+  await _hydrateBasemapOrigins();
+  if (_basemapOrigins.has(url.origin)) return 'basemap';
+  return 'network';
+}
+
+/**
  * Decide which strategy applies to a given request.
  *
  * Returns one of: ``'static'`` | ``'navigate'`` | ``'basemap'`` | ``'network'``.
  *
  * Delegates the cheap, synchronous cases to ``_classifySync()``; only
- * awaits anything for a cross-origin GET, where ``_hydrateBasemapOrigins()``
- * (SNOW-487) may need to rehydrate ``_basemapOrigins`` from IndexedDB
- * before the allowlist check can run.
+ * awaits anything for a cross-origin GET, via ``_classifyCrossOriginGet()``.
+ * Retained as the single full-classification entry point (referenced by the
+ * e2e tests' narrative); the ``fetch`` listener below skips it and calls the
+ * two halves directly to avoid re-parsing the ``URL``.
  *
  * @param {Request} request
  * @returns {Promise<'static' | 'navigate' | 'basemap' | 'network'>}
@@ -519,13 +542,7 @@ async function _classify(request) {
   const url = new URL(request.url);
   const sync = _classifySync(request, url);
   if (sync !== null) return sync;
-
-  // Cross-origin GET — SNOW-484 opportunistic basemap caching. Any
-  // other cross-origin request (an unregistered CDN, etc.) stays
-  // network-only, unchanged from before SNOW-484.
-  await _hydrateBasemapOrigins();
-  if (_basemapOrigins.has(url.origin)) return 'basemap';
-  return 'network';
+  return _classifyCrossOriginGet(url);
 }
 
 /**
@@ -711,10 +728,12 @@ async function _guardedRespond(responsePromise, request, clientId) {
 // about whether to call ``event.respondWith()`` at all must be made
 // before any ``await`` — so that branch ALWAYS calls it, with a promise
 // that resolves to a plain ``fetch(event.request)`` when the request
-// turns out not to be a registered basemap origin. That passthrough is
-// behaviourally equivalent to never having intercepted the GET at all,
-// which preserves the "unknown cross-origin stays network-only"
-// contract.
+// turns out not to be a registered basemap origin. For the CORS GETs the
+// app actually issues cross-origin (vector tiles, sprites, glyphs) that
+// passthrough is behaviourally equivalent to never having intercepted the
+// GET, which preserves the "unknown cross-origin stays network-only"
+// contract. (Non-GET cross-origin requests never reach here — they exit
+// synchronously at the ``'network'`` branch above.)
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -729,16 +748,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (sync === 'network') {
-    // Same-origin, network-only. No event.respondWith() call means the
-    // request is never seen by the SW's caching layer at all.
+    // Network-only: a non-GET request (any origin) or a same-origin GET
+    // that is neither a static-shell asset nor a navigation. No
+    // event.respondWith() call means the request is never seen by the
+    // SW's caching layer — the browser handles it natively.
     return;
   }
 
-  // sync === null: cross-origin GET — defer to the async _classify(),
-  // which lazily rehydrates _basemapOrigins (SNOW-487) before deciding.
+  // sync === null: cross-origin GET — defer to the async cross-origin
+  // classifier, which lazily rehydrates _basemapOrigins (SNOW-487) before
+  // deciding. Pass the already-parsed url so we don't re-run _classifySync.
   event.respondWith(
     (async () => {
-      const strategy = await _classify(request);
+      const strategy = await _classifyCrossOriginGet(url);
       if (strategy === 'basemap') {
         return _guardedRespond(_basemapStaleWhileRevalidate(request), request, event.clientId);
       }

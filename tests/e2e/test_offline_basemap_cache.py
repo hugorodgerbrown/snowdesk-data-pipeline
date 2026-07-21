@@ -57,6 +57,10 @@ on the real, activated SW) and a reserved, never-resolving RFC 2606
   (SNOW-487) proves hydration doesn't turn every cross-origin request
   basemap-cacheable: an origin absent from the ``meta:app`` allowlist
   still hits a real (failing) network attempt.
+- ``test_in_flight_hydration_never_clobbers_a_fresh_registration``
+  (SNOW-487) exercises the ``_basemapOrigins.size === 0`` write-guard: a
+  ``register-basemap-origins`` message that lands mid-rehydrate wins over
+  the in-flight (stale) ``meta:app`` read.
 - ``test_trim_cache_caps_basemap_cache_at_max_entries`` calls the real
   ``_trimCache()`` helper with a small over-the-cap batch (the
   oldest-first algorithm is size-independent, so this proves the
@@ -377,6 +381,63 @@ def test_unregistered_origin_stays_network_only_after_hydration_runs(
     assert hydrated == [registered_origin], (
         f"expected hydration to have run and populated _basemapOrigins from "
         f"meta:app even though the fetched origin didn't match; got {hydrated!r}"
+    )
+
+
+def test_in_flight_hydration_never_clobbers_a_fresh_registration(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-487: a live registration wins a race against an in-flight rehydrate.
+
+    Reproduces the interleaving the ``_basemapOrigins.size === 0`` write-guard
+    exists to defend: a fresh worker starts rehydrating ``_basemapOrigins``
+    from a (now stale) ``meta:app`` row, and while that IndexedDB read is in
+    flight a live page posts ``register-basemap-origins`` with the current
+    allowlist. The explicit registration must win — a stale durable read must
+    never overwrite it.
+
+    The race is made deterministic without pausing the DB read: an async IIFE
+    runs synchronously up to its first ``await``, so ``_hydrateBasemapOrigins()``
+    is suspended at the DB-open ``await`` the moment it returns its promise.
+    Dispatching the ``message`` event synchronously then runs the real
+    ``register-basemap-origins`` handler before the read resolves, so when
+    hydration resumes it finds a non-empty Set and leaves it untouched.
+    """
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+
+    stale_origin = "https://snow487-stale-db.invalid"
+    fresh_origin = "https://snow487-fresh-registration.invalid"
+
+    page.evaluate(
+        """async (origin) => {
+            await window.pwaDb.put('meta:app', { key: 'basemap.origins', value: [origin] });
+          }""",
+        stale_origin,
+    )
+
+    result = worker.evaluate(
+        """async (fresh) => {
+            _basemapOrigins = new Set();
+            _basemapHydration = null;
+            // Starts the rehydrate; the async IIFE runs to its first await
+            // (the IndexedDB open) and yields, leaving the read in flight.
+            const inFlight = _hydrateBasemapOrigins();
+            // A live page registers the current allowlist mid-read. The real
+            // 'message' listener runs synchronously via dispatchEvent, setting
+            // _basemapOrigins and resetting _basemapHydration.
+            self.dispatchEvent(new MessageEvent('message', {
+              data: { type: 'register-basemap-origins', origins: [fresh] },
+            }));
+            await inFlight;
+            return [..._basemapOrigins].sort();
+          }""",
+        fresh_origin,
+    )
+    assert result == [fresh_origin], (
+        f"expected the live register-basemap-origins allowlist to survive the "
+        f"in-flight stale meta:app read; got {result!r}"
     )
 
 
