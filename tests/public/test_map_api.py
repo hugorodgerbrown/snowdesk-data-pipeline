@@ -37,6 +37,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
@@ -1968,14 +1969,13 @@ class TestCommunityReportsGeojson:
 
     def test_observed_at_truncated_to_nearest_quarter_hour(self) -> None:
         """observed_at is floored to the nearest 15-minute mark."""
-        # Anchor to a recent, in-window instant (the endpoint drops anything
-        # older than 48h) with a fixed non-quarter minute so the flooring is
-        # observable; derive the expected value rather than hard-coding a date.
-        observed_at = (timezone.now() - dt.timedelta(hours=2)).replace(
-            minute=37, second=42, microsecond=0
-        )
-        FieldObservationFactory.create(observed_at=observed_at)
-        response = Client().get(reverse("api:community_reports_geojson"))
+        observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
+        # Freeze "now" alongside the fixed observed_at so the report stays
+        # inside the endpoint's 48h window regardless of the wall-clock date
+        # the suite runs on (otherwise this assertion rots and features empties).
+        with freeze_time("2026-07-19T11:00:00Z"):
+            FieldObservationFactory.create(observed_at=observed_at)
+            response = Client().get(reverse("api:community_reports_geojson"))
         properties = response.json()["features"][0]["properties"]
         expected = observed_at.replace(minute=30, second=0).isoformat()
         assert properties["observed_at"] == expected

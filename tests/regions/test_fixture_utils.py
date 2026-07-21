@@ -3,7 +3,7 @@ tests/regions/test_fixture_utils.py — Unit tests for regions/fixture_utils.py.
 
 Covers the helper functions shared across the fixture-build commands
 (build_switzerland_fixture, build_france_fixture, build_austria_fixture,
-build_italy_fixture):
+build_italy_fixture, refresh_eaws_fixtures):
 
 * build_entries_from_eaws_dir
 * bbox_from_children
@@ -11,6 +11,10 @@ build_italy_fixture):
 * boundary_from_children
 * centre_from_bbox
 * _iter_coords_from_geometry
+* load_fixture
+* write_fixture
+* diff_against_existing
+* entry_key
 """
 
 from __future__ import annotations
@@ -427,3 +431,229 @@ class TestBoundaryFromChildren:
         # Shapely merges two adjacent squares into a single Polygon.
         assert result["type"] in ("Polygon", "MultiPolygon")
         assert "coordinates" in result
+
+
+# ---------------------------------------------------------------------------
+# load_fixture
+# ---------------------------------------------------------------------------
+
+
+class TestLoadFixture:
+    """Tests for load_fixture (SNOW-488 — consolidated fixture-I/O helper)."""
+
+    def test_missing_file_returns_empty_list_by_default(self, tmp_path: Path) -> None:
+        """missing_ok=True (the default) returns [] when the file is absent."""
+        from regions.fixture_utils import load_fixture
+
+        missing = tmp_path / "does_not_exist.json"
+        assert load_fixture(missing) == []
+
+    def test_missing_file_raises_when_missing_ok_false(self, tmp_path: Path) -> None:
+        """missing_ok=False lets a missing file raise FileNotFoundError."""
+        from regions.fixture_utils import load_fixture
+
+        missing = tmp_path / "does_not_exist.json"
+        with pytest.raises(FileNotFoundError):
+            load_fixture(missing, missing_ok=False)
+
+    def test_round_trips_written_fixture(self, tmp_path: Path) -> None:
+        """load_fixture reads back exactly what write_fixture wrote."""
+        from regions.fixture_utils import load_fixture, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        data = [
+            {"model": "regions.majorregion", "fields": {"prefix": "XX-1"}},
+            {"model": "regions.microregion", "fields": {"region_id": "XX-1-01"}},
+        ]
+        write_fixture(path, data)
+        assert load_fixture(path) == data
+
+    def test_present_file_ignores_missing_ok(self, tmp_path: Path) -> None:
+        """An existing file is read regardless of the missing_ok value."""
+        from regions.fixture_utils import load_fixture, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        write_fixture(path, data)
+        assert load_fixture(path, missing_ok=False) == data
+
+
+# ---------------------------------------------------------------------------
+# write_fixture
+# ---------------------------------------------------------------------------
+
+
+class TestWriteFixture:
+    """Tests for write_fixture's canonical on-disk JSON formatting."""
+
+    def test_uses_indent_2(self, tmp_path: Path) -> None:
+        """Nested fields are indented two spaces per level."""
+        from regions.fixture_utils import write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        write_fixture(path, [{"model": "regions.majorregion", "fields": {"a": 1}}])
+        text = path.read_text(encoding="utf-8")
+        assert '[\n  {\n    "model"' in text
+
+    def test_ends_with_trailing_newline(self, tmp_path: Path) -> None:
+        """The written file ends in exactly one trailing newline."""
+        from regions.fixture_utils import write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        write_fixture(path, [{"model": "regions.majorregion", "fields": {"a": 1}}])
+        text = path.read_text(encoding="utf-8")
+        assert text.endswith("\n")
+        assert not text.endswith("\n\n")
+
+    def test_preserves_non_ascii_characters_literally(self, tmp_path: Path) -> None:
+        r"""ensure_ascii=False — non-ASCII text is written literally, not \u-escaped."""
+        from regions.fixture_utils import write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        write_fixture(
+            path,
+            [
+                {
+                    "model": "regions.majorregion",
+                    "fields": {"name_native": "Graubünden — Nördlich"},
+                }
+            ],
+        )
+        text = path.read_text(encoding="utf-8")
+        assert "Graubünden — Nördlich" in text
+        assert "\\u" not in text
+
+    def test_matches_exact_expected_bytes(self, tmp_path: Path) -> None:
+        """The full on-disk text matches json.dumps(..., indent=2) + a newline."""
+        from regions.fixture_utils import write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        write_fixture(path, data)
+        expected = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        assert path.read_text(encoding="utf-8") == expected
+
+
+# ---------------------------------------------------------------------------
+# diff_against_existing
+# ---------------------------------------------------------------------------
+
+
+class TestDiffAgainstExisting:
+    """Tests for diff_against_existing's added/changed/removed semantics."""
+
+    def test_missing_file_tolerated_via_load_fixture_default(
+        self, tmp_path: Path
+    ) -> None:
+        """A missing on-disk fixture is treated as empty (load_fixture default)."""
+        from regions.fixture_utils import diff_against_existing
+
+        missing = tmp_path / "does_not_exist.json"
+        new_data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        assert diff_against_existing(missing, new_data) == 1
+
+    def test_identical_data_returns_zero(self, tmp_path: Path) -> None:
+        """No differences between the on-disk and new data returns 0."""
+        from regions.fixture_utils import diff_against_existing, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        write_fixture(path, data)
+        assert diff_against_existing(path, data) == 0
+
+    def test_added_entry_counted(self, tmp_path: Path) -> None:
+        """A new entry with no counterpart on disk counts as one change."""
+        from regions.fixture_utils import diff_against_existing, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        existing = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        write_fixture(path, existing)
+        new_data = existing + [
+            {"model": "regions.majorregion", "fields": {"prefix": "XX-2"}}
+        ]
+        assert diff_against_existing(path, new_data) == 1
+
+    def test_removed_entry_counted(self, tmp_path: Path) -> None:
+        """An on-disk entry absent from the new data counts as one change."""
+        from regions.fixture_utils import diff_against_existing, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        existing = [
+            {"model": "regions.majorregion", "fields": {"prefix": "XX-1"}},
+            {"model": "regions.majorregion", "fields": {"prefix": "XX-2"}},
+        ]
+        write_fixture(path, existing)
+        new_data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
+        assert diff_against_existing(path, new_data) == 1
+
+    def test_changed_entry_counted_once(self, tmp_path: Path) -> None:
+        """An entry whose fields changed (same natural key) counts as one change."""
+        from regions.fixture_utils import diff_against_existing, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        existing = [
+            {
+                "model": "regions.majorregion",
+                "fields": {"prefix": "XX-1", "name_en": "Old Name"},
+            }
+        ]
+        write_fixture(path, existing)
+        new_data = [
+            {
+                "model": "regions.majorregion",
+                "fields": {"prefix": "XX-1", "name_en": "New Name"},
+            }
+        ]
+        assert diff_against_existing(path, new_data) == 1
+
+    def test_multiple_unrelated_entries_unchanged_returns_zero(
+        self, tmp_path: Path
+    ) -> None:
+        """Several identical entries, in any order, produce no diff."""
+        from regions.fixture_utils import diff_against_existing, write_fixture
+
+        path = tmp_path / "eaws_XX.json"
+        data = [
+            {"model": "regions.majorregion", "fields": {"prefix": "XX-1"}},
+            {"model": "regions.subregion", "fields": {"prefix": "XX-11"}},
+            {"model": "regions.microregion", "fields": {"region_id": "XX-1101"}},
+        ]
+        write_fixture(path, data)
+        assert diff_against_existing(path, data) == 0
+
+
+# ---------------------------------------------------------------------------
+# entry_key
+# ---------------------------------------------------------------------------
+
+
+class TestEntryKey:
+    """Tests for entry_key's stable natural-key derivation."""
+
+    def test_majorregion_keys_on_prefix(self) -> None:
+        """A MajorRegion entry keys on its prefix field."""
+        from regions.fixture_utils import entry_key
+
+        entry = {"model": "regions.majorregion", "fields": {"prefix": "CH-1"}}
+        assert entry_key(entry) == "regions.majorregion:CH-1"
+
+    def test_subregion_keys_on_prefix(self) -> None:
+        """A SubRegion entry keys on its prefix field."""
+        from regions.fixture_utils import entry_key
+
+        entry = {"model": "regions.subregion", "fields": {"prefix": "CH-11"}}
+        assert entry_key(entry) == "regions.subregion:CH-11"
+
+    def test_microregion_keys_on_region_id(self) -> None:
+        """A MicroRegion entry keys on its region_id field."""
+        from regions.fixture_utils import entry_key
+
+        entry = {"model": "regions.microregion", "fields": {"region_id": "CH-1101"}}
+        assert entry_key(entry) == "regions.microregion:CH-1101"
+
+    def test_unknown_model_falls_back_to_sorted_fields_json(self) -> None:
+        """An unrecognised model falls back to a sorted-keys JSON dump of fields."""
+        from regions.fixture_utils import entry_key
+
+        entry = {"model": "regions.other", "fields": {"b": 2, "a": 1}}
+        assert entry_key(entry) == 'regions.other:{"a": 1, "b": 2}'

@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, _sw_update_banner, icons, CACHE_VERSION, SITE_ENVIRONMENT swap
+description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, icons, CACHE_VERSION, BASEMAP_CACHE opportunistic basemap tile caching
 status: current
 last-reviewed: 2026-07-21
 ---
@@ -21,7 +21,7 @@ manifest icons.
 | Path | Role |
 |------|------|
 | `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
-| `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); network-only for everything else. |
+| `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); stale-while-revalidate against a dedicated `snowdesk-basemap-v1` cache for the active basemap's cross-origin CORS responses (SNOW-484); network-only for everything else. |
 | `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (rendered from `templates/includes/_sw_update_banner.html`; see "Update strategy" below). |
 | `static/offline.html` | Branded fallback page returned by the SW when an HTML navigation fails AND no cached copy exists (SNOW-118). Inline-styled, zero external assets. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
@@ -282,7 +282,7 @@ on the brand `background_color` is acceptable.
 
 ## Cache strategy
 
-The SW classifies every fetch into one of three buckets:
+The SW classifies every fetch into one of four buckets:
 
 - **`static`** — same-origin requests for assets in
   `STATIC_SHELL_EXTENSIONS` (CSS, JS, SVG, PNG/JPG/WEBP, ICO,
@@ -306,29 +306,69 @@ The SW classifies every fetch into one of three buckets:
   fetches from the server — serves the cached `/` shell instead of the
   offline page.
 
-- **`network`** — everything else: bulletin JSON
-  (`/api/region/<id>/summary/`), calendar partials, and all third-party
-  origins — including the basemap style JSON (MapLibre CDN, OpenFreeMap
-  tiles). Strategy: **network only** — no `event.respondWith()` call, the
-  SW is bypassed entirely. This is deliberate for bulletin/calendar data
-  (a stale avalanche rating could mislead a user); for the basemap style
-  it means an offline fetch fails outright, which `static/js/map.js`
-  handles by falling back to an inline background style (SNOW-483, see
-  [`docs/offline-first.md`](offline-first.md)) so the SW-cached region
-  overlays above still paint.
+- **`basemap`** (SNOW-484) — cross-origin requests whose origin is in the
+  SW's runtime `_basemapOrigins` allowlist. `static/js/map.js` populates
+  that allowlist by `postMessage`-ing `{ type: 'register-basemap-origins',
+  origins: [...] }` to the SW once `BASEMAP_OPTIONS` is parsed from the
+  basemap picker's `data-basemap-url` attributes — a service worker has
+  no DOM, so it cannot read those itself. Every basemap in the picker is
+  included, not just the active one, so switching basemap mid-session is
+  covered. SNOW-487: `map.js` also mirrors the same origin list into the
+  durable `meta:app` IndexedDB store under the key `basemap.origins`,
+  because the in-memory `_basemapOrigins` Set does not survive the
+  browser terminating an idle worker — a later `fetch` event runs in a
+  fresh global with an empty Set even though `BASEMAP_CACHE` still holds
+  previously-cached tiles. `_classify()` lazily rehydrates
+  `_basemapOrigins` from that `meta:app` row (`_hydrateBasemapOrigins()`,
+  memoised per worker instance) before deciding a cross-origin request's
+  strategy, so the allowlist is durable across worker restarts rather
+  than purely in-memory. Strategy: **stale-while-revalidate** against a
+  dedicated `snowdesk-basemap-v1` cache (`BASEMAP_CACHE`), kept separate from the
+  shell's `CACHE_VERSION` cache so bumping the shell version on an
+  unrelated change never evicts previously-cached basemap tiles. Only
+  `ok`, `type: 'cors'` (readable) responses are cached — `opaque`
+  responses from a `no-cors` fetch, and non-2xx responses, are never
+  cached. The cache is capped at `BASEMAP_CACHE_MAX_ENTRIES` (600 —
+  a single browsing session at typical zoom levels loads a few hundred
+  vector-tile + sprite + glyph requests; 600 gives headroom while
+  bounding on-disk growth) via a simple oldest-first LRU trim
+  (`Cache.keys()` returns insertion order — no byte-size accounting, and
+  none is planned; see "Out of scope" below). This is opportunistic
+  caching of whatever the user has actually browsed, not a "Save
+  offline" precache — there is no UI to force a region into the cache.
 
-The exact rules live in `_classify()` and the two strategy helpers
-`_staleWhileRevalidate()` / `_networkFirst()` in `sw.js`. To add a new
-URL pattern to the cache, edit those — don't introduce additional
-fetch strategies without first checking whether the data class is one
-users must always see fresh.
+- **`network`** — everything else: bulletin JSON
+  (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar
+  partials, resort feeds that change with the bulletin, and any
+  cross-origin request whose origin is not in `_basemapOrigins`.
+  Strategy: **network only** — no `event.respondWith()` call, the SW is
+  bypassed entirely. This is deliberate: a stale avalanche rating could
+  mislead a user. A basemap whose origin is not in the allowlist, or an
+  area never browsed online, therefore has no cached tiles offline; when
+  the basemap style JSON itself can't be fetched, `static/js/map.js` falls
+  back to an inline background style (SNOW-483, see
+  [`docs/offline-first.md`](offline-first.md)) so the SW-cached region
+  overlays still paint.
+
+The exact rules live in `_classify()` and the strategy helpers
+`_staleWhileRevalidate()` / `_networkFirst()` / `_basemapStaleWhileRevalidate()`
+in `sw.js`. To add a new URL pattern to the cache, edit those — don't
+introduce additional fetch strategies without first checking whether
+the data class is one users must always see fresh.
+
+### Out of scope (SNOW-484)
+
+Deliberately not implemented: a bounded/favourites precache, any
+"Save offline" UI, or byte-based cache accounting for the basemap
+cache. The count-based LRU cap above is the only eviction mechanism.
 
 ## Cache version bump
 
-`sw.js` declares a single `CACHE_VERSION` constant at the top of the
-file (`snowdesk-shell-v3` at the time of writing). On `activate`, the
-SW deletes any cache whose name is not the current version. Bump it
-when:
+`sw.js` declares a `CACHE_VERSION` constant near the top of the file
+(`snowdesk-shell-v20` at the time of writing — see the dated comment
+block above it for the full history). On `activate`, the SW deletes any
+`snowdesk-shell-*` / `map-shell-*` cache whose name is not the current
+`CACHE_VERSION`. Bump it when:
 
 - The cache contract changes (new asset class added, classification
   rules altered in a way that would re-serve stale entries
@@ -337,10 +377,26 @@ when:
   today; if it gets renamed or new precache entries land, the bump
   forces every client to re-run the install handler (SNOW-118).
 - A bug in the previous SW could have poisoned caches at scale.
+- **Any** byte change to `sw.js` at all, actually — that's what makes
+  the browser detect the update and offer the reload banner (see
+  "Update strategy" above). In practice this means: touch `sw.js`, bump
+  `CACHE_VERSION`.
 
 Day-to-day asset edits (new CSS rule, new JS function, new icon) do
 **not** require a version bump — stale-while-revalidate handles that
 automatically on the next page view.
+
+### The basemap cache is versioned separately (SNOW-484)
+
+`BASEMAP_CACHE` (`snowdesk-basemap-v1`) is a **separate** constant with
+its own version number, deliberately decoupled from `CACHE_VERSION`.
+The `activate` cleanup sweep reaps stale `snowdesk-basemap-*` caches the
+same way it reaps stale shell caches, but never deletes the *current*
+`BASEMAP_CACHE` — so a routine `CACHE_VERSION` bump (a CSS tweak, a JS
+fix, anything unrelated to the basemap contract) does not evict a
+user's previously-cached offline map tiles. Bump `BASEMAP_CACHE`
+independently, only when the basemap cache contract itself changes
+(e.g. what gets cached, or a poisoned-cache incident specific to it).
 
 ## Regenerating icons
 

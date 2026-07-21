@@ -104,6 +104,49 @@ def _delete_db(page: Page) -> None:
     )
 
 
+def _open_via_db_js_and_read(page: Page) -> dict[str, Any]:
+    """Open the DB through db.js and read back store 1 of ``queue:events``.
+
+    Used by the schema-upgrade tests after they seed an older-version DB
+    with a manually-opened connection that they then ``close()``. An
+    IndexedDB ``close()`` only takes full effect once the connection's
+    outstanding work drains, so under load db.js's v3 upgrade here can
+    begin while that manual connection is still settling and be briefly
+    blocked. db.js surfaces that as a distinct ``idb_blocked`` rejection
+    *precisely so callers can retry* (a real consumer does the same when
+    another tab is mid-close) — so retry until the block clears rather than
+    letting the transient race fail the test. Every other open error still
+    propagates immediately.
+
+    Returns the opened DB's ``version``, sorted ``objectStoreNames``, and
+    the seeded ``queue:events`` row.
+    """
+    return cast(
+        "dict[str, Any]",
+        page.evaluate(
+            """async () => {
+                let db = null;
+                for (let attempt = 0; attempt < 40; attempt++) {
+                  try {
+                    db = await window.pwaDb.open();
+                    break;
+                  } catch (err) {
+                    if (String(err && err.message) !== 'idb_blocked') throw err;
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                  }
+                }
+                if (!db) throw new Error('idb_blocked did not clear within retry budget');
+                const row = await window.pwaDb.get('queue:events', 1);
+                return {
+                  version: db.version,
+                  names: Array.from(db.objectStoreNames).sort(),
+                  row,
+                };
+              }"""
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. Fresh open creates every static store at version 3.
 # ---------------------------------------------------------------------------
@@ -347,17 +390,7 @@ def test_upgrade_from_v1_adds_data_favourites(
     # Now let db.js open the same DB — its _runMigrations upgrade branch
     # must add every missing store, up to the current version, without
     # disturbing the seeded row.
-    result = page.evaluate(
-        """async () => {
-            const db = await window.pwaDb.open();
-            const row = await window.pwaDb.get('queue:events', 1);
-            return {
-              version: db.version,
-              names: Array.from(db.objectStoreNames).sort(),
-              row,
-            };
-          }"""
-    )
+    result = _open_via_db_js_and_read(page)
     assert result["version"] == 3
     assert result["names"] == sorted(V3_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}
@@ -410,17 +443,7 @@ def test_upgrade_from_v2_adds_log_sync(live_server: LiveServer, page: Page) -> N
 
     # Now let db.js open the same DB — its _runMigrations upgrade branch
     # must add log:sync without disturbing the seeded row.
-    result = page.evaluate(
-        """async () => {
-            const db = await window.pwaDb.open();
-            const row = await window.pwaDb.get('queue:events', 1);
-            return {
-              version: db.version,
-              names: Array.from(db.objectStoreNames).sort(),
-              row,
-            };
-          }"""
-    )
+    result = _open_via_db_js_and_read(page)
     assert result["version"] == 3
     assert result["names"] == sorted(V3_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}

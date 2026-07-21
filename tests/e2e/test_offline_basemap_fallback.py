@@ -40,7 +40,25 @@ from pytest_django.live_server_helper import LiveServer
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
-    """Navigate to / and wait for the season scrubber to finish booting."""
+    """Navigate to / with the SW stripped, and wait for the scrubber to boot.
+
+    ``navigator.serviceWorker`` is stripped before any page script runs (the
+    same technique as ``test_report_unverified.py``). Since SNOW-484 the
+    service worker classifies the basemap origin as cacheable and answers its
+    style/tile fetches with ``respondWith`` — re-fetching them as the *SW's
+    own* fetches, which ``page.route`` cannot intercept (see this module's
+    docstring). That would shadow the ``page.route`` basemap mock these tests
+    rely on to simulate the offline style failure. Stripping the SW keeps
+    MapLibre's style fetch at the page level so the route mock controls it,
+    and isolates exactly what these tests exist to cover: the page-level
+    ``map.on('error')`` → inline-fallback logic in ``static/js/map.js``, which
+    is SW-independent. The SW-cached-basemap path (offline within a
+    previously-browsed area) is covered by ``test_offline_basemap_cache.py``.
+    """
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector('#season-scrubber[data-state="ready"]')

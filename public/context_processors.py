@@ -69,6 +69,32 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     }
 
 
+def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the PWA telemetry master switch into every template context.
+
+    Exposes ``PWA_TELEMETRY_ENABLED`` (from ``settings``, default True) so
+    ``base.html`` can bake it into a ``<meta name="pwa-telemetry-enabled">``
+    tag. ``static/js/telemetry.js`` reads that tag at load time and turns
+    the whole client pipeline into a no-op when the value is ``"0"`` — no
+    event buffering, no ``navigator.sendBeacon``, no ``/api/telemetry``
+    POSTs. This is the client half of the operator-level off switch
+    documented in ``docs/telemetry-pipeline.md``; the server receiver and
+    the §16.2 server-emitted signals gate on the same setting.
+
+    Args:
+        request: The incoming HTTP request (unused — value comes from settings).
+
+    Returns:
+        ``{"PWA_TELEMETRY_ENABLED": bool}``. The template renders it as
+        ``"1"`` / ``"0"`` via the ``yesno`` filter.
+
+    """
+    return {
+        "PWA_TELEMETRY_ENABLED": bool(getattr(settings, "PWA_TELEMETRY_ENABLED", True)),
+    }
+
+
 def site_environment(request: HttpRequest) -> dict[str, Any]:
     """
     Inject PWA environment identity into every template context (SNOW-399).

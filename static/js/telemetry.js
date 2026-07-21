@@ -102,6 +102,37 @@
   // written through on ``setOptIn``. Nullable while unresolved.
   let _optInCache = null;
 
+  // In-memory cache for the telemetry master switch (the
+  // ``pwa-telemetry-enabled`` meta tag baked in by
+  // ``public.context_processors.pwa_telemetry``). Resolved once on first
+  // read. Nullable while unresolved.
+  let _enabledCache = null;
+
+  /**
+   * Return whether the telemetry pipeline is enabled for this page load.
+   *
+   * The server renders ``<meta name="pwa-telemetry-enabled" content="0">``
+   * when ``settings.PWA_TELEMETRY_ENABLED`` is false — an operator-level
+   * off switch (distinct from the per-user opt-in) that silences the
+   * WHOLE pipeline, critical events included. Any value other than the
+   * literal ``"0"`` — including a missing tag — is treated as enabled so
+   * a page that omits the tag keeps the historical behaviour.
+   *
+   * @returns {boolean}
+   */
+  function _enabled() {
+    if (_enabledCache !== null) return _enabledCache;
+    let value = true;
+    try {
+      const el = document.querySelector('meta[name="pwa-telemetry-enabled"]');
+      if (el && el.getAttribute('content') === '0') value = false;
+    } catch (_e) {
+      // No DOM / querySelector unavailable — default to enabled.
+    }
+    _enabledCache = value;
+    return value;
+  }
+
   // Flush-in-progress guard so overlapping triggers don't send the same
   // rows twice.
   let _flushInFlight = null;
@@ -266,6 +297,9 @@
    */
   async function emit(event, properties) {
     if (typeof event !== 'string' || !event) return;
+    // Operator-level kill switch — silences the whole pipeline,
+    // critical events included. Checked before anything touches the DB.
+    if (!_enabled()) return;
     if (
       typeof window.pwaDb !== 'object' ||
       window.pwaDb.isResetRequired()
@@ -319,6 +353,9 @@
    *   down; every other trigger runs while the tab is still alive.
    */
   function flush(opts) {
+    // Nothing is ever enqueued while disabled, but guard here too so a
+    // manual ``flush()`` call is a no-op rather than a stray fetch.
+    if (!_enabled()) return Promise.resolve();
     if (_flushInFlight) return _flushInFlight;
     const keepalive = !!(opts && opts.keepalive);
     _flushInFlight = (async () => {
@@ -377,6 +414,10 @@
   // -------------------------------------------------------------------
 
   function _wireLifecycle() {
+    // Don't attach the flush triggers (online / visibilitychange /
+    // interval / pagehide) at all when telemetry is disabled — there is
+    // nothing to drain and no reason to hold a timer.
+    if (!_enabled()) return;
     try {
       window.addEventListener('online', () => {
         flush().catch(() => {});

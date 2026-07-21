@@ -361,6 +361,41 @@ class TestReceiverKeyGatePositive:
         mock_track.assert_called_once()
 
 
+class TestReceiverMasterSwitch:
+    """PWA_TELEMETRY_ENABLED=False accepts-and-drops before parsing."""
+
+    @override_settings(POSTHOG_API_KEY="test-key", PWA_TELEMETRY_ENABLED=False)
+    def test_disabled_returns_204_without_forwarding(self) -> None:
+        """Master switch off → 204, ``analytics.track`` never called.
+
+        The key is populated to prove the master switch wins over the
+        key gate — with telemetry disabled, nothing forwards regardless.
+        """
+        with patch("analytics.views.analytics.track") as mock_track:
+            response = Client().post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event()),
+                content_type="application/json",
+            )
+        assert response.status_code == 204
+        mock_track.assert_not_called()
+
+    @override_settings(POSTHOG_API_KEY="test-key", PWA_TELEMETRY_ENABLED=False)
+    def test_disabled_drops_before_validation(self) -> None:
+        """The switch short-circuits ahead of schema validation.
+
+        A payload that would otherwise 400 (unknown event name) still
+        gets a 204 when telemetry is disabled — the disabled path never
+        reaches ``_parse_events``.
+        """
+        response = Client().post(
+            "/api/telemetry",
+            data=json.dumps(_valid_event(name="not.an.allowed.event")),
+            content_type="application/json",
+        )
+        assert response.status_code == 204
+
+
 class TestReceiverCsrfExempt:
     """The endpoint is CSRF-exempt so sendBeacon can post without a token."""
 

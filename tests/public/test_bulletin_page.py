@@ -93,7 +93,6 @@ def _render_model_with_traits(
         },
         "danger_patterns": [],
         "traits": traits,
-        "snowpack_structure": None,
         "metadata": metadata
         or {
             "publication_time": "2026-03-15T06:00:00+00:00",
@@ -2283,7 +2282,6 @@ class TestMFElevationBandSplitBulletinPage:
                     "danger_level": 2,
                 }
             ],
-            "snowpack_structure": None,
             "metadata": {
                 "publication_time": "2026-03-15T06:00:00+00:00",
                 "valid_from": "2026-03-15T06:00:00+00:00",
@@ -2558,7 +2556,6 @@ class TestDayWindowsBandedRender:
             },
             "danger_patterns": [],
             "traits": [],
-            "snowpack_structure": None,
             "metadata": {
                 "publication_time": "2026-03-15T06:00:00+00:00",
                 "valid_from": "2026-03-15T06:00:00+00:00",
@@ -3804,7 +3801,6 @@ def _render_model_with_ratings(
         },
         "danger_patterns": [],
         "traits": [],
-        "snowpack_structure": None,
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",
@@ -4125,7 +4121,6 @@ def _render_model_with_split_ratings(
         },
         "danger_patterns": [],
         "traits": [],
-        "snowpack_structure": None,
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",
@@ -4481,7 +4476,6 @@ def _albina_render_model_with_bands(
         },
         "danger_patterns": [],
         "traits": traits,
-        "snowpack_structure": None,
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",

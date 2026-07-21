@@ -62,7 +62,6 @@ def _render_model_with_one_problem(elevation: dict[str, Any]) -> dict[str, Any]:
                 "danger_level": 2,
             }
         ],
-        "snowpack_structure": None,
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",

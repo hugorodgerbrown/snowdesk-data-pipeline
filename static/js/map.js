@@ -359,6 +359,64 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   }
 
+  // SNOW-484: tell the SW which cross-origin basemap origins are safe to
+  // opportunistically cache (vector tiles, sprites, glyphs), so a
+  // previously-browsed area still renders offline. A service worker has
+  // no DOM, so it cannot read data-basemap-url itself (see
+  // static/js/sw.js's 'register-basemap-origins' message handler) — this
+  // is the one-way handoff. Every basemap in the picker is included, not
+  // just the active one, so switching basemap mid-session is covered
+  // too; the ``.basemap-menu-item`` selector above also matches the
+  // overlay checkboxes, which carry no ``data-basemap-url``, hence the
+  // truthy filter below.
+  //
+  // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
+  // e2e SW-stripping helpers define the property with ``value: undefined``
+  // (so the key is present but the value is nullish), and dereferencing
+  // ``navigator.serviceWorker.ready`` would throw and abort map init.
+  if (navigator.serviceWorker) {
+    const basemapOrigins = [
+      ...new Set(
+        Object.values(BASEMAP_OPTIONS)
+          .filter((url) => typeof url === 'string' && url)
+          .map((url) => new URL(url).origin),
+      ),
+    ];
+    const registerBasemapOrigins = (registration) => {
+      const target = registration && registration.active;
+      if (target) {
+        target.postMessage({ type: 'register-basemap-origins', origins: basemapOrigins });
+      }
+      // SNOW-487: also mirror the allowlist into the durable meta:app
+      // store, so a service worker that gets idle-terminated and later
+      // restarted for a fresh 'fetch' event (an empty in-memory
+      // _basemapOrigins) can rehydrate it from IndexedDB instead of
+      // wrongly falling back to network-only for a previously-cached
+      // area. Best-effort and non-blocking, matching the same
+      // window.pwaDb guard idiom as static/js/pwa_offline.js's
+      // persistMeta() — must never throw or delay basemap registration
+      // when IndexedDB is unavailable (private mode, Reset Required).
+      if (window.pwaDb && typeof window.pwaDb.put === 'function') {
+        try {
+          window.pwaDb
+            .put('meta:app', { key: 'basemap.origins', value: basemapOrigins })
+            .catch(() => {});
+        } catch (_err) {
+          // Ignore — persistence is best-effort.
+        }
+      }
+    };
+    navigator.serviceWorker.ready.then(registerBasemapOrigins).catch(() => {});
+    // .ready resolves once the registration has an *active* worker, but on
+    // the very first visit that worker is not yet *controlling* this page
+    // (it takes over on the next navigation). Re-send on controllerchange
+    // so a freshly activated worker — the first-install case, and after any
+    // update — learns the allowlist promptly, without a full page reload.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      navigator.serviceWorker.getRegistration().then(registerBasemapOrigins).catch(() => {});
+    });
+  }
+
   // SNOW-59: EAWS region overlay layers — three tiers stacked above
   // the basemap. L1 (Major) and L2 (Sub) are outline-only line layers;
   // L4 (Micro) is the data-bearing choropleth and defaults to visible.
