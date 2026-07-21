@@ -1218,6 +1218,18 @@
 .ribbon-cell--very_high   { background: var(--color-eaws-very-high); }
 
 /* —————————————————————————————————————————————————————————
+   Map-scoped z-index band (SNOW-486)
+   #home-intro and #map-help-overlay are positioned against other
+   #map controls (utility cluster, scrubber, legend) and live inside
+   #map's own stacking context, so they intentionally do NOT use the
+   global --z-banner/--z-toast/--z-popup/--z-modal scale declared in
+   src/css/main.css's @theme — lifting them out of #map would detach
+   them from the controls they're anchored to. This 0-7 scale is local
+   to #map only: 0-4 cover the choropleth/legend/utility-cluster layers
+   above; 5 is #home-intro, 6 is the coachmark ring, 7 is its tooltip.
+   ————————————————————————————————————————————————————————— */
+
+/* —————————————————————————————————————————————————————————
    SNOW-314 — Homepage intro overlay (#home-intro)
    Absolutely positioned over #map; rendered with show_intro=True from
    the home() view. Dismissed via button or Escape key; restored by

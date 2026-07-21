@@ -278,6 +278,21 @@
   --radius-sm:     6px;    /* small tag badge, callout icon        */
   --radius-pill:   4px;    /* timing badge, period pill            */
 
+  /* —— Overlay z-index scale (SNOW-486) ————————————
+     Ordered so a higher-priority surface always wins the
+     stacking order: modal > popup > toast > banner. Applies
+     to the shell banners/toasts/sheets/modals below (Tailwind
+     arbitrary z-[var(--z-*)] syntax). Map-INTERNAL overlays
+     (#home-intro, #map-help-overlay — positioned against map
+     controls, inside #map's own stacking context) are
+     deliberately NOT part of this scale; they keep the
+     map-scoped 0-7 band documented in static/css/map.css.
+     ————————————————————————————————————————— */
+  --z-banner: 40;   /* persistent banners: sw-update, install prompts, off-season bar */
+  --z-toast:  50;   /* transient toasts: share, mutation-queue, htmx-error            */
+  --z-popup:  60;   /* sheets: favourite / report fly-outs                            */
+  --z-modal:  70;   /* full-screen modals: forced update, reset required              */
+
   /* Grid breakpoints */
   --breakpoint-tablet:   600px;
   --breakpoint-desktop:  960px;
