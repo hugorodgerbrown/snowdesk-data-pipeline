@@ -1,0 +1,28 @@
+{% comment %}
+accounts/templates/accounts/partials/_sync_log_body.html — Sync-log panel body shell.
+
+Content partial for the manage page (SNOW-482); included via the
+body_template parameter of includes/_collapsible_panel.html, wrapped by
+the caller in {% if sync_log_visible %}. Rows are painted client-side by
+static/js/sync_log.js, which reads window.pwaDb.getSyncLog() on load —
+nothing server-side to query, so this shell only carries the loading /
+empty placeholder and the <ul> the JS targets.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm text-text-2">
+    <p class="text-xs text-text-3 mb-3">
+        {% blocktrans trimmed %}
+            Recent real syncs with the server on this device (cached, offline-served pages don't count). Cleared by
+            "Reset local data on this device", above.
+        {% endblocktrans %}
+    </p>
+    <ul
+        id="sync-log-list"
+        class="divide-y divide-border rounded-card border border-border bg-card text-sm"
+        data-testid="sync-log-list"
+    >
+        <li class="px-4 py-3 text-text-3" data-role="sync-log-placeholder">
+            {% trans "Loading…" %}
+        </li>
+    </ul>
+</div>
