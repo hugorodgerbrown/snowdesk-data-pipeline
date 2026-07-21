@@ -58,6 +58,17 @@ class TestEmitServerSignal:
             emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
         mock_capture.assert_not_called()
 
+    @override_settings(POSTHOG_API_KEY="test-key", PWA_TELEMETRY_ENABLED=False)
+    def test_no_op_when_master_switch_off(self) -> None:
+        """PWA_TELEMETRY_ENABLED=False → no-op even with a key configured.
+
+        The master switch silences the whole pipeline, so a populated
+        POSTHOG_API_KEY does not re-enable the server-emitted signals.
+        """
+        with patch("posthog.capture") as mock_capture:
+            emit_server_signal("pwa.version.endpoint.hit", {"foo": 1})
+        mock_capture.assert_not_called()
+
     @override_settings(POSTHOG_API_KEY="")
     def test_analytics_track_not_called_when_key_empty(self) -> None:
         """SNOW-384: the gate lives in emit_server_signal itself — it never

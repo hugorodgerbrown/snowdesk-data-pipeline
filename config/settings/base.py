@@ -186,6 +186,10 @@ TEMPLATES = [
                 # base.html can bake them into <meta> tags for the client-side
                 # version check (SNOW-374).
                 "public.context_processors.pwa_version",
+                # Injects PWA_TELEMETRY_ENABLED so base.html can bake the
+                # telemetry master switch into a <meta> tag read by
+                # static/js/telemetry.js (docs/telemetry-pipeline.md).
+                "public.context_processors.pwa_telemetry",
                 # SNOW-399: injects SITE_ENVIRONMENT and the derived
                 # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
                 # base.html can render a distinct app name, icon, and theme
@@ -263,6 +267,28 @@ AUTHENTICATION_BACKENDS = [
 
 POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
 POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
+
+# ---------------------------------------------------------------------------
+# PWA telemetry master switch
+# ---------------------------------------------------------------------------
+# Single authoritative kill switch for the first-party PWA telemetry
+# pipeline (spec §16, docs/telemetry-pipeline.md). When False:
+#
+#   * ``static/js/telemetry.js`` becomes an inert no-op — no event
+#     buffering, no ``navigator.sendBeacon``, no ``/api/telemetry`` POSTs
+#     (the ``pwa-telemetry-enabled`` meta tag in base.html carries the
+#     value to the client via ``public.context_processors.pwa_telemetry``).
+#   * The ``/api/telemetry`` receiver accepts and drops (still 204 so a
+#     stale shell drains its local queue cleanly).
+#   * The server-emitted §16.2 signals (``emit_server_signal``) no-op.
+#
+# This is distinct from ``POSTHOG_API_KEY`` (which only stops *forwarding*
+# to PostHog) and from the per-user opt-in (spec §16.6): this switch is an
+# operator/deploy-level off switch that silences the whole pipeline,
+# including the operational-safety "critical" events. Default True; set
+# ``PWA_TELEMETRY_ENABLED=False`` in ``.env`` to silence telemetry when
+# running locally.
+PWA_TELEMETRY_ENABLED: bool = config("PWA_TELEMETRY_ENABLED", default=True, cast=bool)
 
 # Capture unhandled view exceptions as PostHog events (default True). Set to
 # False to disable exception capture without removing the middleware.
