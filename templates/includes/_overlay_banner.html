@@ -36,7 +36,11 @@ Optional context:
                 sw-update-banner contract); the install-nudge banners
                 have never carried this attribute.
   kind        — status-palette key ("warning" default) — strip variant only.
-  icon        — "calendar" (strip) | "refresh" (floating). Omit for none.
+  icon        — "calendar" (strip) | "refresh" | "location-off" (floating).
+                Omit for none.
+  position    — "top" | "bottom" (floating only; default "bottom"). "top"
+                anchors near the top-centre (clears the nav) — used by the
+                off-map nudge; the update/install nudges use the default.
   title       — heading text (floating only). When supplied, ``body``
                 renders as a second, smaller line; when omitted, ``body``
                 is the only line.
@@ -94,31 +98,50 @@ Optional context:
         {% if aria_live %}aria-live="{{ aria_live }}"{% endif %}
         {% if title_id %}aria-labelledby="{{ title_id }}"{% endif %}
         {% if dismissible %}data-overlay data-overlay-hide="class"{% endif %}
-        class="{% if static %}relative{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-banner)]{% endif %} w-[calc(100vw-2rem)] max-w-md"
+        class="{% if static %}relative{% else %}hidden fixed {% if position == 'top' %}top-20{% else %}bottom-4{% endif %} left-1/2 -translate-x-1/2 z-[var(--z-banner)]{% endif %} w-[calc(100vw-2rem)] max-w-md"
         {% if bottom_offset and not static %}
             {# ds-lint-allow: env(safe-area-inset-bottom) can only be expressed via inline style — CSS variables don't cover it and the scrubber-clearance offset is single-use. #}
             style="bottom: {{ bottom_offset }}"
         {% endif %}
     >
         <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3 flex items-center gap-3">
-            {% if icon == "refresh" %}
+            {% if icon %}
                 <span
                     class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-status-info-bg text-status-info-text"
                     aria-hidden="true"
                 >
-                    <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <polyline points="23 4 23 10 17 10" />
-                        <path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10" />
-                    </svg>
+                    {% if icon == "refresh" %}
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10" />
+                        </svg>
+                    {% elif icon == "location-off" %}
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
+                            <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
+                            <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
+                            <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
+                            <line x1="2" x2="22" y1="2" y2="22" />
+                        </svg>
+                    {% endif %}
                 </span>
             {% endif %}
             <div class="min-w-0 flex-1">

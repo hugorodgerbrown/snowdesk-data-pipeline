@@ -1044,6 +1044,19 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
             "static": True,
         },
     },
+    {
+        "caption": "Floating — off-map nudge (top, dismissible)",
+        "context": {
+            "variant": "floating",
+            "icon": "location-off",
+            "position": "top",
+            "title": "Off the map",
+            "body": "Your location is outside the mapped regions.",
+            "title_id": "component-library-banner-title-3",
+            "dismissible": True,
+            "static": True,
+        },
+    },
 )
 
 

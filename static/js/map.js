@@ -4111,12 +4111,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     positionOptions: { enableHighAccuracy: true, maximumAge: 60000 },
   });
 
-  // The off-map notification lives as a hidden element in the template
-  // (#offmap-banner). Reveal/hide it by toggling hidden↔flex (the `flex`
-  // utility would otherwise win over the HTML `hidden` attribute). On narrow
-  // viewports it's an in-flow banner that pushes the map down, so resize the
-  // map after toggling; on wide viewports it floats (sm:fixed) and resize is a
-  // harmless no-op.
+  // SNOW-324/486: the off-map notification (#offmap-banner) renders through
+  // the shared floating-banner primitive (includes/_overlay_banner.html) and
+  // is a [data-overlay], so overlays.js owns the "×" hide via the class idiom.
+  // It floats (fixed) on every viewport, so revealing it no longer affects the
+  // map's layout — no resize needed. map.js owns only the reveal and the 7s
+  // auto-dismiss timer.
   const offMapBanner = document.getElementById('offmap-banner');
   let offMapTimer = null;
 
@@ -4124,27 +4124,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (!offMapBanner) return;
     clearTimeout(offMapTimer);
     offMapBanner.classList.add('hidden');
-    offMapBanner.classList.remove('flex');
-    if (MAP) requestAnimationFrame(() => MAP.resize());
   }
 
   function showOffMapBanner() {
     if (!offMapBanner) return;
     clearTimeout(offMapTimer);
     offMapBanner.classList.remove('hidden');
-    offMapBanner.classList.add('flex');
-    if (MAP) requestAnimationFrame(() => MAP.resize());
     offMapTimer = setTimeout(hideOffMapBanner, 7000);
   }
 
-  if (offMapBanner) {
-    // SNOW-486: adopts the shared "×" data-action naming convention, but
-    // #offmap-banner is not wired through overlays.js's generic handler —
-    // see the template comment above the banner for why (the hidden/flex
-    // dual-toggle it needs isn't covered by the generic class-hide idiom).
-    const dismissBtn = offMapBanner.querySelector('[data-action="dismiss"]');
-    if (dismissBtn) dismissBtn.addEventListener('click', hideOffMapBanner);
-  }
+  // If the user dismisses via the "×" (handled by overlays.js) before the
+  // timeout fires, cancel the pending auto-dismiss so it can't fight a later
+  // re-reveal.
+  document.addEventListener('overlay:dismissed', (event) => {
+    if (event.detail && event.detail.overlay === offMapBanner) {
+      clearTimeout(offMapTimer);
+    }
+  });
 
   // Register the control at top-right so MapLibre adds its (hidden)
   // button and stands up the internal state machine. The position

@@ -17,9 +17,15 @@ control, and z-index literal.
 
 1. **Banner** — `templates/includes/_overlay_banner.html`. Persistent,
    condition-driven. Two positional variants: **strip** (full-width in-flow
-   edge bar, e.g. the off-season notice) and **floating** (fixed
-   bottom-centre card with an optional icon/CTA/dismiss). Migrated the
-   sw-update banner and the Android/Chromium + iOS install prompts.
+   edge bar, e.g. the off-season notice) and **floating** (fixed card with an
+   optional icon/CTA/dismiss, anchored bottom-centre by default or top-centre
+   via `position="top"`). Migrated the sw-update banner, the Android/Chromium
+   + iOS install prompts, and the **off-map nudge** (`#offmap-banner`,
+   `position="top"`, `icon="location-off"`) — the map.js reveal keeps its 7s
+   auto-dismiss timer but the card shape and the "×" are now the shared
+   primitive + `overlays.js`. Because it floats on every viewport it no
+   longer pushes the map down on mobile (a deliberate convergence onto the
+   one nudge shape).
 2. **Toast** — `templates/includes/_toast.html`. Transient, bottom-centred
    pill. Extended with an opt-in `timeout` attribute (auto-dismiss via the
    shared controller in `static/js/overlays.js`).
