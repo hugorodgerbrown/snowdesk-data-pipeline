@@ -8,10 +8,18 @@ static/js/pwa_offline.js when:
   * ``navigator.onLine === false``, or
   * a fetch / HTMX request just failed with a network error.
 
-Copy shows the dataset freshness read from ``X-Data-Generated-At`` (SNOW-370)
-on the most recent successful response. The empty-timestamp initial state
-reads "No connection — cached data shown"; once a response has been seen
-we bake in the "Last updated HH:MM DD/MM" suffix.
+Copy shows two distinct clocks (SNOW-482): when the device last synced
+with the server (``sync.last_at``, persisted to IndexedDB ``meta:app``)
+and when the server generated the data it last returned (read from
+``X-Data-Generated-At``, SNOW-370, persisted as
+``freshness.last_generated_at``). Once both are known the suffix reads
+"Synced HH:MM DD/MM · data from HH:MM DD/MM"; either clock degrades
+gracefully on its own when the other is unknown.
+
+In-flow, not ``fixed`` — it sits as the first child of the body, above
+``includes/nav.html``, so when revealed it pushes the nav and page
+content down rather than overlapping the nav bar. ``hidden`` collapses
+it to zero height.
 
 Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
 {% endcomment %}
@@ -19,7 +27,7 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
     id="pwa-offline-banner"
     role="status"
     aria-live="polite"
-    class="hidden fixed top-0 inset-x-0 z-[9998] bg-status-warning-bg text-status-warning-text border-b border-border px-4 py-2 text-sm"
+    class="hidden w-full bg-status-warning-bg text-status-warning-text border-b border-border px-4 py-2 text-sm"
 >
     <div class="max-w-4xl mx-auto flex items-center gap-2">
         <svg
