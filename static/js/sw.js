@@ -159,8 +159,12 @@ try {
 // SNOW-478: v19 — static/js/map.js now derives overlay label fonts from the
 // active basemap and draws the favourites pin as an SDF icon (fixes glyph
 // 404s on swisstopo/IGN/basemap.at basemaps).
-// SNOW-482: v20 — stamp X-SW-Cache on cache-served responses.
-const CACHE_VERSION = 'snowdesk-shell-v20';
+// SNOW-483: v20 — static/js/map.js now swaps in an inline fallback style
+// when the (non-ESRI) basemap style JSON can't be fetched offline, so
+// cached region overlays still paint instead of a blank canvas; retried
+// on the next ``online`` event.
+// SNOW-482: v21 — stamp X-SW-Cache on cache-served responses.
+const CACHE_VERSION = 'snowdesk-shell-v21';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that

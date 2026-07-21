@@ -188,6 +188,12 @@ every public page. Its responsibilities:
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
+- (SNOW-483) On the map page, when the third-party basemap style JSON
+  can't be fetched offline (the SW treats it as network-only),
+  `static/js/map.js` swaps in an inline fallback background style so
+  MapLibre's `load` event still fires and the SW-cached region
+  overlays paint on a plain background instead of a blank canvas.
+  Retried automatically on the next `window` `online` event.
 
 ### `X-SW-Cache` header (SNOW-482)
 
