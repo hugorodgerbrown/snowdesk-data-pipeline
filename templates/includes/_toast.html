@@ -19,6 +19,22 @@
                   (no ``hidden``, no positioning utilities; uses
                   ``inline-flex``). Used only by the component library so
                   variants don't pile up at the viewport bottom.
+    timeout     — Int; opt-in auto-dismiss delay in milliseconds. When
+                  supplied, renders ``data-toast-timeout`` and the shared
+                  toast controller (static/js/overlays.js) hides the toast
+                  that many ms after it becomes visible. Omit for a toast
+                  a caller dismisses itself (e.g. bulletin.html's share
+                  toast already runs its own timer — do not also pass
+                  ``timeout`` there, or the two would race harmlessly but
+                  redundantly).
+
+  SNOW-486: the outer element carries ``data-overlay data-overlay-hide=
+  "class"`` (except when ``static``) so a "×" click is caught by
+  static/js/overlays.js's shared delegated handler for free — no
+  per-page JS needed to wire the dismiss button, though a caller with
+  its own reveal/hide logic (e.g. bulletin.html's share toast) may still
+  bind additional listeners; the two do not conflict since both just
+  toggle the same ``hidden`` class.
 
   ARIA:
     kind in ("error", "warning") → role="alert" aria-live="assertive"
@@ -41,7 +57,9 @@
     {% endif %}
     data-testid="toast"
     data-kind="{{ kind }}"
-    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
+    {% if not static %}data-overlay data-overlay-hide="class"{% endif %}
+    {% if timeout %}data-toast-timeout="{{ timeout }}"{% endif %}
+    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
 >
     <span>{{ body }}</span>
     {% if cta_label and cta_href %}

@@ -77,11 +77,16 @@ and loads home_intro.js in addition to the shared map assets.
     {# Narrow viewports: a full-width banner in flow between the nav and the   #}
     {# map (pushes the map down). Wide viewports (sm+): a floating, rounded    #}
     {# toast panel near the top-centre, out of flow (overlays the map).        #}
+    {# SNOW-486: shares the --z-toast token by numeric value (was sm:z-50) —  #}
+    {# not otherwise wired through the shared overlays.js dismiss handler:    #}
+    {# map.js's showOffMapBanner()/hideOffMapBanner() toggle BOTH `hidden`    #}
+    {# and `flex` together (the `flex` utility would otherwise beat `hidden`  #}
+    {# in the cascade), which the generic class-toggle idiom doesn't cover.   #}
     <div
         id="offmap-banner"
         role="status"
         aria-live="polite"
-        class="hidden items-center gap-4 border-b border-border bg-card px-5 py-4 sm:fixed sm:left-1/2 sm:top-20 sm:z-50 sm:w-96 sm:-translate-x-1/2 sm:rounded-card sm:border sm:shadow-lg"
+        class="hidden items-center gap-4 border-b border-border bg-card px-5 py-4 sm:fixed sm:left-1/2 sm:top-20 sm:z-[var(--z-toast)] sm:w-96 sm:-translate-x-1/2 sm:rounded-card sm:border sm:shadow-lg"
     >
         <span
             class="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-text-1 text-card"
@@ -112,7 +117,7 @@ and loads home_intro.js in addition to the shared map assets.
         </div>
         <button
             type="button"
-            data-action="dismiss-offmap"
+            data-action="dismiss"
             aria-label='{% trans "Dismiss" %}'
             class="flex-none p-1 text-text-2 hover:text-text-1"
         >

@@ -4080,7 +4080,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   if (offMapBanner) {
-    const dismissBtn = offMapBanner.querySelector('[data-action="dismiss-offmap"]');
+    // SNOW-486: adopts the shared "×" data-action naming convention, but
+    // #offmap-banner is not wired through overlays.js's generic handler —
+    // see the template comment above the banner for why (the hidden/flex
+    // dual-toggle it needs isn't covered by the generic class-hide idiom).
+    const dismissBtn = offMapBanner.querySelector('[data-action="dismiss"]');
     if (dismissBtn) dismissBtn.addEventListener('click', hideOffMapBanner);
   }
 
