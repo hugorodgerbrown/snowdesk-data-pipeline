@@ -76,6 +76,15 @@ async function resolveBasemapStyle(key, url) {
 // tokens directly (see the favourites ``icon-color`` comment above); the
 // literal hex fallback matters because the e2e environment doesn't compile
 // CSS, so the token can resolve to an empty string there.
+//
+// ``glyphs`` must be declared even though nothing will resolve it offline:
+// the overlay install path adds symbol layers with a ``text-field`` (region
+// labels), and MapLibre's style validator rejects any ``text-field`` layer
+// on a style with no ``glyphs`` template — the layer is silently dropped and
+// every subsequent read of it (e.g. ``getFilter``) throws. A same-origin
+// placeholder satisfies the validator; the label glyphs then simply 404
+// while degraded, the same harmless failure mode SNOW-478 already accepts
+// for a basemap whose glyph server doesn't serve a requested font.
 function buildFallbackStyle() {
   const bg = getComputedStyle(document.documentElement)
     .getPropertyValue('--color-bg')
@@ -83,6 +92,7 @@ function buildFallbackStyle() {
   return {
     version: 8,
     name: 'snowdesk-offline-fallback',
+    glyphs: `${window.location.origin}/static/fonts/{fontstack}/{range}.pbf`,
     sources: {},
     layers: [
       { id: 'snowdesk-offline-fallback-bg', type: 'background', paint: { 'background-color': bg } },
