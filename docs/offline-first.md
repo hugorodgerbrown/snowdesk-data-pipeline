@@ -1,6 +1,6 @@
 ---
 name: offline-first
-description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry + sync log
+description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version, freshness, idempotency, reset, install, telemetry, sync log
 status: current
 last-reviewed: 2026-07-21
 ---

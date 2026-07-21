@@ -1,6 +1,6 @@
 ---
 name: indexeddb-scaffolding
-description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, log:sync, Reset Required
+description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, log:sync
 status: current
 last-reviewed: 2026-07-21
 ---
