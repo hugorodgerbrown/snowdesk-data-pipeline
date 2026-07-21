@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, favourites/community-reports overlays, /api/ endpoints (ratings, geojson, summary, groupings)
 status: current
-last-reviewed: 2026-07-20
+last-reviewed: 2026-07-21
 ---
 
 # Map page and JSON API
@@ -45,6 +45,14 @@ active timelapse stops cleanly. The PWA shell service worker
 ([`offline-map.md`](offline-map.md)) is **not** involved in basemap
 swaps — tile fetches go straight to the network so a stale basemap
 can never linger in the cache.
+
+The `openfreemap_liberty` catalogue entry reads its style URL from
+`settings.OPENFREEMAP_STYLE_URL` (SNOW-242), defaulting to
+`https://tiles.openfreemap.org/styles/liberty`. The CSP `connect-src`
+origin is derived from the same setting, so switching the basemap origin
+(e.g. onto a self-hosted deployment) is an env-var change with no code
+deploy. Live self-hosting — CORS, PMTiles range requests, and the
+subdomain — is tracked in SNOW-485.
 
 **Season scrubber and timelapse**: a horizontal scrubber sits at the
 bottom of the map. The thumb defaults to today's position within the
