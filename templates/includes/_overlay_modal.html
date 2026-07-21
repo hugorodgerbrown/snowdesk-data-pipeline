@@ -1,0 +1,49 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_overlay_modal.html — Full-screen modal primitive (SNOW-486).
+
+Shared shell for the site's non-dismissable, CTA-only overlays — today the
+two PWA modals: forced update (_pwa_update_modal.html) and reset-required
+(_pwa_reset_required.html), which were byte-identical apart from copy and
+ids. Full-screen backdrop + centred card; no dismiss control by design —
+the caller decides there is exactly one way out (the CTA).
+
+Required context:
+  id           — DOM id on the outer backdrop div.
+  title_id     — id for the <h2>, referenced by aria-labelledby.
+  body_id      — id for the <p>, referenced by aria-describedby.
+  title        — heading text. Pass an already-translated string via
+                 ``{% trans "…" as var %}`` / ``{% blocktrans asvar var %}``
+                 in the including template — this partial does not wrap it
+                 in {% trans %} itself, since the copy differs per caller.
+  body         — body text, same translation convention as title.
+  cta_id       — DOM id for the primary CTA button (bound by JS elsewhere).
+  cta_label    — CTA button label, same translation convention as title.
+
+Optional context:
+  role         — ARIA role on the backdrop. Default "alertdialog".
+  static       — Bool; default False. When True renders inline (no
+                 ``hidden``, no ``fixed`` positioning, no z-index) so the
+                 component library can display it without pinning it to
+                 the viewport. Mirrors _toast.html's "static" convention.
+
+Hide idiom: the Tailwind ``hidden`` CLASS (not the HTML5 attribute) — the
+caller's JS toggles ``classList`` (e.g. static/js/pwa_version_check.js,
+static/js/db.js), matching every other shell-chrome overlay.
+{% endcomment %}
+<div
+    id="{{ id }}"
+    role='{{ role|default:"alertdialog" }}'
+    aria-modal="true"
+    aria-labelledby="{{ title_id }}"
+    aria-describedby="{{ body_id }}"
+    class="{% if static %}relative{% else %}hidden fixed inset-0 z-[var(--z-modal)]{% endif %} flex items-center justify-center bg-text-1/60 backdrop-blur-sm p-4"
+>
+    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass max-w-md w-full p-6 flex flex-col gap-4">
+        <h2 id="{{ title_id }}" class="text-lg font-semibold">{{ title }}</h2>
+        <p id="{{ body_id }}" class="text-text-2 text-sm leading-prose">{{ body }}</p>
+        <div class="flex justify-end">
+            {% include "includes/_button.html" with variant="primary" size="standard" button_type="button" button_id=cta_id label=cta_label %}
+        </div>
+    </div>
+</div>
