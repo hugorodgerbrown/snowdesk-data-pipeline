@@ -461,6 +461,7 @@
       openSheet();
       if (IS_UNVERIFIED) {
         sheet.innerHTML =
+          SHEET_HEADER_HTML +
           '<p class="px-2 py-4 text-sm text-text-2">Verify your email to submit a field observation. Check your inbox for the verification link.</p>';
       } else if (SIGNIN_URL) {
         sheet.innerHTML =
