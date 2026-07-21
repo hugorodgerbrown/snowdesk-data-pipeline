@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-21
 ---
 
 # Offline-first PWA compliance
@@ -175,6 +175,12 @@ every public page. Its responsibilities:
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
+- (SNOW-483) On the map page, when the third-party basemap style JSON
+  can't be fetched offline (the SW treats it as network-only),
+  `static/js/map.js` swaps in an inline fallback background style so
+  MapLibre's `load` event still fires and the SW-cached region
+  overlays paint on a plain background instead of a blank canvas.
+  Retried automatically on the next `window` `online` event.
 
 ## Reset local data (SNOW-378)
 
