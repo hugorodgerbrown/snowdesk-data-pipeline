@@ -174,11 +174,15 @@ every public page. Its responsibilities:
   shows real values instead of resetting to blank:
   - `sync.last_at` — wall-clock time of the most recent successful
     same-origin response that did NOT carry `X-SW-Cache: hit` (a real
-    network round-trip, not a Cache-Storage replay). The banner shows
-    this as "Synced HH:MM DD/MM".
+    network round-trip, not a Cache-Storage replay). The banner summary
+    surfaces this as a relative phrase — "Offline — last synced
+    6 minutes ago" — rendered with `Intl.RelativeTimeFormat` and
+    re-rendered on a 30s timer while the banner is shown, so it counts
+    up rather than freezing.
   - `freshness.last_generated_at` — newest `X-Data-Generated-At`
-    header seen, absorbed regardless of cache-hit status. The banner
-    shows this as "data from HH:MM DD/MM".
+    header seen, absorbed regardless of cache-hit status. Persisted for
+    the ledger but **not** surfaced on the banner; the caret opens a
+    short plain-language explanation of the offline state instead.
   - Off-season these can differ substantially: a device that synced
     minutes ago can still be showing a rating generated weeks earlier.
 - Toggle the `disabled` state of any element carrying
