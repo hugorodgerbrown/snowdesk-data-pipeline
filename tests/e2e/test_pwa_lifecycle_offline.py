@@ -8,7 +8,12 @@ the persistent offline banner + ``data-network-required`` disabling, and
 the branded offline fallback for a page never visited at all. Also covers
 the SNOW-482 dual sync/freshness clock: a real (un-stamped) response
 advances the persisted "Synced" clock and appends a ``log:sync`` row; a
-Cache-Storage replay (``X-SW-Cache: hit``) does not.
+Cache-Storage replay (``X-SW-Cache: hit``) does not. SNOW-490 adds the
+regression guard for the bug that motivated the tightened qualifier: an
+offline reload used to reset ``sync.last_at`` to "now" the moment the
+page issued ANY un-stamped same-origin fetch, including one that missed
+the SW's cache and fell back to a synthesized 504 with no real network
+round-trip behind it.
 """
 
 from __future__ import annotations
@@ -265,9 +270,12 @@ def test_last_synced_phrase_auto_updates_while_offline(
     The real service worker is stripped (as in test_pwa_db.py) so its
     cache replays can't perturb the ledger. Stripping the SW is NOT enough
     on its own, though. ``pwa_offline.js``'s ``absorbFreshness`` advances
-    ``syncLastAt`` (and re-renders the banner) on EVERY settled same-origin,
-    non-cache response — and the home page keeps such traffic flowing under
-    a faked clock: ``page.clock.fast_forward`` fires maplibre-gl's internal
+    ``syncLastAt`` (and re-renders the banner) on every settled,
+    successful (2xx), non-synthesized same-origin, non-cache response
+    (SNOW-490 tightened this from "every non-cache response" to also
+    require a 2xx status and a non-empty resolved URL) — and the home
+    page keeps such traffic flowing under a faked clock:
+    ``page.clock.fast_forward`` fires maplibre-gl's internal
     timers, which rebuild the map style and re-fetch ``/api/regions.geojson``
     / ``/api/ratings`` at the just-advanced clock time, plus telemetry.js's
     faked flush interval. Any of these settling mid-fast-forward stamps
@@ -332,6 +340,115 @@ def test_last_synced_phrase_auto_updates_while_offline(
         page.context.set_offline(False)
     assert second is not None and "minute" in second
     assert second != first
+
+
+def test_offline_reload_preserves_sync_clock(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """SNOW-490 regression guard: an offline reload must not reset ``sync.last_at``.
+
+    Before this fix, ``absorbFreshness()`` advanced the sync clock for any
+    un-stamped, same-origin response — and ``static/js/sw.js``'s
+    synthesized 504 fallback for an offline cache miss was both un-stamped
+    and had ``url === ''``, which resolves against ``location.href`` and
+    is misclassified as a same-origin success. Every offline cache miss
+    (an unfetched ``/api/ratings/`` variant here) therefore silently reset
+    the "last synced" clock to "now" and appended a bogus ``log:sync`` row.
+
+    Warms the page online first with one real qualifying fetch so
+    ``sync.last_at`` already has a value to protect, then goes offline,
+    reloads, and issues a never-cached ``/api/ratings/`` request — which
+    misses the SW's stale-while-revalidate cache and, offline, falls
+    through to the synthesized 504.
+    """
+    page = pwa_page.page
+    page.goto(pwa_page.live_server_url + "/ch-4115/martigny-verbier/2026-04-08/")
+    page.wait_for_load_state("load")
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+
+    # One real, qualifying fetch online — establishes a sync.last_at value
+    # and a log:sync row to protect against the offline reload below.
+    warm = page.evaluate(
+        """async () => {
+            const res = await fetch('/api/version');
+            await res.text();
+            return {
+              status: res.status,
+              syncedAt: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+              logCount: await window.pwaDb.count('log:sync'),
+            };
+          }"""
+    )
+    assert warm["status"] == 200
+    assert warm["syncedAt"]
+    recorded_synced_at = warm["syncedAt"]
+    recorded_log_count = warm["logCount"]
+
+    page.context.set_offline(True)
+    try:
+        page.reload()
+        page.wait_for_load_state("load")
+        page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
+
+        cache_bust = uuid.uuid4().hex
+        never_cached_url = f"/api/ratings/?d=2026-02-02&country=ch&e2e={cache_bust}"
+        miss = page.evaluate(
+            """async (url) => {
+                const res = await fetch(url);
+                return {
+                  status: res.status,
+                  cacheHeader: res.headers.get('X-SW-Cache'),
+                  syncedAt: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+                  logCount: await window.pwaDb.count('log:sync'),
+                };
+              }""",
+            never_cached_url,
+        )
+        synced_text = page.eval_on_selector(
+            '#pwa-offline-banner [data-role="synced-at"]', "(el) => el.textContent"
+        )
+    finally:
+        page.context.set_offline(False)
+
+    assert miss["status"] == 504
+    assert miss["cacheHeader"] == "miss"
+    assert miss["syncedAt"] == recorded_synced_at
+    assert miss["logCount"] == recorded_log_count
+    assert synced_text is not None
+    assert synced_text.strip() not in ("", "—")
+
+
+def test_online_5xx_does_not_advance_sync_clock(pwa_page: PwaPage) -> None:
+    """SNOW-490: a real network round-trip that returns a 5xx must not sync.
+
+    Only a *successful* (2xx) response advances ``sync.last_at``. Routes
+    ``/api/version`` to a stubbed 500 — the SW does not ``respondWith`` for
+    a network-classified (non-``STATIC_PATHS``) same-origin URL, so
+    Playwright's route layer still sees and can intercept the request.
+    """
+    page = pwa_page.page
+    page.route(
+        "**/api/version",
+        lambda route: route.fulfill(status=500, body="boom"),
+    )
+    try:
+        result = page.evaluate(
+            """async () => {
+                const before = (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value;
+                const res = await fetch('/api/version');
+                await res.text();
+                return {
+                  status: res.status,
+                  before,
+                  after: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+                };
+              }"""
+        )
+    finally:
+        page.unroute("**/api/version")
+
+    assert result["status"] == 500
+    assert result["after"] == result["before"]
 
 
 # ---------------------------------------------------------------------------
