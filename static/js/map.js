@@ -65,6 +65,31 @@ async function resolveBasemapStyle(key, url) {
   return style;
 }
 
+// SNOW-483: build the inline fallback style swapped in when the native
+// basemap style JSON can't be fetched (offline — the SW deliberately treats
+// the third-party style URL as network-only). An empty ``sources``/``layers``
+// pair plus a single background layer is enough to make MapLibre fire
+// ``load`` so the existing overlay-install path runs against the SW-cached
+// regions GeoJSON + ratings — a plain coloured map beats a blank one.
+// ``background-color`` is read from the ``--color-bg`` design token at
+// runtime because MapLibre paint properties can't reference CSS ``@theme``
+// tokens directly (see the favourites ``icon-color`` comment above); the
+// literal hex fallback matters because the e2e environment doesn't compile
+// CSS, so the token can resolve to an empty string there.
+function buildFallbackStyle() {
+  const bg = getComputedStyle(document.documentElement)
+    .getPropertyValue('--color-bg')
+    .trim() || '#f2f0ec';
+  return {
+    version: 8,
+    name: 'snowdesk-offline-fallback',
+    sources: {},
+    layers: [
+      { id: 'snowdesk-offline-fallback-bg', type: 'background', paint: { 'background-color': bg } },
+    ],
+  };
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -303,6 +328,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     ? storedBasemapKey
     : DEFAULT_BASEMAP_KEY;
   const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
+  // SNOW-483: true once the native basemap style has failed to load (offline)
+  // and the inline fallback background (buildFallbackStyle, below) is active.
+  // Shared with the ``online`` recovery listener and the ``styledata``
+  // flag-clear, both registered after the Map is constructed.
+  let basemapFallbackActive = false;
   // Mark the active radio so the popover renders in the right state on
   // first paint, before basemapPickerInit binds its click handlers.
   // The selector deliberately excludes the SNOW-59 overlay checkboxes —
@@ -450,6 +480,49 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
+
+  // SNOW-483: degrade gracefully when the (non-ESRI) basemap style JSON
+  // can't be fetched — offline, the SW treats the third-party style URL as
+  // network-only, so the fetch fails, MapLibre never fires ``load``, and
+  // every overlay installed inside ``map.on('load')`` below is skipped,
+  // leaving a blank canvas even though the regions GeoJSON and ratings are
+  // both SW-cached and fetch fine offline. MapLibre emits ``error`` for many
+  // benign reasons too (tile/glyph 404s, SNOW-478), so this is gated hard:
+  // skip if the fallback is already active (idempotent) or if a style is
+  // already loaded (not a cold style-load failure) — only a failure before
+  // any style has loaded triggers the swap.
+  map.on('error', () => {
+    if (basemapFallbackActive) return;
+    if (map.isStyleLoaded()) return;
+    basemapFallbackActive = true;
+    map.setStyle(buildFallbackStyle());
+  });
+
+  // SNOW-483: only a real style load clears the fallback flag — a native
+  // ``setStyle(url)`` retry that still fails offline won't reject its
+  // internal fetch, so ``styledata`` (which fires for every style change,
+  // including a failed one that never becomes "loaded") plus the sentinel
+  // ``name`` check is what tells a real basemap apart from a retry that's
+  // still degraded. Coexists with the SNOW-473 ``styledata`` listener
+  // registered inside ``map.on('load')`` below — multiple listeners are fine.
+  map.on('styledata', () => {
+    if (!basemapFallbackActive) return;
+    if (!map.isStyleLoaded()) return;
+    if (map.getStyle()?.name === 'snowdesk-offline-fallback') return;
+    basemapFallbackActive = false;
+  });
+
+  // SNOW-483: retry the real basemap once connectivity returns. Reuses the
+  // ESRI-aware resolver (resolveBasemapStyle) so a reconnect while an ESRI
+  // basemap is selected re-fetches and rewrites it exactly as boot does; the
+  // ``.catch`` swallows a still-failing fetch so we stay degraded and simply
+  // retry on the next ``online`` event.
+  window.addEventListener('online', () => {
+    if (!basemapFallbackActive) return;
+    resolveBasemapStyle(initialBasemapKey, initialBasemapUrl)
+      .then((style) => map.setStyle(style))
+      .catch(() => {});
+  });
 
   // SNOW-445: the on-map zoom pill was a debug artefact and has been removed.
   // Expose the live camera on the console instead — window.snowdeskMap is the
