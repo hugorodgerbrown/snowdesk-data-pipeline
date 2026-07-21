@@ -1449,6 +1449,32 @@ class TestManageViewFavouritesSection:
 
 
 # ---------------------------------------------------------------------------
+# manage_view — "Sync log" panel (SNOW-482)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestManageViewSyncLogSection:
+    """The flag-gated 'Sync log' panel next to the SNOW-378 reset control."""
+
+    @override_flag("sync_log", active=True)
+    def test_panel_present_when_flag_active(self) -> None:
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert b'data-testid="sync-log-panel"' in response.content
+
+    @override_flag("sync_log", active=False)
+    def test_panel_absent_when_flag_inactive(self) -> None:
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert b'data-testid="sync-log-panel"' not in response.content
+
+
+# ---------------------------------------------------------------------------
 # remove_region
 # ---------------------------------------------------------------------------
 
