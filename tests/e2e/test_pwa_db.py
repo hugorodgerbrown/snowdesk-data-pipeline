@@ -110,14 +110,33 @@ def _block_map_data_feeds(page: Page) -> None:
 
 
 def _delete_db(page: Page) -> None:
-    """Delete the PWA DB so each test starts from a clean slate."""
+    """Delete the PWA DB and wait for the deletion to actually complete.
+
+    ``onblocked`` must NOT resolve this promise: it fires while the delete
+    is still *pending*, blocked by a live connection — not done. db.js
+    memoises its connection for the page's whole lifetime as soon as any
+    on-load consumer reads (pwa_offline's clock hydration, the mutation-badge
+    read, telemetry context), and it yields that connection on
+    ``versionchange`` (see ``static/js/db.js`` ``open()``), so a blocked
+    delete unblocks itself and ``onsuccess`` still fires — but if db.js has an
+    in-flight transaction when ``deleteDatabase`` runs, ``onblocked`` fires
+    first. The old helper resolved there, returning before the DB was gone;
+    the schema-upgrade tests then reopened at a *lower* version against the
+    still-present v3 DB and hit ``VersionError: The requested version (1) is
+    less than the existing version (3)`` (flaky — it only bites when db.js is
+    mid-transaction at delete time, which CI's slower, more contended run
+    hits far more often than a local one). Waiting for ``onsuccess`` makes the
+    clean slate real before the next open. A genuine indefinite block (db.js
+    failing to yield) surfaces as the evaluate's own timeout rather than a
+    silent, incomplete delete.
+    """
     page.evaluate(
         """(name) => new Promise((resolve) => {
             try {
               const req = indexedDB.deleteDatabase(name);
               req.onsuccess = () => resolve();
               req.onerror = () => resolve();
-              req.onblocked = () => resolve();
+              // Deliberately no onblocked handler — see the docstring.
             } catch (_e) { resolve(); }
           })""",
         DB_NAME,
