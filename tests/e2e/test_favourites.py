@@ -294,11 +294,9 @@ def test_create_form_close_button_hides_sheet(
     page.wait_for_selector("#favourite-sheet:not([hidden])")
     page.wait_for_selector("#favourite-create-form")
 
-    # The Cancel button also carries data-action="close-favourite-sheet" —
+    # The Cancel button also carries data-action="dismiss" (SNOW-486) —
     # filter on the × glyph to target the header control specifically.
-    close_btn = page.locator(
-        '#favourite-sheet [data-action="close-favourite-sheet"]', has_text="×"
-    )
+    close_btn = page.locator('#favourite-sheet [data-action="dismiss"]', has_text="×")
     assert close_btn.count() == 1
     close_btn.click()
 
@@ -315,9 +313,7 @@ def test_anonymous_signin_cta_has_close_button(
     page.click("#favourite-add-btn")
     page.wait_for_selector("#favourite-sheet:not([hidden])")
 
-    close_btn = page.locator(
-        '#favourite-sheet [data-action="close-favourite-sheet"]', has_text="×"
-    )
+    close_btn = page.locator('#favourite-sheet [data-action="dismiss"]', has_text="×")
     assert close_btn.count() == 1
     close_btn.click()
 

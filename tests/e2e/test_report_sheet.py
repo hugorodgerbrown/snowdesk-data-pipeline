@@ -60,11 +60,9 @@ def test_report_form_close_button_hides_sheet(
     page.click("#report-btn")
     page.wait_for_selector("#report-form")
 
-    # The Cancel button also carries data-action="close-report-sheet" —
+    # The Cancel button also carries data-action="dismiss" (SNOW-486) —
     # filter on the × glyph to target the header control specifically.
-    close_btn = page.locator(
-        '#report-sheet [data-action="close-report-sheet"]', has_text="×"
-    )
+    close_btn = page.locator('#report-sheet [data-action="dismiss"]', has_text="×")
     assert close_btn.count() == 1
     close_btn.click()
 
@@ -81,9 +79,7 @@ def test_anonymous_signin_cta_has_close_button(
     page.click("#report-btn")
     page.wait_for_selector("#report-sheet:not([hidden])")
 
-    close_btn = page.locator(
-        '#report-sheet [data-action="close-report-sheet"]', has_text="×"
-    )
+    close_btn = page.locator('#report-sheet [data-action="dismiss"]', has_text="×")
     assert close_btn.count() == 1
     close_btn.click()
 
