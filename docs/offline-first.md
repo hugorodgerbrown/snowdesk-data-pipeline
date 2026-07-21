@@ -173,8 +173,11 @@ every public page. Its responsibilities:
   `meta:app` (SNOW-482), read back on init so a cold offline launch
   shows real values instead of resetting to blank:
   - `sync.last_at` — wall-clock time of the most recent successful
-    same-origin response that did NOT carry `X-SW-Cache: hit` (a real
-    network round-trip, not a Cache-Storage replay). The banner summary
+    (2xx) same-origin response that did NOT carry `X-SW-Cache: hit` and
+    is not a synthesized service-worker fallback (SNOW-490: a non-empty
+    resolved URL — a synthesized `Response` has `url === ''`, which
+    must not be resolved against the page's own URL and mistaken for a
+    same-origin round-trip). The banner summary
     surfaces this as a relative phrase — "Offline — last synced
     6 minutes ago" — rendered with `Intl.RelativeTimeFormat` and
     re-rendered on a 30s timer while the banner is shown, so it counts
@@ -195,16 +198,19 @@ every public page. Its responsibilities:
   overlays paint on a plain background instead of a blank canvas.
   Retried automatically on the next `window` `online` event.
 
-### `X-SW-Cache` header (SNOW-482)
+### `X-SW-Cache` header (SNOW-482, SNOW-490)
 
 `static/js/sw.js` stamps every response it serves from Cache Storage —
 the stale-while-revalidate cache hit and all three `_networkFirst`
 cache-fallback branches — with `X-SW-Cache: hit`, via a
 `_stampCacheHit()` helper that rebuilds the (otherwise header-immutable)
-cached `Response`. This is the only reliable signal the page has to
-distinguish a Cache-Storage replay from a genuine server round-trip;
-`pwa_offline.js` reads it to decide whether a response advances
-`sync.last_at` and appends a `log:sync` row.
+cached `Response`. Its synthesized 504 fallbacks for an offline cache
+miss (`_staleWhileRevalidate` and `_basemapStaleWhileRevalidate`) carry
+`X-SW-Cache: miss` instead. `pwa_offline.js` reads this header, plus the
+response status and resolved URL, to decide whether a response advances
+`sync.last_at` and appends a `log:sync` row: it requires a successful
+(2xx), un-stamped, non-synthesized same-origin response — excluding
+both cache replays and synthesized fallbacks.
 
 ### Sync log (SNOW-482)
 
