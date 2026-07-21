@@ -93,18 +93,23 @@
   }
 
   // ---- Dismiss button ----
+  // SNOW-486: #home-intro-dismiss carries data-action="dismiss" inside the
+  // [data-overlay] #home-intro, so the click itself — the hide (attribute
+  // idiom, unchanged) and the localStorage persist (data-overlay-persist=
+  // "snowdesk.home.intro=dismissed") — is handled by
+  // static/js/overlays.js's shared delegated handler. This only runs the
+  // teardown that handler doesn't know about.
 
-  const dismissBtn = document.getElementById('home-intro-dismiss');
-  if (dismissBtn) {
-    dismissBtn.addEventListener('click', () => {
-      hide(true);
-      // Clear the hash so /#about does not re-open immediately if the user
-      // presses the browser back button and forward again.
-      if (hashIsAbout()) {
-        history.replaceState(null, '', location.pathname + location.search);
-      }
-    });
-  }
+  document.addEventListener('overlay:dismissed', (event) => {
+    const dismissed = event.detail && event.detail.overlay;
+    if (dismissed !== overlay) return;
+    overlay.setAttribute('aria-hidden', 'true');
+    // Clear the hash so /#about does not re-open immediately if the user
+    // presses the browser back button and forward again.
+    if (hashIsAbout()) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  });
 
   // ---- Keyboard dismiss (Escape) ----
 

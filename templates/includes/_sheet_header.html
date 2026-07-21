@@ -4,15 +4,19 @@ templates/includes/_sheet_header.html — Shared header for map fly-out sheets.
 
 Renders a title plus a persistent × close control. Used by any sheet state
 that lacks its own close affordance (favourites and reports map sheets).
-The × dispatches through the sheet's existing delegated close-button
-listener via ``data-action`` — it does not call JS directly.
+The × dispatches through ``data-action`` — it does not call JS directly.
+
+SNOW-486: ``close_action`` is conventionally ``"dismiss"`` — the owning
+sheet is a ``[data-overlay]`` element (includes/_overlay_sheet.html), so
+static/js/overlays.js's shared delegated handler picks up a
+``[data-action="dismiss"]`` click without the sheet's own JS needing to
+bind a listener for it.
 
 Parameters (passed via ``{% include … with … %}``):
   title        (string) — Heading text rendered next to the ×.
-  close_action (string) — Value for the button's ``data-action`` attribute,
-                           matching the delegated listener the owning sheet
-                           already wires up (e.g. "close-favourite-sheet",
-                           "close-report-sheet").
+  close_action (string) — Value for the button's ``data-action`` attribute.
+                           Pass "dismiss" unless the owning sheet has its
+                           own bespoke close handler.
 {% endcomment %}
 <div class="flex items-center justify-between px-2 pt-1 pb-3">
     <span class="text-sm font-semibold text-text-1">{{ title }}</span>

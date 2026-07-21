@@ -71,11 +71,23 @@ class TestHomePageBasic:
         assert 'id="home-intro"' in content
 
     def test_home_renders_offmap_banner(self) -> None:
-        """The #offmap-banner element is present on / (moved from map.html in SNOW-344)."""
+        """The #offmap-banner element is present on / (moved from map.html in SNOW-344).
+
+        SNOW-486: it now renders through the shared floating-banner primitive
+        and is wired to overlays.js — assert the consolidation contract
+        (``data-overlay`` + the class hide idiom + a ``data-action="dismiss"``
+        control) so it can't silently regress back to bespoke markup with no
+        shared dismiss.
+        """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert 'id="offmap-banner"' in content
+        # The element opts into the shared dismiss handler.
+        assert "data-overlay" in content
+        assert 'data-overlay-hide="class"' in content
+        # And carries the standard × dismiss control every other overlay uses.
+        assert 'data-action="dismiss"' in content
 
     def test_map_redirect_returns_301_to_home(self) -> None:
         """/map/ returns a 301 to / (SNOW-344)."""

@@ -20,14 +20,10 @@ Context expected:
   from #report-btn which is rendered by _map_embed.html.)
 {% endcomment %}
 {% if report_visible %}
-    {# Sheet container — hidden until report.js opens it.                    #}
-    <div
-        id="report-sheet"
-        hidden
-        class="fixed bottom-0 left-0 right-0 z-40 rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 [box-shadow:var(--shadow-glass)] sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
-        aria-label='{% trans "Field observation report" %}'
-    >
-    </div>
+    {# Sheet container — hidden until report.js opens it. SNOW-486:         #}
+    {# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
+    {% trans "Field observation report" as report_sheet_aria_label %}
+    {% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
     {# SNOW-475: shared touch-friendly place-picker — must precede          #}
     {# report.js in document order (both are defer, so document-order      #}
     {# defer execution guarantees window.PlacePicker exists first).        #}

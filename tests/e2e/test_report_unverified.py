@@ -107,3 +107,11 @@ def test_unverified_user_sees_verify_prompt_no_form_load(
     page.wait_for_timeout(200)
     assert form_requests == []
     assert forbidden_errors == []
+
+    # SNOW-486: the verify prompt must carry the shared × dismiss control like
+    # every other sheet state (it previously rendered headerless, leaving the
+    # overlay with no close mechanic). Clicking it dismisses the sheet.
+    close = page.locator('#report-sheet [data-action="dismiss"]')
+    assert close.count() == 1
+    close.click()
+    page.wait_for_selector("#report-sheet[hidden]", state="attached")

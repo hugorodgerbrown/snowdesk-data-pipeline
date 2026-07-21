@@ -8,49 +8,34 @@ static/js/pwa_install.js once the meaningful-action threshold is met
 platform-appropriate.
 
   * #pwa-install-banner — Android / desktop Chromium. "Install"
-    triggers the deferred beforeinstallprompt.
+    triggers the deferred beforeinstallprompt. SNOW-486: markup
+    delegated to the shared banner primitive (includes/_overlay_banner.html,
+    "floating" variant) — byte-identical shape to _sw_update_banner.html
+    apart from copy/ids/CTA action.
   * #pwa-install-ios    — iOS Safari. Shows a static Share → Add to
-    Home Screen illustration (SVG inline, no external asset).
+    Home Screen illustration (SVG inline, no external asset). Kept
+    bespoke (not through the primitive) — the 3-icon diagram row has no
+    equivalent slot in the shared shape — but still adopts the
+    --z-banner token and the data-overlay/data-action="dismiss"
+    convention so static/js/overlays.js's shared handler can hide it.
 
 Both use design tokens (bg-card, text-text-1/2, border-border,
 rounded-card) and _button.html for the primary CTA.
 {% endcomment %}
-<div
-    id="pwa-install-banner"
-    role="dialog"
-    aria-labelledby="pwa-install-title"
-    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[9997] w-[calc(100vw-2rem)] max-w-md"
->
-    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass p-4 flex items-start gap-3">
-        <div class="flex-1 min-w-0">
-            <p id="pwa-install-title" class="text-sm font-semibold">
-                {% trans "Install Snowdesk" %}
-            </p>
-            <p class="text-xs text-text-2 mt-0.5">
-                {% blocktrans trimmed %}
-                    Add Snowdesk to your home screen for one-tap access and notifications when a new bulletin lands.
-                {% endblocktrans %}
-            </p>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-            {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id="pwa-install-accept" extra_classes="whitespace-nowrap" label=_("Install") %}
-            <button
-                type="button"
-                data-action="dismiss"
-                aria-label="{% trans 'Dismiss' %}"
-                class="text-text-3 hover:text-text-1 text-lg leading-none px-2"
-            >
-                &times;
-            </button>
-        </div>
-    </div>
-</div>
+{% trans "Install Snowdesk" as pwa_install_title %}
+{% blocktrans asvar pwa_install_body trimmed %}
+    Add Snowdesk to your home screen for one-tap access and notifications when a new bulletin lands.
+{% endblocktrans %}
+{% trans "Install" as pwa_install_cta_label %}
+{% include "includes/_overlay_banner.html" with id="pwa-install-banner" variant="floating" role="dialog" title_id="pwa-install-title" title=pwa_install_title body=pwa_install_body cta_id="pwa-install-accept" cta_label=pwa_install_cta_label dismissible=True %}
 
 <div
     id="pwa-install-ios"
     role="dialog"
     aria-labelledby="pwa-install-ios-title"
-    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[9997] w-[calc(100vw-2rem)] max-w-md"
+    data-overlay
+    data-overlay-hide="class"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-banner)] w-[calc(100vw-2rem)] max-w-md"
 >
     <div class="bg-card text-text-1 rounded-card border border-border shadow-glass p-4">
         <div class="flex items-start justify-between gap-3">

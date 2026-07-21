@@ -148,12 +148,20 @@
     sheet.innerHTML = '';
   }
 
-  // Delegate close from Cancel / Close buttons inside the sheet.
-  document.addEventListener('click', function (event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (target && target.closest && target.closest('[data-action="close-report-sheet"]')) {
-      closeSheet();
-    }
+  // SNOW-486: #report-sheet is a [data-overlay] element (see
+  // includes/_overlay_sheet.html), so a click on any
+  // [data-action="dismiss"] inside it — the Cancel button, the header ×,
+  // the confirmation's Close button — is already caught by
+  // static/js/overlays.js's shared delegated handler, which hides the
+  // sheet (the attribute idiom it already used) and dispatches
+  // overlay:dismissed. This listens for that event to run the teardown
+  // the shared handler doesn't know about: deactivating the place-picker
+  // and clearing the sheet's content so the next open starts fresh.
+  document.addEventListener('overlay:dismissed', function (event) {
+    const el = event.detail && event.detail.overlay;
+    if (el !== sheet) return;
+    window.PlacePicker?.deactivate();
+    sheet.innerHTML = '';
   });
 
   // Esc dismisses the sheet.
@@ -441,7 +449,7 @@
   const SHEET_HEADER_HTML =
     '<div class="flex items-center justify-between px-2 pt-1 pb-3">' +
     '<span class="text-sm font-semibold text-text-1">Report</span>' +
-    '<button type="button" data-action="close-report-sheet" aria-label="Close" ' +
+    '<button type="button" data-action="dismiss" aria-label="Close" ' +
     'class="text-text-2 hover:text-text-1 text-lg leading-none px-1">×</button>' +
     '</div>';
 
@@ -453,6 +461,7 @@
       openSheet();
       if (IS_UNVERIFIED) {
         sheet.innerHTML =
+          SHEET_HEADER_HTML +
           '<p class="px-2 py-4 text-sm text-text-2">Verify your email to submit a field observation. Check your inbox for the verification link.</p>';
       } else if (SIGNIN_URL) {
         sheet.innerHTML =

@@ -183,7 +183,9 @@ try {
 // lazily rehydrated into _basemapOrigins from _classify() on a fresh
 // worker restart, so an idle-terminated worker doesn't lose the
 // allowlist and fall back to network-only for a previously-cached area.
-const CACHE_VERSION = 'snowdesk-shell-v23';
+// SNOW-486: v24 — overlay primitives consolidation touched shell JS/CSS
+// (overlays.js, the toast/banner/modal/sheet partials, z-index tokens).
+const CACHE_VERSION = 'snowdesk-shell-v24';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

@@ -10,33 +10,15 @@ static/js/pwa_version_check.js when:
   * the soft update banner has been showing for more than 24h and the
     user has just cold-launched the app (spec §3.9 24h escalation).
 
-Design contract:
-  * Full-screen backdrop + centred card — the reload button is the only
-    interactive control.
-  * No dismiss / no ×. The user cannot defer indefinitely — security
-    fixes and data-model corrections may be inbound.
-  * Uses ``_button.html`` and design tokens (``bg-card``, ``text-text-1``,
-    ``border-border``); no palette utilities.
+SNOW-486: markup delegated to the shared modal primitive
+(includes/_overlay_modal.html) — this file now only supplies the
+copy/ids. See that partial's header comment for the design contract
+(full-screen backdrop, centred card, no dismiss).
 
 Copy is wrapped in ``{% trans %}`` for future localisation.
 {% endcomment %}
-<div
-    id="pwa-update-modal"
-    role="alertdialog"
-    aria-modal="true"
-    aria-labelledby="pwa-update-modal-title"
-    aria-describedby="pwa-update-modal-body"
-    class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-text-1/60 backdrop-blur-sm p-4"
->
-    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass max-w-md w-full p-6 flex flex-col gap-4">
-        <h2 id="pwa-update-modal-title" class="text-lg font-semibold">
-            {% trans "Update required" %}
-        </h2>
-        <p id="pwa-update-modal-body" class="text-text-2 text-sm leading-prose">
-            {% blocktrans %}Snowdesk has been updated. Reload to continue using the latest version.{% endblocktrans %}
-        </p>
-        <div class="flex justify-end">
-            {% include "includes/_button.html" with variant="primary" size="standard" button_type="button" button_id="pwa-update-modal-reload" label=_("Reload now") %}
-        </div>
-    </div>
-</div>
+{% trans "Update required" as pwa_update_modal_title %}
+{% blocktrans asvar pwa_update_modal_body %}Snowdesk has been updated. Reload to continue using the latest
+    version.{% endblocktrans %}
+{% trans "Reload now" as pwa_update_modal_cta_label %}
+{% include "includes/_overlay_modal.html" with id="pwa-update-modal" title_id="pwa-update-modal-title" body_id="pwa-update-modal-body" title=pwa_update_modal_title body=pwa_update_modal_body cta_id="pwa-update-modal-reload" cta_label=pwa_update_modal_cta_label %}

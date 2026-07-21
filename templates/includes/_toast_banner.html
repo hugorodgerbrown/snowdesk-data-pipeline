@@ -36,6 +36,14 @@
   ARIA: role="alert" aria-live="assertive" — a permanently-failed mutation
   is exactly the kind of thing a screen-reader user must be interrupted
   for, same rationale as the "error"/"warning" kinds in _toast.html.
+
+  SNOW-486: deliberately does NOT carry ``data-overlay`` — the reveal/
+  dismiss above is a slide transition (mutation_queue.js adds "hidden"
+  only once the transition finishes, not on the click itself), which the
+  generic shared handler in static/js/overlays.js would short-circuit by
+  hiding immediately. mutation_queue.js keeps its own direct listener on
+  the "×". Shares the --z-toast token with _toast.html by numeric value
+  (both were z-50) even though its dismiss isn't shared-handler-driven.
 {% endcomment %}
 {% with toast_id=id|default:"mutation-queue-toast" %}
     <div
@@ -43,7 +51,7 @@
         role="alert"
         aria-live="assertive"
         data-testid="mutation-queue-toast"
-        class="{% if static %}flex{% else %}hidden fixed inset-x-0 top-0 z-50 -translate-y-full opacity-0{% endif %} w-full items-center justify-center gap-3 transition-all duration-300 ease-out bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
+        class="{% if static %}flex{% else %}hidden fixed inset-x-0 top-0 z-[var(--z-toast)] -translate-y-full opacity-0{% endif %} w-full items-center justify-center gap-3 transition-all duration-300 ease-out bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
     >
         <span>
             {% if body %}

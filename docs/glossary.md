@@ -82,6 +82,12 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `bulletins/models.py` |
 | RequestLog | Request-context snapshot (geo, UA, referer) captured at sign-up/sign-in/account/share-click | `core/models.py` |
 
+## Frontend and design system
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Overlay primitive | One of the four consolidated DS shapes — banner, toast, sheet, modal — sharing the `data-action="dismiss"` / `[data-overlay]` contract and the `--z-*` token scale | `templates/includes/_overlay_{banner,modal,sheet}.html`, `_toast.html`; `static/js/overlays.js`; [overlay-primitives.md](decisions/overlay-primitives.md) |
+
 ## Testing
 
 | Term | Meaning | Code |

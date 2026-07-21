@@ -40,34 +40,12 @@ Optional context:
     {# it. Mirrors the offline banner's status-warning treatment               #}
     {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
     {# the map down rather than overlaying it.                                  #}
-    <div
-        id="map-offseason-bar"
-        role="note"
-        class="flex items-center gap-2 border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-text"
-    >
-        <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            class="shrink-0"
-        >
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-        <span>
-            {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
-                New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
-            {% endblocktrans %}
-        </span>
-    </div>
+    {# SNOW-486: markup delegated to the shared banner primitive               #}
+    {# (includes/_overlay_banner.html, "strip" variant).                        #}
+    {% blocktrans asvar map_offseason_bar_body trimmed with start_month=archived_season_start|date:"F" %}
+        New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
+    {% endblocktrans %}
+    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body %}
 {% endif %}
 {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
 {# fetch to the last populated date when today is past the season end.       #}
@@ -695,6 +673,8 @@ Optional context:
         aria-modal="false"
         aria-label='{% trans "Map help" %}'
         aria-describedby="map-help-tooltip-title map-help-tooltip-body"
+        data-overlay
+        data-overlay-persist="snowdesk.map.help=seen"
     >
         <div id="map-help-ring" aria-hidden="true"></div>
         {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
@@ -703,11 +683,15 @@ Optional context:
         <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
             {# SNOW-457: "×" close in the top-right — the universal dismiss     #}
             {# affordance. Replaces the former "Skip" text button; persists the #}
-            {# dismissed state exactly as Escape does.                          #}
+            {# dismissed state exactly as Escape does. SNOW-486: data-action    #}
+            {# routes the click through the shared overlays.js handler, which   #}
+            {# hides the overlay and persists snowdesk.map.help — map_help.js   #}
+            {# listens for overlay:dismissed to restore focus.                  #}
             <button
                 type="button"
                 id="map-help-close"
                 class="map-help-close"
+                data-action="dismiss"
                 aria-label='{% trans "Close" %}'
             >
                 <svg
@@ -757,7 +741,13 @@ Optional context:
         {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
         {# role="complementary" (non-blocking, map stays interactive behind it),  #}
         {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}
-        <div id="home-intro" class="home-intro" role="complementary">
+        <div
+            id="home-intro"
+            class="home-intro"
+            role="complementary"
+            data-overlay
+            data-overlay-persist="snowdesk.home.intro=dismissed"
+        >
             <div class="home-intro-card">
                 <div class="home-intro-identity">
                     <span class="home-intro-wordmark">Snowdesk</span>
@@ -776,10 +766,15 @@ Optional context:
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">
+                    {# SNOW-486: data-action routes the click through the shared #}
+                    {# overlays.js handler, which hides the overlay and persists #}
+                    {# snowdesk.home.intro — home_intro.js listens for           #}
+                    {# overlay:dismissed to clear the /#about hash.               #}
                     <button
                         id="home-intro-dismiss"
                         type="button"
                         class="home-intro-dismiss"
+                        data-action="dismiss"
                         aria-label='{% trans "Dismiss and explore the map" %}'
                     >
                         {% trans "Explore the map" %}

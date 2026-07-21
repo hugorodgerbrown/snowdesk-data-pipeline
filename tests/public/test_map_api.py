@@ -1977,7 +1977,8 @@ class TestCommunityReportsGeojson:
             FieldObservationFactory.create(observed_at=observed_at)
             response = Client().get(reverse("api:community_reports_geojson"))
         properties = response.json()["features"][0]["properties"]
-        assert properties["observed_at"] == "2026-07-19T10:30:00+00:00"
+        expected = observed_at.replace(minute=30, second=0).isoformat()
+        assert properties["observed_at"] == expected
 
     def test_response_never_exposes_raw_coordinates_or_identity(self) -> None:
         """No full-precision coord, gps_*, user, or pk fields cross the wire."""

@@ -46,7 +46,7 @@ Context:
     {% if gps_lon is not None %}<input type="hidden" name="gps_lon" value="{{ gps_lon }}">{% endif %}
 
     {% trans "Report" as report_form_title %}
-    {% include "includes/_sheet_header.html" with title=report_form_title close_action="close-report-sheet" %}
+    {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" %}
 
     <div class="flex items-start justify-between gap-2 text-sm">
         <span class="text-text-2">
@@ -93,7 +93,7 @@ Context:
     <button
         type="button"
         class="text-sm font-medium rounded-tag text-text-2 border border-text-3/30 hover:text-text-1 hover:border-text-2 transition-colors px-4 py-2"
-        data-action="close-report-sheet"
+        data-action="dismiss"
     >
         {% trans "Cancel" %}
     </button>
