@@ -10,7 +10,7 @@ Covers:
   - Missing aggregation: logs ERROR and returns empty traits (no synthesis).
   - Happy paths: both empty, empty title fallback, 3+ aggregation warning.
   - Version 3: metadata and prose extraction, _parse_iso_timestamp helper,
-    tendency list, back-compat top-level snowpack_structure.
+    tendency list.
   - Version 4: source detection, ALBINA aggregation synthesis,
     per-problem extras and avalanche_type, avalanche_activity prose,
     danger_patterns; CH regression tests asserting empty new slots.
@@ -243,7 +243,6 @@ class TestBuildRenderModelStableDay:
         assert rm["version"] == RENDER_MODEL_VERSION
         assert "danger" in rm
         assert "traits" in rm
-        assert "snowpack_structure" in rm
         assert "metadata" in rm
         assert "prose" in rm
 
@@ -270,11 +269,11 @@ class TestBuildRenderModelStableDay:
         assert compute_day_character(rm).label == "Stable day"
 
     def test_snowpack_structure_populated(self) -> None:
-        """snowpack_structure is populated from the raw data."""
+        """prose.snowpack_structure is populated from the raw data."""
         props = _load_sample("sample_stable_day.json")
         rm = build_render_model(props)
-        assert rm["snowpack_structure"] is not None
-        assert "stable" in rm["snowpack_structure"].lower()
+        assert rm["prose"]["snowpack_structure"] is not None
+        assert "stable" in rm["prose"]["snowpack_structure"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1073,11 +1072,11 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 7."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 8."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 7
+        assert RENDER_MODEL_VERSION == 8
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
@@ -1583,33 +1582,6 @@ class TestBuildProseAllMissing:
         props: dict[str, Any] = {}
         prose = _build_prose(props)
         assert prose["tendency"] == []
-
-
-# ---------------------------------------------------------------------------
-# Version 3 — back-compat: top-level snowpack_structure == prose.snowpack_structure
-# ---------------------------------------------------------------------------
-
-
-class TestBackCompatSnowpackStructure:
-    """Tests that top-level snowpack_structure mirrors prose.snowpack_structure."""
-
-    def test_top_level_equals_prose_value(self) -> None:
-        """render_model['snowpack_structure'] == render_model['prose']['snowpack_structure']."""
-        props = _load_sample("sample_variable_day.json")
-        rm = build_render_model(props)
-        assert rm["snowpack_structure"] == rm["prose"]["snowpack_structure"]
-
-    def test_top_level_equals_prose_when_none(self) -> None:
-        """Both are None when snowpackStructure is absent."""
-        props: dict[str, Any] = {
-            "bulletinID": "no-snowpack-001",
-            "dangerRatings": [{"mainValue": "low"}],
-            "avalancheProblems": [],
-            "customData": {"CH": {}},
-        }
-        rm = build_render_model(props)
-        assert rm["snowpack_structure"] is None
-        assert rm["prose"]["snowpack_structure"] is None
 
 
 # ---------------------------------------------------------------------------

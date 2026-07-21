@@ -46,7 +46,7 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | Bulletin | One CAAML bulletin from one provider for one validity window; `bulletin_id` globally unique; holds `raw_data` + `render_model` | `bulletins/models.py` |
 | RegionBulletin | Through table (bulletin, MicroRegion); snapshots `region_name_at_time` because region names drift | `bulletins/models.py` |
 | PipelineRun | One execution of an ingestion run — status, timings, created/updated/failed counts | `bulletins/models.py` |
-| Render model | Versioned presentation JSON built at ingest so templates contain no derivation logic; `RENDER_MODEL_VERSION = 7` | `bulletins/services/render_model.py` (`build_render_model()`); stored on `Bulletin.render_model` |
+| Render model | Versioned presentation JSON built at ingest so templates contain no derivation logic; `RENDER_MODEL_VERSION = 8` | `bulletins/services/render_model.py` (`build_render_model()`); stored on `Bulletin.render_model` |
 | Danger rating | EAWS 1–5 scale (low → very_high) plus `no_snow` / `no_rating` | `DangerRatingValue` in `bulletins/schema.py`; numeric map `_DANGER_NUMBER` in `render_model.py` |
 | Subdivision | SLF's +/=/− refinement of a level (e.g. `4-`) | carried through render model and `RegionDayRating.subdivisions` |
 | RegionDayRating | Denormalised per-(region, date) min/max rating from the authoritative bulletin; feeds the calendar and CSV export | `bulletins/models.py`; built by `bulletins/services/day_rating.py` |

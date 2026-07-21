@@ -142,7 +142,6 @@ def _problem_card_render_model(elevation: dict[str, Any] | None) -> dict[str, An
                 "danger_level": 2,
             }
         ],
-        "snowpack_structure": None,
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",
