@@ -369,7 +369,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // too; the ``.basemap-menu-item`` selector above also matches the
   // overlay checkboxes, which carry no ``data-basemap-url``, hence the
   // truthy filter below.
-  if ('serviceWorker' in navigator) {
+  //
+  // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
+  // e2e SW-stripping helpers define the property with ``value: undefined``
+  // (so the key is present but the value is nullish), and dereferencing
+  // ``navigator.serviceWorker.ready`` would throw and abort map init.
+  if (navigator.serviceWorker) {
     const basemapOrigins = [
       ...new Set(
         Object.values(BASEMAP_OPTIONS)
