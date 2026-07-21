@@ -16,6 +16,9 @@ from __future__ import annotations
 import re
 import uuid
 
+from playwright.sync_api import Page
+from pytest_django.live_server_helper import LiveServer
+
 from tests.e2e.conftest import PwaPage
 
 # ---------------------------------------------------------------------------
@@ -230,9 +233,9 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     assert third["after"] != third["before"]
 
     # The offline banner reads the persisted clock — going offline fills the
-    # "App last synced …" sentence from the value the fetches above already
-    # wrote, with no further network activity required. The clock resolves
-    # to a relative phrase (Intl.RelativeTimeFormat, e.g. "now" or
+    # "Offline — last synced …" summary from the value the fetches above
+    # already wrote, with no further network activity required. The clock
+    # resolves to a relative phrase (Intl.RelativeTimeFormat, e.g. "now" or
     # "5 seconds ago"), never the em-dash placeholder.
     page.context.set_offline(True)
     try:
@@ -245,6 +248,65 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     assert synced_text is not None
     assert synced_text.strip() not in ("", "—")
     assert re.search(r"\bago\b|\bnow\b", synced_text.strip())
+
+
+def test_last_synced_phrase_auto_updates_while_offline(
+    live_server: LiveServer, page: Page, _load_test_data: None
+) -> None:
+    """SNOW-482: the "last synced" phrase re-renders on a timer while shown.
+
+    With the page clock frozen, seed the sync clock 30 s in the past and
+    go offline (which reveals the banner and starts its re-render ticker).
+    Fast-forwarding two minutes must advance the phrase from a
+    seconds-granularity read to a minutes one WITHOUT any user
+    interaction — proving the timer, not just the initial render, updates
+    the value. The real service worker is stripped (as in test_pwa_db.py)
+    so its cache replays and telemetry cannot perturb the ledger; this
+    test is about the timer alone.
+    """
+    page.clock.install()
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
+    page.goto(live_server.url)
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+
+    # Seed the sync clock 30 s before the frozen "now", then reload so
+    # pwa_offline.js hydrates it from meta:app on init.
+    page.evaluate(
+        """() => window.pwaDb.put('meta:app', {
+            key: 'sync.last_at',
+            value: new Date(Date.now() - 30000).toISOString(),
+        })"""
+    )
+    page.reload()
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+
+    selector = '#pwa-offline-banner [data-role="synced-at"]'
+    page.context.set_offline(True)
+    try:
+        page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
+        first = page.eval_on_selector(selector, "(el) => el.textContent")
+        # 30 s in the past → a seconds-granularity phrase, not minutes.
+        assert first is not None and "minute" not in first
+
+        # Advance two minutes; the 30 s ticker fires and re-renders the
+        # phrase against the advanced clock.
+        page.clock.fast_forward("02:00")
+        page.wait_for_function(
+            """(sel) => {
+                const el = document.querySelector(sel);
+                return el && /minute/.test(el.textContent);
+            }""",
+            arg=selector,
+            timeout=5000,
+        )
+        second = page.eval_on_selector(selector, "(el) => el.textContent")
+    finally:
+        page.context.set_offline(False)
+    assert second is not None and "minute" in second
+    assert second != first
 
 
 # ---------------------------------------------------------------------------

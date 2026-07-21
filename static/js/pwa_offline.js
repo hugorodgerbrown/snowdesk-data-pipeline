@@ -59,6 +59,11 @@
   const SYNC_LAST_AT_KEY = 'sync.last_at';
   const FRESHNESS_LAST_GENERATED_AT_KEY = 'freshness.last_generated_at';
 
+  // SNOW-482: cadence at which the banner re-renders its relative
+  // "last synced" phrase while shown, so it counts up live rather than
+  // freezing at the value captured when the banner appeared.
+  const FRESHNESS_TICK_MS = 30000;
+
   // Extensions treated as static-asset requests for the purposes of the
   // sync log — mirrors static/js/sw.js's STATIC_SHELL_EXTENSIONS. These
   // never represent a meaningful "sync" from the user's point of view.
@@ -123,40 +128,56 @@
   }
 
   /**
-   * Format the data clock as a long absolute date — e.g. "05 June 2026".
-   * Locale-aware via ``Intl.DateTimeFormat``.
-   *
-   * @param {string | Date | null} value
-   * @returns {string}
-   */
-  function formatLongDate(value) {
-    const d = toDate(value);
-    if (!d) return '';
-    return new Intl.DateTimeFormat(undefined, {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }).format(d);
-  }
-
-  /**
-   * Fill the banner's freshness disclosure with the two clocks — the
-   * sync clock as a relative phrase, the data clock as a long date —
-   * degrading to an em dash when a clock is unknown.
+   * Fill the banner summary's "last synced" span with the sync clock as
+   * a relative phrase, degrading to an em dash until the first sync is
+   * known.
    *
    * @param {HTMLElement} banner
    * @returns {void}
    */
   function renderFreshnessCells(banner) {
     const syncedCell = banner.querySelector('[data-role="synced-at"]');
-    const dataCell = banner.querySelector('[data-role="data-at"]');
     if (syncedCell) syncedCell.textContent = formatRelative(syncLastAt) || '—';
-    if (dataCell) dataCell.textContent = formatLongDate(freshnessLastGeneratedAt) || '—';
+  }
+
+  // Re-render the "last synced" phrase on a timer while the banner is
+  // shown, so an open banner counts up ("6 minutes ago" → "7 minutes
+  // ago") rather than freezing. Started when revealed, cleared when
+  // hidden; also self-clears if it wakes to find the banner gone.
+  let freshnessTicker = null;
+
+  /**
+   * Start the freshness re-render timer, if not already running.
+   *
+   * @returns {void}
+   */
+  function startFreshnessTicker() {
+    if (freshnessTicker !== null) return;
+    freshnessTicker = window.setInterval(() => {
+      const banner = document.getElementById(BANNER_ID);
+      if (!banner || banner.classList.contains('hidden')) {
+        stopFreshnessTicker();
+        return;
+      }
+      renderFreshnessCells(banner);
+    }, FRESHNESS_TICK_MS);
   }
 
   /**
-   * Reveal / hide the offline banner and refresh its freshness cells.
-   * Idempotent — safe to call on every online/offline transition.
+   * Stop the freshness re-render timer, if running.
+   *
+   * @returns {void}
+   */
+  function stopFreshnessTicker() {
+    if (freshnessTicker === null) return;
+    window.clearInterval(freshnessTicker);
+    freshnessTicker = null;
+  }
+
+  /**
+   * Reveal / hide the offline banner and refresh its "last synced"
+   * phrase. Idempotent — safe to call on every online/offline
+   * transition. Drives the re-render ticker alongside visibility.
    *
    * @param {boolean} online
    */
@@ -165,10 +186,12 @@
     if (!banner) return;
     if (online) {
       banner.classList.add('hidden');
+      stopFreshnessTicker();
       return;
     }
     banner.classList.remove('hidden');
     renderFreshnessCells(banner);
+    startFreshnessTicker();
   }
 
   /**

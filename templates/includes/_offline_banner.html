@@ -9,21 +9,18 @@ static/js/pwa_offline.js when:
   * a fetch / HTMX request just failed with a network error.
 
 The banner is a ``<details>`` disclosure (SNOW-482). The summary row
-carries the offline message and a caret; opening it reveals two
-naturalistic sentences describing two distinct clocks so neither crowds
-the summary line:
+reads "Offline — last synced <relative>", where ``static/js/pwa_offline.js``
+fills the ``data-role="synced-at"`` span with a relative phrase
+("6 minutes ago") derived from ``sync.last_at`` — the wall-clock time
+this device last reached the server, persisted to IndexedDB ``meta:app``.
+The phrase re-renders on a timer while the banner is shown, so an
+open banner keeps counting up rather than freezing. It falls back to an
+em dash until the first sync is known.
 
-  * "App last synced <relative>." — when this device last reached the
-    server (``sync.last_at``, persisted to IndexedDB ``meta:app``),
-    rendered as a relative phrase ("6 minutes ago");
-  * "Data shown dates from <date>." — when the server generated the
-    data it last returned (read from ``X-Data-Generated-At``, SNOW-370,
-    persisted as ``freshness.last_generated_at``), rendered as a long
-    date ("05 June 2026").
-
-``static/js/pwa_offline.js`` fills the two value spans
-(``data-role="synced-at"`` / ``data-role="data-at"``) from those clocks,
-falling back to an em dash when a clock is unknown.
+Opening the caret reveals a short explanation of the offline state. The
+data-generated clock (``freshness.last_generated_at``, read from
+``X-Data-Generated-At``, SNOW-370) is still absorbed and persisted by the
+ledger, but is no longer surfaced on the banner itself.
 
 In-flow, not ``fixed`` — it sits as the first child of the body, above
 ``includes/nav.html``, so when revealed it pushes the nav and page
@@ -57,7 +54,8 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
         <span
             data-role="offline-message"
             class="whitespace-nowrap"
-        >{% trans "Offline — showing cached data." %}</span>
+        >{% trans "Offline — last synced" %}</span>
+        <span data-role="synced-at">—</span>
         <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
@@ -73,7 +71,11 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
     {# overrides the UA rule that hides a closed <details>, so we drive the     #}
     {# collapse ourselves: display:none when closed, block only when open.       #}
     <div class="hidden group-open:block max-w-4xl mx-auto px-4 pb-2 pl-10 text-xs opacity-90">
-        <p>{% trans "App last synced" %} <span data-role="synced-at" class="font-medium">—</span>.</p>
-        <p>{% trans "Data shown dates from" %} <span data-role="data-at" class="font-medium">—</span>.</p>
+        <p>
+            {% blocktrans %}
+                The app has lost contact with the server, and is displaying the latest cached data. It will update as
+                soon as the connection is restored.
+            {% endblocktrans %}
+        </p>
     </div>
 </details>
