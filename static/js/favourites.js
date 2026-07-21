@@ -146,7 +146,7 @@
     title.textContent = titleText;
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
-    closeBtn.setAttribute('data-action', 'close-favourite-sheet');
+    closeBtn.setAttribute('data-action', 'dismiss');
     // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
@@ -156,13 +156,20 @@
     return header;
   }
 
-  // Delegate close from Cancel / Close buttons inside the sheet — survives
-  // every htmx swap since it's bound on document (mirrors report.js).
-  document.addEventListener('click', function (event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (target && target.closest && target.closest('[data-action="close-favourite-sheet"]')) {
-      closeSheet();
-    }
+  // SNOW-486: #favourite-sheet is a [data-overlay] element (see
+  // includes/_overlay_sheet.html), so a click on any
+  // [data-action="dismiss"] inside it — the Cancel button, the header ×,
+  // the confirmation's Close button — is already caught by
+  // static/js/overlays.js's shared delegated handler, which hides the
+  // sheet (the attribute idiom it already used) and dispatches
+  // overlay:dismissed. This listens for that event to run the teardown
+  // the shared handler doesn't know about: deactivating the place-picker
+  // and clearing the sheet's content so the next open starts fresh.
+  document.addEventListener('overlay:dismissed', function (event) {
+    const el = event.detail && event.detail.overlay;
+    if (el !== sheet) return;
+    window.PlacePicker?.deactivate();
+    sheet.innerHTML = '';
   });
 
   // Esc dismisses the sheet, matching report.js.

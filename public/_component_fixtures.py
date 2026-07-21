@@ -1002,11 +1002,11 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Report sheet",
-        "context": {"title": "Report", "close_action": "close-report-sheet"},
+        "context": {"title": "Report", "close_action": "dismiss"},
     },
     {
         "caption": "Favourite sheet",
-        "context": {"title": "Favourite", "close_action": "close-favourite-sheet"},
+        "context": {"title": "Favourite", "close_action": "dismiss"},
     },
 )
 

@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_overlay_sheet.html — Map fly-out sheet primitive (SNOW-486).
+
+Extracts the byte-identical outer wrapper shared by the favourite and
+report map sheets (public/partials/_favourites_surface.html,
+public/partials/_report_surface.html) — an empty container the owning
+JS (favourites.js / report.js) fills via ``innerHTML`` or an HTMX swap,
+never server-rendered with static children.
+
+Hide idiom: the HTML5 ``hidden`` ATTRIBUTE (not a class) — matches every
+other map-internal/JS-driven overlay (#home-intro, #map-help-overlay).
+Carries a bare ``data-overlay`` (no ``data-overlay-hide`` override, so
+static/js/overlays.js's shared handler uses its attribute default) so a
+"×" rendered inside it — anywhere, including content injected later by
+JS — is caught by the shared delegated dismiss handler without each
+sheet's own JS needing to bind a document click listener for it.
+
+Required context:
+  id         — DOM id on the sheet container (e.g. "favourite-sheet").
+  aria_label — Translated label text for the sheet's aria-label.
+{% endcomment %}
+<div
+    id="{{ id }}"
+    hidden
+    data-overlay
+    class="fixed bottom-0 left-0 right-0 z-[var(--z-popup)] rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
+    aria-label="{{ aria_label }}"
+>
+</div>

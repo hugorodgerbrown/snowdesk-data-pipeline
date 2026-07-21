@@ -675,6 +675,8 @@ Optional context:
         aria-modal="false"
         aria-label='{% trans "Map help" %}'
         aria-describedby="map-help-tooltip-title map-help-tooltip-body"
+        data-overlay
+        data-overlay-persist="snowdesk.map.help=seen"
     >
         <div id="map-help-ring" aria-hidden="true"></div>
         {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
@@ -683,11 +685,15 @@ Optional context:
         <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
             {# SNOW-457: "×" close in the top-right — the universal dismiss     #}
             {# affordance. Replaces the former "Skip" text button; persists the #}
-            {# dismissed state exactly as Escape does.                          #}
+            {# dismissed state exactly as Escape does. SNOW-486: data-action    #}
+            {# routes the click through the shared overlays.js handler, which   #}
+            {# hides the overlay and persists snowdesk.map.help — map_help.js   #}
+            {# listens for overlay:dismissed to restore focus.                  #}
             <button
                 type="button"
                 id="map-help-close"
                 class="map-help-close"
+                data-action="dismiss"
                 aria-label='{% trans "Close" %}'
             >
                 <svg
@@ -737,7 +743,13 @@ Optional context:
         {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
         {# role="complementary" (non-blocking, map stays interactive behind it),  #}
         {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}
-        <div id="home-intro" class="home-intro" role="complementary">
+        <div
+            id="home-intro"
+            class="home-intro"
+            role="complementary"
+            data-overlay
+            data-overlay-persist="snowdesk.home.intro=dismissed"
+        >
             <div class="home-intro-card">
                 <div class="home-intro-identity">
                     <span class="home-intro-wordmark">Snowdesk</span>
@@ -756,10 +768,15 @@ Optional context:
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">
+                    {# SNOW-486: data-action routes the click through the shared #}
+                    {# overlays.js handler, which hides the overlay and persists #}
+                    {# snowdesk.home.intro — home_intro.js listens for           #}
+                    {# overlay:dismissed to clear the /#about hash.               #}
                     <button
                         id="home-intro-dismiss"
                         type="button"
                         class="home-intro-dismiss"
+                        data-action="dismiss"
                         aria-label='{% trans "Dismiss and explore the map" %}'
                     >
                         {% trans "Explore the map" %}

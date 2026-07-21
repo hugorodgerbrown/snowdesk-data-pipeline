@@ -158,6 +158,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# when a queued mutation is marked "failed" (a non-408/429 4xx, #}
         {# or one that exhausted its retry budget).                      #}
         {% include "includes/_toast_banner.html" %}
+        {# SNOW-486: shared "×" dismiss handler for every [data-action=    #}
+        {# "dismiss"] control inside a [data-overlay] element, plus the   #}
+        {# toast auto-dismiss controller. No dependency on the scripts    #}
+        {# below — loads first among them so it's registered before any   #}
+        {# overlay could plausibly be revealed and clicked.                #}
+        <script src="{% static 'js/overlays.js' %}" defer></script>
         {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}

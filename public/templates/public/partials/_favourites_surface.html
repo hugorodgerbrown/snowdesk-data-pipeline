@@ -20,15 +20,11 @@ Context expected:
   favourites_signin_url       — str: sign-in page URL for the anon CTA.
 {% endcomment %}
 {% if favourites_visible %}
-    {# Sheet container — hidden until favourites.js opens it. Same token   #}
-    {# classes as #report-sheet so the two surfaces read as one family.    #}
-    <div
-        id="favourite-sheet"
-        hidden
-        class="fixed bottom-0 left-0 right-0 z-40 rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 [box-shadow:var(--shadow-glass)] sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
-        aria-label='{% trans "Favourite" %}'
-    >
-    </div>
+    {# Sheet container — hidden until favourites.js opens it. SNOW-486:    #}
+    {# delegated to the shared sheet primitive (includes/_overlay_sheet.html) — #}
+    {# same shape as #report-sheet so the two surfaces read as one family. #}
+    {% trans "Favourite" as favourite_sheet_aria_label %}
+    {% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label %}
     {# Create-form template — cloned by favourites.js once a pin has been  #}
     {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}
     {# submit is intercepted by favourites.js and routed through the client #}
@@ -45,7 +41,7 @@ Context expected:
             class="flex flex-col gap-3 px-2 py-4"
         >
             {% trans "Add favourite" as favourite_create_title %}
-            {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="close-favourite-sheet" %}
+            {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="dismiss" %}
             {% csrf_token %}
             <input type="hidden" name="lat">
             <input type="hidden" name="lon">
@@ -69,7 +65,7 @@ Context expected:
                 </button>
                 <button
                     type="button"
-                    data-action="close-favourite-sheet"
+                    data-action="dismiss"
                     class="flex-1 rounded-pill border border-border py-2 text-sm font-medium text-text-2"
                 >
                     {% trans "Cancel" %}
@@ -98,7 +94,7 @@ Context expected:
             </p>
             <button
                 type="button"
-                data-action="close-favourite-sheet"
+                data-action="dismiss"
                 class="rounded-tag border border-text-3/30 px-4 py-2 text-sm font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
             >
                 {% trans "Close" %}

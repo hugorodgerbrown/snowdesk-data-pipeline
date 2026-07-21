@@ -281,7 +281,23 @@
 
   backBtn.addEventListener('click', () => advance(-1));
   nextBtn.addEventListener('click', () => advance(1));
-  closeBtn.addEventListener('click', () => close(true));
+  // SNOW-486: closeBtn (#map-help-close) carries data-action="dismiss"
+  // inside the [data-overlay] #map-help-overlay, so the click itself —
+  // the hide (attribute idiom, unchanged) and the localStorage persist
+  // (data-overlay-persist="snowdesk.map.help=seen") — is handled by
+  // static/js/overlays.js's shared delegated handler below. No direct
+  // click binding needed here.
+
+  document.addEventListener('overlay:dismissed', (event) => {
+    const dismissed = event.detail && event.detail.overlay;
+    if (dismissed !== overlay) return;
+    overlay.setAttribute('aria-hidden', 'true');
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      lastFocused.focus();
+    } else if (toggleBtn) {
+      toggleBtn.focus();
+    }
+  });
 
   if (toggleBtn) {
     // Re-opens from step 1 regardless of stored state — this is the
