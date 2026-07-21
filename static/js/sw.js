@@ -547,7 +547,7 @@ self.addEventListener('message', (event) => {
  * ``DB_NAME`` exactly so it opens the SAME database a page already
  * created. It opens WITHOUT a version number so it attaches to whatever
  * schema version the page most recently migrated to (db.js owns
- * ``DB_VERSION`` — currently 2 — and bumps it as stores are added; a
+ * ``DB_VERSION`` — currently 3 — and bumps it as stores are added; a
  * hardcoded version here would throw ``VersionError`` the moment db.js
  * moved ahead). The ``onupgradeneeded`` branch below only fires in the
  * (rare) case a Background Sync fires before any page has ever opened the
