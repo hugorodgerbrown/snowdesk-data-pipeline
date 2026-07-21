@@ -286,10 +286,14 @@ The SW classifies every fetch into one of four buckets:
 
 - **`static`** — same-origin requests for assets in
   `STATIC_SHELL_EXTENSIONS` (CSS, JS, SVG, PNG/JPG/WEBP, ICO,
-  WOFF/WOFF2, WEBMANIFEST) plus the paths in `STATIC_PATHS` (currently
-  just `/api/regions.geojson`). Strategy: **stale-while-revalidate**.
-  The cache is served immediately if hit; a background fetch refreshes
-  the entry for next time.
+  WOFF/WOFF2, WEBMANIFEST) plus the paths in `STATIC_PATHS`
+  (`/api/ratings/`, `/api/regions.geojson`, `/api/major-regions.geojson`,
+  `/api/sub-regions.geojson`, `/api/resorts.geojson`). Strategy:
+  **stale-while-revalidate**. The cache is served immediately if hit; a
+  background fetch refreshes the entry for next time. `/api/ratings/` is
+  safe to cache this way because its URL encodes the data window via
+  `?d=YYYY-MM-DD` and `?country=` — each variant cache-keys separately, so
+  a stale entry can never be returned for the wrong day.
 
 - **`navigate`** — HTML navigations (`request.mode === 'navigate'` or
   destination `document`). Strategy: **network-first** with a
@@ -330,7 +334,12 @@ The SW classifies every fetch into one of four buckets:
   cross-origin request whose origin is not in `_basemapOrigins`.
   Strategy: **network only** — no `event.respondWith()` call, the SW is
   bypassed entirely. This is deliberate: a stale avalanche rating could
-  mislead a user.
+  mislead a user. A basemap whose origin is not in the allowlist, or an
+  area never browsed online, therefore has no cached tiles offline; when
+  the basemap style JSON itself can't be fetched, `static/js/map.js` falls
+  back to an inline background style (SNOW-483, see
+  [`docs/offline-first.md`](offline-first.md)) so the SW-cached region
+  overlays still paint.
 
 The exact rules live in `_classify()` and the strategy helpers
 `_staleWhileRevalidate()` / `_networkFirst()` / `_basemapStaleWhileRevalidate()`
