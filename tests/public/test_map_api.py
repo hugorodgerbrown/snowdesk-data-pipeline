@@ -37,6 +37,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
@@ -1968,19 +1969,15 @@ class TestCommunityReportsGeojson:
 
     def test_observed_at_truncated_to_nearest_quarter_hour(self) -> None:
         """observed_at is floored to the nearest 15-minute mark."""
-        # Anchor to now (like the sibling window tests) so the observation
-        # stays inside the 48h ``_COMMUNITY_REPORTS_WINDOW_HOURS`` filter
-        # regardless of the wall clock — an absolute date silently aged out
-        # of the window and failed once real time passed it. Pin the minute
-        # to 37m42s so the quarter-hour flooring (→ :30:00) is observable.
-        observed_at = (timezone.now() - dt.timedelta(hours=1)).replace(
-            minute=37, second=42, microsecond=0
-        )
-        expected = observed_at.replace(minute=30, second=0).isoformat()
-        FieldObservationFactory.create(observed_at=observed_at)
-        response = Client().get(reverse("api:community_reports_geojson"))
+        observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
+        # Freeze "now" alongside the fixed observed_at so the report stays
+        # inside the endpoint's 48h window regardless of the wall-clock date
+        # the suite runs on (otherwise this assertion rots and features empties).
+        with freeze_time("2026-07-19T11:00:00Z"):
+            FieldObservationFactory.create(observed_at=observed_at)
+            response = Client().get(reverse("api:community_reports_geojson"))
         properties = response.json()["features"][0]["properties"]
-        assert properties["observed_at"] == expected
+        assert properties["observed_at"] == "2026-07-19T10:30:00+00:00"
 
     def test_response_never_exposes_raw_coordinates_or_identity(self) -> None:
         """No full-precision coord, gps_*, user, or pk fields cross the wire."""
