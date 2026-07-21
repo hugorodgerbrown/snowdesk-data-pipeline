@@ -260,15 +260,40 @@ def test_last_synced_phrase_auto_updates_while_offline(
     Fast-forwarding two minutes must advance the phrase from a
     seconds-granularity read to a minutes one WITHOUT any user
     interaction — proving the timer, not just the initial render, updates
-    the value. The real service worker is stripped (as in test_pwa_db.py)
-    so its cache replays and telemetry cannot perturb the ledger; this
-    test is about the timer alone.
+    the value.
+
+    The real service worker is stripped (as in test_pwa_db.py) so its
+    cache replays can't perturb the ledger. Stripping the SW is NOT enough
+    on its own, though. ``pwa_offline.js``'s ``absorbFreshness`` advances
+    ``syncLastAt`` (and re-renders the banner) on EVERY settled same-origin,
+    non-cache response — and the home page keeps such traffic flowing under
+    a faked clock: ``page.clock.fast_forward`` fires maplibre-gl's internal
+    timers, which rebuild the map style and re-fetch ``/api/regions.geojson``
+    / ``/api/ratings`` at the just-advanced clock time, plus telemetry.js's
+    faked flush interval. Any of these settling mid-fast-forward stamps
+    ``syncLastAt`` to the advanced "now", flipping the phrase back off
+    "2 minutes ago" and racing the assertion below — the source of the
+    SNOW-482 serial-suite flake (it's load-sensitive, so it only surfaced
+    under the full serial run).
+
+    This test needs no network at all: the banner is revealed by the
+    ``offline`` event, the phrase is seeded into IndexedDB, and the ticker
+    is a pure timer. So every ``fetch`` is stubbed to a promise that never
+    settles — nothing reaches ``absorbFreshness``, and the freshness ticker
+    is left as the ONLY thing that can re-render the banner, which is exactly
+    what this test means to isolate. Document navigation, ``<script>`` /
+    ``<link>`` asset loads and IndexedDB are unaffected (none go through
+    ``window.fetch``).
     """
     page.clock.install()
     page.add_init_script(
         "Object.defineProperty(navigator, 'serviceWorker', "
         "{ value: undefined, configurable: true });"
     )
+    # Neutralise every fetch (see docstring): a never-settling promise, not
+    # a stub response — even a resolved or rejected one would re-render the
+    # banner via absorbFreshness / the fetch-failure path and mask the ticker.
+    page.add_init_script("window.fetch = () => new Promise(() => {});")
     page.goto(live_server.url)
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
 
