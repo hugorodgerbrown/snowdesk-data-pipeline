@@ -89,7 +89,13 @@
 (function () {
   'use strict';
 
-  if (!('serviceWorker' in navigator)) return;
+  // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
+  // e2e SW-stripping helpers define the property with ``value: undefined``
+  // (key present, value nullish), and the ``navigator.serviceWorker``
+  // dereferences below (``.addEventListener`` etc.) would otherwise throw
+  // (SNOW-484). Equivalent to the ``in`` check wherever the SW is genuinely
+  // supported.
+  if (!navigator.serviceWorker) return;
 
   // The installed-but-waiting worker (the pending update), captured when
   // we show the banner so the "Reload" handler can message it.
