@@ -168,3 +168,71 @@ def test_basemap_swaps_back_in_once_online_again(
     _poll(page, "() => MAP.getStyle()?.name === 'snowdesk-recovered'")
     _poll(page, "() => !!MAP.getSource('regions')")
     assert page_errors == [], f"unexpected JS errors: {page_errors}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_still_offline_recovery_attempt_reinstates_fallback(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A retry that still fails offline must not leave the canvas blank.
+
+    Regression coverage for a Major review finding on SNOW-483: the
+    ``online`` listener always calls ``resolveBasemapStyle().then(style =>
+    map.setStyle(style))``. For a native basemap ``resolveBasemapStyle``
+    resolves immediately with the plain URL — it never rejects, only the
+    ESRI branch fetches internally — so a still-offline retry hands
+    ``setStyle`` a URL that then fails to load. The old ``error`` handler
+    saw ``basemapFallbackActive`` already ``true`` and returned without
+    reinstating anything, so a retry that started from a not-yet-loaded
+    state left the map with nothing to render until the *next* ``online``
+    event. The fix re-engages the fallback whenever an ``error`` fires with
+    no style currently loaded, regardless of whether the fallback was
+    already active, so a still-failing retry can never leave the canvas
+    worse off than before the retry.
+    """
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    route_state: dict[str, Any] = {"style": None}
+
+    def _handle_route(route: Any) -> None:
+        if route_state["style"] is None:
+            route.abort()
+        else:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+                body=json.dumps(route_state["style"]),
+            )
+
+    page.route(settings.BASEMAP_STYLE_URL, _handle_route)
+
+    _navigate_home(page, live_server.url)
+    _poll(page, "() => MAP && MAP.getStyle()?.name === 'snowdesk-offline-fallback'")
+    _poll(page, "() => !!MAP.getSource('regions')")
+
+    # Connectivity "returns" but the network is still actually down: the
+    # route keeps aborting, so the online listener's retry fails to load.
+    # The map must stay in (or return to) a usable degraded state rather
+    # than end up with no style at all.
+    page.evaluate("() => window.dispatchEvent(new Event('online'))")
+
+    _poll(page, "() => MAP && MAP.getStyle()?.name === 'snowdesk-offline-fallback'")
+    _poll(page, "() => !!MAP.getSource('regions')")
+    _poll(
+        page,
+        "() => MAP.getLayer('regions-fill') && "
+        "MAP.getLayoutProperty('regions-fill', 'visibility') === 'visible'",
+    )
+    _poll(page, "() => MAP.isStyleLoaded()")
+
+    # Connectivity genuinely returns: the next retry succeeds and the real
+    # basemap swaps in, exactly as in
+    # test_basemap_swaps_back_in_once_online_again.
+    route_state["style"] = _minimal_style(live_server.url)
+    page.evaluate("() => window.dispatchEvent(new Event('online'))")
+
+    _poll(page, "() => MAP.getStyle()?.name === 'snowdesk-recovered'")
+    _poll(page, "() => !!MAP.getSource('regions')")
+    assert page_errors == [], f"unexpected JS errors: {page_errors}"

@@ -491,18 +491,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
 
-  // SNOW-483: degrade gracefully when the (non-ESRI) basemap style JSON
-  // can't be fetched — offline, the SW treats the third-party style URL as
+  // SNOW-483: degrade gracefully when the basemap style JSON can't be
+  // fetched — offline, the SW treats the third-party style URL as
   // network-only, so the fetch fails, MapLibre never fires ``load``, and
   // every overlay installed inside ``map.on('load')`` below is skipped,
   // leaving a blank canvas even though the regions GeoJSON and ratings are
   // both SW-cached and fetch fine offline. MapLibre emits ``error`` for many
-  // benign reasons too (tile/glyph 404s, SNOW-478), so this is gated hard:
-  // skip if the fallback is already active (idempotent) or if a style is
-  // already loaded (not a cold style-load failure) — only a failure before
-  // any style has loaded triggers the swap.
+  // benign reasons too (tile/glyph 404s, SNOW-478), so the gate is
+  // ``!map.isStyleLoaded()``: no style is currently up, so the error means
+  // "there is no usable style right now" rather than "a loaded style had a
+  // benign hiccup". That window is (rarely) also open during a user-driven
+  // basemap swap via the picker (basemapPickerInit, further down this
+  // file) — if that swap's style genuinely 404s, this engages the fallback
+  // rather than leaving the previous basemap in place. Accepted as unlikely
+  // (CDN-hosted basemap styles/sprites don't 404 in practice) rather than
+  // worth a structural exclusion.
+  //
+  // Two distinct situations share this handler:
+  //  - cold boot: the initial style URL fails before anything has loaded.
+  //  - failed recovery: the ``online`` listener below retries the real
+  //    basemap via ``map.setStyle(url)``. ``resolveBasemapStyle`` resolves
+  //    immediately for a native (non-ESRI) basemap — it never rejects, it
+  //    just hands the URL straight to ``setStyle`` — so if that URL then
+  //    fails to load (still offline) with no style currently active, this
+  //    reinstates the fallback rather than leaving the map with nothing to
+  //    render until the *next* ``online`` event.
+  // Re-engaging is idempotent and loop-safe: ``buildFallbackStyle`` returns
+  // a synchronous inline style with no external fetch, so it becomes
+  // "loaded" immediately and every subsequent benign error returns at the
+  // ``isStyleLoaded()`` guard above.
   map.on('error', () => {
-    if (basemapFallbackActive) return;
     if (map.isStyleLoaded()) return;
     basemapFallbackActive = true;
     map.setStyle(buildFallbackStyle());
