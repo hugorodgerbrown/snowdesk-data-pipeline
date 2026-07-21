@@ -304,9 +304,10 @@
    * available (fetch or HTMX). ``syncLastAt`` / ``sync.last_at`` /
    * the ``log:sync`` row (for qualifying, non-static-asset paths) only
    * advance for a response that is: successful (2xx status), un-stamped
-   * (no ``X-SW-Cache`` header — i.e. not a Cache-Storage replay served
-   * by ``static/js/sw.js``), and same-origin with a *non-empty*
-   * resolved URL. The empty-URL check matters because a synthesized
+   * (no ``X-SW-Cache`` header — i.e. neither a Cache-Storage replay
+   * (``X-SW-Cache: hit``) nor a synthesized offline fallback
+   * (``X-SW-Cache: miss``) served by ``static/js/sw.js``), and
+   * same-origin with a *non-empty* resolved URL. The empty-URL check matters because a synthesized
    * service-worker fallback (offline cache miss — see SNOW-490) has
    * ``url === ''``, which would otherwise resolve against
    * ``location.href`` and be misclassified as a same-origin success.

@@ -78,13 +78,17 @@
  *
  * X-SW-Cache header (SNOW-482, SNOW-490)
  * ----------------------------------------
- * Every response served from Cache Storage — the stale-while-revalidate
- * cache hit and all three ``_networkFirst`` cache-fallback branches — is
- * rebuilt via ``_stampCacheHit()`` with an added ``X-SW-Cache: hit``
- * header before it reaches the page. ``static/js/pwa_offline.js`` reads
- * this header to distinguish a Cache-Storage replay from a genuine
- * server round-trip: only un-stamped same-origin responses advance the
- * persisted "last synced" clock and append a ``log:sync`` row.
+ * Every same-origin response served from Cache Storage — the
+ * stale-while-revalidate cache hit and all three ``_networkFirst``
+ * cache-fallback branches — is rebuilt via ``_stampCacheHit()`` with an
+ * added ``X-SW-Cache: hit`` header before it reaches the page.
+ * (``_basemapStaleWhileRevalidate`` serves its cache hits un-rebuilt:
+ * those responses are cross-origin, so ``pwa_offline.js``'s same-origin
+ * check already excludes them from the sync clock without a stamp.)
+ * ``static/js/pwa_offline.js`` reads this header to distinguish a
+ * Cache-Storage replay from a genuine server round-trip: only 2xx,
+ * un-stamped same-origin responses advance the persisted "last synced"
+ * clock and append a ``log:sync`` row.
  *
  * The synthesized 504 fallbacks in ``_staleWhileRevalidate`` and
  * ``_basemapStaleWhileRevalidate`` (an offline cache miss with no network
