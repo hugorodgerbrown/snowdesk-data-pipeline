@@ -344,11 +344,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     };
     navigator.serviceWorker.ready.then(registerBasemapOrigins).catch(() => {});
-    // .ready only resolves once a worker is already controlling — a page
-    // opened before the SW ever installed won't get another chance until
-    // a new worker takes over. Re-send on controllerchange so a freshly
-    // activated worker (e.g. after an update) also learns the allowlist
-    // promptly, without waiting for the next full page load.
+    // .ready resolves once the registration has an *active* worker, but on
+    // the very first visit that worker is not yet *controlling* this page
+    // (it takes over on the next navigation). Re-send on controllerchange
+    // so a freshly activated worker — the first-install case, and after any
+    // update — learns the allowlist promptly, without a full page reload.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       navigator.serviceWorker.getRegistration().then(registerBasemapOrigins).catch(() => {});
     });
