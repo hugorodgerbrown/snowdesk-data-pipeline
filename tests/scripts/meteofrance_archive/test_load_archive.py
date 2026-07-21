@@ -24,9 +24,12 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import load_archive  # noqa: E402
 import pytest  # noqa: E402
 from django.core.management import call_command  # noqa: E402
-from load_archive import _fixup_envelope, load_archive as run_loader  # noqa: E402
+from load_archive import load_archive as run_loader  # noqa: E402
 
 from bulletins.models import Bulletin, PipelineRun  # noqa: E402
+from bulletins.services.meteofrance_archive_loader import (  # noqa: E402
+    _fixup_envelope,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_NDJSON = FIXTURES_DIR / "sample_archive.ndjson"
@@ -54,70 +57,58 @@ class TestFixupEnvelope:
 
     def test_translates_region_id(self) -> None:
         """regionID is translated from FR-{SLUG} to FR-{NN}."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-ARAVIS", "name": "Aravis"}],
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
-        _fixup_envelope(properties, SLUG_TO_CODE)
+        _fixup_envelope(properties)
         regions = properties["regions"]
         assert isinstance(regions, list)
         assert regions[0]["regionID"] == "FR-02"
 
     def test_synthesises_bulletin_id(self) -> None:
         """bulletinID is synthesised as FR-{NN}-{date}."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-CHABLAIS", "name": "Chablais"}],
             "customData": {"MF": {"massif": "CHABLAIS", "date": "2026-01-15"}},
         }
-        bulletin_id = _fixup_envelope(properties, SLUG_TO_CODE)
+        bulletin_id = _fixup_envelope(properties)
         assert bulletin_id == "FR-01-2026-01-15"
         assert properties["bulletinID"] == "FR-01-2026-01-15"
 
     def test_unknown_slug_returns_none(self) -> None:
         """Unknown massif slug returns None without mutating properties."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-UNKNOWNMASSIF", "name": "Unknown"}],
             "customData": {"MF": {"massif": "UNKNOWNMASSIF", "date": "2026-01-15"}},
         }
-        result = _fixup_envelope(properties, SLUG_TO_CODE)
+        result = _fixup_envelope(properties)
         assert result is None
         assert "bulletinID" not in properties
 
     def test_missing_custom_data_returns_none(self) -> None:
         """Missing customData block returns None."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-ARAVIS", "name": "Aravis"}],
         }
-        result = _fixup_envelope(properties, SLUG_TO_CODE)
+        result = _fixup_envelope(properties)
         assert result is None
 
     def test_missing_regions_returns_none(self) -> None:
         """Missing regions list returns None."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
-        result = _fixup_envelope(properties, SLUG_TO_CODE)
+        result = _fixup_envelope(properties)
         assert result is None
 
     def test_mont_blanc_region_id(self) -> None:
         """MONT-BLANC slug translates to FR-03."""
-        from _massifs import SLUG_TO_CODE
-
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-MONT-BLANC", "name": "Mont Blanc"}],
             "customData": {"MF": {"massif": "MONT-BLANC", "date": "2026-01-20"}},
         }
-        bulletin_id = _fixup_envelope(properties, SLUG_TO_CODE)
+        bulletin_id = _fixup_envelope(properties)
         assert bulletin_id == "FR-03-2026-01-20"
 
 

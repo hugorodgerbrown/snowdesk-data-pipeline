@@ -744,8 +744,6 @@ def home(request: HttpRequest) -> HttpResponse:
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
       ``show_intro``          — True (the overlay renders on the homepage).
       ``is_offseason``        — True when today is past the active season end.
-      ``sample_bulletin_url`` — resolved URL for CH-4115 2026-02-17 (High-danger
-                                day, verified 200 in test_data), via reverse().
       ``edit_mode``           — True when resort-edit mode is active.
       ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
       ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
@@ -787,17 +785,6 @@ def home(request: HttpRequest) -> HttpResponse:
     archived_season_start, _archived_season_end = _season_date_range(season_end)
     season_label = (
         f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
-    )
-
-    # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
-    # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
-    sample_bulletin_url = reverse(
-        "public:bulletin_date",
-        kwargs={
-            "region_id": "ch-4115",
-            "slug": "martigny-verbier",
-            "date_str": "2026-02-17",
-        },
     )
 
     # SNOW-344 (merged from map_view): resort-edit mode when the querystring
@@ -845,7 +832,6 @@ def home(request: HttpRequest) -> HttpResponse:
             "is_offseason": is_offseason,
             "season_label": season_label,
             "archived_season_start": archived_season_start,
-            "sample_bulletin_url": sample_bulletin_url,
         },
     )
 

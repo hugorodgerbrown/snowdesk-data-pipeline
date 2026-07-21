@@ -1,9 +1,13 @@
-"""regions/fixture_utils.py — Shared geometry helpers for fixture-build commands.
+"""regions/fixture_utils.py — Shared geometry and fixture-I/O helpers.
 
 Provides the geometry utility functions used by ``build_france_fixture``,
 ``build_austria_fixture``, ``build_italy_fixture``, and
 ``build_switzerland_fixture`` when computing parent-region geometry from
-child (L4 MicroRegion) geometry.
+child (L4 MicroRegion) geometry, plus the fixture file-I/O helpers
+(``load_fixture``, ``write_fixture``, ``diff_against_existing``,
+``entry_key``) shared by those four builders and by
+``refresh_eaws_fixtures`` (SNOW-488 — these were previously duplicated
+verbatim in each command module).
 
 All functions operate on GeoJSON geometry dicts and on lists of field-dicts
 (the ``fields`` portion of a Django fixture entry).
@@ -15,6 +19,10 @@ Functions:
     bbox_from_children   — bounding box over all child boundaries.
     boundary_from_children — Shapely-derived union of child polygons.
     centre_from_bbox     — bbox midpoint of a single GeoJSON geometry.
+    load_fixture          — read a Django fixture JSON file into entries.
+    write_fixture         — write entries to a Django fixture JSON file.
+    diff_against_existing — count entries that differ from the on-disk fixture.
+    entry_key             — stable string key for a fixture entry.
     _iter_coords_from_geometry — flat list of (lon, lat) pairs from a geometry.
 """
 
@@ -175,6 +183,78 @@ def centre_from_bbox(geometry: dict[str, Any]) -> dict[str, float]:
         "lon": (min(lons) + max(lons)) / 2,
         "lat": (min(lats) + max(lats)) / 2,
     }
+
+
+def load_fixture(path: Path, *, missing_ok: bool = True) -> list[dict[str, Any]]:
+    """Read a Django fixture JSON file into a list of entries.
+
+    Args:
+        path: Path to the fixture file.
+        missing_ok: When True (the default — matches the four
+            ``build_*_fixture`` commands), a missing file returns an empty
+            list instead of raising, since a first-ever build has nothing
+            to diff against. Pass False (matches ``refresh_eaws_fixtures``,
+            which only recomputes geometry on an already-committed
+            fixture) to let a missing file raise instead.
+
+    Returns:
+        The list of fixture entry dicts.
+
+    Raises:
+        FileNotFoundError: When ``missing_ok`` is False and the file is
+            absent.
+
+    """
+    if missing_ok and not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+
+def write_fixture(path: Path, data: list[dict[str, Any]]) -> None:
+    """Write a Django fixture file in the project's canonical format."""
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("Wrote %s (%d entries)", path, len(data))
+
+
+def diff_against_existing(path: Path, new_data: list[dict[str, Any]]) -> int:
+    """Return the number of entries that differ from the on-disk fixture.
+
+    Compares the serialised JSON string of each entry after round-tripping
+    both sides through ``json.dumps`` so normalisation is identical.
+
+    Args:
+        path: Path to the existing fixture file.
+        new_data: Newly generated fixture entry list.
+
+    Returns:
+        Count of changed / added / removed entries.
+
+    """
+    existing = load_fixture(path)
+    new_str = json.dumps(new_data, indent=2, ensure_ascii=False)
+    old_str = json.dumps(existing, indent=2, ensure_ascii=False)
+    if new_str == old_str:
+        return 0
+    new_by_key = {entry_key(e): json.dumps(e, sort_keys=True) for e in new_data}
+    old_by_key = {entry_key(e): json.dumps(e, sort_keys=True) for e in existing}
+    all_keys = set(new_by_key) | set(old_by_key)
+    return sum(1 for k in all_keys if new_by_key.get(k) != old_by_key.get(k))
+
+
+def entry_key(entry: dict[str, Any]) -> str:
+    """Return a stable string key for a fixture entry (model + natural PK field)."""
+    model: str = entry["model"]
+    fields: dict[str, Any] = entry["fields"]
+    if model == "regions.majorregion":
+        return f"{model}:{fields['prefix']}"
+    if model == "regions.subregion":
+        return f"{model}:{fields['prefix']}"
+    if model == "regions.microregion":
+        return f"{model}:{fields['region_id']}"
+    return f"{model}:{json.dumps(fields, sort_keys=True)}"
 
 
 def _iter_coords_from_geometry(

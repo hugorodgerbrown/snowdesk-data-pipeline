@@ -299,9 +299,9 @@ class Bulletin(BaseModel):
         blank=True,
         help_text=(
             "Versioned, presentation-ready view of the bulletin built from "
-            "raw_data. Shape: {version, danger, traits, fallback_key_message, "
-            "snowpack_structure}. Rebuilt by upsert_bulletin and on demand by "
-            "rebuild_render_models."
+            "raw_data. Shape: {version, source, danger, traits, metadata, "
+            "prose, danger_patterns} — see docs/render-model.md. Rebuilt by "
+            "upsert_bulletin and on demand by rebuild_render_models."
         ),
     )
     render_model_version = models.PositiveIntegerField(

@@ -6,7 +6,6 @@ Covers:
   - The intro overlay (#home-intro) is rendered (show_intro=True).
   - The season ribbon (#season-ribbon) is present when data exists.
   - Off-season note present when is_offseason is True.
-  - sample_bulletin_url resolves to the CH-4115 2026-02-17 URL.
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
   - #season-ribbon carries data-default-region-name and -slug on homepage
     (CH-4115 pre-selection, retained — SNOW-342).
@@ -91,42 +90,6 @@ class TestHomePageBasic:
         response = client.get("/map/?d=2026-01-15")
         assert response.status_code == 301
         assert response["Location"] == "/?d=2026-01-15"
-
-    def test_home_sample_bulletin_url_in_context(self) -> None:
-        """home() passes sample_bulletin_url pointing to CH-4115 2026-02-17."""
-        client = Client()
-        response = client.get(reverse("public:home"))
-        assert "sample_bulletin_url" in response.context
-        expected = reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-4115",
-                "slug": "martigny-verbier",
-                "date_str": "2026-02-17",
-            },
-        )
-        assert response.context["sample_bulletin_url"] == expected
-
-    def test_home_sample_bulletin_link_not_in_html(self) -> None:
-        """The sample-bulletin CTA link is no longer rendered in the HTML (SNOW-342).
-
-        The prototype removed the "View a sample bulletin →" anchor from the
-        intro overlay actions.  sample_bulletin_url is still passed to the
-        context (tested above) in case it is needed by a future feature, but it
-        is not rendered as an <a> in the current template.
-        """
-        client = Client()
-        response = client.get(reverse("public:home"))
-        content = response.content.decode()
-        expected = reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-4115",
-                "slug": "martigny-verbier",
-                "date_str": "2026-02-17",
-            },
-        )
-        assert expected not in content
 
     def test_home_loads_map_assets(self) -> None:
         """The homepage loads maplibre, map.css, map.js, and home_intro.js."""

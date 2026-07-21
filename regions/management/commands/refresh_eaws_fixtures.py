@@ -49,6 +49,8 @@ from typing import Any
 
 from django.core.management.base import BaseCommand
 
+from regions.fixture_utils import load_fixture, write_fixture
+
 logger = logging.getLogger(__name__)
 
 _FIXTURES_DIR = Path("regions/fixtures")
@@ -81,7 +83,7 @@ class Command(BaseCommand):
         commit: bool = options["commit"]
         verbosity: int = options.get("verbosity", 1)
 
-        all_entries = _load_fixture(_EAWS_FIXTURE)
+        all_entries = load_fixture(_EAWS_FIXTURE, missing_ok=False)
 
         # Split by model label.
         regions = [e for e in all_entries if e["model"] == _LABEL_MICRO]
@@ -113,25 +115,12 @@ class Command(BaseCommand):
 
         if major_changes or sub_changes:
             combined = majors + subs + regions
-            _write_fixture(_EAWS_FIXTURE, combined)
+            write_fixture(_EAWS_FIXTURE, combined)
 
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS("Fixtures refreshed. Run tox to verify.")
             )
-
-
-def _load_fixture(path: Path) -> list[dict[str, Any]]:
-    """Read a Django fixture JSON file into a list of entries."""
-    return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
-
-
-def _write_fixture(path: Path, data: list[dict[str, Any]]) -> None:
-    """Write a Django fixture JSON file, preserving the project's format."""
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    logger.info("Wrote %s (%d entries)", path, len(data))
 
 
 def _update_geometry_inplace(

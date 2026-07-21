@@ -33,10 +33,10 @@ Version 3 changes:
     ``weather_review``, ``weather_forecast`` HTML strings, and a
     ``tendency`` list. Each tendency entry carries ``comment``,
     ``tendency_type``, ``valid_from``, and ``valid_until``.
-  - Top-level ``snowpack_structure`` is kept (equals ``prose.snowpack_structure``)
-    for backward compatibility. It was originally slated for removal in v4
-    but has been retained — both locations hold the same value (still true
-    as of v7).
+  - Top-level ``snowpack_structure`` was kept (equal to
+    ``prose.snowpack_structure``) for backward compatibility. It was
+    originally slated for removal in v4 but was retained through v7 —
+    see the v8 entry below for its removal.
 
 Version 3 (continued — no shape change requiring regeneration):
   - Removed ``fallback_key_message`` from the output shape. The field was
@@ -110,6 +110,14 @@ Version 7 changes:
     Two new helpers support this: ``band_id_for_problem`` and
     ``band_label_for_elevation``.
 
+Version 8 changes:
+  - Removed the duplicate top-level ``snowpack_structure`` key (SNOW-488).
+    All production consumers (``public/templatetags/snowdesk_html.py``,
+    ``mcp_server/tools.py``) already read the nested
+    ``prose.snowpack_structure`` value; the top-level copy was v2-era
+    back-compat with no remaining reader. ``prose.snowpack_structure`` is
+    unchanged.
+
 Also exposes ``compute_period_transition``, a pure function that inspects the
 ``danger.ratings`` list in a render model and derives a ``PeriodTransition``
 dataclass describing whether the day escalates, de-escalates, is flat-but-split,
@@ -147,7 +155,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 7
+RENDER_MODEL_VERSION: int = 8
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -1969,15 +1977,11 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     metadata = _build_metadata(properties)
     danger_patterns = _resolve_danger_patterns(properties, source)
 
-    # Keep top-level snowpack_structure for v2 back-compat (equals prose copy).
-    snowpack_structure: str | None = prose["snowpack_structure"]
-
     return {
         "version": RENDER_MODEL_VERSION,
         "source": source,
         "danger": danger,
         "traits": traits,
-        "snowpack_structure": snowpack_structure,
         "metadata": metadata,
         "prose": prose,
         "danger_patterns": danger_patterns,
