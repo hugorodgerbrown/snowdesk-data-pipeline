@@ -99,22 +99,21 @@
   }
 
   /**
-   * Compose the banner's freshness suffix from the two clocks,
-   * degrading gracefully when one (or both) is unknown.
+   * Fill the banner's freshness disclosure with the two clocks, one per
+   * ``<dd>`` cell, degrading to an em dash when a clock is unknown.
    *
-   * @returns {string}
+   * @param {HTMLElement} banner
+   * @returns {void}
    */
-  function composeFreshnessLabel() {
-    const synced = formatShort(syncLastAt);
-    const dataFrom = formatShort(freshnessLastGeneratedAt);
-    if (synced && dataFrom) return `Synced ${synced} · data from ${dataFrom}`;
-    if (synced) return `Synced ${synced}`;
-    if (dataFrom) return `Data from ${dataFrom}`;
-    return '';
+  function renderFreshnessCells(banner) {
+    const syncedCell = banner.querySelector('[data-role="synced-at"]');
+    const dataCell = banner.querySelector('[data-role="data-at"]');
+    if (syncedCell) syncedCell.textContent = formatShort(syncLastAt) || '—';
+    if (dataCell) dataCell.textContent = formatShort(freshnessLastGeneratedAt) || '—';
   }
 
   /**
-   * Reveal / hide the offline banner and refresh its freshness suffix.
+   * Reveal / hide the offline banner and refresh its freshness cells.
    * Idempotent — safe to call on every online/offline transition.
    *
    * @param {boolean} online
@@ -127,9 +126,7 @@
       return;
     }
     banner.classList.remove('hidden');
-    const label = banner.querySelector('[data-role="offline-freshness"]');
-    if (!label) return;
-    label.textContent = composeFreshnessLabel();
+    renderFreshnessCells(banner);
   }
 
   /**

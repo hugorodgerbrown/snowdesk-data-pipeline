@@ -8,13 +8,19 @@ static/js/pwa_offline.js when:
   * ``navigator.onLine === false``, or
   * a fetch / HTMX request just failed with a network error.
 
-Copy shows two distinct clocks (SNOW-482): when the device last synced
-with the server (``sync.last_at``, persisted to IndexedDB ``meta:app``)
-and when the server generated the data it last returned (read from
-``X-Data-Generated-At``, SNOW-370, persisted as
-``freshness.last_generated_at``). Once both are known the suffix reads
-"Synced HH:MM DD/MM · data from HH:MM DD/MM"; either clock degrades
-gracefully on its own when the other is unknown.
+The banner is a ``<details>`` disclosure (SNOW-482). The summary row
+carries the offline message and a caret; opening it reveals a ``<dl>``
+with two distinct clocks so neither crowds the summary line:
+
+  * ``Synced`` — when this device last reached the server
+    (``sync.last_at``, persisted to IndexedDB ``meta:app``);
+  * ``Latest data`` — when the server generated the data it last
+    returned (read from ``X-Data-Generated-At``, SNOW-370, persisted as
+    ``freshness.last_generated_at``).
+
+``static/js/pwa_offline.js`` fills the two ``<dd>`` cells
+(``data-role="synced-at"`` / ``data-role="data-at"``) from those clocks,
+falling back to an em dash when a clock is unknown.
 
 In-flow, not ``fixed`` — it sits as the first child of the body, above
 ``includes/nav.html``, so when revealed it pushes the nav and page
@@ -23,13 +29,14 @@ it to zero height.
 
 Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
 {% endcomment %}
-<div
+<details
     id="pwa-offline-banner"
+    data-role="offline-freshness"
     role="status"
     aria-live="polite"
-    class="hidden w-full bg-status-warning-bg text-status-warning-text border-b border-border px-4 py-2 text-sm"
+    class="group hidden w-full bg-status-warning-bg text-status-warning-text border-b border-border text-sm"
 >
-    <div class="max-w-4xl mx-auto flex items-center gap-2">
+    <summary class="max-w-4xl mx-auto flex items-center gap-2 px-4 py-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
         <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
@@ -44,7 +51,28 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
                 d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0"
             />
         </svg>
-        <span data-role="offline-message">{% trans "No connection — showing cached data." %}</span>
-        <span data-role="offline-freshness" class="ml-auto font-mono text-xs opacity-80"></span>
-    </div>
-</div>
+        <span
+            data-role="offline-message"
+            class="whitespace-nowrap"
+        >{% trans "Offline — showing cached data." %}</span>
+        <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            class="ml-auto w-4 h-4 shrink-0 opacity-80 transition-transform group-open:rotate-180"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+        </svg>
+    </summary>
+    {# ``hidden group-open:grid`` — an explicit ``display`` on details content #}
+    {# overrides the UA rule that hides a closed <details>, so we drive the    #}
+    {# collapse ourselves: display:none when closed, grid only when open.       #}
+    <dl class="hidden group-open:grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 max-w-4xl mx-auto px-4 pb-2 pl-10 font-mono text-xs">
+        <dt class="opacity-70">{% trans "Synced" %}</dt>
+        <dd data-role="synced-at">—</dd>
+        <dt class="opacity-70">{% trans "Latest data" %}</dt>
+        <dd data-role="data-at">—</dd>
+    </dl>
+</details>

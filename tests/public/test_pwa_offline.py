@@ -185,7 +185,7 @@ def test_offline_banner_ships_hidden_on_home_page() -> None:
     response = Client().get("/")
     body = response.content.decode("utf-8")
     assert 'id="pwa-offline-banner"' in body
-    assert 'class="hidden w-full' in body
+    assert "hidden w-full" in body
     assert "fixed top-0" not in body
 
 

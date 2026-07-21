@@ -13,6 +13,7 @@ Cache-Storage replay (``X-SW-Cache: hit``) does not.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from tests.e2e.conftest import PwaPage
@@ -228,18 +229,20 @@ def test_sync_clock_advances_on_real_response_not_on_cache_hit(
     assert third["cacheHit"] is None
     assert third["after"] != third["before"]
 
-    # The offline banner reads the persisted clock — going offline shows
-    # "Synced …" from the value the fetches above already wrote, with no
-    # further network activity required.
+    # The offline banner reads the persisted clock — going offline fills the
+    # disclosure's "Synced" cell from the value the fetches above already
+    # wrote, with no further network activity required. The cell holds a
+    # formatted "HH:MM DD/MM" stamp, not the em-dash placeholder.
     page.context.set_offline(True)
     try:
         page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
-        freshness_text = page.eval_on_selector(
-            '[data-role="offline-freshness"]', "(el) => el.textContent"
+        synced_text = page.eval_on_selector(
+            '#pwa-offline-banner [data-role="synced-at"]', "(el) => el.textContent"
         )
     finally:
         page.context.set_offline(False)
-    assert freshness_text is not None and "Synced" in freshness_text
+    assert synced_text is not None
+    assert re.fullmatch(r"\d{2}:\d{2} \d{2}/\d{2}", synced_text.strip())
 
 
 # ---------------------------------------------------------------------------
