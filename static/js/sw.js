@@ -25,14 +25,24 @@
  *                                requested URL has never been visited
  *                                (SNOW-118).
  *
- *   - Everything else           (most /api/* endpoints, third-party
- *                                origins like maplibre + tiles)
+ *   - Everything else           (most /api/* endpoints, and third-party
+ *                                origins not registered as the active
+ *                                basemap)
  *     → network-only. Bulletin JSON, calendar partials, and map tiles
  *     must always reflect server-side freshness; cached avalanche
  *     ratings are dangerous. Exception: /api/ratings/ gets
  *     stale-while-revalidate because its URL encodes the (country,
  *     date) window via query parameters — a stale entry can never be
  *     served for the wrong day, since date rollover changes the URL.
+ *
+ *   - Active basemap origins    (SNOW-484: vector tiles, sprites, glyphs
+ *                                from whichever basemap(s) map.js has
+ *                                registered via postMessage — see
+ *                                _basemapOrigins below)
+ *     → stale-while-revalidate against a dedicated BASEMAP_CACHE, so a
+ *     previously-browsed map area still renders offline. Only readable
+ *     (``cors``) successful responses are cached — never ``opaque``
+ *     no-cors responses, which are unreadable by design.
  *
  * Update contract (the important part)
  * -------------------------------------
@@ -146,7 +156,37 @@ try {
 // SNOW-478: v19 — static/js/map.js now derives overlay label fonts from the
 // active basemap and draws the favourites pin as an SDF icon (fixes glyph
 // 404s on swisstopo/IGN/basemap.at basemaps).
-const CACHE_VERSION = 'snowdesk-shell-v19';
+// SNOW-484: v20 — opportunistic cross-origin basemap caching: a new
+// 'basemap' fetch classification, a dedicated BASEMAP_CACHE kept separate
+// from the shell cache, and a 'register-basemap-origins' message handler
+// fed by static/js/map.js.
+const CACHE_VERSION = 'snowdesk-shell-v20';
+
+// SNOW-484: a dedicated cache for the active basemap's cross-origin
+// responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
+// cache (CACHE_VERSION), so a shell-only change (new CSS, new JS) never
+// evicts a previously-browsed area's offline basemap coverage. See
+// activate's cleanup sweep below for how stale versions of this cache are
+// reaped without touching the current one.
+const BASEMAP_CACHE = 'snowdesk-basemap-v1';
+
+// A single map browsing session at typical zoom levels issues a few
+// hundred vector-tile + sprite + glyph requests across a handful of zoom
+// levels (a manual trace panning/zooming one region logged ~150-300
+// distinct URLs). 600 gives headroom for a longer session while still
+// bounding on-disk growth from origins whose response sizes we don't
+// control — this is a count-based cap, not a byte budget (out of scope
+// for SNOW-484).
+const BASEMAP_CACHE_MAX_ENTRIES = 600;
+
+// SNOW-484: the allowlist of cross-origin basemap origins it is safe to
+// cache. A service worker has no DOM, so it cannot itself read the
+// basemap picker's data-basemap-url attributes — map.js posts them here
+// via a 'register-basemap-origins' message (see the message handler
+// below). Populated fresh (replaced, not merged) on every registration
+// so a stale allowlist from an earlier page load can't linger. Entries
+// are exact ``scheme://host[:port]`` strings.
+let _basemapOrigins = new Set();
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -294,15 +334,21 @@ self.addEventListener('activate', (event) => {
         // Use ``startsWith('snowdesk-shell-')`` rather than a strict
         // equality check so legacy ``map-shell-*`` caches from the
         // SNOW-9 precache controller also get cleared on first install
-        // of the SNOW-79 SW (see the catch-all sweep below).
+        // of the SNOW-79 SW (see the catch-all sweep below). SNOW-484:
+        // also reaps stale ``snowdesk-basemap-*`` versions the same way,
+        // but the second filter below excludes BOTH current-version
+        // caches (CACHE_VERSION and BASEMAP_CACHE) from deletion — the
+        // basemap cache is versioned independently of the shell, so a
+        // shell-only CACHE_VERSION bump must never wipe it.
         const cacheNames = await caches.keys();
         const deletions = cacheNames
           .filter(
             (name) =>
               name.startsWith('snowdesk-shell-') ||
-              name.startsWith('map-shell-'),
+              name.startsWith('map-shell-') ||
+              name.startsWith('snowdesk-basemap-'),
           )
-          .filter((name) => name !== CACHE_VERSION)
+          .filter((name) => name !== CACHE_VERSION && name !== BASEMAP_CACHE)
           .map((name) => caches.delete(name));
         await Promise.all(deletions);
         // Take control of every open client the moment we activate. This is
@@ -339,16 +385,24 @@ self.addEventListener('activate', (event) => {
 /**
  * Decide which strategy applies to a given request.
  *
- * Returns one of: ``'static'`` | ``'navigate'`` | ``'network'``.
+ * Returns one of: ``'static'`` | ``'navigate'`` | ``'basemap'`` | ``'network'``.
  *
  * @param {Request} request
- * @returns {'static' | 'navigate' | 'network'}
+ * @returns {'static' | 'navigate' | 'basemap' | 'network'}
  */
 function _classify(request) {
   if (request.method !== 'GET') return 'network';
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) return 'network';
+  if (url.origin !== self.location.origin) {
+    // SNOW-484: opportunistically cache the active basemap's readable
+    // cross-origin responses (vector tiles, sprites, glyphs) so a
+    // previously-browsed area still renders offline. Any other
+    // cross-origin request (an unregistered CDN, etc.) stays
+    // network-only, unchanged from before SNOW-484.
+    if (_basemapOrigins.has(url.origin)) return 'basemap';
+    return 'network';
+  }
 
   if (request.mode === 'navigate' || request.destination === 'document') {
     return 'navigate';
@@ -385,6 +439,63 @@ async function _staleWhileRevalidate(request) {
     })
     .catch(() => null);
   if (cached) return cached;
+  const network = await fetchPromise;
+  if (network) return network;
+  return new Response('', { status: 504, statusText: 'Gateway Timeout' });
+}
+
+/**
+ * SNOW-484: trim ``cache`` down to at most ``max`` entries, oldest first.
+ * ``Cache.keys()`` returns entries in insertion order, so deleting the
+ * earliest ``length - max`` keys is an LRU-by-insertion-order approximation
+ * — no per-entry timestamp bookkeeping needed, which keeps the basemap
+ * cache path cheap on every put.
+ *
+ * @param {Cache} cache
+ * @param {number} max
+ */
+async function _trimCache(cache, max) {
+  const keys = await cache.keys();
+  const excess = keys.length - max;
+  if (excess <= 0) return;
+  await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+}
+
+/**
+ * SNOW-484: stale-while-revalidate for the active basemap's cross-origin
+ * requests (vector tiles, sprites, glyphs), against the dedicated
+ * ``BASEMAP_CACHE`` rather than the shell's ``CACHE_VERSION`` cache.
+ * Serves a cache hit immediately while refreshing it in the background;
+ * on a cache miss it awaits the network so the very first fetch of a
+ * tile still resolves.
+ *
+ * Only ``ok``, ``cors`` responses are cached. ``opaque`` responses (from
+ * a ``no-cors`` request) are unreadable by design and would poison the
+ * cache with content that can't be verified; a non-2xx response would
+ * cache an error body as if it were a tile. Every origin here comes from
+ * ``_basemapOrigins``, itself sourced from URLs MapLibre already fetches
+ * cross-origin in default (``cors``) mode, so ``opaque`` is not expected
+ * in practice — the type check is defence-in-depth, not a workaround for
+ * an observed MapLibre behaviour.
+ */
+async function _basemapStaleWhileRevalidate(request) {
+  const cache = await caches.open(BASEMAP_CACHE);
+  const cached = await cache.match(request);
+  const fetchPromise = fetch(request)
+    .then(async (response) => {
+      if (response && response.ok && response.type === 'cors') {
+        await cache.put(request, response.clone()).catch(() => {});
+        await _trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+      }
+      return response;
+    })
+    .catch(() => null);
+  if (cached) return cached;
+  // Cache miss: fall through to the network. If that also fails (e.g.
+  // offline and never previously cached), this deliberately does NOT
+  // throw — the caller (_guardedRespond via the fetch handler) still
+  // needs a Response, and a 504 here is more informative than an
+  // unhandled rejection reaching the page as a raw network error.
   const network = await fetchPromise;
   if (network) return network;
   return new Response('', { status: 504, statusText: 'Gateway Timeout' });
@@ -479,6 +590,14 @@ self.addEventListener('fetch', (event) => {
         event.clientId,
       ),
     );
+  } else if (strategy === 'basemap') {
+    event.respondWith(
+      _guardedRespond(
+        _basemapStaleWhileRevalidate(event.request),
+        event.request,
+        event.clientId,
+      ),
+    );
   }
   // 'network' → fall through to the default browser fetch. No
   // event.respondWith() call means the request is never seen by the
@@ -498,6 +617,19 @@ self.addEventListener('message', (event) => {
   // ``clients.claim()``), which hands control to this new shell.
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  // SNOW-484: map.js posts this once BASEMAP_OPTIONS is parsed from the
+  // basemap picker's data-basemap-url attributes (and again on
+  // controllerchange, so a freshly-activated worker learns it promptly).
+  // Replaces rather than merges _basemapOrigins — see its declaration
+  // above for why. Origins for every basemap in the picker are included,
+  // not just the active one, so switching basemap mid-session is covered.
+  if (
+    event.data &&
+    event.data.type === 'register-basemap-origins' &&
+    Array.isArray(event.data.origins)
+  ) {
+    _basemapOrigins = new Set(event.data.origins);
   }
 });
 

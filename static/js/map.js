@@ -319,6 +319,41 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   }
 
+  // SNOW-484: tell the SW which cross-origin basemap origins are safe to
+  // opportunistically cache (vector tiles, sprites, glyphs), so a
+  // previously-browsed area still renders offline. A service worker has
+  // no DOM, so it cannot read data-basemap-url itself (see
+  // static/js/sw.js's 'register-basemap-origins' message handler) — this
+  // is the one-way handoff. Every basemap in the picker is included, not
+  // just the active one, so switching basemap mid-session is covered
+  // too; the ``.basemap-menu-item`` selector above also matches the
+  // overlay checkboxes, which carry no ``data-basemap-url``, hence the
+  // truthy filter below.
+  if ('serviceWorker' in navigator) {
+    const basemapOrigins = [
+      ...new Set(
+        Object.values(BASEMAP_OPTIONS)
+          .filter((url) => typeof url === 'string' && url)
+          .map((url) => new URL(url).origin),
+      ),
+    ];
+    const registerBasemapOrigins = (registration) => {
+      const target = registration && registration.active;
+      if (target) {
+        target.postMessage({ type: 'register-basemap-origins', origins: basemapOrigins });
+      }
+    };
+    navigator.serviceWorker.ready.then(registerBasemapOrigins).catch(() => {});
+    // .ready only resolves once a worker is already controlling — a page
+    // opened before the SW ever installed won't get another chance until
+    // a new worker takes over. Re-send on controllerchange so a freshly
+    // activated worker (e.g. after an update) also learns the allowlist
+    // promptly, without waiting for the next full page load.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      navigator.serviceWorker.getRegistration().then(registerBasemapOrigins).catch(() => {});
+    });
+  }
+
   // SNOW-59: EAWS region overlay layers — three tiers stacked above
   // the basemap. L1 (Major) and L2 (Sub) are outline-only line layers;
   // L4 (Micro) is the data-bearing choropleth and defaults to visible.
