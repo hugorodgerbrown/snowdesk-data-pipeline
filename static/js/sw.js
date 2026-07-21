@@ -76,8 +76,8 @@
  * ``message`` handler so devtools can confirm which SW version is in
  * control.
  *
- * X-SW-Cache header (SNOW-482)
- * -----------------------------
+ * X-SW-Cache header (SNOW-482, SNOW-490)
+ * ----------------------------------------
  * Every response served from Cache Storage — the stale-while-revalidate
  * cache hit and all three ``_networkFirst`` cache-fallback branches — is
  * rebuilt via ``_stampCacheHit()`` with an added ``X-SW-Cache: hit``
@@ -85,6 +85,14 @@
  * this header to distinguish a Cache-Storage replay from a genuine
  * server round-trip: only un-stamped same-origin responses advance the
  * persisted "last synced" clock and append a ``log:sync`` row.
+ *
+ * The synthesized 504 fallbacks in ``_staleWhileRevalidate`` and
+ * ``_basemapStaleWhileRevalidate`` (an offline cache miss with no network
+ * to fall back to) carry ``X-SW-Cache: miss`` instead. They also have
+ * ``url === ''`` (a synthesized ``Response`` has no URL), which
+ * ``pwa_offline.js`` treats as un-resolvable rather than resolving it
+ * against the page's own URL — belt and braces against a synthesized
+ * fallback ever being counted as a successful sync (SNOW-490).
  *
  * Scope
  * -----
@@ -185,7 +193,10 @@ try {
 // allowlist and fall back to network-only for a previously-cached area.
 // SNOW-486: v24 — overlay primitives consolidation touched shell JS/CSS
 // (overlays.js, the toast/banner/modal/sheet partials, z-index tokens).
-const CACHE_VERSION = 'snowdesk-shell-v24';
+// SNOW-490: v25 — synthesized offline-cache-miss 504 fallbacks now stamp
+// X-SW-Cache: miss, so pwa_offline.js can't mistake them for a real
+// same-origin sync.
+const CACHE_VERSION = 'snowdesk-shell-v25';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -591,7 +602,13 @@ async function _staleWhileRevalidate(request) {
   if (cached) return _stampCacheHit(cached);
   const network = await fetchPromise;
   if (network) return network;
-  return new Response('', { status: 504, statusText: 'Gateway Timeout' });
+  // SNOW-490: stamp the synthesized fallback so pwa_offline.js can't
+  // mistake an offline cache miss for a successful sync.
+  return new Response('', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'X-SW-Cache': 'miss' },
+  });
 }
 
 /**
@@ -648,7 +665,13 @@ async function _basemapStaleWhileRevalidate(request) {
   // unhandled rejection reaching the page as a raw network error.
   const network = await fetchPromise;
   if (network) return network;
-  return new Response('', { status: 504, statusText: 'Gateway Timeout' });
+  // SNOW-490: stamp the synthesized fallback so pwa_offline.js can't
+  // mistake an offline cache miss for a successful sync.
+  return new Response('', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'X-SW-Cache': 'miss' },
+  });
 }
 
 /**
