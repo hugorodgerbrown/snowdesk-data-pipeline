@@ -252,7 +252,12 @@ def test_reset_required_state_shows_error_toast_not_false_confirmation(
         """async (name) => {
             await new Promise((resolve) => {
               const del = indexedDB.deleteDatabase(name);
-              del.onsuccess = del.onerror = del.onblocked = () => resolve();
+              // Only settle on a real terminal event — NOT onblocked, which
+              // fires while the delete is still pending behind db.js's live
+              // connection. Resolving there would reopen at version 99 against
+              // the still-present DB. db.js yields on versionchange, so the
+              // block clears itself. See tests/e2e/test_pwa_db.py::_delete_db.
+              del.onsuccess = del.onerror = () => resolve();
             });
             await new Promise((resolve, reject) => {
               const req = indexedDB.open(name, 99);
