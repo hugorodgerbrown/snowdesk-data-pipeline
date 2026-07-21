@@ -697,11 +697,14 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 # ---------------------------------------------------------------------------
 # Changing basemap is a rare, deliberate event, so the vendor URLs live
 # in this catalogue and the env picks a key rather than a raw URL. The
-# resolved URL is passed through ``public.views.map_view`` context and
-# rendered onto the ``#map`` element as ``data-basemap-style``;
-# ``static/js/map.js`` reads it from ``mapEl.dataset.basemapStyle``. To
-# add a candidate: drop a new ``{key: url}`` entry here and set
-# ``BASEMAP=<key>`` in ``.env``. An unknown key raises at startup.
+# resolved catalogue is passed through ``public.views.map_view`` context
+# and rendered as one ``<button data-basemap-key data-basemap-url>`` per
+# style inside the ``#basemap-menu`` popover (SNOW-58); the env-resolved
+# default key is rendered as ``data-default-basemap-key`` on ``#map``.
+# ``static/js/map.js`` reads the catalogue from the menu's DOM at boot and
+# resolves the active style from localStorage × the default key. To add a
+# candidate: drop a new ``{key: url}`` entry here and set ``BASEMAP=<key>``
+# in ``.env``. An unknown key raises at startup.
 
 BASEMAP_STYLES = {
     "openfreemap_liberty": "https://tiles.openfreemap.org/styles/liberty",
