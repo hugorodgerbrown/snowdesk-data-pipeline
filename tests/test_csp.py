@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.test import Client
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
@@ -56,6 +57,21 @@ def test_csp_allows_maplibre_tile_origin() -> None:
     policy = _csp(response)
     assert "connect-src" in policy
     assert "https://tiles.openfreemap.org" in policy
+
+
+@pytest.mark.django_db
+def test_csp_connect_src_derived_from_openfreemap_style_url() -> None:
+    """connect-src allowlists OPENFREEMAP_ORIGIN, derived from OPENFREEMAP_STYLE_URL.
+
+    SNOW-242: the two settings are derived from a single env-configurable
+    value so they never drift.
+    """
+    assert settings.OPENFREEMAP_ORIGIN == "https://tiles.openfreemap.org"
+    assert settings.OPENFREEMAP_STYLE_URL.startswith(settings.OPENFREEMAP_ORIGIN)
+
+    response = Client().get("/")
+    policy = _csp(response)
+    assert settings.OPENFREEMAP_ORIGIN in policy
 
 
 @pytest.mark.django_db
