@@ -23,11 +23,14 @@
  * generated the data* it last returned. These are now tracked and
  * persisted separately:
  *
- *   - ``syncLastAt`` — wall-clock time of the most recent successful
- *     same-origin response that did NOT carry ``X-SW-Cache: hit``
- *     (i.e. a real network round-trip, not a Cache-Storage replay
- *     served by ``static/js/sw.js``). Persisted to IndexedDB
- *     ``meta:app`` under key ``sync.last_at``.
+ *   - ``syncLastAt`` — wall-clock time of the most recent *successful*
+ *     (2xx) same-origin response that is neither cache-served
+ *     (``X-SW-Cache`` absent) nor a synthesized service-worker fallback
+ *     (a non-empty resolved URL — see SNOW-490: an offline cache miss
+ *     in ``static/js/sw.js`` resolves to a synthesized 504 with
+ *     ``url === ''``, which must not be mistaken for a real
+ *     round-trip). Persisted to IndexedDB ``meta:app`` under key
+ *     ``sync.last_at``.
  *   - ``freshnessLastGeneratedAt`` — newest ``X-Data-Generated-At``
  *     header seen, regardless of whether it came from the network or
  *     the cache (a cache-served response still tells the user how old
@@ -297,33 +300,42 @@
   }
 
   /**
-   * Called whenever a response header set + resolved URL is available
-   * (fetch or HTMX). Reads ``X-SW-Cache`` to tell a Cache-Storage
-   * replay apart from a real server round-trip: only an un-stamped
-   * same-origin response advances ``syncLastAt`` / persists
-   * ``sync.last_at`` / appends a ``log:sync`` row (for qualifying,
-   * non-static-asset paths). ``X-Data-Generated-At`` is always
-   * absorbed regardless of cache-hit status — a cache-served response
-   * still tells the user how old the data it's showing is.
+   * Called whenever a response header set + resolved URL + status is
+   * available (fetch or HTMX). ``syncLastAt`` / ``sync.last_at`` /
+   * the ``log:sync`` row (for qualifying, non-static-asset paths) only
+   * advance for a response that is: successful (2xx status), un-stamped
+   * (no ``X-SW-Cache`` header — i.e. not a Cache-Storage replay served
+   * by ``static/js/sw.js``), and same-origin with a *non-empty*
+   * resolved URL. The empty-URL check matters because a synthesized
+   * service-worker fallback (offline cache miss — see SNOW-490) has
+   * ``url === ''``, which would otherwise resolve against
+   * ``location.href`` and be misclassified as a same-origin success.
+   * ``X-Data-Generated-At`` is always absorbed regardless of cache-hit
+   * status — a cache-served response still tells the user how old the
+   * data it's showing is.
    *
    * @param {(name: string) => string | null} getHeader
    * @param {string} responseUrl
+   * @param {number} status
    */
-  function absorbFreshness(getHeader, responseUrl) {
+  function absorbFreshness(getHeader, responseUrl, status) {
     const now = new Date();
     const cacheHit = !!getHeader('X-SW-Cache');
+    const successful = status >= 200 && status < 300;
 
     let sameOrigin = false;
     let pathname = '';
-    try {
-      const parsed = new URL(responseUrl, window.location.href);
-      sameOrigin = parsed.origin === window.location.origin;
-      pathname = parsed.pathname;
-    } catch (_err) {
-      sameOrigin = false;
+    if (responseUrl) {
+      try {
+        const parsed = new URL(responseUrl, window.location.href);
+        sameOrigin = parsed.origin === window.location.origin;
+        pathname = parsed.pathname;
+      } catch (_err) {
+        sameOrigin = false;
+      }
     }
 
-    if (!cacheHit && sameOrigin) {
+    if (successful && !cacheHit && sameOrigin) {
       syncLastAt = now;
       persistMeta(SYNC_LAST_AT_KEY, now.toISOString());
       if (!isStaticAssetPath(pathname)) {
@@ -356,7 +368,11 @@
       try {
         const response = await original(...args);
         try {
-          absorbFreshness((name) => response.headers.get(name), response.url);
+          absorbFreshness(
+            (name) => response.headers.get(name),
+            response.url,
+            response.status,
+          );
         } catch (_err) {
           // Never break the caller on a header quirk.
         }
@@ -380,7 +396,11 @@
       const xhr = evt?.detail?.xhr;
       if (!xhr || typeof xhr.getResponseHeader !== 'function') return;
       try {
-        absorbFreshness((name) => xhr.getResponseHeader(name), xhr.responseURL || '');
+        absorbFreshness(
+          (name) => xhr.getResponseHeader(name),
+          xhr.responseURL || '',
+          xhr.status,
+        );
       } catch (_err) {
         // Ignore.
       }
