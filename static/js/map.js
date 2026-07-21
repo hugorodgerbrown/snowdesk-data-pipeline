@@ -387,6 +387,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (target) {
         target.postMessage({ type: 'register-basemap-origins', origins: basemapOrigins });
       }
+      // SNOW-487: also mirror the allowlist into the durable meta:app
+      // store, so a service worker that gets idle-terminated and later
+      // restarted for a fresh 'fetch' event (an empty in-memory
+      // _basemapOrigins) can rehydrate it from IndexedDB instead of
+      // wrongly falling back to network-only for a previously-cached
+      // area. Best-effort and non-blocking, matching the same
+      // window.pwaDb guard idiom as static/js/pwa_offline.js's
+      // persistMeta() — must never throw or delay basemap registration
+      // when IndexedDB is unavailable (private mode, Reset Required).
+      if (window.pwaDb && typeof window.pwaDb.put === 'function') {
+        try {
+          window.pwaDb
+            .put('meta:app', { key: 'basemap.origins', value: basemapOrigins })
+            .catch(() => {});
+        } catch (_err) {
+          // Ignore — persistence is best-effort.
+        }
+      }
     };
     navigator.serviceWorker.ready.then(registerBasemapOrigins).catch(() => {});
     // .ready resolves once the registration has an *active* worker, but on
