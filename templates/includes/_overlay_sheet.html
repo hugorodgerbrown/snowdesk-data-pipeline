@@ -31,7 +31,7 @@ Optional context:
     id="{{ id }}"
     {% if not static %}hidden{% endif %}
     data-overlay
-    class="{% if static %}relative{% else %}fixed bottom-0 left-0 right-0{% endif %} z-[var(--z-popup)] rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
+    class="{% if static %}relative{% else %}fixed bottom-0 left-0 right-0 z-[var(--z-popup)]{% endif %} rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
     aria-label="{{ aria_label }}"
 >
     {% if static %}

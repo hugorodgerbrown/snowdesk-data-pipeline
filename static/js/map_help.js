@@ -55,6 +55,9 @@
   ) {
     // Malformed/partial markup — nothing sensible to drive. Fail silently
     // rather than throwing, matching home_intro.js's early-return guard.
+    // (closeBtn is guarded for markup completeness only — its click is
+    // handled by the shared overlays.js dismiss handler, not bound here;
+    // see the Control bindings note below.)
     return;
   }
 
