@@ -8,20 +8,35 @@ static/js/pwa_offline.js when:
   * ``navigator.onLine === false``, or
   * a fetch / HTMX request just failed with a network error.
 
-Copy shows the dataset freshness read from ``X-Data-Generated-At`` (SNOW-370)
-on the most recent successful response. The empty-timestamp initial state
-reads "No connection — cached data shown"; once a response has been seen
-we bake in the "Last updated HH:MM DD/MM" suffix.
+The banner is a ``<details>`` disclosure (SNOW-482). The summary row
+reads "Offline — last synced <relative>", where ``static/js/pwa_offline.js``
+fills the ``data-role="synced-at"`` span with a relative phrase
+("6 minutes ago") derived from ``sync.last_at`` — the wall-clock time
+this device last reached the server, persisted to IndexedDB ``meta:app``.
+The phrase re-renders on a timer while the banner is shown, so an
+open banner keeps counting up rather than freezing. It falls back to an
+em dash until the first sync is known.
+
+Opening the caret reveals a short explanation of the offline state. The
+data-generated clock (``freshness.last_generated_at``, read from
+``X-Data-Generated-At``, SNOW-370) is still absorbed and persisted by the
+ledger, but is no longer surfaced on the banner itself.
+
+In-flow, not ``fixed`` — it sits as the first child of the body, above
+``includes/nav.html``, so when revealed it pushes the nav and page
+content down rather than overlapping the nav bar. ``hidden`` collapses
+it to zero height.
 
 Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
 {% endcomment %}
-<div
+<details
     id="pwa-offline-banner"
+    data-role="offline-freshness"
     role="status"
     aria-live="polite"
-    class="hidden fixed top-0 inset-x-0 z-[9998] bg-status-warning-bg text-status-warning-text border-b border-border px-4 py-2 text-sm"
+    class="group hidden w-full bg-status-warning-bg text-status-warning-text border-b border-border text-sm"
 >
-    <div class="max-w-4xl mx-auto flex items-center gap-2">
+    <summary class="max-w-4xl mx-auto flex items-center gap-2 px-4 py-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
         <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
@@ -36,7 +51,31 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
                 d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0"
             />
         </svg>
-        <span data-role="offline-message">{% trans "No connection — showing cached data." %}</span>
-        <span data-role="offline-freshness" class="ml-auto font-mono text-xs opacity-80"></span>
+        <span
+            data-role="offline-message"
+            class="whitespace-nowrap"
+        >{% trans "Offline — last synced" %}</span>
+        <span data-role="synced-at">—</span>
+        <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            class="ml-auto w-4 h-4 shrink-0 opacity-80 transition-transform group-open:rotate-180"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+        </svg>
+    </summary>
+    {# ``hidden group-open:block`` — an explicit ``display`` on details content #}
+    {# overrides the UA rule that hides a closed <details>, so we drive the     #}
+    {# collapse ourselves: display:none when closed, block only when open.       #}
+    <div class="hidden group-open:block max-w-4xl mx-auto px-4 pb-2 pl-10 text-xs opacity-90">
+        <p>
+            {% blocktrans %}
+                The app has lost contact with the server, and is displaying the latest cached data. It will update as
+                soon as the connection is restored.
+            {% endblocktrans %}
+        </p>
     </div>
-</div>
+</details>

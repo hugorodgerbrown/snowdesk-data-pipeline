@@ -5,10 +5,19 @@ Covers Scenarios P7, P8, P9 (docs/testing-scenarios.md §"PWA Shell"): an
 offline reload of a cached ``/?d=YYYY-MM-DD`` URL (including the SNOW-347
 regression guard for a URL never fetched with that exact query string),
 the persistent offline banner + ``data-network-required`` disabling, and
-the branded offline fallback for a page never visited at all.
+the branded offline fallback for a page never visited at all. Also covers
+the SNOW-482 dual sync/freshness clock: a real (un-stamped) response
+advances the persisted "Synced" clock and appends a ``log:sync`` row; a
+Cache-Storage replay (``X-SW-Cache: hit``) does not.
 """
 
 from __future__ import annotations
+
+import re
+import uuid
+
+from playwright.sync_api import Page
+from pytest_django.live_server_helper import LiveServer
 
 from tests.e2e.conftest import PwaPage
 
@@ -133,6 +142,171 @@ def test_offline_banner_and_network_required_controls(
         "async () => (await navigator.serviceWorker.getRegistrations()).length"
     )
     assert registration_count == 1
+
+
+def test_sync_clock_advances_on_real_response_not_on_cache_hit(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """SNOW-482: the persisted "Synced" clock only advances on a real round-trip.
+
+    ``/api/regions.geojson`` is one of ``sw.js``'s stale-while-revalidate
+    ``STATIC_PATHS`` — a real first fetch populates the SW cache; an
+    immediate second fetch of the SAME URL is served from that cache with
+    ``X-SW-Cache: hit``. Requires ``?country=ch`` (the endpoint 400s
+    without it, and ``_staleWhileRevalidate`` only caches ``response.ok``
+    responses); a cache-busting query param keeps this test's URL
+    distinct from anything ``pwa_page``'s earlier navigations may have
+    already warmed.
+    """
+    page = pwa_page.page
+    page.goto(pwa_page.live_server_url + "/ch-4115/martigny-verbier/2026-04-08/")
+    page.wait_for_load_state("load")
+
+    cache_bust = uuid.uuid4().hex
+    geojson_url = f"/api/regions.geojson?country=ch&e2e={cache_bust}"
+
+    # First fetch: real network round-trip, no cache entry yet — advances
+    # the sync clock and appends a log:sync row. sw.js's
+    # stale-while-revalidate strategy writes to Cache Storage as a
+    # fire-and-forget promise (not awaited before the response is
+    # returned), so this polls for the cache entry to land before
+    # returning — otherwise the second fetch below can race it and miss
+    # the cache too.
+    first = page.evaluate(
+        """async (url) => {
+            const res = await fetch(url);
+            await res.arrayBuffer();
+            for (let i = 0; i < 50; i++) {
+              if (await caches.match(url)) break;
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return {
+              cacheHit: res.headers.get('X-SW-Cache'),
+              syncedAt: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+              logCount: await window.pwaDb.count('log:sync'),
+            };
+          }""",
+        geojson_url,
+    )
+    assert first["cacheHit"] is None
+    assert first["syncedAt"]
+    assert first["logCount"] >= 1
+
+    # Second fetch of the exact same URL is served from the SW's
+    # stale-while-revalidate cache — X-SW-Cache: hit — and must NOT
+    # advance the sync clock or append another log:sync row.
+    second = page.evaluate(
+        """async (url) => {
+            const before = (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value;
+            const beforeCount = await window.pwaDb.count('log:sync');
+            const res = await fetch(url);
+            await res.arrayBuffer();
+            return {
+              cacheHit: res.headers.get('X-SW-Cache'),
+              before,
+              after: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+              beforeCount,
+              afterCount: await window.pwaDb.count('log:sync'),
+            };
+          }""",
+        geojson_url,
+    )
+    assert second["cacheHit"] == "hit"
+    assert second["after"] == second["before"]
+    assert second["afterCount"] == second["beforeCount"]
+
+    # A further real (un-stamped) request to a different qualifying,
+    # never-cached URL advances the clock again.
+    third = page.evaluate(
+        """async () => {
+            const before = (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value;
+            const res = await fetch('/api/version');
+            await res.text();
+            return {
+              cacheHit: res.headers.get('X-SW-Cache'),
+              before,
+              after: (await window.pwaDb.get('meta:app', 'sync.last_at'))?.value,
+            };
+          }"""
+    )
+    assert third["cacheHit"] is None
+    assert third["after"] != third["before"]
+
+    # The offline banner reads the persisted clock — going offline fills the
+    # "Offline — last synced …" summary from the value the fetches above
+    # already wrote, with no further network activity required. The clock
+    # resolves to a relative phrase (Intl.RelativeTimeFormat, e.g. "now" or
+    # "5 seconds ago"), never the em-dash placeholder.
+    page.context.set_offline(True)
+    try:
+        page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
+        synced_text = page.eval_on_selector(
+            '#pwa-offline-banner [data-role="synced-at"]', "(el) => el.textContent"
+        )
+    finally:
+        page.context.set_offline(False)
+    assert synced_text is not None
+    assert synced_text.strip() not in ("", "—")
+    assert re.search(r"\bago\b|\bnow\b", synced_text.strip())
+
+
+def test_last_synced_phrase_auto_updates_while_offline(
+    live_server: LiveServer, page: Page, _load_test_data: None
+) -> None:
+    """SNOW-482: the "last synced" phrase re-renders on a timer while shown.
+
+    With the page clock frozen, seed the sync clock 30 s in the past and
+    go offline (which reveals the banner and starts its re-render ticker).
+    Fast-forwarding two minutes must advance the phrase from a
+    seconds-granularity read to a minutes one WITHOUT any user
+    interaction — proving the timer, not just the initial render, updates
+    the value. The real service worker is stripped (as in test_pwa_db.py)
+    so its cache replays and telemetry cannot perturb the ledger; this
+    test is about the timer alone.
+    """
+    page.clock.install()
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
+    page.goto(live_server.url)
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+
+    # Seed the sync clock 30 s before the frozen "now", then reload so
+    # pwa_offline.js hydrates it from meta:app on init.
+    page.evaluate(
+        """() => window.pwaDb.put('meta:app', {
+            key: 'sync.last_at',
+            value: new Date(Date.now() - 30000).toISOString(),
+        })"""
+    )
+    page.reload()
+    page.wait_for_function("() => typeof window.pwaDb === 'object'")
+
+    selector = '#pwa-offline-banner [data-role="synced-at"]'
+    page.context.set_offline(True)
+    try:
+        page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
+        first = page.eval_on_selector(selector, "(el) => el.textContent")
+        # 30 s in the past → a seconds-granularity phrase, not minutes.
+        assert first is not None and "minute" not in first
+
+        # Advance two minutes; the 30 s ticker fires and re-renders the
+        # phrase against the advanced clock.
+        page.clock.fast_forward("02:00")
+        page.wait_for_function(
+            """(sel) => {
+                const el = document.querySelector(sel);
+                return el && /minute/.test(el.textContent);
+            }""",
+            arg=selector,
+            timeout=5000,
+        )
+        second = page.eval_on_selector(selector, "(el) => el.textContent")
+    finally:
+        page.context.set_offline(False)
+    assert second is not None and "minute" in second
+    assert second != first
 
 
 # ---------------------------------------------------------------------------

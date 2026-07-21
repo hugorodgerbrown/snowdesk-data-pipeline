@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle operator guide — Flag/Switch/Sample, flag inventory (edit_map, favourites, community_reports, observations_page)
+description: django-waffle operator guide — Flag/Switch/Sample, flag inventory (edit_map, favourites, community_reports, observations_page, sync_log)
 status: current
-last-reviewed: 2026-07-20
+last-reviewed: 2026-07-21
 ---
 
 # Feature flags (django-waffle)
@@ -56,6 +56,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | `field_observations` | `superusers=True` | The GPS-gated field-report ("Waze-style Report") button on `/map/` and its submission endpoints (`observations.views`). | SNOW-324. |
 | `community_reports` | `superusers=True` | The "Community reports" read overlay on `/map/` — anonymised, clustered pins from the last 48h of `FieldObservation` rows (`api:community_reports_geojson`). Separate from `field_observations` so the read overlay can ship independently of the submission feature. | SNOW-419. |
 | `observations_page` | `superusers=True` | The `/observations/` page — a signed-in stream of the last 48h of `FieldObservation` rows (`public.views.observations_list`). Own reports always show; other users' reports show only when `community_reports` is also active for the viewer, with timestamps floored to the nearest 15 minutes. Separate flag so the page can ship independently of the map overlay. | SNOW-476. |
+| `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 
 Keep this table up to date as new flags land.
 

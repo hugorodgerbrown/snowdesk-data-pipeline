@@ -12,10 +12,14 @@
  *   queue:mutations  pending mutations for SNOW-376 (autoIncrement id)
  *   queue:events     telemetry buffer for SNOW-385 (autoIncrement id)
  *   meta:sync        last-sync timestamps per resource (keyPath: 'resource')
- *   meta:app         install timestamps, first-launch flags, opt-in/out
- *                     (keyPath: 'key')
+ *   meta:app         install timestamps, first-launch flags, opt-in/out,
+ *                    and (SNOW-482) the persisted sync/freshness clocks
+ *                    (keyPath: 'key')
  *   data:favourites  cached favourites + region rating + point weather,
  *                     for offline reads (SNOW-418; keyPath: 'uuid')
+ *   log:sync         rolling record of recent real (un-cached) server
+ *                     round-trips, trimmed to the newest 100 rows
+ *                     (SNOW-482; autoIncrement id)
  *   data:*           reserved namespace for further cached server-data
  *                     copies; added on demand by consumers.
  *
@@ -46,7 +50,9 @@
   // v2 (SNOW-418): added 'data:favourites' — the first consumer of the
   // reserved data:* namespace, caching each favourite's roster/card
   // record so the manage page can repaint offline.
-  const DB_VERSION = 2;
+  // v3 (SNOW-482): added 'log:sync' — a rolling record of real server
+  // round-trips backing the manage-page sync-log panel.
+  const DB_VERSION = 3;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -59,6 +65,10 @@
     // SNOW-418 (v2) — cached favourite roster/card records, keyed by the
     // favourite's uuid so a card update can upsert a single record.
     'data:favourites': { keyPath: 'uuid' },
+    // SNOW-482 (v3) — rolling log of real (un-cached) server round-trips,
+    // read by the manage-page sync-log panel. Trimmed to newest 100 rows
+    // by appendSyncLog below.
+    'log:sync': { keyPath: 'id', autoIncrement: true },
   });
 
   // Session state — single-page-load lifetime.
@@ -343,6 +353,98 @@
   }
 
   // -------------------------------------------------------------------
+  // SNOW-482 — log:sync helpers
+  //
+  // appendSyncLog writes one row then trims the store to the newest
+  // ``maxRows`` (default 100) entries. getSyncLog reads back up to
+  // ``limit`` rows, newest first. IDBObjectStore.getAll(query, count)
+  // returns the LOWEST keys first, which is the wrong end for both of
+  // these — trimming and reading both walk a cursor instead.
+  // -------------------------------------------------------------------
+
+  const SYNC_LOG_MAX_ROWS = 100;
+
+  /**
+   * Delete the oldest rows in ``log:sync`` until at most ``maxRows``
+   * remain. Ascending cursor order visits the lowest (oldest)
+   * autoIncrement ids first.
+   *
+   * @param {number} maxRows
+   * @returns {Promise<void>}
+   */
+  async function _trimSyncLog(maxRows) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('log:sync', 'readwrite');
+      const store = tx.objectStore('log:sync');
+      const countReq = store.count();
+      countReq.onsuccess = () => {
+        const excess = countReq.result - maxRows;
+        if (excess <= 0) {
+          resolve();
+          return;
+        }
+        let deleted = 0;
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = (evt) => {
+          const cursor = evt.target.result;
+          if (!cursor || deleted >= excess) {
+            resolve();
+            return;
+          }
+          cursor.delete();
+          deleted += 1;
+          cursor.continue();
+        };
+        cursorReq.onerror = () => reject(cursorReq.error || new Error('trim cursor failed'));
+      };
+      countReq.onerror = () => reject(countReq.error || new Error('count failed'));
+      tx.onabort = () => reject(tx.error || new Error('IDBTransaction aborted'));
+    });
+  }
+
+  /**
+   * Append one row to the ``log:sync`` store, then trim to the newest
+   * ``SYNC_LOG_MAX_ROWS``.
+   *
+   * @param {object} entry - row to store; must not set ``id`` (autoIncrement).
+   * @returns {Promise<void>}
+   */
+  async function appendSyncLog(entry) {
+    await put('log:sync', entry);
+    await _trimSyncLog(SYNC_LOG_MAX_ROWS);
+  }
+
+  /**
+   * Read up to ``limit`` rows from ``log:sync``, newest first. A
+   * descending cursor visits the highest (newest) autoIncrement ids
+   * first.
+   *
+   * @param {number} [limit]
+   * @returns {Promise<Array<object>>}
+   */
+  async function getSyncLog(limit) {
+    const db = await open();
+    const max = limit || SYNC_LOG_MAX_ROWS;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('log:sync', 'readonly');
+      const store = tx.objectStore('log:sync');
+      const results = [];
+      const cursorReq = store.openCursor(null, 'prev');
+      cursorReq.onsuccess = (evt) => {
+        const cursor = evt.target.result;
+        if (!cursor || results.length >= max) {
+          resolve(results);
+          return;
+        }
+        results.push(cursor.value);
+        cursor.continue();
+      };
+      cursorReq.onerror = () => reject(cursorReq.error || new Error('getSyncLog failed'));
+    });
+  }
+
+  // -------------------------------------------------------------------
   // 8-field envelope context helper (spec §16.1)
   //
   // Consumers (telemetry, mutation queue) call ``context()`` to build
@@ -487,6 +589,8 @@
       getAll,
       count,
       clear,
+      appendSyncLog,
+      getSyncLog,
       context,
       isResetRequired,
       // Exposed for tests + doc reference. Do not mutate.
