@@ -89,6 +89,26 @@ def _open_and_wait(page: Page, live_server_url: str) -> None:
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
 
 
+def _block_map_data_feeds(page: Page) -> None:
+    """Abort the map homepage's background ``/api/**`` fetches.
+
+    The ``log:sync`` tests assert on the *exact* set of rows they write, but
+    ``/`` is the map-as-homepage: map.js fires ``/api/ratings/`` plus five
+    ``*.geojson`` feeds on load, and ``pwa_offline.js``'s wrapped
+    ``window.fetch`` appends a ``log:sync`` row for every un-cached
+    same-origin, non-static response (``.geojson`` is not a static-asset
+    extension, so the feeds qualify too). Those async appends race the
+    test's own writes: any that resolve *after* ``_delete_db`` land in the
+    fresh DB and survive the newest-100 trim, so the surviving set is
+    polluted with ``/api/ratings/`` / ``*.geojson`` rows and the assertion
+    is non-deterministic. db.js loads from ``/static/`` (never ``/api``) and
+    the load event doesn't wait on these XHR/fetch calls, so aborting them
+    removes the pollution source without affecting ``window.pwaDb`` or page
+    load. Must be armed before ``_open_and_wait`` navigates.
+    """
+    page.route("**/api/**", lambda route: route.abort())
+
+
 def _delete_db(page: Page) -> None:
     """Delete the PWA DB so each test starts from a clean slate."""
     page.evaluate(
@@ -464,6 +484,7 @@ def test_append_sync_log_trims_to_newest_100(
     surviving rows are the newest 100 (paths "sync-1".."sync-100"), not
     the oldest.
     """
+    _block_map_data_feeds(page)
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
@@ -484,6 +505,7 @@ def test_append_sync_log_trims_to_newest_100(
 
 def test_get_sync_log_returns_newest_first(live_server: LiveServer, page: Page) -> None:
     """getSyncLog reads back rows newest-first, honouring ``limit``."""
+    _block_map_data_feeds(page)
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 

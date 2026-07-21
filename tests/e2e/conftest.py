@@ -93,6 +93,34 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
     }
 
 
+@pytest.fixture(autouse=True)
+def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the Open-Meteo elevation lookup for every e2e test.
+
+    Creating a ``Favourite`` runs ``favourites.services.create_favourite`` →
+    ``resolve_forecast_point`` → ``fetch_elevation``, which makes a live
+    ``requests.get`` to ``https://api.open-meteo.com/v1/elevation`` with a
+    30s timeout. The favourite-submit / drain tests replay that POST against
+    the real ``live_server`` (deliberately un-mocked at the ``page.route``
+    layer — ``page.route`` only intercepts *browser* requests, never the
+    server's own outbound HTTP), so the round-trip is at the mercy of a
+    third-party API: a slow or rate-limited Open-Meteo stalls the drain past
+    the test's poll timeout, which is exactly the CI flake in SNOW-479 /
+    test_favourites.
+
+    ``live_server`` runs in-process, so patching the name in
+    ``forecast_points``'s namespace (where it's looked up at call time) is
+    visible to the server thread — the same mechanism that makes
+    ``override_flag`` work here. Patched autouse because no e2e test should
+    depend on an external API; tests that never create a favourite are
+    unaffected.
+    """
+    monkeypatch.setattr(
+        "bulletins.services.forecast_points.fetch_elevation",
+        lambda latitude, longitude, base_url=None: 1500.0,
+    )
+
+
 @pytest.fixture()
 def _load_test_data(django_db_blocker: Any) -> None:
     """Seed the navigable test dataset before each e2e test.
