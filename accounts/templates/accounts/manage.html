@@ -15,8 +15,11 @@ cross-app import, the view only checks the "favourites" waffle flag. A
 passkeys section lists registered platform passkeys with delete buttons.
 An "Anonymous usage data" section (SNOW-387) hosts a role="switch" toggle
 bound to window.pwaTelemetry.setOptIn/.isOptIn(), with a link to the
-privacy policy. A destructive "Unsubscribe from all alerts" button
-hard-deletes the subscriber.
+privacy policy. A flag-gated "Sync log" panel (SNOW-482) reads recent
+real-sync rows from window.pwaDb.getSyncLog() via static/js/sync_log.js —
+gated on the same "sync_log" waffle flag as the matching /help/ section.
+A destructive "Unsubscribe from all alerts" button hard-deletes the
+subscriber.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -307,6 +310,19 @@ hard-deletes the subscriber.
                     </p>
                 </div>
 
+                {% if sync_log_visible %}
+                    {% comment %}
+                        SNOW-482: Sync-log panel — read-out of the client-side
+                        log:sync IndexedDB store. Rows are painted by
+                        static/js/sync_log.js on load; the body_template
+                        shell only carries the <ul> it targets.
+                    {% endcomment %}
+                    <div class="border-t border-border pt-8">
+                        {% translate "Sync log" as t_sync_log %}
+                        {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="sync-log-panel" body_template="accounts/partials/_sync_log_body.html" %}
+                    </div>
+                {% endif %}
+
                 {% comment %}
                     SNOW-387: Telemetry opt-in/opt-out toggle.
                     Renders disabled + aria-busy="true" until the inline
@@ -374,6 +390,10 @@ hard-deletes the subscriber.
             {% endcomment %}
             {# SNOW-378: reset-local-data escape hatch — wires the [data-pwa-reset-trigger] button above. #}
             <script src="{% static 'js/pwa_reset.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+            {% if sync_log_visible %}
+                {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
+                <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+            {% endif %}
             <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
             <script nonce="{{ request.csp_nonce }}">
                 (function () {

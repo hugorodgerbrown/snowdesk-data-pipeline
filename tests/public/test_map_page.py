@@ -225,6 +225,18 @@ def test_map_view_passes_basemap_catalogue() -> None:
     assert ctx["default_basemap_key"] == settings.BASEMAP
 
 
+def test_basemap_styles_openfreemap_liberty_matches_style_url_setting() -> None:
+    """
+    SNOW-242: ``BASEMAP_STYLES["openfreemap_liberty"]`` and
+    ``OPENFREEMAP_STYLE_URL`` are derived from the same env-configurable
+    setting — asserting equality here pins that single-source-of-truth
+    contract rather than duplicating the URL.
+    """
+    assert (
+        settings.BASEMAP_STYLES["openfreemap_liberty"] == settings.OPENFREEMAP_STYLE_URL
+    )
+
+
 @pytest.mark.django_db
 def test_map_page_accepts_date_query_param() -> None:
     """

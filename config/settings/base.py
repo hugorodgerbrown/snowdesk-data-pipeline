@@ -10,6 +10,7 @@ read from the environment via python-decouple.
 import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from decouple import config
 from django.core.exceptions import ImproperlyConfigured
@@ -529,6 +530,23 @@ QUERY_COUNT_HEADER_ENABLED = config(
 # The {report_uri} placeholder is replaced at request time with the local
 # CSP report endpoint mounted under /csp/ in config/urls.py.
 
+# Basemap origin (SNOW-242) — env-configurable so production can flip the
+# OpenFreeMap Liberty basemap onto a self-hosted origin (SNOW-485) without a
+# code deploy. Defaults to the public volunteer tier. The CSP connect-src
+# origin below is derived from this same value so the two never drift.
+OPENFREEMAP_STYLE_URL = config(
+    "OPENFREEMAP_STYLE_URL",
+    default="https://tiles.openfreemap.org/styles/liberty",
+)
+_ofm_parts = urlsplit(OPENFREEMAP_STYLE_URL)
+if not _ofm_parts.scheme or not _ofm_parts.netloc:
+    raise ImproperlyConfigured(
+        f"OPENFREEMAP_STYLE_URL={OPENFREEMAP_STYLE_URL!r} must be an absolute "
+        f"URL (e.g. https://tiles.openfreemap.org/styles/liberty)."
+    )
+OPENFREEMAP_ORIGIN = f"{_ofm_parts.scheme}://{_ofm_parts.netloc}"
+del _ofm_parts
+
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
 CSP_DEFAULTS = {
@@ -554,12 +572,13 @@ CSP_DEFAULTS = {
     # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
     # our own service worker (served from /).
     "worker-src": ["'self'", "blob:"],
-    # MapLibre fetches the Liberty style + vector tiles from
-    # tiles.openfreemap.org via fetch(); leave self in for XHRs issued
-    # against our own API endpoints.
+    # MapLibre fetches the Liberty style + vector tiles from the OpenFreeMap
+    # origin via fetch(); derived from OPENFREEMAP_STYLE_URL (env-configurable,
+    # SNOW-242) so the two settings never drift. Leave self in for XHRs
+    # issued against our own API endpoints.
     "connect-src": [
         "'self'",
-        "https://tiles.openfreemap.org",
+        OPENFREEMAP_ORIGIN,
         # swisstopo winter/light styles + tiles.
         "https://vectortiles.geo.admin.ch",
         # Regional national basemaps: IGN Plan IGN (France) and
@@ -705,9 +724,12 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 # resolves the active style from localStorage × the default key. To add a
 # candidate: drop a new ``{key: url}`` entry here and set ``BASEMAP=<key>``
 # in ``.env``. An unknown key raises at startup.
+# ``openfreemap_liberty`` reads its URL from ``OPENFREEMAP_STYLE_URL``
+# (SNOW-242) so its origin can move to a self-hosted deployment
+# (SNOW-485) without a code deploy.
 
 BASEMAP_STYLES = {
-    "openfreemap_liberty": "https://tiles.openfreemap.org/styles/liberty",
+    "openfreemap_liberty": OPENFREEMAP_STYLE_URL,
     "swisstopo_winter": (
         "https://vectortiles.geo.admin.ch/styles/"
         "ch.swisstopo.basemap-winter.vt/style.json"

@@ -16,14 +16,17 @@
  *                                whose URL encodes the date window —
  *                                see STATIC_PATHS below for the full
  *                                list and the per-entry safety argument)
- *     → stale-while-revalidate.
+ *     → stale-while-revalidate. Cache-served responses get an added
+ *       ``X-SW-Cache: hit`` header (SNOW-482) so the page can tell a
+ *       replay apart from a real network round-trip.
  *
  *   - HTML navigations          → network-first with a per-page cache
  *                                fallback so an offline reload still
  *                                surfaces the last-seen version, and a
  *                                pre-cached /static/offline.html if the
  *                                requested URL has never been visited
- *                                (SNOW-118).
+ *                                (SNOW-118). Every cache-fallback branch
+ *                                also gets ``X-SW-Cache: hit`` (SNOW-482).
  *
  *   - Everything else           (most /api/* endpoints, and third-party
  *                                origins not registered as the active
@@ -72,6 +75,16 @@
  * deploys leave nothing behind. The version is also surfaced via a
  * ``message`` handler so devtools can confirm which SW version is in
  * control.
+ *
+ * X-SW-Cache header (SNOW-482)
+ * -----------------------------
+ * Every response served from Cache Storage — the stale-while-revalidate
+ * cache hit and all three ``_networkFirst`` cache-fallback branches — is
+ * rebuilt via ``_stampCacheHit()`` with an added ``X-SW-Cache: hit``
+ * header before it reaches the page. ``static/js/pwa_offline.js`` reads
+ * this header to distinguish a Cache-Storage replay from a genuine
+ * server round-trip: only un-stamped same-origin responses advance the
+ * persisted "last synced" clock and append a ``log:sync`` row.
  *
  * Scope
  * -----
@@ -160,11 +173,12 @@ try {
 // when the (non-ESRI) basemap style JSON can't be fetched offline, so
 // cached region overlays still paint instead of a blank canvas; retried
 // on the next ``online`` event.
-// SNOW-484: v21 — opportunistic cross-origin basemap caching: a new
+// SNOW-482: v21 — stamp X-SW-Cache on cache-served responses.
+// SNOW-484: v22 — opportunistic cross-origin basemap caching: a new
 // 'basemap' fetch classification, a dedicated BASEMAP_CACHE kept separate
 // from the shell cache, and a 'register-basemap-origins' message handler
 // fed by static/js/map.js.
-const CACHE_VERSION = 'snowdesk-shell-v21';
+const CACHE_VERSION = 'snowdesk-shell-v22';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -424,6 +438,28 @@ function _classify(request) {
 }
 
 /**
+ * SNOW-482: reconstruct a cached ``Response`` with ``X-SW-Cache: hit``
+ * added, so the page can tell a Cache-Storage replay apart from a real
+ * server round-trip (``static/js/pwa_offline.js`` only advances the
+ * persisted sync clock / appends a sync-log row when this header is
+ * absent). Cached ``Response`` objects have immutable headers, so the
+ * only way to add one is to build a new ``Response`` around the same
+ * body/status/headers.
+ *
+ * @param {Response} response
+ * @returns {Response}
+ */
+function _stampCacheHit(response) {
+  const headers = new Headers(response.headers);
+  headers.set('X-SW-Cache', 'hit');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
  * Stale-while-revalidate: serve the cached response immediately if
  * present, kick off a background re-fetch to refresh the cache for
  * the next call. Falls through to network-only on cache miss.
@@ -442,7 +478,7 @@ async function _staleWhileRevalidate(request) {
       return response;
     })
     .catch(() => null);
-  if (cached) return cached;
+  if (cached) return _stampCacheHit(cached);
   const network = await fetchPromise;
   if (network) return network;
   return new Response('', { status: 504, statusText: 'Gateway Timeout' });
@@ -534,12 +570,12 @@ async function _networkFirst(request) {
     return response;
   } catch (err) {
     const cached = await cache.match(request);
-    if (cached) return cached;
+    if (cached) return _stampCacheHit(cached);
     if (request.mode === 'navigate' || request.destination === 'document') {
       const searchless = await cache.match(request, { ignoreSearch: true });
-      if (searchless) return searchless;
+      if (searchless) return _stampCacheHit(searchless);
       const fallback = await cache.match(OFFLINE_FALLBACK);
-      if (fallback) return fallback;
+      if (fallback) return _stampCacheHit(fallback);
     }
     throw err;
   }
@@ -647,7 +683,7 @@ self.addEventListener('message', (event) => {
  * ``DB_NAME`` exactly so it opens the SAME database a page already
  * created. It opens WITHOUT a version number so it attaches to whatever
  * schema version the page most recently migrated to (db.js owns
- * ``DB_VERSION`` — currently 2 — and bumps it as stores are added; a
+ * ``DB_VERSION`` — currently 3 — and bumps it as stores are added; a
  * hardcoded version here would throw ``VersionError`` the moment db.js
  * moved ahead). The ``onupgradeneeded`` branch below only fires in the
  * (rare) case a Background Sync fires before any page has ever opened the

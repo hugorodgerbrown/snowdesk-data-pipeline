@@ -6,10 +6,10 @@ Covers:
   * ``GET /help/`` returns HTTP 200 for an anonymous user; the URL reverses
     to ``/help/``; the heading marker is present.
   * The seven always-on topic panels render regardless of waffle flag state.
-  * The Favourites and Field-observations panels, plus the map panel's
-    favourites-overlay, community-reports, and Report-button sentences, are
-    gated on the matching per-user waffle flag — absent by default, present
-    under ``@override_flag``.
+  * The Favourites, Field-observations, and Sync-log panels, plus the map
+    panel's favourites-overlay, community-reports, and Report-button
+    sentences, are gated on the matching per-user waffle flag — absent by
+    default, present under ``@override_flag``.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -92,6 +92,10 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-map-report"' not in response.content
 
+    def test_sync_log_panel_absent_by_default(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-sync-log"' not in response.content
+
     @override_flag("favourites", active=True)
     def test_favourites_panel_present_when_flag_active(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
@@ -127,6 +131,11 @@ class TestHelpPageFlagGating:
     ) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-recent-observations"' in response.content
+
+    @override_flag("sync_log", active=True)
+    def test_sync_log_panel_present_when_flag_active(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-sync-log"' in response.content
 
 
 @pytest.mark.django_db

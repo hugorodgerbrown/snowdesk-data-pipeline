@@ -15,8 +15,10 @@ instead.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
+from django.conf import settings
 from django.test import Client
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
@@ -56,6 +58,42 @@ def test_csp_allows_maplibre_tile_origin() -> None:
     policy = _csp(response)
     assert "connect-src" in policy
     assert "https://tiles.openfreemap.org" in policy
+
+
+@pytest.mark.django_db
+def test_csp_connect_src_derived_from_openfreemap_style_url() -> None:
+    """connect-src allowlists OPENFREEMAP_ORIGIN, derived from OPENFREEMAP_STYLE_URL.
+
+    SNOW-242: the two settings are derived from a single env-configurable
+    value so they never drift.
+    """
+    assert settings.OPENFREEMAP_ORIGIN == "https://tiles.openfreemap.org"
+    assert settings.OPENFREEMAP_STYLE_URL.startswith(settings.OPENFREEMAP_ORIGIN)
+
+    response = Client().get("/")
+    policy = _csp(response)
+    assert settings.OPENFREEMAP_ORIGIN in policy
+
+
+def test_openfreemap_style_url_validation_failure_mode() -> None:
+    """A scheme-less OPENFREEMAP_STYLE_URL would fail base.py's startup guard.
+
+    SNOW-242: settings are read at import time, so this test cannot reload
+    ``config.settings.base`` with a bad env value without side effects on
+    the rest of the suite. Instead it pins the failure mode the inline
+    ``ImproperlyConfigured`` guard relies on (empty ``scheme``/``netloc``
+    from ``urlsplit``) and confirms the deployed default does not trip it.
+    """
+    bad_parts = urlsplit("tiles.openfreemap.org/styles/liberty")
+    assert not bad_parts.scheme
+    assert not bad_parts.netloc
+
+    # A port-bearing URL is still a valid origin — scheme + host:port.
+    port_parts = urlsplit("https://host.example:8080/styles/liberty")
+    assert port_parts.scheme and port_parts.netloc
+    assert f"{port_parts.scheme}://{port_parts.netloc}" == "https://host.example:8080"
+
+    assert settings.OPENFREEMAP_ORIGIN == "https://tiles.openfreemap.org"
 
 
 @pytest.mark.django_db

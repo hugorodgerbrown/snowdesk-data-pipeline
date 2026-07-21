@@ -2,10 +2,10 @@
 tests/e2e/test_pwa_db.py — Playwright tests for static/js/db.js (SNOW-375).
 
 Covers the four contracts from the SNOW-375 scoping comment, plus the
-SNOW-418 schema-v2 bump:
+SNOW-418 schema-v2 bump and the SNOW-482 schema-v3 bump:
 
-1. Fresh open — all five static object stores (including SNOW-418's
-   ``data:favourites``) exist at version 2.
+1. Fresh open — all six static object stores (including SNOW-418's
+   ``data:favourites`` and SNOW-482's ``log:sync``) exist at version 3.
 2. Round-trip — put / get / delete / getAll / count / clear behave on
    ``queue:events``.
 3. ``context()`` returns the expected eight-field envelope with correct
@@ -13,9 +13,12 @@ SNOW-418 schema-v2 bump:
 4. Reset Required — force a migration failure and assert
    ``isResetRequired()`` becomes true, the overlay is revealed, and the
    next ``open()`` rejects.
-5. Schema upgrade — a pre-existing version-1 DB (missing
-   ``data:favourites``) is migrated to version 2 with the new store
-   added, without disturbing existing stores' data.
+5. Schema upgrades — a pre-existing version-1 DB (missing
+   ``data:favourites``/``log:sync``) is migrated to version 2 with
+   ``data:favourites`` added; a pre-existing version-2 DB is migrated to
+   version 3 with ``log:sync`` added — neither disturbs existing data.
+6. ``appendSyncLog`` / ``getSyncLog`` (SNOW-482) — trims to the newest
+   100 rows and reads back newest-first.
 
 All tests navigate to ``/`` (map-as-homepage). db.js is loaded from
 base.html via ``<script defer>`` — Playwright's ``domcontentloaded``
@@ -55,6 +58,8 @@ DB_NAME = "snowdesk-pwa-v1"
 STATIC_STORES = ["queue:mutations", "queue:events", "meta:sync", "meta:app"]
 # SNOW-418 (schema v2) — added alongside the four version-1 stores above.
 V2_STORES = [*STATIC_STORES, "data:favourites"]
+# SNOW-482 (schema v3) — added alongside the five version-2 stores above.
+V3_STORES = [*V2_STORES, "log:sync"]
 
 
 def _open_and_wait(page: Page, live_server_url: str) -> None:
@@ -100,12 +105,12 @@ def _delete_db(page: Page) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 1. Fresh open creates every static store at version 2.
+# 1. Fresh open creates every static store at version 3.
 # ---------------------------------------------------------------------------
 
 
 def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> None:
-    """After a fresh open() all five stores exist at version 2 (SNOW-418)."""
+    """After a fresh open() all six stores exist at version 3 (SNOW-482)."""
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
@@ -118,8 +123,8 @@ def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> N
             };
           }"""
     )
-    assert stores["version"] == 2
-    assert stores["names"] == sorted(V2_STORES)
+    assert stores["version"] == 3
+    assert stores["names"] == sorted(V3_STORES)
 
 
 # ---------------------------------------------------------------------------
@@ -296,10 +301,15 @@ def test_reset_required_on_migration_failure(
 def test_upgrade_from_v1_adds_data_favourites(
     live_server: LiveServer, page: Page
 ) -> None:
-    """A pre-existing version-1 DB (four stores, no ``data:favourites``) is
-    migrated to version 2 by db.js's own ``_runMigrations`` on the next
-    ``open()`` — the new store is added and the four original stores
-    (with any of their existing data) are left untouched.
+    """A pre-existing version-1 DB (four stores) is migrated straight to
+    the current version by db.js's own ``_runMigrations`` on the next
+    ``open()`` — every missing store (``data:favourites`` from SNOW-418,
+    ``log:sync`` from SNOW-482) is added in the single combined upgrade
+    transaction, and the four original stores (with any of their
+    existing data) are left untouched. ``_runMigrations`` has no
+    per-version branches — it just creates whatever's missing from
+    ``STORES`` — so a client jumping several versions in one ``open()``
+    behaves the same as one jumping a single version.
     """
     _open_and_wait(page, live_server.url)
     _delete_db(page)
@@ -335,7 +345,8 @@ def test_upgrade_from_v1_adds_data_favourites(
     assert seeded == 1
 
     # Now let db.js open the same DB — its _runMigrations upgrade branch
-    # must add data:favourites without disturbing the seeded row.
+    # must add every missing store, up to the current version, without
+    # disturbing the seeded row.
     result = page.evaluate(
         """async () => {
             const db = await window.pwaDb.open();
@@ -347,6 +358,124 @@ def test_upgrade_from_v1_adds_data_favourites(
             };
           }"""
     )
-    assert result["version"] == 2
-    assert result["names"] == sorted(V2_STORES)
+    assert result["version"] == 3
+    assert result["names"] == sorted(V3_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}
+
+
+# ---------------------------------------------------------------------------
+# 5b. Schema upgrade — a pre-existing v2 DB gains log:sync (SNOW-482).
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_from_v2_adds_log_sync(live_server: LiveServer, page: Page) -> None:
+    """A pre-existing version-2 DB (five stores, no ``log:sync``) is
+    migrated to version 3 by db.js's own ``_runMigrations`` on the next
+    ``open()`` — the new store is added and the five original stores
+    (with any of their existing data) are left untouched.
+    """
+    _open_and_wait(page, live_server.url)
+    _delete_db(page)
+
+    # Simulate a pre-SNOW-482 client: open at version 2 with the five
+    # V2_STORES, and write one row into queue:events so we can prove the
+    # upgrade didn't wipe existing data.
+    seeded = page.evaluate(
+        """async (name) => {
+            const db = await new Promise((resolve, reject) => {
+              const req = indexedDB.open(name, 2);
+              req.onupgradeneeded = (evt) => {
+                const d = evt.target.result;
+                d.createObjectStore('queue:mutations', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('queue:events', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('meta:sync', { keyPath: 'resource' });
+                d.createObjectStore('meta:app', { keyPath: 'key' });
+                d.createObjectStore('data:favourites', { keyPath: 'uuid' });
+              };
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            const putId = await new Promise((resolve, reject) => {
+              const tx = db.transaction('queue:events', 'readwrite');
+              const req = tx.objectStore('queue:events').put({ event: 'pre-existing' });
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            db.close();
+            return putId;
+          }""",
+        DB_NAME,
+    )
+    assert seeded == 1
+
+    # Now let db.js open the same DB — its _runMigrations upgrade branch
+    # must add log:sync without disturbing the seeded row.
+    result = page.evaluate(
+        """async () => {
+            const db = await window.pwaDb.open();
+            const row = await window.pwaDb.get('queue:events', 1);
+            return {
+              version: db.version,
+              names: Array.from(db.objectStoreNames).sort(),
+              row,
+            };
+          }"""
+    )
+    assert result["version"] == 3
+    assert result["names"] == sorted(V3_STORES)
+    assert result["row"] == {"id": 1, "event": "pre-existing"}
+
+
+# ---------------------------------------------------------------------------
+# 6. appendSyncLog / getSyncLog (SNOW-482).
+# ---------------------------------------------------------------------------
+
+
+def test_append_sync_log_trims_to_newest_100(
+    live_server: LiveServer, page: Page
+) -> None:
+    """appendSyncLog trims log:sync to the newest 100 rows.
+
+    getAll(store, limit) returns the LOWEST keys first, which is the
+    wrong end for a "keep the newest N" trim — this asserts the actual
+    surviving rows are the newest 100 (paths "sync-1".."sync-100"), not
+    the oldest.
+    """
+    _open_and_wait(page, live_server.url)
+    _delete_db(page)
+
+    result = page.evaluate(
+        """async () => {
+            for (let i = 1; i <= 105; i++) {
+              await window.pwaDb.appendSyncLog({ at: new Date().toISOString(), path: `sync-${i}` });
+            }
+            const count = await window.pwaDb.count('log:sync');
+            const all = await window.pwaDb.getAll('log:sync');
+            return { count, paths: all.map((row) => row.path).sort() };
+          }"""
+    )
+    assert result["count"] == 100
+    expected = sorted(f"sync-{i}" for i in range(6, 106))
+    assert result["paths"] == expected
+
+
+def test_get_sync_log_returns_newest_first(live_server: LiveServer, page: Page) -> None:
+    """getSyncLog reads back rows newest-first, honouring ``limit``."""
+    _open_and_wait(page, live_server.url)
+    _delete_db(page)
+
+    result = page.evaluate(
+        """async () => {
+            for (let i = 1; i <= 5; i++) {
+              await window.pwaDb.appendSyncLog({ at: new Date().toISOString(), path: `sync-${i}` });
+            }
+            const all = await window.pwaDb.getSyncLog();
+            const limited = await window.pwaDb.getSyncLog(2);
+            return {
+              allPaths: all.map((row) => row.path),
+              limitedPaths: limited.map((row) => row.path),
+            };
+          }"""
+    )
+    assert result["allPaths"] == ["sync-5", "sync-4", "sync-3", "sync-2", "sync-1"]
+    assert result["limitedPaths"] == ["sync-5", "sync-4"]
