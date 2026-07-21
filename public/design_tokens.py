@@ -45,6 +45,9 @@ from public._component_fixtures import (
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
+    OVERLAY_BANNER_VARIANTS,
+    OVERLAY_MODAL_VARIANTS,
+    OVERLAY_SHEET_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -762,6 +765,51 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_toast_banner.html",
         variants=TOAST_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-banner",
+        label="Overlay banner",
+        description=(
+            "Persistent, condition-driven banner primitive (SNOW-486) — the "
+            "'strip' variant is a full-width in-flow edge bar (off-season "
+            "notice); the 'floating' variant is a fixed bottom-centre card "
+            "with an optional icon, CTA and dismiss. Migrated the sw-update "
+            "banner and the install prompts; the offline banner and the "
+            "mutation-queue toast keep their own templates (documented "
+            "exceptions — see docs/decisions/overlay-primitives.md)."
+        ),
+        kind="components",
+        partial="includes/_overlay_banner.html",
+        variants=OVERLAY_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-modal",
+        label="Overlay modal",
+        description=(
+            "Full-screen backdrop + centred card primitive (SNOW-486), "
+            "CTA-only by design — no dismiss control. Shared shell for the "
+            "two PWA modals (forced update, reset required)."
+        ),
+        kind="components",
+        partial="includes/_overlay_modal.html",
+        variants=OVERLAY_MODAL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-sheet",
+        label="Overlay sheet",
+        description=(
+            "Fly-out sheet primitive (SNOW-486) shared by the favourite and "
+            "report map surfaces — fixed to the viewport edge on mobile, a "
+            "floating card on larger screens. Content is injected by the "
+            "owning JS module (favourites.js / report.js) at open time; the "
+            "shell itself carries the data-overlay dismiss contract."
+        ),
+        kind="components",
+        partial="includes/_overlay_sheet.html",
+        variants=OVERLAY_SHEET_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

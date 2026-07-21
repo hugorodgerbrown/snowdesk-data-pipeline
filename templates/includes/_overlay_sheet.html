@@ -18,12 +18,23 @@ sheet's own JS needing to bind a document click listener for it.
 Required context:
   id         — DOM id on the sheet container (e.g. "favourite-sheet").
   aria_label — Translated label text for the sheet's aria-label.
+
+Optional context:
+  static     — Bool; default False. When True renders inline (no
+               ``hidden``, no ``fixed`` positioning, no z-index) — used
+               only by the component library, mirroring _toast.html's
+               "static" convention. A slot of placeholder text is shown
+               in place of the real (JS-injected) content so the empty
+               shell isn't invisible in the panel.
 {% endcomment %}
 <div
     id="{{ id }}"
-    hidden
+    {% if not static %}hidden{% endif %}
     data-overlay
-    class="fixed bottom-0 left-0 right-0 z-[var(--z-popup)] rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
+    class="{% if static %}relative{% else %}fixed bottom-0 left-0 right-0{% endif %} z-[var(--z-popup)] rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
     aria-label="{{ aria_label }}"
 >
+    {% if static %}
+        <p class="px-2 py-4 text-sm text-text-3">Content injected by JS (favourites.js / report.js) at open time.</p>
+    {% endif %}
 </div>

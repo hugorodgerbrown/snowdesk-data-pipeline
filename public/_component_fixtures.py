@@ -994,6 +994,88 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Overlay primitives (SNOW-486) -----------------------------------------------
+# The four consolidated overlay shapes — banner, modal, sheet — each with a
+# "static" context flag so the component library renders them inline rather
+# than pinned to the real viewport edge. (Toast's own fixtures sit above,
+# pre-dating this consolidation.)
+
+OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Strip — off-season notice",
+        "context": {
+            "variant": "strip",
+            "body": "Archive bulletins are shown outside the winter season.",
+            "icon": "calendar",
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — no dismiss, no CTA",
+        "context": {
+            "variant": "floating",
+            "body": "Checking for updates…",
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — dismissible, no CTA",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            "title": "You're offline",
+            "body": "Showing the last cached bulletin.",
+            "title_id": "component-library-banner-title-1",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — dismissible with CTA (SW update shape)",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            "title": "Update available",
+            "body": "A new version of Snowdesk is ready.",
+            "title_id": "component-library-banner-title-2",
+            "cta_id": "component-library-banner-cta",
+            "cta_label": "Reload",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+)
+
+
+OVERLAY_MODAL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Forced update (PWA shape)",
+        "context": {
+            "id": "component-library-overlay-modal",
+            "title_id": "component-library-overlay-modal-title",
+            "body_id": "component-library-overlay-modal-body",
+            "title": "Update required",
+            "body": "A new version of Snowdesk is available. Reload to continue.",
+            "cta_id": "component-library-overlay-modal-cta",
+            "cta_label": "Reload",
+            "static": True,
+        },
+    },
+)
+
+
+OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Favourite / report sheet shell",
+        "context": {
+            "id": "component-library-overlay-sheet",
+            "aria_label": "Favourite",
+            "static": True,
+        },
+    },
+)
+
+
 # Sheet header (SNOW-474) -----------------------------------------------------
 # Shared title + persistent × close control for the favourites/report map
 # sheets. Both context vars are required (title, close_action) — supplying
