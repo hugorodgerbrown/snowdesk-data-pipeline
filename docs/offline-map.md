@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, _sw_update_banner, icons, CACHE_VERSION, SITE_ENVIRONMENT swap
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-21
 ---
 
 # PWA shell
@@ -286,10 +286,14 @@ The SW classifies every fetch into one of three buckets:
 
 - **`static`** — same-origin requests for assets in
   `STATIC_SHELL_EXTENSIONS` (CSS, JS, SVG, PNG/JPG/WEBP, ICO,
-  WOFF/WOFF2, WEBMANIFEST) plus the paths in `STATIC_PATHS` (currently
-  just `/api/regions.geojson`). Strategy: **stale-while-revalidate**.
-  The cache is served immediately if hit; a background fetch refreshes
-  the entry for next time.
+  WOFF/WOFF2, WEBMANIFEST) plus the paths in `STATIC_PATHS`
+  (`/api/ratings/`, `/api/regions.geojson`, `/api/major-regions.geojson`,
+  `/api/sub-regions.geojson`, `/api/resorts.geojson`). Strategy:
+  **stale-while-revalidate**. The cache is served immediately if hit; a
+  background fetch refreshes the entry for next time. `/api/ratings/` is
+  safe to cache this way because its URL encodes the data window via
+  `?d=YYYY-MM-DD` and `?country=` — each variant cache-keys separately, so
+  a stale entry can never be returned for the wrong day.
 
 - **`navigate`** — HTML navigations (`request.mode === 'navigate'` or
   destination `document`). Strategy: **network-first** with a
@@ -303,11 +307,15 @@ The SW classifies every fetch into one of three buckets:
   offline page.
 
 - **`network`** — everything else: bulletin JSON
-  (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar partials,
-  resort feeds that change with the bulletin, and all third-party
-  origins (MapLibre CDN, OpenFreeMap tiles). Strategy: **network only**
-  — no `event.respondWith()` call, the SW is bypassed entirely. This
-  is deliberate: a stale avalanche rating could mislead a user.
+  (`/api/region/<id>/summary/`), calendar partials, and all third-party
+  origins — including the basemap style JSON (MapLibre CDN, OpenFreeMap
+  tiles). Strategy: **network only** — no `event.respondWith()` call, the
+  SW is bypassed entirely. This is deliberate for bulletin/calendar data
+  (a stale avalanche rating could mislead a user); for the basemap style
+  it means an offline fetch fails outright, which `static/js/map.js`
+  handles by falling back to an inline background style (SNOW-483, see
+  [`docs/offline-first.md`](offline-first.md)) so the SW-cached region
+  overlays above still paint.
 
 The exact rules live in `_classify()` and the two strategy helpers
 `_staleWhileRevalidate()` / `_networkFirst()` in `sw.js`. To add a new
