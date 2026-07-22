@@ -162,6 +162,19 @@ try {
   // Non-fatal — see fallback in the 'sync' listener below.
 }
 
+// SNOW-496: pure fetch-classification/cache-eviction helpers, extracted so
+// they can be unit-tested directly (tests/js/test_basemap_cache_core.js)
+// rather than only via a real, slow-to-drive service worker. Same guarded
+// importScripts idiom as above — a transient 404 can't take down SW
+// startup; _classifySync/_classifyCrossOriginGet/_trimCache below fall back
+// to an inline literal when the global didn't load.
+try {
+  importScripts('/static/js/basemap_cache_core.js');
+} catch (_importErr) {
+  // Non-fatal — see the inline fallbacks in _classifySync,
+  // _classifyCrossOriginGet and _trimCache below.
+}
+
 // SNOW-475: v13 — new static/js/place_picker.js, favourites.js/report.js
 // rewritten to use it, and _map_embed.html's markup gained #map-place-pin.
 // (v12 was taken by SNOW-462/SNOW-472 on main.)
@@ -203,7 +216,12 @@ try {
 // SNOW-492: v26 — new 'warm-cache' message handler (the map's "Cache this
 // area for offline" control) and the map.js/sw_register.js changes that
 // drive it.
-const CACHE_VERSION = 'snowdesk-shell-v26';
+// SNOW-496: v27 — _classifySync/_classifyCrossOriginGet's origin check/
+// _trimCache now delegate to a second importScripts'd module,
+// basemap_cache_core.js (self.pwaBasemapCacheCore), so the classification/
+// eviction logic can be unit-tested directly. Behaviour is unchanged —
+// this is a shell-bytes bump only.
+const CACHE_VERSION = 'snowdesk-shell-v27';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -508,6 +526,19 @@ function _hydrateBasemapOrigins() {
  * @returns {'static' | 'navigate' | 'network' | null}
  */
 function _classifySync(request, url) {
+  // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
+  // Inline fallback mirrors the ``self.pwaMutationQueueCore ||`` idiom
+  // already used for the sync-event handler below, so a transient
+  // importScripts 404 can't break the fetch path.
+  if (self.pwaBasemapCacheCore) {
+    return self.pwaBasemapCacheCore.classifySync(
+      request,
+      url,
+      self.location.origin,
+      STATIC_PATHS,
+      STATIC_SHELL_EXTENSIONS,
+    );
+  }
   if (request.method !== 'GET') return 'network';
   if (url.origin !== self.location.origin) return null;
 
@@ -540,7 +571,11 @@ function _classifySync(request, url) {
  */
 async function _classifyCrossOriginGet(url) {
   await _hydrateBasemapOrigins();
-  if (_basemapOrigins.has(url.origin)) return 'basemap';
+  // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
+  const isBasemap = self.pwaBasemapCacheCore
+    ? self.pwaBasemapCacheCore.isBasemapOrigin(url, _basemapOrigins)
+    : _basemapOrigins.has(url.origin);
+  if (isBasemap) return 'basemap';
   return 'network';
 }
 
@@ -629,6 +664,10 @@ async function _staleWhileRevalidate(request) {
  * @param {number} max
  */
 async function _trimCache(cache, max) {
+  // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
+  if (self.pwaBasemapCacheCore) {
+    return self.pwaBasemapCacheCore.trimCache(cache, max);
+  }
   const keys = await cache.keys();
   const excess = keys.length - max;
   if (excess <= 0) return;

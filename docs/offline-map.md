@@ -439,7 +439,7 @@ toggle) in the map's Options menu (`#cache-now-toggle`). Clicking it:
 ## Cache version bump
 
 `sw.js` declares a `CACHE_VERSION` constant near the top of the file
-(`snowdesk-shell-v26` at the time of writing — see the dated comment
+(`snowdesk-shell-v27` at the time of writing — see the dated comment
 block above it for the full history). On `activate`, the SW deletes any
 `snowdesk-shell-*` / `map-shell-*` cache whose name is not the current
 `CACHE_VERSION`. Bump it when:

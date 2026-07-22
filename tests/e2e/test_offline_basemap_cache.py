@@ -61,10 +61,14 @@ on the real, activated SW) and a reserved, never-resolving RFC 2606
   (SNOW-487) exercises the ``_basemapOrigins.size === 0`` write-guard: a
   ``register-basemap-origins`` message that lands mid-rehydrate wins over
   the in-flight (stale) ``meta:app`` read.
-- ``test_trim_cache_caps_basemap_cache_at_max_entries`` calls the real
-  ``_trimCache()`` helper with a small over-the-cap batch (the
-  oldest-first algorithm is size-independent, so this proves the
-  eviction order without a slow 600-entry write loop).
+SNOW-496: the ``_trimCache()`` eviction-order assertion previously here
+(``test_trim_cache_caps_basemap_cache_at_max_entries``) is now a unit test
+in ``tests/js/test_basemap_cache_core.js`` against the extracted
+``basemap_cache_core.js`` — the algorithm is cache-agnostic (it takes the
+``Cache`` as an argument), so nothing about it needed a real service
+worker. What's left here needs a real activated SW + real CacheStorage:
+the origin-registration handoff, the offline serve/hydration paths, and
+the hydration-vs-registration race.
 """
 
 from __future__ import annotations
@@ -438,51 +442,4 @@ def test_in_flight_hydration_never_clobbers_a_fresh_registration(
     assert result == [fresh_origin], (
         f"expected the live register-basemap-origins allowlist to survive the "
         f"in-flight stale meta:app read; got {result!r}"
-    )
-
-
-def test_trim_cache_caps_basemap_cache_at_max_entries(pwa_page: PwaPage) -> None:
-    """BASEMAP_CACHE_MAX_ENTRIES caps snowdesk-basemap-v1, oldest-first.
-
-    Calls the real ``_trimCache()`` helper (``worker.evaluate``) against a
-    small over-the-cap batch — ``Cache.keys()`` returns insertion order,
-    and the trim deletes the earliest ``length - max`` keys regardless of
-    scale, so 10 entries trimmed to 6 proves the same algorithm 600 would.
-
-    Runs against a dedicated throwaway cache, NOT the live ``BASEMAP_CACHE``:
-    this fixture drives the real service worker, whose
-    ``_basemapStaleWhileRevalidate`` writes genuine basemap tiles into
-    ``BASEMAP_CACHE`` as the map paints. One of those real ``cache.put``s
-    landing during this evaluate polluted the cache with a non-``tile-*``
-    URL, so the parse below raised ``IndexError`` (and, when the intruder
-    landed last, stole a survivor slot from the trim). ``_trimCache(cache,
-    max)`` is cache-agnostic — it takes the cache as an argument and never
-    names ``BASEMAP_CACHE`` — so a private cache exercises the identical
-    algorithm with no interference from the worker's own writes.
-    """
-    page = pwa_page.page
-    assert page.context.service_workers, "expected a registered service worker"
-    worker = page.context.service_workers[0]
-
-    remaining = worker.evaluate(
-        """async () => {
-            const TEST_CACHE = 'snow484-trim-test-cache';
-            await caches.delete(TEST_CACHE);
-            const cache = await caches.open(TEST_CACHE);
-            for (let i = 0; i < 10; i++) {
-              await cache.put(
-                `https://snow484-trim-test.invalid/tile-${i}.pbf`,
-                new Response(String(i)),
-              );
-            }
-            await _trimCache(cache, 6);
-            const urls = (await cache.keys()).map((k) => k.url);
-            await caches.delete(TEST_CACHE);
-            return urls;
-          }"""
-    )
-
-    kept = sorted(int(url.rsplit("tile-", 1)[1].split(".")[0]) for url in remaining)
-    assert kept == [4, 5, 6, 7, 8, 9], (
-        f"expected the 6 most-recently-inserted entries to survive the trim; kept {kept}"
     )
