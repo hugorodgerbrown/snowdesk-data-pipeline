@@ -4338,15 +4338,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // when the user actually toggles the overlay on, not on a warm-cache
     // call. Including them here would let this control claim success while
     // leaving them genuinely unavailable offline.
+    //
+    // SNOW-493 finding 6: iterate every currently-ENABLED country
+    // (COUNTRY_STATE, the module-scope mirror the country-toggle buttons
+    // keep current), not just a hardcoded ?country=ch. Previously "Cache
+    // this area" only ever warmed Switzerland's feeds — a user who'd also
+    // enabled France/Austria/Italy would have those regions vanish on the
+    // very next offline reload despite the control reporting success.
     const urls = [];
-    const addCountryFeed = (base) => {
-      if (base) urls.push(base + '?country=ch');
+    const enabledCountries = Object.keys(COUNTRY_STATE).filter(
+      code => COUNTRY_STATE[code],
+    );
+    const addCountryFeeds = (base) => {
+      if (!base) return;
+      for (const code of enabledCountries) {
+        urls.push(base + '?country=' + code);
+      }
     };
-    addCountryFeed(mapEl.dataset.regionsUrl);
-    addCountryFeed(mapEl.dataset.majorRegionsUrl);
-    addCountryFeed(mapEl.dataset.subRegionsUrl);
+    addCountryFeeds(mapEl.dataset.regionsUrl);
+    addCountryFeeds(mapEl.dataset.majorRegionsUrl);
+    addCountryFeeds(mapEl.dataset.subRegionsUrl);
     if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
-    if (RATINGS_URL) urls.push(RATINGS_URL + '?country=ch');
+    if (RATINGS_URL) {
+      for (const code of enabledCountries) {
+        urls.push(RATINGS_URL + '?country=' + code);
+      }
+    }
 
     // The active basemap's own style JSON — read off the checked radio in
     // the popover (basemapPickerInit's markup is the single source of
@@ -4362,8 +4379,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const finish = (result) => {
       busy = false;
       btn.removeAttribute('aria-disabled');
+      // No result at all (no active worker, or the SW never replied within
+      // its timeout) — unchanged from before: the feature is unavailable
+      // this session, so stay silent rather than claim any outcome.
       if (!result) return;
-      const toast = document.getElementById('map-cache-now-toast');
+      // SNOW-493 finding 7: branch the completion toast on the actual
+      // {ok, failed} counts instead of always claiming "available
+      // offline" — a run where every URL failed to cache must never say
+      // that, and a partially-successful run should say so rather than
+      // over-claim full coverage.
+      let toastId;
+      if (result.failed === 0) {
+        toastId = 'map-cache-now-toast-complete';
+      } else if (result.ok > 0) {
+        toastId = 'map-cache-now-toast-partial';
+      } else {
+        toastId = 'map-cache-now-toast-failed';
+      }
+      const toast = document.getElementById(toastId);
       if (toast) {
         toast.classList.remove('hidden');
         toast.classList.add('flex');
