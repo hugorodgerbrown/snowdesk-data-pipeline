@@ -3401,35 +3401,33 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       // SNOW-419: re-install the community-reports layer if it was enabled
       // before the basemap swap, seeded from the last-fetched cache (no
-      // refetch). Unlike favourites, this overlay IS re-installed here —
-      // omitting it would leave the pins vanished after a basemap swap.
+      // refetch).
       if (overlayLoaded.community_reports) {
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
-
-      // SNOW-172: Re-apply country filters for the freshly-installed layers.
-      // The caches (geojsonCache, majorGeojsonCache, subGeojsonCache) still
-      // hold the merged multi-country data from before the basemap switch,
-      // so we only need to re-set the filters — no re-fetch required.
-      // Reset loadedCountries to just CH so ensureCountryLoaded will
-      // re-merge any previously-loaded country back into the reinstalled
-      // sources.
-      loadedCountries.clear();
-      loadedCountries.add('ch');
-      // Re-merge data for any country that is currently enabled and was
-      // previously loaded. geojsonCache already has the merged features but
-      // the fresh source only has CH (from the reinstalled cache).  Re-fetch
-      // so the source gets the full merged set again.
-      const countriesToReload = COUNTRY_KEYS.filter(
-        code => code !== 'ch' && countryState[code],
-      );
-      if (countriesToReload.length > 0) {
-        Promise.all(countriesToReload.map(code => ensureCountryLoaded(code)))
-          .then(() => applyCountryFilters())
-          .catch(() => applyCountryFilters());
-      } else {
-        applyCountryFilters();
+      // SNOW-493 finding 2: favourites was never re-installed here, so a
+      // basemap swap silently dropped every favourite pin even though
+      // favouritesGeojsonCache still held the data (fetched once, never
+      // re-requested). Re-install it whenever it was loaded before the
+      // swap, mirroring the community-reports reinstall above.
+      if (overlayLoaded.favourites) {
+        installFavouritesLayer(favouritesGeojsonCache);
       }
+
+      // SNOW-172 / SNOW-493 finding 3: re-apply country filters for the
+      // freshly-installed layers. geojsonCache/majorGeojsonCache/
+      // subGeojsonCache already hold every merged country's features —
+      // installRegionsLayers/installOverlayLayers above installed that
+      // complete merged data as-is — so no re-fetch is needed here.
+      // Previously this block cleared ``loadedCountries`` down to just
+      // ``ch`` and called ``ensureCountryLoaded`` again for every
+      // currently-enabled country, which re-fetched and re-merged data the
+      // caches already contained, duplicating every foreign region's
+      // features on each basemap swap. ``loadedCountries`` itself is
+      // untouched by ``setStyle`` (it isn't reset elsewhere), so it still
+      // accurately reflects what's already merged into the caches above —
+      // nothing further to load.
+      applyCountryFilters();
 
       if (selectedId !== null) {
         map.setFeatureState(
