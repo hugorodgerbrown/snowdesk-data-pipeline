@@ -20,14 +20,16 @@
  * ``withCommunityReportsAgeOpacity`` in map.js), so ``cached_at`` is recorded
  * only for observability, not as a store-level cutoff.
  *
- * ``principal`` (SNOW-493) partitions every row by the signed-in account —
- * ``window.pwaDb.context().user_id``, normalised to ``null`` for anonymous
- * sessions — so a cached favourites row from one account can never be read
- * back after a different account signs in on the same browser. Every row is
- * stamped uniformly (including ``community_reports``, which has no account
- * binding of its own) so both resources share one code path: anonymous /
- * community rows carry ``principal: null`` on both write and read, and so
- * still match each other.
+ * ``principal`` (SNOW-493) partitions **account-specific** rows by the
+ * signed-in account — ``window.pwaDb.context().user_id``, normalised to
+ * ``null`` for anonymous sessions — so a cached favourites row from one
+ * account can never be read back after a different account signs in on the
+ * same browser. Only resources in ``PRINCIPAL_SCOPED`` (``favourites``)
+ * carry and validate a ``principal``. ``community_reports`` is public data
+ * with no account binding, so it is deliberately NOT partitioned: a report
+ * cached while signed in must stay readable after logout, and an anonymous
+ * report after login — tying it to a principal would wrongly hide public
+ * data across an account change.
  *
  * No exports beyond ``window.pwaMapOverlayCache`` — every call site in
  * map.js reaches this via that global.
@@ -37,6 +39,12 @@
   'use strict';
 
   const STORE = 'data:map_overlays';
+
+  // SNOW-493: resources whose cached rows are partitioned by the signed-in
+  // account. Only account-specific data belongs here — favourites are a
+  // user's own saved locations. ``community_reports`` is public and is
+  // intentionally absent, so it round-trips across sign-in/sign-out.
+  const PRINCIPAL_SCOPED = new Set(['favourites']);
 
   /**
    * True when ``window.pwaDb`` is present and the app is not in the
@@ -82,12 +90,18 @@
   async function putOverlay(resource, geojson) {
     if (!dbReady() || !resource || !geojson) return;
     try {
-      await window.pwaDb.put(STORE, {
+      const record = {
         key: resource,
         geojson,
         cached_at: new Date().toISOString(),
-        principal: _currentPrincipal(),
-      });
+      };
+      // Only stamp a principal on account-specific resources; public
+      // resources (community_reports) stay principal-free so they read
+      // back regardless of who is signed in.
+      if (PRINCIPAL_SCOPED.has(resource)) {
+        record.principal = _currentPrincipal();
+      }
+      await window.pwaDb.put(STORE, record);
     } catch (_e) {
       // Non-fatal — the cache is best-effort.
     }
@@ -95,10 +109,13 @@
 
   /**
    * Read back the cached GeoJSON payload for ``resource``, or ``null`` if
-   * nothing is cached, the DB isn't ready, or the cached row belongs to a
-   * different principal than the one currently signed in (SNOW-493) — a
-   * row with no ``principal`` at all (written before this fix) never
-   * matches, so it can't leak across an account switch either.
+   * nothing is cached or the DB isn't ready. For account-specific
+   * resources (``PRINCIPAL_SCOPED``, i.e. favourites) also returns ``null``
+   * when the cached row belongs to a different principal than the one
+   * currently signed in (SNOW-493) — a favourites row with no ``principal``
+   * at all (written before this fix) never matches, so it can't leak across
+   * an account switch either. Public resources (community_reports) skip the
+   * principal check entirely and read back for any session.
    *
    * @param {string} resource - ``'favourites'`` or ``'community_reports'``
    * @returns {Promise<object | null>}
@@ -108,7 +125,12 @@
     try {
       const record = await window.pwaDb.get(STORE, resource);
       if (!record || !record.geojson) return null;
-      if (record.principal !== _currentPrincipal()) return null;
+      if (
+        PRINCIPAL_SCOPED.has(resource) &&
+        record.principal !== _currentPrincipal()
+      ) {
+        return null;
+      }
       return record.geojson;
     } catch (_e) {
       return null;

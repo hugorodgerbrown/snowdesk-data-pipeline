@@ -122,3 +122,72 @@ def test_offline_favourites_cache_never_leaks_across_account_switch(
     assert page.evaluate("() => !!MAP.getSource('favourites')") is False, (
         "B's map must not install a favourites source built from A's cached pins"
     )
+
+
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_offline_community_reports_cache_survives_account_switch(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """Public community-reports cache is NOT partitioned by account (P2).
+
+    Community reports are public data with no account binding. A report
+    collection cached while user A is signed in must still read back after
+    user B signs in on the same browser — tying it to a principal (as the
+    favourites cache above deliberately is) would wrongly hide public data
+    across an account change: a report cached signed-in would vanish on
+    logout, and an anonymous one on login. Regression coverage for
+    SNOW-493 P2 — before the fix, ``putOverlay`` / ``getOverlay`` applied
+    principal isolation to every resource, so B's read-back of A's cached
+    reports missed and the "unavailable offline" toast fired.
+    """
+    with django_db_blocker.unblock():
+        subscriber_a = SubscriberFactory.create()
+        subscriber_b = SubscriberFactory.create()
+
+    # A signs in and seeds the community-reports cache directly (no prior
+    # real fetch needed). Pre-fix this row was stamped with A's principal.
+    _session_login(page.context, live_server.url, subscriber_a.user)
+    _navigate_home_with_sw_stripped(page, live_server.url)
+    page.evaluate(
+        """() => window.pwaMapOverlayCache.putOverlay('community_reports', {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [7.5, 46.5] },
+                properties: { id: 'cr-1' },
+            }],
+        })"""
+    )
+    _poll(
+        page,
+        "async () => window.pwaDb.get('data:map_overlays', 'community_reports')",
+    )
+
+    # B signs in on the same browser; the live community-reports fetch is
+    # forced to fail so the offline read-back branch runs against A's row.
+    _session_login(page.context, live_server.url, subscriber_b.user)
+    page.route("**/api/community-reports.geojson", lambda route: route.abort())
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    toggle = page.locator('[data-overlay-key="community_reports"]')
+    toggle.wait_for(state="visible")
+    toggle.click()
+
+    # Post-fix: the public cache reads back for B, so the source installs
+    # with A's cached report and the unavailable toast never fires.
+    page.wait_for_function("() => !!MAP.getSource('community-reports')", timeout=10000)
+    features = page.evaluate(
+        """() => {
+            const src = MAP.getSource('community-reports');
+            return (src.serialize().data.features || []).length;
+        }"""
+    )
+    assert features == 1, "B must read back A's public community-reports cache"
+
+    page.wait_for_timeout(300)
+    assert "hidden" in (
+        page.locator("#map-offline-toast-community_reports").get_attribute("class")
+        or ""
+    )
