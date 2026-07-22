@@ -6,15 +6,15 @@
 
 set -o errexit
 
-# See build.sh for the rationale behind `uv sync --active --no-dev --frozen`.
+# See build.sh for the rationale behind the in-project virtualenv.
 pip install uv
-uv sync --active --no-dev --frozen
+uv sync --no-dev --frozen
 
-python manage.py migrate
+uv run --no-sync python manage.py migrate
 
 # Sync committed fixtures (see build.sh for the rationale — cron workers
 # must see the same region/resort data as the web service).
-python manage.py loaddata \
+uv run --no-sync python manage.py loaddata \
     regions/fixtures/eaws_CH.json \
     regions/fixtures/eaws_FR.json \
     regions/fixtures/eaws_AT.json \

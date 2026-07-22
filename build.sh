@@ -6,13 +6,12 @@
 
 set -o errexit
 
-# Python dependencies. `--active` installs into Render's build-time
-# virtualenv (the same one Poetry installed into), so the bare
-# `python manage.py` / `gunicorn` start commands resolve without an
-# `uv run` prefix. `--no-dev` mirrors the old `--only main`; `--frozen`
+# Python dependencies. Keep the environment in the project so this works in
+# both Render and cloud development environments; the latter does not provide
+# an active virtualenv. `--no-dev` mirrors the old `--only main`; `--frozen`
 # installs strictly from uv.lock and fails if it is out of date.
 pip install uv
-uv sync --active --no-dev --frozen
+uv sync --no-dev --frozen
 
 # Tailwind CSS build (output.css is gitignored — must be built on deploy)
 npm install
@@ -24,8 +23,8 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 # continues with GeoIP disabled (geo fields go empty). See the script header.
 ./bin/fetch-geoip-data
 
-python manage.py collectstatic --no-input
-python manage.py migrate
+uv run --no-sync python manage.py collectstatic --no-input
+uv run --no-sync python manage.py migrate
 
 # Sync the committed fixtures into the database. ``loaddata`` upserts by
 # primary key (``region_id`` on MicroRegion, ``prefix`` on Major/SubRegion,
@@ -33,7 +32,7 @@ python manage.py migrate
 # deploy is idempotent. Without this step, fixture edits (e.g. corrected
 # region names) only reach production if an operator remembers to run
 # ``loaddata`` out of band — see ``docs/management-commands.md``.
-python manage.py loaddata \
+uv run --no-sync python manage.py loaddata \
     regions/fixtures/eaws_CH.json \
     regions/fixtures/eaws_FR.json \
     regions/fixtures/eaws_AT.json \
