@@ -23,12 +23,12 @@ notes on those). Specifically:
    avoid a flaky race against that reload).
 5. (Moved, SNOW-496) ``window.pwaMutationQueue`` behaviour. SNOW-376
    replaced the no-op stub with a real queue whose ``enqueue`` performs an
-   actual network drain — coverage moved to
-   ``tests/e2e/test_mutation_queue.py`` (real-SW cases) and
-   ``tests/js/test_mutation_queue.js`` (everything else), which mock the
-   mutation endpoint. Asserting stub semantics here fired an un-routed
-   POST at the live server, which under the file-based e2e SQLite DB
-   could lock the table and deadlock a later test.
+   actual network drain — coverage moved entirely to
+   ``tests/js/test_mutation_queue.js`` (Vitest, mocked ``fetch``) and the
+   real-consumer journeys in ``tests/e2e/test_offline_favourite_submit.py``
+   / ``test_offline_observation_submit.py``. Asserting stub semantics here
+   fired an un-routed POST at the live server, which under the file-based
+   e2e SQLite DB could lock the table and deadlock a later test.
 6. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
    SNOW-388) on same-origin ``fetch`` and HTMX requests, and its absence on
    third-party requests — including the ``sw_register.js::fetchSwConfig()``
@@ -102,7 +102,7 @@ def _delete_db(page: Page) -> None:
               // No onblocked handler: it fires while the delete is still
               // pending (blocked by db.js's live, self-yielding connection),
               // not done — resolving there returns before the DB is gone. See
-              // tests/e2e/test_pwa_db.py::_delete_db for the full rationale.
+              // tests/js/test_db.js's deleteDb() for the full rationale.
             } catch (_e) { resolve(); }
           })""",
         "snowdesk-pwa-v1",

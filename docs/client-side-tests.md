@@ -73,9 +73,41 @@ Same opt-in shape as `tox -e e2e` (not in the default `tox` envlist — `npm
 ci` is a needless cost on the common local loop). Runs `npm ci && npm run
 test:js` (`vitest run`).
 
+### What the JS-unit layer covers (SNOW-495, SNOW-496)
+
+- `db.js` — schema/upgrade, CRUD helpers, `context()`, the sync log, and the
+  one-way Reset Required latch (`test_db.js`, `test_db_reset_required.js`).
+- `telemetry.js` — `emit()`/`flush()`/`setOptIn()`/`isOptIn()`, critical-event
+  `sendBeacon`, opt-out stripping, the opt-in default and operator kill
+  switch (each in their own file — see `test_telemetry.js`'s docstring for
+  why), the freshness-indicator sample-rate gate, and `db.js`'s
+  storage-eviction heuristic (`test_telemetry*.js`).
+- `mutation_queue_core.js` / `mutation_queue.js` — backoff/classification,
+  enqueue/drain, the nav sync badge, Background Sync feature-detection, the
+  failure toast, and the SNOW-462 account-change reconcile/drain-guard
+  (`test_mutation_queue*.js`, split across several files for the same
+  per-module-instance-state reason as telemetry.js).
+- `overlays.js`, `home_intro.js`, `map_help.js` — the shared dismiss
+  primitive, and the two overlays' persistence/keyboard/auto-start
+  behaviour (`test_overlays.js`, `test_home_intro.js`, `test_map_help.js`;
+  the latter drops pixel-positioning assertions jsdom's zero-rect
+  `getBoundingClientRect` can't support — none of the ported Playwright
+  cases asserted on positions anyway).
+- `scrubber_core.js` / `basemap_cache_core.js` — pure math extracted from
+  `map.js` (season scrubber/timelapse/ribbon) and `sw.js` (fetch
+  classification, basemap cache eviction) behind thin delegators, so logic
+  that real MapLibre/service-worker constraints made hard (or impossible)
+  to exercise in Playwright gets direct unit coverage
+  (`test_scrubber_core.js`, `test_basemap_cache_core.js`).
+
+The e2e suite (`tox -e e2e`) is left holding real-SW/offline journeys
+(install, update, kill switch, push, offline map/favourites, the mutation
+queue's real-server round trip) and happy-path page flows — see
+"SW-lifecycle tests: real vs simulated" below.
+
 ---
 
-## What the harness covers
+## What the Playwright share-button smoke test covers
 
 One smoke test (`tests/e2e/test_share_button.py`) exercises the full
 share-button flow on the canonical bulletin page:
@@ -152,14 +184,18 @@ the wrong one for a new test either pollutes an unrelated assertion or
 misses the thing you actually meant to test:
 
 - **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
-  the stripped-`navigator.serviceWorker` init script in
-  `test_pwa_telemetry.py`) — the real `/sw.js` never registers. Use this
-  when the test is about something ELSE that happens to load on a page
-  the SW would otherwise control (telemetry envelopes, the install-prompt
-  funnel) and a real SW's own asynchronous lifecycle events would just be
-  timing noise for that assertion. (For pure JS-module internals like
-  `db.js`, prefer the Vitest harness over a browser entirely — see the
-  "JS unit tests" section above.)
+  the stripped-`navigator.serviceWorker` pattern used throughout
+  `tests/e2e/test_offline_favourite_submit.py` /
+  `test_offline_observation_submit.py`) — the real `/sw.js` never
+  registers. Use this when the test is about something ELSE that happens
+  to load on a page the SW would otherwise control (the install-prompt
+  funnel, a real-server mutation-queue round trip) and a real SW's own
+  asynchronous lifecycle events would just be timing noise for that
+  assertion. (For pure JS-module internals like `db.js`, `telemetry.js`,
+  or `mutation_queue.js`, prefer the Vitest harness over a browser
+  entirely — `delete navigator.serviceWorker` gets the same isolation for
+  free there, since jsdom doesn't define it by default. See the "JS unit
+  tests" section above.)
 - **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
   genuine `/sw.js` registers, activates, and controls the page, with
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
