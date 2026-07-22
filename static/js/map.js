@@ -1808,20 +1808,34 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }));
       }
 
-      if (newMajor && newMajor.features && majorGeojsonCache) {
-        majorGeojsonCache = {
-          ...majorGeojsonCache,
-          features: [...majorGeojsonCache.features, ...newMajor.features],
-        };
+      // SNOW-493 finding 5: retain L1/L2 results unconditionally, mirroring
+      // the merge-always behaviour geojsonCache (L4) uses above. Previously
+      // this was gated on ``majorGeojsonCache``/``subGeojsonCache`` already
+      // being non-null — which is only true once the user has enabled L1/L2
+      // at least once — so fetching a country before that first enable
+      // silently discarded its L1/L2 data. loadedCountries then marks the
+      // country as loaded, so a later L1/L2 enable never re-fetches it and
+      // the foreign hierarchy stays permanently missing. Create the cache
+      // here if it doesn't exist yet so the data survives for that later
+      // enable to pick up (see the matching merge in ensureOverlayLoaded).
+      if (newMajor && newMajor.features) {
+        majorGeojsonCache = majorGeojsonCache
+          ? {
+              ...majorGeojsonCache,
+              features: [...majorGeojsonCache.features, ...newMajor.features],
+            }
+          : { type: 'FeatureCollection', features: [...newMajor.features] };
         const majorSource = map.getSource('major-regions');
         if (majorSource) majorSource.setData(majorGeojsonCache);
       }
 
-      if (newSub && newSub.features && subGeojsonCache) {
-        subGeojsonCache = {
-          ...subGeojsonCache,
-          features: [...subGeojsonCache.features, ...newSub.features],
-        };
+      if (newSub && newSub.features) {
+        subGeojsonCache = subGeojsonCache
+          ? {
+              ...subGeojsonCache,
+              features: [...subGeojsonCache.features, ...newSub.features],
+            }
+          : { type: 'FeatureCollection', features: [...newSub.features] };
         const subSource = map.getSource('sub-regions');
         if (subSource) subSource.setData(subGeojsonCache);
       }
@@ -1923,8 +1937,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     community_reports: false,
   };
 
-  const ensureOverlayLoaded = async (key) => {
-    if (overlayLoaded[key]) return;
+  // SNOW-493 P1: the in-flight load promise per key. ``overlayLoaded`` only
+  // flips true after the fetch settles, so a rapid on → off → on (the user
+  // re-enables a tier before its first request returns) would otherwise
+  // pass the guard twice and start a second fetch. For l1/l2 both responses
+  // concatenate into majorGeojsonCache/subGeojsonCache, duplicating every
+  // country feature — invisible until the next basemap swap reinstalls the
+  // source from that cache. Reusing the pending promise collapses the
+  // second enable onto the first fetch, so the merge happens exactly once.
+  const overlayLoading = {};
+
+  const _loadOverlay = async (key) => {
     if (key === 'l1') {
       if (!MAJOR_REGIONS_URL) return;
       const data = await fetch(MAJOR_REGIONS_URL + '?country=ch')
@@ -1933,7 +1956,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
-      majorGeojsonCache = data;
+      // SNOW-493 finding 5: merge into any L1 data already retained by
+      // ensureCountryLoaded (e.g. a foreign country toggled on before L1's
+      // first enable) rather than overwriting it — otherwise this first
+      // fetch would wipe out data for a country that's already loaded and
+      // will never be re-fetched.
+      majorGeojsonCache = majorGeojsonCache
+        ? {
+            ...majorGeojsonCache,
+            features: [...majorGeojsonCache.features, ...data.features],
+          }
+        : data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l2') {
       if (!SUB_REGIONS_URL) return;
@@ -1943,7 +1976,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
-      subGeojsonCache = data;
+      // SNOW-493 finding 5: same merge as L1 above, for L2's retained data.
+      subGeojsonCache = subGeojsonCache
+        ? {
+            ...subGeojsonCache,
+            features: [...subGeojsonCache.features, ...data.features],
+          }
+        : data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
       // SNOW-323: enabling L3 is a deliberate, settled action — fetch the
@@ -2004,11 +2043,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
         installCommunityReportsLayer(communityReportsGeojsonCache);
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
-        const fresh = cached ? dropExpiredCommunityReports(cached) : null;
-        // Optional chaining on .features — dropExpiredCommunityReports
-        // returns a malformed/non-FeatureCollection input unchanged, so
-        // .features can be undefined here rather than an empty array.
-        if (!fresh || !fresh.features?.length) {
+        // SNOW-493 finding 8: no cached copy at all is genuinely
+        // unavailable offline.
+        if (!cached) {
+          revealOfflineToast('map-offline-toast-community_reports');
+          return;
+        }
+        const fresh = dropExpiredCommunityReports(cached);
+        // A cached, valid, but EMPTY FeatureCollection (no reports right
+        // now, or every cached report has since aged past the 48h window)
+        // is a successful cached response, not a failure — install it as
+        // zero markers rather than showing the "unavailable offline"
+        // warning. Only a malformed/non-FeatureCollection cached payload
+        // (``.features`` isn't an array at all — dropExpiredCommunityReports
+        // returns such input unchanged) still counts as unavailable.
+        if (!Array.isArray(fresh.features)) {
           revealOfflineToast('map-offline-toast-community_reports');
           return;
         }
@@ -2020,6 +2069,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
+  };
+
+  // SNOW-235 / SNOW-493 P1: public entry point. Short-circuits if the tier
+  // is already loaded, reuses any in-flight load for the same key (see
+  // ``overlayLoading`` above), and otherwise starts one — clearing the slot
+  // on settle so a genuine later retry (e.g. after an offline failure that
+  // left ``overlayLoaded[key]`` false) can attempt the fetch again.
+  const ensureOverlayLoaded = (key) => {
+    if (overlayLoaded[key]) return Promise.resolve();
+    if (overlayLoading[key]) return overlayLoading[key];
+    const work = _loadOverlay(key).finally(() => {
+      delete overlayLoading[key];
+    });
+    overlayLoading[key] = work;
+    return work;
   };
 
   // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
@@ -2050,9 +2114,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('snowdesk:overlay-load', (e) => {
     const { key } = e.detail;
     ensureOverlayLoaded(key).then(() => {
+      // SNOW-493 finding 4: the fetch above is async, so the user may have
+      // toggled the overlay off again before it settled. Unconditionally
+      // setting 'visible' here would revive an overlay the user just
+      // disabled. Re-read the persisted state from localStorage — the
+      // module's live source of truth for overlay visibility (the
+      // picker writes it on every click; ``overlayState`` itself is only
+      // re-seeded from it at boot and after a basemap swap, per the
+      // SNOW-473 comment above the ``styledata`` handler) — rather than
+      // trusting the boot-time ``overlayState`` value.
+      const stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[key], overlayState[key]);
+      overlayState[key] = stillEnabled;
+      const visibility = stillEnabled ? 'visible' : 'none';
       for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
         if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, 'visibility', 'visible');
+          map.setLayoutProperty(layerId, 'visibility', visibility);
         }
       }
     }).catch(() => {});
@@ -3359,35 +3435,33 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       // SNOW-419: re-install the community-reports layer if it was enabled
       // before the basemap swap, seeded from the last-fetched cache (no
-      // refetch). Unlike favourites, this overlay IS re-installed here —
-      // omitting it would leave the pins vanished after a basemap swap.
+      // refetch).
       if (overlayLoaded.community_reports) {
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
-
-      // SNOW-172: Re-apply country filters for the freshly-installed layers.
-      // The caches (geojsonCache, majorGeojsonCache, subGeojsonCache) still
-      // hold the merged multi-country data from before the basemap switch,
-      // so we only need to re-set the filters — no re-fetch required.
-      // Reset loadedCountries to just CH so ensureCountryLoaded will
-      // re-merge any previously-loaded country back into the reinstalled
-      // sources.
-      loadedCountries.clear();
-      loadedCountries.add('ch');
-      // Re-merge data for any country that is currently enabled and was
-      // previously loaded. geojsonCache already has the merged features but
-      // the fresh source only has CH (from the reinstalled cache).  Re-fetch
-      // so the source gets the full merged set again.
-      const countriesToReload = COUNTRY_KEYS.filter(
-        code => code !== 'ch' && countryState[code],
-      );
-      if (countriesToReload.length > 0) {
-        Promise.all(countriesToReload.map(code => ensureCountryLoaded(code)))
-          .then(() => applyCountryFilters())
-          .catch(() => applyCountryFilters());
-      } else {
-        applyCountryFilters();
+      // SNOW-493 finding 2: favourites was never re-installed here, so a
+      // basemap swap silently dropped every favourite pin even though
+      // favouritesGeojsonCache still held the data (fetched once, never
+      // re-requested). Re-install it whenever it was loaded before the
+      // swap, mirroring the community-reports reinstall above.
+      if (overlayLoaded.favourites) {
+        installFavouritesLayer(favouritesGeojsonCache);
       }
+
+      // SNOW-172 / SNOW-493 finding 3: re-apply country filters for the
+      // freshly-installed layers. geojsonCache/majorGeojsonCache/
+      // subGeojsonCache already hold every merged country's features —
+      // installRegionsLayers/installOverlayLayers above installed that
+      // complete merged data as-is — so no re-fetch is needed here.
+      // Previously this block cleared ``loadedCountries`` down to just
+      // ``ch`` and called ``ensureCountryLoaded`` again for every
+      // currently-enabled country, which re-fetched and re-merged data the
+      // caches already contained, duplicating every foreign region's
+      // features on each basemap swap. ``loadedCountries`` itself is
+      // untouched by ``setStyle`` (it isn't reset elsewhere), so it still
+      // accurately reflects what's already merged into the caches above —
+      // nothing further to load.
+      applyCountryFilters();
 
       if (selectedId !== null) {
         map.setFeatureState(
@@ -4298,15 +4372,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // when the user actually toggles the overlay on, not on a warm-cache
     // call. Including them here would let this control claim success while
     // leaving them genuinely unavailable offline.
+    //
+    // SNOW-493 finding 6: iterate every currently-ENABLED country
+    // (COUNTRY_STATE, the module-scope mirror the country-toggle buttons
+    // keep current), not just a hardcoded ?country=ch. Previously "Cache
+    // this area" only ever warmed Switzerland's feeds — a user who'd also
+    // enabled France/Austria/Italy would have those regions vanish on the
+    // very next offline reload despite the control reporting success.
     const urls = [];
-    const addCountryFeed = (base) => {
-      if (base) urls.push(base + '?country=ch');
+    const enabledCountries = Object.keys(COUNTRY_STATE).filter(
+      code => COUNTRY_STATE[code],
+    );
+    const addCountryFeeds = (base) => {
+      if (!base) return;
+      for (const code of enabledCountries) {
+        urls.push(base + '?country=' + code);
+      }
     };
-    addCountryFeed(mapEl.dataset.regionsUrl);
-    addCountryFeed(mapEl.dataset.majorRegionsUrl);
-    addCountryFeed(mapEl.dataset.subRegionsUrl);
+    addCountryFeeds(mapEl.dataset.regionsUrl);
+    addCountryFeeds(mapEl.dataset.majorRegionsUrl);
+    addCountryFeeds(mapEl.dataset.subRegionsUrl);
     if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
-    if (RATINGS_URL) urls.push(RATINGS_URL + '?country=ch');
+    if (RATINGS_URL) {
+      for (const code of enabledCountries) {
+        urls.push(RATINGS_URL + '?country=' + code);
+      }
+    }
 
     // The active basemap's own style JSON — read off the checked radio in
     // the popover (basemapPickerInit's markup is the single source of
@@ -4322,8 +4413,27 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const finish = (result) => {
       busy = false;
       btn.removeAttribute('aria-disabled');
+      // No result at all (no active worker, or the SW never replied within
+      // its timeout) — unchanged from before: the feature is unavailable
+      // this session, so stay silent rather than claim any outcome.
       if (!result) return;
-      const toast = document.getElementById('map-cache-now-toast');
+      // SNOW-493 finding 7: branch the completion toast on the actual
+      // {ok, failed} counts instead of always claiming "available
+      // offline" — a run where every URL failed to cache must never say
+      // that, and a partially-successful run should say so rather than
+      // over-claim full coverage. "Complete" requires at least one
+      // success as well as no failures, so a vacuous run (``ok === 0``,
+      // nothing cached) never claims the area is available offline —
+      // matching the acceptance criterion for any ``ok === 0`` result.
+      let toastId;
+      if (result.ok > 0 && result.failed === 0) {
+        toastId = 'map-cache-now-toast-complete';
+      } else if (result.ok > 0) {
+        toastId = 'map-cache-now-toast-partial';
+      } else {
+        toastId = 'map-cache-now-toast-failed';
+      }
+      const toast = document.getElementById(toastId);
       if (toast) {
         toast.classList.remove('hidden');
         toast.classList.add('flex');

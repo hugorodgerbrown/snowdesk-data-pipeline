@@ -464,6 +464,12 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     carries the same theoretical live-CDN flakiness risk documented in the
     module docstring, even though the completion toast itself never
     depends on the CDN succeeding.
+
+    SNOW-493 finding 7: the completion toast now branches on the actual
+    {ok, failed} counts (complete/partial/failed — see
+    ``test_cache_this_area.py`` for coverage of each branch with stubbed
+    counts), so this smoke test accepts whichever of the three the live
+    CDN outcome happens to produce rather than asserting a specific one.
     """
     page = pwa_page.page
     page.wait_for_function(
@@ -476,6 +482,11 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     button.wait_for(state="visible")
     button.click()
 
-    page.wait_for_selector("#map-cache-now-toast:not(.hidden)", timeout=15000)
+    page.wait_for_selector(
+        "#map-cache-now-toast-complete:not(.hidden), "
+        "#map-cache-now-toast-partial:not(.hidden), "
+        "#map-cache-now-toast-failed:not(.hidden)",
+        timeout=15000,
+    )
     # The button re-enables once the run completes (busy guard cleared).
     assert button.get_attribute("aria-disabled") is None
