@@ -2,10 +2,11 @@
 tests/e2e/test_pwa_db.py — Playwright tests for static/js/db.js (SNOW-375).
 
 Covers the four contracts from the SNOW-375 scoping comment, plus the
-SNOW-418 schema-v2 bump and the SNOW-482 schema-v3 bump:
+SNOW-418 schema-v2, SNOW-482 schema-v3, and SNOW-492 schema-v4 bumps:
 
-1. Fresh open — all six static object stores (including SNOW-418's
-   ``data:favourites`` and SNOW-482's ``log:sync``) exist at version 3.
+1. Fresh open — all seven static object stores (including SNOW-418's
+   ``data:favourites``, SNOW-482's ``log:sync``, and SNOW-492's
+   ``data:map_overlays``) exist at version 4.
 2. Round-trip — put / get / delete / getAll / count / clear behave on
    ``queue:events``.
 3. ``context()`` returns the expected eight-field envelope with correct
@@ -14,9 +15,11 @@ SNOW-418 schema-v2 bump and the SNOW-482 schema-v3 bump:
    ``isResetRequired()`` becomes true, the overlay is revealed, and the
    next ``open()`` rejects.
 5. Schema upgrades — a pre-existing version-1 DB (missing
-   ``data:favourites``/``log:sync``) is migrated to version 2 with
-   ``data:favourites`` added; a pre-existing version-2 DB is migrated to
-   version 3 with ``log:sync`` added — neither disturbs existing data.
+   ``data:favourites``/``log:sync``/``data:map_overlays``) is migrated
+   straight to the current version with every missing store added; a
+   pre-existing version-2 DB gains ``log:sync`` + ``data:map_overlays``;
+   a pre-existing version-3 DB gains ``data:map_overlays`` — none
+   disturbs existing data.
 6. ``appendSyncLog`` / ``getSyncLog`` (SNOW-482) — trims to the newest
    100 rows and reads back newest-first.
 
@@ -60,6 +63,8 @@ STATIC_STORES = ["queue:mutations", "queue:events", "meta:sync", "meta:app"]
 V2_STORES = [*STATIC_STORES, "data:favourites"]
 # SNOW-482 (schema v3) — added alongside the five version-2 stores above.
 V3_STORES = [*V2_STORES, "log:sync"]
+# SNOW-492 (schema v4) — added alongside the six version-3 stores above.
+V4_STORES = [*V3_STORES, "data:map_overlays"]
 
 
 def _open_and_wait(page: Page, live_server_url: str) -> None:
@@ -187,12 +192,12 @@ def _open_via_db_js_and_read(page: Page) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 1. Fresh open creates every static store at version 3.
+# 1. Fresh open creates every static store at version 4.
 # ---------------------------------------------------------------------------
 
 
 def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> None:
-    """After a fresh open() all six stores exist at version 3 (SNOW-482)."""
+    """After a fresh open() all seven stores exist at version 4 (SNOW-492)."""
     _open_and_wait(page, live_server.url)
     _delete_db(page)
 
@@ -205,8 +210,8 @@ def test_fresh_open_creates_all_stores(live_server: LiveServer, page: Page) -> N
             };
           }"""
     )
-    assert stores["version"] == 3
-    assert stores["names"] == sorted(V3_STORES)
+    assert stores["version"] == 4
+    assert stores["names"] == sorted(V4_STORES)
 
 
 # ---------------------------------------------------------------------------
@@ -386,12 +391,13 @@ def test_upgrade_from_v1_adds_data_favourites(
     """A pre-existing version-1 DB (four stores) is migrated straight to
     the current version by db.js's own ``_runMigrations`` on the next
     ``open()`` — every missing store (``data:favourites`` from SNOW-418,
-    ``log:sync`` from SNOW-482) is added in the single combined upgrade
-    transaction, and the four original stores (with any of their
-    existing data) are left untouched. ``_runMigrations`` has no
-    per-version branches — it just creates whatever's missing from
-    ``STORES`` — so a client jumping several versions in one ``open()``
-    behaves the same as one jumping a single version.
+    ``log:sync`` from SNOW-482, ``data:map_overlays`` from SNOW-492) is
+    added in the single combined upgrade transaction, and the four
+    original stores (with any of their existing data) are left
+    untouched. ``_runMigrations`` has no per-version branches — it just
+    creates whatever's missing from ``STORES`` — so a client jumping
+    several versions in one ``open()`` behaves the same as one jumping a
+    single version.
     """
     _open_and_wait(page, live_server.url)
     _delete_db(page)
@@ -430,21 +436,22 @@ def test_upgrade_from_v1_adds_data_favourites(
     # must add every missing store, up to the current version, without
     # disturbing the seeded row.
     result = _open_via_db_js_and_read(page)
-    assert result["version"] == 3
-    assert result["names"] == sorted(V3_STORES)
+    assert result["version"] == 4
+    assert result["names"] == sorted(V4_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}
 
 
 # ---------------------------------------------------------------------------
-# 5b. Schema upgrade — a pre-existing v2 DB gains log:sync (SNOW-482).
+# 5b. Schema upgrade — a pre-existing v2 DB gains log:sync + map_overlays.
 # ---------------------------------------------------------------------------
 
 
 def test_upgrade_from_v2_adds_log_sync(live_server: LiveServer, page: Page) -> None:
-    """A pre-existing version-2 DB (five stores, no ``log:sync``) is
-    migrated to version 3 by db.js's own ``_runMigrations`` on the next
-    ``open()`` — the new store is added and the five original stores
-    (with any of their existing data) are left untouched.
+    """A pre-existing version-2 DB (five stores, no ``log:sync`` or
+    ``data:map_overlays``) is migrated straight to the current version by
+    db.js's own ``_runMigrations`` on the next ``open()`` — both missing
+    stores are added and the five original stores (with any of their
+    existing data) are left untouched.
     """
     _open_and_wait(page, live_server.url)
     _delete_db(page)
@@ -481,10 +488,64 @@ def test_upgrade_from_v2_adds_log_sync(live_server: LiveServer, page: Page) -> N
     assert seeded == 1
 
     # Now let db.js open the same DB — its _runMigrations upgrade branch
-    # must add log:sync without disturbing the seeded row.
+    # must add log:sync + data:map_overlays without disturbing the seeded row.
     result = _open_via_db_js_and_read(page)
-    assert result["version"] == 3
-    assert result["names"] == sorted(V3_STORES)
+    assert result["version"] == 4
+    assert result["names"] == sorted(V4_STORES)
+    assert result["row"] == {"id": 1, "event": "pre-existing"}
+
+
+# ---------------------------------------------------------------------------
+# 5c. Schema upgrade — a pre-existing v3 DB gains data:map_overlays (SNOW-492).
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_from_v3_adds_map_overlays(live_server: LiveServer, page: Page) -> None:
+    """A pre-existing version-3 DB (six stores, no ``data:map_overlays``)
+    is migrated to version 4 by db.js's own ``_runMigrations`` on the next
+    ``open()`` — the new store is added and the six original stores (with
+    any of their existing data) are left untouched.
+    """
+    _open_and_wait(page, live_server.url)
+    _delete_db(page)
+
+    # Simulate a pre-SNOW-492 client: open at version 3 with the six
+    # V3_STORES, and write one row into queue:events so we can prove the
+    # upgrade didn't wipe existing data.
+    seeded = page.evaluate(
+        """async (name) => {
+            const db = await new Promise((resolve, reject) => {
+              const req = indexedDB.open(name, 3);
+              req.onupgradeneeded = (evt) => {
+                const d = evt.target.result;
+                d.createObjectStore('queue:mutations', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('queue:events', { keyPath: 'id', autoIncrement: true });
+                d.createObjectStore('meta:sync', { keyPath: 'resource' });
+                d.createObjectStore('meta:app', { keyPath: 'key' });
+                d.createObjectStore('data:favourites', { keyPath: 'uuid' });
+                d.createObjectStore('log:sync', { keyPath: 'id', autoIncrement: true });
+              };
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            const putId = await new Promise((resolve, reject) => {
+              const tx = db.transaction('queue:events', 'readwrite');
+              const req = tx.objectStore('queue:events').put({ event: 'pre-existing' });
+              req.onsuccess = () => resolve(req.result);
+              req.onerror = () => reject(req.error);
+            });
+            db.close();
+            return putId;
+          }""",
+        DB_NAME,
+    )
+    assert seeded == 1
+
+    # Now let db.js open the same DB — its _runMigrations upgrade branch
+    # must add data:map_overlays without disturbing the seeded row.
+    result = _open_via_db_js_and_read(page)
+    assert result["version"] == 4
+    assert result["names"] == sorted(V4_STORES)
     assert result["row"] == {"id": 1, "event": "pre-existing"}
 
 

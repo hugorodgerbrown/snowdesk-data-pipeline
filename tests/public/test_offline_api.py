@@ -77,7 +77,7 @@ def test_offline_fallback_page_exists_on_disk() -> None:
     path = Path(settings.BASE_DIR) / "static" / "offline.html"
     assert path.exists()
     content = path.read_text(encoding="utf-8")
-    assert "You're offline" in content
+    assert "This page isn't available offline" in content
     # The page must NOT pull external CSS/JS — its job is to render with
     # zero network access. Strip HTML comments before matching so the
     # rationale comment in the file (which spells out "no

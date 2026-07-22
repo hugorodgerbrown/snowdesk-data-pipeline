@@ -97,6 +97,12 @@ and loads home_intro.js in addition to the shared map assets.
 
 {% block extra_js %}
     <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+    {# SNOW-492: offline read cache for the favourites / community-reports #}
+    {# map overlays. Loads before map.js — ensureOverlayLoaded calls        #}
+    {# window.pwaMapOverlayCache on both a successful fetch (write-through) #}
+    {# and a failed one (read-back). Needs db.js (base.html), which is     #}
+    {# earlier in document order and also deferred.                        #}
+    <script defer src="{% static 'js/map_overlay_offline_cache.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>

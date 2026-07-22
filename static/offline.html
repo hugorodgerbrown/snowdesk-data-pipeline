@@ -17,6 +17,14 @@
   Out of scope: per-region offline content, last-seen bulletin replay,
   service-worker version probe. This is a recovery page, not an app
   shell substitute.
+
+  SNOW-492: because this fallback only ever fires for a page with no
+  cached copy at all (a previously-visited page's own cache still wins
+  in ``_networkFirst`` — see static/js/sw.js), the copy deliberately says
+  "this page isn't available offline" rather than a generic "you're
+  offline" — the map page keeps working fully offline once it has been
+  opened at least once, and blanket "you're offline" copy here would
+  wrongly suggest otherwise.
 -->
 <html lang="en">
     <head>
@@ -108,9 +116,11 @@
     </head>
     <body>
         <p class="wordmark">Snowdesk</p>
-        <h1>You're offline</h1>
+        <h1>This page isn't available offline</h1>
         <p>
-            Snowdesk needs a network connection to fetch the latest bulletin. Check your connection and try again.
+            You're offline, and this page hasn't been opened before, so there's nothing saved to show. The interactive
+            map is the one part of Snowdesk built to work offline — open it once while connected and it keeps working
+            without a signal. Reconnect and try this page again.
         </p>
         <button type="button" onclick="location.reload()">Retry</button>
     </body>

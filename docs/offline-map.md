@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, icons, CACHE_VERSION, BASEMAP_CACHE opportunistic basemap tile caching
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-07-22
 ---
 
 # PWA shell
@@ -21,7 +21,7 @@ manifest icons.
 | Path | Role |
 |------|------|
 | `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
-| `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); stale-while-revalidate against a dedicated `snowdesk-basemap-v1` cache for the active basemap's cross-origin CORS responses (SNOW-484); network-only for everything else. |
+| `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); stale-while-revalidate against a dedicated `snowdesk-basemap-v1` cache for the active basemap's cross-origin CORS responses (SNOW-484); network-only for everything else. Also answers a `{ type: 'warm-cache', urls }` `message` (SNOW-492, "Cache this area for offline" — see below). |
 | `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (rendered from `templates/includes/_sw_update_banner.html`; see "Update strategy" below). |
 | `static/offline.html` | Branded fallback page returned by the SW when an HTML navigation fails AND no cached copy exists (SNOW-118). Inline-styled, zero external assets. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
@@ -358,14 +358,88 @@ the data class is one users must always see fresh.
 
 ### Out of scope (SNOW-484)
 
-Deliberately not implemented: a bounded/favourites precache, any
-"Save offline" UI, or byte-based cache accounting for the basemap
-cache. The count-based LRU cap above is the only eviction mechanism.
+Deliberately not implemented: byte-based cache accounting for the
+basemap cache (the count-based LRU cap above is the only eviction
+mechanism). SNOW-492 (below) added a bounded, on-demand precache
+control — "a bounded/favourites precache" is no longer accurate as an
+"out of scope" item, but there is still no automatic/background
+precache; everything is either opportunistic (browse an area, it
+caches) or the explicit one-shot control.
+
+## Offline overlay caches + "Cache this area" (SNOW-492)
+
+Two gaps the opportunistic strategies above don't cover, both closed
+without loosening the `network`-only default for safety-critical data:
+
+**Favourites / community-reports overlays.** Both feeds are `network`
+-classified in `sw.js` (per-user / anonymised-but-live data, not safe
+for the SW's own stale-while-revalidate), so without a client-side
+cache they went blank offline even after the map's own regions/ratings
+still rendered. `static/js/map_overlay_offline_cache.js`
+(`window.pwaMapOverlayCache`) is a small write-through/read-back
+helper — modelled on `static/js/favourites_offline.js` — over a new
+`data:map_overlays` IndexedDB store (schema v4, one row per resource;
+see [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)).
+`static/js/map.js`'s `ensureOverlayLoaded` caches every successful
+fetch and installs from the cached copy when the fetch fails offline:
+
+- **Favourites never expire** at read-back — a saved pin is still
+  useful to see offline even days later.
+- **Community reports** re-apply the existing 48h age-fade window
+  (`dropExpiredCommunityReports`) at read-back, so a stale cached copy
+  drops features past the horizon exactly as the live feed would —
+  it never shows a report as if it were still within its normal
+  freshness window.
+- **Known gap**: neither cache itself expires or gets evicted — a
+  favourites/community-reports snapshot can go arbitrarily stale if
+  the user never reconnects. Flagged as a future refinement rather
+  than shipped now (low risk: favourites are explicitly the user's
+  own choice of pins, and community reports already re-filter by age
+  at read-back).
+
+When an overlay's fetch fails offline AND nothing is cached to fall
+back to, `ensureOverlayLoaded` reveals a small dismissible toast
+(`includes/_toast.html`, `kind="warning"`) rather than silently
+leaving the toggle looking like it did nothing — `#map-offline-toast-favourites`,
+`#map-offline-toast-community_reports`, and a shared
+`#map-offline-toast-layer` for l1/l2/l3/resorts (rendered in
+`public/templates/public/partials/_map_embed.html`).
+
+**"Cache this area for offline"** — a one-shot command (not a
+toggle) in the map's Options menu (`#cache-now-toggle`). Clicking it:
+
+1. `static/js/map.js` assembles a URL list: the same-origin data feeds
+   in sw.js's `STATIC_PATHS` set (regions/major-regions/sub-regions/
+   resorts/ratings), the active basemap's own style JSON (read off the
+   checked radio in the picker) + sprite JSON/PNG (1x/2x), and the
+   vector tile URLs covering the current viewport across a small zoom
+   range (`computeBasemapTileURLs`, capped at 400 tiles per run) — pure
+   Web Mercator tile math, no MapLibre-internal API. Deliberately does
+   **not** warm glyph PBFs; MapLibre only requests the specific ranges
+   the current labels use, and those are almost always already cached
+   from ordinary browsing by the time a user reaches for this control.
+   Also deliberately excludes favourites/community-reports: both are
+   `network`-classified in sw.js (see above), so the SW would never
+   read back whatever this wrote for them — their offline availability
+   is entirely the `data:map_overlays` write-through above, which only
+   populates once the user has actually toggled the overlay on.
+2. Posts `{ type: 'warm-cache', urls }` to the active SW
+   (`static/js/sw_register.js`'s `window.pwaWarmCache(urls)` bridge,
+   which resolves once the SW posts `warm-cache-done` back).
+3. `sw.js`'s `warm-cache` message handler fetches every URL — same-
+   origin ones into the shell `CACHE_VERSION` cache, basemap-origin
+   ones into `BASEMAP_CACHE` (trimmed to `BASEMAP_CACHE_MAX_ENTRIES`
+   afterwards) — and posts back `{ok, failed}` counts. Every URL is
+   independent; one failure never aborts the rest.
+4. A completion toast (`#map-cache-now-toast`, `kind="success"`)
+   confirms the run finished, regardless of the ok/failed split — a
+   handful of tile misses still leaves most of the area usable
+   offline.
 
 ## Cache version bump
 
 `sw.js` declares a `CACHE_VERSION` constant near the top of the file
-(`snowdesk-shell-v20` at the time of writing — see the dated comment
+(`snowdesk-shell-v26` at the time of writing — see the dated comment
 block above it for the full history). On `activate`, the SW deletes any
 `snowdesk-shell-*` / `map-shell-*` cache whose name is not the current
 `CACHE_VERSION`. Bump it when:
@@ -498,6 +572,17 @@ underlying PNGs.
 - `tests/public/test_map_page.py` — the inverted offline-toggle
   assertion: `#offline-toggle` must **not** appear in the rendered
   map page.
+- `tests/e2e/test_offline_map.py` (SNOW-492, `tox -e e2e`) — the
+  blank-map bug fix (a tile/source-scoped `error` must not engage the
+  cold-boot fallback; a genuine style-load failure still does),
+  favourites/community-reports offline install + expiry-on-read-back,
+  the per-overlay "unavailable offline" toast, and `window.pwaWarmCache`
+  / the "Cache this area" button. See that file's module docstring for
+  which parts deliberately avoid the real basemap CDN (documented
+  elsewhere as flaky/unreachable in this harness — see
+  `tests/e2e/test_offline_basemap_cache.py`) and which offline-mutation
+  scenarios are already covered by `test_offline_favourite_submit.py` /
+  `test_offline_observation_submit.py` rather than duplicated here.
 
 There are no unit tests for the SW's runtime behaviour — service
 workers run inside a browser context that pytest can't replicate

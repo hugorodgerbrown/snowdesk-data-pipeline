@@ -56,7 +56,7 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
 
     assert page.url == dated_url
     page.wait_for_selector("#season-scrubber")
-    assert page.locator("h1", has_text="You're offline").count() == 0
+    assert page.locator("h1", has_text="This page isn't available offline").count() == 0
 
 
 def test_offline_reload_of_never_visited_date_url(pwa_page: PwaPage) -> None:
@@ -83,7 +83,7 @@ def test_offline_reload_of_never_visited_date_url(pwa_page: PwaPage) -> None:
 
     assert page.url == never_visited_url
     page.wait_for_selector("#season-scrubber")
-    assert page.locator("h1", has_text="You're offline").count() == 0
+    assert page.locator("h1", has_text="This page isn't available offline").count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -475,5 +475,5 @@ def test_offline_navigation_to_never_visited_url_shows_offline_fallback(
     finally:
         page.context.set_offline(False)
 
-    assert page.locator("h1", has_text="You're offline").count() == 1
+    assert page.locator("h1", has_text="This page isn't available offline").count() == 1
     assert page.locator("button", has_text="Retry").count() == 1

@@ -20,6 +20,9 @@
  *   log:sync         rolling record of recent real (un-cached) server
  *                     round-trips, trimmed to the newest 100 rows
  *                     (SNOW-482; autoIncrement id)
+ *   data:map_overlays cached favourites / community-reports GeoJSON for
+ *                     the map's offline overlay toggles (SNOW-492;
+ *                     keyPath: 'key', one row per resource)
  *   data:*           reserved namespace for further cached server-data
  *                     copies; added on demand by consumers.
  *
@@ -52,7 +55,10 @@
   // record so the manage page can repaint offline.
   // v3 (SNOW-482): added 'log:sync' — a rolling record of real server
   // round-trips backing the manage-page sync-log panel.
-  const DB_VERSION = 3;
+  // v4 (SNOW-492): added 'data:map_overlays' — cached favourites /
+  // community-reports GeoJSON so the map's overlay toggles keep working
+  // offline (map_overlay_offline_cache.js).
+  const DB_VERSION = 4;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -69,6 +75,10 @@
     // read by the manage-page sync-log panel. Trimmed to newest 100 rows
     // by appendSyncLog below.
     'log:sync': { keyPath: 'id', autoIncrement: true },
+    // SNOW-492 (v4) — cached favourites / community-reports GeoJSON for
+    // the map's overlay toggles, keyed by resource name ('favourites' /
+    // 'community_reports'). See map_overlay_offline_cache.js.
+    'data:map_overlays': { keyPath: 'key' },
   });
 
   // Session state — single-page-load lifetime.
