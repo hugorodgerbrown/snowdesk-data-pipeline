@@ -1,0 +1,99 @@
+# .github/workflows/js.yml — JS unit tests (Vitest/jsdom/fake-indexeddb).
+#
+# Runs the ``tox -e js`` env on every pull-request and push to main/release.
+# Isolated from ci.yml and e2e.yml so its Node setup and dependency install
+# are scoped to this workflow. SNOW-495 adds this harness alongside the
+# existing Playwright suite (tests/e2e/) — see docs/client-side-tests.md for
+# when to reach for which. Not yet registered as a required status check in
+# any ruleset (see the "CI enforced via rulesets" note in CLAUDE.md) — that
+# is a deliberate follow-up, not an oversight.
+#
+# The ``pull_request`` trigger has no path filter, mirroring e2e.yml's
+# SNOW-435 rationale: a path-filtered required check never reports on PRs
+# outside its paths and leaves them stuck at "Expected". This workflow isn't
+# a required check yet, but is shaped the same way so it can be promoted
+# later without re-litigating that trap. The ``push`` trigger keeps a path
+# filter — pushes to main/release aren't merge-gated. Docs-only PRs skip the
+# test job via the ``changes`` gate, same pattern as e2e.yml.
+
+name: JS unit tests (Vitest)
+
+on:
+  push:
+    branches:
+      - main
+      - release
+    paths:
+      - "**/*.js"
+      - "**/*.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "tox.ini"
+      - ".github/workflows/js.yml"
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect docs-only diff
+    runs-on: ubuntu-latest
+    outputs:
+      # "true" unless this is a docs-only pull request; push runs skip the
+      # filter step and fall through to "true".
+      code: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - name: Check the PR diff for non-docs files
+        id: filter
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail open: an empty file list (API error) runs the full suite.
+          files="$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')" || files=""
+          code=false
+          [ -n "$files" ] || code=true
+          while IFS= read -r f; do
+            case "$f" in
+              "" | *.md | docs/* | .claude/*) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "docs-only filter -> code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  js:
+    name: JS unit tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # tox is a Python tool (drives `npm ci && npm run test:js`), so both
+      # runtimes are required — Python for tox itself, Node for Vitest.
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node (20)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-js-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      - name: Install tox and run js env
+        run: |
+          pip install tox
+          tox -e js
