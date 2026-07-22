@@ -103,6 +103,10 @@ and loads home_intro.js in addition to the shared map assets.
     {# and a failed one (read-back). Needs db.js (base.html), which is     #}
     {# earlier in document order and also deferred.                        #}
     <script defer src="{% static 'js/map_overlay_offline_cache.js' %}"></script>
+    {# SNOW-496: pure scrubber/timelapse/ribbon math, extracted so it can be #}
+    {# unit-tested directly (tests/js/test_scrubber_core.js) — map.js's own  #}
+    {# IIFEs delegate to window.pwaScrubberCore. Must load before map.js.    #}
+    <script defer src="{% static 'js/scrubber_core.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
