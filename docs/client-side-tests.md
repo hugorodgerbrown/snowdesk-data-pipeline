@@ -190,24 +190,21 @@ common (the binary version is tied to the `playwright` package).
 
 ## Known limitations
 
-- **Missing `output.css`**: `static/css/output.css` is gitignored (built by
-  the Tailwind CLI).  In CI and in local tox runs where the CSS has not been
-  compiled, the browser logs a "Failed to load resource" console error for
-  the missing stylesheet.  This is harmless to the **current** suite — the
-  tests only capture `pageerror` events (uncaught JS exceptions), not
-  resource-load console messages or layout, so the assertions still pass.
-  Neither the CI e2e workflow (`.github/workflows/e2e.yml`) nor the
-  `tox -e e2e` env compiles the CSS.
-  A layout-dependent test would be a different story: on an unstyled,
-  collapsed page an element can report as "outside the viewport" or as
-  intercepting a click, and the failure message won't point at the missing
-  stylesheet.  If you add such a test, compile the CSS first — a fresh Claude
-  worktree already does this via `bin/init-worktree` (which runs the
-  `npm install` + Tailwind CLI build after seeding the DB; see
-  [`docs/worktrees.md`](worktrees.md)), so locally you get it for free.  A
-  layout-dependent test running in **CI** would additionally need a CSS-build
-  step wired into `.github/workflows/e2e.yml` or the `tox -e e2e` env, which
-  does not exist yet.
+- **`output.css` is built before the suite runs**: `static/css/output.css` is
+  gitignored (built by the Tailwind CLI), so both the CI e2e workflow
+  (`.github/workflows/e2e.yml`) and the `tox -e e2e` env compile it before the
+  live server serves statics — CI via a dedicated `npx @tailwindcss/cli` step,
+  tox via a `commands_pre` build (SNOW-491).  This matters for
+  **layout-dependent** tests: on an unstyled, collapsed page an element can
+  report as "outside the viewport" or as intercepting a click, and the failure
+  message won't point at the missing stylesheet.  SNOW-491 was exactly this —
+  the SNOW-486 z-index tokens (`--z-popup` et al.) were absent from a stale
+  `output.css`, so the favourite/report sheets dropped below the map utility
+  buttons (`z-index: 4`) and eight tests failed with `<div id="map"> … subtree
+  intercepts pointer events`.  The `commands_pre` build makes `tox -e e2e`
+  self-sufficient (it needs `npx`/node on the PATH); a fresh Claude worktree
+  additionally builds the CSS via `bin/init-worktree` (see
+  [`docs/worktrees.md`](worktrees.md)).
 - **Chromium only**: Firefox and WebKit are excluded from scope.  Adding them
   requires extending the `tox -e e2e` command to pass `--browser firefox` etc.
 - **`DJANGO_ALLOW_ASYNC_UNSAFE=true`**: The e2e tox env sets this because

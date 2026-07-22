@@ -82,7 +82,10 @@ def _delete_db(page: Page) -> None:
               const req = indexedDB.deleteDatabase(name);
               req.onsuccess = () => resolve();
               req.onerror = () => resolve();
-              req.onblocked = () => resolve();
+              // No onblocked handler: it fires while the delete is still
+              // pending (blocked by db.js's live, self-yielding connection),
+              // not done — resolving there returns before the DB is gone. See
+              // tests/e2e/test_pwa_db.py::_delete_db for the full rationale.
             } catch (_e) { resolve(); }
           })""",
         DB_NAME,
