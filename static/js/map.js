@@ -578,7 +578,25 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // a synchronous inline style with no external fetch, so it becomes
   // "loaded" immediately and every subsequent benign error returns at the
   // ``isStyleLoaded()`` guard above.
-  map.on('error', () => {
+  //
+  // SNOW-492: the ``!isStyleLoaded()`` guard alone is too broad — it's
+  // transiently ``false`` mid-zoom while tiles are in flight, and an
+  // offline zoom to an uncached tile resolves as an HTTP 504 from the SW's
+  // ``_basemapStaleWhileRevalidate`` (sw.js), which MapLibre reports as a
+  // benign, source-scoped ``error`` (it overzooms/retries on its own). That
+  // was wrongly swapping in the empty fallback style permanently. MapLibre
+  // 4.7.1 merges the firing source's evented-parent data — ``sourceId`` — up
+  // through Style to Map for every tile/source error (see
+  // ``Style.addSource``'s ``setEventedParent(style, {..., sourceId})``);
+  // tile-load failures also carry ``tile`` directly. A genuine
+  // style-document load failure (``Style.loadURL``'s catch, the cold-boot
+  // and failed-recovery cases this fallback exists for) fires on the Style
+  // object itself, whose evented-parent data is only ``{style}`` — never
+  // ``sourceId``/``tile``. So checking for either first, before the
+  // ``isStyleLoaded()`` guard, filters out the benign case without
+  // masking a real style failure.
+  map.on('error', (e) => {
+    if (e && (e.sourceId || e.tile)) return;
     if (map.isStyleLoaded()) return;
     basemapFallbackActive = true;
     map.setStyle(buildFallbackStyle());
