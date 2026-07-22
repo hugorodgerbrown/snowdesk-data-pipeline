@@ -456,7 +456,14 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     ``snowdesk:cache-now`` dispatch -> cacheNowInit -> ``pwaWarmCache`` ->
     the completion toast) — does not assert on how many basemap tiles were
     actually cached, since that depends on the active basemap's CDN being
-    reachable (see the module docstring).
+    reachable (see the module docstring). Like
+    ``test_favourites_overlay_installs_from_cache_after_offline_reload``,
+    this test still depends on ``pwa_page``'s own boot reaching a real
+    basemap (``MAP`` existing is enough here — the click handler degrades
+    gracefully to warming zero tile URLs if the style never loaded), so it
+    carries the same theoretical live-CDN flakiness risk documented in the
+    module docstring, even though the completion toast itself never
+    depends on the CDN succeeding.
     """
     page = pwa_page.page
     page.wait_for_function(

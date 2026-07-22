@@ -409,16 +409,20 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 toggle) in the map's Options menu (`#cache-now-toggle`). Clicking it:
 
 1. `static/js/map.js` assembles a URL list: the same-origin data feeds
-   (regions/major-regions/sub-regions/resorts/ratings), favourites /
-   community-reports (when eligible), the active basemap's own style
-   JSON (read off the checked radio in the picker) + sprite JSON/PNG
-   (1x/2x), and the vector tile URLs covering the current viewport
-   across a small zoom range (`computeBasemapTileURLs`, capped at 400
-   tiles per run) — pure Web Mercator tile math, no MapLibre-internal
-   API. Deliberately does **not** warm glyph PBFs; MapLibre only
-   requests the specific ranges the current labels use, and those are
-   almost always already cached from ordinary browsing by the time a
-   user reaches for this control.
+   in sw.js's `STATIC_PATHS` set (regions/major-regions/sub-regions/
+   resorts/ratings), the active basemap's own style JSON (read off the
+   checked radio in the picker) + sprite JSON/PNG (1x/2x), and the
+   vector tile URLs covering the current viewport across a small zoom
+   range (`computeBasemapTileURLs`, capped at 400 tiles per run) — pure
+   Web Mercator tile math, no MapLibre-internal API. Deliberately does
+   **not** warm glyph PBFs; MapLibre only requests the specific ranges
+   the current labels use, and those are almost always already cached
+   from ordinary browsing by the time a user reaches for this control.
+   Also deliberately excludes favourites/community-reports: both are
+   `network`-classified in sw.js (see above), so the SW would never
+   read back whatever this wrote for them — their offline availability
+   is entirely the `data:map_overlays` write-through above, which only
+   populates once the user has actually toggled the overlay on.
 2. Posts `{ type: 'warm-cache', urls }` to the active SW
    (`static/js/sw_register.js`'s `window.pwaWarmCache(urls)` bridge,
    which resolves once the SW posts `warm-cache-done` back).

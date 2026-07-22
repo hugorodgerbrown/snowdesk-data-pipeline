@@ -2005,7 +2005,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
         const fresh = cached ? dropExpiredCommunityReports(cached) : null;
-        if (!fresh || !fresh.features.length) {
+        // Optional chaining on .features — dropExpiredCommunityReports
+        // returns a malformed/non-FeatureCollection input unchanged, so
+        // .features can be undefined here rather than an empty array.
+        if (!fresh || !fresh.features?.length) {
           revealOfflineToast('map-offline-toast-community_reports');
           return;
         }
@@ -4283,11 +4286,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     busy = true;
     btn.setAttribute('aria-disabled', 'true');
 
-    // Same-origin data feeds — the STATIC_PATHS set sw.js already serves
-    // stale-while-revalidate, plus the eligible-gated per-user overlays,
-    // which are network-only in sw.js and so rely entirely on this
-    // write-through/read-back pair (map_overlay_offline_cache.js) rather
-    // than the SW's own cache.
+    // Same-origin data feeds the STATIC_PATHS set in sw.js already serves
+    // stale-while-revalidate — warming them here just refreshes the entry
+    // sooner than the next natural fetch would. Deliberately EXCLUDES
+    // favourites/community-reports: those two are 'network'-classified in
+    // sw.js's _classifySync (not in STATIC_PATHS, no static-shell
+    // extension), so the SW never respondWith()s them and would never read
+    // back whatever _warmCache wrote for them — their real offline path is
+    // entirely the data:map_overlays IndexedDB write-through in
+    // ensureOverlayLoaded (map_overlay_offline_cache.js), which only runs
+    // when the user actually toggles the overlay on, not on a warm-cache
+    // call. Including them here would let this control claim success while
+    // leaving them genuinely unavailable offline.
     const urls = [];
     const addCountryFeed = (base) => {
       if (base) urls.push(base + '?country=ch');
@@ -4297,15 +4307,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     addCountryFeed(mapEl.dataset.subRegionsUrl);
     if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
     if (RATINGS_URL) urls.push(RATINGS_URL + '?country=ch');
-    if (mapEl.dataset.favouritesEligible === 'true' && mapEl.dataset.favouritesUrl) {
-      urls.push(mapEl.dataset.favouritesUrl);
-    }
-    if (
-      mapEl.dataset.communityReportsEligible === 'true' &&
-      mapEl.dataset.communityReportsUrl
-    ) {
-      urls.push(mapEl.dataset.communityReportsUrl);
-    }
 
     // The active basemap's own style JSON — read off the checked radio in
     // the popover (basemapPickerInit's markup is the single source of

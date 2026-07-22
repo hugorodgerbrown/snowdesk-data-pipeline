@@ -812,7 +812,11 @@ Optional context:
 {% include "includes/_toast.html" with id="map-offline-toast-layer" kind="warning" body=offline_toast_layer_body dismissible=True timeout=6000 %}
 {% trans "Favourites aren't available offline yet — view them online first." as offline_toast_favourites_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-favourites" kind="warning" body=offline_toast_favourites_body dismissible=True timeout=6000 %}
-{% trans "Community reports aren't available offline yet — view them online first." as offline_toast_community_reports_body %}
+{# SNOW-492: same copy covers both causes — never cached this session, or #}
+{# a cached copy that's aged past the 48h window — "aren't available"     #}
+{# without claiming why, plus "view online" as the one recovery action    #}
+{# either way. #}
+{% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
 {# SNOW-492: "Cache this area for offline" completion toast — map.js       #}
 {# reveals this once the SW's warm-cache handler reports back, whether or #}

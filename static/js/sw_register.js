@@ -164,6 +164,13 @@
     }
   });
 
+  // SNOW-492: how long warmCache() waits for the worker's warm-cache-done
+  // reply before giving up. A worker terminated (idle-killed, crashed)
+  // between receiving the message and posting the reply would otherwise
+  // leave the caller's promise pending forever — cacheNowInit's button
+  // would stay aria-disabled for the rest of the page's life.
+  const WARM_CACHE_TIMEOUT_MS = 30000;
+
   /**
    * SNOW-492: bridge for map.js's "Cache this area for offline" control.
    * Posts the given URL list to the active worker's ``warm-cache`` message
@@ -171,7 +178,10 @@
    * summary once the worker posts ``warm-cache-done`` back. Resolves
    * ``null`` immediately when there's no active worker (unsupported
    * browser, or the kill switch has unregistered every SW) — the caller
-   * degrades to "nothing to warm".
+   * degrades to "nothing to warm". Also resolves ``null`` if the worker
+   * hasn't replied within ``WARM_CACHE_TIMEOUT_MS`` (see its comment) —
+   * callers already treat ``null`` as "nothing to report" via the same
+   * no-active-worker branch.
    *
    * @param {string[]} urls
    * @returns {Promise<{ok: number, failed: number} | null>}
@@ -179,10 +189,14 @@
   function warmCache(urls) {
     const active = navigator.serviceWorker.controller;
     if (!active) return Promise.resolve(null);
-    return new Promise((resolve) => {
+    const reply = new Promise((resolve) => {
       _warmCacheResolve = resolve;
       active.postMessage({ type: 'warm-cache', urls: urls || [] });
     });
+    const timeout = new Promise((resolve) => {
+      setTimeout(() => resolve(null), WARM_CACHE_TIMEOUT_MS);
+    });
+    return Promise.race([reply, timeout]);
   }
 
   Object.defineProperty(window, 'pwaWarmCache', {
