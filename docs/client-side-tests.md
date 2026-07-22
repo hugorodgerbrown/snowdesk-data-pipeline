@@ -107,22 +107,90 @@ queue's real-server round trip) and happy-path page flows — see
 
 ---
 
-## What the Playwright share-button smoke test covers
+## What the Playwright suite covers (SNOW-497)
 
-One smoke test (`tests/e2e/test_share_button.py`) exercises the full
-share-button flow on the canonical bulletin page:
+The top layer of the suite is a small, deliberate set of **happy-path user
+journeys** — each drives real clicks/fills and asserts only a
+user-observable outcome, with **zero `wait_for_timeout`** (auto-waiting
+assertions only: `expect(...).to_be_visible()`, `wait_for_url`,
+`page.expect_response`):
 
-1. Navigates to `/ch-4115/martigny-verbier/2026-04-08/` (pre-seeded via
-   the `_load_test_data` fixture).
-2. Asserts no JS `pageerror` fires on load (catches script-parse errors).
-3. Clicks `[data-bulletin-share-button]` and asserts a POST reaches
-   `/api/bulletins/share/` (catches DOM-timing failures).
-4. Reads the clipboard and asserts it starts with `http` (catches missing
-   clipboard fallback).
+- `test_public_pages_load.py` — the map homepage, the canonical bulletin,
+  and the static/informational pages (`/terms/`, `/help/`, `/privacy/`, …)
+  each load with no JS `pageerror`.
+- `test_register_subscribe.py` — filling the inline bulletin-page subscribe
+  CTA (`#subscribe-cta-<region_id>`) and submitting swaps in the "Check your
+  inbox" confirmation card. Email delivery itself is asserted at the pytest
+  layer (`tests/accounts/test_email.py` via `mail.outbox`) — a Playwright
+  test cannot read a real inbox.
+- `test_sign_in_password.py` — the password-toggle reveal, plus a full
+  password sign-in (`accounts:sign_in`'s `_password_sign_in` branch) landing
+  on `/account/manage/`.
+- `test_account_access_link.py` — the magic-link journey: GET renders a
+  confirm page with no side effect, POST activates the subscriber and
+  redirects to manage.
+- `test_sign_out.py` — signing out via the nav's subscriber dropdown POSTs
+  `accounts:sign_out`, redirects to sign-in with signed-out nav links
+  visible, and a follow-up manage GET redirects back to sign-in.
+- `test_account_manage.py` — the authenticated subscriptions dashboard
+  renders a `.subscription-card` naming a subscribed region.
+- `test_map_bulletin_journey.py` — tapping a region polygon opens the
+  MapLibre popup carrying a link to that day's bulletin. The click is
+  dispatched via a stubbed `queryRenderedFeatures` + `MAP.fire('click', …)`
+  (headless Chromium doesn't reliably composite `regions-fill` for a
+  genuine pixel hit-test) — the highest-flake-risk journey in the set; if a
+  future change makes even the stubbed click unreliable, prefer falling
+  back to the plain selection-state assertion
+  `test_map_marker_exclusion.py` already proves over reintroducing a sleep.
+- `test_setup_passkey.py` / `test_share_button.py` — WebAuthn registration
+  and the share-button flow (SNOW-223's original smoke test — see its own
+  docstring for the three regression patterns it guards).
 
-**Out of scope** (explicitly excluded from SNOW-223): Firefox/WebKit, visual
-regression/screenshot diffing, coverage for other inline scripts (season
-sheet, service worker, HTMX swaps, map).
+Everything else in `tests/e2e/` is feature-regression / real-SW coverage
+(map glyphs, marker exclusion, community reports, the season scrubber, PWA
+lifecycle/offline/push) — narrower guards for specific bugs, not journeys,
+and out of scope for this rebuild. A few of those retain their own
+`wait_for_timeout` calls (deliberately, per their own docstrings) —
+`wait_for_timeout` is banned only in the journey modules listed above.
+
+**Out of scope** (unchanged from SNOW-223): Firefox/WebKit, visual
+regression/screenshot diffing.
+
+---
+
+## The `real_sw` marker and the xdist split (SNOW-497)
+
+Every module that drives a **real** service worker (`pwa_page` /
+`signed_in_page` / `SignedInPage` — see "SW-lifecycle tests: real vs
+simulated" below) carries `pytestmark = pytest.mark.real_sw` at module
+level: `test_pwa_lifecycle_install/update/offline/kill_and_reset.py`,
+`test_pwa_push_journey.py`, `test_offline_map.py`,
+`test_offline_basemap_cache.py`, `test_favourites_offline.py`, and
+`test_sync_log_panel.py`. The marker is registered in `pyproject.toml`'s
+`[tool.pytest.ini_options]`.
+
+`[testenv:e2e]` in `tox.ini` runs two pytest invocations:
+
+```
+pytest tests/e2e/ -m "not real_sw" --no-cov -n auto   # SW-free — parallel
+pytest tests/e2e/ -m "real_sw"     --no-cov -n0       # real-SW — serial
+```
+
+pytest-django gives each xdist worker its own `gwN` test database and
+`live_server` binds an OS-assigned free port per worker, so the SW-free set
+is safe under `-n auto` — verified empirically (SNOW-497): green under
+parallel workers and faster wall-clock than the old single serial run. The
+real-SW modules still can't share a worker (each drives its own live SW
+registration/IndexedDB sequence against one browser context) and run
+second, serially.
+
+Both commands take `{posargs:tests/e2e/}`, so single-file targeting still
+works in either direction — `tox -e e2e -- tests/e2e/test_some_file.py`
+runs that file against both `-m` filters. Whichever filter doesn't match
+anything in that file collects zero tests (pytest exit code 5); a small
+`bash -c` wrapper around each command maps that specific "nothing
+collected" exit back to 0 so it doesn't fail the env, while a real test
+failure (exit 1) still propagates.
 
 ---
 
@@ -142,6 +210,12 @@ is opt-in only).  To run the default suite:
 ```bash
 uv run tox          # fmt, lint, mypy, django-checks, ds-lint, test
 uv run tox -e e2e   # e2e only
+```
+
+To target a single file (either SW-free or real-SW):
+
+```bash
+uv run tox -e e2e -- tests/e2e/test_map_bulletin_journey.py
 ```
 
 ---
