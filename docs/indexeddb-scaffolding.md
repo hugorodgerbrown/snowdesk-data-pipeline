@@ -1,8 +1,8 @@
 ---
 name: indexeddb-scaffolding
-description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema versioning, queue:mutations/events, meta:app, data:favourites, log:sync
+description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-07-22
 ---
 
 # IndexedDB scaffolding
@@ -23,8 +23,8 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **3** (SNOW-482 added `log:sync`; v2 added
-  `data:favourites`).
+- Current schema version: **4** (SNOW-492 added `data:map_overlays`;
+  SNOW-482 added `log:sync`; v2 added `data:favourites`).
 
 ## Object stores
 
@@ -40,13 +40,28 @@ never removed.
 | `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
+| `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
 
 `data:*` is a reserved namespace for cached server-data copies.
-`data:favourites` (v2) is its first occupant — see
+`data:favourites` (v2) was its first occupant; `data:map_overlays` (v4,
+SNOW-492) is the second — see
 [`docs/offline-first.md`](offline-first.md) §12.6 for the
 cached-with-explicit-staleness contract it follows. When a further
 consumer adds a store, bump `DB_VERSION` + add a migration branch in
 `_runMigrations`.
+
+### `data:map_overlays` row shape (SNOW-492)
+
+```js
+{
+  key,        // 'favourites' | 'community_reports'
+  geojson,    // the last successfully-fetched FeatureCollection, verbatim
+  cached_at,  // ISO 8601 timestamp — observability only, not a store-level
+              // expiry cutoff (favourites never expire; community reports
+              // apply the existing 48h age-fade window at read-back time,
+              // in static/js/map.js's dropExpiredCommunityReports)
+}
+```
 
 ### `log:sync` row shape (SNOW-482)
 

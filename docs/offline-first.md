@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version, freshness, idempotency, reset, install, telemetry, sync log
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-07-22
 ---
 
 # Offline-first PWA compliance
@@ -191,12 +191,28 @@ every public page. Its responsibilities:
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
-- (SNOW-483) On the map page, when the third-party basemap style JSON
-  can't be fetched offline (the SW treats it as network-only),
-  `static/js/map.js` swaps in an inline fallback background style so
-  MapLibre's `load` event still fires and the SW-cached region
-  overlays paint on a plain background instead of a blank canvas.
-  Retried automatically on the next `window` `online` event.
+- (SNOW-483, refined SNOW-492) On the map page, when the third-party
+  basemap style JSON can't be fetched offline (the SW treats it as
+  network-only), `static/js/map.js` swaps in an inline fallback
+  background style so MapLibre's `load` event still fires and the
+  SW-cached region overlays paint on a plain background instead of a
+  blank canvas. Retried automatically on the next `window` `online`
+  event. SNOW-492 tightened the trigger: the `error` handler now
+  returns early for any tile/source-scoped error (carrying
+  `sourceId`/`tile`) before its `!isStyleLoaded()` guard, since that
+  guard is transiently true mid-zoom while tiles are in flight — a
+  benign, uncached-tile 504 from the SW no longer permanently blanks
+  the map. Only a genuine style-document load failure (no
+  `sourceId`/`tile`) still engages the fallback.
+- (SNOW-492) Favourites / community-reports map overlays, both
+  `network`-classified in `sw.js`, get their own client-side
+  write-through/read-back cache (`data:map_overlays`,
+  `static/js/map_overlay_offline_cache.js`) so they still render
+  offline once fetched at least once — see
+  [`offline-map.md`](offline-map.md#offline-overlay-caches--cache-this-area-snow-492)
+  for the full mechanism, including the "Cache this area for offline"
+  on-demand precache control and the per-overlay "unavailable offline"
+  toast.
 
 ### `X-SW-Cache` header (SNOW-482, SNOW-490)
 
@@ -320,6 +336,18 @@ Shipped from the observability + IndexedDB track:
   read-out panel and matching `/help/` section behind the `sync_log`
   waffle flag. Clears the SNOW-377 "IndexedDB-backed persistence"
   deferred bullet.
+- **SNOW-492** — "Further adventures in offline sync": fixes the
+  blank-map bug (a benign, tile-scoped `error` mid-zoom no longer
+  permanently swaps in the SNOW-483 fallback), adds the
+  `data:map_overlays` write-through/read-back cache (schema v4) so
+  favourites and community-reports keep working offline, a per-overlay
+  "unavailable offline" toast, and the "Cache this area for offline"
+  on-demand precache control (`sw.js`'s `warm-cache` message handler +
+  `window.pwaWarmCache`). See
+  [`offline-map.md`](offline-map.md#offline-overlay-caches--cache-this-area-snow-492).
+  Known gap carried forward rather than shipped now: neither offline
+  overlay cache itself expires/evicts — a snapshot can go arbitrarily
+  stale if the device never reconnects.
 
 ## See also
 
