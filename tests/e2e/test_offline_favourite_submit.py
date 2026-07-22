@@ -20,23 +20,29 @@ Covers the full offline → reconnect journey wiring
 3. Replaying the same operation a second time — same Idempotency-Key, same
    body — does not create a duplicate row:
    ``core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
-4. Cap path: when the user is already at ``FAVOURITES_MAX_PER_USER``, the
-   queued create replays to a 409 (a non-retry 4xx), which the queue treats
-   as an immediate permanent failure — the failure toast + nav badge fire,
-   no ``Favourite`` is created, and the optimistic pending pin is dropped.
+
+SNOW-496: the cap-path case (queued create replays to a 409 at
+``FAVOURITES_MAX_PER_USER``, which the queue treats as an immediate
+permanent failure — toast + nav badge, no ``Favourite`` created, pending
+pin dropped) is removed — the classification mechanics (any non-{408,429}
+4xx, including 409, is 'permanent') are proven generically by
+``tests/js/test_mutation_queue.js``'s permanent-4xx cases; this file keeps
+the one real, user-observable offline→reconnect→real-server journey that
+those synthetic-endpoint unit tests can't reach.
 
 Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped) — see
 ``docs/client-side-tests.md``'s "SW-lifecycle tests: real vs simulated" —
-this test is about the queue's own logic plus ``favourite_create``, not the
-SW lifecycle itself. Placing the pin drives the touch-friendly place-picker
-via ``MAP.setCenter`` (as ``tests/e2e/test_favourites.py`` does) rather than
-a canvas click, for headless-WebGL determinism.
+this test is about ``favourite_create`` plus the queue's real-server
+integration, not the SW lifecycle itself. Placing the pin drives the
+touch-friendly place-picker via ``MAP.setCenter`` (as
+``tests/e2e/test_favourites.py`` does) rather than a canvas click, for
+headless-WebGL determinism.
 
 Polling note: every multi-step wait is driven by ``_poll`` (Python-side,
 one ``page.evaluate`` round-trip at a time) rather than
 ``page.wait_for_function`` with an async body — see
-``tests/e2e/test_mutation_queue.py``'s module docstring for why (xdist
-parallel-run race between overlapping async predicate evaluations).
+``tests/js/test_mutation_queue.js``'s module docstring for the same xdist
+parallel-run race between overlapping async predicate evaluations.
 """
 
 from __future__ import annotations
@@ -51,7 +57,7 @@ from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from tests.e2e.conftest import _session_login
-from tests.factories import FavouriteFactory, SubscriberFactory
+from tests.factories import SubscriberFactory
 
 DB_NAME = "snowdesk-pwa-v1"
 
@@ -259,75 +265,3 @@ def test_offline_favourite_creation_syncs_without_duplicate(
 
     with django_db_blocker.unblock():
         assert Favourite.objects.count() == 1
-
-
-@override_flag("favourites", active=True)
-@pytest.mark.django_db(transaction=True)
-def test_offline_create_at_cap_fails_permanently_and_drops_pending_pin(
-    live_server: LiveServer, page: Page, django_db_blocker: Any, settings: Any
-) -> None:
-    """At the favourites cap, a queued create replays to 409 → permanent fail.
-
-    The queue classifies a 409 as an immediate permanent failure (not a
-    retry), so it fires the failure toast + nav badge, creates no
-    ``Favourite``, and — via favourites.js's pwa:mutation-failed-permanent
-    listener — drops the optimistic pending pin.
-    """
-    settings.FAVOURITES_MAX_PER_USER = 1
-    with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
-        # Fill the single allowed slot so the next create hits the cap.
-        FavouriteFactory.create(user=subscriber.user)
-
-    _session_login(page.context, live_server.url, subscriber.user)
-    _navigate_home_with_sw_stripped(page, live_server.url)
-
-    _open_create_form_at(page, lat=45.9, lon=6.9)
-    page.fill("#favourite-name-input", "Over Cap")
-
-    _go_offline(page)
-    page.click("#favourite-create-form button[type=submit]")
-
-    # Optimistically confirmed + pending pin painted while offline.
-    page.wait_for_selector('#favourite-sheet:has-text("Pin saved")')
-    _poll(
-        page,
-        """() => {
-            const src = MAP.getSource('favourites');
-            if (!src) return false;
-            return (src.serialize().data.features || []).some(
-                (f) => f.properties && f.properties.name === 'Over Cap'
-                       && f.properties.pending === true,
-            );
-        }""",
-    )
-
-    # Reconnect — the replay hits the cap and the server returns 409.
-    _go_online(page)
-
-    # Permanent failure: the queue's top-of-page toast banner is revealed.
-    page.wait_for_selector("#mutation-queue-toast:not(.hidden)")
-
-    # The row is marked failed (not deleted) and no Favourite was created.
-    _poll(
-        page,
-        """() => window.pwaDb.getAll('queue:mutations').then(
-            (rows) => rows.length === 1 && rows[0].status === 'failed'
-          )""",
-    )
-    with django_db_blocker.unblock():
-        # Only the pre-existing favourite remains.
-        assert Favourite.objects.filter(user=subscriber.user).count() == 1
-        assert not Favourite.objects.filter(name="Over Cap").exists()
-
-    # The optimistic pending pin was dropped (favourites-changed refetch).
-    _poll(
-        page,
-        """() => {
-            const src = MAP.getSource('favourites');
-            if (!src) return true;
-            return !(src.serialize().data.features || []).some(
-                (f) => f.properties && f.properties.pending === true,
-            );
-        }""",
-    )
