@@ -36,8 +36,9 @@ Fixtures defined here:
     Every other fixture and test in this directory that touches
     ``navigator.serviceWorker`` disables or strips it (``_disable_real_sw``
     in ``test_pwa_client_signals.py``, the stripped-``serviceWorker`` init
-    script in ``test_pwa_db.py`` / ``test_pwa_telemetry.py``) because a real
-    SW's own lifecycle timing used to be unreliable to assert on. SNOW-389's
+    script in ``test_offline_favourite_submit.py`` /
+    ``test_offline_observation_submit.py``) because a real SW's own
+    lifecycle timing used to be unreliable to assert on. SNOW-389's
     spike (``tests/e2e/_spike_results.py``) found the opposite once the SW
     is driven correctly (poll ``navigator.serviceWorker.controller?.state``
     rather than relying on Playwright's page/context network-interception
@@ -75,7 +76,8 @@ from tests.seeding import seed_test_dataset
 
 # Kept local (not imported from a test file) so this conftest has no
 # dependency on any single test module's internals. Matches the DB name
-# constant duplicated across test_pwa_db.py / test_pwa_telemetry.py.
+# constant duplicated across test_offline_favourite_submit.py /
+# test_offline_observation_submit.py.
 _PWA_DB_NAME = "snowdesk-pwa-v1"
 
 # Session backend used for magic-link / passkey logins — see
@@ -152,9 +154,9 @@ def _load_test_data(django_db_blocker: Any) -> None:
 def _delete_pwa_db(page: Page) -> None:
     """Delete the PWA IndexedDB so the next test starts from a clean slate.
 
-    Same pattern as ``_delete_db`` in ``test_pwa_client_signals.py`` /
-    ``test_pwa_db.py`` — duplicated here (rather than imported) so this
-    conftest has no dependency on a particular test module.
+    Same pattern as ``_delete_db`` in ``test_pwa_client_signals.py`` —
+    duplicated here (rather than imported) so this conftest has no
+    dependency on a particular test module.
     """
     page.evaluate(
         """(name) => new Promise((resolve) => {
@@ -165,7 +167,7 @@ def _delete_pwa_db(page: Page) -> None:
               // No onblocked handler: it fires while the delete is still
               // pending (blocked by db.js's live, self-yielding connection),
               // not done — resolving there returns before the DB is gone. See
-              // tests/e2e/test_pwa_db.py::_delete_db for the full rationale.
+              // tests/js/test_db.js's deleteDb() for the full rationale.
             } catch (_e) { resolve(); }
           })""",
         _PWA_DB_NAME,

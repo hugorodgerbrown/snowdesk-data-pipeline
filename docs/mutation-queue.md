@@ -285,23 +285,34 @@ relying entirely on the page-lifecycle drain triggers above instead.
 
 ## Tests
 
-`tests/e2e/test_mutation_queue.py` — Playwright, simulated-SW pattern
-(see [`client-side-tests.md`](client-side-tests.md)). Covers offline
-enqueue → online replay, identical Idempotency-Key across retries,
-permanent-4xx immediate failure (toast + telemetry), backoff scheduling
-and the 20-attempt ceiling, the nav badge, and feature-detected
-Background Sync registration. `tests/templates/includes/test_toast_banner.py`
+`tests/js/test_mutation_queue.js` (SNOW-496, Vitest — see
+[`client-side-tests.md`](client-side-tests.md)) covers the queue's own
+logic: offline enqueue → online replay, identical Idempotency-Key across
+retries, permanent-4xx immediate failure (toast + telemetry), backoff
+scheduling and the 20-attempt ceiling, the nav badge, and feature-detected
+Background Sync registration. The SNOW-462 principal-stamping and
+reconcile-on-load scenarios (account change / uninitialised baseline)
+live in their own files —
+`test_mutation_queue_principal.js` / `_reconcile_account_change.js` /
+`_reconcile_uninitialised.js` — because `db.js`'s `context()` memoises
+`<meta name="pwa-user-id">` once per module instance; see
+`test_mutation_queue.js`'s own docstring. `tests/templates/includes/test_toast_banner.py`
 covers the toast partial's render contract. `tests/e2e/test_offline_observation_submit.py`
-(SNOW-420) covers the first real consumer end to end: an offline tap
-enqueues with no network round-trip, the optimistic confirmation +
-sync-pending line + nav badge render immediately, a reconnect drains the
-queue against the real `report_submit` view with the tap-time
-`observed_at` preserved, and a replayed duplicate does not create a second
-row. `tests/e2e/test_mutation_queue_account_change.py` (SNOW-462) covers
-the headline account-change regression: user A queues a real
-`report_submit` mutation offline, user B signs in on the same browser
-before reconnect, and B's account ends up with zero
-`FieldObservation` rows.
+(SNOW-420) and `test_offline_favourite_submit.py` (SNOW-479) cover the
+real consumers end to end: an offline tap enqueues with no network
+round-trip, the optimistic confirmation + sync-pending line + nav badge
+render immediately, a reconnect drains the queue against the real
+`report_submit` / `favourite_create` view (the latter with the tap-time
+`observed_at` preserved for observations), and a replayed duplicate does
+not create a second row (`core.idempotency.IdempotencyMiddleware`).
+`test_offline_observation_submit.py` additionally covers report.js's
+Reset-Required guard (a report tap must not show the optimistic
+confirmation when IndexedDB is in the terminal Reset Required state). The
+SNOW-462 account-change headline regression against a real
+`report_submit` mutation is folded into
+`tests/js/test_mutation_queue_reconcile_account_change.js` (a synthetic
+mutation exercises the same reconcile-on-load path; the queue's own logic
+is what's under test either way).
 
 ## See also
 

@@ -267,7 +267,8 @@ def test_last_synced_phrase_auto_updates_while_offline(
     interaction — proving the timer, not just the initial render, updates
     the value.
 
-    The real service worker is stripped (as in test_pwa_db.py) so its
+    The real service worker is stripped (matching tests/js/test_db.js's
+    jsdom harness, which has no service worker at all) so its
     cache replays can't perturb the ledger. Stripping the SW is NOT enough
     on its own, though. ``pwa_offline.js``'s ``absorbFreshness`` advances
     ``syncLastAt`` (and re-renders the banner) on every settled,

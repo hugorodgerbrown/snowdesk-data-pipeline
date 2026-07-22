@@ -10,9 +10,9 @@ The server half is covered here:
   tag as ``"1"`` (enabled) / ``"0"`` (disabled) — the value
   ``static/js/telemetry.js`` reads to decide whether to run at all.
 
-The client no-op behaviour driven by ``content="0"`` is exercised by
-Playwright in ``tests/e2e/test_pwa_telemetry.py``; the receiver and
-server-signal gates are covered in ``tests/analytics/``.
+The client no-op behaviour driven by ``content="0"`` is exercised in
+``tests/js/test_telemetry_master_switch.js`` (SNOW-496, Vitest); the
+receiver and server-signal gates are covered in ``tests/analytics/``.
 """
 
 from __future__ import annotations
