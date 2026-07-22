@@ -80,6 +80,11 @@ from waffle.testutils import override_flag
 from tests.e2e.conftest import PwaPage, _session_login
 from tests.factories import FavouriteFactory, SubscriberFactory
 
+# SNOW-497: most of this module drives a real service worker (pwa_page /
+# _authenticated_pwa_navigate); the whole module runs serially (-n0) rather
+# than splitting the two SW-free tests out. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

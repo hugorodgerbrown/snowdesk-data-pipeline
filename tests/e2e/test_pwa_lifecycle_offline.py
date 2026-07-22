@@ -21,10 +21,15 @@ from __future__ import annotations
 import re
 import uuid
 
+import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
 from tests.e2e.conftest import PwaPage
+
+# SNOW-497: drives a real service worker — must run serially (-n0), never
+# under xdist. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
 
 # ---------------------------------------------------------------------------
 # P7 — offline reload of a cached page, including /?d= variants

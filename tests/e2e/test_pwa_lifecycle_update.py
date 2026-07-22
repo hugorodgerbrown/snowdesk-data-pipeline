@@ -23,6 +23,10 @@ from playwright.sync_api import Route
 from public import views as public_views
 from tests.e2e.conftest import PwaPage
 
+# SNOW-497: drives a real service worker — must run serially (-n0), never
+# under xdist. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
+
 # ---------------------------------------------------------------------------
 # P4 — SW-driven update (a new sw.js is deployed)
 # ---------------------------------------------------------------------------

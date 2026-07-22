@@ -36,7 +36,13 @@ further evaluated on the page afterwards.
 
 from __future__ import annotations
 
+import pytest
+
 from tests.e2e.conftest import PwaPage
+
+# SNOW-497: drives a real service worker — must run serially (-n0), never
+# under xdist. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
 
 
 def test_push_event_dispatched_to_real_sw_emits_received_and_shown(

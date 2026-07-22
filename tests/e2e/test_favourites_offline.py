@@ -33,6 +33,10 @@ from waffle.testutils import override_flag
 from tests.e2e.conftest import SignedInPage
 from tests.factories import FavouriteFactory, MicroRegionFactory, RegionDayRatingFactory
 
+# SNOW-497: drives a real service worker — must run serially (-n0), never
+# under xdist. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
+
 MANAGE_URL_PATH = "/account/manage/"
 
 # Polls window.pwaDb until a row with the given uuid lands in

@@ -10,9 +10,14 @@ e2e file, this one drives a real, undisabled service worker.
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Response
 
 from tests.e2e.conftest import PwaPage
+
+# SNOW-497: drives a real service worker — must run serially (-n0), never
+# under xdist. See tox.ini's [testenv:e2e] split.
+pytestmark = pytest.mark.real_sw
 
 
 def test_first_install_registers_and_caches_shell(pwa_page: PwaPage) -> None:
