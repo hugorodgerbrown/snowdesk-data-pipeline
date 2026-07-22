@@ -1305,6 +1305,25 @@ const repaintRegionsForDate = (dateKey, cache) => {
     return geojson;
   };
 
+  // SNOW-492: the server only ever returns reports inside the 48h window,
+  // so the live fetch path never needs to drop anything — the age-fade
+  // above is the only "expiry" it applies. A cached (offline read-back)
+  // copy can be older than the whole window has moved by the time it's
+  // reinstalled, so filter out features whose `observed_at` has aged past
+  // COMMUNITY_REPORTS_WINDOW_MS *before* re-applying the same age-opacity
+  // fade, so cached reports expire visually at 48h exactly as they do
+  // online rather than sitting at the opacity floor forever.
+  const dropExpiredCommunityReports = (geojson) => {
+    if (!geojson || !Array.isArray(geojson.features)) return geojson;
+    const now = Date.now();
+    const features = geojson.features.filter((feature) => {
+      const observedAt = feature.properties && feature.properties.observed_at;
+      if (!observedAt) return true;
+      return now - new Date(observedAt).getTime() < COMMUNITY_REPORTS_WINDOW_MS;
+    });
+    return { ...geojson, features };
+  };
+
   // SNOW-472: draw the shared community-report flag icon on an offscreen
   // canvas and hand MapLibre its alpha mask as an SDF image. The shape is
   // the Font Awesome "flag" path (COMMUNITY_REPORT_FLAG_PATH above), filled
@@ -1834,8 +1853,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
       const data = await fetch(FAVOURITES_URL)
         .then(r => r.json()).catch(() => null);
-      if (!data) return;
-      installFavouritesLayer(data);
+      if (data) {
+        // SNOW-492: write-through — favourites never expire, so the
+        // cached copy is installed as-is on a later offline read-back.
+        window.pwaMapOverlayCache?.putOverlay('favourites', data);
+        installFavouritesLayer(data);
+      } else {
+        const cached = await window.pwaMapOverlayCache?.getOverlay('favourites');
+        if (!cached) return;
+        installFavouritesLayer(cached);
+      }
     } else if (key === 'community_reports') {
       // SNOW-419: flag-gated only (no auth eligibility) — guard the fetch
       // in case this is ever reached some other way (e.g. the eager
@@ -1843,9 +1870,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!COMMUNITY_REPORTS_ELIGIBLE || !COMMUNITY_REPORTS_URL) return;
       const data = await fetch(COMMUNITY_REPORTS_URL)
         .then(r => r.json()).catch(() => null);
-      if (!data) return;
-      communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
-      installCommunityReportsLayer(communityReportsGeojsonCache);
+      if (data) {
+        // SNOW-492: write-through, cached before the age-opacity mutation
+        // below so the stored copy is the pristine server payload.
+        window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+        communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
+        installCommunityReportsLayer(communityReportsGeojsonCache);
+      } else {
+        const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
+        const fresh = cached ? dropExpiredCommunityReports(cached) : null;
+        if (!fresh || !fresh.features.length) return;
+        communityReportsGeojsonCache = withCommunityReportsAgeOpacity(fresh);
+        installCommunityReportsLayer(communityReportsGeojsonCache);
+      }
     }
     overlayLoaded[key] = true;
     // Apply country filters to the freshly-added layers so they
