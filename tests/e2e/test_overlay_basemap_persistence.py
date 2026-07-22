@@ -13,10 +13,19 @@ localStorage and never updated by the basemap picker's toggle handler
 came back on, and a runtime-enabled lazy tier (l1/l2/l3/resorts/
 community_reports) vanished.
 
-Drives ``MAP.setStyle(MAP.getStyle(), {diff: false})`` to exercise the
-exact teardown/re-install path without loading an external basemap style
-(unreachable in the headless/CI harness) — same technique the plan
-verified against the ``styledata`` handler in ``map.js``.
+Every test here drives a genuine, empty-style swap via
+``_engage_fallback_style_and_wait_for_regions`` — a real MapLibre
+``error`` event that engages the SNOW-483 inline fallback style, which
+truly removes every runtime-added source and so makes the ``styledata``
+handler's early-return guard (``if (map.getSource('regions')) return``)
+false and runs its whole reinstall body. See that helper's docstring for
+why the tempting ``MAP.setStyle(MAP.getStyle(), {diff: false})`` shortcut
+is NOT used: ``getStyle()`` serialises our runtime sources into the
+snapshot it returns, so ``setStyle`` re-applies a style that still
+contains 'regions'/'favourites'/etc, the guard fires immediately, and the
+reinstall body — the exact code every test here targets — never executes.
+A test using that shortcut would pass even with the reinstall logic
+deleted.
 
 SNOW-493 findings 2/3: the same ``styledata`` handler never re-installed
 the favourites layer at all (finding 2), and re-fetched every enabled
@@ -24,13 +33,7 @@ foreign country's L1/L2/L4 data on every swap even though the merged
 caches already held it, duplicating those features each time (finding 3).
 ``test_favourite_pin_survives_basemap_swap`` and
 ``test_repeated_basemap_swap_does_not_duplicate_country_regions`` cover
-those two respectively — via a different helper,
-``_engage_fallback_style_and_wait_for_regions``, than the
-``setStyle(getStyle(), {diff:false})`` technique the SNOW-473 tests below
-use; see that helper's docstring for why (the short version: that
-technique doesn't actually remove our runtime sources in this MapLibre
-version, so it never exercises the styledata handler's reinstall body at
-all — findings 2/3 need a technique that genuinely does).
+those two respectively.
 """
 
 from __future__ import annotations
@@ -57,35 +60,22 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-def _reload_style_and_wait_for_regions(page: Page) -> None:
-    """Force a full style re-install and wait for ``regions`` to reappear.
-
-    ``MAP.setStyle(MAP.getStyle(), {diff: false})`` wipes every source and
-    layer we added, exercising the same ``styledata`` re-install path a
-    real basemap swap does. The re-install is async, so poll on the
-    ``regions`` source reappearing rather than a fixed sleep.
-    """
-    page.evaluate("() => MAP.setStyle(MAP.getStyle(), { diff: false })")
-    page.wait_for_function("() => !!MAP.getSource('regions')")
-
-
 def _engage_fallback_style_and_wait_for_regions(page: Page) -> None:
     """Force a genuine, empty-style swap and wait for ``regions`` to reappear.
 
-    Unlike ``_reload_style_and_wait_for_regions`` above,
-    ``MAP.setStyle(MAP.getStyle(), {diff: false})`` turns out NOT to
-    actually remove our runtime-added sources in this MapLibre version —
-    ``getStyle()`` serialises them into the snapshot it returns, so
-    ``setStyle`` re-applies a style that already contains 'regions' /
-    'favourites' / etc, and the ``styledata`` re-install handler's own
-    early-return guard (``if (map.getSource('regions')) return``) then
-    skips its entire body, including the exact re-fetch/re-install logic
-    SNOW-493 findings 2/3 are about. Verified empirically: instrumenting
-    ``installRegionsLayers`` with a call counter showed it never runs a
-    second time via that technique, even when the L4/resorts tests above
-    (established, SNOW-473) still pass — those two only assert on layout
-    *visibility*, which the untouched snapshot already preserves correctly
-    regardless of whether the reinstall block executes at all.
+    The tempting shortcut ``MAP.setStyle(MAP.getStyle(), {diff: false})``
+    turns out NOT to actually remove our runtime-added sources in this
+    MapLibre version — ``getStyle()`` serialises them into the snapshot it
+    returns, so ``setStyle`` re-applies a style that already contains
+    'regions' / 'favourites' / etc, and the ``styledata`` re-install
+    handler's own early-return guard (``if (map.getSource('regions'))
+    return``) then skips its entire body, including the exact
+    re-fetch/re-install logic every test in this module targets. Verified
+    empirically: instrumenting ``installRegionsLayers`` with a call counter
+    showed it never runs a second time via that technique, even though a
+    test asserting only on layout *visibility* would still pass — the
+    untouched snapshot preserves visibility correctly regardless of whether
+    the reinstall block executes at all.
 
     This helper instead engages the SNOW-483 inline fallback style via the
     same technique ``test_offline_map.py``'s
@@ -141,7 +131,7 @@ def test_l4_stays_hidden_across_basemap_swap(
         == "none"
     )
 
-    _reload_style_and_wait_for_regions(page)
+    _engage_fallback_style_and_wait_for_regions(page)
 
     assert (
         page.evaluate("() => MAP.getLayoutProperty('regions-fill', 'visibility')")
@@ -178,7 +168,7 @@ def test_runtime_enabled_tier_survives_basemap_swap(
         "MAP.getLayoutProperty('resorts-pin', 'visibility') === 'visible'"
     )
 
-    _reload_style_and_wait_for_regions(page)
+    _engage_fallback_style_and_wait_for_regions(page)
 
     # The install fns run synchronously within the styledata handler, so once
     # the regions source is back the resorts layer exists too; assert its
