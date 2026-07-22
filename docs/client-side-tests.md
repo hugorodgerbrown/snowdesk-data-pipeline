@@ -257,19 +257,25 @@ Two different fixture families exercise the service worker, and picking
 the wrong one for a new test either pollutes an unrelated assertion or
 misses the thing you actually meant to test:
 
-- **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
-  the stripped-`navigator.serviceWorker` pattern used throughout
-  `tests/e2e/test_offline_favourite_submit.py` /
-  `test_offline_observation_submit.py`) — the real `/sw.js` never
+- **Simulated** (the shared `_disable_real_sw` fixture in `conftest.py`,
+  SNOW-497 — requested by most SW-free tests, including
+  `test_offline_favourite_submit.py`, `test_offline_observation_submit.py`,
+  and every happy-path journey module) — the real `/sw.js` never
   registers. Use this when the test is about something ELSE that happens
   to load on a page the SW would otherwise control (the install-prompt
   funnel, a real-server mutation-queue round trip) and a real SW's own
   asynchronous lifecycle events would just be timing noise for that
-  assertion. (For pure JS-module internals like `db.js`, `telemetry.js`,
-  or `mutation_queue.js`, prefer the Vitest harness over a browser
-  entirely — `delete navigator.serviceWorker` gets the same isolation for
-  free there, since jsdom doesn't define it by default. See the "JS unit
-  tests" section above.)
+  assertion — or, since SNOW-484, when a test stubs a route (e.g. the
+  basemap style URL) that the SW would otherwise intercept via its own
+  `respondWith` before `page.route` ever sees it (`test_map_glyphs.py`,
+  `test_offline_basemap_fallback.py`). `test_pwa_client_signals.py` keeps
+  its own local, differently-scoped `_disable_real_sw` function (it also
+  kills the `/api/sw-config` gate) rather than the shared fixture — see
+  that file's docstring. (For pure JS-module internals like `db.js`,
+  `telemetry.js`, or `mutation_queue.js`, prefer the Vitest harness over a
+  browser entirely — `delete navigator.serviceWorker` gets the same
+  isolation for free there, since jsdom doesn't define it by default. See
+  the "JS unit tests" section above.)
 - **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
   genuine `/sw.js` registers, activates, and controls the page, with
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,

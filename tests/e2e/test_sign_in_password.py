@@ -16,7 +16,10 @@ Two things:
    branch (``accounts/views.py``), not just the client-side reveal.
 
 The sign-in page renders standalone (no bulletin data needed), so no
-``_load_test_data`` fixture is required.
+``_load_test_data`` fixture is required. Both tests request
+``_disable_real_sw`` — neither is about the SW, and stripping it closes off
+any theoretical service-worker interference with the
+``/account/sign-in/`` → ``/account/manage/`` redirect.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ def _reveal_password_field(page: Page, live_server_url: str) -> None:
 def test_password_toggle_reveals_field(
     live_server: LiveServer,
     page: Page,
+    _disable_real_sw: None,
 ) -> None:
     """Clicking the toggle reveals the password field (inline JS ran cleanly)."""
     page.goto(f"{live_server.url}/account/sign-in/")
@@ -78,6 +82,7 @@ def test_password_sign_in_lands_on_manage_page(
     live_server: LiveServer,
     page: Page,
     django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """A correct email + password lands the subscriber on /account/manage/."""
     with django_db_blocker.unblock():

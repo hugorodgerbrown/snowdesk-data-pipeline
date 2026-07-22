@@ -117,7 +117,7 @@ def _frutiger_style(origin: str) -> dict[str, Any]:
 
 @pytest.mark.django_db(transaction=True)
 def test_overlay_label_font_follows_active_basemap(
-    live_server: LiveServer, page: Page
+    live_server: LiveServer, page: Page, _disable_real_sw: None
 ) -> None:
     """Overlay labels adopt the active basemap's own declared font.
 
@@ -127,6 +127,14 @@ def test_overlay_label_font_follows_active_basemap(
     test off the flaky external basemap servers), so the overlay ``regions-label``
     installed at boot must derive ``Frutiger Neue Condensed Regular``, never
     ``Noto Sans``.
+
+    Requests ``_disable_real_sw`` (SNOW-497): since SNOW-484 the real service
+    worker classifies the basemap origin as cacheable and answers its style
+    fetch via its own ``respondWith`` — invisible to ``page.route``, which
+    would otherwise race the SW for who serves the request and occasionally
+    let the real (Noto) basemap style through under xdist. Stripping the SW
+    keeps the fetch at the page level so the ``page.route`` stub above
+    deterministically wins. Mirrors ``test_offline_basemap_fallback.py``.
     """
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))

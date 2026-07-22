@@ -396,7 +396,23 @@ def _route_capturing_headers(captured: dict[str, str]) -> Callable[[Route], None
 def test_fetch_stamps_client_version_on_same_origin_request(
     live_server: LiveServer, page: Page
 ) -> None:
-    """A same-origin fetch() call carries X-Client-Version matching the meta tag."""
+    """A same-origin fetch() call carries X-Client-Version matching the meta tag.
+
+    ``_disable_real_sw`` (SNOW-497): without it, localhost's secure context
+    lets the real ``sw.js`` register on this fresh browser context and — with
+    no prior worker to wait behind — activate and ``clients.claim()`` the page
+    at non-deterministic timing (see ``pwa_page``'s docstring in
+    ``conftest.py``). Once claimed, this same-origin GET is dispatched to the
+    SW's ``fetch`` handler even though ``_classifySync`` returns ``'network'``
+    for it (no ``respondWith`` — the browser handles it natively) — but a
+    request routed through a SW-controlled document sometimes isn't visible to
+    ``page.route`` regardless, the same "SW fetches are invisible to
+    interception" limitation this suite relies on elsewhere. Under ``-n0``
+    serial timing this races rarely enough to pass; under xdist's ``-n auto``
+    parallel load the claim reliably lands before the fetch, and ``captured``
+    stays empty. Disabling the SW removes the race entirely.
+    """
+    _disable_real_sw(page)
     _load(page, live_server.url)
 
     captured: dict[str, str] = {}
