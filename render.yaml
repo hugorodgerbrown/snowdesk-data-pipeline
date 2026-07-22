@@ -44,7 +44,7 @@ projects:
             region: frankfurt
             branch: release
             buildCommand: ./build_headless.sh
-            startCommand: python manage.py db_worker
+            startCommand: uv run --no-sync python manage.py db_worker
             autoDeployTrigger: checksPass
             envVars:
               - fromGroup: Production
@@ -57,7 +57,7 @@ projects:
             region: frankfurt
             branch: release
             buildCommand: ./build_headless.sh
-            startCommand: python manage.py run_scheduler
+            startCommand: uv run --no-sync python manage.py run_scheduler
             autoDeployTrigger: checksPass
             envVars:
               - fromGroup: Production
@@ -69,8 +69,8 @@ projects:
             plan: starter
             region: frankfurt
             branch: release
-            buildCommand: . ./build.sh
-            startCommand: gunicorn config.wsgi
+            buildCommand: ./build.sh
+            startCommand: uv run --no-sync gunicorn config.wsgi
             domains:
               - www.snowdesk.info
               - snowdesk.info
@@ -105,8 +105,8 @@ projects:
             plan: starter
             region: frankfurt
             branch: main
-            buildCommand: . ./build.sh
-            startCommand: gunicorn config.wsgi
+            buildCommand: ./build.sh
+            startCommand: uv run --no-sync gunicorn config.wsgi
             autoDeployTrigger: checksPass
             envVars:
               # Staging inherits production hardening but sends email inline
