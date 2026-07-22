@@ -114,11 +114,42 @@
   // rather than once per entry point that happens to observe it.
   let announcedUpdateWorker = null;
 
-  // SNOW-492: resolver for the in-flight "Cache this area" call, if any.
-  // Only one warm-cache run can be in flight at a time — map.js click-guards
-  // its button while busy — so a single slot is enough; no request-id
-  // bookkeeping needed.
-  let _warmCacheResolve = null;
+  // SNOW-492: slot for the in-flight "Cache this area" call, if any. Only
+  // one warm-cache run can be in flight at a time — map.js click-guards its
+  // button while busy — so a single slot is enough.
+  //
+  // SNOW-493 finding 9: the slot now carries a ``requestId`` alongside the
+  // ``resolve`` function. Without it, a worker reply that arrives AFTER
+  // ``warmCache()`` has already given up (timed out and resolved ``null``)
+  // would still find ``_warmCacheSlot.resolve`` set — a later call's own
+  // ``resolve`` — and wrongly settle it with the stale reply's numbers.
+  // Correlating on ``requestId`` (minted per call, echoed back by the
+  // worker) means a reply only ever resolves the call it actually answers.
+  let _warmCacheSlot = null;
+
+  /**
+   * Mint a request id for a ``warmCache()`` call. ``crypto.randomUUID`` is
+   * available on every browser this feature targets; the hex fallback
+   * mirrors ``mutation_queue.js``'s ``_mintIdempotencyKey`` /
+   * ``db.js``'s ``_randomHex`` for the rare runtime without it.
+   * @returns {string}
+   */
+  function _mintRequestId() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      let out = '';
+      for (let i = 0; i < bytes.length; i++) {
+        out += bytes[i].toString(16).padStart(2, '0');
+      }
+      return out;
+    } catch (_e) {
+      return 'warm-' + Date.now().toString(16) + '-' + Math.floor(Math.random() * 1e9).toString(16);
+    }
+  }
 
   // SNOW-384: SW → page telemetry bridge. sw.js (and sw-kill.js) have no
   // ``window`` and so cannot call ``window.pwaTelemetry`` directly; they
@@ -157,9 +188,13 @@
       return;
     }
     if (data.type === 'warm-cache-done') {
-      if (_warmCacheResolve) {
-        _warmCacheResolve({ ok: data.ok, failed: data.failed });
-        _warmCacheResolve = null;
+      // SNOW-493 finding 9: only resolve if this reply matches the
+      // in-flight slot's requestId — a stale reply for a call that already
+      // timed out (and whose slot was replaced or cleared) must not
+      // resolve a different, later call.
+      if (_warmCacheSlot && data.requestId === _warmCacheSlot.requestId) {
+        _warmCacheSlot.resolve({ ok: data.ok, failed: data.failed });
+        _warmCacheSlot = null;
       }
     }
   });
@@ -183,18 +218,33 @@
    * callers already treat ``null`` as "nothing to report" via the same
    * no-active-worker branch.
    *
+   * SNOW-493 finding 9: mints a ``requestId`` for this call and posts it
+   * alongside the URL list; ``sw.js`` echoes it back in
+   * ``warm-cache-done``. On timeout, this call's own promise still
+   * resolves ``null``, but the slot is only cleared if it still belongs to
+   * THIS request — otherwise a request that arrived and repopulated the
+   * slot in the interim (vanishingly unlikely given map.js's click-guard,
+   * but not impossible if a caller bypasses it) would have its slot wiped
+   * out from under it by this stale timeout.
+   *
    * @param {string[]} urls
    * @returns {Promise<{ok: number, failed: number} | null>}
    */
   function warmCache(urls) {
     const active = navigator.serviceWorker.controller;
     if (!active) return Promise.resolve(null);
+    const requestId = _mintRequestId();
     const reply = new Promise((resolve) => {
-      _warmCacheResolve = resolve;
-      active.postMessage({ type: 'warm-cache', urls: urls || [] });
+      _warmCacheSlot = { requestId, resolve };
+      active.postMessage({ type: 'warm-cache', urls: urls || [], requestId });
     });
     const timeout = new Promise((resolve) => {
-      setTimeout(() => resolve(null), WARM_CACHE_TIMEOUT_MS);
+      setTimeout(() => {
+        if (_warmCacheSlot && _warmCacheSlot.requestId === requestId) {
+          _warmCacheSlot = null;
+        }
+        resolve(null);
+      }, WARM_CACHE_TIMEOUT_MS);
     });
     return Promise.race([reply, timeout]);
   }
