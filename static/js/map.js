@@ -1937,8 +1937,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     community_reports: false,
   };
 
-  const ensureOverlayLoaded = async (key) => {
-    if (overlayLoaded[key]) return;
+  // SNOW-493 P1: the in-flight load promise per key. ``overlayLoaded`` only
+  // flips true after the fetch settles, so a rapid on → off → on (the user
+  // re-enables a tier before its first request returns) would otherwise
+  // pass the guard twice and start a second fetch. For l1/l2 both responses
+  // concatenate into majorGeojsonCache/subGeojsonCache, duplicating every
+  // country feature — invisible until the next basemap swap reinstalls the
+  // source from that cache. Reusing the pending promise collapses the
+  // second enable onto the first fetch, so the merge happens exactly once.
+  const overlayLoading = {};
+
+  const _loadOverlay = async (key) => {
     if (key === 'l1') {
       if (!MAJOR_REGIONS_URL) return;
       const data = await fetch(MAJOR_REGIONS_URL + '?country=ch')
@@ -2060,6 +2069,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
+  };
+
+  // SNOW-235 / SNOW-493 P1: public entry point. Short-circuits if the tier
+  // is already loaded, reuses any in-flight load for the same key (see
+  // ``overlayLoading`` above), and otherwise starts one — clearing the slot
+  // on settle so a genuine later retry (e.g. after an offline failure that
+  // left ``overlayLoaded[key]`` false) can attempt the fetch again.
+  const ensureOverlayLoaded = (key) => {
+    if (overlayLoaded[key]) return Promise.resolve();
+    if (overlayLoading[key]) return overlayLoading[key];
+    const work = _loadOverlay(key).finally(() => {
+      delete overlayLoading[key];
+    });
+    overlayLoading[key] = work;
+    return work;
   };
 
   // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
