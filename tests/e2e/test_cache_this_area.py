@@ -164,3 +164,24 @@ def test_toast_failed_when_ok_is_zero(pwa_page: PwaPage) -> None:
     page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
     assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
     assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
+
+
+def test_toast_never_complete_for_vacuous_run(pwa_page: PwaPage) -> None:
+    """Finding 7: ``ok === 0`` never claims "available offline".
+
+    A vacuous run — ``{ok: 0, failed: 0}``, nothing cached — has no
+    successes, so the "complete" toast must stay hidden even though there
+    were no failures. "Complete" requires ``ok > 0`` as well as
+    ``failed === 0``.
+    """
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+    _stub_warm_cache(worker, ok=0, failed=0)
+
+    _wait_for_map_ready(page)
+    _open_menu_and_click_cache_now(page)
+
+    page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
+    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
+    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")

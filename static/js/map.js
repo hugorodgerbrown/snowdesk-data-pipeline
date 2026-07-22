@@ -4397,9 +4397,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // {ok, failed} counts instead of always claiming "available
       // offline" — a run where every URL failed to cache must never say
       // that, and a partially-successful run should say so rather than
-      // over-claim full coverage.
+      // over-claim full coverage. "Complete" requires at least one
+      // success as well as no failures, so a vacuous run (``ok === 0``,
+      // nothing cached) never claims the area is available offline —
+      // matching the acceptance criterion for any ``ok === 0`` result.
       let toastId;
-      if (result.failed === 0) {
+      if (result.ok > 0 && result.failed === 0) {
         toastId = 'map-cache-now-toast-complete';
       } else if (result.ok > 0) {
         toastId = 'map-cache-now-toast-partial';
