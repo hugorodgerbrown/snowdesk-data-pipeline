@@ -225,6 +225,13 @@
     border-radius: 3px;
 }
 
+/* SNOW-492: "Cache this area for offline" is a one-shot command, not a
+   persistent toggle — it never sets aria-checked, so the shared radio-dot
+   glyph would otherwise sit permanently empty. Hide it for this item only. */
+.basemap-menu-item--action::before {
+    display: none;
+}
+
 .basemap-menu-item--overlay[aria-checked="true"]::before {
     background: var(--color-text-1);
     border-color: var(--color-text-1);

@@ -200,7 +200,10 @@ try {
 // SNOW-490: v25 — synthesized offline-cache-miss 504 fallbacks now stamp
 // X-SW-Cache: miss, so pwa_offline.js can't mistake them for a real
 // same-origin sync.
-const CACHE_VERSION = 'snowdesk-shell-v25';
+// SNOW-492: v26 — new 'warm-cache' message handler (the map's "Cache this
+// area for offline" control) and the map.js/sw_register.js changes that
+// drive it.
+const CACHE_VERSION = 'snowdesk-shell-v26';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -633,6 +636,54 @@ async function _trimCache(cache, max) {
 }
 
 /**
+ * SNOW-492: eagerly fetch + cache a caller-supplied list of URLs — the
+ * "Cache this area for offline" control map.js wires into the map's
+ * Options menu. Splits by origin into the same two caches the fetch
+ * handler above already reads from, so a subsequent offline reload of the
+ * current view is served from a warm cache rather than depending on
+ * stale-while-revalidate having already run for every one of these URLs:
+ * same-origin data feeds → the shell cache (``CACHE_VERSION``);
+ * basemap-origin tiles/sprites/glyphs/style JSON → ``BASEMAP_CACHE``. Only
+ * caches an ``ok`` response of the expected ``type`` — ``'basic'``
+ * same-origin, ``'cors'`` cross-origin — mirroring the exact checks
+ * ``_staleWhileRevalidate`` / ``_basemapStaleWhileRevalidate`` already
+ * apply, so a warmed entry is guaranteed servable by those same read
+ * paths. Every URL is fetched independently — one failure doesn't abort
+ * the rest — and the basemap cache is trimmed afterwards since a single
+ * "cache this area" call can add hundreds of tile entries in one burst.
+ *
+ * @param {string[]} urls
+ * @returns {Promise<{ok: number, failed: number}>}
+ */
+async function _warmCache(urls) {
+  const shellCache = await caches.open(CACHE_VERSION);
+  const basemapCache = await caches.open(BASEMAP_CACHE);
+  let ok = 0;
+  let failed = 0;
+  await Promise.all(
+    (Array.isArray(urls) ? urls : []).map(async (rawUrl) => {
+      try {
+        const url = new URL(rawUrl, self.location.origin);
+        const sameOrigin = url.origin === self.location.origin;
+        const response = await fetch(url.toString());
+        const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
+        if (response && response.ok && validType) {
+          const cache = sameOrigin ? shellCache : basemapCache;
+          await cache.put(url.toString(), response.clone());
+          ok += 1;
+        } else {
+          failed += 1;
+        }
+      } catch (_err) {
+        failed += 1;
+      }
+    }),
+  );
+  await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+  return { ok, failed };
+}
+
+/**
  * SNOW-484: stale-while-revalidate for the active basemap's cross-origin
  * requests (vector tiles, sprites, glyphs), against the dedicated
  * ``BASEMAP_CACHE`` rather than the shell's ``CACHE_VERSION`` cache.
@@ -830,6 +881,27 @@ self.addEventListener('message', (event) => {
     // instead of using the Set we just replaced.
     _basemapHydration = null;
   }
+  // SNOW-492: "Cache this area for offline" — map.js posts this with the
+  // current view's URL list (see its docstring for how that list is
+  // assembled). Runs inside event.waitUntil (ExtendableMessageEvent
+  // supports it, same as 'fetch'/'sync') so the fetch burst isn't cut
+  // short if the worker would otherwise be judged idle mid-flight; posts
+  // the completion summary back to the requesting client so map.js can
+  // show a toast.
+  if (
+    event.data &&
+    event.data.type === 'warm-cache' &&
+    Array.isArray(event.data.urls)
+  ) {
+    const warm = _warmCache(event.data.urls).then((result) => {
+      event.source?.postMessage({
+        type: 'warm-cache-done',
+        ok: result.ok,
+        failed: result.failed,
+      });
+    });
+    if (typeof event.waitUntil === 'function') event.waitUntil(warm);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -842,7 +914,7 @@ self.addEventListener('message', (event) => {
  * ``DB_NAME`` exactly so it opens the SAME database a page already
  * created. It opens WITHOUT a version number so it attaches to whatever
  * schema version the page most recently migrated to (db.js owns
- * ``DB_VERSION`` — currently 3 — and bumps it as stores are added; a
+ * ``DB_VERSION`` — currently 4 — and bumps it as stores are added; a
  * hardcoded version here would throw ``VersionError`` the moment db.js
  * moved ahead). The ``onupgradeneeded`` branch below only fires in the
  * (rare) case a Background Sync fires before any page has ever opened the

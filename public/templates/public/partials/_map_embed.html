@@ -371,6 +371,22 @@ Optional context:
                         {% trans "Auto-zoom" %}
                     </button>
                 </li>
+                {# SNOW-492: "Cache this area for offline" — a command, not a  #}
+                {# persistent toggle, so role="menuitem" rather than the      #}
+                {# menuitemcheckbox affordance the other Options item uses.   #}
+                {# map.js assembles the current view's data-feed + basemap-   #}
+                {# tile URLs and posts them to the SW's warm-cache handler.   #}
+                <li role="none">
+                    <button
+                        id="cache-now-toggle"
+                        type="button"
+                        role="menuitem"
+                        class="basemap-menu-item basemap-menu-item--action"
+                        data-action="cache-now"
+                    >
+                        {% trans "Cache this area for offline" %}
+                    </button>
+                </li>
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
@@ -798,3 +814,9 @@ Optional context:
 {% include "includes/_toast.html" with id="map-offline-toast-favourites" kind="warning" body=offline_toast_favourites_body dismissible=True timeout=6000 %}
 {% trans "Community reports aren't available offline yet — view them online first." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
+{# SNOW-492: "Cache this area for offline" completion toast — map.js       #}
+{# reveals this once the SW's warm-cache handler reports back, whether or #}
+{# not every URL in the batch succeeded (a handful of tile misses still   #}
+{# leaves most of the area usable offline).                               #}
+{% trans "This area is now available offline." as cache_now_toast_body %}
+{% include "includes/_toast.html" with id="map-cache-now-toast" kind="success" body=cache_now_toast_body dismissible=True timeout=5000 %}

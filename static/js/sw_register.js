@@ -114,6 +114,12 @@
   // rather than once per entry point that happens to observe it.
   let announcedUpdateWorker = null;
 
+  // SNOW-492: resolver for the in-flight "Cache this area" call, if any.
+  // Only one warm-cache run can be in flight at a time — map.js click-guards
+  // its button while busy — so a single slot is enough; no request-id
+  // bookkeeping needed.
+  let _warmCacheResolve = null;
+
   // SNOW-384: SW → page telemetry bridge. sw.js (and sw-kill.js) have no
   // ``window`` and so cannot call ``window.pwaTelemetry`` directly; they
   // instead post ``{type: 'pwa-telemetry', event, properties}`` to every
@@ -123,6 +129,9 @@
   // SNOW-376: the same channel also carries ``{type: 'drain-mutations'}``
   // when a Background Sync fires for the mutation-queue tag while this
   // tab is open — see static/js/sw.js's ``_handleMutationSync``.
+  //
+  // SNOW-492: and ``{type: 'warm-cache-done', ok, failed}`` — the
+  // completion summary for a ``warmCache()`` call below.
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event.data;
     if (!data) return;
@@ -145,7 +154,41 @@
       } catch (_err) {
         // Ignore — a broken drain must never break the SW message channel.
       }
+      return;
     }
+    if (data.type === 'warm-cache-done') {
+      if (_warmCacheResolve) {
+        _warmCacheResolve({ ok: data.ok, failed: data.failed });
+        _warmCacheResolve = null;
+      }
+    }
+  });
+
+  /**
+   * SNOW-492: bridge for map.js's "Cache this area for offline" control.
+   * Posts the given URL list to the active worker's ``warm-cache`` message
+   * handler (``static/js/sw.js``) and resolves with its ``{ok, failed}``
+   * summary once the worker posts ``warm-cache-done`` back. Resolves
+   * ``null`` immediately when there's no active worker (unsupported
+   * browser, or the kill switch has unregistered every SW) — the caller
+   * degrades to "nothing to warm".
+   *
+   * @param {string[]} urls
+   * @returns {Promise<{ok: number, failed: number} | null>}
+   */
+  function warmCache(urls) {
+    const active = navigator.serviceWorker.controller;
+    if (!active) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      _warmCacheResolve = resolve;
+      active.postMessage({ type: 'warm-cache', urls: urls || [] });
+    });
+  }
+
+  Object.defineProperty(window, 'pwaWarmCache', {
+    value: warmCache,
+    writable: false,
+    configurable: false,
   });
 
   /**

@@ -100,6 +100,99 @@ function buildFallbackStyle() {
   };
 }
 
+// SNOW-492: minimal slippy-map (Web Mercator) tile math, used only by the
+// "Cache this area for offline" control (cacheNowInit, further down) to
+// enumerate the vector tile URLs covering the current viewport. Pure
+// functions, no MapLibre dependency.
+function _lonToTileX(lon, z) {
+  return Math.floor(((lon + 180) / 360) * 2 ** z);
+}
+function _latToTileY(lat, z) {
+  const rad = (lat * Math.PI) / 180;
+  return Math.floor(
+    ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * 2 ** z,
+  );
+}
+
+// SNOW-492: cap the number of tile URLs one "Cache this area" run can
+// enqueue. sw.js's BASEMAP_CACHE_MAX_ENTRIES is 600 — this leaves headroom
+// under that ceiling for ordinary stale-while-revalidate browsing to keep
+// adding entries without a single click evicting everything else out of
+// the LRU trim.
+const CACHE_NOW_MAX_TILES = 400;
+
+// SNOW-492: zoom levels either side of the current view to also warm, so a
+// small zoom in/out after reconnecting still hits a warm cache rather than
+// only the exact level the button was pressed at.
+const CACHE_NOW_ZOOM_RADIUS = 1;
+
+// SNOW-492: enumerate the vector tile URLs covering `map`'s current
+// viewport across a small zoom range around its current zoom level. Reads
+// the *resolved* tile URL template off each vector source's runtime
+// instance (`map.getSource(id).tiles`) rather than the static style JSON —
+// a TileJSON-backed source only populates `tiles` once its tilejson fetch
+// resolves. Returns [] for a style with no vector sources (the offline
+// fallback style, SNOW-483) or before the style has finished loading.
+function computeBasemapTileURLs(map) {
+  if (!map || !map.isStyleLoaded()) return [];
+  const style = map.getStyle();
+  if (!style || !style.sources) return [];
+  const bounds = map.getBounds();
+  const centreZoom = Math.round(map.getZoom());
+  const minZ = Math.max(0, centreZoom - CACHE_NOW_ZOOM_RADIUS);
+  const maxZ = Math.min(20, centreZoom + CACHE_NOW_ZOOM_RADIUS);
+  const urls = [];
+  for (const sourceId of Object.keys(style.sources)) {
+    if (style.sources[sourceId].type !== 'vector') continue;
+    const runtime = map.getSource(sourceId);
+    const template = runtime && Array.isArray(runtime.tiles) && runtime.tiles[0];
+    if (!template) continue;
+    for (let z = minZ; z <= maxZ && urls.length < CACHE_NOW_MAX_TILES; z++) {
+      const xMin = _lonToTileX(bounds.getWest(), z);
+      const xMax = _lonToTileX(bounds.getEast(), z);
+      const yMin = _latToTileY(bounds.getNorth(), z);
+      const yMax = _latToTileY(bounds.getSouth(), z);
+      for (let x = xMin; x <= xMax && urls.length < CACHE_NOW_MAX_TILES; x++) {
+        for (let y = yMin; y <= yMax && urls.length < CACHE_NOW_MAX_TILES; y++) {
+          urls.push(
+            template
+              .replace('{z}', String(z))
+              .replace('{x}', String(x))
+              .replace('{y}', String(y)),
+          );
+        }
+      }
+    }
+  }
+  return urls;
+}
+
+// SNOW-492: sprite JSON/PNG URLs (1x and 2x) for `map`'s current style, if
+// any. MapLibre's `sprite` style property is either a single base URL
+// string or (multi-sprite styles) an array of `{id, url}` entries; both
+// shapes are handled. Returns [] for a style with no sprite (the offline
+// fallback style). Deliberately does not attempt to warm glyph PBFs —
+// MapLibre only requests the specific unicode ranges the current labels
+// use, and by the time a user reaches for "Cache this area" those ranges
+// have almost always already been fetched (and cached, via the existing
+// basemap stale-while-revalidate strategy) as a side effect of ordinary
+// browsing; enumerating them ourselves would mean re-deriving MapLibre's
+// own glyph-range logic for marginal benefit. Documented as a known gap
+// in docs/offline-map.md rather than reverse-engineered here.
+function computeBasemapSpriteURLs(map) {
+  if (!map) return [];
+  const style = map.getStyle && map.getStyle();
+  const sprite = style && style.sprite;
+  if (!sprite) return [];
+  const bases = Array.isArray(sprite) ? sprite.map((s) => s.url) : [sprite];
+  const urls = [];
+  for (const base of bases) {
+    if (typeof base !== 'string') continue;
+    urls.push(`${base}.json`, `${base}.png`, `${base}@2x.json`, `${base}@2x.png`);
+  }
+  return urls;
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -4065,6 +4158,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
+      // SNOW-492: "Cache this area for offline" — a one-shot command, not
+      // a checkbox/radio, so it's dispatched before either of those
+      // branches rather than folded into them. countryState / MAP /
+      // ensureOverlayLoaded etc. are all scoped to the main IIFE, hence
+      // the CustomEvent bridge (same idiom as snowdesk:overlay-load).
+      if (item.dataset.action === 'cache-now') {
+        setMenuOpen(false);
+        document.dispatchEvent(new CustomEvent('snowdesk:cache-now'));
+        return;
+      }
+
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
@@ -4157,6 +4261,80 @@ const repaintRegionsForDate = (dateKey, cache) => {
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
+})();
+
+// SNOW-492: "Cache this area for offline" control. Listens for the
+// snowdesk:cache-now CustomEvent dispatched by basemapPickerInit's item
+// click loop above (the button lives inside that IIFE's popover markup,
+// which already owns closing the menu on click — same bridge idiom as
+// snowdesk:overlay-load / snowdesk:country-toggle). Reads every URL
+// straight off the #map element's data-* attributes (module-scope
+// readable from any IIFE, unlike the main IIFE's own consts derived from
+// them) plus the module-scope RATINGS_URL / MAP globals, so this needs no
+// access to the main IIFE's internals at all.
+(function cacheNowInit() {
+  const btn = document.getElementById('cache-now-toggle');
+  if (!btn) return;
+  const mapEl = document.getElementById('map');
+  let busy = false;
+
+  document.addEventListener('snowdesk:cache-now', () => {
+    if (busy || !MAP) return;
+    busy = true;
+    btn.setAttribute('aria-disabled', 'true');
+
+    // Same-origin data feeds — the STATIC_PATHS set sw.js already serves
+    // stale-while-revalidate, plus the eligible-gated per-user overlays,
+    // which are network-only in sw.js and so rely entirely on this
+    // write-through/read-back pair (map_overlay_offline_cache.js) rather
+    // than the SW's own cache.
+    const urls = [];
+    const addCountryFeed = (base) => {
+      if (base) urls.push(base + '?country=ch');
+    };
+    addCountryFeed(mapEl.dataset.regionsUrl);
+    addCountryFeed(mapEl.dataset.majorRegionsUrl);
+    addCountryFeed(mapEl.dataset.subRegionsUrl);
+    if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
+    if (RATINGS_URL) urls.push(RATINGS_URL + '?country=ch');
+    if (mapEl.dataset.favouritesEligible === 'true' && mapEl.dataset.favouritesUrl) {
+      urls.push(mapEl.dataset.favouritesUrl);
+    }
+    if (
+      mapEl.dataset.communityReportsEligible === 'true' &&
+      mapEl.dataset.communityReportsUrl
+    ) {
+      urls.push(mapEl.dataset.communityReportsUrl);
+    }
+
+    // The active basemap's own style JSON — read off the checked radio in
+    // the popover (basemapPickerInit's markup is the single source of
+    // truth for each basemap's (key, url) pair) rather than re-deriving it.
+    const activeBasemap = document.querySelector(
+      '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
+    );
+    if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
+
+    urls.push(...computeBasemapSpriteURLs(MAP));
+    urls.push(...computeBasemapTileURLs(MAP));
+
+    const finish = (result) => {
+      busy = false;
+      btn.removeAttribute('aria-disabled');
+      if (!result) return;
+      const toast = document.getElementById('map-cache-now-toast');
+      if (toast) {
+        toast.classList.remove('hidden');
+        toast.classList.add('flex');
+      }
+    };
+
+    if (typeof window.pwaWarmCache === 'function') {
+      window.pwaWarmCache(urls).then(finish).catch(() => finish(null));
+    } else {
+      finish(null);
+    }
+  });
 })();
 
 // SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers
