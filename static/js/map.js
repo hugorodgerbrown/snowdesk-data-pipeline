@@ -1802,6 +1802,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   };
 
+  // SNOW-492: reveal the per-overlay "unavailable offline" toast by id —
+  // remove `hidden`, add `flex` (per _toast.html's display note; the base
+  // class list deliberately omits `flex` so both idioms that toggle it,
+  // this one and sw_register.js's, can coexist). overlays.js's shared
+  // data-toast-timeout auto-dismiss and "×" handler take it from there.
+  // Best-effort: a missing element (template not rendered, e.g. an older
+  // cached shell) is a silent no-op rather than a thrown error.
+  const revealOfflineToast = (id) => {
+    try {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+    } catch (_e) {
+      // Non-fatal — the toast is a nice-to-have, not load-bearing.
+    }
+  };
+
   // SNOW-235: Lazy-load an overlay tier (l1 / l2 / resorts) on first use.
   // Modelled on ensureCountryLoaded — guard flag prevents duplicate fetches,
   // errors degrade silently (no layer install), applyCountryFilters is called
@@ -1818,14 +1836,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!MAJOR_REGIONS_URL) return;
       const data = await fetch(MAJOR_REGIONS_URL + '?country=ch')
         .then(r => r.json()).catch(() => null);
-      if (!data) return;
+      if (!data) {
+        revealOfflineToast('map-offline-toast-layer');
+        return;
+      }
       majorGeojsonCache = data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l2') {
       if (!SUB_REGIONS_URL) return;
       const data = await fetch(SUB_REGIONS_URL + '?country=ch')
         .then(r => r.json()).catch(() => null);
-      if (!data) return;
+      if (!data) {
+        revealOfflineToast('map-offline-toast-layer');
+        return;
+      }
       subGeojsonCache = data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
@@ -1835,7 +1859,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!BULLETIN_GROUPINGS_URL) return;
       const dateKey = currentDisplayedDate || bootDateKey;
       const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
-      if (!fc) return;
+      if (!fc) {
+        revealOfflineToast('map-offline-toast-layer');
+        return;
+      }
       installBulletinGroupingsLayer(fc);
       currentGroupingsFC = fc;
       groupingsDrawn = true;
@@ -1843,7 +1870,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!RESORTS_GEOJSON_URL) return;
       const data = await fetch(RESORTS_GEOJSON_URL)
         .then(r => r.json()).catch(() => null);
-      if (!data) return;
+      if (!data) {
+        revealOfflineToast('map-offline-toast-layer');
+        return;
+      }
       resortsGeojsonCache = data;
       installResortsLayer(resortsGeojsonCache);
     } else if (key === 'favourites') {
@@ -1860,7 +1890,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
         installFavouritesLayer(data);
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('favourites');
-        if (!cached) return;
+        if (!cached) {
+          revealOfflineToast('map-offline-toast-favourites');
+          return;
+        }
         installFavouritesLayer(cached);
       }
     } else if (key === 'community_reports') {
@@ -1879,7 +1912,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
         const fresh = cached ? dropExpiredCommunityReports(cached) : null;
-        if (!fresh || !fresh.features.length) return;
+        if (!fresh || !fresh.features.length) {
+          revealOfflineToast('map-offline-toast-community_reports');
+          return;
+        }
         communityReportsGeojsonCache = withCommunityReportsAgeOpacity(fresh);
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
