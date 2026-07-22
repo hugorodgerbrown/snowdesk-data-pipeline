@@ -3606,7 +3606,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // ISO date string. Both use the season bounds parsed above and round
   // to the nearest day — the scrubber is intentionally single-day
   // resolution (intraday is a future ticket).
+  // SNOW-496: thin delegators — the actual math lives in scrubber_core.js
+  // (window.pwaScrubberCore) so it can be unit-tested directly; every
+  // closure value below is forwarded unchanged, so behaviour is identical.
+  // Inline fallback mirrors the ``self.pwaBasemapCacheCore ||`` idiom in
+  // sw.js, so a transient scrubber_core.js load failure can't break the
+  // scrubber — the fallback body is byte-identical to the pre-extraction
+  // inline code.
   const pctToDateKey = (pct) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.pctToDateKey(pct, seasonStartMs, seasonSpanMs);
     const ms = seasonStartMs + (pct / 100) * seasonSpanMs;
     const day = new Date(ms);
     // Snap to UTC midnight to dodge DST edges, then format.
@@ -3616,6 +3624,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     return `${y}-${m}-${d}`;
   };
   const dateKeyToPct = (dateKey) => {
+    if (window.pwaScrubberCore) {
+      return window.pwaScrubberCore.dateKeyToPct(dateKey, seasonStartMs, seasonSpanMs, todayPct);
+    }
     const ms = Date.parse(dateKey);
     if (Number.isNaN(ms) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
       return todayPct;
@@ -3644,6 +3655,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // COUNTRY_STATE (the module-scope mirror of the main IIFE's countryState).
   // Falls back to the last entry if nothing matches.
   const deriveEffectiveTodayKey = (dates, cache) => {
+    if (window.pwaScrubberCore) {
+      return window.pwaScrubberCore.deriveEffectiveTodayKey(dates, cache, COUNTRY_STATE, todayKey);
+    }
     if (!dates || dates.length === 0) return todayKey;
     // Dedupe unexpected-prefix warnings per call: a full-season payload
     // can contain hundreds of regions and we don't want one stray prefix
@@ -3698,6 +3712,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 
   const snapToNearestDataDay = (dateKey) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.snapToNearestDataDay(dateKey, sortedDates);
     if (!sortedDates || sortedDates.length === 0) return dateKey;
     let best = sortedDates[0];
     let bestDelta = Math.abs(Date.parse(best) - Date.parse(dateKey));
@@ -3787,6 +3802,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // commit it (which positions the thumb + queues the repaint once the
   // ratings cache resolves). Otherwise leave the thumb at today's pct.
   const isInSeason = (dateKey) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.isInSeason(dateKey, seasonStartMs, seasonEndMs);
     const ms = Date.parse(dateKey);
     return Number.isFinite(ms) && ms >= seasonStartMs && ms <= seasonEndMs;
   };
@@ -3923,8 +3939,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Determine the frame index to start from so playback begins at the
   // current thumb position rather than always rewinding to frame 0.
   const currentFrameIdx = () => {
-    if (!sortedDates || sortedDates.length === 0) return 0;
     const ariaNow = scrubber ? parseFloat(scrubber.getAttribute('aria-valuenow')) : NaN;
+    if (window.pwaScrubberCore) {
+      return window.pwaScrubberCore.nearestFrameIndex(sortedDates, ariaNow, seasonStartMs, seasonSpanMs);
+    }
+    if (!sortedDates || sortedDates.length === 0) return 0;
     if (!Number.isFinite(ariaNow) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
       return 0;
     }
@@ -3959,6 +3978,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Hoisted so start() can re-arm setInterval at a new direction without
   // losing the current frame index.
   const tick = () => {
+    if (window.pwaScrubberCore) {
+      const result = window.pwaScrubberCore.nextFrame(frameIdx, direction, sortedDates.length);
+      frameIdx = result.frameIdx;
+      if (result.done) {
+        // Boundary reached (forward end or reverse start): last valid frame
+        // already painted — stop so the value settles.
+        stop();
+        return;
+      }
+      applyFrame(sortedDates[frameIdx]);
+      return;
+    }
     frameIdx += direction;
     if (direction === 1 && frameIdx >= sortedDates.length) {
       // Forward end: last frame already painted — stop so the value settles.
@@ -4642,7 +4673,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const readoutAction = document.getElementById('region-readout-action');
 
   // Convert the int rating from the ratings cache to a key string.
+  // SNOW-496: thin delegator — see scrubber_core.js's module header.
   const intToKey = (n) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.intToKey(n, INT_TO_RATING);
     if (n == null || n < 0 || n >= INT_TO_RATING.length) return 'no_rating';
     return INT_TO_RATING[n];
   };

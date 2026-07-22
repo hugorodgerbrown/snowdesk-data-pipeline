@@ -21,25 +21,31 @@ notes on those). Specifically:
    ``pwa_version_check.js`` (the min-version-mismatch path also triggers
    a real reload via ``resetAndReload()`` and is not covered here to
    avoid a flaky race against that reload).
-5. ``pwa.freshness.{fresh,stale,unsafe}`` via the
-   ``templates/includes/_freshness_indicator.html`` inline script,
-   rendered server-side with Django's template engine and injected into
-   a live page (``innerHTML``-inserted ``<script>`` elements are inert,
-   so scripts are individually recreated to force execution).
-6. (Moved) ``window.pwaMutationQueue`` behaviour. SNOW-376 replaced the
-   no-op stub with a real queue whose ``enqueue`` performs an actual
-   network drain — coverage moved to ``tests/e2e/test_mutation_queue.py``,
-   which mocks the mutation endpoint. Asserting stub semantics here fired
-   an un-routed POST at the live server, which under the file-based e2e
-   SQLite DB could lock the table and deadlock a later test.
-7. ``pwa.storage.evicted_probable`` heuristic in ``static/js/db.js``,
-   forcing the sample-rate gate open by stubbing ``Math.random``.
-8. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
+5. (Moved, SNOW-496) ``window.pwaMutationQueue`` behaviour. SNOW-376
+   replaced the no-op stub with a real queue whose ``enqueue`` performs an
+   actual network drain — coverage moved entirely to
+   ``tests/js/test_mutation_queue.js`` (Vitest, mocked ``fetch``) and the
+   real-consumer journeys in ``tests/e2e/test_offline_favourite_submit.py``
+   / ``test_offline_observation_submit.py``. Asserting stub semantics here
+   fired an un-routed POST at the live server, which under the file-based
+   e2e SQLite DB could lock the table and deadlock a later test.
+6. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
    SNOW-388) on same-origin ``fetch`` and HTMX requests, and its absence on
    third-party requests — including the ``sw_register.js::fetchSwConfig()``
    pre-register fetch, which fires synchronously at IIFE-load and is the
    regression case for the original load-order bug (the wrapper must load
    BEFORE ``sw_register.js``, not after).
+
+SNOW-496: two cases that tested telemetry.js's OWN sample-rate/enqueue
+logic (rather than another module's wiring into it) moved to
+``tests/js/test_telemetry.js`` as direct ``emit()`` calls, dropping the
+page-rendering/live-page-open-quota parts (Django template rendering and
+``navigator.storage`` aren't exercised by a jsdom unit test — see that
+file's docstring):
+``pwa.freshness.{fresh,stale,unsafe}`` (was: rendering
+``templates/includes/_freshness_indicator.html`` inline script into a live
+page) and ``pwa.storage.evicted_probable`` (was: stubbing
+``navigator.storage.estimate()`` on a live page).
 
 Not covered here (documented as manual-only in
 ``docs/telemetry-pipeline.md``): ``pwa.sw.installed/.activated/
@@ -55,11 +61,9 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from django.template.loader import render_to_string
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
 
@@ -70,10 +74,8 @@ def browser_type_launch_args(
 ) -> dict[str, Any]:
     """Point Playwright at a pre-installed chromium binary when one is set.
 
-    See ``tests/e2e/test_pwa_db.py`` / ``test_pwa_telemetry.py`` for the
-    same fixture — kept per-file rather than in ``conftest.py`` so the
-    escape hatch is scoped to the tests that actually need a bundled
-    browser.
+    Kept per-file rather than in ``conftest.py`` so the escape hatch is
+    scoped to the tests that actually need a bundled browser.
     """
     executable = os.environ.get("PLAYWRIGHT_EXECUTABLE_PATH")
     if executable:
@@ -100,7 +102,7 @@ def _delete_db(page: Page) -> None:
               // No onblocked handler: it fires while the delete is still
               // pending (blocked by db.js's live, self-yielding connection),
               // not done — resolving there returns before the DB is gone. See
-              // tests/e2e/test_pwa_db.py::_delete_db for the full rationale.
+              // tests/js/test_db.js's deleteDb() for the full rationale.
             } catch (_e) { resolve(); }
           })""",
         "snowdesk-pwa-v1",
@@ -343,60 +345,7 @@ def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> 
 
 
 # ---------------------------------------------------------------------------
-# 5. pwa.freshness.{fresh,stale,unsafe} — _freshness_indicator.html
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("state", ["fresh", "stale", "unsafe"])
-def test_freshness_indicator_emits(
-    live_server: LiveServer, page: Page, state: str
-) -> None:
-    """The partial's inline script emits pwa.freshness.<state> on render.
-
-    ``pwa.freshness.fresh`` and ``.stale`` are sampled at 10%
-    (``telemetry.js`` ``SAMPLE_RATES``) — ``Math.random`` is stubbed via
-    ``add_init_script`` (applied before any page script runs) to force
-    the gate open deterministically. Overriding it later, inside a
-    ``page.evaluate`` call, proved unreliable in practice — the
-    reassignment doesn't consistently apply to code paths already
-    scheduled by the time that call runs. ``.unsafe`` is unsampled
-    (always 100%) but the stub is harmless for it too.
-    """
-    page.add_init_script("Math.random = () => 0;")
-    _load(page, live_server.url)
-    _delete_db(page)
-
-    html = render_to_string(
-        "includes/_freshness_indicator.html",
-        {"state": state, "generated_at": datetime(2026, 7, 16, 10, 0, tzinfo=UTC)},
-    )
-
-    row = page.evaluate(
-        """async (html) => {
-            await window.pwaTelemetry.setOptIn(true);
-            const container = document.createElement('div');
-            document.body.appendChild(container);
-            container.innerHTML = html;
-            // innerHTML-parsed <script> elements are inert; recreate each
-            // one so the browser actually executes it.
-            container.querySelectorAll('script').forEach((old) => {
-              const fresh = document.createElement('script');
-              fresh.textContent = old.textContent;
-              old.replaceWith(fresh);
-            });
-            await new Promise((r) => setTimeout(r, 100));
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.find((r) => r.event.startsWith('pwa.freshness.'));
-          }""",
-        html,
-    )
-    assert row is not None
-    assert row["event"] == f"pwa.freshness.{state}"
-
-
-# ---------------------------------------------------------------------------
-# 6. window.pwaMutationQueue — moved to tests/e2e/test_mutation_queue.py
+# 5. window.pwaMutationQueue — moved to tests/js/test_mutation_queue.js
 # ---------------------------------------------------------------------------
 # The three former stub tests here asserted no-op semantics that SNOW-376
 # made obsolete: the real enqueue() now performs a network drain, and
@@ -404,66 +353,17 @@ def test_freshness_indicator_emits(
 # those against the live server here fired an un-routed POST /account/ (no
 # page.route), which under the file-based e2e SQLite DB could lock the
 # table and deadlock a later test. The real behaviour — with the mutation
-# endpoint mocked — is now covered by tests/e2e/test_mutation_queue.py.
+# endpoint mocked — is now covered entirely by tests/js/test_mutation_queue.js
+# (SNOW-496; the retired tests/e2e/test_mutation_queue.py was a "simulated
+# SW" suite throughout, so nothing here needed a real-SW home).
+
+# SNOW-496: pwa.freshness.{fresh,stale,unsafe} (_freshness_indicator.html)
+# and pwa.storage.evicted_probable (static/js/db.js's cold-start heuristic)
+# moved to tests/js/test_telemetry.js — see this file's module docstring.
 
 
 # ---------------------------------------------------------------------------
-# 7. pwa.storage.evicted_probable — static/js/db.js cold-start heuristic
-# ---------------------------------------------------------------------------
-
-
-def test_storage_evicted_probable_on_low_quota(
-    live_server: LiveServer, page: Page
-) -> None:
-    """An implausibly low navigator.storage.estimate() quota is flagged.
-
-    ``Math.random`` is stubbed via ``add_init_script`` (before any page
-    script runs) to force the 10% sample-rate gate open deterministically
-    — see the note on ``test_freshness_indicator_emits`` for why a later
-    runtime reassignment inside ``page.evaluate`` proved unreliable.
-    """
-    page.add_init_script(
-        """
-        Object.defineProperty(navigator, 'storage', {
-          value: { estimate: () => Promise.resolve({ quota: 1024, usage: 0 }) },
-          configurable: true,
-        });
-        Math.random = () => 0;
-        """
-    )
-    _load(page, live_server.url)
-    _delete_db(page)
-
-    page.evaluate(
-        """async () => {
-            await window.pwaTelemetry.setOptIn(true);
-            await window.pwaDb.open();
-          }"""
-    )
-    # Poll rather than a fixed sleep — _checkStorageEstimate() is
-    # fire-and-forget inside db.js's onsuccess handler, chained behind
-    # setOptIn()'s own IndexedDB round-trip above, so its completion time
-    # isn't bounded tightly enough for a short fixed delay to be reliable.
-    page.wait_for_function(
-        """async () => {
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.some((r) => r.event === 'pwa.storage.evicted_probable');
-          }""",
-        timeout=5000,
-    )
-    row = page.evaluate(
-        """async () => {
-            const rows = await window.pwaDb.getAll('queue:events');
-            return rows.find((r) => r.event === 'pwa.storage.evicted_probable');
-          }"""
-    )
-    assert row is not None
-    assert row["properties"]["quota"] == 1024
-    assert row["properties"]["usage"] == 0
-
-
-# ---------------------------------------------------------------------------
-# 8. X-Client-Version on same-origin fetch / HTMX requests (SNOW-388)
+# 6. X-Client-Version on same-origin fetch / HTMX requests (SNOW-388)
 # ---------------------------------------------------------------------------
 
 

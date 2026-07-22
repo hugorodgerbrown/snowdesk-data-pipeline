@@ -20,6 +20,12 @@ reverse, direction flip) cannot be exercised in this headless environment
 because the real ``start()`` path is blocked before it updates ``direction`` or
 button state.  No JS stub is injected; these tests verify DOM structure, initial
 state, and the event-dispatch path only.
+
+SNOW-496: the transport math itself (frame stepping, percentage/date-key
+conversion) was never exercised here — it's extracted to
+``static/js/scrubber_core.js`` and unit-tested directly in
+``tests/js/test_scrubber_core.js``, which is real new coverage rather than a
+port (nothing in this file duplicates it).
 """
 
 from __future__ import annotations

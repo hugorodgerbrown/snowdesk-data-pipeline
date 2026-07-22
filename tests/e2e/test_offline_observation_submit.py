@@ -29,9 +29,13 @@ real GPS-path form load, not just the submit handler in isolation.
 
 Polling note: every multi-step wait is driven by ``_poll`` (Python-side,
 one ``page.evaluate`` round-trip at a time) rather than
-``page.wait_for_function`` with an async body — see
-``tests/e2e/test_mutation_queue.py``'s module docstring for why (xdist
-parallel-run race between overlapping async predicate evaluations).
+``page.wait_for_function`` with an async body — under xdist's parallel
+load, Playwright's own polling loop can invoke a fresh async predicate
+before an earlier invocation's IndexedDB reads have settled, so two
+overlapping evaluations of a predicate that does sequential
+``await pwaDb.getAll(...)`` calls can occasionally resolve out of order.
+Driving the loop from Python guarantees each ``page.evaluate`` call is
+awaited in full before the next one starts, so this hazard cannot occur.
 """
 
 from __future__ import annotations
@@ -57,8 +61,9 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
 
     Stripping serviceWorker (before any page script runs) makes
     sw_register.js and mutation_queue.js's ``_registerBackgroundSync()``
-    bail out immediately — see ``tests/e2e/test_mutation_queue.py``'s
-    ``_load`` for the identical technique and rationale.
+    bail out immediately — matches ``tests/js/test_mutation_queue.js``'s
+    default (jsdom has no ``navigator.serviceWorker`` at all unless a test
+    defines one).
     """
     page.add_init_script(
         "Object.defineProperty(navigator, 'serviceWorker', "
@@ -118,7 +123,7 @@ def test_offline_report_submission_syncs_without_duplicate(
     page.wait_for_selector("#report-form")
 
     # Go offline — mutation_queue.js reads navigator.onLine (not the browser
-    # context's own offline flag), matching test_mutation_queue.py.
+    # context's own offline flag), matching tests/js/test_mutation_queue.js.
     page.evaluate(
         "() => Object.defineProperty(navigator, 'onLine', "
         "{ value: false, configurable: true })"
@@ -246,8 +251,8 @@ def test_reset_required_state_shows_error_toast_not_false_confirmation(
 
     # Poison the DB to a version above db.js's DB_VERSION, then reload so
     # db.js's fresh open() hits VersionError → terminal Reset-Required state.
-    # Same failure path as tests/e2e/test_pwa_db.py, driven via reload so
-    # db.js opens the poisoned version from a clean module state.
+    # Same failure path as tests/js/test_db_reset_required.js, driven via
+    # reload so db.js opens the poisoned version from a clean module state.
     page.evaluate(
         """async (name) => {
             await new Promise((resolve) => {
@@ -256,7 +261,7 @@ def test_reset_required_state_shows_error_toast_not_false_confirmation(
               // fires while the delete is still pending behind db.js's live
               // connection. Resolving there would reopen at version 99 against
               // the still-present DB. db.js yields on versionchange, so the
-              // block clears itself. See tests/e2e/test_pwa_db.py::_delete_db.
+              // block clears itself. See tests/js/test_db.js's deleteDb().
               del.onsuccess = del.onerror = () => resolve();
             });
             await new Promise((resolve, reject) => {

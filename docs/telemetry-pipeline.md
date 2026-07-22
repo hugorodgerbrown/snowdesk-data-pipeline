@@ -335,25 +335,30 @@ for the `reason` values it sends.
 
 ### Tests
 
-`tests/e2e/test_pwa_telemetry.py` covers:
+`tests/js/test_telemetry.js` (SNOW-496, Vitest) covers:
 1. `emit()` writes to `queue:events` with the eight-field envelope shape.
 2. `flush()` POSTs the batch and clears rows on 2xx.
 3. Critical event fires `sendBeacon` immediately.
 4. Opt-out drops standard events; critical events fire with null ids.
-5. First `isOptIn()` call persists the computed default to `meta:app`.
-6. `setOptIn(true)` writes through.
+5. The freshness-indicator sample-rate gate (`pwa.freshness.{fresh,stale,unsafe}`)
+   and `db.js`'s storage-eviction heuristic (`pwa.storage.evicted_probable`).
 
-(That file disables `navigator.serviceWorker` via an init script —
-localhost is a secure context in the Playwright harness, so the real
-`sw.js` genuinely installs and, since SNOW-384, posts its own telemetry;
-this file tests `telemetry.js` in isolation from the SW lifecycle.)
+The opt-in default (computed from `navigator.language` on the first-ever
+`isOptIn()` call) and the operator kill switch
+(`pwa-telemetry-enabled` meta tag) each live in their own file —
+`test_telemetry_optin_default.js` / `test_telemetry_master_switch.js` —
+because `telemetry.js` memoises both on first call for the life of a
+module instance; see `test_telemetry.js`'s own docstring for the full
+per-file rationale, including why this only needed a JS-unit harness at
+all: no real page, DOM, or service worker is involved in any of the above.
 
-`tests/e2e/test_pwa_client_signals.py` (SNOW-384) covers every consumer
-wire-up above that doesn't require a real installed + activated service
-worker: the message bridge itself (simulated via a `MessageEvent`
-dispatched on `navigator.serviceWorker`), Mechanism-A kill switch, the
-install funnel, forced-update escalation, the freshness indicator, the
-`mutation_queue.js` stub, and the storage-eviction heuristic.
+`tests/e2e/test_pwa_client_signals.py` (SNOW-384) covers the consumer
+wire-ups that DO need a real page/DOM (other modules calling INTO
+telemetry.js, not telemetry.js's own logic) and don't require a real
+installed + activated service worker: the message bridge itself
+(simulated via a `MessageEvent` dispatched on `navigator.serviceWorker`),
+Mechanism-A kill switch, the install funnel, forced-update escalation, and
+`pwa_client_version.js`'s `X-Client-Version` header stamping.
 
 SNOW-389 added a second class of test that DOES drive a real, undisabled
 service worker (the `pwa_page` fixture in `tests/e2e/conftest.py`),

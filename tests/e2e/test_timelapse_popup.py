@@ -22,6 +22,12 @@ replaces the popup-dependent and hook-dependent tests with:
    exercisable without a loaded map: the listener is registered synchronously.
 
 All tests stub ``/api/ratings/`` so the scrubber enters ready state.
+
+SNOW-496: the frame-stepping/percentage math itself is extracted to
+``static/js/scrubber_core.js`` and unit-tested directly in
+``tests/js/test_scrubber_core.js`` — real new coverage (MapLibre never
+reaches a loaded style here, so this file never exercised that math),
+not a duplicate of anything below.
 """
 
 from __future__ import annotations
