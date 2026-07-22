@@ -1,8 +1,8 @@
 ---
 name: client-side-tests
-description: Playwright e2e harness (tox -e e2e) — share-button test, clipboard fixtures, real-vs-simulated SW-lifecycle tests, adding tests
+description: Playwright e2e (tox -e e2e) and Vitest JS-unit (tox -e js) harnesses — tests/js/ db.js coverage, when to use which, adding tests
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-22
 ---
 
 # Client-side test harness
@@ -13,6 +13,65 @@ end-to-end browser tests that execute inline JavaScript embedded in Django
 templates.  The harness was introduced in SNOW-223 to catch the class of bugs
 that bit SNOW-217 (share button): template-tag-in-JS-comment parse errors,
 script-before-DOM timing failures, and silent clipboard fallback omissions.
+
+SNOW-495 added a second, faster harness — [Vitest](https://vitest.dev/) —
+for unit-testing the standalone `static/js/*` PWA modules (db.js, telemetry,
+the mutation queue, sw.js cache helpers, …) without a browser. See "JS unit
+tests" below for when to reach for which.
+
+---
+
+## JS unit tests (Vitest)
+
+`static/js/*` modules that don't need a real page, DOM event cycle, or
+service worker are unit-tested with [Vitest](https://vitest.dev/) under a
+jsdom environment, using [fake-indexeddb](https://github.com/dumbmatter/fakeIndexedDB)
+for the IndexedDB surface (jsdom itself has no IndexedDB implementation).
+This is the fast, headless path — no Chromium download, no live server, no
+Django test database.
+
+**When to reach for JS-unit (Vitest) instead of Playwright:**
+
+- The module's behaviour is self-contained — pure logic, storage, or a
+  wrapper around a Web API (IndexedDB, `crypto`, `sessionStorage`) — and
+  doesn't depend on a rendered Django template, real HTMX swap, or a live
+  service worker controlling the page.
+- You want to assert on internal state transitions (e.g. `db.js`'s
+  `_resetRequired` latch) that would otherwise need a full page load to
+  reach.
+- The test is inherently about the JS module in isolation, not an
+  end-to-end user journey.
+
+**Stay with Playwright (`tox -e e2e`)** when the test is about the SW
+lifecycle itself, a real page's DOM/CSS layout, HTMX partial swaps, or any
+journey spanning multiple in-page scripts — see "SW-lifecycle tests: real
+vs simulated" below.
+
+### Conventions
+
+- Tests live under `tests/js/`, mirroring `static/js/` the way `tests/e2e/`
+  mirrors template/view code.
+- File naming follows the project's Python-style `test_*.js` convention
+  (not Vitest's default `*.test.js`/`*.spec.js` glob) — `vitest.config.mjs`
+  overrides `include` to match.
+- A frozen browser-IIFE module (e.g. `db.js`, which assigns a
+  non-configurable `window.pwaDb`) is loaded by importing it for its side
+  effects: `import '../../static/js/db.js';`. Vitest gives each test FILE a
+  fresh module graph, so a case that needs a pristine module-level flag
+  (like `db.js`'s one-way `_resetRequired` latch) belongs in its own file —
+  see `tests/js/test_db_reset_required.js`.
+- No coverage configuration — JS coverage isn't a target metric (the 90%
+  coverage bar in `CLAUDE.md` is Python-only).
+
+### Running locally
+
+```bash
+uv run tox -e js
+```
+
+Same opt-in shape as `tox -e e2e` (not in the default `tox` envlist — `npm
+ci` is a needless cost on the common local loop). Runs `npm ci && npm run
+test:js` (`vitest run`).
 
 ---
 
@@ -93,12 +152,14 @@ the wrong one for a new test either pollutes an unrelated assertion or
 misses the thing you actually meant to test:
 
 - **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
-  the stripped-`navigator.serviceWorker` init script in `test_pwa_db.py` /
+  the stripped-`navigator.serviceWorker` init script in
   `test_pwa_telemetry.py`) — the real `/sw.js` never registers. Use this
   when the test is about something ELSE that happens to load on a page
-  the SW would otherwise control (telemetry envelopes, `db.js` internals,
-  the install-prompt funnel) and a real SW's own asynchronous lifecycle
-  events would just be timing noise for that assertion.
+  the SW would otherwise control (telemetry envelopes, the install-prompt
+  funnel) and a real SW's own asynchronous lifecycle events would just be
+  timing noise for that assertion. (For pure JS-module internals like
+  `db.js`, prefer the Vitest harness over a browser entirely — see the
+  "JS unit tests" section above.)
 - **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
   genuine `/sw.js` registers, activates, and controls the page, with
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
