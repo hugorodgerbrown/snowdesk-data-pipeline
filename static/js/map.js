@@ -1808,20 +1808,34 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }));
       }
 
-      if (newMajor && newMajor.features && majorGeojsonCache) {
-        majorGeojsonCache = {
-          ...majorGeojsonCache,
-          features: [...majorGeojsonCache.features, ...newMajor.features],
-        };
+      // SNOW-493 finding 5: retain L1/L2 results unconditionally, mirroring
+      // the merge-always behaviour geojsonCache (L4) uses above. Previously
+      // this was gated on ``majorGeojsonCache``/``subGeojsonCache`` already
+      // being non-null — which is only true once the user has enabled L1/L2
+      // at least once — so fetching a country before that first enable
+      // silently discarded its L1/L2 data. loadedCountries then marks the
+      // country as loaded, so a later L1/L2 enable never re-fetches it and
+      // the foreign hierarchy stays permanently missing. Create the cache
+      // here if it doesn't exist yet so the data survives for that later
+      // enable to pick up (see the matching merge in ensureOverlayLoaded).
+      if (newMajor && newMajor.features) {
+        majorGeojsonCache = majorGeojsonCache
+          ? {
+              ...majorGeojsonCache,
+              features: [...majorGeojsonCache.features, ...newMajor.features],
+            }
+          : { type: 'FeatureCollection', features: [...newMajor.features] };
         const majorSource = map.getSource('major-regions');
         if (majorSource) majorSource.setData(majorGeojsonCache);
       }
 
-      if (newSub && newSub.features && subGeojsonCache) {
-        subGeojsonCache = {
-          ...subGeojsonCache,
-          features: [...subGeojsonCache.features, ...newSub.features],
-        };
+      if (newSub && newSub.features) {
+        subGeojsonCache = subGeojsonCache
+          ? {
+              ...subGeojsonCache,
+              features: [...subGeojsonCache.features, ...newSub.features],
+            }
+          : { type: 'FeatureCollection', features: [...newSub.features] };
         const subSource = map.getSource('sub-regions');
         if (subSource) subSource.setData(subGeojsonCache);
       }
@@ -1933,7 +1947,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
-      majorGeojsonCache = data;
+      // SNOW-493 finding 5: merge into any L1 data already retained by
+      // ensureCountryLoaded (e.g. a foreign country toggled on before L1's
+      // first enable) rather than overwriting it — otherwise this first
+      // fetch would wipe out data for a country that's already loaded and
+      // will never be re-fetched.
+      majorGeojsonCache = majorGeojsonCache
+        ? {
+            ...majorGeojsonCache,
+            features: [...majorGeojsonCache.features, ...data.features],
+          }
+        : data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l2') {
       if (!SUB_REGIONS_URL) return;
@@ -1943,7 +1967,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
-      subGeojsonCache = data;
+      // SNOW-493 finding 5: same merge as L1 above, for L2's retained data.
+      subGeojsonCache = subGeojsonCache
+        ? {
+            ...subGeojsonCache,
+            features: [...subGeojsonCache.features, ...data.features],
+          }
+        : data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
       // SNOW-323: enabling L3 is a deliberate, settled action — fetch the
@@ -2050,9 +2080,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('snowdesk:overlay-load', (e) => {
     const { key } = e.detail;
     ensureOverlayLoaded(key).then(() => {
+      // SNOW-493 finding 4: the fetch above is async, so the user may have
+      // toggled the overlay off again before it settled. Unconditionally
+      // setting 'visible' here would revive an overlay the user just
+      // disabled. Re-read the persisted state from localStorage — the
+      // module's live source of truth for overlay visibility (the
+      // picker writes it on every click; ``overlayState`` itself is only
+      // re-seeded from it at boot and after a basemap swap, per the
+      // SNOW-473 comment above the ``styledata`` handler) — rather than
+      // trusting the boot-time ``overlayState`` value.
+      const stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[key], overlayState[key]);
+      overlayState[key] = stillEnabled;
+      const visibility = stillEnabled ? 'visible' : 'none';
       for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
         if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, 'visibility', 'visible');
+          map.setLayoutProperty(layerId, 'visibility', visibility);
         }
       }
     }).catch(() => {});
