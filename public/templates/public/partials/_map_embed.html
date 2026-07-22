@@ -818,9 +818,16 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-492: "Cache this area for offline" completion toast — map.js       #}
-{# reveals this once the SW's warm-cache handler reports back, whether or #}
-{# not every URL in the batch succeeded (a handful of tile misses still   #}
-{# leaves most of the area usable offline).                               #}
-{% trans "This area is now available offline." as cache_now_toast_body %}
-{% include "includes/_toast.html" with id="map-cache-now-toast" kind="success" body=cache_now_toast_body dismissible=True timeout=5000 %}
+{# SNOW-492/SNOW-493: "Cache this area for offline" completion toasts —    #}
+{# map.js reveals exactly one of these three once the SW's warm-cache     #}
+{# handler reports its {ok, failed} counts back, branching on how many    #}
+{# URLs actually succeeded (SNOW-493 finding 7): "complete" when every    #}
+{# URL cached, "partial" when some did and some didn't (a handful of tile #}
+{# misses still leaves most of the area usable offline), "failed" when    #}
+{# none did — that variant deliberately never claims "available offline". #}
+{% trans "This area is now available offline." as cache_now_toast_complete_body %}
+{% include "includes/_toast.html" with id="map-cache-now-toast-complete" kind="success" body=cache_now_toast_complete_body dismissible=True timeout=5000 %}
+{% trans "This area is partly available offline — some data couldn't be cached." as cache_now_toast_partial_body %}
+{% include "includes/_toast.html" with id="map-cache-now-toast-partial" kind="warning" body=cache_now_toast_partial_body dismissible=True timeout=6000 %}
+{% trans "Couldn't cache this area for offline — check your connection and try again." as cache_now_toast_failed_body %}
+{% include "includes/_toast.html" with id="map-cache-now-toast-failed" kind="error" body=cache_now_toast_failed_body dismissible=True timeout=6000 %}

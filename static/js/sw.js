@@ -203,7 +203,11 @@ try {
 // SNOW-492: v26 — new 'warm-cache' message handler (the map's "Cache this
 // area for offline" control) and the map.js/sw_register.js changes that
 // drive it.
-const CACHE_VERSION = 'snowdesk-shell-v26';
+// SNOW-493: v27 — 'warm-cache-done' now echoes the requestId the page sent
+// (sw_register.js correlates it against the in-flight call, ignoring a
+// stale reply after a timeout) plus the map.js state-consistency fixes
+// (findings 1-8) that ship alongside it.
+const CACHE_VERSION = 'snowdesk-shell-v27';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -888,16 +892,25 @@ self.addEventListener('message', (event) => {
   // short if the worker would otherwise be judged idle mid-flight; posts
   // the completion summary back to the requesting client so map.js can
   // show a toast.
+  //
+  // SNOW-493 finding 9: echoes back whatever ``requestId`` the page sent
+  // (undefined if an older page script didn't send one) so
+  // ``sw_register.js`` can tell a genuine reply for THIS call apart from a
+  // stale reply for a call it already gave up on (timed out). This worker
+  // has no other way to correlate — it's the only side that can echo an id
+  // it never generated itself.
   if (
     event.data &&
     event.data.type === 'warm-cache' &&
     Array.isArray(event.data.urls)
   ) {
+    const requestId = event.data.requestId;
     const warm = _warmCache(event.data.urls).then((result) => {
       event.source?.postMessage({
         type: 'warm-cache-done',
         ok: result.ok,
         failed: result.failed,
+        requestId,
       });
     });
     if (typeof event.waitUntil === 'function') event.waitUntil(warm);
