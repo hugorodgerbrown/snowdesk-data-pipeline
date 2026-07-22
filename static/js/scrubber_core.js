@@ -183,7 +183,12 @@
    */
   function deriveEffectiveTodayKey(dates, cache, countryState, fallbackKey) {
     if (!dates || dates.length === 0) return fallbackKey;
-    var warnedPrefixes = {};
+    // Object.create(null) rather than {} — a plain object's prototype
+    // chain would make `!warnedPrefixes[prefix]` return falsy (already
+    // "warned") for any prefix that collides with an inherited Object.prototype
+    // name (e.g. 'constructor', 'toString'), silently suppressing that
+    // prefix's first warning.
+    var warnedPrefixes = Object.create(null);
     for (var i = dates.length - 1; i >= 0; i--) {
       var dateKey = dates[i];
       var frame = cache[dateKey] || {};
