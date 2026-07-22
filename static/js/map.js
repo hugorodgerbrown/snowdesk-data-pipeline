@@ -2034,11 +2034,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
         installCommunityReportsLayer(communityReportsGeojsonCache);
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
-        const fresh = cached ? dropExpiredCommunityReports(cached) : null;
-        // Optional chaining on .features — dropExpiredCommunityReports
-        // returns a malformed/non-FeatureCollection input unchanged, so
-        // .features can be undefined here rather than an empty array.
-        if (!fresh || !fresh.features?.length) {
+        // SNOW-493 finding 8: no cached copy at all is genuinely
+        // unavailable offline.
+        if (!cached) {
+          revealOfflineToast('map-offline-toast-community_reports');
+          return;
+        }
+        const fresh = dropExpiredCommunityReports(cached);
+        // A cached, valid, but EMPTY FeatureCollection (no reports right
+        // now, or every cached report has since aged past the 48h window)
+        // is a successful cached response, not a failure — install it as
+        // zero markers rather than showing the "unavailable offline"
+        // warning. Only a malformed/non-FeatureCollection cached payload
+        // (``.features`` isn't an array at all — dropExpiredCommunityReports
+        // returns such input unchanged) still counts as unavailable.
+        if (!Array.isArray(fresh.features)) {
           revealOfflineToast('map-offline-toast-community_reports');
           return;
         }
