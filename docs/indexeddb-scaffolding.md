@@ -181,20 +181,25 @@ the wipe covers it even without the enumeration API.
 
 ## Tests
 
-`tests/e2e/test_pwa_db.py` covers:
+`tests/js/test_db.js` (Vitest + jsdom + fake-indexeddb — `tox -e js`,
+see [`client-side-tests.md`](client-side-tests.md)) covers:
 
 1. Fresh open — all static stores exist at the current version
-   (currently 3), including `log:sync`.
+   (currently 4), including `log:sync` and `data:map_overlays`.
 2. Round-trip — `put/get/delete/getAll/count/clear` on `queue:events`.
 3. `context()` returns the expected seven envelope-context keys with
-   sane defaults.
-4. Reset Required state — arrange a pre-existing higher-version DB,
-   assert `pwaDb.open()` rejects, the flag flips, and the overlay is
-   revealed.
-5. v1→v2 and v2→v3 migrations — open an older-version DB, upgrade, and
-   assert the new store(s) exist without disturbing existing rows.
-6. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
+   sane defaults, and is stable within a page load.
+4. v1→v4, v2→v4, and v3→v4 migrations — open an older-version DB,
+   upgrade, and assert the new store(s) exist without disturbing
+   existing rows.
+5. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
    order.
+
+`tests/js/test_db_reset_required.js` covers the Reset Required state —
+arrange a pre-existing higher-version DB, assert `pwaDb.open()` rejects,
+the flag flips, and the overlay is revealed. It lives in its own file
+because `_resetRequired` is a one-way per-module latch (Vitest isolates
+each test file, giving a fresh module).
 
 ## See also
 

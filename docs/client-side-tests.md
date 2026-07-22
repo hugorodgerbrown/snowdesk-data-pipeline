@@ -152,12 +152,14 @@ the wrong one for a new test either pollutes an unrelated assertion or
 misses the thing you actually meant to test:
 
 - **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
-  the stripped-`navigator.serviceWorker` init script in `test_pwa_db.py` /
+  the stripped-`navigator.serviceWorker` init script in
   `test_pwa_telemetry.py`) — the real `/sw.js` never registers. Use this
   when the test is about something ELSE that happens to load on a page
-  the SW would otherwise control (telemetry envelopes, `db.js` internals,
-  the install-prompt funnel) and a real SW's own asynchronous lifecycle
-  events would just be timing noise for that assertion.
+  the SW would otherwise control (telemetry envelopes, the install-prompt
+  funnel) and a real SW's own asynchronous lifecycle events would just be
+  timing noise for that assertion. (For pure JS-module internals like
+  `db.js`, prefer the Vitest harness over a browser entirely — see the
+  "JS unit tests" section above.)
 - **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
   genuine `/sw.js` registers, activates, and controls the page, with
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
