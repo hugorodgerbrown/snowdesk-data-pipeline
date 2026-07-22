@@ -54,6 +54,17 @@ Fixtures defined here:
     which is visible to the live-server thread since pytest-django's
     ``live_server`` runs in-process, so it works the same as in a
     Django-test-client test.
+
+``_disable_real_sw`` (SNOW-497)
+    The shared simulated-SW helper: strips ``navigator.serviceWorker``
+    before any page script runs, so ``sw_register.js`` never registers a
+    worker. Request this fixture (rather than repeating the
+    ``page.add_init_script`` call inline) in any new test that needs a
+    plain, SW-free page — the happy-path journey modules all do. Not a
+    rename of ``test_pwa_client_signals.py``'s own module-local
+    ``_disable_real_sw`` function (different, broader semantics — it also
+    kills the ``/api/sw-config`` gate); that file keeps its own helper and
+    does not request this fixture.
 """
 
 from __future__ import annotations
@@ -144,6 +155,24 @@ def _load_test_data(django_db_blocker: Any) -> None:
     # prior test that hit /api/ratings/ against the empty (pre-load) DB would
     # otherwise leave an empty payload cached and starve this test's ribbon.
     cache.clear()
+
+
+@pytest.fixture()
+def _disable_real_sw(page: Page) -> None:
+    """Strip ``navigator.serviceWorker`` before any page script runs (SNOW-497).
+
+    Makes ``sw_register.js`` (and anything that feature-detects
+    ``navigator.serviceWorker``, e.g. ``mutation_queue.js``'s
+    ``_registerBackgroundSync()``) bail out immediately, so the test drives
+    a plain page with no real service worker in play. The shared version of
+    the ``Object.defineProperty(navigator, 'serviceWorker', { value:
+    undefined, configurable: true })`` init-script strip previously
+    duplicated inline across several journey/regression files.
+    """
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
 
 
 # ---------------------------------------------------------------------------

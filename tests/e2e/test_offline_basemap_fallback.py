@@ -40,13 +40,14 @@ from pytest_django.live_server_helper import LiveServer
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
-    """Navigate to / with the SW stripped, and wait for the scrubber to boot.
+    """Navigate to / and wait for the scrubber to boot.
 
-    ``navigator.serviceWorker`` is stripped before any page script runs (the
-    same technique as ``test_report_unverified.py``). Since SNOW-484 the
-    service worker classifies the basemap origin as cacheable and answers its
-    style/tile fetches with ``respondWith`` — re-fetching them as the *SW's
-    own* fetches, which ``page.route`` cannot intercept (see this module's
+    Callers request the ``_disable_real_sw`` fixture (same technique as
+    ``test_report_unverified.py``) so ``navigator.serviceWorker`` is
+    stripped before this navigation. Since SNOW-484 the service worker
+    classifies the basemap origin as cacheable and answers its style/tile
+    fetches with ``respondWith`` — re-fetching them as the *SW's own*
+    fetches, which ``page.route`` cannot intercept (see this module's
     docstring). That would shadow the ``page.route`` basemap mock these tests
     rely on to simulate the offline style failure. Stripping the SW keeps
     MapLibre's style fetch at the page level so the route mock controls it,
@@ -55,10 +56,6 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     is SW-independent. The SW-cached-basemap path (offline within a
     previously-browsed area) is covered by ``test_offline_basemap_cache.py``.
     """
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector('#season-scrubber[data-state="ready"]')
@@ -105,7 +102,7 @@ def _minimal_style(origin: str) -> dict[str, Any]:
 
 @pytest.mark.django_db(transaction=True)
 def test_fallback_paints_cached_overlays_when_basemap_style_fails(
-    live_server: LiveServer, page: Page
+    live_server: LiveServer, page: Page, _disable_real_sw: None
 ) -> None:
     """Overlays install against the fallback style when the basemap 404s.
 
@@ -146,7 +143,7 @@ def test_fallback_paints_cached_overlays_when_basemap_style_fails(
 
 @pytest.mark.django_db(transaction=True)
 def test_basemap_swaps_back_in_once_online_again(
-    live_server: LiveServer, page: Page
+    live_server: LiveServer, page: Page, _disable_real_sw: None
 ) -> None:
     """Reconnecting retries the real basemap and keeps the overlays.
 
@@ -190,7 +187,7 @@ def test_basemap_swaps_back_in_once_online_again(
 
 @pytest.mark.django_db(transaction=True)
 def test_still_offline_recovery_attempt_reinstates_fallback(
-    live_server: LiveServer, page: Page
+    live_server: LiveServer, page: Page, _disable_real_sw: None
 ) -> None:
     """A retry that still fails offline must not leave the canvas blank.
 

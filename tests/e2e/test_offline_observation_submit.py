@@ -19,10 +19,11 @@ Covers the full offline → reconnect journey wiring
    body — does not create a duplicate row:
    ``core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
 
-Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped) — see
-``docs/client-side-tests.md``'s "SW-lifecycle tests: real vs simulated" —
-this test is about the queue's own logic plus ``report_submit``, not the
-SW lifecycle itself. Geolocation is driven via a real, permission-granted
+Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped via the
+shared ``_disable_real_sw`` fixture) — see ``docs/client-side-tests.md``'s
+"SW-lifecycle tests: real vs simulated" — this test is about the queue's
+own logic plus ``report_submit``, not the SW lifecycle itself. Geolocation
+is driven via a real, permission-granted
 ``navigator.geolocation`` fix (rather than dispatching
 ``snowdesk:geolocate`` directly) so the test also exercises report.js's
 real GPS-path form load, not just the submit handler in isolation.
@@ -56,19 +57,16 @@ from tests.factories import AccountFactory, UserFactory
 DB_NAME = "snowdesk-pwa-v1"
 
 
-def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
-    """Load / with navigator.serviceWorker stripped, wait for the map + queue.
+def _navigate_home(page: Page, live_server_url: str) -> None:
+    """Load / and wait for the map + queue to be ready.
 
-    Stripping serviceWorker (before any page script runs) makes
-    sw_register.js and mutation_queue.js's ``_registerBackgroundSync()``
-    bail out immediately — matches ``tests/js/test_mutation_queue.js``'s
-    default (jsdom has no ``navigator.serviceWorker`` at all unless a test
-    defines one).
+    Callers request the ``_disable_real_sw`` fixture so
+    ``navigator.serviceWorker`` is stripped before this navigation, which
+    makes sw_register.js and mutation_queue.js's
+    ``_registerBackgroundSync()`` bail out immediately — matches
+    ``tests/js/test_mutation_queue.js``'s default (jsdom has no
+    ``navigator.serviceWorker`` at all unless a test defines one).
     """
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
@@ -104,7 +102,10 @@ def _poll(
 @override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_report_submission_syncs_without_duplicate(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """Offline tap enqueues + confirms optimistically; reconnect syncs once."""
     with django_db_blocker.unblock():
@@ -115,7 +116,7 @@ def test_offline_report_submission_syncs_without_duplicate(
     page.context.grant_permissions(["geolocation"])
     page.context.set_geolocation({"latitude": 46.10, "longitude": 7.10, "accuracy": 10})
 
-    _navigate_home_with_sw_stripped(page, live_server.url)
+    _navigate_home(page, live_server.url)
 
     # Open the sheet — report.js requests a real GPS fix, which resolves
     # immediately against the granted/stubbed geolocation above.
@@ -226,7 +227,10 @@ def test_offline_report_submission_syncs_without_duplicate(
 @override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_reset_required_state_shows_error_toast_not_false_confirmation(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """When IndexedDB is in the terminal Reset-Required state, a report tap
     must NOT show the optimistic "Thank you" confirmation.
@@ -247,7 +251,7 @@ def test_reset_required_state_shows_error_toast_not_false_confirmation(
     page.context.grant_permissions(["geolocation"])
     page.context.set_geolocation({"latitude": 46.10, "longitude": 7.10, "accuracy": 10})
 
-    _navigate_home_with_sw_stripped(page, live_server.url)
+    _navigate_home(page, live_server.url)
 
     # Poison the DB to a version above db.js's DB_VERSION, then reload so
     # db.js's fresh open() hits VersionError → terminal Reset-Required state.

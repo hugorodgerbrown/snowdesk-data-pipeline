@@ -15,9 +15,9 @@ real client: an unverified user taps ``#report-btn`` and must see the
 "verify your email" prompt, with no form-load request fired (so no 403) and the
 sheet never stuck on the locating placeholder.
 
-Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped) — see
-``docs/client-side-tests.md`` — this test is about report.js's branching, not
-the SW lifecycle.
+Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped via the
+shared ``_disable_real_sw`` fixture) — see ``docs/client-side-tests.md`` —
+this test is about report.js's branching, not the SW lifecycle.
 """
 
 from __future__ import annotations
@@ -33,18 +33,14 @@ from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, UserFactory
 
 
-def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
-    """Load / with navigator.serviceWorker stripped, wait for the map + button.
+def _navigate_home(page: Page, live_server_url: str) -> None:
+    """Load / and wait for the map + report button.
 
-    Stripping serviceWorker before any page script runs keeps sw_register.js
-    from registering a worker — see
+    Callers request the ``_disable_real_sw`` fixture so the strip is applied
+    before this navigation — see
     ``tests/e2e/test_offline_observation_submit.py`` for the identical
     technique and rationale.
     """
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function(
@@ -56,7 +52,10 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
 @override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_unverified_user_sees_verify_prompt_no_form_load(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """An unverified user taps Report → verify prompt, no form-load GET, no 403."""
     with django_db_blocker.unblock():
@@ -64,7 +63,7 @@ def test_unverified_user_sees_verify_prompt_no_form_load(
         AccountFactory.create(user=user, is_verified=False)
 
     _session_login(page.context, live_server.url, user)
-    _navigate_home_with_sw_stripped(page, live_server.url)
+    _navigate_home(page, live_server.url)
 
     # The button must advertise the unverified state and not eligibility.
     assert page.get_attribute("#report-btn", "data-report-eligible") == "false"

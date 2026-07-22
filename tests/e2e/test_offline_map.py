@@ -235,14 +235,17 @@ def test_non_tile_error_with_no_style_loaded_still_engages_fallback(
 @override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourites_offline_toast_when_nothing_cached_yet(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """The favourites "unavailable offline" toast fires with nothing cached.
 
-    Service worker stripped + the favourites-geojson fetch routed to abort
-    (the same "simulate an offline fetch failure without a real offline
-    browser context" technique as
-    ``tests/e2e/test_offline_basemap_fallback.py``) — deterministic, and
+    Service worker stripped (via the shared ``_disable_real_sw`` fixture) +
+    the favourites-geojson fetch routed to abort (the same "simulate an
+    offline fetch failure without a real offline browser context" technique
+    as ``tests/e2e/test_offline_basemap_fallback.py``) — deterministic, and
     proves ``ensureOverlayLoaded``'s new no-cached-fallback branch reveals
     ``#map-offline-toast-favourites`` rather than silently no-opping.
     """
@@ -250,10 +253,6 @@ def test_favourites_offline_toast_when_nothing_cached_yet(
         subscriber = SubscriberFactory.create()
     _session_login(page.context, live_server.url, subscriber.user)
 
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.route("**/favourites/favourites.geojson", lambda route: route.abort())
 
     _navigate_home(page, live_server.url)
@@ -316,7 +315,7 @@ def test_favourites_overlay_installs_from_cache_after_offline_reload(
 @override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_community_reports_toggle_drops_expired_features_from_cache(
-    live_server: LiveServer, page: Page
+    live_server: LiveServer, page: Page, _disable_real_sw: None
 ) -> None:
     """A stale cached community-reports copy expires visually at 48h.
 
@@ -338,10 +337,6 @@ def test_community_reports_toggle_drops_expired_features_from_cache(
     Only the fresh feature must survive, proving
     ``dropExpiredCommunityReports`` (static/js/map.js) runs on read-back.
     """
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.route(settings.BASEMAP_STYLE_URL, lambda route: route.abort())
     page.route("**/api/community-reports.geojson", lambda route: route.abort())
 

@@ -30,9 +30,10 @@ pin dropped) is removed — the classification mechanics (any non-{408,429}
 the one real, user-observable offline→reconnect→real-server journey that
 those synthetic-endpoint unit tests can't reach.
 
-Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped) — see
-``docs/client-side-tests.md``'s "SW-lifecycle tests: real vs simulated" —
-this test is about ``favourite_create`` plus the queue's real-server
+Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped via the
+shared ``_disable_real_sw`` fixture) — see ``docs/client-side-tests.md``'s
+"SW-lifecycle tests: real vs simulated" — this test is about
+``favourite_create`` plus the queue's real-server
 integration, not the SW lifecycle itself. Placing the pin drives the
 touch-friendly place-picker via ``MAP.setCenter`` (as
 ``tests/e2e/test_favourites.py`` does) rather than a canvas click, for
@@ -62,17 +63,14 @@ from tests.factories import SubscriberFactory
 DB_NAME = "snowdesk-pwa-v1"
 
 
-def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
-    """Load / with navigator.serviceWorker stripped, wait for the map + queue.
+def _navigate_home(page: Page, live_server_url: str) -> None:
+    """Load / and wait for the map + queue to be ready.
 
-    Mirrors ``tests/e2e/test_offline_observation_submit.py`` — stripping
-    serviceWorker before any page script runs makes sw_register.js and
+    Mirrors ``tests/e2e/test_offline_observation_submit.py`` — callers
+    request the ``_disable_real_sw`` fixture so ``navigator.serviceWorker``
+    is stripped before this navigation, which makes sw_register.js and
     mutation_queue.js's ``_registerBackgroundSync()`` bail out immediately.
     """
-    page.add_init_script(
-        "Object.defineProperty(navigator, 'serviceWorker', "
-        "{ value: undefined, configurable: true });"
-    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
@@ -142,14 +140,17 @@ def _go_online(page: Page) -> None:
 @override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_favourite_creation_syncs_without_duplicate(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _disable_real_sw: None,
 ) -> None:
     """Offline Save enqueues + confirms optimistically; reconnect syncs once."""
     with django_db_blocker.unblock():
         subscriber = SubscriberFactory.create()
 
     _session_login(page.context, live_server.url, subscriber.user)
-    _navigate_home_with_sw_stripped(page, live_server.url)
+    _navigate_home(page, live_server.url)
 
     _open_create_form_at(page, lat=46.2, lon=7.6)
     page.fill("#favourite-name-input", "Offline Peak")
