@@ -277,6 +277,7 @@ uv run tox -e ds-lint         # design-system template linter (see "Design syste
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 uv run tox -e audit           # pip-audit on the locked dependency set
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
+uv run tox -e js              # Vitest JS-unit tests (opt-in, see docs/client-side-tests.md)
 uv run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
