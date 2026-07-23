@@ -39,3 +39,9 @@ uv run --no-sync python manage.py loaddata \
     regions/fixtures/eaws_IT.json \
     regions/fixtures/resorts.json \
     regions/fixtures/region_aliases.json
+
+# Sync waffle.Flag rows to core/fixtures/waffle_flags.json — create + delete
+# only, never edit-in-place, so an operator's live admin-tuned targeting on
+# an existing flag survives every deploy. Idempotent (a no-op once the DB
+# matches the manifest) — see docs/management-commands.md.
+uv run --no-sync python manage.py sync_waffle_flags --commit
