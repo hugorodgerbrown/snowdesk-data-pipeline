@@ -535,6 +535,14 @@ class Resort(BaseModel):
     The fixture in ``regions/fixtures/resorts.json`` is the source of truth
     in git; run ``manage.py dump_resorts_fixture --commit`` after a session
     of edits to persist them.
+
+    ``forecast_point`` (SNOW-503) is the shared ``bulletins.ForecastPoint``
+    a geocoded resort's coordinates resolve to, set by
+    ``manage.py link_resort_forecast_points --commit``; it is what widens
+    the point-weather polling set to cover resorts, not just favourites.
+    ``on_delete=PROTECT`` mirrors ``Favourite.forecast_point`` — the point
+    may be shared by other resorts/favourites and by weather-fetch
+    bookkeeping.
     """
 
     GEOCODE_SOURCES = [
@@ -571,6 +579,14 @@ class Resort(BaseModel):
     geocode_confidence = models.FloatField(null=True, blank=True)
     geocoded_at = models.DateTimeField(null=True, blank=True)
     needs_review = models.BooleanField(default=False)
+    forecast_point = models.ForeignKey(
+        "bulletins.ForecastPoint",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="resorts",
+        help_text="Shared weather-sampling point; resolved once from lat/lon.",
+    )
 
     objects = ResortQuerySet.as_manager()
 
