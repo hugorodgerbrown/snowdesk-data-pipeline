@@ -503,6 +503,48 @@ class TestFavouriteCreateFromResortValidation:
 
 
 @pytest.mark.django_db
+class TestFavouriteCreateFromResortRateLimit:
+    """Rate limit returns 429 when exceeded."""
+
+    @override_flag("favourites", active=True)
+    def test_rate_limited_branch_returns_429(self, client: Client) -> None:
+        """When request.limited is True (set by ratelimit decorator), view returns 429.
+
+        Mirrors ``TestFavouriteCreateRateLimit`` above for the resort-create
+        view — django-ratelimit ORs a pre-set ``request.limited=True`` with
+        its own (unmet) check, so pre-setting it short-circuits into the
+        429 branch.
+        """
+        user = UserFactory.create()
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+        from django.contrib.sessions.backends.db import SessionStore  # noqa: PLC0415
+        from django.test import RequestFactory  # noqa: PLC0415
+        from django_htmx.middleware import HtmxMiddleware  # noqa: PLC0415
+
+        rf = RequestFactory()
+        request = rf.post(
+            RESORT_CREATE_URL,
+            {"resort_id": resort.pk},
+            HTTP_HX_REQUEST="true",
+        )
+        request.limited = True  # type: ignore[attr-defined]
+        request.user = user
+        request.session = SessionStore()
+
+        from django.http import HttpResponse as _HR  # noqa: PLC0415
+
+        htmx_mw = HtmxMiddleware(lambda r: _HR())
+        htmx_mw(request)
+
+        with patch("favourites.views._require_favourites_flag", return_value=None):
+            from favourites.views import favourite_create_from_resort  # noqa: PLC0415
+
+            resp = favourite_create_from_resort(request)
+            assert resp.status_code == 429
+
+
+@pytest.mark.django_db
 class TestFavouriteCreateFromResortUngeocoded:
     """An ungeocoded resort cannot be favourited — 422."""
 
@@ -546,6 +588,28 @@ class TestFavouriteCreateFromResortSuccess:
         assert favourite.resort == resort
         assert favourite.region == region
         assert favourite.name == "Verbier"
+
+    @override_flag("favourites", active=True)
+    def test_repeat_submit_is_idempotent(self, client: Client) -> None:
+        """POSTing the same resort_id twice returns 200 both times, one row."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            first = client.post(
+                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            )
+            second = client.post(
+                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert Favourite.objects.filter(user=user, resort=resort).count() == 1
+        first_favourite = Favourite.objects.get(user=user, resort=resort)
+        assert str(first_favourite.uuid) in second.content.decode()
 
 
 @pytest.mark.django_db

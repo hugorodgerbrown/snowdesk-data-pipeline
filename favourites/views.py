@@ -371,6 +371,14 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     has no coordinates to favourite from — also a permanent failure, since
     no retry will make the resort geocoded.
 
+    Errors:
+        403 — anonymous request.
+        400 — non-HTMX request; missing/non-integer ``resort_id``.
+        404 — ``favourites`` flag inactive, or unknown ``resort_id``.
+        409 — the user has reached ``settings.FAVOURITES_MAX_PER_USER``.
+        422 — the resort has no latitude/longitude set.
+        429 — rate limit exceeded (> 10 creations/min per user).
+
     Args:
         request: The incoming HTMX POST request.
 

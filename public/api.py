@@ -812,8 +812,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
 
 def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
-    """
-    Return pre-rendered minimal popup HTML for a resort-pin tap.
+    """Return pre-rendered minimal popup HTML for a resort-pin tap.
 
     Response shape::
 

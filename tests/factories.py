@@ -588,3 +588,4 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
         elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
     )
     region = None
+    resort = None
