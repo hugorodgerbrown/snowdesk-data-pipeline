@@ -1248,12 +1248,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // snowdesk:favourites-changed handler).
   let favouritedResortIds = [];
 
+  // SNOW-499: whether the favourites overlay is currently drawn. The resort
+  // exclusion below is only justified while the favourite star is actually
+  // visible to stand in for the hidden resort dot — with the favourites
+  // overlay toggled off there is no star, so a favourited resort must fall
+  // back to its plain resort dot rather than vanishing from the map
+  // entirely. Reads the live layer state, so it is correct however the
+  // caller reached here (boot, toggle on, toggle off).
+  const favouritesLayerVisible = () =>
+    !!map.getLayer('favourites-pin') &&
+    map.getLayoutProperty('favourites-pin', 'visibility') !== 'none';
+
   // SNOW-499: apply (or clear) the resorts-layer exclusion filter for the
   // current favouritedResortIds. Composes with each layer's pristine base
   // filter (captured in installResortsLayer) rather than its current
-  // filter, so repeated calls never accumulate a stale exclusion.
+  // filter, so repeated calls never accumulate a stale exclusion. The
+  // exclusion is gated on the favourites overlay being visible (see
+  // favouritesLayerVisible) so a favourited resort stays on the map as a
+  // plain dot when its star is hidden.
   const applyResortsFavouritedFilter = () => {
-    const exclusion = favouritedResortIds.length
+    const exclusion = favouritedResortIds.length && favouritesLayerVisible()
       ? ['!', ['in', ['get', 'id'], ['literal', favouritedResortIds]]]
       : null;
     for (const layerId of ['resorts-pin', 'resorts-label']) {
@@ -2189,7 +2203,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
           map.setLayoutProperty(layerId, 'visibility', visibility);
         }
       }
+      // SNOW-499: making the favourites overlay (re-)visible means any
+      // favourited resort should hide its plain dot again, now the star is
+      // back. ensureOverlayLoaded short-circuits for an already-loaded
+      // favourites layer, so the recompute inside syncFavouritedResortIds
+      // won't have run — reapply the exclusion here.
+      if (key === 'favourites') applyResortsFavouritedFilter();
     }).catch(() => {});
+  });
+
+  // SNOW-499: the picker toggles an already-installed favourites layer off
+  // via a direct setLayoutProperty in its own IIFE (no overlay-load event),
+  // so bridge that here: recompute the resort exclusion whenever the
+  // favourites overlay visibility changes, so a favourited resort's plain
+  // dot reappears the moment its star is hidden.
+  document.addEventListener('snowdesk:favourites-visibility-changed', () => {
+    applyResortsFavouritedFilter();
   });
 
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
@@ -4467,6 +4496,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
                 );
               }
             }
+          }
+          // SNOW-499: bridge to the main IIFE so the resort layer's
+          // favourited-resort exclusion is recomputed against the new
+          // favourites visibility — otherwise a favourited resort stays
+          // hidden (no dot, no star) when the overlay is switched off.
+          // Dispatched for both directions; the toggle-on lazy path is
+          // also covered by the overlay-load handler once its fetch settles.
+          if (overlayKey === 'favourites') {
+            document.dispatchEvent(
+              new CustomEvent('snowdesk:favourites-visibility-changed'),
+            );
           }
         }
         return;

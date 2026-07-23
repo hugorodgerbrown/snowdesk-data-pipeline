@@ -225,7 +225,7 @@ try {
 // basemap_cache_core.js (self.pwaBasemapCacheCore), so the classification/
 // eviction logic can be unit-tested directly. Behaviour is unchanged —
 // this is a shell-bytes bump only.
-const CACHE_VERSION = 'snowdesk-shell-v29';
+const CACHE_VERSION = 'snowdesk-shell-v30';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

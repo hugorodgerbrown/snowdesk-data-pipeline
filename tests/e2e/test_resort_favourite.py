@@ -159,3 +159,90 @@ def test_star_unfavourites_existing_resort_favourite(
 
     with django_db_blocker.unblock():
         assert not Favourite.objects.filter(pk=favourite_pk).exists()
+
+
+@override_flag("favourites", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_favourited_resort_returns_to_resort_layer_when_favourites_hidden(
+    favourites_page: FavouritesPage, django_db_blocker: Any
+) -> None:
+    """A favourited resort keeps its plain dot when the favourites overlay is off.
+
+    Regression guard: the resorts layer hides a favourited resort's dot so it
+    renders only as a favourite star — but that exclusion is only justified
+    while the star is actually drawn. With the favourites overlay switched
+    off there is no star, so the resort must fall back to its plain dot rather
+    than vanishing from the map entirely.
+
+    Asserted on the ``resorts-pin`` layer filter (deterministic, no WebGL
+    frame needed) rather than a ``queryRenderedFeatures`` hit-test. Toggling
+    the favourites overlay off is driven by the two actions the layers-menu
+    picker performs — set the layers' visibility to ``none`` and dispatch
+    ``snowdesk:favourites-visibility-changed`` — which is the documented seam
+    ``map.js`` listens on to recompute the exclusion.
+    """
+    with django_db_blocker.unblock():
+        resort = ResortFactory.create(name="Davos", latitude=46.8, longitude=9.83)
+        create_resort_favourite(favourites_page.subscriber.user, resort)
+
+    page = favourites_page.page
+    _navigate_home(page, favourites_page.live_server_url)
+
+    # Ensure the favourites overlay is loaded and the pre-existing resort
+    # favourite is in its source — this is what populates the resort-layer
+    # exclusion set, so gating on it removes the boot-time race between the
+    # (eager) favourites load and the (lazy) resorts install below.
+    page.evaluate(
+        "() => document.dispatchEvent("
+        "new CustomEvent('snowdesk:overlay-load', {detail: {key: 'favourites'}}))"
+    )
+    page.wait_for_function(
+        """(resortId) => {
+            const src = MAP.getSource('favourites');
+            if (!src) return false;
+            const data = src.serialize().data;
+            return (data.features || []).some(
+                (f) => f.properties && f.properties.resort_id === resortId,
+            );
+        }""",
+        arg=resort.pk,
+    )
+
+    # Install the (default-off, lazy) resorts overlay so resorts-pin exists.
+    page.evaluate(
+        "() => document.dispatchEvent("
+        "new CustomEvent('snowdesk:overlay-load', {detail: {key: 'resorts'}}))"
+    )
+    page.wait_for_function("() => MAP.getLayer('resorts-pin') != null")
+
+    # While favourites are visible, the favourited resort is excluded from the
+    # resorts-pin layer (it shows as a star instead).
+    page.wait_for_function(
+        """(resortId) => {
+            const f = MAP.getFilter('resorts-pin');
+            return JSON.stringify(f || '').includes(String(resortId));
+        }""",
+        arg=resort.pk,
+    )
+
+    # Switch the favourites overlay off, exactly as the picker does.
+    page.evaluate(
+        """(resortId) => {
+            localStorage.setItem('snowdesk.map.overlay.favourites', 'false');
+            for (const id of ['favourites-pin', 'favourites-label']) {
+                if (MAP.getLayer(id)) MAP.setLayoutProperty(id, 'visibility', 'none');
+            }
+            document.dispatchEvent(
+                new CustomEvent('snowdesk:favourites-visibility-changed'));
+        }""",
+        arg=resort.pk,
+    )
+
+    # The exclusion clears — the resort is back on the resorts-pin layer.
+    page.wait_for_function(
+        """(resortId) => {
+            const f = MAP.getFilter('resorts-pin');
+            return !JSON.stringify(f || '').includes(String(resortId));
+        }""",
+        arg=resort.pk,
+    )
