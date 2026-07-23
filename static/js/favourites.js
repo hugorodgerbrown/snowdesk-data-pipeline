@@ -68,6 +68,13 @@
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
+  // SNOW-499: resort-popup star create URL — read from #map's own dataset
+  // (not #favourite-add-btn's) since it is emitted alongside the other
+  // #map data-*-url attributes and gated the same way
+  // (favourites_eligible), independent of whether #map exists at all.
+  const mapEl = document.getElementById('map');
+  const RESORT_CREATE_URL = mapEl ? mapEl.dataset.resortCreateUrl : undefined;
+
   // ---------------------------------------------------------------------------
   // Module-level helpers.
   // ---------------------------------------------------------------------------
@@ -511,8 +518,120 @@
 
   document.addEventListener('pwa:mutation-failed-permanent', function (event) {
     const url = (event.detail && event.detail.url) || '';
-    if (CREATE_URL && url.indexOf(CREATE_URL) !== -1) {
+    if (
+      (CREATE_URL && url.indexOf(CREATE_URL) !== -1) ||
+      (RESORT_CREATE_URL && url.indexOf(RESORT_CREATE_URL) !== -1)
+    ) {
       document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Resort-popup star (SNOW-499) — favourite/unfavourite a resort from the
+  // minimal map-pin popup (public/templates/public/partials/_resort_popup.html).
+  // Delegated from document — the popup markup is injected by map.js well
+  // after this script's own load-time query selectors ran, and this handler
+  // must keep working even when the surface-gating early return above would
+  // otherwise apply to code defined further down (it doesn't here — this is
+  // reached only when favourites_visible is true, since favourites.js itself
+  // is only loaded in that case; the star only ever renders in the popup
+  // when the requesting user is additionally authenticated).
+  //
+  // Not favourited: enqueued through window.pwaMutationQueue exactly like
+  // the create-form flow above (SNOW-479) — offline-capable, and the queue
+  // itself dispatches snowdesk:favourites-changed once the create actually
+  // lands (see mutation_queue.js's drain()); dispatching it here too would
+  // just race a stale refetch. Already favourited: unfavourited via a plain
+  // online POST to the existing delete endpoint (delete stays online-only,
+  // matching the dropped-pin favourite detail flow above).
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const star = target && target.closest ? target.closest('[data-resort-star]') : null;
+    if (!star) return;
+    event.preventDefault();
+
+    const resortId = star.dataset.resortId;
+    const lat = parseFloat(star.dataset.resortLat);
+    const lon = parseFloat(star.dataset.resortLon);
+    const name = star.dataset.resortName || '';
+    const alreadyFavourited = star.dataset.favourited === 'true';
+    const favUuid = star.dataset.favouriteUuid || '';
+
+    if (!alreadyFavourited) {
+      if (!IS_ELIGIBLE || !RESORT_CREATE_URL) return;
+
+      // Mirrors the create-form submit handler's device-availability guard
+      // above — enqueue() silently no-ops when IndexedDB is missing or in
+      // the terminal Reset-Required state.
+      const dbUnavailable =
+        typeof window.pwaDb !== 'object' ||
+        (typeof window.pwaDb.isResetRequired === 'function' &&
+          window.pwaDb.isResetRequired());
+      if (!window.pwaMutationQueue || dbUnavailable) {
+        showToast('Could not save this favourite on this device — please try again.');
+        return;
+      }
+
+      const body = new URLSearchParams({
+        csrfmiddlewaretoken: getCsrfToken(),
+        resort_id: resortId,
+      }).toString();
+
+      window.pwaMutationQueue
+        .enqueue({
+          method: 'POST',
+          url: RESORT_CREATE_URL,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            // favourite_create_from_resort is @require_htmx; the replay is a
+            // plain fetch.
+            'HX-Request': 'true',
+          },
+          body: body,
+        })
+        .catch(function () {});
+
+      if (!isNaN(lat) && !isNaN(lon)) {
+        document.dispatchEvent(
+          new CustomEvent('snowdesk:favourite-pending', {
+            detail: { lat: lat, lon: lon, name: name },
+          }),
+        );
+      }
+
+      window.pwaTelemetry?.emit('map.favourite.created', {
+        offline: !navigator.onLine,
+        resort: true,
+      });
+
+      // The popup's own star state can't be trusted fresh (no uuid yet —
+      // the create is queued, possibly offline) — close it rather than
+      // show a half-updated star. The next tap re-fetches accurate state.
+      document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
+      return;
+    }
+
+    // Already favourited — unfavourite via the existing delete path
+    // (online-only, matching the dropped-pin detail flow's delete).
+    if (!favUuid || !DELETE_URL_TEMPLATE) return;
+
+    fetch(DELETE_URL_TEMPLATE.replace('__UUID__', favUuid), {
+      method: 'POST',
+      headers: {
+        'HX-Request': 'true',
+        'X-CSRFToken': getCsrfToken(),
+      },
+    })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('delete failed');
+        window.pwaTelemetry?.emit('map.favourite.deleted', { resort: true });
+        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+        document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
+      })
+      .catch(function () {
+        showToast('Could not remove this favourite — please try again.');
+      });
   });
 }());

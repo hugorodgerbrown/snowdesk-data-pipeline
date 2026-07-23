@@ -395,6 +395,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // renders the literal placeholder through {% url 'api:region_summary'
   // region_id='XX-0000' %} so the JS never has to reconstruct URL structure.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl || '';
+  // SNOW-499: The resort-pin popup URL template — the literal '0' resort_id
+  // is string-replaced with the tapped resort's real id before each fetch.
+  // Rendered via {% url 'api:resort_popup' resort_id=0 %}; public endpoint,
+  // always present regardless of favourites eligibility.
+  const RESORT_POPUP_URL_TEMPLATE = mapEl.dataset.resortPopupUrl || '';
 
   // SNOW-236: Clamp the cold-open boot date to the season end so the
   // choropleth paints at the last populated date after season end.
@@ -1222,7 +1227,57 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'text-halo-width': 1.4,
       },
     });
+    // SNOW-499: snapshot each layer's pristine filter (both are unfiltered
+    // at install time) so applyResortsFavouritedFilter can always compose
+    // from this base rather than the filter it itself set on a previous
+    // call — reading back the *current* filter would re-include an
+    // exclusion that no longer applies once a resort is unfavourited.
+    BASE_LAYER_FILTERS['resorts-pin'] = map.getFilter('resorts-pin') ?? null;
+    BASE_LAYER_FILTERS['resorts-label'] = map.getFilter('resorts-label') ?? null;
     raiseMarkerLayers();
+    // Re-apply in case favourites data (and therefore favouritedResortIds)
+    // was already known before this layer installed.
+    applyResortsFavouritedFilter();
+  };
+
+  // SNOW-499: ids of resorts the current user has already favourited —
+  // hidden from the resorts-pin/resorts-label layers so a favourited
+  // resort renders only as a favourite star (favourites-pin layer), never
+  // as a plain resort dot as well. Recomputed from the favourites
+  // FeatureCollection whenever it changes (installFavouritesLayer and the
+  // snowdesk:favourites-changed handler).
+  let favouritedResortIds = [];
+
+  // SNOW-499: apply (or clear) the resorts-layer exclusion filter for the
+  // current favouritedResortIds. Composes with each layer's pristine base
+  // filter (captured in installResortsLayer) rather than its current
+  // filter, so repeated calls never accumulate a stale exclusion.
+  const applyResortsFavouritedFilter = () => {
+    const exclusion = favouritedResortIds.length
+      ? ['!', ['in', ['get', 'id'], ['literal', favouritedResortIds]]]
+      : null;
+    for (const layerId of ['resorts-pin', 'resorts-label']) {
+      if (!map.getLayer(layerId)) continue;
+      const base = BASE_LAYER_FILTERS[layerId] ?? null;
+      const filter = exclusion
+        ? (base ? ['all', base, exclusion] : exclusion)
+        : base;
+      map.setFilter(layerId, filter);
+    }
+  };
+
+  // SNOW-499: recompute favouritedResortIds from a favourites
+  // FeatureCollection and reapply the exclusion filter. Called whenever
+  // favouritesGeojsonCache is set to a new authoritative payload.
+  const syncFavouritedResortIds = (geojson) => {
+    favouritedResortIds = [];
+    if (geojson && Array.isArray(geojson.features)) {
+      for (const feature of geojson.features) {
+        const resortId = feature.properties && feature.properties.resort_id;
+        if (resortId != null) favouritedResortIds.push(resortId);
+      }
+    }
+    applyResortsFavouritedFilter();
   };
 
   // SNOW-478: the favourites pin is drawn as an SDF icon image, not a ``★``
@@ -1293,6 +1348,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       );
     }
     favouritesGeojsonCache = geojson;
+    // SNOW-499: keep the resorts-layer exclusion filter in sync with
+    // whatever favourites data this install carries.
+    syncFavouritedResortIds(geojson);
     map.addSource('favourites', { type: 'geojson', data: geojson });
     map.addLayer({
       id: 'favourites-pin',
@@ -2545,6 +2603,75 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     };
 
+    // SNOW-499: separate popup handle from the region popup — a resort tap
+    // opens its own minimal popup (name, region, favourite star, bulletin
+    // link) rather than proxying to the parent region's popup/selection, so
+    // it is tracked independently of activePopup/activePopupRegion (no
+    // history/hash involvement, unlike the region popup).
+    let activeResortPopup = null;
+
+    // SNOW-499: fetch and open the resort-pin popup for a tapped resort
+    // feature. Mirrors openRegionPopup's fetch/setHTML/addTo shape; a
+    // resort popup always replaces any other open popup (region or resort)
+    // since only one can be meaningfully open at a time.
+    const openResortPopup = async (resortFeature) => {
+      const resortId = resortFeature.properties && resortFeature.properties.id;
+      if (resortId == null || !RESORT_POPUP_URL_TEMPLATE) return false;
+
+      if (activeResortPopup) {
+        activeResortPopup.remove();
+        activeResortPopup = null;
+      }
+      // A resort popup replaces any open region popup too — only one popup
+      // at a time. Silent dismissal (no history/hash side effects, since a
+      // resort popup never touches the selection/hash state).
+      dismissActivePopupSilently();
+
+      const url = RESORT_POPUP_URL_TEMPLATE.replace(
+        '/resorts/0/popup/', `/resorts/${encodeURIComponent(resortId)}/popup/`,
+      );
+      try {
+        const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!resp.ok) return false;
+        const data = await resp.json();
+
+        // Server-trusted HTML: rendered by Django templates with all
+        // user-supplied values escaped by autoescape — safe for setHTML.
+        const popup = new maplibregl.Popup({
+          closeButton: true,
+          closeOnClick: false,
+          focusAfterOpen: false,
+          anchor: 'bottom',
+          maxWidth: 'min(320px, calc(100vw - 32px))',
+          className: 'resort-popup',
+        });
+
+        popup
+          .setHTML(data.html)
+          .setLngLat(resortFeature.geometry.coordinates)
+          .addTo(map);
+
+        if (typeof popup._update === 'function') popup._update();
+
+        activeResortPopup = popup;
+        popup.on('close', () => { activeResortPopup = null; });
+        return true;
+      } catch (_err) {
+        return false;
+      }
+    };
+
+    // SNOW-499: favourites.js dispatches this once a resort-popup favourite
+    // toggle (star tap) has been submitted, so the popup — whose favourited
+    // state and uuid were fetched at open time — closes rather than showing
+    // stale state. The next tap on the same pin re-fetches fresh state.
+    document.addEventListener('snowdesk:resort-popup-close', () => {
+      if (activeResortPopup) {
+        activeResortPopup.remove();
+        activeResortPopup = null;
+      }
+    });
+
     // Clear the selection state for the currently-focused region (deselects
     // the map highlight) and keep the URL hash in sync. Called on genuine
     // empty-map-canvas taps and on back-button navigation.
@@ -2900,15 +3027,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // changes (mirrors the old regions-fill IS_PLAYING guard).
       if (IS_PLAYING) return;
 
-      // SNOW-78: a resort pin is a proxy for its parent region — prefer its
-      // region_id so a resort near a border selects the region it belongs to,
-      // not merely the polygon rendered under the tap. Falls through to the
-      // fill feature when no resort pin is under the point.
+      // SNOW-499: a resort pin now opens its own minimal popup (name, region,
+      // favourite star, bulletin link) instead of proxying to the parent
+      // region's selection (former SNOW-78 behaviour) — the popup's "View
+      // bulletin" link is the replacement path to the region.
       const resort = features.find((f) => f.layer.id === 'resorts-pin');
       if (resort) {
-        const regionID = resort.properties.region_id;
-        const feature = regionID ? FEATURE_BY_REGION_ID[regionID] : null;
-        if (feature) selectFeature(feature.id);
+        openResortPopup(resort);
         return;
       }
 
@@ -2941,6 +3066,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
         // append starts from current truth.
         favouritesGeojsonCache = fc;
+        // SNOW-499: recompute before installFavouritesLayer's own call so a
+        // resort favourited/unfavourited elsewhere (e.g. the resort popup
+        // star) is reflected on the resorts layer as soon as this refetch
+        // lands, regardless of which branch below runs.
+        syncFavouritedResortIds(fc);
         const source = map.getSource('favourites');
         if (source) {
           source.setData(fc);
