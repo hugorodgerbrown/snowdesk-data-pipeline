@@ -21,13 +21,16 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from waffle.models import Flag
 
 from core.services.waffle_sync import compute_flag_diff, load_manifest
 
 logger = logging.getLogger(__name__)
 
+# The command lives at core/management/commands/, so parents[2] is the ``core``
+# app root; the manifest sits alongside the app's other fixtures.
 DEFAULT_MANIFEST_PATH = (
-    Path(__file__).resolve().parents[3] / "core" / "fixtures" / "waffle_flags.json"
+    Path(__file__).resolve().parents[2] / "fixtures" / "waffle_flags.json"
 )
 
 
@@ -66,8 +69,6 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
-        from waffle.models import Flag
-
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
         manifest_path: Path = options["manifest"]
