@@ -120,12 +120,29 @@ class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
 
 
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):
-    """Factory for Resort instances."""
+    """
+    Factory for Resort instances.
+
+    The ``geocoded`` trait sets ``latitude``/``longitude`` to the same
+    representative coordinates as ``ForecastPointFactory`` (46.1, 7.4) plus
+    ``geocode_source="manual"``, so ``ResortFactory.create(geocoded=True)``
+    builds a resort that ``Resort.objects.geocoded()`` — and
+    ``link_resort_forecast_points`` — can pick up.
+    """
 
     class Meta:
         """Factory metadata."""
 
         model = Resort
+
+    class Params:
+        """Traits for common variations."""
+
+        geocoded = factory.Trait(
+            latitude=46.1,
+            longitude=7.4,
+            geocode_source="manual",
+        )
 
     name = factory.Sequence(lambda n: f"Resort {n}")
     name_alt = ""
@@ -138,6 +155,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     geocode_confidence = None
     geocoded_at = None
     needs_review = False
+    forecast_point = None
 
 
 class RegionAliasFactory(factory.django.DjangoModelFactory[RegionAlias]):
