@@ -7,6 +7,9 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 
 - ``favourite_create`` (POST) — validates lat/lon/name, creates a
   Favourite, returns the saved-pin partial.
+- ``favourite_create_from_resort`` (POST) — SNOW-499: creates a Favourite
+  from a public ``regions.Resort`` (the resort-pin popup's star), returns
+  the same saved-pin partial as ``favourite_create``.
 - ``favourite_rename`` (POST) — owner-checked rename of an existing
   Favourite, returns the updated partial.
 - ``favourite_delete`` (POST) — owner-checked deletion of a Favourite.
@@ -20,7 +23,7 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All six are:
+All seven are:
   - flag-gated on ``favourites`` (404 when inactive);
   - authentication-gated (403 for anonymous users).
 
@@ -66,11 +69,14 @@ from favourites.models import Favourite
 from favourites.relevance import annotate_problem_relevance
 from favourites.services import (
     FavouriteLimitReached,
+    ResortNotGeocoded,
     create_favourite,
+    create_resort_favourite,
     delete_favourite,
 )
 from public.templatetags.snowdesk_time import danger_level_digit
 from public.views import _select_bulletin_for_date, problem_cards_for_bulletin
+from regions.models import Resort
 
 if TYPE_CHECKING:
     from bulletins.services.weather_display import ForecastPanel
@@ -346,6 +352,85 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 
 @require_htmx
 @require_POST
+@ratelimit(key="user", rate="10/m", block=False)
+def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
+    """Create a Favourite from a public Resort and return the saved-pin partial.
+
+    Entry point is the resort-pin popup's favourite star
+    (``public/templates/public/partials/_resort_popup.html``), submitted via
+    ``static/js/favourites.js``'s client mutation queue — same offline-capable
+    path as ``favourite_create`` (SNOW-499).
+
+    Request body:
+    - ``resort_id`` — the Resort's primary key. 400 if missing/non-integer,
+      404 if no such Resort exists.
+
+    Mirrors ``favourite_create``'s error-status contract so the mutation
+    queue classifies each outcome the same way: 409 (not 200/429) at the
+    per-user cap, since only deleting a pin clears it; 422 when the resort
+    has no coordinates to favourite from — also a permanent failure, since
+    no retry will make the resort geocoded.
+
+    Errors:
+        403 — anonymous request.
+        400 — non-HTMX request; missing/non-integer ``resort_id``.
+        404 — ``favourites`` flag inactive, or unknown ``resort_id``.
+        409 — the user has reached ``settings.FAVOURITES_MAX_PER_USER``.
+        422 — the resort has no latitude/longitude set.
+        429 — rate limit exceeded (> 10 creations/min per user).
+
+    Args:
+        request: The incoming HTMX POST request.
+
+    Returns:
+        Rendered saved-pin or limit-reached partial, or an error response.
+
+    """
+    _require_favourites_flag(request)
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before saving another pin.",
+            status=429,
+        )
+
+    raw_resort_id = request.POST.get("resort_id")
+    if not raw_resort_id:
+        return HttpResponse("resort_id is required.", status=400)
+    try:
+        resort_id = int(raw_resort_id)
+    except TypeError, ValueError:
+        return HttpResponse("resort_id must be an integer.", status=400)
+
+    try:
+        resort = Resort.objects.select_related("region").get(pk=resort_id)
+    except Resort.DoesNotExist:
+        return HttpResponse("Resort not found.", status=404)
+
+    try:
+        favourite = create_resort_favourite(request.user, resort)
+    except FavouriteLimitReached:
+        logger.info(
+            "Resort favourite create blocked: user=%s hit the cap", request.user.pk
+        )
+        return render(
+            request, "favourites/partials/_favourite_limit.html", {}, status=409
+        )
+    except ResortNotGeocoded:
+        return HttpResponse("This resort has no location set yet.", status=422)
+
+    return render(
+        request,
+        "favourites/partials/_favourite.html",
+        {"favourite": favourite},
+    )
+
+
+@require_htmx
+@require_POST
 def favourite_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
     """Rename an existing Favourite owned by the requesting user.
 
@@ -596,9 +681,12 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     """Return a FeatureCollection of the requesting user's own favourites.
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
-    (RFC 7946) and properties ``uuid`` and ``name``. Not ``@require_htmx`` —
-    consumed by the map's saved-pins layer via a JS ``fetch()`` call, not an
-    HTMX swap.
+    (RFC 7946) and properties ``uuid``, ``name``, and ``resort_id`` (SNOW-499;
+    ``null`` for a plain dropped-pin favourite). ``resort_id`` lets the map
+    client hide a favourited resort from the public resorts layer — it
+    should render only as a favourite star, never as a plain dot as well.
+    Not ``@require_htmx`` — consumed by the map's saved-pins layer via a JS
+    ``fetch()`` call, not an HTMX swap.
 
     The response is marked ``Cache-Control: private, no-store`` — the
     inverse of the public ``resorts_geojson`` layer — since this payload is
@@ -630,6 +718,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "uuid": str(favourite.uuid),
                     "name": favourite.name,
+                    "resort_id": favourite.resort_id,
                 },
             }
         )

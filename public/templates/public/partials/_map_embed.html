@@ -58,10 +58,17 @@ Optional context:
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
     data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
+    {# SNOW-499: resort-pin popup URL — public endpoint, always emitted. #}
+    {# The '0' resort_id is a placeholder the JS string-replaces with the  #}
+    {# tapped resort's real id before each fetch (mirrors the region-      #}
+    {# summary 'XX-0000' token above; a literal string placeholder isn't   #}
+    {# possible here since the URL uses an <int:resort_id> converter).     #}
+    data-resort-popup-url="{% url 'api:resort_popup' resort_id=0 %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"
     {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}
+    {% if favourites_eligible %}data-resort-create-url="{% url 'favourites:resort_create' %}"{% endif %}
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
     {% if community_reports_visible %}data-community-reports-url="{{ community_reports_geojson_url }}"{% endif %}
     data-community-reports-eligible="{{ community_reports_visible|yesno:'true,false' }}"
@@ -302,8 +309,10 @@ Optional context:
                 {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
                 {# circle pins above the L4 choropleth. Off by default;  #}
                 {# state persists in localStorage under                  #}
-                {# snowdesk.map.overlay.resorts. Pin click focuses the   #}
-                {# parent region and updates the readout.                #}
+                {# snowdesk.map.overlay.resorts. SNOW-499: pin click     #}
+                {# opens a minimal popup (name, region, favourite star,  #}
+                {# bulletin link) rather than selecting the parent       #}
+                {# region.                                               #}
                 <li role="none">
                     <button
                         type="button"

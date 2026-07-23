@@ -27,6 +27,7 @@ class FavouriteAdmin(admin.ModelAdmin):
         "user",
         "name",
         "region",
+        "resort",
         "latitude",
         "longitude",
         "elevation",
@@ -34,7 +35,13 @@ class FavouriteAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["region", "created_at"]
-    search_fields = ["user__email", "name", "region__name", "region__region_id"]
+    search_fields = [
+        "user__email",
+        "name",
+        "region__name",
+        "region__region_id",
+        "resort__name",
+    ]
     ordering = ["-created_at"]
     readonly_fields = [
         "id",
@@ -46,6 +53,7 @@ class FavouriteAdmin(admin.ModelAdmin):
         "elevation",
         "forecast_point",
         "region",
+        "resort",
         "created_at",
         "updated_at",
     ]

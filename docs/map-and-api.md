@@ -81,16 +81,21 @@ and is fetched eagerly at boot for eligible users rather than waiting for a
 toggle, since it's the user's own saved data rather than a public dataset.
 The `favourites-pin` layer is a `symbol` layer rendering a `★` glyph (no
 sprite image needed) plus a zoom-banded `favourites-label` showing each
-pin's name; tapping a pin dispatches `snowdesk:favourite-selected
-{uuid, name}` for `static/js/favourites.js` to open the rename/delete sheet,
-and a successful create/rename/delete round-trip there dispatches
-`snowdesk:favourites-changed`, which re-fetches the geojson and calls
-`map.getSource('favourites').setData(fc)`. The "Add favourite" flow itself
-(placement, drag-to-refine, the create/rename/delete sheet, CSRF handling)
-is documented in `favourites/views.py`'s module docstring and
-`static/js/favourites.js`'s header comment — there is no server-side "fetch
-one favourite" endpoint, so the pin-detail sheet's rename/delete markup is
-reconstructed client-side from the `__UUID__`-templated
+pin's name; tapping an *existing* pin dispatches `snowdesk:favourite-selected
+{uuid, name, container}` — map.js passes an empty `[data-favourite-detail]`
+container that `static/js/favourites.js` fills with the rename/delete markup,
+then map.js anchors it in a MapLibre popup at the pin (SNOW-499: an existing
+favourite is a point fixed to the map, so its detail is a *pinned popup*, not
+the docked create/placement sheet — the sheet stays put only while the map
+pans a mobile pin under it during placement). A successful rename/delete
+round-trip dispatches `snowdesk:favourites-changed` (re-fetch geojson +
+`setData`), and delete additionally dispatches `snowdesk:favourite-detail-close`
+so map.js removes the popup. The "Add favourite" flow itself (placement,
+drag-to-refine, the create sheet, CSRF handling) is documented in
+`favourites/views.py`'s module docstring and `static/js/favourites.js`'s
+header comment — there is no server-side "fetch one favourite" endpoint, so
+the pin-detail rename/delete markup is reconstructed client-side from the
+`__UUID__`-templated
 `favourite_rename_url_template` / `favourite_delete_url_template` context
 vars — the same reverse-with-a-dummy-id-then-string-replace trick
 `public/views.py::home()` uses for `edit_save_url_template`
