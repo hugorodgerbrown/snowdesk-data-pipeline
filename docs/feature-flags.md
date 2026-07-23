@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle operator guide — Flag/Switch/Sample, flag inventory (edit_map, favourites, community_reports, observations_page, sync_log)
+description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-07-23
 ---
 
 # Feature flags (django-waffle)
@@ -58,7 +58,10 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | `observations_page` | `superusers=True` | The `/observations/` page — a signed-in stream of the last 48h of `FieldObservation` rows (`public.views.observations_list`). Own reports always show; other users' reports show only when `community_reports` is also active for the viewer, with timestamps floored to the nearest 15 minutes. Separate flag so the page can ship independently of the map overlay. | SNOW-476. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 
-Keep this table up to date as new flags land.
+Keep this table up to date as new flags land. The **source of truth for
+which flags exist** is `core/fixtures/waffle_flags.json` (SNOW-502) — the
+`sync_waffle_flags` management command reconciles the DB to that manifest
+on every deploy; this table is the human-readable summary of the same set.
 
 ---
 
@@ -93,44 +96,26 @@ The change takes effect on the next request — there's no cache to bust.
 ## How to add a new flag
 
 1. **Pick a name** following the convention above.
-2. **Add a data migration** under the relevant app's `migrations/`
-   directory. Pattern (modelled on
-   `regions/migrations/0002_seed_edit_map_flag.py`):
+2. **Add an entry** to `core/fixtures/waffle_flags.json` (SNOW-502):
 
-   ```python
-   from django.db import migrations
-
-   FLAG_NAME = "<your_flag_name>"
-   FLAG_NOTE = "Short prose describing what the flag gates and the SNOW ticket."
-
-
-   def seed(apps, schema_editor):
-       Flag = apps.get_model("waffle", "Flag")
-       Flag.objects.get_or_create(
-           name=FLAG_NAME,
-           defaults={
-               "superusers": True,  # or staff=True, authenticated=True, etc.
-               "note": FLAG_NOTE,
-           },
-       )
-
-
-   def remove(apps, schema_editor):
-       Flag = apps.get_model("waffle", "Flag")
-       Flag.objects.filter(name=FLAG_NAME).delete()
-
-
-   class Migration(migrations.Migration):
-       dependencies = [
-           ("<app>", "<previous_migration>"),
-           ("waffle", "0004_update_everyone_nullbooleanfield"),
-       ]
-       operations = [migrations.RunPython(seed, reverse_code=remove)]
+   ```json
+   {
+     "name": "your_flag_name",
+     "note": "Short prose describing what the flag gates and the SNOW ticket.",
+     "superusers": true
+   }
    ```
 
-   `get_or_create` keeps the migration idempotent and means an operator
-   tweaking the flag in the admin won't have their changes clobbered by
-   a re-run.
+   `name` and `note` are required; the rest of the ``Flag`` create-time
+   defaults (`staff`, `authenticated`, `everyone`, `percent`, `testing`,
+   `rollout`) are optional — omit a key to fall back to the `Flag` model's
+   own default. An unrecognised key (e.g. a `superuser` typo) fails the
+   next `sync_waffle_flags` run rather than being silently ignored. The
+   next deploy's `sync_waffle_flags --commit` (run from `build.sh`) creates
+   the row; re-running against a DB that already has it is a no-op —
+   an operator tweaking the flag's targeting in the admin afterwards is
+   never clobbered, because the command only creates and deletes, never
+   edits an existing row in place.
 
 3. **Gate the code path.** Server-side flag check:
 
@@ -172,6 +157,21 @@ The change takes effect on the next request — there's no cache to bust.
 
 6. **Update `CLAUDE.md`** if the flag is the gate for a major feature
    surface — the feature-specific reference table should mention it.
+
+---
+
+## How to remove a flag
+
+1. **Remove the manifest entry** from `core/fixtures/waffle_flags.json`.
+2. **Strip every `{% flag %}` / `flag_is_active()` call site** that gates
+   on the flag, in the **same commit** — a leftover call site fails
+   closed (`WAFFLE_FLAG_DEFAULT = False`) once the row is gone, which
+   silently disables the feature rather than raising an error, so don't
+   rely on that as a substitute for removing the call site.
+3. Ship it. The next deploy's `sync_waffle_flags --commit` deletes the
+   `Flag` row — the DB is reconciled to the manifest by create + delete,
+   so an entry no longer in the manifest is removed automatically with
+   no separate cleanup step.
 
 ---
 

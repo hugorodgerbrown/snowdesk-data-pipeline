@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders, bootstrap-dev-db
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-23
 ---
 
 # Management commands
@@ -136,6 +136,32 @@ on every deploy. The operator workflow for a fixture change is therefore:
 so re-running on every deploy is safe. Manual `loaddata` against the
 production DB is no longer required — but it remains the right call
 for a same-day hotfix, before the next deploy lands.
+
+### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
+
+Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
+`core/fixtures/waffle_flags.json` (SNOW-502) by **create + delete
+only** — an existing flag is never edited in place, so an operator's
+live admin-tuned targeting (`superusers`, `everyone`, `percent`, …)
+always survives a re-run. See [`docs/feature-flags.md`](feature-flags.md)
+for the manifest shape and the add/remove-a-flag workflow.
+
+```bash
+# Read-only: print the create/delete diff, write nothing.
+uv run python manage.py sync_waffle_flags
+
+# Persist the diff (run on every deploy via build.sh).
+uv run python manage.py sync_waffle_flags --commit
+
+# Point at an alternate manifest (mainly for tests).
+uv run python manage.py sync_waffle_flags --commit --manifest path/to/flags.json
+```
+
+Read-only by default; `--commit` persists. `--manifest PATH` overrides
+the default manifest path (`core/fixtures/waffle_flags.json`). Respects
+`--verbosity`. A missing manifest file, malformed JSON, an entry missing
+`name`/`note`, a duplicate `name`, or an unrecognised key all raise a
+`CommandError` (non-zero exit).
 
 ### One-off operational commands
 
