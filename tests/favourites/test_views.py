@@ -7,6 +7,11 @@ Covers:
                       name over max_length → 400;
                       valid submit → 200 + creates row;
                       cap reached → 409 with the limit-reached partial.
+  favourite_create_from_resort (SNOW-499) — happy path (200 + resort FK
+                      set); cap reached → 409 with the limit partial;
+                      flag off → 404; anonymous → 403; non-HTMX → 400;
+                      missing/non-integer resort_id → 400; unknown
+                      resort_id → 404; ungeocoded resort → 422.
   favourite_rename — owner isolation (user A cannot rename user B's pin);
                       name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
@@ -33,7 +38,8 @@ Covers:
                     (SNOW-415).
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
-                        anonymous → 403; flag off → 404.
+                        anonymous → 403; flag off → 404; each feature
+                        carries resort_id (null for a plain pin, SNOW-499).
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -73,10 +79,12 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    ResortFactory,
     UserFactory,
 )
 
 CREATE_URL = "/favourites/partials/create/"
+RESORT_CREATE_URL = "/favourites/partials/resort/create/"
 GEOJSON_URL = "/favourites/favourites.geojson"
 LIST_URL = "/favourites/partials/list/"
 
@@ -412,6 +420,159 @@ class TestFavouriteCreateRateLimit:
 
             resp = favourite_create(request)
             assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# favourite_create_from_resort — POST /favourites/partials/resort/create/ (SNOW-499)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortFlagGate:
+    """Flag-off → 404."""
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_returns_404(self, client: Client) -> None:
+        """When the favourites flag is inactive, POST returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(
+            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortAuthGate:
+    """Anonymous users are rejected with 403."""
+
+    @override_flag("favourites", active=True)
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous POST returns 403."""
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(
+            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortHtmxGate:
+    """Non-HTMX requests are rejected with 400."""
+
+    @override_flag("favourites", active=True)
+    def test_non_htmx_returns_400(self, client: Client) -> None:
+        """A plain POST without HX-Request returns 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(RESORT_CREATE_URL, {"resort_id": resort.pk})
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortValidation:
+    """Missing/non-integer resort_id → 400; unknown resort_id → 404."""
+
+    @override_flag("favourites", active=True)
+    def test_missing_resort_id_returns_400(self, client: Client) -> None:
+        """No resort_id provided → 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(RESORT_CREATE_URL, {}, **HTMX_HEADERS)
+        assert response.status_code == 400
+
+    @override_flag("favourites", active=True)
+    def test_non_integer_resort_id_returns_400(self, client: Client) -> None:
+        """A non-integer resort_id → 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(
+            RESORT_CREATE_URL, {"resort_id": "not-an-int"}, **HTMX_HEADERS
+        )
+        assert response.status_code == 400
+
+    @override_flag("favourites", active=True)
+    def test_unknown_resort_id_returns_404(self, client: Client) -> None:
+        """A resort_id with no matching row → 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(RESORT_CREATE_URL, {"resort_id": 999999}, **HTMX_HEADERS)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortUngeocoded:
+    """An ungeocoded resort cannot be favourited — 422."""
+
+    @override_flag("favourites", active=True)
+    def test_ungeocoded_resort_returns_422(self, client: Client) -> None:
+        """A resort with no latitude/longitude returns 422, no row created."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=None, longitude=None)
+
+        response = client.post(
+            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 422
+        assert not Favourite.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortSuccess:
+    """A valid submission creates a resort-linked Favourite and returns 200."""
+
+    @override_flag("favourites", active=True)
+    def test_valid_submit_creates_resort_favourite(self, client: Client) -> None:
+        """A geocoded resort_id creates a Favourite with the resort FK set."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            name="Verbier", region=region, latitude=46.1, longitude=7.4
+        )
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            response = client.post(
+                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            )
+
+        assert response.status_code == 200
+        favourite = Favourite.objects.get(user=user)
+        assert favourite.resort == resort
+        assert favourite.region == region
+        assert favourite.name == "Verbier"
+
+
+@pytest.mark.django_db
+class TestFavouriteCreateFromResortCap:
+    """Reaching the per-user cap renders the limit-reached partial at 409."""
+
+    @override_flag("favourites", active=True)
+    def test_cap_reached_returns_409_with_limit_partial(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The resort-create endpoint shares the same 409-at-cap contract."""
+        settings.FAVOURITES_MAX_PER_USER = 1
+        user = UserFactory.create()
+        client.force_login(user)
+        _create_via_service(user)
+
+        resort = ResortFactory.create(latitude=47.0, longitude=8.0)
+        point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            response = client.post(
+                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            )
+
+        assert response.status_code == 409
+        assert Favourite.objects.filter(user=user).count() == 1
+        content = response.content.decode()
+        assert "limit" in content.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -919,6 +1080,35 @@ class TestFavouritesGeojson:
         client.force_login(user)
         response = client.get(GEOJSON_URL)
         assert response["Cache-Control"] == "private, no-store"
+
+    @override_flag("favourites", active=True)
+    def test_resort_id_is_null_for_a_plain_pin(self, client: Client) -> None:
+        """A dropped-pin favourite's resort_id property is null (SNOW-499)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        _create_via_service(user)
+
+        response = client.get(GEOJSON_URL)
+
+        data = response.json()
+        assert data["features"][0]["properties"]["resort_id"] is None
+
+    @override_flag("favourites", active=True)
+    def test_resort_id_is_set_for_a_resort_favourite(self, client: Client) -> None:
+        """A resort favourite's resort_id property matches the linked Resort (SNOW-499)."""
+        from favourites.services import create_resort_favourite  # noqa: PLC0415
+
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            create_resort_favourite(user, resort)
+
+        response = client.get(GEOJSON_URL)
+
+        data = response.json()
+        assert data["features"][0]["properties"]["resort_id"] == resort.pk
 
     @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
