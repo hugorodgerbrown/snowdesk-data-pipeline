@@ -106,7 +106,6 @@ class ResortAdmin(admin.ModelAdmin):
     list_filter = ["canton", "geocode_source", "needs_review"]
     search_fields = ["name", "name_alt", "region__region_id"]
     ordering = ["name"]
-    raw_id_fields = ["forecast_point"]
     readonly_fields = [
         "id",
         "uuid",

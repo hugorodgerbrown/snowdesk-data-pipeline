@@ -154,7 +154,7 @@ class TestLinkResortForecastPointsCommit:
             geocoded=True, latitude=46.1005, longitude=7.4
         )
 
-        def _elevation_side_effect(latitude: float, longitude: float) -> float:
+        def _elevation_side_effect(latitude: float, _longitude: float) -> float:
             return 1500.0 if latitude == 46.1 else 1750.0
 
         with patch(
@@ -207,7 +207,7 @@ class TestLinkResortForecastPointsFailureIsolation:
         resort_ok = ResortFactory.create(geocoded=True, latitude=46.1, longitude=7.4)
         resort_bad = ResortFactory.create(geocoded=True, latitude=50.0, longitude=10.0)
 
-        def _elevation_side_effect(latitude: float, longitude: float) -> float:
+        def _elevation_side_effect(latitude: float, _longitude: float) -> float:
             if latitude == 50.0:
                 raise RuntimeError("simulated elevation lookup failure")
             return 1500.0
