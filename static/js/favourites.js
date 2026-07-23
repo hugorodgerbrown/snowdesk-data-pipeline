@@ -68,7 +68,7 @@
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
-  // SNOW-499: resort-popup star create URL — read from #map's own dataset
+  // SNOW-499: resort-sheet star create URL — read from #map's own dataset
   // (not #favourite-add-btn's) since it is emitted alongside the other
   // #map data-*-url attributes and gated the same way
   // (favourites_eligible), independent of whether #map exists at all.
@@ -128,6 +128,14 @@
   // ---------------------------------------------------------------------------
 
   function openSheet() {
+    // SNOW-499: only one map-detail surface at a time — close the resort
+    // sheet if it is open, so the favourite and resort sheets (both docked
+    // at the same viewport position) never overlap.
+    const resortSheet = document.getElementById('resort-sheet');
+    if (resortSheet && !resortSheet.hasAttribute('hidden')) {
+      resortSheet.setAttribute('hidden', '');
+      resortSheet.innerHTML = '';
+    }
     sheet.removeAttribute('hidden');
     sheet.focus();
   }
@@ -527,14 +535,15 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Resort-popup star (SNOW-499) — favourite/unfavourite a resort from the
-  // minimal map-pin popup (public/templates/public/partials/_resort_popup.html).
-  // Delegated from document — the popup markup is injected by map.js well
+  // Resort-sheet star (SNOW-499) — favourite/unfavourite a resort from the
+  // resort detail sheet (public/templates/public/partials/_resort_sheet.html),
+  // the same bottom-sheet primitive as the favourite pin-detail.
+  // Delegated from document — the sheet markup is injected by map.js well
   // after this script's own load-time query selectors ran, and this handler
   // must keep working even when the surface-gating early return above would
   // otherwise apply to code defined further down (it doesn't here — this is
   // reached only when favourites_visible is true, since favourites.js itself
-  // is only loaded in that case; the star only ever renders in the popup
+  // is only loaded in that case; the star only ever renders in the sheet
   // when the requesting user is additionally authenticated).
   //
   // Not favourited: enqueued through window.pwaMutationQueue exactly like
@@ -606,10 +615,10 @@
         resort: true,
       });
 
-      // The popup's own star state can't be trusted fresh (no uuid yet —
+      // The sheet's own star state can't be trusted fresh (no uuid yet —
       // the create is queued, possibly offline) — close it rather than
       // show a half-updated star. The next tap re-fetches accurate state.
-      document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
+      document.dispatchEvent(new CustomEvent('snowdesk:resort-sheet-close'));
       return;
     }
 
@@ -628,7 +637,7 @@
         if (!resp.ok) throw new Error('delete failed');
         window.pwaTelemetry?.emit('map.favourite.deleted', { resort: true });
         document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-        document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
+        document.dispatchEvent(new CustomEvent('snowdesk:resort-sheet-close'));
       })
       .catch(function () {
         showToast('Could not remove this favourite — please try again.');

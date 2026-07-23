@@ -812,24 +812,27 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
 
 def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
-    """Return pre-rendered minimal popup HTML for a resort-pin tap.
+    """Return pre-rendered detail-sheet HTML for a resort-pin tap.
 
     Response shape::
 
         {"html": "<...>"}
 
-    The ``html`` key is a server-rendered snippet injected into a
-    ``maplibregl.Popup`` on ``/map/`` when a resort pin is tapped (SNOW-499),
-    mirroring ``region_summary``'s ``{"html": ...}`` shape. Content: resort
-    name (+ alternative name), parent region name, a favourite/unfavourite
-    star, and a "View bulletin" link.
+    The ``html`` key is a server-rendered snippet injected into the shared
+    map fly-out sheet (``#resort-sheet``) on ``/map/`` when a resort pin is
+    tapped (SNOW-499) — the same bottom-sheet primitive the favourite
+    pin-detail uses, so the two surfaces read as one family rather than a
+    popup-vs-sheet split. Mirrors ``region_summary``'s ``{"html": ...}``
+    shape. Content: resort name (+ alternative name), parent region name, a
+    favourite/unfavourite star, and a "View bulletin" link. (The URL name
+    remains ``resort_popup`` for continuity; the surface is a sheet.)
 
     Unlike ``region_summary``, this endpoint is **public** — resorts are a
     public reference layer, so anonymous visitors see the same name/region/
     bulletin-link content everyone else does. Only the favourite star is
     gated: it renders (with the correct favourited state + the existing
     favourite's uuid, for unfavourite) when the ``favourites`` waffle flag is
-    active AND the requester is authenticated; otherwise the popup shows a
+    active AND the requester is authenticated; otherwise the sheet shows a
     sign-in CTA in its place (``can_favourite=False``).
 
     Deliberately **not** cached (unlike ``resorts_geojson``) — the
@@ -847,7 +850,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
         resort_id: The Resort's primary key.
 
     Returns:
-        A JsonResponse with a single ``html`` key containing the popup markup.
+        A JsonResponse with a single ``html`` key containing the sheet markup.
 
     """
     resort = get_object_or_404(
@@ -866,7 +869,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     response = JsonResponse(
         {
             "html": render_to_string(
-                "public/partials/_resort_popup.html",
+                "public/partials/_resort_sheet.html",
                 {
                     "resort": resort,
                     "region": resort.region,

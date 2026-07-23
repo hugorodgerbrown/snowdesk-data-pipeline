@@ -1,0 +1,79 @@
+{% load i18n %}
+{% comment %}
+public/partials/_resort_sheet.html — Minimal resort-pin detail sheet body.
+
+Server-rendered by ``public.api.resort_popup`` and injected into the shared
+map fly-out sheet (``#resort-sheet`` — includes/_overlay_sheet.html) by
+``static/js/map.js``'s ``openResortSheet`` when a resort pin is tapped
+(SNOW-499). This is the *same* bottom-sheet primitive the favourite
+pin-detail uses, so tapping a resort and tapping a favourite present one
+consistent surface rather than a popup-vs-sheet split.
+
+Public endpoint — resorts are a public reference layer, so this body always
+renders the name/region/bulletin-link content for anonymous visitors too.
+Only the favourite star is gated on authentication + the ``favourites``
+waffle flag (``can_favourite``); ineligible visitors see a sign-in CTA in
+its place instead of a hidden control.
+
+The header's × is a ``[data-action="dismiss"]`` control — the owning
+``#resort-sheet`` is a ``[data-overlay]`` element, so static/js/overlays.js's
+shared delegated handler closes it (map.js clears the content on the
+``overlay:dismissed`` it fires), exactly as it does for the favourite sheet.
+
+Content:
+  1. Sheet header — resort name + persistent × close control.
+  2. Alternative/marketing name (when set) and parent region name.
+  3. Either the favourite/unfavourite star (``can_favourite``) or a
+     sign-in CTA.
+  4. "View bulletin" CTA linking to the region's evergreen bulletin page.
+
+Context variables expected:
+  resort         — regions.Resort instance.
+  region         — regions.MicroRegion instance (resort.region).
+  favourited     — bool: True when the requesting user already has a
+                   Favourite for this resort.
+  favourite_uuid — str: the existing Favourite's uuid (for unfavourite),
+                   or "" when not favourited.
+  can_favourite  — bool: True when the ``favourites`` flag is active AND the
+                   requesting user is authenticated.
+  signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
+  bulletin_url   — str: URL to the region's evergreen bulletin page.
+{% endcomment %}
+<div class="flex flex-col gap-3 px-2 py-4" data-testid="resort-sheet" data-resort-id="{{ resort.pk }}">
+    {% include "includes/_sheet_header.html" with title=resort.name close_action="dismiss" %}
+    {% if resort.name_alt %}
+        <p class="-mt-2 px-2 text-xs text-text-3">{{ resort.name_alt }}</p>
+    {% endif %}
+    <p class="px-2 text-sm text-text-2">{{ region.name }}</p>
+    {% if can_favourite %}
+        <button
+            type="button"
+            data-resort-star
+            data-resort-id="{{ resort.pk }}"
+            data-resort-name="{{ resort.name }}"
+            data-resort-lat="{{ resort.latitude|default:'' }}"
+            data-resort-lon="{{ resort.longitude|default:'' }}"
+            data-favourited="{{ favourited|yesno:'true,false' }}"
+            data-favourite-uuid="{{ favourite_uuid }}"
+            aria-pressed="{{ favourited|yesno:'true,false' }}"
+            class="mx-2 flex items-center gap-2 self-start rounded-pill border border-border px-3 py-1.5 text-sm font-medium text-text-1 hover:border-text-2"
+        >
+            <span aria-hidden="true">{% if favourited %}★{% else %}☆{% endif %}</span>
+            {% if favourited %}
+                {% trans "Saved" %}
+            {% else %}
+                {% trans "Save resort" %}
+            {% endif %}
+        </button>
+    {% else %}
+        <a
+            href="{{ signin_url }}"
+            class="mx-2 self-start text-sm font-medium text-status-info-text underline"
+        >
+            {% trans "Sign in to save this resort" %}
+        </a>
+    {% endif %}
+    <div class="px-2">
+        {% include "includes/_button.html" with label=_("View bulletin →") href=bulletin_url variant="secondary" size="compact" %}
+    </div>
+</div>

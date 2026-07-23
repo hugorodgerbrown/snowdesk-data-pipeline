@@ -93,6 +93,13 @@ and loads home_intro.js in addition to the shared map assets.
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
     {% include "public/partials/_favourites_surface.html" %}
+    {# SNOW-499: resort-pin detail sheet — the same bottom-sheet primitive  #}
+    {# as the favourite sheet, filled by map.js's openResortSheet on a      #}
+    {# resort tap. Public (resorts are a public reference layer), so it is   #}
+    {# NOT gated on favourites_visible; the star inside is gated server-side #}
+    {# (public.api.resort_popup / _resort_sheet.html).                       #}
+    {% trans "Resort" as resort_sheet_aria_label %}
+    {% include "includes/_overlay_sheet.html" with id="resort-sheet" aria_label=resort_sheet_aria_label %}
 {% endblock %}
 
 {% block extra_js %}
