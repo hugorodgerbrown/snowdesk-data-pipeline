@@ -15,6 +15,10 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
+* ``/api/resorts/<resort_id>/popup/``      — SNOW-499: pre-rendered minimal
+  popup HTML for a resort pin (name, region, favourite star, bulletin link).
+  Public (no auth gate — resorts are a public layer); the favourite star
+  itself is gated on the ``favourites`` waffle flag + authentication.
 * ``/api/community-reports.geojson``       — anonymised, clustered
   ``FieldObservation`` pins from the last 48 hours (SNOW-419). Flag-gated
   on ``community_reports``.
@@ -59,6 +63,7 @@ from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
 from core.freshness import apply_freshness_headers
+from favourites.models import Favourite
 from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
@@ -803,6 +808,80 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         response,
         generated_at=day_rating.updated_at if day_rating else timezone.now(),
     )
+    return response
+
+
+def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
+    """
+    Return pre-rendered minimal popup HTML for a resort-pin tap.
+
+    Response shape::
+
+        {"html": "<...>"}
+
+    The ``html`` key is a server-rendered snippet injected into a
+    ``maplibregl.Popup`` on ``/map/`` when a resort pin is tapped (SNOW-499),
+    mirroring ``region_summary``'s ``{"html": ...}`` shape. Content: resort
+    name (+ alternative name), parent region name, a favourite/unfavourite
+    star, and a "View bulletin" link.
+
+    Unlike ``region_summary``, this endpoint is **public** — resorts are a
+    public reference layer, so anonymous visitors see the same name/region/
+    bulletin-link content everyone else does. Only the favourite star is
+    gated: it renders (with the correct favourited state + the existing
+    favourite's uuid, for unfavourite) when the ``favourites`` waffle flag is
+    active AND the requester is authenticated; otherwise the popup shows a
+    sign-in CTA in its place (``can_favourite=False``).
+
+    Deliberately **not** cached (unlike ``resorts_geojson``) — the
+    favourited state is per-user, so caching this response would leak one
+    user's favourite state to another (see the SNOW-499 plan's cache-policy
+    note: ``resorts_geojson`` stays anonymous and unchanged specifically so
+    this per-user popup doesn't have to fight a shared-cache Vary: Cookie
+    problem).
+
+    Errors:
+        404 — unknown ``resort_id``.
+
+    Args:
+        request: The incoming HTTP request.
+        resort_id: The Resort's primary key.
+
+    Returns:
+        A JsonResponse with a single ``html`` key containing the popup markup.
+
+    """
+    resort = get_object_or_404(
+        Resort.objects.select_related("region"),
+        pk=resort_id,
+    )
+
+    can_favourite = False
+    favourite = None
+    if waffle.flag_is_active(request, "favourites") and request.user.is_authenticated:
+        can_favourite = True
+        favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
+
+    bulletin_url = resort.region.get_absolute_url()
+
+    response = JsonResponse(
+        {
+            "html": render_to_string(
+                "public/partials/_resort_popup.html",
+                {
+                    "resort": resort,
+                    "region": resort.region,
+                    "favourited": favourite is not None,
+                    "favourite_uuid": str(favourite.uuid) if favourite else "",
+                    "can_favourite": can_favourite,
+                    "signin_url": reverse("accounts:sign_in"),
+                    "bulletin_url": bulletin_url,
+                },
+                request=request,
+            ),
+        }
+    )
+    response["Cache-Control"] = "private, no-store"
     return response
 
 
