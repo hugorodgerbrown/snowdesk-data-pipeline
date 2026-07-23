@@ -397,6 +397,7 @@ Read these when working in the relevant area:
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
+| Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
