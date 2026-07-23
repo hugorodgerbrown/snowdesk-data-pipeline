@@ -101,11 +101,20 @@ class ResortAdmin(admin.ModelAdmin):
         "longitude",
         "geocode_source",
         "needs_review",
+        "forecast_point",
     ]
     list_filter = ["canton", "geocode_source", "needs_review"]
     search_fields = ["name", "name_alt", "region__region_id"]
     ordering = ["name"]
-    readonly_fields = ["id", "uuid", "geocoded_at", "created_at", "updated_at"]
+    raw_id_fields = ["forecast_point"]
+    readonly_fields = [
+        "id",
+        "uuid",
+        "geocoded_at",
+        "created_at",
+        "updated_at",
+        "forecast_point",
+    ]
     fieldsets = (
         (None, {"fields": ("name", "name_alt", "region", "canton", "notes")}),
         (
@@ -124,6 +133,17 @@ class ResortAdmin(admin.ModelAdmin):
                     "set lat/lon is the in-map editor at /?edit=resorts. "
                     "Access is gated by the ``edit_map`` waffle flag — manage "
                     "it at /admin/waffle/flag/ (seeded with superusers=True)."
+                ),
+            },
+        ),
+        (
+            "Weather",
+            {
+                "fields": ("forecast_point",),
+                "description": (
+                    "Machine-resolved by "
+                    "`manage.py link_resort_forecast_points --commit` — not "
+                    "hand-edited."
                 ),
             },
         ),
