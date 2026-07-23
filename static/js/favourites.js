@@ -68,7 +68,7 @@
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
-  // SNOW-499: resort-sheet star create URL — read from #map's own dataset
+  // SNOW-499: resort-popup star create URL — read from #map's own dataset
   // (not #favourite-add-btn's) since it is emitted alongside the other
   // #map data-*-url attributes and gated the same way
   // (favourites_eligible), independent of whether #map exists at all.
@@ -128,14 +128,10 @@
   // ---------------------------------------------------------------------------
 
   function openSheet() {
-    // SNOW-499: only one map-detail surface at a time — close the resort
-    // sheet if it is open, so the favourite and resort sheets (both docked
-    // at the same viewport position) never overlap.
-    const resortSheet = document.getElementById('resort-sheet');
-    if (resortSheet && !resortSheet.hasAttribute('hidden')) {
-      resortSheet.setAttribute('hidden', '');
-      resortSheet.innerHTML = '';
-    }
+    // SNOW-499: the create/placement sheet and an anchored detail popup are
+    // mutually exclusive map-detail surfaces — opening the sheet closes any
+    // open resort/favourite detail popup (map.js listens for this).
+    document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
     sheet.removeAttribute('hidden');
     sheet.focus();
   }
@@ -145,6 +141,13 @@
     sheet.setAttribute('hidden', '');
     sheet.innerHTML = '';
   }
+
+  // SNOW-499: map.js dispatches this as it opens an anchored detail popup
+  // (resort tap or existing-favourite tap) — close the create/placement
+  // sheet so the two surfaces never overlap.
+  document.addEventListener('snowdesk:map-detail-opening', function () {
+    if (!sheet.hasAttribute('hidden')) closeSheet();
+  });
 
   /** Build a sheet-header row (title + persistent × close button), mirroring
    * templates/includes/_sheet_header.html for states built via DOM APIs
@@ -362,20 +365,27 @@
     return row;
   }
 
+  // SNOW-414 / SNOW-499: an existing favourite's rename/delete detail now
+  // opens in a popup anchored to the pin (a fixed point → pinned overlay),
+  // not the docked create sheet. map.js owns anchoring, so it passes an empty
+  // ``detail.container`` ([data-favourite-detail]) for this module to fill —
+  // keeping the CSRF/URL/DOM-not-innerHTML wiring here — then anchors the
+  // filled container in the popup. The container id/attribute is what the
+  // htmx rename/delete lifecycle below scopes to (it used to scope to the
+  // sheet).
   document.addEventListener('snowdesk:favourite-selected', function (event) {
     if (!RENAME_URL_TEMPLATE || !DELETE_URL_TEMPLATE) return;
     const detail = event.detail || {};
     const favUuid = detail.uuid;
-    if (!favUuid) return;
+    const container = detail.container;
+    if (!favUuid || !container) return;
 
     window.PlacePicker?.deactivate();
+    // The create/placement sheet and the detail popup are mutually exclusive.
+    if (!sheet.hasAttribute('hidden')) closeSheet();
 
-    sheet.innerHTML = '';
-
-    sheet.appendChild(buildSheetHeader('Favourite'));
-    sheet.appendChild(buildDetailRow(favUuid, detail.name || ''));
-    if (typeof htmx !== 'undefined') htmx.process(sheet); // eslint-disable-line no-undef
-    openSheet();
+    container.appendChild(buildDetailRow(favUuid, detail.name || ''));
+    if (typeof htmx !== 'undefined') htmx.process(container); // eslint-disable-line no-undef
   });
 
   // ---------------------------------------------------------------------------
@@ -384,45 +394,50 @@
   // Create is no longer htmx-driven: SNOW-479 routes it through the client
   // mutation queue (see the #favourite-create-form submit interceptor below).
   // Only the pin-detail rename/delete forms built by buildDetailRow() still use
-  // hx-post. Two-step: mark on htmx:beforeRequest whether the element making the
-  // request lives inside #favourite-sheet (checked *before* any swap runs, so
-  // elt.closest() sees a properly attached tree — outerHTML swaps like the
-  // delete form's own row removal detach the element by the time a later event
-  // fires), then act on htmx:afterRequest (last event in htmx's lifecycle, so
-  // any swap has already completed) by inspecting #favourite-sheet's current
-  // contents. A rename swaps its _favourite.html (carrying [data-favourite-uuid])
-  // back into #favourite-<uuid> inside the sheet; a delete empties the row.
+  // hx-post, and (SNOW-499) they live in the anchored detail popup's
+  // [data-favourite-detail] container, not the create sheet. Two-step: mark on
+  // htmx:beforeRequest whether the element making the request lives inside that
+  // container (checked *before* any swap runs, so elt.closest() sees a properly
+  // attached tree — outerHTML swaps like the delete form's own row removal
+  // detach the element by the time a later event fires), then act on
+  // htmx:afterRequest (last event in htmx's lifecycle, so any swap has
+  // completed) by inspecting the container's current contents. A rename swaps
+  // its _favourite.html (carrying [data-favourite-uuid]) back into
+  // #favourite-<uuid> inside the container; a delete empties it, and we close
+  // the popup.
   // ---------------------------------------------------------------------------
 
-  let sheetRequestPending = false;
+  let detailRequestPending = false;
 
   document.addEventListener('htmx:beforeRequest', function (event) {
     const elt = event.detail && event.detail.elt;
-    sheetRequestPending = !!(elt && elt.closest && elt.closest('#favourite-sheet'));
+    detailRequestPending = !!(
+      elt && elt.closest && elt.closest('[data-favourite-detail]')
+    );
   });
 
   document.addEventListener('htmx:afterRequest', function (event) {
-    if (!sheetRequestPending) return;
-    sheetRequestPending = false;
+    if (!detailRequestPending) return;
+    detailRequestPending = false;
     if (!event.detail.successful) return; // errors handled by responseError below
 
-    const favouriteRow = sheet.querySelector('[data-favourite-uuid]');
-    if (favouriteRow) {
+    const container = document.querySelector('[data-favourite-detail]');
+    if (container && container.querySelector('[data-favourite-uuid]')) {
       // Renamed successfully (the detail row's _favourite.html swapped back in).
       document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
       return;
     }
-    // No row left in the sheet => delete succeeded (favourites:delete returns
-    // an empty 200 body, removing the row).
+    // No row left in the container => delete succeeded (favourites:delete
+    // returns an empty 200 body, removing the row). Close the popup.
     window.pwaTelemetry?.emit('map.favourite.deleted', {});
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-    closeSheet();
+    document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
   });
 
   document.addEventListener('htmx:responseError', function (event) {
     const elt = event.detail && event.detail.elt;
     if (!elt || !elt.closest) return;
-    if (!elt.closest('#favourite-sheet')) return;
+    if (!elt.closest('[data-favourite-detail]')) return;
     const message =
       (event.detail.xhr && event.detail.xhr.responseText) ||
       'Something went wrong — please try again.';
@@ -535,15 +550,14 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Resort-sheet star (SNOW-499) — favourite/unfavourite a resort from the
-  // resort detail sheet (public/templates/public/partials/_resort_sheet.html),
-  // the same bottom-sheet primitive as the favourite pin-detail.
-  // Delegated from document — the sheet markup is injected by map.js well
+  // Resort-popup star (SNOW-499) — favourite/unfavourite a resort from the
+  // minimal map-pin popup (public/templates/public/partials/_resort_popup.html).
+  // Delegated from document — the popup markup is injected by map.js well
   // after this script's own load-time query selectors ran, and this handler
   // must keep working even when the surface-gating early return above would
   // otherwise apply to code defined further down (it doesn't here — this is
   // reached only when favourites_visible is true, since favourites.js itself
-  // is only loaded in that case; the star only ever renders in the sheet
+  // is only loaded in that case; the star only ever renders in the popup
   // when the requesting user is additionally authenticated).
   //
   // Not favourited: enqueued through window.pwaMutationQueue exactly like
@@ -615,10 +629,10 @@
         resort: true,
       });
 
-      // The sheet's own star state can't be trusted fresh (no uuid yet —
+      // The popup's own star state can't be trusted fresh (no uuid yet —
       // the create is queued, possibly offline) — close it rather than
       // show a half-updated star. The next tap re-fetches accurate state.
-      document.dispatchEvent(new CustomEvent('snowdesk:resort-sheet-close'));
+      document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
       return;
     }
 
@@ -637,7 +651,7 @@
         if (!resp.ok) throw new Error('delete failed');
         window.pwaTelemetry?.emit('map.favourite.deleted', { resort: true });
         document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-        document.dispatchEvent(new CustomEvent('snowdesk:resort-sheet-close'));
+        document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
       })
       .catch(function () {
         showToast('Could not remove this favourite — please try again.');

@@ -8,8 +8,8 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourite_create`` (POST) — validates lat/lon/name, creates a
   Favourite, returns the saved-pin partial.
 - ``favourite_create_from_resort`` (POST) — SNOW-499: creates a Favourite
-  from a public ``regions.Resort`` (the resort-pin detail sheet's star),
-  returns the same saved-pin partial as ``favourite_create``.
+  from a public ``regions.Resort`` (the resort-pin popup's star), returns
+  the same saved-pin partial as ``favourite_create``.
 - ``favourite_rename`` (POST) — owner-checked rename of an existing
   Favourite, returns the updated partial.
 - ``favourite_delete`` (POST) — owner-checked deletion of a Favourite.
@@ -356,8 +356,8 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     """Create a Favourite from a public Resort and return the saved-pin partial.
 
-    Entry point is the resort-pin detail sheet's favourite star
-    (``public/templates/public/partials/_resort_sheet.html``), submitted via
+    Entry point is the resort-pin popup's favourite star
+    (``public/templates/public/partials/_resort_popup.html``), submitted via
     ``static/js/favourites.js``'s client mutation queue — same offline-capable
     path as ``favourite_create`` (SNOW-499).
 

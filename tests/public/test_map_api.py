@@ -13,9 +13,8 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
                                   English breadcrumb, date caption, and bulletin
                                   CTA (SNOW-174). Resort list removed.
-* ``api:resort_popup``          — SNOW-499: resort-pin detail sheet body
-                                  (name, region, favourite star, bulletin
-                                  link) — injected into #resort-sheet.
+* ``api:resort_popup``          — SNOW-499: minimal resort-pin popup (name,
+                                  region, favourite star, bulletin link).
                                   Public; the star is gated on the
                                   ``favourites`` flag + authentication.
 

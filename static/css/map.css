@@ -1617,3 +1617,62 @@
     font-size: 12px;
     color: var(--color-text-2, #5f5e5a);
 }
+
+/* SNOW-499: resort- and existing-favourite-detail popups are anchored to a
+ * point fixed on the map (a resort pin / a saved favourite), so they share
+ * the same frosted-glass MapLibre-popup chrome as .region-popup and
+ * .community-report-popup-wrapper — one consistent popup family, rather than
+ * MapLibre's default white box. No data-level border (neither has a danger
+ * rating). Mirrors the community-report treatment (the simpler sibling). */
+.detail-popup .maplibregl-popup-content {
+    /* Right padding reserves room for the absolutely-positioned close button
+     * so content never runs under it. */
+    padding: 12px 34px 12px 14px;
+    border-radius: 12px;
+    background: var(--color-popup-glass);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 2px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    box-shadow: var(--shadow-glass, 0 4px 16px rgba(0, 0, 0, 0.12));
+    color: var(--color-text-1, #1a1a1a);
+    font-family: var(--sans);
+    min-width: 200px;
+}
+
+.detail-popup .maplibregl-popup-close-button {
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+    border-radius: 6px;
+    color: var(--color-text-2, #5f5e5a);
+}
+
+.detail-popup .maplibregl-popup-close-button:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--color-text-1, #1a1a1a);
+}
+
+/* The existing-favourite popup hosts the client-built rename/delete row
+ * (favourites.js buildDetailRow, and the _favourite.html the rename swaps
+ * back in) — both carry their own card border/background for the manage-page
+ * list. Inside the glass popup that reads as a box-in-box, so flatten it to
+ * sit flush on the glass, matching the resort/region/observation content. */
+.detail-popup [data-favourite-uuid] {
+    border: 0;
+    background: transparent;
+    padding: 0;
+}
+
+/* Keep the editable name legible as a field on the glass — a subtle underline
+ * signals "editable" without the full card border. */
+.detail-popup [data-favourite-uuid] input[name="name"] {
+    border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.18));
+    padding-bottom: 2px;
+}

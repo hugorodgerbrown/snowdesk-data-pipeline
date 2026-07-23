@@ -1,9 +1,9 @@
 """
 tests/e2e/test_resort_favourite.py — Playwright test for the SNOW-499 resort
-favourite star (the resort-pin detail sheet's entry point for favouriting a
-public ``regions.Resort``).
+favourite star (the minimal resort-pin popup's entry point for favouriting
+a public ``regions.Resort``).
 
-Opening the real resort detail sheet on the map requires a genuine MapLibre
+Opening the real resort-pin popup on the map requires a genuine MapLibre
 ``queryRenderedFeatures`` hit on a composited WebGL frame with the (default
 -off, lazy-loaded) resorts overlay enabled — exactly the kind of
 frame-timing dependency ``tests/e2e/test_favourites.py``'s module docstring
@@ -11,14 +11,14 @@ already flags as unreliable in headless Chromium, and which that file avoids
 by dispatching ``snowdesk:favourite-selected`` directly rather than relying
 on a canvas hit-test.
 
-This test follows the same principle, one level further: rather than the
-canvas tap, it fetches the real server-rendered ``api:resort_popup`` partial
-and injects it into the *real* ``#resort-sheet`` element (the same DOM effect
-``static/js/map.js``'s ``openResortSheet`` produces), then drives the star
-exactly as a user tapping it inside the sheet would. This is deterministic,
-needs no WebGL frame, and exercises the real template, the shared overlay
-sheet primitive, and the real ``[data-resort-star]`` delegated handler in
-``static/js/favourites.js``.
+This test follows the same principle, one level further: rather than
+hand-crafting a ``[data-resort-star]`` button, it fetches the real
+server-rendered ``api:resort_popup`` partial (the exact HTML
+``static/js/map.js``'s ``openResortPopup`` would ``popup.setHTML(...)``) and
+injects it into the page, then drives the star exactly as a user tapping it
+inside the real popup would. This is deterministic, needs no WebGL frame,
+and still exercises the real template + the real ``[data-resort-star]``
+delegated handler in ``static/js/favourites.js``.
 """
 
 from __future__ import annotations
@@ -46,27 +46,29 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-def _open_resort_sheet(page: Page, live_server_url: str, resort_id: int) -> None:
-    """Fetch the real resort-detail partial and open it in ``#resort-sheet``.
+def _inject_resort_popup(page: Page, live_server_url: str, resort_id: int) -> None:
+    """Fetch the real resort-popup partial and inject it into the page.
 
-    Reproduces the DOM effect of ``map.js``'s ``openResortSheet`` — inject
-    the fetched HTML into the real shared sheet element and remove its
-    ``hidden`` attribute — so the ``[data-resort-star]`` handler and the
-    shared overlay dismiss can be driven without a WebGL-dependent canvas
-    hit-test standing between the test and the sheet.
+    Mirrors what ``map.js``'s ``openResortPopup`` does with
+    ``popup.setHTML(data.html)`` — a real server round trip landed in a
+    plain host ``<div>`` rather than a ``maplibregl.Popup``, so the
+    ``[data-resort-star]`` handler can be driven without a WebGL-dependent
+    canvas hit-test standing between the test and the button.
     """
     url = f"{live_server_url}{reverse('api:resort_popup', args=[resort_id])}"
     page.evaluate(
         """async (url) => {
             const resp = await fetch(url);
             const data = await resp.json();
-            const sheet = document.getElementById('resort-sheet');
-            sheet.innerHTML = data.html;
-            sheet.removeAttribute('hidden');
+            const host = document.getElementById('e2e-resort-popup-host')
+                || document.createElement('div');
+            host.id = 'e2e-resort-popup-host';
+            host.innerHTML = data.html;
+            document.body.appendChild(host);
         }""",
         url,
     )
-    page.wait_for_selector("#resort-sheet:not([hidden]) [data-resort-star]")
+    page.wait_for_selector("#e2e-resort-popup-host [data-resort-star]")
 
 
 @override_flag("favourites", active=True)
@@ -92,9 +94,9 @@ def test_star_creates_resort_favourite(
     page.wait_for_function("() => typeof window.pwaMutationQueue === 'object'")
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
 
-    _open_resort_sheet(page, favourites_page.live_server_url, resort.pk)
+    _inject_resort_popup(page, favourites_page.live_server_url, resort.pk)
 
-    star = page.locator("#resort-sheet [data-resort-star]")
+    star = page.locator("#e2e-resort-popup-host [data-resort-star]")
     assert star.get_attribute("data-favourited") == "false"
 
     star.click()
@@ -136,9 +138,9 @@ def test_star_unfavourites_existing_resort_favourite(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
-    _open_resort_sheet(page, favourites_page.live_server_url, resort.pk)
+    _inject_resort_popup(page, favourites_page.live_server_url, resort.pk)
 
-    star = page.locator("#resort-sheet [data-resort-star]")
+    star = page.locator("#e2e-resort-popup-host [data-resort-star]")
     assert star.get_attribute("data-favourited") == "true"
 
     star.click()
@@ -157,30 +159,6 @@ def test_star_unfavourites_existing_resort_favourite(
 
     with django_db_blocker.unblock():
         assert not Favourite.objects.filter(pk=favourite_pk).exists()
-
-
-@override_flag("favourites", active=True)
-@pytest.mark.django_db(transaction=True)
-def test_resort_sheet_header_close_dismisses_the_sheet(
-    favourites_page: FavouritesPage, django_db_blocker: Any
-) -> None:
-    """The sheet header's × closes #resort-sheet via the shared dismiss handler.
-
-    Confirms the resort detail uses the shared overlay-sheet primitive: the
-    header × is a plain ``[data-action="dismiss"]`` with no bespoke JS, and
-    static/js/overlays.js hides the ``[data-overlay]`` sheet and clears it.
-    """
-    with django_db_blocker.unblock():
-        resort = ResortFactory.create(name="Saas-Fee", latitude=46.1, longitude=7.93)
-
-    page = favourites_page.page
-    _navigate_home(page, favourites_page.live_server_url)
-    _open_resort_sheet(page, favourites_page.live_server_url, resort.pk)
-
-    # The shared _sheet_header.html × carries data-action="dismiss".
-    page.locator('#resort-sheet [data-action="dismiss"]').click()
-
-    page.wait_for_selector("#resort-sheet[hidden]", state="attached")
 
 
 @override_flag("favourites", active=True)

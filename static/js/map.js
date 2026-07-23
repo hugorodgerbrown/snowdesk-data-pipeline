@@ -2632,48 +2632,63 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     };
 
-    // SNOW-499: a resort tap opens the shared map fly-out sheet
-    // (#resort-sheet — includes/_overlay_sheet.html) with the resort's
-    // name/region/favourite-star/bulletin link, rather than proxying to the
-    // parent region's popup/selection. This is the *same* bottom-sheet
-    // primitive the favourite pin-detail uses, so tapping a resort and
-    // tapping a favourite present one consistent surface (not a popup vs a
-    // sheet). The sheet is a public element (resorts are a public layer), so
-    // it exists for anonymous visitors too; the star inside is gated
-    // server-side.
-    const resortSheet = document.getElementById('resort-sheet');
+    // SNOW-499: a single "detail popup" handle, separate from the region
+    // popup — a resort or an *existing* favourite is a point fixed to the
+    // map, so its detail overlay is a MapLibre popup anchored to the point
+    // (not the docked create/placement sheet, which stays put while the map
+    // pans a mobile pin under it). Only one detail popup can be open at a
+    // time, and it is tracked independently of activePopup/activePopupRegion
+    // (no history/hash involvement, unlike the region popup).
+    let activeDetailPopup = null;
 
-    // Close the resort sheet and clear its content so the next open starts
-    // fresh. Hidden via the HTML5 ``hidden`` attribute, matching the
-    // favourite sheet and the shared overlays.js dismiss idiom.
-    const closeResortSheet = () => {
-      if (!resortSheet || resortSheet.hasAttribute('hidden')) return;
-      resortSheet.setAttribute('hidden', '');
-      resortSheet.innerHTML = '';
+    // Remove the open detail popup, if any.
+    const closeDetailPopup = () => {
+      if (!activeDetailPopup) return;
+      const p = activeDetailPopup;
+      activeDetailPopup = null;
+      p.remove();
     };
 
-    // SNOW-499: fetch the resort detail body and open it in #resort-sheet.
-    // Only one map-detail surface is meaningful at a time, so opening the
-    // resort sheet dismisses any open region popup AND the favourite sheet.
-    const openResortSheet = async (resortFeature) => {
-      const resortId = resortFeature.properties && resortFeature.properties.id;
-      if (resortId == null || !RESORT_POPUP_URL_TEMPLATE || !resortSheet) {
-        return false;
-      }
-
-      // Dismiss the region popup (silent — no history/hash side effects).
+    // Anchor a detail popup at ``lngLat`` with server HTML (``content.html``)
+    // or a client-built DOM node (``content.node``). Replaces any open detail
+    // popup, dismisses the region popup, and closes the favourite create
+    // sheet — only one map-detail surface is meaningful at a time.
+    const mountDetailPopup = (lngLat, content) => {
+      closeDetailPopup();
       dismissActivePopupSilently();
-      // Dismiss the favourite sheet if it is open, reusing its own teardown
-      // (place-picker deactivate + content clear) via the shared
-      // overlay:dismissed event favourites.js already listens for.
-      const favSheet = document.getElementById('favourite-sheet');
-      if (favSheet && !favSheet.hasAttribute('hidden')) {
-        favSheet.setAttribute('hidden', '');
-        favSheet.dispatchEvent(new CustomEvent('overlay:dismissed', {
-          bubbles: true,
-          detail: { overlay: favSheet },
-        }));
+      // Close the favourite create/placement sheet if it is open.
+      document.dispatchEvent(new CustomEvent('snowdesk:map-detail-opening'));
+
+      const popup = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: false,
+        focusAfterOpen: false,
+        anchor: 'bottom',
+        maxWidth: 'min(320px, calc(100vw - 32px))',
+        className: 'detail-popup',
+      });
+      if (content.html != null) {
+        // Server-trusted HTML: rendered by Django templates with all
+        // user-supplied values escaped by autoescape — safe for setHTML.
+        popup.setHTML(content.html);
+      } else if (content.node) {
+        popup.setDOMContent(content.node);
       }
+      popup.setLngLat(lngLat).addTo(map);
+      if (typeof popup._update === 'function') popup._update();
+
+      activeDetailPopup = popup;
+      popup.on('close', () => {
+        if (activeDetailPopup === popup) activeDetailPopup = null;
+      });
+      return popup;
+    };
+
+    // SNOW-499: fetch the resort detail body and anchor it in a popup at the
+    // tapped resort pin. Mirrors openRegionPopup's fetch/setHTML shape.
+    const openResortPopup = async (resortFeature) => {
+      const resortId = resortFeature.properties && resortFeature.properties.id;
+      if (resortId == null || !RESORT_POPUP_URL_TEMPLATE) return false;
 
       const url = RESORT_POPUP_URL_TEMPLATE.replace(
         '/resorts/0/popup/', `/resorts/${encodeURIComponent(resortId)}/popup/`,
@@ -2682,37 +2697,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
         const resp = await fetch(url, { headers: { Accept: 'application/json' } });
         if (!resp.ok) return false;
         const data = await resp.json();
-        // Server-trusted HTML: rendered by Django templates with all
-        // user-supplied values escaped by autoescape — safe for innerHTML.
-        resortSheet.innerHTML = data.html;
-        resortSheet.removeAttribute('hidden');
-        resortSheet.focus();
+        mountDetailPopup(resortFeature.geometry.coordinates, { html: data.html });
         return true;
       } catch (_err) {
         return false;
       }
     };
 
-    // SNOW-486: #resort-sheet is a [data-overlay] element, so its header ×
-    // (data-action="dismiss") is closed by static/js/overlays.js's shared
-    // handler, which hides it and fires overlay:dismissed. Clear the content
-    // on that event so the next open starts fresh (mirrors favourites.js).
-    document.addEventListener('overlay:dismissed', (event) => {
-      if (event.detail && event.detail.overlay === resortSheet) {
-        resortSheet.innerHTML = '';
-      }
-    });
-
-    // Esc closes the resort sheet, matching the favourite/report sheets.
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') closeResortSheet();
-    });
-
-    // SNOW-499: favourites.js dispatches this once a resort-sheet favourite
-    // toggle (star tap) has been submitted, so the sheet — whose favourited
-    // state and uuid were fetched at open time — closes rather than showing
-    // stale state. The next tap on the same pin re-fetches fresh state.
-    document.addEventListener('snowdesk:resort-sheet-close', closeResortSheet);
+    // SNOW-499: favourites.js dispatches this once a resort-popup favourite
+    // toggle (star tap), or a favourite rename/delete, has been submitted, so
+    // the popup — whose state was captured at open time — closes rather than
+    // showing stale content. The next tap on the same pin re-fetches fresh
+    // state.
+    document.addEventListener('snowdesk:resort-popup-close', closeDetailPopup);
+    document.addEventListener('snowdesk:favourite-detail-close', closeDetailPopup);
 
     // Clear the selection state for the currently-focused region (deselects
     // the map highlight) and keep the URL hash in sync. Called on genuine
@@ -2913,14 +2911,25 @@ const repaintRegionsForDate = (dateKey, cache) => {
         .catch(() => {});
     };
 
-    // SNOW-414: tapping a favourite pin opens the rename/delete detail sheet
-    // (favourites.js listens for this event) rather than focusing a region,
-    // since a favourite isn't necessarily inside a known EAWS region.
+    // SNOW-414 / SNOW-499: tapping an *existing* favourite pin opens its
+    // rename/delete detail in a popup anchored to the pin — a favourite is a
+    // point fixed to the map, so (like a resort or a region) its detail is a
+    // pinned popup, not the docked sheet the mobile create/placement pin
+    // uses. favourites.js owns the rename/delete markup + CSRF/URL wiring, so
+    // map.js hands it an empty [data-favourite-detail] container to fill (via
+    // the same snowdesk:favourite-selected contract), then anchors the filled
+    // container in a popup at the favourite's coordinates. If favourites.js
+    // isn't loaded (never happens for a rendered favourite pin — the layer is
+    // eligibility-gated), the container stays empty and no popup opens.
     const activateFavourite = (feature) => {
       const props = feature.properties;
+      const container = document.createElement('div');
+      container.setAttribute('data-favourite-detail', '');
       document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
-        detail: { uuid: props.uuid, name: props.name },
+        detail: { uuid: props.uuid, name: props.name, container: container },
       }));
+      if (!container.childNodes.length) return;
+      mountDetailPopup(feature.geometry.coordinates, { node: container });
     };
 
     // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
@@ -3058,6 +3067,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // so closePopupOnly must run first to fire the 'close' teardown while
         // those references are still live.
         closePopupOnly();
+        closeDetailPopup(); // SNOW-499: an anchored resort/favourite popup too.
         clearTooltip();
         document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
           detail: { region_id: null, region_name: null },
@@ -3069,18 +3079,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // changes (mirrors the old regions-fill IS_PLAYING guard).
       if (IS_PLAYING) return;
 
-      // SNOW-499: a resort pin now opens its own detail sheet (name, region,
+      // SNOW-499: a resort pin now opens its own minimal popup (name, region,
       // favourite star, bulletin link) instead of proxying to the parent
-      // region's selection (former SNOW-78 behaviour) — the sheet's "View
+      // region's selection (former SNOW-78 behaviour) — the popup's "View
       // bulletin" link is the replacement path to the region.
       const resort = features.find((f) => f.layer.id === 'resorts-pin');
       if (resort) {
-        openResortSheet(resort);
+        openResortPopup(resort);
         return;
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
-      if (region) selectFeature(region.id);
+      if (region) {
+        // SNOW-499: a region tap opens the region popup — close any anchored
+        // resort/favourite detail popup so the two don't co-exist.
+        closeDetailPopup();
+        selectFeature(region.id);
+      }
     });
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
