@@ -66,6 +66,15 @@ class Favourite(BaseModel):
     ``region`` is a best-effort MicroRegion resolution, mirroring
     ``observations.models.FieldObservation.region`` — it may be null when
     the pin falls outside every known boundary.
+
+    ``resort`` (SNOW-499) is set when this favourite was created from a
+    public ``regions.Resort`` pin rather than a dropped map pin — in that
+    case ``region`` is taken authoritatively from ``resort.region`` rather
+    than the best-effort ``region_for_point`` match above.
+    ``on_delete=SET_NULL`` degrades a resort favourite to a plain pin (the
+    snapshotted name/coordinates/region survive) if the resort row is ever
+    deleted; the partial-unique constraint below stops a user favouriting
+    the same resort twice.
     """
 
     user = models.ForeignKey(
@@ -108,6 +117,17 @@ class Favourite(BaseModel):
             "Null when the point cannot be matched to a known boundary."
         ),
     )
+    resort = models.ForeignKey(
+        "regions.Resort",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="favourites",
+        help_text=(
+            "The public Resort this favourite was created from, when "
+            "created via the resort-pin popup rather than a dropped pin."
+        ),
+    )
 
     objects = FavouriteQuerySet.as_manager()
 
@@ -126,6 +146,14 @@ class Favourite(BaseModel):
             models.CheckConstraint(
                 condition=models.Q(longitude__gte=-180, longitude__lte=180),
                 name="favourite_longitude_within_wgs84",
+            ),
+            # SNOW-499: a user may favourite a given resort at most once.
+            # Partial (condition=...) so multiple plain (resort=NULL) pins
+            # never collide with one another.
+            models.UniqueConstraint(
+                fields=["user", "resort"],
+                condition=models.Q(resort__isnull=False),
+                name="favourite_unique_user_resort",
             ),
         ]
 

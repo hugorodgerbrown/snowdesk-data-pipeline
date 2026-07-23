@@ -22,7 +22,10 @@ determinism reason: dispatching ``snowdesk:favourite-selected`` directly
 (the documented contract between map.js and favourites.js — see
 docs/map-and-api.md) rather than relying on ``queryRenderedFeatures``
 finding a rendered symbol-layer glyph at a pixel, which requires the layer
-to have actually composited a frame.
+to have actually composited a frame. SNOW-499: an existing-favourite tap now
+opens an anchored popup rather than the docked sheet, so the rename/delete
+tests supply the ``[data-favourite-detail]`` container map.js would (see
+``_open_favourite_detail``) and assert against it.
 
 The forecast-panel test (SNOW-417) instead drives the manage page's
 "My favourites" list — the "Details" button hx-gets ``favourite_card``
@@ -157,12 +160,38 @@ def test_signed_in_add_flow_creates_favourite(
         assert favourite.longitude == pytest.approx(7.6, abs=0.01)
 
 
+def _open_favourite_detail(page: Page, uuid: str, name: str) -> None:
+    """Open an existing favourite's rename/delete detail deterministically.
+
+    SNOW-499: an existing-favourite tap now opens an anchored popup, not the
+    docked sheet — map.js hands favourites.js an empty ``[data-favourite-detail]``
+    container (via the ``snowdesk:favourite-selected`` contract) to fill, then
+    anchors it in a MapLibre popup at the pin. Mounting that popup needs a
+    composited WebGL ``queryRenderedFeatures`` hit (the frame-timing flake this
+    file avoids), so the test reproduces map.js's DOM effect instead: create
+    the same container, attach it, and dispatch the event. This exercises the
+    real favourites.js fill + htmx rename/delete lifecycle without the canvas
+    hit-test; the popup mounting itself is covered by an in-browser check.
+    """
+    page.evaluate(
+        """({ uuid, name }) => {
+            const container = document.createElement('div');
+            container.setAttribute('data-favourite-detail', '');
+            document.body.appendChild(container);
+            document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
+                detail: { uuid, name, container },
+            }));
+        }""",
+        {"uuid": uuid, "name": name},
+    )
+
+
 @override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
-def test_rename_via_detail_sheet_refreshes_label(
+def test_rename_via_detail_popup_refreshes_label(
     favourites_page: FavouritesPage, django_db_blocker: Any
 ) -> None:
-    """Renaming via the detail sheet updates the DB row and the map source."""
+    """Renaming via the detail popup updates the DB row and the map source."""
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
             user=favourites_page.subscriber.user, name="Old Name"
@@ -172,11 +201,7 @@ def test_rename_via_detail_sheet_refreshes_label(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
-    page.evaluate(
-        "({ uuid, name }) => document.dispatchEvent("
-        "new CustomEvent('snowdesk:favourite-selected', { detail: { uuid, name } }))",
-        {"uuid": fav_uuid, "name": "Old Name"},
-    )
+    _open_favourite_detail(page, fav_uuid, "Old Name")
     page.wait_for_selector(f"#favourite-{fav_uuid}")
     name_input = page.locator(f"#favourite-{fav_uuid} input[name=name]")
     assert name_input.input_value() == "Old Name"
@@ -210,7 +235,7 @@ def test_rename_via_detail_sheet_refreshes_label(
 def test_delete_removes_pin(
     favourites_page: FavouritesPage, django_db_blocker: Any
 ) -> None:
-    """Delete via the detail sheet removes the DB row and closes the sheet."""
+    """Delete via the detail popup removes the DB row and tears the detail down."""
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
             user=favourites_page.subscriber.user, name="Doomed Pin"
@@ -220,15 +245,26 @@ def test_delete_removes_pin(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
+    # Listen for the popup-close signal favourites.js fires on a successful
+    # delete (map.js closes the anchored popup on it).
     page.evaluate(
-        "({ uuid, name }) => document.dispatchEvent("
-        "new CustomEvent('snowdesk:favourite-selected', { detail: { uuid, name } }))",
-        {"uuid": fav_uuid, "name": "Doomed Pin"},
+        """() => {
+            window.__detailClosed = false;
+            document.addEventListener('snowdesk:favourite-detail-close',
+                () => { window.__detailClosed = true; });
+        }"""
     )
-    page.wait_for_selector(f"#favourite-{fav_uuid}")
-    page.click(f"#favourite-{fav_uuid} button[type=submit]")
 
-    page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
+    _open_favourite_detail(page, fav_uuid, "Doomed Pin")
+    page.wait_for_selector(f"#favourite-{fav_uuid}")
+    with page.expect_response(
+        lambda r: r.url.endswith(f"/favourites/partials/{fav_uuid}/delete/")
+    ):
+        page.click(f"#favourite-{fav_uuid} button[type=submit]")
+
+    # The row is gone from the detail container, and the popup-close fired.
+    page.wait_for_selector(f"#favourite-{fav_uuid}", state="detached")
+    page.wait_for_function("() => window.__detailClosed === true")
 
     with django_db_blocker.unblock():
         assert not Favourite.objects.filter(pk=favourite.pk).exists()

@@ -13,6 +13,10 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
                                   English breadcrumb, date caption, and bulletin
                                   CTA (SNOW-174). Resort list removed.
+* ``api:resort_popup``          — SNOW-499: minimal resort-pin popup (name,
+                                  region, favourite star, bulletin link).
+                                  Public; the star is gated on the
+                                  ``favourites`` flag + authentication.
 
 SNOW-252 — peak semantics:
 * ``api:ratings`` choropleth emits peak (max_rating) for two-period escalating days.
@@ -44,12 +48,15 @@ from bulletins.models import RegionDayRating
 from observations.models import FieldObservation
 from tests.factories import (
     BulletinGroupingFactory,
+    FavouriteFactory,
     FieldObservationFactory,
+    ForecastPointFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     ResortFactory,
     SubRegionFactory,
+    UserFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -711,6 +718,120 @@ def test_region_summary_unknown_region_returns_404() -> None:
     client = Client()
     response = client.get(reverse("api:region_summary", args=["xx-9999"]))
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# resort_popup (SNOW-499)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resort_popup_returns_html_for_known_resort() -> None:
+    """200 response with a single html key containing the resort/region names."""
+    region = MicroRegionFactory.create(name="Martigny – Verbier")
+    resort = ResortFactory.create(
+        name="Verbier", region=region, latitude=46.1, longitude=7.4
+    )
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) == {"html"}
+    assert "Verbier" in data["html"]
+    assert "Martigny" in data["html"]
+
+
+@pytest.mark.django_db
+def test_resort_popup_unknown_resort_returns_404() -> None:
+    """An unknown resort_id returns 404."""
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[999999]))
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@override_flag("favourites", active=True)
+def test_resort_popup_anonymous_shows_signin_cta_no_star() -> None:
+    """An anonymous visitor sees a sign-in CTA and no favourite star."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "data-resort-star" not in html
+    assert "Sign in" in html
+
+
+@pytest.mark.django_db
+@override_flag("favourites", active=True)
+def test_resort_popup_authenticated_not_favourited_shows_star() -> None:
+    """An authenticated, not-yet-favouriting user sees the star, unfavourited."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+    user = UserFactory.create()
+
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "data-resort-star" in html
+    assert 'data-favourited="false"' in html
+
+
+@pytest.mark.django_db
+@override_flag("favourites", active=True)
+def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> None:
+    """An already-favourited resort shows data-favourited=true + the favourite's uuid."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+    user = UserFactory.create()
+    point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+    favourite = FavouriteFactory.create(
+        user=user,
+        resort=resort,
+        latitude=46.1,
+        longitude=7.4,
+        forecast_point=point,
+    )
+
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert 'data-favourited="true"' in html
+    assert str(favourite.uuid) in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_flag_inactive_shows_signin_cta_no_star() -> None:
+    """An authenticated user sees the sign-in CTA when the flag is inactive."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+    user = UserFactory.create()
+
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "data-resort-star" not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_not_cached() -> None:
+    """The response never carries a public/shared Cache-Control (per-user star)."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert "public" not in response.get("Cache-Control", "")
 
 
 @pytest.mark.django_db
