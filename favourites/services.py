@@ -1,8 +1,9 @@
 """
 favourites/services.py — Business logic for creating and deleting Favourites.
 
-Provides ``create_favourite`` and ``delete_favourite``, the two mutating
-entry points used by ``favourites/views.py``.
+Provides ``create_favourite``, ``create_resort_favourite``, and
+``delete_favourite`` — the mutating entry points used by
+``favourites/views.py``.
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
@@ -19,7 +20,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from bulletins.services.forecast_points import resolve_forecast_point
 from favourites.models import Favourite
@@ -28,11 +29,17 @@ from regions.services.point_match import region_for_point
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from regions.models import Resort
+
 logger = logging.getLogger(__name__)
 
 
 class FavouriteLimitReached(Exception):
     """Raised when a user has reached ``settings.FAVOURITES_MAX_PER_USER``."""
+
+
+class ResortNotGeocoded(Exception):
+    """Raised when a Resort has no latitude/longitude to favourite from."""
 
 
 def create_favourite(
@@ -107,6 +114,91 @@ def create_favourite(
         user.pk,
         forecast_point.pk,
         region.region_id if region else None,
+    )
+    return favourite
+
+
+def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
+    """Create (or return the existing) Favourite for a user's resort pin.
+
+    Unlike ``create_favourite``, ``region`` is taken authoritatively from
+    ``resort.region`` — a resort's parent region is a maintained fixture
+    fact, not a best-effort point match — and ``name`` snapshots
+    ``resort.name`` so a favourite created this way never renders blank in
+    the favourites list even after ``resort`` degrades to null (SET_NULL).
+
+    Idempotent on an existing ``(user, resort)`` favourite: a pre-check
+    returns the existing row without a second Open-Meteo call, and the
+    ``IntegrityError`` from the partial-unique constraint is caught as the
+    race backstop (mirrors the cap re-check pattern in ``create_favourite``).
+
+    Args:
+        user: The authenticated user favouriting the resort.
+        resort: The Resort being favourited. Must be geocoded.
+
+    Returns:
+        The newly created (or pre-existing) Favourite.
+
+    Raises:
+        ResortNotGeocoded: When ``resort`` has no latitude/longitude.
+        FavouriteLimitReached: When the user already holds
+            ``settings.FAVOURITES_MAX_PER_USER`` favourites.
+
+    """
+    if resort.latitude is None or resort.longitude is None:
+        raise ResortNotGeocoded(f"Resort {resort.pk} ({resort.name}) is not geocoded.")
+
+    existing = Favourite.objects.filter(user=user, resort=resort).first()
+    if existing is not None:
+        return existing
+
+    if Favourite.objects.for_user(user).count() >= settings.FAVOURITES_MAX_PER_USER:
+        raise FavouriteLimitReached(
+            f"User {user.pk} has reached the "
+            f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
+        )
+
+    # External HTTP call (Open-Meteo elevation lookup) — kept outside any
+    # transaction so a slow or failing request never holds a DB lock.
+    forecast_point = resolve_forecast_point(resort.latitude, resort.longitude)
+
+    try:
+        with transaction.atomic():
+            # Lock the user row before the cap re-check — see create_favourite
+            # for the full race-condition rationale.
+            get_user_model().objects.select_for_update().get(pk=user.pk)
+            if (
+                Favourite.objects.for_user(user).count()
+                >= settings.FAVOURITES_MAX_PER_USER
+            ):
+                raise FavouriteLimitReached(
+                    f"User {user.pk} has reached the "
+                    f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
+                )
+            favourite = Favourite.objects.create(
+                user=user,
+                name=resort.name,
+                latitude=resort.latitude,
+                longitude=resort.longitude,
+                elevation=forecast_point.elevation,
+                forecast_point=forecast_point,
+                region=resort.region,
+                resort=resort,
+            )
+    except IntegrityError:
+        # Race backstop: another request created the same (user, resort)
+        # favourite between the pre-check above and this write. The partial-
+        # unique constraint rejects our insert; return the row that won.
+        existing = Favourite.objects.filter(user=user, resort=resort).first()
+        if existing is None:
+            raise
+        return existing
+
+    logger.info(
+        "Resort favourite created: user=%s resort=%s region=%s",
+        user.pk,
+        resort.pk,
+        resort.region.region_id,
     )
     return favourite
 
