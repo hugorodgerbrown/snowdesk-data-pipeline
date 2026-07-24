@@ -117,7 +117,12 @@ exclude_lines = [
 
 [tool.ruff]
 line-length = 88
-extend-exclude = ["docs/research"]
+# ruff 0.16 began formatting Python code blocks embedded in Markdown. We do
+# not want that: it rewrites illustrative doc snippets into standalone-module
+# form (e.g. wrapping a trailing-comma urlpatterns line into a tuple), which
+# misleads the reader. ruff has never linted prose docs, so exclude Markdown
+# from ruff entirely rather than pinning ruff back (SNOW-506).
+extend-exclude = ["docs/research", "*.md"]
 
 [tool.ruff.lint]
 select = [
