@@ -2424,7 +2424,7 @@ requires-dist = [
     { name = "gunicorn", specifier = ">=26.0.0,<27" },
     { name = "pdfplumber", specifier = ">=0.11.9,<0.12" },
     { name = "posthog", specifier = ">=7.16.3,<8" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.4,<4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4,<4" },
     { name = "python-decouple", specifier = ">=3.8,<4" },
     { name = "pywebpush", specifier = ">=2.3.0,<3" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
