@@ -66,9 +66,11 @@ def _navigate_home_map_loaded(page: Page, live_server_url: str) -> None:
 
 
 def _dot_state(page: Page, key: str) -> str | None:
-    return page.locator(f'[data-overlay-key="{key}"] .sync-dot').get_attribute(
-        "data-sync-state"
-    )
+    dot = page.locator(f'[data-overlay-key="{key}"] .sync-dot')
+    # Annotate the local so the Any-typed get_attribute() return is absorbed
+    # here rather than tripping mypy's no-any-return on the bare return.
+    state: str | None = dot.get_attribute("data-sync-state")
+    return state
 
 
 def test_seeded_row_resolves_cached_unseeded_row_stays_uncached(
