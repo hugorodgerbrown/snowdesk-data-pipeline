@@ -150,28 +150,30 @@ the manage page can be authenticated-only.
                     pwToggle.classList.add("hidden");
                     var input = document.getElementById("id_password");
                     if (input) input.focus();
-                    if (window.Passkey) window.Passkey.abortConditionalSignIn();
+                    window.Passkey.abortConditionalSignIn();
                 });
             }
 
             /* Conditional UI — passkeys surface in email-field autofill dropdown.
                Typing an email or submitting the form aborts any pending
                conditional ceremony (SNOW-515) so it never overlaps the
-               explicit "Sign in with a passkey" button's ceremony. */
+               explicit "Sign in with a passkey" button's ceremony.
+               passkey.js loads synchronously in the <script src> above, so
+               window.Passkey is trusted here at the same level as the
+               startConditionalSignIn() call itself — only the elements are
+               guarded on existence. */
             window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
 
-            if (window.Passkey) {
-                var emailInput = form ? form.querySelector('input[name="email"]') : null;
-                if (emailInput) {
-                    emailInput.addEventListener("input", function () {
-                        window.Passkey.abortConditionalSignIn();
-                    });
-                }
-                if (form) {
-                    form.addEventListener("submit", function () {
-                        window.Passkey.abortConditionalSignIn();
-                    });
-                }
+            var emailInput = form ? form.querySelector('input[name="email"]') : null;
+            if (emailInput) {
+                emailInput.addEventListener("input", function () {
+                    window.Passkey.abortConditionalSignIn();
+                });
+            }
+            if (form) {
+                form.addEventListener("submit", function () {
+                    window.Passkey.abortConditionalSignIn();
+                });
             }
 
             function showAuthError(msg) {
