@@ -79,6 +79,10 @@ sast = [
 e2e = [
     "playwright>=1.0,<2",
     "pytest-playwright>=0.7,<0.9",
+    # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
+    # that can't be made fully deterministic (SNOW-516) — e2e-only, see
+    # tox.ini's [testenv:e2e] and docs/client-side-tests.md.
+    "pytest-rerunfailures>=15,<16",
     {include-group = "test"},
 ]
 dev = [
