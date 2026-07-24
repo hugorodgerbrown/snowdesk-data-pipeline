@@ -74,7 +74,7 @@ lint = [
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [
-    "semgrep>=1.95,<2",
+    "semgrep>=1.171.0,<2",
 ]
 e2e = [
     "playwright>=1.0,<2",
