@@ -1695,6 +1695,32 @@ def _get_observation_has_user_located(
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
 
 
+def _get_favourites_in_region(
+    request: HttpRequest, region: "MicroRegion"
+) -> list[Favourite]:
+    """Return the requesting user's own favourites resolved to a region (SNOW-507).
+
+    Guarded on ``request.user.is_authenticated`` (checked before the
+    ``favourites`` waffle flag, since anonymous is the common case) so
+    anonymous requests issue zero extra queries — mirrors
+    ``user_subscribed_to_region``'s per-user pattern on the bulletin page.
+
+    Args:
+        request: The current HTTP request.
+        region: The MicroRegion to resolve favourites for.
+
+    Returns:
+        The user's favourites in this region, or an empty list when
+        anonymous or the ``favourites`` flag is inactive.
+
+    """
+    if not request.user.is_authenticated or not waffle.flag_is_active(
+        request, "favourites"
+    ):
+        return []
+    return list(Favourite.objects.for_user_region(request.user, region))
+
+
 def _serve_sw_file(static_relative_path: str) -> HttpResponse:
     """Read a service-worker script off disk and wrap it in SW-required headers.
 
@@ -3361,6 +3387,7 @@ def _bulletin_detail_response(
     # Resort.Meta.ordering. Cross-links the bulletin page to each resort's
     # own page; empty for regions with no fixture-seeded resorts.
     resorts_in_region = list(region.resorts.all())
+    favourites_in_region = _get_favourites_in_region(request, region)
 
     _capture_utm_to_session(request)
 
@@ -3459,6 +3486,7 @@ def _bulletin_detail_response(
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
                 "resorts_in_region": resorts_in_region,
+                "favourites_in_region": favourites_in_region,
                 "season_calendar": season_header(today),
                 "weather_display": weather_display,
                 "weather_htmx_trigger": weather_display is None,
@@ -3599,6 +3627,8 @@ def _bulletin_detail_response(
         "adjoining_regions": adjoining_regions,
         # Resorts in this region — see SNOW-504.
         "resorts_in_region": resorts_in_region,
+        # The user's own favourites in this region — see SNOW-507.
+        "favourites_in_region": favourites_in_region,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
         # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).

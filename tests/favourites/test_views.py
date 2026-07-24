@@ -30,6 +30,10 @@ Covers:
                     ForecastPointWeather rows → forecast panel (day strip +
                     hourly detail) renders, response carries
                     X-Data-Generated-At (SNOW-417).
+  favourite_detail (SNOW-507) — owner GET 200 full page with page chrome
+                    plus the card content; non-owner uuid → 404; unknown
+                    uuid → 404; anon → 403; flag off → 404; response
+                    carries Cache-Control: private, no-store.
   favourite_card problems — elevation-aware avalanche-problem highlighting
                     (SNOW-422): a region + today's bulletin renders one
                     rating-block per problem card plus an altitude-relevance
@@ -40,7 +44,8 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; flag off → 404;
                     non-HTMX → 400; empty state when the user has none
-                    (SNOW-415).
+                    (SNOW-415); each row carries an "Open page →" link to
+                    favourites:detail (SNOW-507).
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; flag off → 404; each feature
@@ -109,6 +114,11 @@ def _delete_url(uuid: object) -> str:
 def _card_url(uuid: object) -> str:
     """Build the detail-card URL for a favourite's uuid."""
     return f"/favourites/partials/{uuid}/card/"
+
+
+def _detail_url(uuid: object) -> str:
+    """Build the full-page detail URL for a favourite's uuid (SNOW-507)."""
+    return f"/favourites/{uuid}/"
 
 
 def _resort_toggle_url(resort_id: object) -> str:
@@ -1124,6 +1134,138 @@ class TestFavouriteCard:
 
 
 # ---------------------------------------------------------------------------
+# favourite_detail — GET /favourites/<uuid>/ (SNOW-507)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteDetail:
+    """favourite_detail — the favourite's own full, bookmarkable page (SNOW-507)."""
+
+    @override_flag("favourites", active=True)
+    def test_owner_gets_200_full_page(self, client: Client) -> None:
+        """Owner GET renders a full page with page chrome and the card content."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        favourite = FavouriteFactory.create(user=user, name="My spot", region=region)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Page chrome — a real page, not an HTMX fragment.
+        assert "<title>" in content
+        assert "My spot" in content
+        # The card content, reused verbatim.
+        assert 'data-testid="favourite-card"' in content
+        assert 'data-testid="favourite-card-rating-chip"' in content
+        assert 'data-testid="favourite-card-bulletin-link"' in content
+        assert region.get_absolute_url() in content
+
+    @override_flag("favourites", active=True)
+    def test_back_link_present_when_region_set(self, client: Client) -> None:
+        """A "Region bulletin" back-link is shown when favourite.region is set."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        favourite = FavouriteFactory.create(user=user, region=region)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="favourite-detail-back-link"' in content
+        assert region.get_absolute_url() in content
+
+    @override_flag("favourites", active=True)
+    def test_back_link_absent_when_region_none(self, client: Client) -> None:
+        """No back-link is shown when the favourite has no resolved region."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, region=None)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="favourite-detail-back-link"' not in content
+        assert 'data-testid="favourite-card-no-coverage"' in content
+
+    @override_flag("favourites", active=True)
+    def test_non_owner_uuid_returns_404(self, client: Client) -> None:
+        """A different user's uuid returns 404, not 403 — no existence oracle."""
+        owner = UserFactory.create()
+        other_user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=owner)
+
+        client.force_login(other_user)
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_unknown_uuid_returns_404(self, client: Client) -> None:
+        """An unknown uuid returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
+
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous GET returns 403."""
+        response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
+        assert response.status_code == 403
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_returns_404(self, client: Client) -> None:
+        """When the favourites flag is inactive, GET returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
+        assert response.status_code == 404
+
+    @override_flag("favourites", active=True)
+    def test_cache_control_is_private_no_store(self, client: Client) -> None:
+        """The response is never cacheable by a shared cache — it's per-user."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+        assert response["Cache-Control"] == "private, no-store"
+
+    @override_flag("favourites", active=True)
+    def test_response_carries_freshness_header(self, client: Client) -> None:
+        """The page stamps the SNOW-370/418 freshness headers, same as the card."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+        assert "X-Data-Generated-At" in response
+
+    @override_flag("favourites", active=True)
+    def test_no_htmx_header_required(self, client: Client) -> None:
+        """Unlike favourite_card, a plain (non-HTMX) GET is not rejected — it's a real page."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
 # favourite_card — avalanche-problems section (SNOW-422)
 # ---------------------------------------------------------------------------
 
@@ -1239,6 +1381,20 @@ class TestFavouriteList:
         assert "Mine" in content
         assert "Theirs" not in content
         assert str(mine.uuid) in content
+
+    @override_flag("favourites", active=True)
+    def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
+        """Each row carries an "Open page →" permalink to favourites:detail (SNOW-507)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="favourite-list-open-page-link"' in content
+        assert _detail_url(favourite.uuid) in content
 
     @override_flag("favourites", active=True)
     def test_empty_state_when_no_favourites(self, client: Client) -> None:

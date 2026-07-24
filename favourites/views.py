@@ -23,6 +23,10 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourite_card`` (GET) — owner-checked detail card: name/coords,
   altitude, the containing region's current danger rating, and a 7-day
   point forecast panel with a near-term hourly detail (SNOW-415, SNOW-417).
+- ``favourite_detail`` (GET) — SNOW-507: the same card content as
+  ``favourite_card``, promoted to a real, bookmarkable full page
+  (``/favourites/<uuid>/``) rather than an HTMX-only fragment. Shares its
+  context-building with ``favourite_card`` via ``_favourite_card_context``.
 - ``favourite_list`` (GET) — the requesting user's own favourites,
   rendered for the manage page's "My favourites" section (SNOW-415).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
@@ -30,14 +34,14 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All eight are:
+All nine are:
   - flag-gated on ``favourites`` (404 when inactive);
   - authentication-gated (403 for anonymous users).
 
-``favourite_card`` and ``favourite_rename``/``favourite_delete`` are
-owner-scoped via ``Favourite.objects.for_user()`` — another user's uuid
-returns 404, never 403, so a probing request can't distinguish "not yours"
-from "doesn't exist" (no existence oracle).
+``favourite_card``, ``favourite_detail``, and ``favourite_rename``/
+``favourite_delete`` are owner-scoped via ``Favourite.objects.for_user()``
+— another user's uuid returns 404, never 403, so a probing request can't
+distinguish "not yours" from "doesn't exist" (no existence oracle).
 
 ``favourite_create`` additionally applies django-ratelimit (10/m, keyed on
 ``user`` since these endpoints are auth-only) and returns 429 when the
@@ -596,13 +600,14 @@ def favourite_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     return HttpResponse("")
 
 
-@require_htmx
-@require_GET
-def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
-    """Render the favourite detail card partial.
+def _favourite_card_context(
+    favourite: Favourite, now: datetime.datetime, today: datetime.date
+) -> tuple[dict[str, Any], datetime.datetime, int | None]:
+    """Build the shared template context for a favourite's detail card.
 
-    Owner-scoped via ``Favourite.objects.for_user()`` — a non-owner's uuid
-    returns 404 (never 403), so the endpoint gives no existence oracle.
+    Shared by ``favourite_card`` (HTMX fragment) and ``favourite_detail``
+    (SNOW-507 full page) so both endpoints render identical card content
+    from one code path.
 
     When ``favourite.region`` is set, resolves today's ``RegionDayRating``
     for it (mirroring ``public.api.region_summary``) so the card can show
@@ -621,16 +626,80 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     bulletin publishes is always included — the annotation only highlights
     relevance, it never suppresses a problem.
 
+    Args:
+        favourite: The Favourite the card describes.
+        now: The reference instant for the point forecast panel's
+            day/night icon decisions.
+        today: The reference calendar date for the region's rating and
+            default-bulletin lookups.
+
+    Returns:
+        A ``(context, generated_at, unsafe_after)`` triple — the template
+        context dict for ``_favourite_card.html``, and the freshness pair
+        (SNOW-370 / SNOW-418) for the caller to stamp via
+        ``apply_freshness_headers``. ``generated_at`` is the OLDER of the
+        rating's ``updated_at`` and the latest forecast row's
+        ``fetched_at`` (so the stamp is never fresher than the card's
+        stalest part); ``unsafe_after`` is the 48h horizon only when a
+        safety-critical rating is present.
+
+    """
+    day_rating = None
+    bulletin_url = ""
+    problem_cards: list[dict[str, Any]] = []
+    if favourite.region is not None:
+        day_rating = RegionDayRating.objects.filter(
+            region=favourite.region, date=today
+        ).first()
+        # No date arg — the evergreen "today" bulletin URL.
+        bulletin_url = favourite.region.get_absolute_url()
+
+        # Avalanche problems — this location (SNOW-422). Rides today's
+        # default bulletin; highlight-never-suppress, so every card the
+        # bulletin publishes is annotated, never dropped.
+        bulletin = _select_bulletin_for_date(favourite.region, today)
+        if bulletin is not None:
+            cards = problem_cards_for_bulletin(bulletin)
+            problem_cards = annotate_problem_relevance(cards, favourite.elevation)
+
+    forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, now)
+
+    # The card mixes a safety-critical rating and (non-safety) point weather.
+    # generated_at is the OLDER of the two present constituents; unsafe_after
+    # is governed by the rating alone (SNOW-418).
+    generated_at, unsafe_after = _card_freshness(day_rating, latest_fetched_at)
+    state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
+    cache_payload = _build_favourite_cache_record(
+        favourite, day_rating, bulletin_url, generated_at, unsafe_after
+    )
+
+    context = {
+        "favourite": favourite,
+        "day_rating": day_rating,
+        "bulletin_url": bulletin_url,
+        "forecast_panel": forecast_panel,
+        "problem_cards": problem_cards,
+        "cache_payload": cache_payload,
+        "freshness_state": state,
+        "freshness_generated_at": generated_at,
+    }
+    return context, generated_at, unsafe_after
+
+
+@require_htmx
+@require_GET
+def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Render the favourite detail card partial.
+
+    Owner-scoped via ``Favourite.objects.for_user()`` — a non-owner's uuid
+    returns 404 (never 403), so the endpoint gives no existence oracle.
+
     Stamps the ``X-Data-Generated-At`` / ``X-Data-Max-Age`` /
-    ``X-Data-Unsafe-After`` freshness headers (SNOW-370 / SNOW-418) via
-    ``_card_freshness``: ``generated_at`` is the OLDER of the rating's
-    ``updated_at`` and the latest forecast row's ``fetched_at`` (so the
-    stamp is never fresher than the card's stalest part), and
-    ``unsafe_after`` is the 48h horizon only when a safety-critical rating
-    is present. Threads a ``cache_payload`` JSON sidecar + freshness
-    indicator into the template context so
-    ``static/js/favourites_offline.js`` can cache this pin for offline
-    reads.
+    ``X-Data-Unsafe-After`` freshness headers (SNOW-370 / SNOW-418).
+    Threads a ``cache_payload`` JSON sidecar + freshness indicator into the
+    template context so ``static/js/favourites_offline.js`` can cache this
+    pin for offline reads. Context-building is shared with
+    ``favourite_detail`` (SNOW-507) via ``_favourite_card_context``.
 
     Args:
         request: The incoming HTMX GET request.
@@ -654,51 +723,65 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     except Favourite.DoesNotExist:
         return HttpResponse("Favourite not found.", status=404)
 
-    day_rating = None
-    bulletin_url = ""
-    problem_cards: list[dict[str, Any]] = []
-    if favourite.region is not None:
-        today = timezone.localdate()
-        day_rating = RegionDayRating.objects.filter(
-            region=favourite.region, date=today
-        ).first()
-        # No date arg — the evergreen "today" bulletin URL.
-        bulletin_url = favourite.region.get_absolute_url()
-
-        # Avalanche problems — this location (SNOW-422). Rides today's
-        # default bulletin; highlight-never-suppress, so every card the
-        # bulletin publishes is annotated, never dropped.
-        bulletin = _select_bulletin_for_date(favourite.region, today)
-        if bulletin is not None:
-            cards = problem_cards_for_bulletin(bulletin)
-            problem_cards = annotate_problem_relevance(cards, favourite.elevation)
-
-    forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, timezone.now())
-
-    # The card mixes a safety-critical rating and (non-safety) point weather.
-    # generated_at is the OLDER of the two present constituents; unsafe_after
-    # is governed by the rating alone (SNOW-418).
-    generated_at, unsafe_after = _card_freshness(day_rating, latest_fetched_at)
-    state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
-    cache_payload = _build_favourite_cache_record(
-        favourite, day_rating, bulletin_url, generated_at, unsafe_after
+    context, generated_at, unsafe_after = _favourite_card_context(
+        favourite, timezone.now(), timezone.localdate()
     )
-
-    response = render(
-        request,
-        "favourites/partials/_favourite_card.html",
-        {
-            "favourite": favourite,
-            "day_rating": day_rating,
-            "bulletin_url": bulletin_url,
-            "forecast_panel": forecast_panel,
-            "problem_cards": problem_cards,
-            "cache_payload": cache_payload,
-            "freshness_state": state,
-            "freshness_generated_at": generated_at,
-        },
-    )
+    response = render(request, "favourites/partials/_favourite_card.html", context)
     return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
+
+
+@require_GET
+def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Render the favourite's own full, bookmarkable page (SNOW-507).
+
+    Promotes ``favourite_card``'s content behind a real page URL
+    (``/favourites/<uuid>/``) rather than only existing as an HTMX
+    fragment swapped into the manage page. Deliberately NOT
+    ``@require_htmx`` — this is a real page a user can navigate to
+    directly or bookmark, not a fragment.
+
+    Same gating and owner scoping as ``favourite_card``:
+    ``_require_favourites_flag`` (404 when the flag is inactive), 403 for
+    an anonymous request, and 404 (never 403) for a non-owner or unknown
+    uuid — no existence oracle. Builds its context via the shared
+    ``_favourite_card_context`` helper and applies the same freshness
+    headers.
+
+    The response additionally sets ``Cache-Control: private, no-store`` —
+    this is a per-user page and must never land in a shared cache, mirroring
+    ``favourites_geojson``.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The Favourite's uuid, from the URL.
+
+    Returns:
+        Rendered ``favourites/favourite_detail.html``, or an error response.
+
+    """
+    _require_favourites_flag(request)
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    try:
+        favourite = (
+            Favourite.objects.for_user(request.user)
+            .select_related("region", "forecast_point")
+            .get(uuid=uuid)
+        )
+    except Favourite.DoesNotExist:
+        return HttpResponse("Favourite not found.", status=404)
+
+    context, generated_at, unsafe_after = _favourite_card_context(
+        favourite, timezone.now(), timezone.localdate()
+    )
+    response = render(request, "favourites/favourite_detail.html", context)
+    response = apply_freshness_headers(
+        response, generated_at, unsafe_after=unsafe_after
+    )
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @require_htmx

@@ -1,0 +1,67 @@
+{% extends "public/base.html" %}
+{% comment %}
+favourites/templates/favourites/favourite_detail.html — Favourite full page (SNOW-507).
+
+Gives a Favourite its own bookmarkable URL (``/favourites/<uuid>/``),
+rendered by ``favourites.views.favourite_detail`` — a full-page promotion
+of the ``favourite_card`` HTMX fragment, sharing its context via
+``favourites.views._favourite_card_context``. The manage page keeps the
+in-panel "Details" card (SNOW-415, which drives the SNOW-418 offline cache
+write-through); this page adds a plain, linkable destination alongside it.
+
+Owner-scoped and gated the same way as ``favourite_card`` — anonymous
+requests get 403, another user's uuid gets 404 (no existence oracle), and
+the response is ``Cache-Control: private, no-store`` since it is per-user.
+
+Sections, top to bottom:
+  1. A "← Region bulletin" back-link to ``bulletin_url``, shown only when
+     ``favourite.region`` is set.
+  2. The favourite detail card, reused verbatim from
+     ``favourites/partials/_favourite_card.html`` — no markup duplication.
+
+Context expected (built by ``favourites.views._favourite_card_context``):
+  favourite               — favourites.Favourite instance.
+  day_rating               — bulletins.RegionDayRating for today, or None.
+  bulletin_url             — str: evergreen bulletin URL for
+                              favourite.region, or "" when None.
+  forecast_panel           — ForecastPanel | None.
+  problem_cards            — list[dict] — see _favourite_card.html.
+  cache_payload            — dict — SNOW-418 offline-cache record.
+  freshness_state          — "fresh" | "stale" | "unsafe".
+  freshness_generated_at   — datetime.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% if favourite.name %}{{ favourite.name }}{% else %}{% trans "Saved location" %}{% endif %} &middot;
+    Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% if favourite.name %}
+        {% blocktrans with name=favourite.name trimmed %}
+            {{ name }} — your saved favourite pin, its point forecast, and the local avalanche bulletin.
+        {% endblocktrans %}
+    {% else %}
+        {% trans "Your saved favourite pin, its point forecast, and the local avalanche bulletin." %}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    <main
+        class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+        data-testid="favourite-detail"
+    >
+        {% if favourite.region %}
+            <div class="mb-4">
+                <a
+                    href="{{ bulletin_url }}"
+                    class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                    data-testid="favourite-detail-back-link"
+                >
+                    {% trans "← Region bulletin" %}
+                </a>
+            </div>
+        {% endif %}
+
+        {% include "favourites/partials/_favourite_card.html" %}
+    </main>
+{% endblock %}

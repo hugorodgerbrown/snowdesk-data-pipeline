@@ -8,7 +8,10 @@ page's "My favourites" section via hx-get on page load (SNOW-415).
 Each row reuses the SNOW-413 rename/remove controls
 (favourites/partials/_favourite.html) plus a "Details" button that
 hx-gets favourites:card into the #favourite-card-panel div below, so the
-card renders in-page without leaving the manage page.
+card renders in-page without leaving the manage page, and an "Open page →"
+permalink to the favourite's own full page (favourites:detail, SNOW-507) —
+the in-panel card stays (it drives the SNOW-418 offline cache
+write-through via favourites_offline.js, which a plain link would lose).
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
@@ -36,6 +39,13 @@ Context:
             >
                 {% trans "Details" %}
             </button>
+            <a
+                href="{% url 'favourites:detail' favourite.uuid %}"
+                class="shrink-0 text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                data-testid="favourite-list-open-page-link"
+            >
+                {% trans "Open page →" %}
+            </a>
         </div>
     {% empty %}
         <p class="text-sm text-text-2" data-testid="favourite-list-empty">
