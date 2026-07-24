@@ -1912,6 +1912,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (subSource) subSource.setData(subGeojsonCache);
       }
 
+      // SNOW-518: the L1/L2/L4 feeds just fetched for this country have now
+      // flowed through the SW cache — green their dashboard dots so the layers
+      // menu reflects the newly-available offline data. Guarded on the same
+      // feature-presence checks as the merges above; markCached no-ops for keys
+      // not actually loaded.
+      //
+      // The "cached" signal is country-agnostic: this greens L1/L2/L4 off ANY
+      // country's feed (e.g. ``?country=at``), even though ``_loadOverlay``
+      // later fetches ``?country=ch`` specifically and ``_staleWhileRevalidate``
+      // caches per full URL. That matches the dashboard's own probe contract —
+      // ``_probeGeoJson`` uses ``ignoreSearch: true`` (map_layer_sync_status.js),
+      // so a re-open ``refresh()`` would paint the same country-agnostic green.
+      // A per-country dot would need a probe change in that (frozen) module.
+      if (newRegions && newRegions.features) window.pwaLayerSyncStatus?.markCached('l4');
+      if (newMajor && newMajor.features) window.pwaLayerSyncStatus?.markCached('l1');
+      if (newSub && newSub.features) window.pwaLayerSyncStatus?.markCached('l2');
+
       loadedCountries.add(code);
 
       // SNOW-239: Fetch the new country's ratings and merge them into the
@@ -2223,6 +2240,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }).catch(() => {});
   });
 
+  // SNOW-518: the layers menu is a live cache-state dashboard. When the user
+  // returns to the tab/PWA, re-derive every dot from real cache state so the
+  // dashboard reflects feeds warmed (or evicted) while we were backgrounded —
+  // something the optimistic markCached path alone can't do (it only greens).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') window.pwaLayerSyncStatus?.refresh();
+  });
+
   // SNOW-499: the picker toggles an already-installed favourites layer off
   // via a direct setLayoutProperty in its own IIFE (no overlay-load event),
   // so bridge that here: recompute the resort exclusion whenever the
@@ -2413,8 +2438,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // they never block first paint. There will be a brief window where the
     // choropleth is visible but the overlay is still fetching — this is
     // intentional and an improvement over the previous blocking behaviour.
+    // SNOW-518: a boot restore silently warms the same cache a toggle would,
+    // so it must green the dashboard dot the same way the toggle handler
+    // does at ``snowdesk:overlay-load`` above — otherwise the dot reads grey
+    // until the next popover open even though the feed is already available
+    // offline. ``overlayLoaded[key]`` is only true after a successful load
+    // (the offline-toast paths in ``_loadOverlay`` early-return leaving it
+    // false), so this never over-claims; markCached itself no-ops for keys
+    // it doesn't recognise. If the user toggles the same tier on mid-restore,
+    // ``ensureOverlayLoaded`` hands both callers the one in-flight promise, so
+    // markCached can fire twice for a single load — harmless, as it just
+    // repaints the dot to the same "cached" state.
+    const restoreOverlay = (key) =>
+      ensureOverlayLoaded(key)
+        .then(() => {
+          if (overlayLoaded[key]) window.pwaLayerSyncStatus?.markCached(key);
+        })
+        .catch(() => {});
+
     for (const key of ['l1', 'l2', 'resorts']) {
-      if (overlayState[key]) ensureOverlayLoaded(key).catch(() => {});
+      if (overlayState[key]) restoreOverlay(key);
     }
 
     // SNOW-414: favourites is default-ON (unlike the tiers above), so an
@@ -2423,14 +2466,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // ensureOverlayLoaded('favourites') also short-circuits on
     // !FAVOURITES_ELIGIBLE as a second guard.
     if (FAVOURITES_ELIGIBLE && overlayState.favourites) {
-      ensureOverlayLoaded('favourites').catch(() => {});
+      restoreOverlay('favourites');
     }
 
     // SNOW-419: restore the community-reports overlay if the user had it
     // enabled in a prior session. Off by default (unlike favourites), so
     // this only fires for a returning user who opted in.
     if (COMMUNITY_REPORTS_ELIGIBLE && overlayState.community_reports) {
-      ensureOverlayLoaded('community_reports').catch(() => {});
+      restoreOverlay('community_reports');
     }
 
     // Interaction
