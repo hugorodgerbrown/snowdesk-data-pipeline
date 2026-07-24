@@ -5,8 +5,8 @@ Covers:
   - Factory produces a valid PushSubscription.
   - Uniqueness constraint on endpoint.
   - to_dict() returns the pywebpush-shaped dict.
-  - to_string() is non-empty for both anonymous (null subscriber) and
-    subscriber-owned rows.
+  - to_string() is non-empty for both anonymous (null account) and
+    account-owned rows.
   - mechanism default and choices validation (SNOW-380).
   - inactive_at default and PushSubscription.objects.active() (SNOW-380).
 """
@@ -19,7 +19,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from accounts.models import PushSubscription
-from tests.factories import PushSubscriptionFactory, SubscriberFactory
+from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
 @pytest.mark.django_db
@@ -54,19 +54,19 @@ class TestPushSubscriptionModel:
         }
 
     def test_to_string_anon_row(self) -> None:
-        """to_string() on a null-subscriber row shows '(anon)'-style text."""
-        sub = PushSubscriptionFactory.create(subscriber=None)
+        """to_string() on a null-account row shows '(anon)'-style text."""
+        sub = PushSubscriptionFactory.create(account=None)
         s = sub.to_string()
         assert s
         assert "anon" in s
 
-    def test_to_string_subscriber_owned(self) -> None:
-        """to_string() on a subscriber-owned row shows the subscriber email."""
-        subscriber = SubscriberFactory.create()
-        sub = PushSubscriptionFactory.create(subscriber=subscriber)
+    def test_to_string_account_owned(self) -> None:
+        """to_string() on a account-owned row shows the account email."""
+        account = AccountFactory.create()
+        sub = PushSubscriptionFactory.create(account=account)
         s = sub.to_string()
         assert s
-        assert subscriber.user.email in s
+        assert account.user.email in s
 
     def test_str_delegates_to_to_string(self) -> None:
         """__str__ returns the same value as to_string()."""

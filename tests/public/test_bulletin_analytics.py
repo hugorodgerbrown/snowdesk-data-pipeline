@@ -17,14 +17,13 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Subscriber
 from bulletins.models import Bulletin
 from regions.models import MicroRegion
 from tests.factories import (
+    AccountFactory,
     BulletinFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
-    SubscriberFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -104,9 +103,9 @@ class TestBulletinViewedEvent:
     def test_fires_for_authenticated_user(
         self, region: MicroRegion, bulletin: Bulletin
     ) -> None:
-        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        account = AccountFactory.create(is_verified=True)
         client = Client()
-        client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
+        client.force_login(account.user, backend=_TOKEN_BACKEND)
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
@@ -115,8 +114,8 @@ class TestBulletinViewedEvent:
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
         assert len(calls) == 1
-        # Authenticated distinct_id is User PK (subscriber.user_id) as string.
-        assert calls[0].args[1] == str(subscriber.user_id)
+        # Authenticated distinct_id is User PK (account.user_id) as string.
+        assert calls[0].args[1] == str(account.user_id)
 
     def test_distinct_id_is_non_empty_for_anon(
         self, region: MicroRegion, bulletin: Bulletin

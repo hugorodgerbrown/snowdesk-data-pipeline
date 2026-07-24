@@ -1,11 +1,11 @@
 {% load i18n components %}
 {% comment %}
 accounts/templates/accounts/partials/subscribe_authed_subscribed.html
-Panel state for an authenticated subscriber who IS already subscribed to this region.
+Panel state for an authenticated account that IS already subscribed to this region.
 
 Displays a confirmation heading and a secondary "Unsubscribe" CTA. POSTs to
-accounts:remove_region_from_bulletin, which either swaps in a confirmation
-fragment or HX-Redirects to /account/unsubscribe-done/ if this was the last region.
+accounts:remove_region_from_bulletin, which swaps in a confirmation fragment —
+the account stays signed in even when this was the last region.
 
 Expected context variables:
   region_id   — the SLF region identifier (str)

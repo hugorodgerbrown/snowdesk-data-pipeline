@@ -19,8 +19,8 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Subscriber
-from tests.factories import SubscriberFactory, UserFactory
+from accounts.models import Account
+from tests.factories import AccountFactory, UserFactory
 
 _PUSH_DEMO_URL = "/_push-demo/"
 
@@ -32,9 +32,9 @@ def staff_user(db: Any) -> User:
 
 
 @pytest.fixture()
-def regular_user(db: Any) -> Subscriber:
-    """Return a non-staff Subscriber."""
-    return SubscriberFactory.create()
+def regular_user(db: Any) -> Account:
+    """Return a non-staff Account."""
+    return AccountFactory.create()
 
 
 @pytest.fixture()
@@ -55,9 +55,7 @@ class TestPushDemoPage:
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]
 
-    def test_non_staff_redirected_to_admin_login(
-        self, regular_user: Subscriber
-    ) -> None:
+    def test_non_staff_redirected_to_admin_login(self, regular_user: Account) -> None:
         """A logged-in non-staff user is also bounced to admin login."""
         c = Client()
         c.force_login(regular_user.user)

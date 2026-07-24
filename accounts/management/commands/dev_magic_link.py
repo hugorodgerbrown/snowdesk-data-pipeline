@@ -1,7 +1,7 @@
 """
 accounts/management/commands/dev_magic_link.py — Dev-only magic-link helper.
 
-Prints a ready-to-open magic-link URL for a subscriber so that the full
+Prints a ready-to-open magic-link URL for an account so that the full
 subscription / passkey flow can be tested locally without needing a working
 SMTP stack.
 
@@ -23,14 +23,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from accounts.models import Subscriber
+from accounts.models import Account
 from accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Print a magic-link URL for a subscriber, creating them if needed."""
+    """Print a magic-link URL for an account, creating it if needed."""
 
     help = "Print a dev magic-link URL for local passkey / subscription testing."
 
@@ -39,7 +39,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--email",
             required=True,
-            help="Subscriber email address.",
+            help="Account email address.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -48,26 +48,22 @@ class Command(BaseCommand):
             raise CommandError("This command is only available when DEBUG=True.")
 
         email = options["email"].strip().lower()
+        now = timezone.now()
 
-        subscriber, created = Subscriber.objects.get_or_create_for_email(
+        account, created = Account.objects.get_or_create_for_email(
             email,
-            defaults={
-                "status": Subscriber.Status.ACTIVE,
-                "confirmed_at": timezone.now(),
-            },
+            defaults={"is_verified": True, "verified_at": now},
         )
 
         verbosity = options["verbosity"]
 
-        if not created and subscriber.status != Subscriber.Status.ACTIVE:
-            subscriber.status = Subscriber.Status.ACTIVE
-            if subscriber.confirmed_at is None:
-                subscriber.confirmed_at = timezone.now()
-            subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
+        if not created and not account.is_verified:
+            account.mark_verified(now)
+            account.save(update_fields=["is_verified", "verified_at", "updated_at"])
             if verbosity >= 1:
-                self.stdout.write(f"Activated existing subscriber {email}")
+                self.stdout.write(f"Verified existing account {email}")
         elif created and verbosity >= 1:
-            self.stdout.write(f"Created subscriber {email}")
+            self.stdout.write(f"Created account {email}")
 
         token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
         base = str(settings.WEBAUTHN_ORIGIN).rstrip("/")

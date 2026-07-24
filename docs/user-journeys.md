@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-24
 ---
 
 # User personas and core journeys
@@ -26,7 +26,7 @@ a product journey.
 
 ### 1. Anonymous visitor
 
-Default state for almost every entry to the site. No `Subscriber` row,
+Default state for almost every entry to the site. No `Account` row,
 no session. Arrives from a search engine, a shared link, a bookmark, or
 the PWA shell. The product has to be useful to this persona without any
 account — they may never subscribe.
@@ -42,10 +42,10 @@ Defining traits:
 
 ### 2. Subscriber
 
-Has a `Subscriber` row (created the moment they submit the inline form;
-flipped to `active` once they click the account-access link). Owns a
-set of `Subscription` rows pinning specific regions. Acts in two modes,
-and a single feature often has to work in both:
+Has an `Account` row (created the moment they submit the inline form;
+`is_verified` flips to `True` once they click the account-access link).
+Owns a set of `Subscription` rows pinning specific regions. Acts in two
+modes, and a single feature often has to work in both:
 
 - **Session-authenticated** — has clicked an account-access link or
   signed in with a passkey in this browser. The full management surface
@@ -53,7 +53,7 @@ and a single feature often has to work in both:
   register passkeys, delete the account.
 - **Token-authenticated** — arrived via a signed token in a bulletin
   email, with no active session. The surface is intentionally narrow:
-  confirm account, unsubscribe one region. Tokens encode the subscriber
+  confirm account, unsubscribe one region. Tokens encode the account
   identity, so we can act on their behalf without a login round-trip.
 
 Defining traits:
@@ -137,14 +137,14 @@ homepage) drops an email into the inline form and becomes a subscriber.
 
 **URL surface:**
 - `POST /account/` — HTMX form submit, returns one of four success
-  cards (A new, B existing-pending, C active-new-region, D
-  active-already).
+  cards (A new account, B existing-unverified, C verified-new-region,
+  D verified-already).
 - Email — account-access link.
 - `GET /account/access/<token>/` — verifies the token and renders a
   confirm page with a POST button; no state change and no sign-in on the
   GET (SNOW-439).
-- `POST /account/access/<token>/` — flips `pending → active`, stamps
-  `confirmed_at`, and signs the subscriber in.
+- `POST /account/access/<token>/` — verifies the `Account`
+  (`is_verified → True`, stamps `verified_at`), and signs the account in.
 - `/account/manage/` — the post-confirm destination.
 
 **Key invariants:**
@@ -194,8 +194,12 @@ homepage) drops an email into the inline form and becomes a subscriber.
 - Adding a new region happens on a bulletin page through the inline
   subscribe form — the manage page itself does not have a region
   picker. There is one entry point for "I want this region", not two.
-- Hard-delete cascades: removing the last region or deleting the
-  account drops the `Subscriber` row entirely.
+- `delete_account` is the sole hard-delete path — it drops the `User`
+  (cascading to `Account` and any `Subscription` rows), available to any
+  authenticated account. Removing the last region via `remove_region` or
+  the unsubscribe token deletes only that `Subscription` row; the
+  `User`/`Account` survive and a session-authenticated user stays signed
+  in on manage.
 - Passkey registration and authentication require an active session;
   passkeys cannot bootstrap an account from scratch (account creation
   is always email-first).

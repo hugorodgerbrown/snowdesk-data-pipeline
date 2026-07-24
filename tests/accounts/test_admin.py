@@ -3,11 +3,12 @@ tests/accounts/test_admin.py — Tests for accounts/admin.py.
 
 Covers:
   - search_fields configuration for each admin class.
-  - That get_search_results finds subscribers via partial email search
-    (icontains) through each of the three admins — verifying the SNOW-313
-    acceptance criterion that email lookup goes via user__email.
+  - That get_search_results finds accounts via partial email search
+    (icontains) through each admin — verifying the SNOW-313 acceptance
+    criterion that email lookup goes via user__email.
   - PasskeyCredentialAdmin search now goes via user__email (SNOW-334).
   - PushSubscriptionAdmin surfaces mechanism/inactive_at (SNOW-380).
+  - AccountAdmin surfaces acquisition_request (SNOW-514).
 """
 
 from typing import Any
@@ -17,21 +18,22 @@ from django.contrib.admin.sites import AdminSite
 from django.test import RequestFactory
 
 from accounts.admin import (
+    AccountAdmin,
     PasskeyCredentialAdmin,
     PushSubscriptionAdmin,
-    SubscriberAdmin,
     SubscriptionAdmin,
 )
 from accounts.models import (
+    Account,
     PasskeyCredential,
     PushSubscription,
-    Subscriber,
     Subscription,
 )
 from tests.factories import (
+    AccountFactory,
     MicroRegionFactory,
     PasskeyCredentialFactory,
-    SubscriberFactory,
+    RequestLogFactory,
     SubscriptionFactory,
     UserFactory,
 )
@@ -45,15 +47,15 @@ def _get_request() -> Any:
 class TestAdminSearchFieldsConfig:
     """Verify search_fields declarations on each admin class."""
 
-    def test_subscriber_admin_search_fields(self) -> None:
-        """SubscriberAdmin.search_fields includes 'user__email'."""
-        admin = SubscriberAdmin(Subscriber, AdminSite())
+    def test_account_admin_search_fields(self) -> None:
+        """AccountAdmin.search_fields includes 'user__email'."""
+        admin = AccountAdmin(Account, AdminSite())
         assert "user__email" in admin.search_fields
 
     def test_subscription_admin_search_fields(self) -> None:
-        """SubscriptionAdmin.search_fields includes 'subscriber__user__email' and 'region__region_id'."""
+        """SubscriptionAdmin.search_fields includes 'account__user__email' and 'region__region_id'."""
         admin = SubscriptionAdmin(Subscription, AdminSite())
-        assert "subscriber__user__email" in admin.search_fields
+        assert "account__user__email" in admin.search_fields
         assert "region__region_id" in admin.search_fields
 
     def test_passkey_credential_admin_search_fields(self) -> None:
@@ -64,50 +66,72 @@ class TestAdminSearchFieldsConfig:
 
 
 @pytest.mark.django_db
-class TestSubscriberAdminSearch:
-    """Tests for SubscriberAdmin.get_search_results."""
+class TestAccountAdminSearch:
+    """Tests for AccountAdmin.get_search_results."""
 
-    def _admin(self) -> SubscriberAdmin:
-        """Return a SubscriberAdmin bound to the default admin site."""
-        return SubscriberAdmin(Subscriber, AdminSite())
+    def _admin(self) -> AccountAdmin:
+        """Return an AccountAdmin bound to the default admin site."""
+        return AccountAdmin(Account, AdminSite())
 
-    def test_partial_email_search_finds_subscriber(self) -> None:
+    def test_partial_email_search_finds_account(self) -> None:
         """Partial email fragment matches via user__email icontains."""
-        sub = SubscriberFactory.create(user__email="alice@example.com")
-        SubscriberFactory.create(user__email="bob@example.com")
+        account = AccountFactory.create(user__email="alice@example.com")
+        AccountFactory.create(user__email="bob@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
             _get_request(),
-            Subscriber.objects.all(),
+            Account.objects.all(),
             "alice",
         )
-        assert sub in list(qs)
+        assert account in list(qs)
 
-    def test_full_email_search_finds_exact_subscriber(self) -> None:
-        """Full email address finds exactly the matching subscriber."""
-        sub = SubscriberFactory.create(user__email="alice@example.com")
-        SubscriberFactory.create(user__email="bob@example.com")
+    def test_full_email_search_finds_exact_account(self) -> None:
+        """Full email address finds exactly the matching account."""
+        account = AccountFactory.create(user__email="alice@example.com")
+        AccountFactory.create(user__email="bob@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
             _get_request(),
-            Subscriber.objects.all(),
+            Account.objects.all(),
             "alice@example.com",
         )
-        assert sub in list(qs)
+        assert account in list(qs)
 
     def test_no_match_returns_empty(self) -> None:
         """A search term with no match returns an empty result set."""
-        SubscriberFactory.create(user__email="alice@example.com")
+        AccountFactory.create(user__email="alice@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
             _get_request(),
-            Subscriber.objects.all(),
+            Account.objects.all(),
             "nobody",
         )
         assert qs.count() == 0
+
+
+@pytest.mark.django_db
+class TestAccountAdminAcquisitionRequest:
+    """SNOW-514: AccountAdmin surfaces acquisition_request."""
+
+    def test_acquisition_request_in_list_display(self) -> None:
+        """'acquisition_request' is a visible column on the changelist."""
+        admin = AccountAdmin(Account, AdminSite())
+        assert "acquisition_request" in admin.list_display
+
+    def test_acquisition_request_is_readonly(self) -> None:
+        """acquisition_request is readonly — the admin edits nothing here."""
+        admin = AccountAdmin(Account, AdminSite())
+        assert "acquisition_request" in admin.readonly_fields
+
+    def test_acquisition_request_value_shown(self) -> None:
+        """A populated acquisition_request round-trips through the queryset."""
+        req_log = RequestLogFactory.create()
+        account = AccountFactory.create(acquisition_request=req_log)
+        account.refresh_from_db()
+        assert account.acquisition_request_id == req_log.pk
 
 
 @pytest.mark.django_db
@@ -118,12 +142,12 @@ class TestSubscriptionAdminSearch:
         """Return a SubscriptionAdmin bound to the default admin site."""
         return SubscriptionAdmin(Subscription, AdminSite())
 
-    def test_partial_subscriber_email_finds_subscription(self) -> None:
-        """Partial email fragment finds subscriptions via subscriber__user__email icontains."""
-        sub = SubscriberFactory.create(user__email="alice@example.com")
-        subscription = SubscriptionFactory.create(subscriber=sub)
-        other = SubscriberFactory.create(user__email="bob@example.com")
-        SubscriptionFactory.create(subscriber=other)
+    def test_partial_account_email_finds_subscription(self) -> None:
+        """Partial email fragment finds subscriptions via account__user__email icontains."""
+        account = AccountFactory.create(user__email="alice@example.com")
+        subscription = SubscriptionFactory.create(account=account)
+        other = AccountFactory.create(user__email="bob@example.com")
+        SubscriptionFactory.create(account=other)
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -155,7 +179,7 @@ class TestPasskeyCredentialAdminSearch:
         """Return a PasskeyCredentialAdmin bound to the default admin site."""
         return PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
 
-    def test_partial_subscriber_email_finds_passkey(self) -> None:
+    def test_partial_account_email_finds_passkey(self) -> None:
         """Partial email fragment finds passkeys via user__email icontains."""
         user_alice = UserFactory.create(
             email="alice@example.com", username="alice@example.com"

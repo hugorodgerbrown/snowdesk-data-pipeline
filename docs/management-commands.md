@@ -269,20 +269,6 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`, `--delay SECONDS` (default 1.0).
-- `backfill_verified_accounts --commit` — one-off post-deploy step for
-  SNOW-430. Creates (or flips) a verified `Account` for every confirmed
-  (active) `Subscriber` that lacks one, so existing subscribers are not
-  locked out of field reports by the new `is_verified` gate. `verified_at`
-  is stamped from the subscriber's `confirmed_at`. Read-only by default;
-  pass `--commit` to persist. Idempotent — a second run reports everything
-  as skipped.
-
-  ```bash
-  uv run python manage.py backfill_verified_accounts           # dry-run
-  uv run python manage.py backfill_verified_accounts --commit
-  ```
-
-  Flags: `--commit`.
 
 ### Health checks (read-only)
 
@@ -667,9 +653,9 @@ refuses to run unless `DEBUG=True`; `mint_vapid_keypair` is a one-time
 bootstrap command intended for production setup (dry-run by default, like
 every other command here).
 
-- `dev_magic_link` — prints a ready-to-open magic-link URL for a
-  subscriber so that the subscription / passkey flow can be tested
-  locally without a working SMTP stack. Creates the subscriber (active)
+- `dev_magic_link` — prints a ready-to-open magic-link URL for an
+  account so that the subscription / passkey flow can be tested
+  locally without a working SMTP stack. Creates the account (verified)
   if one does not already exist. Refuses to run when `DEBUG` is `False`.
 
   ```bash

@@ -69,16 +69,16 @@ L3 is deliberately skipped. All in `regions/models.py`.
 
 | Term | Meaning | Code |
 |------|---------|------|
-| FieldObservation | A GPS-gated avalanche-signal report submitted by a subscriber from the map page (SNOW-324); stores observation types, coordinates, and region match | `observations/models.py` |
+| FieldObservation | A GPS-gated avalanche-signal report submitted by an account from the map page (SNOW-324); stores observation types, coordinates, and region match | `observations/models.py` |
 
 ## Subscriptions and tracking
 
 | Term | Meaning | Code |
 |------|---------|------|
-| Subscriber | Profile model (`OneToOne` to `auth.User`) — tracks subscription lifecycle (pending/active) for an email that has opted in to bulletin alerts. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Subscriber` is a domain profile, not the user model | `accounts/models.py` |
-| Subscription | (Subscriber, MicroRegion) pair driving bulletin emails | `accounts/models.py` |
+| Account | The single public-user identity (`OneToOne` to `auth.User`, SNOW-514 collapsed the former `Subscriber` model into this). Auto-created at every public entry point (subscribe, sign-in, register). `is_verified` is the sole "email proven reachable" gate, set by every email-proving link. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Account` is a domain profile, not the user model | `accounts/models.py` |
+| Subscription | (Account, MicroRegion) pair driving bulletin emails | `accounts/models.py` |
 | Signed token | `TimestampSigner` tokens for account access (expiring) and unsubscribe (permanent, encodes `email\|region_id`) | `accounts/services/token.py` |
-| PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Subscriber` — any authenticated user, including staff without a Subscriber profile, can register one) | `accounts/models.py` |
+| PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Account` — any authenticated user, including staff without an Account profile, can register one) | `accounts/models.py` |
 | PushSubscription | Web Push endpoint (spike) | `accounts/models.py` |
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `bulletins/models.py` |
 | RequestLog | Request-context snapshot (geo, UA, referer) captured at sign-up/sign-in/account/share-click | `core/models.py` |

@@ -28,7 +28,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from accounts.models import Subscriber, Subscription
+from accounts.models import Account, Subscription
 from bulletins.management.commands.seed_test_data import (
     DEV_USER_PASSWORD,
     NORMAL_USER_EMAIL,
@@ -309,16 +309,16 @@ class TestUserSeeding:
         assert user.check_password(DEV_USER_PASSWORD)
 
     def test_include_user_creates_subscribed_normal_user(self) -> None:
-        """--include user creates an ACTIVE normal user subscribed to CH-4115."""
+        """--include user creates a verified normal user subscribed to CH-4115."""
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         user = User.objects.get(username=NORMAL_USER_EMAIL.lower())
         assert not user.is_staff
         assert user.email == NORMAL_USER_EMAIL.lower()
         assert user.check_password(DEV_USER_PASSWORD)
-        subscriber = Subscriber.objects.get(user=user)
-        assert subscriber.status == Subscriber.Status.ACTIVE
+        account = Account.objects.get(user=user)
+        assert account.is_verified
         sub = Subscription.objects.get(
-            subscriber=subscriber, region__region_id=SUBSCRIBED_REGION_ID
+            account=account, region__region_id=SUBSCRIBED_REGION_ID
         )
         assert sub.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
 
@@ -339,10 +339,10 @@ class TestUserSeeding:
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         assert User.objects.filter(username=SUPERUSER_EMAIL.lower()).count() == 1
         assert User.objects.filter(username=NORMAL_USER_EMAIL.lower()).count() == 1
-        subscriber = Subscriber.objects.get(user__username=NORMAL_USER_EMAIL.lower())
+        account = Account.objects.get(user__username=NORMAL_USER_EMAIL.lower())
         assert (
             Subscription.objects.filter(
-                subscriber=subscriber, region__region_id=SUBSCRIBED_REGION_ID
+                account=account, region__region_id=SUBSCRIBED_REGION_ID
             ).count()
             == 1
         )

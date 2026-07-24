@@ -12,7 +12,7 @@ ownership no-oracle contract — another user's favourite uuid returns 404, not
 Deterministic and WebGL-free: unlike the map-surface favourites tests, these
 drive plain server-rendered pages (the region bulletin and the favourite page),
 so no MapLibre frame timing is involved. Uses the shared ``favourites_page``
-fixture (a signed-in ``Subscriber``) plus ``_load_test_data`` for a real,
+fixture (a signed-in ``Account``) plus ``_load_test_data`` for a real,
 navigable region (CH-4115, Martigny / Verbier — the canonical seeded region used
 across the e2e suite).
 """
@@ -48,7 +48,7 @@ def test_region_page_links_to_favourite_and_back(
     with django_db_blocker.unblock():
         region = MicroRegion.objects.get(region_id=_REGION_ID)
         favourite = FavouriteFactory.create(
-            user=favourites_page.subscriber.user,
+            user=favourites_page.account.user,
             name="My Verbier spot",
             region=region,
         )
@@ -95,7 +95,7 @@ def test_foreign_favourite_uuid_returns_404(
     """
     with django_db_blocker.unblock():
         # A favourite owned by a *different* user (FavouriteFactory's default
-        # ``user`` SubFactory, not ``favourites_page.subscriber``).
+        # ``user`` SubFactory, not ``favourites_page.account``).
         other_favourite = FavouriteFactory.create(name="Not yours")
     other_uuid = str(other_favourite.uuid)
 

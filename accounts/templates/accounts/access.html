@@ -3,8 +3,8 @@
 accounts/templates/accounts/access.html — Account-access ("magic link") confirm page.
 
 Rendered on GET of /account/access/<token>/ for a valid token. It performs no
-state change and signs nobody in: only the POST from this form activates the
-subscriber (if pending) and establishes the session (safe against link-prefetch
+state change and signs nobody in: only the POST from this form verifies the
+account (if not already) and establishes the session (safe against link-prefetch
 scanners and GET-only account access). SNOW-439.
 {% endcomment %}
 {% load i18n %}

@@ -11,15 +11,15 @@ from __future__ import annotations
 import pytest
 from django.test import Client
 
-from tests.factories import SubscriberFactory
+from tests.factories import AccountFactory
 
 
 @pytest.mark.django_db
 def test_manage_page_has_reset_trigger() -> None:
     """The manage page ships the ``data-pwa-reset-trigger`` button."""
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
 
     response = client.get("/account/manage/")
     body = response.content.decode("utf-8")
@@ -32,9 +32,9 @@ def test_manage_page_has_reset_trigger() -> None:
 @pytest.mark.django_db
 def test_manage_page_loads_pwa_reset_script() -> None:
     """The manage page loads ``pwa_reset.js`` alongside its passkey script."""
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
 
     response = client.get("/account/manage/")
     body = response.content.decode("utf-8")
@@ -45,9 +45,9 @@ def test_manage_page_loads_pwa_reset_script() -> None:
 @pytest.mark.django_db
 def test_manage_page_has_reset_helper_copy() -> None:
     """The helper line explains what is and is not affected."""
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
 
     response = client.get("/account/manage/")
     body = response.content.decode("utf-8")

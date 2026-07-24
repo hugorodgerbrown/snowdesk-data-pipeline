@@ -154,7 +154,7 @@ def test_signed_in_add_flow_creates_favourite(
 
     with django_db_blocker.unblock():
         favourite = Favourite.objects.get(
-            user=favourites_page.subscriber.user, name="Test Peak"
+            user=favourites_page.account.user, name="Test Peak"
         )
         assert favourite.latitude == pytest.approx(46.2, abs=0.01)
         assert favourite.longitude == pytest.approx(7.6, abs=0.01)
@@ -194,7 +194,7 @@ def test_rename_via_detail_popup_refreshes_label(
     """Renaming via the detail popup updates the DB row and the map source."""
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
-            user=favourites_page.subscriber.user, name="Old Name"
+            user=favourites_page.account.user, name="Old Name"
         )
     fav_uuid = str(favourite.uuid)
 
@@ -238,7 +238,7 @@ def test_delete_removes_pin(
     """Delete via the detail popup removes the DB row and tears the detail down."""
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
-            user=favourites_page.subscriber.user, name="Doomed Pin"
+            user=favourites_page.account.user, name="Doomed Pin"
         )
     fav_uuid = str(favourite.uuid)
 
@@ -388,7 +388,7 @@ def test_forecast_panel_hourly_detail_expands_and_collapses(
     """
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
-            user=favourites_page.subscriber.user, name="Powder Stash"
+            user=favourites_page.account.user, name="Powder Stash"
         )
         # Match the view's own start_date basis (timezone.localdate()) —
         # favourite.created_at.date() is a UTC date and would diverge from

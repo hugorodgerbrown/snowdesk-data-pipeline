@@ -32,7 +32,7 @@ from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
-from tests.factories import FavouriteFactory, SubscriberFactory
+from tests.factories import AccountFactory, FavouriteFactory
 
 
 def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
@@ -98,23 +98,23 @@ def test_offline_favourites_cache_never_leaks_across_account_switch(
     favourites source at all.
     """
     with django_db_blocker.unblock():
-        subscriber_a = SubscriberFactory.create()
-        FavouriteFactory.create(user=subscriber_a.user, name="A's Peak")
-        subscriber_b = SubscriberFactory.create()
+        account_a = AccountFactory.create()
+        FavouriteFactory.create(user=account_a.user, name="A's Peak")
+        account_b = AccountFactory.create()
 
-    _session_login(page.context, live_server.url, subscriber_a.user)
+    _session_login(page.context, live_server.url, account_a.user)
     _navigate_home_with_sw_stripped(page, live_server.url)
 
     row = _poll(
         page,
         "async () => window.pwaDb.get('data:map_overlays', 'favourites')",
     )
-    assert row["principal"] == str(subscriber_a.user.pk), row
+    assert row["principal"] == str(account_a.user.pk), row
 
     # User B signs in on the same browser context and their own favourites
     # fetch is forced to fail, driving ensureOverlayLoaded into the
     # offline read-back branch against the cache A's session populated.
-    _session_login(page.context, live_server.url, subscriber_b.user)
+    _session_login(page.context, live_server.url, account_b.user)
     page.route("**/favourites/favourites.geojson", lambda route: route.abort())
     _navigate_home_with_sw_stripped(page, live_server.url)
 
@@ -142,12 +142,12 @@ def test_offline_community_reports_cache_survives_account_switch(
     reports missed and the "unavailable offline" toast fired.
     """
     with django_db_blocker.unblock():
-        subscriber_a = SubscriberFactory.create()
-        subscriber_b = SubscriberFactory.create()
+        account_a = AccountFactory.create()
+        account_b = AccountFactory.create()
 
     # A signs in and seeds the community-reports cache directly (no prior
     # real fetch needed). Pre-fix this row was stamped with A's principal.
-    _session_login(page.context, live_server.url, subscriber_a.user)
+    _session_login(page.context, live_server.url, account_a.user)
     _navigate_home_with_sw_stripped(page, live_server.url)
     page.evaluate(
         """() => window.pwaMapOverlayCache.putOverlay('community_reports', {
@@ -166,7 +166,7 @@ def test_offline_community_reports_cache_survives_account_switch(
 
     # B signs in on the same browser; the live community-reports fetch is
     # forced to fail so the offline read-back branch runs against A's row.
-    _session_login(page.context, live_server.url, subscriber_b.user)
+    _session_login(page.context, live_server.url, account_b.user)
     page.route("**/api/community-reports.geojson", lambda route: route.abort())
     _navigate_home_with_sw_stripped(page, live_server.url)
 

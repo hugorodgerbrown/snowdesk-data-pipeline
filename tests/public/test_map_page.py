@@ -26,7 +26,6 @@ from tests.factories import (
     AccountFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
-    SubscriberFactory,
     UserFactory,
 )
 
@@ -424,9 +423,9 @@ def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
     SNOW-505: favourites and community_reports also carry a sync-dot once
     their waffle flags render the row at all.
     """
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
@@ -509,9 +508,9 @@ class TestMapPageDataDrivenSeasonBounds:
 @override_flag("field_observations", active=False)
 def test_report_button_not_shown_when_flag_off() -> None:
     """Report button is absent when field_observations flag is inactive."""
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
     # SNOW-457: the map-help coachmark always references "#report-btn" as a
@@ -545,11 +544,11 @@ def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
 
 @pytest.mark.django_db
 @override_flag("field_observations", active=True)
-def test_report_button_shown_for_subscriber_with_flag() -> None:
-    """Report button and sheet are shown for a subscriber when flag is active."""
-    subscriber = SubscriberFactory.create()
+def test_report_button_shown_for_account_with_flag() -> None:
+    """Report button and sheet are shown for an account when flag is active."""
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report-btn" in content
@@ -561,9 +560,9 @@ def test_report_button_shown_for_subscriber_with_flag() -> None:
 @override_flag("field_observations", active=False)
 def test_report_js_not_loaded_when_flag_off() -> None:
     """report.js is not referenced when the flag is inactive."""
-    subscriber = SubscriberFactory.create()
+    account = AccountFactory.create()
     client = Client()
-    client.force_login(subscriber.user)
+    client.force_login(account.user)
     response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report.js" not in content

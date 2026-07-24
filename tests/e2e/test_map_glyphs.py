@@ -171,7 +171,7 @@ def test_favourites_pin_is_glyph_free_icon(
     ``text-field``, and that the star image is registered.
     """
     with django_db_blocker.unblock():
-        FavouriteFactory.create(user=favourites_page.subscriber.user, name="Star Test")
+        FavouriteFactory.create(user=favourites_page.account.user, name="Star Test")
 
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)

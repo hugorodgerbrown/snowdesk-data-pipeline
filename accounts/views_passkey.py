@@ -16,7 +16,7 @@ All WebAuthn endpoints consume and produce JSON.  The ``passkey_delete`` view
 returns empty 200; HTMX handles DOM removal via ``hx-swap="outerHTML"``.
 
 Registration and delete are gated on ``request.user.is_authenticated`` so any
-authenticated ``auth.User`` — including staff/superusers without a Subscriber
+authenticated ``auth.User`` — including staff/superusers without an Account
 profile — can manage passkeys.
 
 Rate limiting:
@@ -138,7 +138,7 @@ def passkey_register_request(request: HttpRequest) -> JsonResponse:
     Return WebAuthn registration options for navigator.credentials.create().
 
     Requires authentication; returns 403 if unauthenticated.  Any authenticated
-    auth.User (including staff without a Subscriber profile) may register a passkey.
+    auth.User (including staff without an Account profile) may register a passkey.
 
     Args:
         request: Incoming GET request.

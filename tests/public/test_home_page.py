@@ -41,7 +41,6 @@ from tests.factories import (
     MicroRegionFactory,
     RegionDayRatingFactory,
     SubRegionFactory,
-    SubscriberFactory,
 )
 from tests.seeding import seed_test_dataset
 
@@ -598,34 +597,31 @@ class TestHomePageReportButtonParity:
         assert "data-signin-url" in content
 
     @override_flag("field_observations", active=True)
-    def test_report_button_eligible_for_verified_subscriber(self) -> None:
-        """Homepage marks the button eligible for a logged-in, verified subscriber.
+    def test_report_button_eligible_for_verified_account(self) -> None:
+        """Homepage marks the button eligible for a logged-in, verified account.
 
         Eligibility requires a verified ``Account`` (matching the server gate,
-        SNOW-477) — confirmed subscribers are backfilled to verified, so a
-        verified account is the realistic state for an eligible user.
+        SNOW-477).
         """
-        subscriber = SubscriberFactory.create()
-        AccountFactory.create(user=subscriber.user, is_verified=True)
+        account = AccountFactory.create(is_verified=True)
         client = Client(SERVER_NAME="localhost")
-        client.force_login(subscriber.user)
+        client.force_login(account.user)
         content = client.get(reverse("public:home")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="true"' in content
         assert 'data-report-unverified="false"' in content
 
     @override_flag("field_observations", active=True)
-    def test_report_button_unverified_for_unverified_subscriber(self) -> None:
+    def test_report_button_unverified_for_unverified_account(self) -> None:
         """Homepage marks the button unverified for a logged-in, unverified user.
 
-        A subscriber whose email is not verified is not eligible; the button
+        An account whose email is not verified is not eligible; the button
         carries ``data-report-unverified="true"`` so report.js shows the
         "verify your email" prompt (SNOW-477).
         """
-        subscriber = SubscriberFactory.create()
-        AccountFactory.create(user=subscriber.user, is_verified=False)
+        account = AccountFactory.create(is_verified=False)
         client = Client(SERVER_NAME="localhost")
-        client.force_login(subscriber.user)
+        client.force_login(account.user)
         content = client.get(reverse("public:home")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="false"' in content
@@ -663,8 +659,8 @@ class TestFavouritesContext:
 
         The flag gates the feature entirely, regardless of auth state.
         """
-        subscriber = SubscriberFactory.create()
-        ctx = _favourites_context(self._request(user=subscriber.user))
+        account = AccountFactory.create()
+        ctx = _favourites_context(self._request(user=account.user))
         assert ctx["favourites_visible"] is False
         assert ctx["favourites_eligible"] is False
 
@@ -683,8 +679,8 @@ class TestFavouritesContext:
     @override_flag("favourites", active=True)
     def test_flag_on_auth_visible_and_eligible(self) -> None:
         """Flag on + authenticated: both visible and eligible."""
-        subscriber = SubscriberFactory.create()
-        ctx = _favourites_context(self._request(user=subscriber.user))
+        account = AccountFactory.create()
+        ctx = _favourites_context(self._request(user=account.user))
         assert ctx["favourites_visible"] is True
         assert ctx["favourites_eligible"] is True
 
@@ -720,13 +716,13 @@ class TestHomePageFavouritesParity:
         assert "data-favourites-url" not in content
 
     @override_flag("favourites", active=True)
-    def test_add_control_and_overlay_eligible_for_subscriber(self) -> None:
-        """A logged-in subscriber sees the Add control, the overlay toggle,
+    def test_add_control_and_overlay_eligible_for_account(self) -> None:
+        """A logged-in account sees the Add control, the overlay toggle,
         and #map carries the per-user geojson URL.
         """
-        subscriber = SubscriberFactory.create()
+        account = AccountFactory.create()
         client = Client(SERVER_NAME="localhost")
-        client.force_login(subscriber.user)
+        client.force_login(account.user)
         content = client.get(reverse("public:home")).content.decode()
         assert "favourite-add-btn" in content
         assert 'data-favourites-eligible="true"' in content
@@ -769,8 +765,8 @@ class TestCommunityReportsContext:
     @override_flag("community_reports", active=True)
     def test_flag_on_visible_with_url_for_authenticated(self) -> None:
         """Flag on + authenticated: also visible — no eligibility gate."""
-        subscriber = SubscriberFactory.create()
-        ctx = _community_reports_context(self._request(user=subscriber.user))
+        account = AccountFactory.create()
+        ctx = _community_reports_context(self._request(user=account.user))
         assert ctx["community_reports_visible"] is True
         assert ctx["community_reports_geojson_url"] == reverse(
             "api:community_reports_geojson"

@@ -22,9 +22,9 @@ Implements the subscription flow built around Django's TimestampSigner:
                       GET/POST — confirm + apply an email change (SNOW-433).
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
-                            on (subscriber_created, subscription_created) to
-                            decide which email to send and which fragment to
-                            return.
+                            on (account_created, subscription_created) and
+                            account.is_verified to decide which email to send
+                            and which fragment to return.
   add_region          POST — HTMX: authenticated one-click add of a region from
                             the bulletin page. Idempotent; no email sent.
   remove_region_from_bulletin
@@ -32,12 +32,12 @@ Implements the subscription flow built around Django's TimestampSigner:
                             bulletin page. Mirrors remove_region cascade logic.
   account_view        GET/POST — account-access ("magic link") token. GET shows
                             a confirm button (no state change, no login); POST
-                            activates the subscriber, logs in via Django auth,
-                            and redirects to /account/manage/.
+                            verifies the Account, logs in via Django auth, and
+                            redirects to /account/manage/.
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
-  delete_account      POST — HTMX: hard-delete subscriber and redirect to done.
+  delete_account      POST — HTMX: hard-delete the account and redirect to done.
   unsubscribe_view    GET/POST — token-verified one-click unsubscribe.
 
 Rate limiting via django-ratelimit (block=False pattern):
@@ -94,7 +94,7 @@ from .forms import (
     SubscribeForm,
 )
 from .logging_utils import mask_email
-from .models import Account, Subscriber, Subscription
+from .models import Account, Subscription
 from .services.email import (
     send_account_access_email,
     send_email_change_confirmation,
@@ -149,17 +149,17 @@ _MANAGE_URL = "/account/manage/"
 _UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
 
 
-def _get_subscriber(request: HttpRequest) -> Subscriber | None:
-    """Return the authenticated Subscriber profile from request.user, or None.
+def _get_account(request: HttpRequest) -> Account | None:
+    """Return the authenticated Account profile from request.user, or None.
 
     Returns None for anonymous users and for authenticated staff users who have
-    no Subscriber profile (e.g. superusers created via createsuperuser).
+    no Account profile (e.g. superusers created via createsuperuser).
     """
     if not request.user.is_authenticated:
         return None
     try:
-        return request.user.subscriber
-    except Subscriber.DoesNotExist:
+        return request.user.account
+    except Account.DoesNotExist:
         return None
 
 
@@ -257,26 +257,23 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 
     email: str = form.cleaned_data["email"]
 
-    # Capture request context before creating / fetching the subscriber so
+    # Capture request context before creating / fetching the account so
     # first-observation wins on acquisition_request.
     req_log = capture_request_log(request)
 
-    subscriber, created = Subscriber.objects.get_or_create_for_email(
+    account, created = Account.objects.get_or_create_for_email(
         email,
-        defaults={
-            "status": Subscriber.Status.PENDING,
-            "acquisition_request": req_log,
-        },
+        defaults={"acquisition_request": req_log},
     )
     send_account_access_email(email, request=request)
     logger.info(
-        "Account-access email sent to subscriber pk=%s via sign-in page", subscriber.pk
+        "Account-access email sent to account pk=%s via sign-in page", account.pk
     )
 
     sign_in_props: dict[str, object] = {}
     if req_log.country_code:
         sign_in_props["country_code"] = req_log.country_code
-    analytics.track("sign_in_requested", str(subscriber.user_id), sign_in_props)
+    analytics.track("sign_in_requested", str(account.user_id), sign_in_props)
 
     return render(request, "accounts/manage_sent.html", {})
 
@@ -292,7 +289,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
     Standalone registration page: email required, name optional.
 
     Creates (or reuses) an ``auth.User`` and an ``Account`` profile — no
-    ``Subscriber`` row.  Submitting sends an email-verification link
+    ``Subscription`` rows.  Submitting sends an email-verification link
     asynchronously; the account only becomes verified when that link is
     confirmed (``verify_view``).
 
@@ -622,6 +619,18 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
     # matches — it is now single-use. login() cycles the session key.
     login(request, user, backend=_TOKEN_BACKEND)
     logger.info("Password reset completed for user pk=%s", user.pk)
+
+    # Clicking a reset link proves the address is reachable — verify the
+    # Account (addendum to the settled decisions).
+    now = timezone.now()
+    account, created = Account.objects.get_or_create(
+        user=user,
+        defaults={"is_verified": True, "verified_at": now},
+    )
+    if not created:
+        account.mark_verified(now)
+        account.save(update_fields=["is_verified", "verified_at", "updated_at"])
+
     response = redirect("accounts:manage")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
@@ -927,19 +936,21 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     Accept a POST from the inline bulletin-page subscribe CTA.
 
     Requires ``region_id`` in the POST data.  Uses a four-case matrix keyed
-    on ``(subscriber_created, subscription_created)`` to decide which email
-    to send and which success fragment to return:
+    on ``(account_created, subscription_created)`` and ``account.is_verified``
+    to decide which email to send and which success fragment to return:
 
-    A. New subscriber (subscriber_created=True):
+    A. New account (account_created=True):
        Send account-access email → "Check your inbox" fragment.
 
-    B. Existing pending subscriber (subscriber_created=False, status=PENDING):
-       Resend account-access email → "Check your inbox" fragment.
+    B. Existing unverified account (account_created=False, is_verified=False):
+       Resend account-access email → "Check your inbox" fragment. **Byte-equal**
+       to Case A's response — this is the documented anti-enumeration invariant
+       (docs/accounts.md).
 
-    C. Existing active subscriber + new region (status=ACTIVE, sub_created=True):
+    C. Verified account + new region (is_verified=True, sub_created=True):
        Send subscription confirmation email → "Added {region} to your alerts" fragment.
 
-    D. Existing active subscriber + already subscribed (status=ACTIVE,
+    D. Verified account + already subscribed (is_verified=True,
        sub_created=False):
        No email → "You're already subscribed to {region}" fragment.
 
@@ -989,12 +1000,9 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     # Capture request context once; first-observation wins on both FKs.
     req_log = capture_request_log(request)
 
-    subscriber, subscriber_created = Subscriber.objects.get_or_create_for_email(
+    account, account_created = Account.objects.get_or_create_for_email(
         email,
-        defaults={
-            "status": Subscriber.Status.PENDING,
-            "acquisition_request": req_log,
-        },
+        defaults={"acquisition_request": req_log},
     )
 
     # Compute geo match before get_or_create so the fields land in the
@@ -1003,14 +1011,14 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     # Persist the region subscription idempotently; capture whether it's new.
     _subscription, subscription_created = Subscription.objects.get_or_create(
-        subscriber=subscriber,
+        account=account,
         region=region,
         defaults={"subscribed_via": req_log, **geo_defaults},
     )
 
-    if subscriber_created:
-        # Case A — new subscriber.
-        logger.info("New subscriber created pk=%s (status=pending)", subscriber.pk)
+    if account_created:
+        # Case A — new account.
+        logger.info("New account created pk=%s (unverified)", account.pk)
         send_account_access_email(email, request=request)
 
         # Emit subscription_started (Case A only — silent on Case B resend).
@@ -1033,10 +1041,10 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             {},
         )
 
-    if subscriber.status == Subscriber.Status.PENDING:
-        # Case B — existing pending subscriber; resend the access link.
+    if not account.is_verified:
+        # Case B — existing unverified account; resend the access link.
         logger.info(
-            "Resending account-access email to pending subscriber pk=%s", subscriber.pk
+            "Resending account-access email to unverified account pk=%s", account.pk
         )
         send_account_access_email(email, request=request)
         return render(
@@ -1046,23 +1054,23 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         )
 
     if subscription_created:
-        # Case C — active subscriber, new region added.
+        # Case C — verified account, new region added.
         logger.info(
-            "Active subscriber pk=%s added new region %s",
-            subscriber.pk,
+            "Verified account pk=%s added new region %s",
+            account.pk,
             region.region_id,
         )
         send_subscription_confirmation_email(email, region=region, request=request)
         region_added_props: dict[str, object] = {
             "region_id": region.region_id,
             "source": "bulletin",
-            "region_count_after": subscriber.subscriptions.count(),
+            "region_count_after": account.subscriptions.count(),
         }
         if req_log.country_code:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(subscriber.user_id),
+            str(account.user_id),
             region_added_props,
         )
         return render(
@@ -1071,10 +1079,10 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             {"region_name": region.name},
         )
 
-    # Case D — active subscriber, already subscribed to this region.
+    # Case D — verified account, already subscribed to this region.
     logger.info(
-        "Active subscriber pk=%s already subscribed to region %s — no-op",
-        subscriber.pk,
+        "Verified account pk=%s already subscribed to region %s — no-op",
+        account.pk,
         region.region_id,
     )
     return render(
@@ -1090,62 +1098,53 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
 
 def _delete_subscription_with_cascade(
-    subscriber: Subscriber, region: MicroRegion, request: HttpRequest
+    account: Account, region: MicroRegion, request: HttpRequest
 ) -> bool | None:
-    """Delete a (subscriber, region) Subscription and apply the last-region cascade.
+    """Delete an (account, region) Subscription row.
 
-    If removing this region leaves the subscriber with no remaining subscriptions,
-    hard-delete the subscriber row and log out the session.
+    Removing the last region deletes only the Subscription row(s) — the
+    User and Account survive and the caller stays signed in on manage. No
+    session change happens here.
 
     Short-circuits when no matching Subscription row exists (deleted_count == 0)
-    to prevent accidental hard-deletion of a subscriber who never held that region.
+    so the caller can distinguish a stale/forged POST from a real removal.
 
     Args:
-        subscriber: The authenticated Subscriber whose subscription is being removed.
+        account: The authenticated Account whose subscription is being removed.
         region: The MicroRegion to unsubscribe from.
-        request: The current HTTP request (used to clear the session on hard-delete).
+        request: The current HTTP request (unused beyond signature parity with
+            callers — retained for future request-scoped needs).
 
     Returns:
-        True when the subscriber was hard-deleted (last region removed); False
-        when the subscriber still has remaining subscriptions; None when the
-        (subscriber, region) pair had no Subscription row to begin with.
+        True on success (a Subscription row was deleted); None when the
+        (account, region) pair had no Subscription row to begin with.
 
     """
     deleted_count, _ = Subscription.objects.filter(
-        subscriber=subscriber, region=region
+        account=account, region=region
     ).delete()
     if deleted_count == 0:
         logger.info(
-            "Subscriber pk=%s has no subscription for region %s — nothing removed",
-            subscriber.pk,
+            "Account pk=%s has no subscription for region %s — nothing removed",
+            account.pk,
             region.region_id,
         )
         return None
     logger.info(
-        "Subscriber pk=%s removed region %s",
-        subscriber.pk,
+        "Account pk=%s removed region %s",
+        account.pk,
         region.region_id,
     )
-    region_count_after = subscriber.subscriptions.count()
+    region_count_after = account.subscriptions.count()
     analytics.track(
         "region_removed",
-        str(subscriber.user_id),
+        str(account.user_id),
         {
             "region_id": region.region_id,
             "region_count_after": region_count_after,
         },
     )
-    if region_count_after == 0:
-        email = subscriber.user.email
-        user = subscriber.user
-        subscriber.delete()
-        user.delete()
-        logout(request)
-        logger.info(
-            "Subscriber %s hard-deleted (last region removed)", mask_email(email)
-        )
-        return True
-    return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1164,7 +1163,7 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
 
     Idempotent — uses ``get_or_create`` so POSTing twice returns the same
     success fragment without raising an IntegrityError.  No email is sent
-    because the subscriber is already active.
+    because the account is already verified.
 
     Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 5 requests/min per IP.
@@ -1180,8 +1179,8 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    account = _get_account(request)
+    if account is None:
         return HttpResponse(status=403)
 
     try:
@@ -1198,26 +1197,26 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
     req_log = capture_request_log(request)
     geo_defaults = geo_match_snapshot(req_log, region)
     _subscription, sub_created = Subscription.objects.get_or_create(
-        subscriber=subscriber,
+        account=account,
         region=region,
         defaults={"subscribed_via": req_log, **geo_defaults},
     )
     logger.info(
-        "Subscriber pk=%s added region %s via bulletin page (idempotent)",
-        subscriber.pk,
+        "Account pk=%s added region %s via bulletin page (idempotent)",
+        account.pk,
         region_id,
     )
     if sub_created:
         region_added_props: dict[str, object] = {
             "region_id": region.region_id,
             "source": "bulletin",
-            "region_count_after": subscriber.subscriptions.count(),
+            "region_count_after": account.subscriptions.count(),
         }
         if req_log.country_code:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(subscriber.user_id),
+            str(account.user_id),
             region_added_props,
         )
     return render(
@@ -1241,11 +1240,9 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
 def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpResponse:
     """Remove a Subscription for the authenticated user from the bulletin page.
 
-    Deletes the ``(subscriber, region)`` Subscription row.  If this was the
-    subscriber's last region, delegates to the cascade helper which hard-deletes
-    the Subscriber and responds with an ``HX-Redirect`` header pointing to the
-    unsubscribe-done page — matching the ``remove_region`` manage-page behaviour.
-    Otherwise swaps the panel for a confirmation fragment.
+    Deletes the ``(account, region)`` Subscription row and swaps the panel
+    for a confirmation fragment. The account stays signed in, even when this
+    was the last remaining region.
 
     Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 10 requests/min per IP.
@@ -1255,16 +1252,16 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
         region_id: The SLF region identifier to unsubscribe from.
 
     Returns:
-        subscribe_unsubscribed fragment (200), HX-Redirect on last region,
-        403 when unauthenticated, 400 when region unknown or subscriber never
-        held the region (stale/forged POST), or 429 when rate-limited.
+        subscribe_unsubscribed fragment (200), 403 when unauthenticated, 400
+        when region unknown or the account never held the region (stale/forged
+        POST), or 429 when rate-limited.
 
     """
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    account = _get_account(request)
+    if account is None:
         return HttpResponse(status=403)
 
     try:
@@ -1280,13 +1277,13 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
             status=400,
         )
 
-    result = _delete_subscription_with_cascade(subscriber, region, request)
+    result = _delete_subscription_with_cascade(account, region, request)
     if result is None:
-        # The subscriber never held this region — stale or forged POST.
+        # The account never held this region — stale or forged POST.
         logger.warning(
-            "remove_region_from_bulletin: subscriber pk=%s has no subscription for "
+            "remove_region_from_bulletin: account pk=%s has no subscription for "
             "region %s — returning 400",
-            subscriber.pk,
+            account.pk,
             region.region_id,
         )
         return render(
@@ -1295,10 +1292,6 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
             {},
             status=400,
         )
-    if result is True:
-        response = HttpResponse(status=200)
-        response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
-        return response
 
     return render(
         request,
@@ -1315,19 +1308,18 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
 @require_http_methods(["GET", "POST"])
 def account_view(request: HttpRequest, token: str) -> HttpResponse:
     """
-    Verify an account-access ("magic link") token and sign the subscriber in.
+    Verify an account-access ("magic link") token and sign the account in.
 
     GET renders a confirm page with a single button — it performs **no** state
     change and does **not** log anyone in, so following the emailed link (or a
     link-prefetch scanner hitting it) never grants account access on its own
-    (SNOW-439).  Only the POST from that page acts: if the subscriber is
-    pending it flips to active and stamps ``confirmed_at`` (idempotent —
-    re-submitting does not re-stamp), then ``django.contrib.auth.login()``
-    establishes the session and redirects to
-    ``/account/manage/?just_confirmed=1``.
+    (SNOW-439).  Only the POST from that page acts: it marks the ``Account``
+    verified (idempotent — re-submitting does not re-stamp ``verified_at``),
+    then ``django.contrib.auth.login()`` establishes the session and redirects
+    to ``/account/manage/?just_confirmed=1``.
 
-    On a bad, tampered, or expired token — or a token for an unknown subscriber
-    — renders ``link_expired.html`` (400) for both verbs.
+    On a bad, tampered, or expired token — or a token for an unknown user —
+    renders ``link_expired.html`` (400) for both verbs.
 
     Args:
         request: Incoming HTTP request.
@@ -1346,8 +1338,8 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         return _link_expired(request)
 
     try:
-        subscriber = Subscriber.objects.get(user__email=email.lower())
-    except Subscriber.DoesNotExist:
+        user = User.objects.get(username=email.lower())
+    except User.DoesNotExist:
         logger.warning(
             "account_view: valid token for unknown email %s", mask_email(email)
         )
@@ -1360,30 +1352,38 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
-    # POST — activate (if pending) and sign in.
-    if subscriber.status == Subscriber.Status.PENDING:
-        subscriber.status = Subscriber.Status.ACTIVE
-        subscriber.confirmed_at = timezone.now()
-        subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
-        logger.info("Subscriber pk=%s activated via account link", subscriber.pk)
+    # POST — verify (if not already) and sign in.
+    now = timezone.now()
+    account, created = Account.objects.get_or_create(
+        user=user,
+        defaults={"is_verified": True, "verified_at": now},
+    )
+    was_verified = account.is_verified
+    if not created:
+        account.mark_verified(now)
+        account.save(update_fields=["is_verified", "verified_at", "updated_at"])
+    logger.info("Account pk=%s verified via account-access link", account.pk)
+
+    if created or not was_verified:
         # Emit subscription_confirmed and join the anonymous session identity to
-        # the now-authenticated User PK.
+        # the now-authenticated User PK — only on the transition into verified,
+        # matching today's "only when transitioning out of PENDING" idempotency.
         hours_since: float = round(
-            (timezone.now() - subscriber.created_at).total_seconds() / 3600,
+            (timezone.now() - account.created_at).total_seconds() / 3600,
             2,
         )
         analytics.track(
             "subscription_confirmed",
-            str(subscriber.user_id),
+            str(account.user_id),
             {"hours_since_started": hours_since},
         )
         anon_id: str | None = request.session.get("analytics_anon_id")
         if anon_id:
             analytics.alias(
-                distinct_id=str(subscriber.user_id),
+                distinct_id=str(account.user_id),
                 alias_id=anon_id,
             )
-    login(request, subscriber.user, backend=_TOKEN_BACKEND)
+    login(request, user, backend=_TOKEN_BACKEND)
     response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
     # Tokens appear in this view's URL path — suppress Referer leakage.
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
@@ -1401,15 +1401,15 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     Show the account dashboard for the authenticated user.
 
     Unauthenticated visitors are redirected to the sign-in page.  A registered
-    user with no ``Subscriber`` profile still sees the page (with no
+    user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
 
     Context keys:
-        subscriber        — authenticated Subscriber instance.
-        subscriptions      — queryset of Subscription rows for the subscriber.
+        account            — authenticated Account instance.
+        subscriptions      — queryset of Subscription rows for the account.
         just_confirmed     — True when arriving via the confirmation link.
         today              — today's date (datetime.date) for the bulletin link label.
         favourites_visible — True when the ``favourites`` waffle flag is
@@ -1433,20 +1433,20 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     if not request.user.is_authenticated:
         return redirect("accounts:sign_in")
 
-    # A registered user (SNOW-430) has an Account but may have no Subscriber
-    # (no bulletin subscriptions). Render the dashboard for any authenticated
-    # user — redirecting non-subscribers to sign-in would loop, because
-    # sign_in_view sends authenticated users straight back here.
-    subscriber = _get_subscriber(request)
+    # A registered user (SNOW-430) has an Account but may have no Subscription
+    # rows (no bulletin subscriptions). Render the dashboard for any
+    # authenticated user — redirecting non-subscribers to sign-in would loop,
+    # because sign_in_view sends authenticated users straight back here.
+    account = _get_account(request)
 
     just_confirmed = request.GET.get("just_confirmed") == "1"
 
     subscriptions = (
-        Subscription.objects.filter(subscriber=subscriber)
+        Subscription.objects.filter(account=account)
         .select_related("region", "region__subregion__major")
         .prefetch_related("region__resorts")
         .order_by("region__name")
-        if subscriber is not None
+        if account is not None
         else Subscription.objects.none()
     )
 
@@ -1454,7 +1454,7 @@ def manage_view(request: HttpRequest) -> HttpResponse:
         request,
         "accounts/manage.html",
         {
-            "subscriber": subscriber,
+            "account": account,
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
             "today": timezone.now().date(),
@@ -1477,12 +1477,11 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 @ratelimit(key="ip", rate="10/m", block=False)
 def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     """
-    Remove a single subscribed region for the authenticated subscriber.
+    Remove a single subscribed region for the authenticated account.
 
-    Deletes the ``(subscriber, region)`` Subscription row.  If this was the
-    subscriber's last region, hard-deletes the subscriber row too (CASCADE
-    handles the Subscription rows) and responds with an ``HX-Redirect``
-    header pointing to the unsubscribe-done page.
+    Deletes the ``(account, region)`` Subscription row. The account stays
+    signed in on manage, even when this was the last remaining region — no
+    logout, no redirect away.
 
     Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 10 requests/min per IP.
@@ -1492,23 +1491,19 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
         region_id: The SLF region identifier to remove.
 
     Returns:
-        Empty 200 (card removed via outerHTML swap), HX-Redirect on last
-        region, 403 when unauthenticated, or 429 when rate-limited.
+        Empty 200 (card removed via outerHTML swap), 403 when unauthenticated,
+        or 429 when rate-limited.
 
     """
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    account = _get_account(request)
+    if account is None:
         return HttpResponse(status=403)
 
     region = get_object_or_404(MicroRegion, region_id__iexact=region_id)
-    result = _delete_subscription_with_cascade(subscriber, region, request)
-    if result is True:
-        response = HttpResponse(status=200)
-        response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
-        return response
+    _delete_subscription_with_cascade(account, region, request)
 
     # Return empty content — hx-swap="outerHTML" on the card will remove it.
     # This covers both the "subscription removed" and the "no row existed" (None)
@@ -1517,7 +1512,7 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# delete_account — HTMX: hard-delete subscriber
+# delete_account — HTMX: hard-delete account
 # ---------------------------------------------------------------------------
 
 
@@ -1526,9 +1521,11 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
 @ratelimit(key="ip", rate="3/m", block=False)
 def delete_account(request: HttpRequest) -> HttpResponse:
     """
-    Hard-delete the authenticated subscriber and all their subscriptions.
+    Hard-delete the authenticated account (User) and all their subscriptions.
 
-    Calls ``django.contrib.auth.logout()`` to clear the Django session and
+    The sole hard-delete path, available to any authenticated account —
+    including a registered-only account with no subscriptions. Calls
+    ``django.contrib.auth.logout()`` to clear the Django session and
     responds with an ``HX-Redirect`` header pointing to the unsubscribe-done
     page.
 
@@ -1546,19 +1543,20 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return HttpResponse(status=403)
 
-    email = subscriber.user.email
-    # Capture account_age_days and distinct_id BEFORE deleting the subscriber row.
-    account_age_days = (timezone.now() - subscriber.created_at).days
-    distinct_id = str(subscriber.user_id)
-    user = subscriber.user
-    subscriber.delete()
-    user.delete()
+    account = _get_account(request)
+    user = request.user
+    email = user.email
+    # Capture account_age_days and distinct_id BEFORE deleting the row.
+    account_age_days = (
+        (timezone.now() - account.created_at).days if account is not None else 0
+    )
+    distinct_id = str(user.pk)
+    user.delete()  # CASCADE deletes the Account and any Subscription rows.
     logout(request)
-    logger.info("Subscriber %s hard-deleted via delete_account", mask_email(email))
+    logger.info("Account %s hard-deleted via delete_account", mask_email(email))
     analytics.track(
         "unsubscribed",
         distinct_id,
@@ -1571,14 +1569,14 @@ def delete_account(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# sign_out — log out the subscriber
+# sign_out — log out the account
 # ---------------------------------------------------------------------------
 
 
 @require_POST
 def sign_out(request: HttpRequest) -> HttpResponse:
     """
-    Log out the subscriber and redirect to the sign-in page.
+    Log out the account and redirect to the sign-in page.
 
     Args:
         request: POST request (CSRF-protected via the standard Django form token).
@@ -1630,9 +1628,10 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     extract ``(email, region_id)``.
 
     GET: render a confirmation page showing which region will be removed.
-    POST: delete that region's Subscription; if it was the last one for
-          the subscriber, hard-delete the Subscriber row.  Idempotent
-          on re-submit (already deleted → renders done page anyway).
+    POST: delete that region's Subscription row. The User and Account are
+          not touched — deletion here removes only the Subscription, even
+          when it was the account's last one. Idempotent on re-submit
+          (already deleted → renders done page anyway).
 
     Rate limited to 10 requests per minute per IP.
 
@@ -1670,46 +1669,36 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
 
     # POST — execute unsubscribe.
     try:
-        subscriber = Subscriber.objects.get(user__email=email.lower())
-    except Subscriber.DoesNotExist:
+        account = Account.objects.get(user__email=email.lower())
+    except Account.DoesNotExist:
         # Already unsubscribed (perhaps from a different link) — idempotent.
         logger.info(
-            "unsubscribe_view: subscriber %s not found — already deleted",
+            "unsubscribe_view: account for %s not found — already deleted",
             mask_email(email),
         )
         response = render(request, "accounts/unsubscribe_done.html", {})
         response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
-    # Capture distinct_id and account_age_days BEFORE any delete.
-    distinct_id = str(subscriber.user_id)
-    account_age_days = (timezone.now() - subscriber.created_at).days
+    # Capture distinct_id and account_age_days BEFORE deleting the row.
+    distinct_id = str(account.user_id)
+    account_age_days = (timezone.now() - account.created_at).days
 
-    # Delete the specific subscription.
+    # Delete the specific subscription. The User and Account survive — this
+    # unauthenticated token path makes no session change and removes only
+    # the Subscription row, even when it was the account's last one.
     # Note: we intentionally do NOT fire ``region_removed`` here.  The
     # unsubscribe-link path fires only ``unsubscribed``; ``region_removed``
     # is reserved for the in-app "remove a region" flow.  Firing both would
     # double-count churn for subscribers who leave via the email link.
-    Subscription.objects.filter(subscriber=subscriber, region=region).delete()
-    logger.info(
-        "Subscriber pk=%s unsubscribed from region %s", subscriber.pk, region_id
-    )
+    Subscription.objects.filter(account=account, region=region).delete()
+    logger.info("Account pk=%s unsubscribed from region %s", account.pk, region_id)
 
     analytics.track(
         "unsubscribed",
         distinct_id,
         {"reason": "unsubscribe_link", "account_age_days": account_age_days},
     )
-
-    # If no subscriptions remain, hard-delete the subscriber and their User.
-    if not subscriber.subscriptions.exists():
-        user = subscriber.user
-        subscriber.delete()
-        user.delete()
-        logger.info(
-            "Subscriber %s hard-deleted (last subscription removed via unsubscribe)",
-            mask_email(email),
-        )
 
     response = render(request, "accounts/unsubscribe_done.html", {})
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
@@ -1731,7 +1720,7 @@ def build_unsubscribe_url(
     commands that need to embed per-region unsubscribe links.
 
     Args:
-        email: The subscriber's email address.
+        email: The account's email address.
         region_id: The SLF region identifier.
         request: Optional request used to derive the base URL.
 

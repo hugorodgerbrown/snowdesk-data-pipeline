@@ -29,7 +29,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
 
-from accounts.models import PushSubscription, Subscriber
+from accounts.models import Account, PushSubscription
 from accounts.push_service import enqueue_push
 
 logger = logging.getLogger(__name__)
@@ -61,19 +61,19 @@ def push_register(request: HttpRequest) -> HttpResponse:
         return JsonResponse({"ok": False, "error": "invalid mechanism"}, status=400)
 
     # The staff gate guarantees an authenticated staff User.  Staff users who
-    # have a Subscriber profile (e.g. created via the subscribe flow) link the
-    # PushSubscription directly; staff with no profile leave subscriber=None.
-    subscriber: Subscriber | None = None
+    # have an Account profile (e.g. created via the subscribe flow) link the
+    # PushSubscription directly; staff with no profile leave account=None.
+    account: Account | None = None
     try:
-        subscriber = request.user.subscriber  # type: ignore[union-attr]  # staff_member_required guarantees authentication
-    except Subscriber.DoesNotExist:
+        account = request.user.account  # type: ignore[union-attr]  # staff_member_required guarantees authentication
+    except Account.DoesNotExist:
         pass
     obj, created = PushSubscription.objects.update_or_create(
         endpoint=endpoint,
         defaults={
             "p256dh": p256dh,
             "auth": auth,
-            "subscriber": subscriber,
+            "account": account,
             "user_agent": request.headers.get("User-Agent", "")[:512],
             "mechanism": mechanism,
             "inactive_at": None,

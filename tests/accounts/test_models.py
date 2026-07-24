@@ -1,8 +1,8 @@
 """
 tests/accounts/test_models.py — Tests for accounts models.
 
-Covers Account, Subscriber, Subscription, and PasskeyCredential model
-behaviour, queryset methods, string representations, and field constraints.
+Covers Account, Subscription, and PasskeyCredential model behaviour,
+queryset methods, string representations, and field constraints.
 """
 
 import datetime
@@ -17,7 +17,6 @@ from accounts.aaguids import lookup as aaguid_lookup
 from accounts.models import (
     Account,
     PasskeyCredential,
-    Subscriber,
     Subscription,
     user_is_verified,
 )
@@ -25,7 +24,6 @@ from tests.factories import (
     AccountFactory,
     MicroRegionFactory,
     PasskeyCredentialFactory,
-    SubscriberFactory,
     SubscriptionFactory,
     UserFactory,
 )
@@ -50,167 +48,12 @@ class TestAaguidLookup:
 
 
 @pytest.mark.django_db
-class TestSubscriberModel:
-    """Tests for the Subscriber model."""
-
-    def test_str_returns_email(self) -> None:
-        sub = SubscriberFactory.create(user__email="alice@example.com")
-        assert str(sub) == "alice@example.com"
-
-    def test_to_string_returns_email(self) -> None:
-        sub = SubscriberFactory.create(user__email="bob@example.com")
-        assert sub.to_string() == "bob@example.com"
-
-    def test_default_status_is_pending_on_fresh_create(self) -> None:
-        user = UserFactory.create(
-            username="fresh@example.com",
-            email="fresh@example.com",
-            is_staff=False,
-        )
-        sub = Subscriber.objects.create(user=user)
-        assert sub.status == Subscriber.Status.PENDING
-
-    def test_factory_default_status_is_active(self) -> None:
-        sub = SubscriberFactory.create()
-        assert sub.status == Subscriber.Status.ACTIVE
-
-    def test_confirmed_at_nullable(self) -> None:
-        sub = SubscriberFactory.create()
-        sub.confirmed_at = None
-        sub.save(update_fields=["confirmed_at"])
-        sub.refresh_from_db()
-        assert sub.confirmed_at is None
-
-    def test_one_subscriber_per_user(self) -> None:
-        """A second Subscriber for the same User violates the OneToOneField constraint."""
-        from django.db import IntegrityError
-
-        existing = SubscriberFactory.create()
-        # Attempt to create a second Subscriber linked to the same User.
-        with pytest.raises(IntegrityError):
-            Subscriber.objects.create(user=existing.user)
-
-    def test_has_uuid(self) -> None:
-        sub = SubscriberFactory.create()
-        assert sub.uuid is not None
-
-    def test_has_created_at(self) -> None:
-        sub = SubscriberFactory.create()
-        assert sub.created_at is not None
-
-    def test_status_choices(self) -> None:
-        assert Subscriber.Status.PENDING == "pending"
-        assert Subscriber.Status.ACTIVE == "active"
-
-    def test_pending_status_persists(self) -> None:
-        sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        sub.refresh_from_db()
-        assert sub.status == Subscriber.Status.PENDING
-
-
-@pytest.mark.django_db
-class TestSubscriberIsActive:
-    """Tests for Subscriber.is_active property."""
-
-    def test_is_active_true_when_status_active(self) -> None:
-        """is_active returns True when status is ACTIVE."""
-        sub = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        assert sub.is_active is True
-
-    def test_is_active_false_when_status_pending(self) -> None:
-        """is_active returns False when status is PENDING."""
-        sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        assert sub.is_active is False
-
-
-@pytest.mark.django_db
-class TestGetOrCreateForEmail:
-    """Tests for Subscriber.objects.get_or_create_for_email."""
-
-    def test_creates_user_and_subscriber_on_first_call(self) -> None:
-        """First call creates both a User and a Subscriber."""
-        subscriber, created = Subscriber.objects.get_or_create_for_email(
-            "newuser@example.com",
-            defaults={"status": Subscriber.Status.PENDING},
-        )
-        assert created is True
-        assert subscriber.user.email == "newuser@example.com"
-        assert subscriber.user.username == "newuser@example.com"
-        assert subscriber.status == Subscriber.Status.PENDING
-
-    def test_idempotent_on_second_call(self) -> None:
-        """Second call returns the existing Subscriber without creating a new one."""
-        first, _ = Subscriber.objects.get_or_create_for_email("idempotent@example.com")
-        second, created = Subscriber.objects.get_or_create_for_email(
-            "idempotent@example.com"
-        )
-        assert created is False
-        assert first.pk == second.pk
-
-    def test_lowercases_email(self) -> None:
-        """Email is normalised to lowercase before creating User and Subscriber."""
-        subscriber, created = Subscriber.objects.get_or_create_for_email(
-            "UPPER@EXAMPLE.COM",
-            defaults={"status": Subscriber.Status.PENDING},
-        )
-        assert created is True
-        assert subscriber.user.email == "upper@example.com"
-        assert subscriber.user.username == "upper@example.com"
-
-    def test_finds_existing_on_mixed_case_input(self) -> None:
-        """Mixed-case email finds the existing lowercase subscriber."""
-        first, _ = Subscriber.objects.get_or_create_for_email("case@example.com")
-        second, created = Subscriber.objects.get_or_create_for_email("CASE@EXAMPLE.COM")
-        assert created is False
-        assert first.pk == second.pk
-
-
-@pytest.mark.django_db
-class TestSubscriberQuerySet:
-    """Tests for SubscriberQuerySet custom methods."""
-
-    def test_active_returns_only_active(self) -> None:
-        active = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        result = Subscriber.objects.active()
-        assert active in result
-        assert result.count() == 1
-
-    def test_active_excludes_pending(self) -> None:
-        SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        result = Subscriber.objects.active()
-        assert result.count() == 0
-
-    def test_by_email_exact_match(self) -> None:
-        """by_email finds a subscriber when the query is already lowercase."""
-        sub = SubscriberFactory.create(user__email="test@example.com")
-        result = Subscriber.objects.by_email("test@example.com")
-        assert sub in result
-        assert result.count() == 1
-
-    def test_by_email_normalises_mixed_case_input(self) -> None:
-        """by_email normalises the query to lowercase before filtering.
-
-        Stored emails are always lowercase (form normalisation invariant);
-        callers may pass mixed-case input and should still find the record.
-        """
-        sub = SubscriberFactory.create(user__email="test@example.com")
-        result = Subscriber.objects.by_email("TEST@EXAMPLE.com")
-        assert sub in result
-        assert result.count() == 1
-
-    def test_by_email_no_match(self) -> None:
-        result = Subscriber.objects.by_email("nobody@example.com")
-        assert result.count() == 0
-
-
-@pytest.mark.django_db
 class TestSubscriptionModel:
     """Tests for the Subscription model."""
 
     def test_str_returns_email_arrow_region(self) -> None:
         sub = SubscriptionFactory.create()
-        expected = f"{sub.subscriber.user.email} → {sub.region.region_id}"
+        expected = f"{sub.account.user.email} → {sub.region.region_id}"
         assert str(sub) == expected
 
     def test_to_string_matches_str(self) -> None:
@@ -220,77 +63,49 @@ class TestSubscriptionModel:
     def test_unique_together_constraint(self) -> None:
         from django.db import IntegrityError
 
-        subscriber = SubscriberFactory.create()
+        account = AccountFactory.create()
         region = MicroRegionFactory.create()
-        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        SubscriptionFactory.create(account=account, region=region)
         with pytest.raises(IntegrityError):
-            SubscriptionFactory.create(subscriber=subscriber, region=region)
+            SubscriptionFactory.create(account=account, region=region)
 
     def test_has_uuid(self) -> None:
         sub = SubscriptionFactory.create()
         assert sub.uuid is not None
 
 
-@pytest.mark.django_db
-class TestSubscriptionQuerySet:
-    """Tests for SubscriptionQuerySet custom methods."""
-
-    def test_for_subscriber_filters_correctly(self) -> None:
-        subscriber = SubscriberFactory.create()
-        other = SubscriberFactory.create()
-        mine = SubscriptionFactory.create(subscriber=subscriber)
-        SubscriptionFactory.create(subscriber=other)
-        result = Subscription.objects.for_subscriber(subscriber)
-        assert list(result) == [mine]
-
-    def test_active_excludes_pending_subscribers(self) -> None:
-        active_sub = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        pending_sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        active_sn = SubscriptionFactory.create(subscriber=active_sub)
-        SubscriptionFactory.create(subscriber=pending_sub)
-        result = Subscription.objects.active()
-        assert active_sn in result
-        assert result.count() == 1
-
-    def test_active_returns_empty_when_all_pending(self) -> None:
-        pending_sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        SubscriptionFactory.create(subscriber=pending_sub)
-        result = Subscription.objects.active()
-        assert result.count() == 0
-
-
 # ---------------------------------------------------------------------------
-# Subscriber and Subscription request_log FKs (SNOW-277)
+# Account and Subscription request_log FKs (SNOW-277, SNOW-514)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestSubscriberAcquisitionRequest:
-    """Subscriber.acquisition_request FK defaults to None."""
+class TestAccountAcquisitionRequest:
+    """Account.acquisition_request FK defaults to None."""
 
     def test_acquisition_request_defaults_to_none(self) -> None:
-        """Factory-created Subscriber has acquisition_request=None."""
-        sub = SubscriberFactory.create()
-        assert sub.acquisition_request is None
+        """Factory-created Account has acquisition_request=None."""
+        account = AccountFactory.create()
+        assert account.acquisition_request is None
 
     def test_acquisition_request_can_be_set(self) -> None:
         """acquisition_request can be set to a RequestLog instance."""
         from tests.factories import RequestLogFactory
 
         req_log = RequestLogFactory.create()
-        sub = SubscriberFactory.create(acquisition_request=req_log)
-        sub.refresh_from_db()
-        assert sub.acquisition_request_id == req_log.pk
+        account = AccountFactory.create(acquisition_request=req_log)
+        account.refresh_from_db()
+        assert account.acquisition_request_id == req_log.pk
 
     def test_acquisition_request_set_null_on_log_delete(self) -> None:
         """Deleting the RequestLog sets acquisition_request to None (SET_NULL)."""
         from tests.factories import RequestLogFactory
 
         req_log = RequestLogFactory.create()
-        sub = SubscriberFactory.create(acquisition_request=req_log)
+        account = AccountFactory.create(acquisition_request=req_log)
         req_log.delete()
-        sub.refresh_from_db()
-        assert sub.acquisition_request is None
+        account.refresh_from_db()
+        assert account.acquisition_request is None
 
 
 @pytest.mark.django_db
@@ -467,11 +282,11 @@ class TestPasskeyCredentialQuerySet:
     """Tests for PasskeyCredentialQuerySet custom methods."""
 
     def test_for_user_returns_correct_passkeys(self) -> None:
-        sub_a = SubscriberFactory.create()
-        sub_b = SubscriberFactory.create()
-        pk_a = PasskeyCredentialFactory.create(user=sub_a.user)
-        PasskeyCredentialFactory.create(user=sub_b.user)
-        result = PasskeyCredential.objects.for_user(sub_a.user)
+        account_a = AccountFactory.create()
+        account_b = AccountFactory.create()
+        pk_a = PasskeyCredentialFactory.create(user=account_a.user)
+        PasskeyCredentialFactory.create(user=account_b.user)
+        result = PasskeyCredential.objects.for_user(account_a.user)
         assert list(result) == [pk_a]
 
     def test_by_credential_id_finds_exact_match(self) -> None:
@@ -482,20 +297,6 @@ class TestPasskeyCredentialQuerySet:
     def test_by_credential_id_returns_empty_for_unknown(self) -> None:
         result = PasskeyCredential.objects.by_credential_id("does-not-exist")
         assert result.count() == 0
-
-
-@pytest.mark.django_db
-class TestSubscriberHasPasskeys:
-    """Tests for Subscriber.has_passkeys()."""
-
-    def test_returns_false_when_no_passkeys(self) -> None:
-        sub = SubscriberFactory.create()
-        assert sub.has_passkeys() is False
-
-    def test_returns_true_when_passkey_exists(self) -> None:
-        sub = SubscriberFactory.create()
-        PasskeyCredentialFactory.create(user=sub.user)
-        assert sub.has_passkeys() is True
 
 
 @pytest.mark.django_db

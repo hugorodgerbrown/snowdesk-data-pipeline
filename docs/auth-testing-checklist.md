@@ -2,7 +2,7 @@
 name: auth-testing-checklist
 description: Manual login/logout test checklist — magic-link, password, passkey sign-in, logout, registration, password reset, change email, unsubscribe
 status: current
-last-reviewed: 2026-07-20
+last-reviewed: 2026-07-24
 ---
 
 # Login / Logout Testing Checklist — Snowdesk
@@ -93,7 +93,7 @@ the scenario doc does not.
 
 - [ ] `/account/unsubscribe/<token>/` (`GET`) → confirmation page naming the region; **no state change** on GET.
 - [ ] POST → the region's subscription is removed; landing page confirms.
-- [ ] Removing the **last** region → account hard-deleted, session cleared, redirect to `/account/unsubscribe-done/`.
+- [ ] Removing the **last** region → only the `Subscription` row is removed; the `User`/`Account` survive (no hard-delete, no session change — this path is unauthenticated by design).
 - [ ] Re-POST an already-processed unsubscribe → idempotent (still renders the done page).
 - [ ] Use an **old** email's unsubscribe link (token never expires) → still works.
 - [ ] Invalid/tampered token → `link_expired` (400).
@@ -101,8 +101,8 @@ the scenario doc does not.
 ## 10. Nav visibility (check in each state)
 
 - [ ] **Anonymous** → "Register" and "Sign in" links visible.
-- [ ] **Authenticated subscriber** → avatar dropdown: up to 3 region links, "Manage alerts", "Sign out".
-- [ ] **Authenticated, no Subscriber** (registered only) → avatar dropdown with no region links; manage page still reachable.
+- [ ] **Authenticated account with subscriptions** → avatar dropdown: up to 3 region links, "Manage alerts", "Sign out".
+- [ ] **Authenticated, no subscriptions** (registered only) → avatar dropdown with no region links; manage page still reachable.
 - [ ] **Staff** → extra cog dropdown (Component library, Django admin, …) rendered alongside the avatar.
 
 ## 11. Cross-cutting checks

@@ -85,7 +85,7 @@ def test_favourite_tap_does_not_select_region_underneath(
     page = favourites_page.page
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
-            user=favourites_page.subscriber.user,
+            user=favourites_page.account.user,
             name="Exclusion Peak",
             latitude=_LAT,
             longitude=_LON,
@@ -249,7 +249,7 @@ def test_pin_markers_stay_above_a_later_installed_overlay(
     page = favourites_page.page
     with django_db_blocker.unblock():
         FavouriteFactory.create(
-            user=favourites_page.subscriber.user,
+            user=favourites_page.account.user,
             name="Summit Pin",
             latitude=_LAT,
             longitude=_LON,

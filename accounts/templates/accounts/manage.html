@@ -4,7 +4,7 @@ accounts/templates/accounts/manage.html — Subscription management page.
 
 Rendered for any authenticated user (the view redirects unauthenticated
 visitors to /account/sign-in/ before this template is reached). A registered
-user with no Subscriber profile sees the page with no subscription cards.
+user with no Subscription rows sees the page with no subscription cards.
 
 Shows one card per subscribed region, ordered by region name. Each card
 shows the region name, region ID, and resort list. A per-region "Remove"
@@ -19,7 +19,7 @@ privacy policy. A flag-gated "Sync log" panel (SNOW-482) reads recent
 real-sync rows from window.pwaDb.getSyncLog() via static/js/sync_log.js —
 gated on the same "sync_log" waffle flag as the matching /help/ section.
 A destructive "Unsubscribe from all alerts" button hard-deletes the
-subscriber.
+account, shown for any authenticated account.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -367,21 +367,21 @@ subscriber.
                 {% comment %}
                     Destructive account deletion — visually separated,
                     small, muted.  hx-confirm stays here: deleting the
-                    whole account is irreversible. Only shown when there are
-                    subscriptions to unsubscribe from (a registered-only user
-                    has no Subscriber row, so delete_account would 403).
+                    whole account is irreversible. Shown for any
+                    authenticated account, including a registered-only
+                    account with no subscriptions — delete_account is the
+                    sole hard-delete path, available to any authenticated
+                    account.
                 {% endcomment %}
-                {% if subscriptions %}
-                    <div class="border-t border-border pt-8">
-                        <button
-                            hx-post="{% url 'accounts:delete_account' %}"
-                            hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
-                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                        >
-                            {% trans "Unsubscribe from all alerts" %}
-                        </button>
-                    </div>
-                {% endif %}
+                <div class="border-t border-border pt-8">
+                    <button
+                        hx-post="{% url 'accounts:delete_account' %}"
+                        hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
+                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                    >
+                        {% trans "Unsubscribe from all alerts" %}
+                    </button>
+                </div>
             </div>
             {# /hx-headers wrapper #}
 
