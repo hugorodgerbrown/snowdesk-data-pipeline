@@ -3824,6 +3824,13 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     short-circuits to ``visible=False`` when the ``field_observations`` flag
     is inactive, so no extra gating is needed here.
 
+    Weather (SNOW-509, product decision: Option 1) shows the *parent
+    region's* ``WeatherSnapshot`` — never a per-resort forecast — so the
+    page issues zero Open-Meteo fetches of its own; the belt-and-braces
+    HTMX retry (when no snapshot exists yet) hits
+    ``public:weather_snippet``, same as the bulletin masthead. Point
+    weather stays a favourite-page-only feature.
+
     Args:
         request: The incoming HTTP request.
         resort_id: The Resort's primary key, from the URL.
@@ -3853,9 +3860,21 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
+    # Weather (SNOW-509, product decision: Option 1) — the resort page shows
+    # the parent region's WeatherSnapshot, not a per-resort forecast. This
+    # keeps the page free of any per-resort Open-Meteo fetch; point weather
+    # stays a favourite-page feature. Same lookup pattern as
+    # ``_bulletin_detail_response`` — ``.first()`` is safe because
+    # ``unique_together = (region, valid_for_date)``.
+    weather_snapshot = (
+        WeatherSnapshot.objects.for_date(today).filter(region=region).first()
+    )
+    weather_display = build_weather_display(weather_snapshot, timezone.now())
+
     context = {
         "resort": resort,
         "region": region,
+        "region_id": region.region_id,
         "day_rating": day_rating,
         "target_date": today,
         "bulletin_url": region.get_absolute_url(),
@@ -3867,6 +3886,8 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "observation_has_user_located": _get_observation_has_user_located(
             request, region, today
         ),
+        "weather_display": weather_display,
+        "weather_htmx_trigger": weather_display is None,
     }
     return render(request, "public/resort.html", context)
 
@@ -3968,7 +3989,14 @@ def fetch_weather_snippet(
     persisted one by the time this endpoint is reached).  Only when no
     snapshot is found does the view hit Open-Meteo (forecast endpoint for
     today/future, archive endpoint for past dates), persist the result, and
-    return the rendered ``includes/bulletin_header.html`` fragment.
+    return the rendered fragment.
+
+    ``?variant=panel`` (SNOW-509) selects which template renders the result:
+    the resort page's belt-and-braces retry passes it so the response is the
+    bare ``includes/_weather_panel.html`` panel (no region ``<h1>``, no
+    share button) rather than the full bulletin masthead — the bulletin
+    page's retry omits it and gets the masthead back, unchanged from
+    before SNOW-509.
 
     ``weather_htmx_trigger`` is always ``False`` in the returned fragment so
     that a fetch failure never triggers an infinite retry loop — HTMX will not
@@ -3978,12 +4006,14 @@ def fetch_weather_snippet(
     (``data-weather-bucket="none"``); the failure is logged server-side only.
 
     Args:
-        request: The incoming HTMX POST request.
+        request: The incoming HTMX POST request. ``request.GET["variant"]``,
+            when equal to ``"panel"``, selects the bare-panel fragment.
         region_id: EAWS micro-region identifier (e.g. ``"CH-4115"``).
         date_str: ISO-8601 date string (``"YYYY-MM-DD"``).
 
     Returns:
-        Rendered ``includes/bulletin_header.html`` fragment.
+        Rendered ``includes/bulletin_header.html`` (default) or
+        ``includes/_weather_panel.html`` (``?variant=panel``) fragment.
 
     """
     region = get_object_or_404(
@@ -4019,6 +4049,24 @@ def fetch_weather_snippet(
                 region_id,
                 target_date,
             )
+
+    variant = request.GET.get("variant")
+    if variant == "panel":
+        return render(
+            request,
+            "includes/_weather_panel.html",
+            {
+                "weather_display": weather_display,
+                "weather_htmx_trigger": False,
+                "region_name": "",
+                "subregion_name": "",
+                "page_date": target_date,
+                "region_id": region.region_id,
+                "panel_testid": "resort-weather",
+                "testid_prefix": "resort-weather",
+                "panel_extra_classes": "rounded-card mb-4",
+            },
+        )
 
     subregion_name = (
         region.subregion.name_en or region.subregion.name_native
