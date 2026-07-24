@@ -267,6 +267,9 @@ Optional context:
                         data-overlay-key="l1"
                         aria-checked="false"
                     >
+                        {# SNOW-505: sync-status dot — hidden (unknown) until #}
+                        {# map_layer_sync_status.js resolves it on menu-open. #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Major regions" %}
                     </button>
                 </li>
@@ -278,6 +281,7 @@ Optional context:
                         data-overlay-key="l2"
                         aria-checked="false"
                     >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Minor regions" %}
                     </button>
                 </li>
@@ -289,6 +293,7 @@ Optional context:
                         data-overlay-key="l4"
                         aria-checked="true"
                     >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Micro regions" %}
                     </button>
                 </li>
@@ -303,6 +308,7 @@ Optional context:
                         data-overlay-key="l3"
                         aria-checked="false"
                     >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Bulletin groupings" %}
                     </button>
                 </li>
@@ -321,6 +327,7 @@ Optional context:
                         data-overlay-key="resorts"
                         aria-checked="false"
                     >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Resorts" %}
                     </button>
                 </li>
@@ -340,6 +347,7 @@ Optional context:
                             data-overlay-key="favourites"
                             aria-checked="true"
                         >
+                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                             {% trans "Favourites" %}
                         </button>
                     </li>
@@ -358,6 +366,7 @@ Optional context:
                             data-overlay-key="community_reports"
                             aria-checked="false"
                         >
+                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                             {% trans "Community reports" %}
                         </button>
                     </li>
@@ -399,6 +408,14 @@ Optional context:
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
+                </li>
+                {# SNOW-505: basemap sync-status caption — an honest "partial" #}
+                {# indicator (browsed areas only, not the whole basemap) #}
+                {# rather than a per-basemap-option dot, since coverage is a #}
+                {# property of the shared BASEMAP_CACHE, not any one style. #}
+                <li id="basemap-sync-status" class="basemap-menu-caption" role="none">
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Browsed areas only" %}
                 </li>
                 {% for bm in basemaps %}
                     <li role="none">

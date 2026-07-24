@@ -225,7 +225,15 @@ try {
 // basemap_cache_core.js (self.pwaBasemapCacheCore), so the classification/
 // eviction logic can be unit-tested directly. Behaviour is unchanged —
 // this is a shell-bytes bump only.
-const CACHE_VERSION = 'snowdesk-shell-v32';
+// SNOW-505: v33 — new static/js/map_layer_sync_status.js plus the layers-
+// popover shell markup change (sync-status dots, _map_embed.html/home.html).
+// SNOW-505 iteration: v34 — "not cached" recoloured grey, and the dots now
+// update live (map.js markCached on a tier's toggle-on load; refresh after
+// "Cache this area") — shell JS bytes changed in map.js/map_layer_sync_status.js.
+// SNOW-505 iteration: v35 — l3 (bulletin groupings) now renders a distinct
+// hollow "unavailable" dot (never-cacheable) rather than the grey "not cached
+// yet" fill — shell JS/CSS bytes changed (map_layer_sync_status.js, map.css).
+const CACHE_VERSION = 'snowdesk-shell-v35';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
