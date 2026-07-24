@@ -1,6 +1,6 @@
 """
 tests/e2e/test_resort_page.py — Playwright test for the resort detail page
-(SNOW-504).
+(SNOW-504), plus (SNOW-508) the point-local field-observation panel.
 
 Verifies the round-trip cross-link SNOW-504 introduces: the bulletin page's
 "Resorts in this region" list links to a resort's own page, and that page's
@@ -15,8 +15,15 @@ dependency, unlike ``test_resort_favourite.py``.
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
+from waffle.testutils import override_flag
+
+from regions.models import Resort
+from tests.factories import FieldObservationFactory
 
 
 def test_bulletin_to_resort_and_back_round_trips_to_same_region(
@@ -49,3 +56,42 @@ def test_bulletin_to_resort_and_back_round_trips_to_same_region(
 
     page.wait_for_load_state("networkidle")
     assert "/ch-4115/" in page.url
+
+
+@override_flag("field_observations", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_resort_page_shows_point_local_observation_count(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """SNOW-508: the panel shows a point-local count for a geocoded resort.
+
+    Seeds a ``FieldObservation`` at Verbier's own coordinates (fixture-seeded
+    with lat/lon by ``_load_test_data``, so distance from the resort is 0 —
+    guaranteed inside the default 10 km radius) and asserts the "Reported
+    nearby" (point-scoped, not region-wide) heading and the report's label
+    both render.
+    """
+    with django_db_blocker.unblock():
+        resort = Resort.objects.get(name="Verbier")
+        assert resort.latitude is not None
+        assert resort.longitude is not None
+        FieldObservationFactory.create(
+            latitude=resort.latitude,
+            longitude=resort.longitude,
+            observation_type="WHUMPFING",
+        )
+        resort_url = resort.get_absolute_url()
+
+    page.goto(f"{live_server.url}{resort_url}")
+    page.wait_for_load_state("networkidle")
+
+    heading = page.locator("#obs-counts-heading")
+    heading.wait_for(state="visible")
+    # The heading is visually uppercased via CSS (text-transform), which
+    # Playwright's inner_text() reflects — compare against the raw DOM text
+    # instead so the assertion checks the actual rendered copy.
+    assert (heading.text_content() or "").strip() == "Reported nearby"
+    assert "Whumpfing" in page.locator("main").inner_text()
