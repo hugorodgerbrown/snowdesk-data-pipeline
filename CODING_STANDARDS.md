@@ -445,19 +445,20 @@ Install with `uv run pre-commit install`. Do not bypass hooks with
 
 ### 6.3 tox
 
-[tox.ini](tox.ini) defines seven environments. The five default envs
-(`fmt`, `lint`, `mypy`, `django-checks`, `test`) run in CI on every
-push. `audit` and `sast` are also wired up as tox envs; run them
-locally before opening a PR that touches dependencies or security-
-sensitive code.
+[tox.ini](tox.ini) defines the default envlist — `fmt`, `lint`, `mypy`,
+`django-checks`, `ds-lint`, `docs-lint`, `test` — which runs in CI on every
+push. `djangofmt`, `audit`, `sast`, `e2e`, and `js` are wired up as tox envs
+but kept out of the default list (they mutate the tree, hit the network, or
+are opt-in); run the relevant one locally before opening a PR that touches
+templates, dependencies, or security-sensitive code.
 
 | env              | purpose                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | `fmt`            | `ruff format --check .`                                                                  |
 | `lint`           | `ruff check .`                                                                           |
-| `mypy`           | `mypy core/ bulletins/ regions/ public/ accounts/ tests/ config/`                       |
+| `mypy`           | `mypy` over every app package + `tests/`, `config/`, `schedule.py` (see the env's `commands`) |
 | `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
-| `test`           | `pytest --cov=core --cov=bulletins --cov=regions --cov=public --cov=accounts tests/`     |
+| `test`           | `pytest -n auto` with `--cov` across every app package (see the env's `commands`)         |
 | `audit`          | `pip-audit` against the uv-exported requirements                                         |
 | `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
 

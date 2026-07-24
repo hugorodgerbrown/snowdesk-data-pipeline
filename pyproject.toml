@@ -40,10 +40,10 @@ dependencies = [
 [dependency-groups]
 # Purpose-scoped groups map 1:1 to tox envs — see tox.ini's
 # `dependency_groups =` and docs/decisions/tox-envs-install-from-uv-lock.md.
-# Each tox env syncs only its group (`uv_sync_flags = --no-default-groups
-# --frozen`), so e.g. `mypy` never drags in playwright. `dev` composes all of
-# them via `{include-group = ...}` so a bare `uv sync` (local dev,
-# bin/init-worktree) still installs everything.
+# Each tox env syncs only its own group — tox-uv injects `--no-default-groups`
+# automatically whenever `dependency_groups` is set — so e.g. `mypy` never
+# drags in playwright. `dev` composes all of them via `{include-group = ...}`
+# so a bare `uv sync` (local dev, bin/init-worktree) still installs everything.
 test = [
     "coverage>=7,<8",
     "pytest>=9.0.3,<10",
