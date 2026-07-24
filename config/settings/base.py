@@ -675,6 +675,18 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 
 FAVOURITES_MAX_PER_USER = config("FAVOURITES_MAX_PER_USER", default=25, cast=int)
 
+
+# ---------------------------------------------------------------------------
+# Field observations (SNOW-508)
+# ---------------------------------------------------------------------------
+# Radius, in kilometres, used by FieldObservation.objects.counts_near_point_for_day
+# to scope reports to "near" a point (e.g. a resort). Configurable so the
+# radius can be tightened without a code change.
+
+FIELD_OBSERVATION_RADIUS_KM = config(
+    "FIELD_OBSERVATION_RADIUS_KM", default=10.0, cast=float
+)
+
 # Base URL used when building absolute links in emails sent outside a request
 # context (e.g. from management commands or background tasks).
 SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")

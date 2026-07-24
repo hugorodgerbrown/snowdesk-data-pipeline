@@ -17,6 +17,7 @@ from __future__ import annotations
 import collections
 import datetime
 import logging
+import math
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -29,6 +30,43 @@ if TYPE_CHECKING:
     from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
+
+# Mean earth radius in kilometres (IUGG). Mirrors
+# ``bulletins/services/forecast_points.py::_haversine_m`` and
+# ``mcp_server/resolvers.py::_haversine_km`` — kept as an independent copy
+# per ``docs/decisions/forecast-point-quantisation.md`` (a shared ``core``
+# extraction is deferred until a third distinct caller shape emerges).
+_EARTH_RADIUS_KM = 6371.0088
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Return the great-circle distance in kilometres between two lat/lon pairs.
+
+    Pure-Python haversine, mirroring ``bulletins/services/forecast_points.py::
+    _haversine_m`` and ``mcp_server/resolvers.py::_haversine_km`` (same earth
+    radius constant, kept as an independent copy — see
+    ``docs/decisions/forecast-point-quantisation.md``).
+
+    Args:
+        lat1: Latitude of point one, in degrees.
+        lon1: Longitude of point one, in degrees.
+        lat2: Latitude of point two, in degrees.
+        lon2: Longitude of point two, in degrees.
+
+    Returns:
+        The great-circle distance in kilometres.
+
+    """
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +118,72 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         types = self.filter(region=region, observed_at__date=day).values_list(
             "observation_type", flat=True
         )
+        return dict(collections.Counter(types))
+
+    def near_point_for_day(
+        self,
+        latitude: float,
+        longitude: float,
+        radius_km: float,
+        day: datetime.date,
+    ) -> "FieldObservationQuerySet":
+        """Return observations within ``radius_km`` of a point on a calendar day.
+
+        Filters to the given calendar day with a SQL ``observed_at__date``
+        filter, then loads ``(pk, latitude, longitude)`` for that day and
+        runs a pure-Python haversine pass (no PostGIS dependency) to find
+        rows within range. The boundary is **inclusive** — a point exactly
+        ``radius_km`` away is included.
+
+        Args:
+            latitude: WGS-84 latitude of the centre point, in degrees.
+            longitude: WGS-84 longitude of the centre point, in degrees.
+            radius_km: Maximum great-circle distance from the centre point,
+                in kilometres. Points at exactly this distance are included.
+            day: The calendar day to filter by.
+
+        Returns:
+            Filtered, chainable queryset restricted to matching rows.
+
+        """
+        candidates = self.filter(observed_at__date=day).values_list(
+            "pk", "latitude", "longitude"
+        )
+        near_pks = [
+            pk
+            for pk, obs_lat, obs_lon in candidates
+            if _haversine_km(latitude, longitude, obs_lat, obs_lon) <= radius_km
+        ]
+        return self.filter(pk__in=near_pks)
+
+    def counts_near_point_for_day(
+        self,
+        latitude: float,
+        longitude: float,
+        radius_km: float,
+        day: datetime.date,
+    ) -> dict[str, int]:
+        """Tally per-type observation counts within ``radius_km`` of a point.
+
+        Reuses ``near_point_for_day`` then tallies with
+        ``collections.Counter``, mirroring ``counts_for_region_day``.
+
+        Args:
+            latitude: WGS-84 latitude of the centre point, in degrees.
+            longitude: WGS-84 longitude of the centre point, in degrees.
+            radius_km: Maximum great-circle distance from the centre point,
+                in kilometres. Points at exactly this distance are included.
+            day: The calendar day to filter by.
+
+        Returns:
+            Mapping from observation-type value string to count. Only types
+            that appear at least once are included; zero-count types are
+            omitted.
+
+        """
+        types = self.near_point_for_day(
+            latitude, longitude, radius_km, day
+        ).values_list("observation_type", flat=True)
         return dict(collections.Counter(types))
 
     def user_located_exists_for_region_day(
@@ -155,6 +259,30 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
 
         """
         return self.get_queryset().counts_for_region_day(region, day)
+
+    def counts_near_point_for_day(
+        self,
+        latitude: float,
+        longitude: float,
+        radius_km: float,
+        day: datetime.date,
+    ) -> dict[str, int]:
+        """Delegate to the queryset's counts_near_point_for_day method.
+
+        Args:
+            latitude: WGS-84 latitude of the centre point, in degrees.
+            longitude: WGS-84 longitude of the centre point, in degrees.
+            radius_km: Maximum great-circle distance from the centre point,
+                in kilometres. Points at exactly this distance are included.
+            day: The calendar day to filter by.
+
+        Returns:
+            Mapping from observation-type value string to count.
+
+        """
+        return self.get_queryset().counts_near_point_for_day(
+            latitude, longitude, radius_km, day
+        )
 
     def user_located_exists_for_region_day(
         self,
