@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels
 status: current
-last-reviewed: 2026-06-21
+last-reviewed: 2026-07-24
 ---
 
 # Glossary — domain terms to code symbols
@@ -38,6 +38,7 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | MicroRegion | L4 warning region, e.g. `CH-4115` or `FR-68` — the unit bulletins, ratings, and subscriptions attach to; `region_id` unique |
 | Resort | Ski resort geocoded onto a MicroRegion |
 | Region id formats | `CH-4115` (4-digit), `FR-01` (2-digit), `AT-07-23-02` / `IT-32-BZ-15` (multi-level) |
+| Resort page | Public detail page for one Resort at `/resorts/<id>/<slug>/` — danger chip, bulletin link, favourite toggle (SNOW-504) | `public:resort` route; `resort_detail()` in `public/views.py`; template `public/templates/public/resort.html` |
 
 ## Bulletins and ratings
 
