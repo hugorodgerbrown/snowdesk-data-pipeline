@@ -225,7 +225,7 @@ try {
 // basemap_cache_core.js (self.pwaBasemapCacheCore), so the classification/
 // eviction logic can be unit-tested directly. Behaviour is unchanged —
 // this is a shell-bytes bump only.
-// SNOW-505: v29 — new static/js/map_layer_sync_status.js plus the layers-
+// SNOW-505: v33 — new static/js/map_layer_sync_status.js plus the layers-
 // popover shell markup change (sync-status dots, _map_embed.html/home.html).
 const CACHE_VERSION = 'snowdesk-shell-v33';
 
