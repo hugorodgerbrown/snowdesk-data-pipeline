@@ -65,6 +65,19 @@ def _backfill_accounts(apps, schema_editor):  # type: ignore[no-untyped-def]
             account_id=account.pk
         )
 
+    # Django creates Postgres FK constraints as DEFERRABLE INITIALLY DEFERRED,
+    # so every INSERT/UPDATE above only *queues* a deferred FK-check trigger
+    # event — it does not fire until COMMIT. The AlterField DDL that follows
+    # this RunPython (promoting Subscription.account to non-null) runs in the
+    # same atomic transaction, and Postgres refuses to ALTER a table that has
+    # pending trigger events. Flush them now so the checks fire immediately
+    # (surfacing any FK inconsistency here) and the pending queue is drained
+    # before the DDL. No-op on SQLite (dev/CI/tests), which has no deferred
+    # triggers and rejects the statement.
+    if schema_editor.connection.vendor == "postgresql":
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
 
 def _reverse_backfill(apps, schema_editor):  # type: ignore[no-untyped-def]
     """No-op reverse — merged/backfilled Account rows cannot be unmerged."""

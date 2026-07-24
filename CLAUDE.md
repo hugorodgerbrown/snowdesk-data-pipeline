@@ -88,10 +88,16 @@ also **by design**; don't relocate it without reading
 [`docs/decisions/in-project-venv.md`](docs/decisions/in-project-venv.md)
 (the pre-commit mypy hook depends on the path).
 
-When a runtime dependency is added via `uv add`, **also add it to the
-relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
-`mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
-up `pyproject.toml` dependencies automatically.
+Every tox env installs from `uv.lock` via the `tox-uv` plugin's
+`uv-venv-lock-runner` — there is nothing to update in `tox.ini` when a
+runtime dependency changes; `uv sync`/`uv lock` already produced the pin
+every env installs from
+([`docs/decisions/tox-envs-install-from-uv-lock.md`](docs/decisions/tox-envs-install-from-uv-lock.md)).
+When you add a new **tool** (not a runtime dependency) that a tox env needs
+— a linter, a type-checker plugin, a test-only package — add it to the
+matching purpose-scoped group in `pyproject.toml`'s `[dependency-groups]`
+(`test`, `type`, `lint`, `sast`, `e2e`; `dev` composes all of them for local
+`uv sync`), then run `uv lock` to update `uv.lock`.
 
 ## Conventions
 
@@ -261,10 +267,11 @@ constraint. The reason is required and audit-visible
 ## Local CI — always run tox
 
 **`tox` is the single entry point** for running linters, type checks, Django
-system checks, and the test suite locally. The tox envs declare their own
-dependencies (independent of the uv-managed venv), so a tox run mirrors what CI
-will execute — catching the "works on my machine" class of failure before a
-PR is opened.
+system checks, and the test suite locally. Every env installs from `uv.lock`
+via `tox-uv` (see
+[`docs/decisions/tox-envs-install-from-uv-lock.md`](docs/decisions/tox-envs-install-from-uv-lock.md)),
+so a tox run installs exactly what local dev and CI already resolved —
+catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
 uv run tox                    # run every env (fmt, lint, mypy, django-checks, test)
