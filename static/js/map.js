@@ -4393,6 +4393,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
+    // SNOW-505: recompute the sync-status dots on every open — cheap,
+    // client-side probes, so no need to keep them live while closed.
+    if (open) window.pwaLayerSyncStatus?.refresh();
   };
 
   toggle.addEventListener('click', (e) => {
