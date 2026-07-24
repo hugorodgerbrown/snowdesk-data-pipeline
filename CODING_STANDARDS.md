@@ -471,25 +471,36 @@ Run the default suite locally with `tox` before pushing.
 
 ### 6.5 Tool-version pinning across surfaces
 
-The same tool runs on three surfaces — local pre-commit, local tox, and CI
-tox (CI just runs the same tox envs). A formatter or linter that floats to a
-newer version on one surface but not the others produces a "clean locally,
-red in CI" failure: SNOW-500 hit exactly this when an unpinned `ruff` in tox
-floated to a release whose formatter disagreed with the pinned pre-commit
-hook.
+Every tox env installs from [uv.lock](uv.lock) via the `tox-uv` plugin's
+`uv-venv-lock-runner` — see
+[`docs/decisions/tox-envs-install-from-uv-lock.md`](docs/decisions/tox-envs-install-from-uv-lock.md).
+Each env declares `dependency_groups = <group>` (`test`, `type`, `lint`,
+`sast`, `e2e` — see [pyproject.toml](pyproject.toml)'s
+`[dependency-groups]`) and syncs `--frozen`, so the pin lives in **one
+place**: whatever version `uv.lock` already resolved for local dev,
+pre-commit's `.venv/bin/*`, and production is exactly what CI installs.
+There is no second `deps =` list to drift out of lockstep — SNOW-500 hit
+that failure mode (an unpinned `ruff` in tox floated to a release whose
+formatter disagreed with the pinned pre-commit hook) before SNOW-510
+collapsed tox's resolution into the lock.
 
-To prevent it, `ruff` is pinned to an **exact** version (`==`, not a range)
-in all three places, and they are bumped **in lockstep**:
+`ruff` is the one tool still pinned to an **exact** version (`==`, not a
+range) — in the `lint` dependency group in
+[pyproject.toml](pyproject.toml) — because it is *also* consumed by
+[.pre-commit-config.yaml](.pre-commit-config.yaml)'s `ruff-pre-commit`
+`rev:`, a separate pin outside `uv.lock`'s reach. Those two must stay
+eyeball-equal; bump both together and re-run `tox` to confirm.
 
-- [.pre-commit-config.yaml](.pre-commit-config.yaml) — `ruff-pre-commit` `rev`
-- [tox.ini](tox.ini) — `[testenv:fmt]` and `[testenv:lint]` `deps`
-- [pyproject.toml](pyproject.toml) — the `dev` dependency group (which pins
-  `.venv/bin/ruff` via `uv.lock`)
-
-`djangofmt` follows the same rule: its `[testenv:djangofmt]` pin must match
-the `pyproject.toml` dev dep (and therefore `.venv/bin/djangofmt`, which the
-pre-commit hook invokes). When bumping either tool, change every surface in
-one commit and re-run `tox` to confirm all envs agree.
+**Deliberate exception — SAST rulesets stay live.** The `semgrep` package in
+the `sast` group is pinned by `uv.lock` like everything else; its rulesets
+(`--config=p/django --config=p/python --config=p/security-audit` in
+`[testenv:sast]`) are not, and fetch live from the Semgrep registry on every
+run. This trades reproducibility for detection freshness on purpose: a
+freshly-published rule is a newly-detected vulnerability class, and pinning
+the rulesets would silently miss new classes until someone remembered to
+bump the pin. The accepted risk is a new upstream rule turning `sast` red
+with no local diff to explain it; the `--exclude-rule` list in `tox.ini`
+absorbs the known false positives. Do not vendor or pin these rulesets.
 
 ---
 
