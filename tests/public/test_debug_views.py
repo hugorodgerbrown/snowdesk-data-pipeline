@@ -1,5 +1,6 @@
 """
-tests/public/test_debug_views.py — Tests for the component-library page.
+tests/public/test_debug_views.py — Tests for the component-library page and
+the other staff-only debug pages hosted in public/debug_views.py.
 
 Covers:
   - Anonymous and non-staff users are redirected to /admin/login/.
@@ -14,6 +15,8 @@ Covers:
   - The partial endpoint rejects non-HTMX requests with 400 (require_htmx).
   - Every IconToken.path resolves via the staticfiles finders so a typo
     can't slip through to the page as a broken-image square.
+  - The SW shell-version page (/_sw-version/, SNOW-517) requires staff and
+    server-renders the committed CACHE_VERSION and APP_VERSION.
 
 The earlier TestHeaderCombinationsView (the /debug/header/ matrix) was
 removed by SNOW-110 — that visual is now the Weather header components
@@ -25,12 +28,14 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
 from accounts.models import Account
+from core.sw_shell import read_cache_version
 from public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
 from tests.factories import AccountFactory, UserFactory
 
@@ -540,3 +545,55 @@ class TestIncludeVariantPartialOverride:
         assert csrf_warnings == [], (
             f"Unexpected CSRF warning(s): {[str(w.message) for w in csrf_warnings]}"
         )
+
+
+def _sw_version_url() -> str:
+    """Resolve the named URL for the SW shell-version debug page."""
+    return reverse("public:sw_version")
+
+
+@pytest.mark.django_db
+class TestSwVersionPage:
+    """Tests for the staff-only /_sw-version/ page (SNOW-517)."""
+
+    def test_anonymous_user_redirected_to_admin_login(self) -> None:
+        """A logged-out user is bounced to the admin login page."""
+        response = Client().get(_sw_version_url())
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_non_staff_user_redirected_to_admin_login(
+        self, regular_user: Account
+    ) -> None:
+        """A logged-in non-staff user is also bounced to admin login."""
+        client = Client()
+        client.force_login(regular_user.user)
+        response = client.get(_sw_version_url())
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_staff_user_sees_committed_version_and_app_version(
+        self, staff_client: Client
+    ) -> None:
+        """The baseline (JS-off) render carries the server-side version pair.
+
+        Proven via both the response context and the rendered HTML.
+        """
+        response = staff_client.get(_sw_version_url())
+        assert response.status_code == 200
+        assert response.context["cache_version"] == read_cache_version()
+        assert response.context["app_version"] == settings.APP_VERSION
+
+        body = response.content.decode()
+        assert read_cache_version() in body
+        assert str(settings.APP_VERSION) in body
+
+    def test_staff_user_sees_live_version_probe_script(
+        self, staff_client: Client
+    ) -> None:
+        """The progressive-enhancement probe script is included on the page."""
+        response = staff_client.get(_sw_version_url())
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert "pwa_sw_version_probe.js" in body
+        assert 'data-testid="sw-live-version"' in body

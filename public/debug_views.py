@@ -1,12 +1,13 @@
 """
-public/debug_views.py — Staff-only design-system / component-library page.
+public/debug_views.py — Staff-only design-system / debug pages.
 
 Renders every design-system entry from ``public/design_tokens.py`` under
 ``/_components/``. Sidebar grouped into Foundations (design tokens) and
 Components (rendered HTML partials); main column HTMX-swaps via the
-sidebar.
+sidebar. Also hosts the Web Push demo (``/_push-demo/``) and the SW
+shell-version page (``/_sw-version/``, SNOW-517).
 
-Auth: ``staff_member_required`` only — no DEBUG gate. The page is
+Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
 admin access already has equivalent capability via Django admin).
 
@@ -16,6 +17,7 @@ now lives inside the component library as the **Weather header** entry
 under the Components group.
 """
 
+from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
@@ -23,6 +25,7 @@ from django.shortcuts import render
 from accounts.models import PushSubscription
 from accounts.push_config import VAPID_PUBLIC_KEY
 from core.decorators import require_htmx
+from core.sw_shell import read_cache_version
 from public.design_tokens import LIBRARY_GROUPS, get_category
 
 DEFAULT_SLUG = "typography"
@@ -86,5 +89,28 @@ def push_demo(request: HttpRequest) -> HttpResponse:
         {
             "vapid_public_key": VAPID_PUBLIC_KEY,
             "subscriptions": PushSubscription.objects.all(),
+        },
+    )
+
+
+@staff_member_required
+def sw_version(request: HttpRequest) -> HttpResponse:
+    """Staff page surfacing the service-worker shell version (SNOW-517).
+
+    Server-renders the deployed ``CACHE_VERSION`` (read live from
+    ``static/js/sw.js`` via ``core.sw_shell.read_cache_version()``) and
+    ``settings.APP_VERSION`` so the baseline works with JS disabled. The
+    live SW version — what the browser actually has under control right
+    now — is filled in by ``static/js/pwa_sw_version_probe.js`` as a
+    progressive enhancement: it posts ``'version'`` to
+    ``navigator.serviceWorker.controller`` and writes the reply into the
+    page (see ``sw.js``'s ``message`` handler).
+    """
+    return render(
+        request,
+        "_debug/sw_version.html",
+        {
+            "cache_version": read_cache_version(),
+            "app_version": settings.APP_VERSION,
         },
     )
