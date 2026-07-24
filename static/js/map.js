@@ -4400,6 +4400,28 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   const STORAGE_KEY = 'snowdesk.map.basemap';
 
+  // SNOW-511: the menu is bottom-anchored (CSS `bottom: -96px`) and grows
+  // upward. On a short viewport a tall menu grows past the top of #map,
+  // sliding its first rows (the Countries section) up behind the nav and
+  // the conditional off-season banner where they can't be reached — the CSS
+  // `max-height: calc(100dvh - 96px)` floor reserves nothing for that top
+  // chrome. Clamp the height to the room actually available between #map's
+  // top edge (a small gap below it) and the menu's fixed bottom baseline so
+  // the top rows stay on-screen and the overflowing list scrolls internally.
+  // The menu's bottom is pinned by CSS regardless of its height, so reading
+  // its baseline before applying the cap is stable. Recomputed on each open
+  // and on resize because the banner (conditional) and the top safe-area
+  // inset both move #map's top.
+  const MENU_TOP_GAP = 8;
+  const clampMenuHeight = () => {
+    const mapEl = document.getElementById('map');
+    if (!mapEl) return;
+    const mapTop = mapEl.getBoundingClientRect().top;
+    const menuBottom = menu.getBoundingClientRect().bottom;
+    const available = Math.max(0, Math.round(menuBottom - mapTop - MENU_TOP_GAP));
+    menu.style.maxHeight = `${available}px`;
+  };
+
   const setMenuOpen = (open) => {
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -4407,7 +4429,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-505: recompute the sync-status dots on every open — cheap,
     // client-side probes, so no need to keep them live while closed.
     if (open) window.pwaLayerSyncStatus?.refresh();
+    // SNOW-511: size the menu to the visible map area once it's laid out.
+    if (open) clampMenuHeight();
   };
+
+  // SNOW-511: keep the cap correct if the viewport changes while the menu is
+  // open (orientation flip, mobile URL-bar show/hide, desktop resize).
+  window.addEventListener('resize', () => {
+    if (!menu.hidden) clampMenuHeight();
+  });
 
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
