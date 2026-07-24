@@ -29,6 +29,15 @@ def _backfill_requestlog_account(apps, schema_editor):  # type: ignore[no-untype
         if account_id is not None:
             RequestLog.objects.filter(pk=row.pk).update(account_id=account_id)
 
+    # Flush the deferred FK-check trigger events queued by the UPDATEs above
+    # before the RemoveField(subscriber) DDL that follows this RunPython in the
+    # same atomic transaction — Postgres refuses to ALTER a table with pending
+    # trigger events (see accounts/0009 for the full explanation). No-op on
+    # SQLite, which has no deferred triggers.
+    if schema_editor.connection.vendor == "postgresql":
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
 
 def _reverse_backfill(apps, schema_editor):  # type: ignore[no-untyped-def]
     """No-op reverse — the dropped subscriber_id values cannot be restored."""
