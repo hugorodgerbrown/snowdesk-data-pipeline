@@ -1,6 +1,7 @@
 """
 tests/e2e/test_resort_page.py — Playwright test for the resort detail page
-(SNOW-504), plus (SNOW-508) the point-local field-observation panel.
+(SNOW-504), plus (SNOW-508) the point-local field-observation panel and
+(SNOW-509) the region weather panel.
 
 Verifies the round-trip cross-link SNOW-504 introduces: the bulletin page's
 "Resorts in this region" list links to a resort's own page, and that page's
@@ -18,12 +19,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.utils import timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from regions.models import Resort
-from tests.factories import FieldObservationFactory
+from tests.factories import FieldObservationFactory, WeatherSnapshotFactory
 
 
 def test_bulletin_to_resort_and_back_round_trips_to_same_region(
@@ -95,3 +97,41 @@ def test_resort_page_shows_point_local_observation_count(
     # instead so the assertion checks the actual rendered copy.
     assert (heading.text_content() or "").strip() == "Reported nearby"
     assert "Whumpfing" in page.locator("main").inner_text()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_resort_page_shows_region_weather_panel(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """SNOW-509: the resort page shows the parent region's WeatherSnapshot.
+
+    Seeds a ``WeatherSnapshot`` for Verbier's own region (CH-4115) at
+    *today* (real wall-clock — the resort view calls ``timezone.localdate()``
+    unfrozen) so ``weather_htmx_trigger`` is False and the server-rendered
+    page already carries the populated panel — no live Open-Meteo call, no
+    HTMX retry to race in the browser. Asserts the shared weather panel
+    renders with the seeded condition, and that no per-point forecast panel
+    (the favourite-page-only surface) appears on this page.
+    """
+    with django_db_blocker.unblock():
+        resort = Resort.objects.get(name="Verbier")
+        WeatherSnapshotFactory.create(
+            region=resort.region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,  # clear sky
+        )
+        resort_url = resort.get_absolute_url()
+
+    page.goto(f"{live_server.url}{resort_url}")
+    page.wait_for_load_state("networkidle")
+
+    panel = page.locator('[data-testid="resort-weather"]')
+    panel.wait_for(state="visible")
+    assert panel.get_attribute("data-weather-bucket") == "clear"
+    assert "Clear" in panel.inner_text()
+
+    # No per-point weather surface — that stays a favourite-page feature.
+    assert page.locator('[data-testid="favourite-forecast-panel"]').count() == 0
