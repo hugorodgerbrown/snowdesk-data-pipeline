@@ -13,6 +13,13 @@
 # place a stale Python tool/runtime pin can hide. Dependabot's `uv`
 # ecosystem reads pyproject.toml/uv.lock and opens a PR bumping the lock —
 # the npm ecosystem is still out of scope.
+#
+# uv patch and minor bumps are collapsed into one weekly grouped PR:
+# dependabot-auto-merge.yml reads the group's highest semver bump, so a
+# patch/minor-only group is classified minor and auto-merges once CI is
+# green. Major bumps are excluded from the group and open one PR each, which
+# auto-merge deliberately leaves for manual review (a major can pass CI yet
+# change behaviour).
 
 version: 2
 updates:
@@ -25,3 +32,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      # One PR a week for all patch and minor bumps; majors are left out of
+      # the group (and so open individually) to stay outside auto-merge.
+      python-patch-minor:
+        update-types:
+          - "minor"
+          - "patch"
