@@ -143,3 +143,8 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable PR review comments: they need pull-requests:write, which
+          # would defeat the least-privilege scoping (SNOW-506). The gate is
+          # the non-zero exit on a detected leak, not the comment. The scan
+          # still reads the PR commit range under pull-requests:read above.
+          GITLEAKS_ENABLE_COMMENTS: "false"
