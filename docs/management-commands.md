@@ -244,6 +244,31 @@ incident that invalidates derived state:
   multi-year backfills to stay polite to the public APIs.
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
+- `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
+  anchors every geocoded, unlinked `Resort` to a shared `bulletins.ForecastPoint`
+  via `bulletins.services.forecast_points.resolve_forecast_point` (the same
+  SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
+  `ForecastPoint.objects.active()` (favourite-OR-resort) so the scheduled
+  `fetch_weather` point pass picks up linked resorts automatically — no
+  scheduler change. Read-only by default; pass `--commit` to persist the
+  FK. Idempotent — a resort with `forecast_point` already set is excluded
+  from the candidate set, so a second run selects nothing. Per-resort
+  elevation-lookup failures are caught, logged, and counted (`failed`);
+  they never abort the batch. Run once after this ships, and again after
+  any future geocoding session (`?edit=resorts`).
+
+  ```bash
+  # Dry-run — resolves and reports, writes no FK.
+  uv run python manage.py link_resort_forecast_points
+
+  # Persist the resolved links.
+  uv run python manage.py link_resort_forecast_points --commit
+
+  # Tighten pacing between the per-resort elevation calls (default 1.0s).
+  uv run python manage.py link_resort_forecast_points --commit --delay 2
+  ```
+
+  Flags: `--commit`, `--delay SECONDS` (default 1.0).
 - `backfill_verified_accounts --commit` — one-off post-deploy step for
   SNOW-430. Creates (or flips) a verified `Account` for every confirmed
   (active) `Subscriber` that lacks one, so existing subscribers are not
@@ -557,7 +582,10 @@ resolved window reaches today, the command also fetches a **7-day** window
 (`POINT_HOURLY_DAYS`) near-term hourly series of ski-relevant variables
 (temperature, snowfall, precipitation, wind speed/gusts, freezing level) —
 for every **active** `ForecastPoint` (a point referenced by at least one
-`Favourite`; see [`favourites`/`accounts` glossary entries](glossary.md)),
+`Favourite` **or** `regions.Resort` — widened by SNOW-503's
+`link_resort_forecast_points` backfill so every geocoded resort gets a
+precise, elevation-downscaled forecast too; see
+[`favourites`/`accounts` glossary entries](glossary.md)),
 passing the point's stored `elevation` explicitly so the forecast is
 statistically downscaled to the pin's altitude. One API call per point
 returns the whole window; one `ForecastPointWeather` row per day is

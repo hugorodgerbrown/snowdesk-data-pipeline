@@ -8,7 +8,8 @@ Covers:
   - unique_together constraint on (lat_cell, lon_cell, elevation_band).
   - Quantisation edge cases: cell boundaries and negative-coordinate floors,
     exercised via bulletins.services.forecast_points.quantise_*.
-  - ForecastPointQuerySet.active() — points with at least one favourite.
+  - ForecastPointQuerySet.active() — points with at least one favourite or
+    resort (SNOW-503).
 """
 
 import pytest
@@ -23,7 +24,7 @@ from bulletins.services.forecast_points import (
     quantise_lat,
     quantise_lon,
 )
-from tests.factories import FavouriteFactory, ForecastPointFactory
+from tests.factories import FavouriteFactory, ForecastPointFactory, ResortFactory
 
 
 @pytest.mark.django_db
@@ -132,7 +133,7 @@ class TestQuantisation:
 
 @pytest.mark.django_db
 class TestForecastPointActiveQuerySet:
-    """ForecastPointQuerySet.active() — points referenced by a favourite."""
+    """ForecastPointQuerySet.active() — points referenced by a favourite or resort."""
 
     def test_point_with_favourite_is_active(self) -> None:
         """A point with one favourite is included in active()."""
@@ -142,5 +143,23 @@ class TestForecastPointActiveQuerySet:
 
     def test_point_without_favourite_is_not_active(self) -> None:
         """A point with no favourites is excluded from active()."""
+        point = ForecastPointFactory.create()
+        assert point not in ForecastPoint.objects.active()
+
+    def test_point_with_resort_is_active(self) -> None:
+        """A point referenced only by a Resort is included in active()."""
+        point = ForecastPointFactory.create()
+        ResortFactory.create(geocoded=True, forecast_point=point)
+        assert point in ForecastPoint.objects.active()
+
+    def test_point_with_favourite_and_resort_appears_once(self) -> None:
+        """A point shared by a favourite and a resort appears exactly once."""
+        point = ForecastPointFactory.create()
+        FavouriteFactory.create(forecast_point=point)
+        ResortFactory.create(geocoded=True, forecast_point=point)
+        assert ForecastPoint.objects.active().filter(pk=point.pk).count() == 1
+
+    def test_orphan_point_excluded(self) -> None:
+        """A point referenced by neither a favourite nor a resort is excluded."""
         point = ForecastPointFactory.create()
         assert point not in ForecastPoint.objects.active()

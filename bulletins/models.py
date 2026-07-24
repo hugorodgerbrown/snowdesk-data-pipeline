@@ -1035,19 +1035,25 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
     """Custom queryset for ForecastPoint."""
 
     def active(self) -> "ForecastPointQuerySet":
-        """Return points referenced by at least one favourite.
+        """Return points referenced by at least one favourite or resort.
 
-        Annotates over the reverse FK created by ``favourites.Favourite``
-        and filters to rows with a non-zero count — see
-        ``docs/decisions/forecast-point-quantisation.md``.
+        Annotates over the reverse FKs created by ``favourites.Favourite``
+        and ``regions.Resort`` (SNOW-503) and filters to rows with a
+        non-zero count on either side — see
+        ``docs/decisions/forecast-point-quantisation.md``. Each count is
+        annotated with ``distinct=True`` so joining both reverse relations
+        at once cannot inflate either count; a point shared by a favourite
+        and a resort still appears exactly once in the result.
 
         Returns:
-            Filtered queryset of ForecastPoints with one or more favourites.
+            Filtered queryset of ForecastPoints with one or more
+            favourites or resorts.
 
         """
-        return self.annotate(favourite_count=models.Count("favourites")).filter(
-            favourite_count__gt=0
-        )
+        return self.annotate(
+            favourite_count=models.Count("favourites", distinct=True),
+            resort_count=models.Count("resorts", distinct=True),
+        ).filter(models.Q(favourite_count__gt=0) | models.Q(resort_count__gt=0))
 
 
 class ForecastPoint(BaseModel):

@@ -2,7 +2,7 @@
 name: forecast-point-quantisation
 description: ForecastPoint grid cell (0.01 lat / 0.015 lon) and 200m elevation band sizing; reuse-nearest precedes cell creation
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-07-23
 ---
 
 # ForecastPoint grid and elevation-band sizing
@@ -38,6 +38,9 @@ band tolerance). `_haversine_m()` is a private copy local to
 haversine helper is deferred — the `mcp_server` copy is private to that
 app, and refactoring it as part of this ticket would be scope creep; a
 future ticket touching either call site should do the extraction.
-`ForecastPointQuerySet.active()` (filtering to points with at least one
-live favourite) is also deferred until the `favourites` app exists to
-supply the reverse FK.
+`ForecastPointQuerySet.active()` filters to points with at least one live
+`Favourite` **or** `regions.Resort` (SNOW-503 widened it from
+favourite-only) — the set `fetch_weather`'s point pass polls, so a resort
+anchored to a point (via `manage.py link_resort_forecast_points`) is
+polled exactly like a user favourite, and a point shared by both is
+counted (and polled) once.
