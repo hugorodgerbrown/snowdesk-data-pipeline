@@ -185,6 +185,24 @@ def _unregister_service_workers(page: Page) -> None:
     )
 
 
+def _wait_for_sw_control(page: Page, timeout: int = 5000) -> None:
+    """Wait until ``navigator.serviceWorker.controller`` is activated.
+
+    A registered service worker is not necessarily a *controlling* one —
+    the controller reference only appears once the activated worker has
+    actually claimed the page. Polling ``controller?.state`` (rather than
+    Playwright's page/context network-interception hooks, which don't see
+    a service worker's own fetches at all — see the module docstring)
+    is the one reliable signal that the SW is ready to intercept fetches,
+    so callers gate on this (SNOW-516) before doing anything that depends
+    on the SW being in control, e.g. going offline.
+    """
+    page.wait_for_function(
+        "() => navigator.serviceWorker.controller?.state === 'activated'",
+        timeout=timeout,
+    )
+
+
 @dataclass
 class PwaPage:
     """A ``Page`` with a real, activated service worker plus lifecycle helpers.
@@ -391,10 +409,7 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     )
     page.goto(live_server.url + "/")
     page.wait_for_load_state("load")
-    page.wait_for_function(
-        "() => navigator.serviceWorker.controller?.state === 'activated'",
-        timeout=5000,
-    )
+    _wait_for_sw_control(page)
     # Guarantee 2 above — both SW lifecycle rows must be in queue:events
     # before the reload can be allowed to happen.
     telemetry_state = page.evaluate(
@@ -423,6 +438,9 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     # needed to make "Scenario P1 completed" actually true.
     page.reload()
     page.wait_for_load_state("load")
+    # Re-confirm control after the reload (SNOW-516) rather than assuming
+    # the first wait's guarantee still holds post-reload.
+    _wait_for_sw_control(page)
     yield PwaPage(page=page, live_server_url=live_server.url, page_errors=page_errors)
     assert page_errors == [], f"JS errors during the test: {page_errors}"
     _unregister_service_workers(page)
