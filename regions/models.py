@@ -28,11 +28,20 @@ from __future__ import annotations
 import datetime
 from typing import Any, TypedDict
 
+from django.core.validators import RegexValidator
 from django.db import models
 from django.urls import reverse
 from django.utils.text import slugify
 
 from core.models import BaseModel
+
+# Validates a "MM-DD" month-day string, e.g. "12-01" — used for the
+# hand-curated typical season open/close fields on Resort. Blank values are
+# allowed: Django skips validators on empty strings.
+MONTH_DAY_VALIDATOR = RegexValidator(
+    r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$",
+    "Enter a month-day as MM-DD, e.g. 12-01.",
+)
 
 # ---------------------------------------------------------------------------
 # EAWS region hierarchy
@@ -579,6 +588,52 @@ class Resort(BaseModel):
     geocode_confidence = models.FloatField(null=True, blank=True)
     geocoded_at = models.DateTimeField(null=True, blank=True)
     needs_review = models.BooleanField(default=False)
+    operator_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Operating company name, hand-curated (not from any feed).",
+    )
+    website = models.URLField(
+        blank=True,
+        help_text="Official resort website, hand-curated (not from any feed).",
+    )
+    num_lifts = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of lifts.",
+    )
+    num_runs = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of piste runs.",
+    )
+    total_piste_km = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total piste length in kilometres.",
+    )
+    base_elevation_m = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Base elevation in metres.",
+    )
+    top_elevation_m = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Top elevation in metres.",
+    )
+    typical_season_open = models.CharField(
+        max_length=5,
+        blank=True,
+        validators=[MONTH_DAY_VALIDATOR],
+        help_text="Typical season opening as month-day, e.g. 12-01.",
+    )
+    typical_season_close = models.CharField(
+        max_length=5,
+        blank=True,
+        validators=[MONTH_DAY_VALIDATOR],
+        help_text="Typical season closing as month-day, e.g. 04-30.",
+    )
     forecast_point = models.ForeignKey(
         "bulletins.ForecastPoint",
         on_delete=models.PROTECT,
