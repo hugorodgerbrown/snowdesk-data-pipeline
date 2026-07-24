@@ -131,6 +131,7 @@ the manage page can be authenticated-only.
             var AUTH_REQUEST_URL = "{% url 'accounts:passkey_auth_request' %}";
             var AUTH_RESPONSE_URL = "{% url 'accounts:passkey_auth_response' %}";
             var authFeedback = document.getElementById("passkey-auth-feedback");
+            var form = document.querySelector("form");
 
             /* Password sign-in toggle (SNOW-431) — progressive enhancement.
                Reveal the "Sign in with a password instead" control, and on
@@ -149,11 +150,31 @@ the manage page can be authenticated-only.
                     pwToggle.classList.add("hidden");
                     var input = document.getElementById("id_password");
                     if (input) input.focus();
+                    window.Passkey.abortConditionalSignIn();
                 });
             }
 
-            /* Conditional UI — passkeys surface in email-field autofill dropdown */
+            /* Conditional UI — passkeys surface in email-field autofill dropdown.
+               Typing an email or submitting the form aborts any pending
+               conditional ceremony (SNOW-515) so it never overlaps the
+               explicit "Sign in with a passkey" button's ceremony.
+               passkey.js loads synchronously in the <script src> above, so
+               window.Passkey is trusted here at the same level as the
+               startConditionalSignIn() call itself — only the elements are
+               guarded on existence. */
             window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+
+            var emailInput = form ? form.querySelector('input[name="email"]') : null;
+            if (emailInput) {
+                emailInput.addEventListener("input", function () {
+                    window.Passkey.abortConditionalSignIn();
+                });
+            }
+            if (form) {
+                form.addEventListener("submit", function () {
+                    window.Passkey.abortConditionalSignIn();
+                });
+            }
 
             function showAuthError(msg) {
                 if (!authFeedback) return;
