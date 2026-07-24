@@ -77,7 +77,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 
-from tests.e2e.conftest import PwaPage
+from tests.e2e.conftest import PwaPage, _wait_for_sw_control
 
 # Matches the picker's curated key order (public.views._BASEMAP_LABELS) —
 # see tests/public/test_map_page.py::test_map_view_passes_basemap_catalogue
@@ -198,6 +198,11 @@ def test_registered_basemap_origin_served_from_cache_while_offline(
         {"origin": tile_origin, "url": tile_url, "body": tile_body},
     )
 
+    # Registered != controlling — gate on an activated controller before
+    # going offline, otherwise the fetch below can race a not-yet-taken-over
+    # SW and fall through to the network instead of the offline-serve path
+    # this test exists to cover (SNOW-516).
+    _wait_for_sw_control(page)
     page.context.set_offline(True)
     try:
         result = page.evaluate(
