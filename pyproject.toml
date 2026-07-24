@@ -14,7 +14,7 @@ dependencies = [
     "django-htmx>=1.21.0,<2",
     "python-decouple>=3.8,<4",
     "requests>=2.32.3,<3",
-    "psycopg[binary]>=3.2.4,<4",
+    "psycopg[binary]>=3.3.4,<4",
     "dj-database-url>=3.1.2,<4",
     "whitenoise>=6.12.0,<7",
     "gunicorn>=26.0.0,<27",
@@ -31,8 +31,8 @@ dependencies = [
     "django-tasks>=0.12.0,<0.13",
     "django-tasks-db>=0.12.0,<0.13",
     "apscheduler>=3.10,<4",
-    "posthog>=7.16.3,<8",
-    "cryptography>=48.0.1,<49",
+    "posthog>=7.29.0,<8",
+    "cryptography>=49.0.0,<50",
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",
 ]
@@ -74,7 +74,7 @@ lint = [
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [
-    "semgrep>=1.95,<2",
+    "semgrep>=1.171.0,<2",
 ]
 e2e = [
     "playwright>=1.0,<2",
@@ -82,7 +82,7 @@ e2e = [
     {include-group = "test"},
 ]
 dev = [
-    "pre-commit>=4.2.0,<5",
+    "pre-commit>=4.6.1,<5",
     "tox>=4.52.1,<5",
     "tox-uv>=1.0,<2",
     "tox-gh-actions>=3.5.0,<4",
