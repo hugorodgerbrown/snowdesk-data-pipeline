@@ -89,7 +89,7 @@ jobs:
       # tox is a Python tool (drives `npm ci && npm run test:js`), so both
       # runtimes are required — Python for tox itself, Node for Vitest.
       - name: Set up Python (3.14)
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
