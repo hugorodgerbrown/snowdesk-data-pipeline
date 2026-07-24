@@ -107,6 +107,10 @@ and loads home_intro.js in addition to the shared map assets.
     {# unit-tested directly (tests/js/test_scrubber_core.js) — map.js's own  #}
     {# IIFEs delegate to window.pwaScrubberCore. Must load before map.js.    #}
     <script defer src="{% static 'js/scrubber_core.js' %}"></script>
+    {# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus). #}
+    {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}
+    {# setMenuOpen on every popover open.                                    #}
+    <script defer src="{% static 'js/map_layer_sync_status.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
