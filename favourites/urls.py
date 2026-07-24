@@ -15,6 +15,7 @@ URL structure:
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
   favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
   favourites/favourites.geojson              GET  — the user's own pins
+  favourites/<uuid>/                         GET  — full detail page (SNOW-507)
 """
 
 from django.urls import path
@@ -63,5 +64,10 @@ urlpatterns = [
         "favourites.geojson",
         views.favourites_geojson,
         name="geojson",
+    ),
+    path(
+        "<uuid:uuid>/",
+        views.favourite_detail,
+        name="detail",
     ),
 ]
