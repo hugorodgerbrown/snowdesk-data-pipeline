@@ -129,7 +129,9 @@ def test_overlay_disabled_before_fetch_settles_stays_hidden(
     # Wait for the delayed fetch to resolve and the layer to actually
     # install (the race the bug exploited), then assert its visibility
     # reflects the LAST toggle state (off), not "always visible on load".
-    page.wait_for_function("() => !!MAP.getLayer('resorts-pin')", timeout=10000)
+    page.wait_for_function(
+        "() => !!MAP.getLayer('resorts-pin')", timeout=_SETTLE_TIMEOUT_MS
+    )
     assert (
         page.evaluate("() => MAP.getLayoutProperty('resorts-pin', 'visibility')")
         == "none"
