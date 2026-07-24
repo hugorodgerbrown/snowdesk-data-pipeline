@@ -104,8 +104,9 @@ from bulletins.services.weather_fetcher import (
 from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
+from favourites.models import Favourite
 from observations.models import FieldObservation
-from regions.models import MicroRegion
+from regions.models import MicroRegion, Resort
 
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
@@ -3275,6 +3276,10 @@ def _bulletin_detail_response(
 
     """
     adjoining_regions = list(region.neighbours.all())
+    # Resorts in this region (SNOW-504) — reverse FK, alphabetical per
+    # Resort.Meta.ordering. Cross-links the bulletin page to each resort's
+    # own page; empty for regions with no fixture-seeded resorts.
+    resorts_in_region = list(region.resorts.all())
 
     _capture_utm_to_session(request)
 
@@ -3372,6 +3377,7 @@ def _bulletin_detail_response(
                 "next_date": next_date,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
+                "resorts_in_region": resorts_in_region,
                 "season_calendar": season_header(today),
                 "weather_display": weather_display,
                 "weather_htmx_trigger": weather_display is None,
@@ -3510,6 +3516,8 @@ def _bulletin_detail_response(
         "period_transition_chip": period_transition_chip,
         # Geographic neighbours — see SNOW-82.
         "adjoining_regions": adjoining_regions,
+        # Resorts in this region — see SNOW-504.
+        "resorts_in_region": resorts_in_region,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
         # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).
@@ -3673,6 +3681,82 @@ def _bulletin_detail_render(
         requested_issue_id=requested_issue_id,
         canonical_is_today=date_str is None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Resort detail page (SNOW-504)
+# ---------------------------------------------------------------------------
+
+
+def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
+    """
+    Render the public resort detail page.
+
+    Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``),
+    cross-linking with the bulletin page (which lists "Resorts in this
+    region" — see ``_bulletin_detail_response``) and the map's resort-pin
+    popup (``public.api.resort_popup``, whose CTA now reads "View resort →"
+    and links here instead of straight to the bulletin).
+
+    301-redirects to the canonical slug when the inbound ``slug`` doesn't
+    match ``resort.name_slug`` — mirrors the region canonical-slug
+    behaviour (``_redirect_to_canonical``) so search engines index one URL
+    per resort.
+
+    Reuses the context-building already proven by ``public.api.resort_popup``
+    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
+    and by ``public.api.region_summary`` (today's ``RegionDayRating`` lookup
+    for the danger chip). Observation counts are region-wide, today-only —
+    the same honest placeholder the bulletin page uses until SNOW-508 adds
+    point-local observations; ``_get_observation_counts`` already
+    short-circuits to an empty list when the ``field_observations`` flag is
+    inactive, so no extra gating is needed here.
+
+    Args:
+        request: The incoming HTTP request.
+        resort_id: The Resort's primary key, from the URL.
+        slug: The inbound URL slug — checked against ``resort.name_slug``;
+            a mismatch 301s to the canonical URL.
+
+    Returns:
+        The rendered resort page, or a 301 redirect to the canonical URL.
+
+    """
+    resort = get_object_or_404(
+        Resort.objects.select_related("region__subregion__major"),
+        pk=resort_id,
+    )
+
+    if slug != resort.name_slug:
+        return redirect(resort.get_absolute_url(), permanent=True)
+
+    region = resort.region
+    today = timezone.localdate()
+
+    day_rating = RegionDayRating.objects.filter(region=region, date=today).first()
+
+    can_favourite = False
+    favourite = None
+    if waffle.flag_is_active(request, "favourites") and request.user.is_authenticated:
+        can_favourite = True
+        favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
+
+    context = {
+        "resort": resort,
+        "region": region,
+        "day_rating": day_rating,
+        "target_date": today,
+        "bulletin_url": region.get_absolute_url(),
+        "favourited": favourite is not None,
+        "favourite_uuid": str(favourite.uuid) if favourite else "",
+        "can_favourite": can_favourite,
+        "signin_url": reverse("accounts:sign_in"),
+        "observation_counts": _get_observation_counts(request, region, today),
+        "observation_has_user_located": _get_observation_has_user_located(
+            request, region, today
+        ),
+    }
+    return render(request, "public/resort.html", context)
 
 
 # ---------------------------------------------------------------------------

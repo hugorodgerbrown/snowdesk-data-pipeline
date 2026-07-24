@@ -36,6 +36,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    ResortFactory,
     WeatherSnapshotFactory,
 )
 
@@ -897,6 +898,96 @@ class TestAdjoiningRegions:
         assert response.context["bulletin"] is None
         assert list(response.context["adjoining_regions"]) == [neighbour]
         assert b'data-testid="adjoining-regions"' in response.content
+
+
+@pytest.mark.django_db
+class TestResortsInRegion:
+    """Tests for the "Resorts in this region" context entry and section (SNOW-504)."""
+
+    def test_context_lists_resorts_in_the_region(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """``resorts_in_region`` lists the region's resorts, alphabetically."""
+        ResortFactory.create(name="Zermatt", region=region)
+        ResortFactory.create(name="Arosa", region=region)
+
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        names = [r.name for r in response.context["resorts_in_region"]]
+        assert names == ["Arosa", "Zermatt"]
+
+    def test_section_renders_with_links_to_each_resort(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The section emits a link to each resort's own page."""
+        resort = ResortFactory.create(name="Verbier", region=region)
+
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        content = response.content.decode()
+        assert 'data-testid="resorts-in-region"' in content
+        assert "Verbier" in content
+        assert resort.get_absolute_url() in content
+
+    def test_section_hidden_when_no_resorts(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """No resorts seeded in the region → no section in the HTML."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        assert response.context["resorts_in_region"] == []
+        assert b'data-testid="resorts-in-region"' not in response.content
+
+    def test_empty_state_includes_resorts_in_region(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Even when there is no bulletin for the date, resorts still render."""
+        resort = ResortFactory.create(name="Verbier", region=region)
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        assert response.context["bulletin"] is None
+        assert list(response.context["resorts_in_region"]) == [resort]
+        assert b'data-testid="resorts-in-region"' in response.content
 
 
 @pytest.mark.django_db

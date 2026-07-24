@@ -1,0 +1,115 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/resort.html — Public resort detail page (SNOW-504).
+
+Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``), rendered
+by ``public.views.resort_detail``. Cross-linked from the bulletin page's
+"Resorts in this region" list and from the map's resort-pin popup, whose
+CTA now reads "View resort →" and links here instead of straight to the
+bulletin.
+
+Sections, top to bottom:
+  1. Resort name (+ alternative/marketing name, when set), canton, and
+     parent region name.
+  2. Today's danger chip — reuses the ``.danger-tile`` component from
+     ``_region_tooltip.html`` — alongside a "View bulletin →" link to the
+     parent region's evergreen bulletin page.
+  3. The favourite/unfavourite control
+     (``favourites/partials/_resort_favourite_button.html``).
+  4. Region-wide, today-only field-observation counts — the same honest
+     placeholder ``bulletin.html`` shows; SNOW-508 will replace this with
+     point-local observations.
+
+Resorts with ``needs_review=True`` or null coordinates still render here —
+only the map-anchor affordance is skipped, and this page has none.
+
+Context expected (built by ``public.views.resort_detail``):
+  resort                        — regions.Resort instance.
+  region                        — regions.MicroRegion instance (resort.region,
+                                   select_related subregion__major).
+  day_rating                    — bulletins.RegionDayRating for today, or None.
+  target_date                   — datetime.date: today.
+  bulletin_url                  — str: the region's evergreen bulletin URL.
+  favourited                    — bool.
+  favourite_uuid                — str: "" when not favourited.
+  can_favourite                 — bool.
+  signin_url                    — str: accounts:sign_in URL.
+  observation_counts            — list[(label, count)] — see bulletin.html.
+  observation_has_user_located  — bool.
+{% endcomment %}
+{% load i18n snowdesk_time %}
+
+{% block title %}{{ resort.name }} &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% blocktrans with name=resort.name region=region.name trimmed %}
+        {{ name }} ski resort — avalanche danger and bulletin for {{ region }}.
+    {% endblocktrans %}
+{% endblock %}
+
+{% block content %}
+    <main
+        class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+        data-testid="resort-detail"
+        data-resort-id="{{ resort.pk }}"
+    >
+        <div class="mb-6">
+            <h1 class="text-2xl font-semibold tracking-tight" data-testid="resort-heading">
+                {{ resort.name }}
+            </h1>
+            {% if resort.name_alt %}
+                <p class="text-sm text-text-3">{{ resort.name_alt }}</p>
+            {% endif %}
+            <p class="mt-1 text-sm text-text-2" data-testid="resort-location">
+                {{ resort.canton }}
+                <span aria-hidden="true"> &middot; </span>
+                {{ region.name }}
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4 mb-6" data-testid="resort-danger">
+            {% if day_rating %}
+                <span
+                    class="danger-tile"
+                    data-level="{{ day_rating.max_rating }}"
+                    data-testid="resort-danger-chip"
+                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+            {% else %}
+                <p class="text-sm text-text-3" data-testid="resort-no-rating">
+                    {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                        {{ d }}{% endblocktrans %}
+                </p>
+            {% endif %}
+            {% include "includes/_button.html" with label=_("View bulletin →") href=bulletin_url variant="secondary" size="compact" %}
+        </div>
+
+        <div class="mb-6">
+            {% include "favourites/partials/_resort_favourite_button.html" %}
+        </div>
+
+        {# ── Field-observation counts (SNOW-324 pattern, reused per SNOW-504) ── #}
+        {% if observation_counts %}
+            <section class="mt-6" aria-labelledby="obs-counts-heading">
+                <h2
+                    id="obs-counts-heading"
+                    class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-3"
+                >
+                    {% trans "Reported today" %}
+                </h2>
+                <ul class="flex flex-wrap gap-2">
+                    {% for label, count in observation_counts %}
+                        <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
+                            <span class="font-medium">{{ count }}</span>
+                            <span>{{ label }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+                {% if observation_has_user_located %}
+                    <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
+                        {% trans "Some reports were placed manually" %}
+                    </p>
+                {% endif %}
+            </section>
+        {% endif %}
+    </main>
+{% endblock %}
