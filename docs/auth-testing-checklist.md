@@ -46,6 +46,7 @@ the scenario doc does not.
 
 ## 3. Passkey sign-in (WebAuthn)
 
+- [ ] `GET /account/sign-in/` and wait without touching the page → no passkey provider UI appears (account C); the email field is not autofocused, so conditional UI must wait for real interaction.
 - [ ] `/account/sign-in/`, focus the email field → browser offers the passkey via conditional-UI autofill (account C).
 - [ ] Complete the OS prompt → `{"ok": true}`, signed in, redirected to manage.
 - [ ] Sign in with a passkey deleted server-side but still cached in the browser → 404 `unknown_credential`; browser clears the stale credential.
