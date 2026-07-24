@@ -34,10 +34,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default: every job gets a read-only token unless it
+# overrides this with a narrower/wider scope (SNOW-506).
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detect docs-only diff
     runs-on: ubuntu-latest
+    # The docs-only filter lists PR files via the REST API, which needs
+    # pull-requests:read on top of the default contents:read.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       # "true" unless this is a docs-only pull request; push runs skip the
       # filter step and fall through to "true".

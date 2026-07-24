@@ -37,6 +37,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default: the linters only read the checkout (SNOW-506).
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Run lint guards

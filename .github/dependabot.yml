@@ -1,0 +1,16 @@
+# .github/dependabot.yml — Keep GitHub Actions current (SNOW-506).
+#
+# Third-party actions in .github/workflows/ are pinned to immutable commit
+# SHAs (with a `# vX.Y.Z` comment recording the human-readable version) so a
+# moved upstream tag cannot execute new code in CI unreviewed. Dependabot's
+# github-actions ecosystem opens a PR when a newer release exists, updating
+# both the SHA and the version comment — that is how the pins stay current
+# without hand-maintenance. Scope is deliberately github-actions only; the
+# pip (uv) and npm ecosystems are out of scope for this ticket.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
