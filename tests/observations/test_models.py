@@ -6,6 +6,9 @@ Covers:
   FieldObservationQuerySet.counts_for_region_day — single-type rows,
     multi-row aggregation, empty case, cross-region isolation,
     cross-day isolation.
+  FieldObservationQuerySet.near_point_for_day /
+    counts_near_point_for_day (SNOW-508) — inside/outside radius, inclusive
+    boundary, empty result, day scoping.
   FieldObservationQuerySet.user_located_exists_for_region_day — returns True
     only for MANUAL/GPS_REFINED rows, False for GPS and empty.
   FieldObservationQuerySet.recent — rows at/inside vs outside a cutoff.
@@ -21,7 +24,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from observations.models import FieldObservation
+from observations.models import FieldObservation, _haversine_km
 from tests.factories import (
     FieldObservationFactory,
     MicroRegionFactory,
@@ -229,6 +232,137 @@ class TestCountsForRegionDay:
         assert counts["WHUMPFING"] == 2
         assert counts["PINWHEELS"] == 1
         assert "FRACTURES" not in counts
+
+
+@pytest.mark.django_db
+class TestNearPointForDay:
+    """near_point_for_day / counts_near_point_for_day (SNOW-508)."""
+
+    CENTRE_LAT = 46.10
+    CENTRE_LON = 7.10
+    RADIUS_KM = 10.0
+
+    def _day(self) -> datetime.date:
+        """Return a fixed test date."""
+        return datetime.date(2026, 2, 1)
+
+    def _at(self, d: datetime.date) -> datetime.datetime:
+        """Return a tz-aware datetime for noon on date d."""
+        return datetime.datetime(d.year, d.month, d.day, 12, 0, tzinfo=UTC)
+
+    def test_returns_empty_queryset_when_no_observations(self) -> None:
+        """near_point_for_day returns an empty queryset when nothing exists."""
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert list(result) == []
+
+    def test_counts_returns_empty_dict_when_no_observations(self) -> None:
+        """counts_near_point_for_day returns {} when nothing exists."""
+        counts = FieldObservation.objects.counts_near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert counts == {}
+
+    def test_includes_observation_inside_radius(self) -> None:
+        """An observation well inside the radius is returned and counted."""
+        inside = FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT,
+            longitude=self.CENTRE_LON + 0.01,  # ~ 0.8 km east, well inside 10 km
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert inside in result
+        counts = FieldObservation.objects.counts_near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert counts == {"WHUMPFING": 1}
+
+    def test_excludes_observation_outside_radius(self) -> None:
+        """An observation well outside the radius is excluded."""
+        outside = FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT + 1.0,  # ~ 111 km north, well outside 10 km
+            longitude=self.CENTRE_LON,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
+        )
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert outside not in result
+        counts = FieldObservation.objects.counts_near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert counts == {}
+
+    def test_boundary_point_is_included(self) -> None:
+        """A point at exactly the radius edge is included (inclusive boundary).
+
+        The radius passed in is derived from ``_haversine_km`` applied to
+        the same two points the queryset method will compare against, so
+        the comparison is an exact float equality (``distance <= radius``
+        with ``distance == radius``) rather than a fragile near-miss.
+        """
+        edge_lat, edge_lon = 46.19, self.CENTRE_LON
+        exact_radius_km = _haversine_km(
+            self.CENTRE_LAT, self.CENTRE_LON, edge_lat, edge_lon
+        )
+        edge = FieldObservationFactory.create(
+            latitude=edge_lat,
+            longitude=edge_lon,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.FRACTURES,
+        )
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, exact_radius_km, self._day()
+        )
+        assert edge in result
+
+    def test_isolates_by_day(self) -> None:
+        """An in-radius observation on a different day is excluded."""
+        other_day = self._day() + datetime.timedelta(days=1)
+        FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT,
+            longitude=self.CENTRE_LON,
+            observed_at=self._at(other_day),
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert list(result) == []
+        counts = FieldObservation.objects.counts_near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert counts == {}
+
+    def test_counts_multiple_types_near_point(self) -> None:
+        """Multiple in-radius reports of different types tally independently."""
+        FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT,
+            longitude=self.CENTRE_LON + 0.01,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT + 0.01,
+            longitude=self.CENTRE_LON,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        FieldObservationFactory.create(
+            latitude=self.CENTRE_LAT,
+            longitude=self.CENTRE_LON - 0.01,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
+        )
+        counts = FieldObservation.objects.counts_near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+        assert counts == {"WHUMPFING": 2, "PINWHEELS": 1}
 
 
 @pytest.mark.django_db
