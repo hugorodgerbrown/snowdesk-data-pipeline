@@ -8,7 +8,8 @@
       "url": [
         "http://localhost:8765/",
         "http://localhost:8765/examples/random/",
-        "http://localhost:8765/map/"
+        "http://localhost:8765/map/",
+        "http://localhost:8765/resorts/1/verbier/"
       ]
     },
     "assert": {
