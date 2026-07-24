@@ -155,3 +155,79 @@ def test_toggling_a_tier_on_flips_its_dot_cached_live(
     page.locator('[data-overlay-key="l3"]').click()
     page.wait_for_timeout(500)
     assert _dot_state(page, "l3") == "unavailable"
+
+
+def test_boot_restore_greens_a_dot_without_a_toggle(
+    live_server: LiveServer, page: Page
+) -> None:
+    """SNOW-518: a boot-time overlay restore greens its dot with no toggle.
+
+    Seeds ``localStorage['snowdesk.map.overlay.l2'] = 'true'`` (via
+    ``add_init_script``, so it lands before map.js's boot-time overlay
+    restore reads ``overlayState`` from localStorage) so l2 restores at
+    boot, and seeds ``/api/sub-regions.geojson`` into a throwaway
+    Cache-Storage cache so the feed the restore fetches is already
+    available offline. Pre-change, the l2 dot stays "unknown" until the
+    popover is first opened — only ``refresh()`` on open paints it. Post
+    this ticket's change, the boot-restore path's ``restoreOverlay`` helper
+    calls ``markCached('l2')`` the moment its ``ensureOverlayLoaded`` call
+    resolves, greening the dot with no popover open and no toggle click.
+    """
+    page.add_init_script(
+        """
+        localStorage.setItem('snowdesk.map.overlay.l2', 'true');
+        (async () => {
+            const cache = await caches.open('snowdesk-e2e-boot-restore-throwaway');
+            await cache.put(
+                new Request('/api/sub-regions.geojson'),
+                new Response('{}', { headers: { 'Content-Type': 'application/json' } }),
+            );
+        })();
+        """
+    )
+
+    _navigate_home_map_loaded(page, live_server.url)
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"l2\"] .sync-dot')"
+        "?.getAttribute('data-sync-state') === 'cached'"
+    )
+    assert _dot_state(page, "l2") == "cached"
+
+
+def test_visibilitychange_reprobes_and_greens_a_dot_without_the_popover(
+    live_server: LiveServer, page: Page
+) -> None:
+    """SNOW-518: returning to the tab re-probes and greens a dot with the
+    popover closed.
+
+    Loads normally (resorts starts "uncached" — never fetched), seeds
+    ``/api/resorts.geojson`` into a throwaway Cache-Storage cache out of
+    band (mimicking a feed warmed while the tab was backgrounded), then
+    dispatches ``visibilitychange`` — the Playwright page is already
+    "visible", so the handler's ``document.visibilityState === 'visible'``
+    guard passes and it calls ``window.pwaLayerSyncStatus.refresh()``,
+    which re-probes real cache state and greens the resorts dot with no
+    popover open.
+    """
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    assert _dot_state(page, "resorts") == "unknown"
+
+    page.evaluate(
+        """async () => {
+            const cache = await caches.open('snowdesk-e2e-visibilitychange-throwaway');
+            await cache.put(
+                new Request('/api/resorts.geojson'),
+                new Response('{}', { headers: { 'Content-Type': 'application/json' } }),
+            );
+        }"""
+    )
+
+    page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"resorts\"] .sync-dot')"
+        "?.getAttribute('data-sync-state') === 'cached'"
+    )
+    assert _dot_state(page, "resorts") == "cached"
