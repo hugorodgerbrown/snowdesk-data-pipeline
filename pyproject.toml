@@ -38,35 +38,64 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    # Pinned EXACT (not a range) so `uv lock --upgrade` can't silently float
-    # ruff ahead of the tox / pre-commit pins and re-drift CI. Bump this,
-    # tox.ini's fmt+lint deps, and .pre-commit-config.yaml's rev in lockstep
-    # (SNOW-512). See CODING_STANDARDS.md §6.5.
-    "ruff==0.16.0",
-    "pre-commit>=4.2.0,<5",
-    "django-stubs>=6.0.2,<7",
+# Purpose-scoped groups map 1:1 to tox envs — see tox.ini's
+# `dependency_groups =` and docs/decisions/tox-envs-install-from-uv-lock.md.
+# Each tox env syncs only its group (`uv_sync_flags = --no-default-groups
+# --frozen`), so e.g. `mypy` never drags in playwright. `dev` composes all of
+# them via `{include-group = ...}` so a bare `uv sync` (local dev,
+# bin/init-worktree) still installs everything.
+test = [
+    "coverage>=7,<8",
     "pytest>=9.0.3,<10",
-    "pytest-django>=4.12.0,<5",
-    "factory-boy>=3.3.3,<4",
-    "types-requests>=2.33.0.20260408,<3",
     "pytest-cov>=7.1.0,<8",
-    "tox>=4.52.1,<5",
-    "tox-gh-actions>=3.5.0,<4",
-    "mypy>=2.0,<2.1",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
-    "djangofmt>=0.2.6,<0.3",
+    "pytest-django>=4.12.0,<5",
+    "pytest-xdist>=3.8.0,<4",
+    "factory-boy>=3.3.3,<4",
     "freezegun>=1.5.5,<2",
+]
+type = [
+    "mypy>=2.0,<2.1",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
+    "django-stubs>=6.0.2,<7",
+    "types-requests>=2.33.0.20260408,<3",
     "types-bleach>=6.3.0.20260408,<7",
-    "semgrep>=1.95,<2",
     "types-defusedxml>=0.7.0.20260504,<0.8",
+    # mypy also type-checks tests/, so it needs the same test-authoring
+    # packages the `test` group installs (factory-boy's typed `.create()`
+    # return, pytest-django fixtures, freezegun) or those call sites collapse
+    # to `Any` and mypy misses real type errors.
+    {include-group = "test"},
+]
+lint = [
+    # Pinned EXACT (not a range) so `uv lock --upgrade` can't silently float
+    # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
+    # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
+    # CODING_STANDARDS.md §6.5.
+    "ruff==0.16.0",
+    "djangofmt>=0.2.6,<0.3",
+]
+sast = [
+    "semgrep>=1.95,<2",
+]
+e2e = [
     "playwright>=1.0,<2",
     "pytest-playwright>=0.7,<0.9",
-    "pytest-xdist>=3.8.0,<4",
+    {include-group = "test"},
+]
+dev = [
+    "pre-commit>=4.2.0,<5",
+    "tox>=4.52.1,<5",
+    "tox-uv>=1.0,<2",
+    "tox-gh-actions>=3.5.0,<4",
+    {include-group = "test"},
+    {include-group = "type"},
+    {include-group = "lint"},
+    {include-group = "sast"},
+    {include-group = "e2e"},
 ]
 
 [tool.uv]
 package = false
-default-groups = "all"
+default-groups = ["dev"]
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
