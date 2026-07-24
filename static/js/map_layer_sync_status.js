@@ -27,8 +27,11 @@
  *                          ``ignoreSearch: true`` (the app appends
  *                          ``?country=ch`` to these URLs).
  *   l3                   — NOT in STATIC_PATHS (network-only per sw.js's
- *                          classification) — always resolves to
- *                          "uncached", without a wasted probe.
+ *                          classification) — can never be cached for
+ *                          offline use, so it resolves to the distinct
+ *                          "unavailable" state (a hollow, border-only dot,
+ *                          visually separate from the grey "not cached yet"
+ *                          fill), without a wasted probe.
  *   favourites,
  *   community_reports    — IndexedDB ``data:map_overlays`` rows written
  *                          by map_overlay_offline_cache.js. A truthy row
@@ -42,6 +45,22 @@
  * Every probe is wrapped so a throw resolves to "uncached" —
  * ``refresh()`` must never reject, since it runs from a UI event handler
  * with no caller-side error handling.
+ *
+ * Live update (SNOW-505 iteration): ``refresh()`` re-probes real cache
+ * state and runs on every popover open. ``markCached(key)`` is the
+ * optimistic real-time counterpart — static/js/map.js calls it the moment
+ * a lazy overlay tier's toggle-on load succeeds, flipping that row's dot
+ * green immediately so the user sees the toggle action populate the offline
+ * cache, rather than only discovering it on the next popover open. It is
+ * deliberately optimistic: a successful online load routes the GeoJSON
+ * through the SW's STATIC_PATHS stale-while-revalidate (or writes the
+ * favourites/community_reports IDB overlay row), so the resource is — to
+ * all practical intents — now cached; the next ``refresh()`` re-verifies
+ * against real cache state and self-corrects in the rare case a background
+ * ``cache.put`` didn't land. ``markCached`` no-ops for ``l3`` (network-only
+ * in sw.js — genuinely never cached, so its hollow "unavailable" dot stays
+ * put even after a successful load) and for any key absent from
+ * ``OVERLAY_RESOURCES``.
  */
 
 (function () {
@@ -52,6 +71,9 @@
 
   const CACHED_LABEL = 'Available offline';
   const UNCACHED_LABEL = 'Not cached — view online first';
+  // l3 is a distinct third state (a hollow dot): not "not cached yet" but
+  // "can never be cached", so a different message from UNCACHED_LABEL.
+  const UNAVAILABLE_LABEL = 'Not available offline';
   const BASEMAP_CACHED_LABEL = 'Cached tiles available offline (browsed areas only)';
   const BASEMAP_UNCACHED_LABEL = 'No offline map tiles yet';
 
@@ -65,7 +87,7 @@
     l2: Object.freeze({ kind: 'geojson', path: '/api/sub-regions.geojson' }),
     l4: Object.freeze({ kind: 'geojson', path: '/api/regions.geojson' }),
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
-    l3: Object.freeze({ kind: 'uncached' }),
+    l3: Object.freeze({ kind: 'uncacheable' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
   });
@@ -107,9 +129,36 @@
    * @returns {void}
    */
   function _applyState(dot, cached, cachedLabel, uncachedLabel) {
+    _paintDot(dot, cached ? 'cached' : 'uncached', cached ? cachedLabel : uncachedLabel);
+  }
+
+  /**
+   * Paint the distinct "never cacheable" state onto a dot (l3): a hollow,
+   * border-only dot (styled in static/css/map.css via
+   * ``[data-sync-state="unavailable"]``), visually separate from the grey
+   * "not cached yet" fill.
+   *
+   * @param {Element | null} dot
+   * @returns {void}
+   */
+  function _applyUnavailable(dot) {
+    _paintDot(dot, 'unavailable', UNAVAILABLE_LABEL);
+  }
+
+  /**
+   * Low-level dot painter shared by ``_applyState`` / ``_applyUnavailable``:
+   * set ``data-sync-state`` plus an accessible name (``role="img"`` +
+   * ``aria-label``) and a ``title`` tooltip, and reveal the dot (dots start
+   * ``aria-hidden="true"`` in the server-rendered ``unknown`` state).
+   *
+   * @param {Element | null} dot
+   * @param {string} state - a resolved ``data-sync-state`` value.
+   * @param {string} label
+   * @returns {void}
+   */
+  function _paintDot(dot, state, label) {
     if (!dot) return;
-    const label = cached ? cachedLabel : uncachedLabel;
-    dot.dataset.syncState = cached ? 'cached' : 'uncached';
+    dot.dataset.syncState = state;
     dot.setAttribute('role', 'img');
     dot.setAttribute('aria-label', label);
     dot.setAttribute('aria-hidden', 'false');
@@ -195,9 +244,11 @@
       const dot = _overlayDot(key);
       if (!dot) continue;
 
-      if (resource.kind === 'uncached') {
-        // l3 is network-only in sw.js — never cached, never probed.
-        _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL);
+      if (resource.kind === 'uncacheable') {
+        // l3 is network-only in sw.js — it can never be cached for offline
+        // use, a distinct state from "not cached yet": a hollow (border-
+        // only) dot rather than a grey fill. Never probed.
+        _applyUnavailable(dot);
         continue;
       }
 
@@ -228,8 +279,31 @@
     await Promise.all(tasks);
   }
 
+  /**
+   * Optimistically flip a single overlay row's dot to "cached" without a
+   * probe — the real-time counterpart to ``refresh()``. Called by
+   * static/js/map.js when a lazy tier's toggle-on load has just succeeded
+   * (``overlayLoaded[key]`` true), so the resource has now flowed through
+   * the SW cache / overlay IDB store and is available offline. No-ops for
+   * ``l3`` (``kind: 'uncacheable'`` — network-only, never cached, so its
+   * hollow "unavailable" dot stays put) and for any key not in
+   * ``OVERLAY_RESOURCES``. The next ``refresh()`` (popover re-open)
+   * re-verifies against real cache state.
+   *
+   * @param {string} key - an ``OVERLAY_RESOURCES`` key.
+   * @returns {void}
+   */
+  function markCached(key) {
+    const resource = OVERLAY_RESOURCES[key];
+    // Only genuinely-cacheable rows flip green. l3 ('uncacheable') is
+    // network-only in sw.js — a successful load doesn't make it available
+    // offline — so its hollow dot stays put. Unknown keys are ignored.
+    if (!resource || (resource.kind !== 'geojson' && resource.kind !== 'idb')) return;
+    _applyState(_overlayDot(key), true, CACHED_LABEL, UNCACHED_LABEL);
+  }
+
   Object.defineProperty(window, 'pwaLayerSyncStatus', {
-    value: Object.freeze({ refresh }),
+    value: Object.freeze({ refresh, markCached }),
     writable: false,
     configurable: false,
   });

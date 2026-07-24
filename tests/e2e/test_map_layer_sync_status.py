@@ -44,6 +44,27 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     page.wait_for_function("() => typeof window.pwaLayerSyncStatus === 'object'")
 
 
+def _navigate_home_map_loaded(page: Page, live_server_url: str) -> None:
+    """Load / and wait for MAP to finish loading before interacting.
+
+    The live-update test toggles a *lazy* overlay tier on, which triggers a
+    real GeoJSON fetch + ``installOverlayLayers`` against the current style.
+    That install throws if the style isn't ready yet, so the tier's load
+    never reaches ``overlayLoaded[key] = true`` and ``markCached`` never
+    fires. Waiting for ``MAP.loaded()`` first (same guard as
+    test_overlay_basemap_persistence.py's ``_navigate_home``) removes that
+    race — the basemap tile CDN is unreachable in the harness, so this
+    resolves once the SNOW-483 inline fallback style has loaded.
+    """
+    page.goto(f"{live_server_url}/")
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+    page.wait_for_function(
+        "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
+    )
+    page.wait_for_function("() => typeof window.pwaLayerSyncStatus === 'object'")
+
+
 def _dot_state(page: Page, key: str) -> str | None:
     return page.locator(f'[data-overlay-key="{key}"] .sync-dot').get_attribute(
         "data-sync-state"
@@ -84,5 +105,51 @@ def test_seeded_row_resolves_cached_unseeded_row_stays_uncached(
 
     assert _dot_state(page, "resorts") == "cached"
     assert _dot_state(page, "l2") == "uncached"
-    # l3 is never cacheable (network-only in sw.js) — always uncached too.
-    assert _dot_state(page, "l3") == "uncached"
+    # l3 is never cacheable (network-only in sw.js) — its own hollow
+    # "unavailable" state, distinct from the grey "uncached" fill.
+    assert _dot_state(page, "l3") == "unavailable"
+
+
+def test_toggling_a_tier_on_flips_its_dot_cached_live(
+    live_server: LiveServer, page: Page
+) -> None:
+    """SNOW-505 iteration: toggling a lazy tier on flips its dot to "cached"
+    in real time — no popover re-open needed — while l3 (network-only) keeps
+    its hollow "unavailable" dot even after being toggled on.
+
+    Opening the popover first re-probes (l2 starts "uncached"); toggling l2
+    on triggers its GeoJSON load, and ``markCached`` optimistically greens
+    the dot the moment that load resolves. l3's load succeeds too, but its
+    dot must remain "unavailable" because bulletin groupings are never
+    cached for offline use.
+    """
+    _navigate_home_map_loaded(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    l2 = page.locator('[data-overlay-key="l2"]')
+    l2.wait_for(state="visible")
+    # At open, l2 has never been fetched, so its dot re-probes to uncached.
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"l2\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'uncached'"
+    )
+
+    # Toggle l2 on and wait for its GeoJSON load to resolve — that resolution
+    # is what fires markCached. Wrapping the click in expect_response mirrors
+    # test_overlay_basemap_persistence.py's proven toggle pattern.
+    with page.expect_response(lambda r: "sub-regions" in r.url and ".geojson" in r.url):
+        l2.click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"l2\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'cached'"
+    )
+    assert _dot_state(page, "l2") == "cached"
+
+    # Toggling l3 on loads it too, but its dot must stay in the hollow
+    # "unavailable" state — markCached no-ops for l3 (network-only, never
+    # cached). This holds regardless of whether the bulletin-groupings fetch
+    # itself succeeds, so it needn't be awaited; a brief settle is enough to
+    # catch an erroneous flip.
+    page.locator('[data-overlay-key="l3"]').click()
+    page.wait_for_timeout(500)
+    assert _dot_state(page, "l3") == "unavailable"

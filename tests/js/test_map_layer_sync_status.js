@@ -127,7 +127,7 @@ describe('GeoJSON overlay rows (l1/l2/l4/resorts)', () => {
 });
 
 describe('l3 (bulletin groupings)', () => {
-  it('always resolves uncached without being probed', async () => {
+  it('always resolves to the hollow "unavailable" state without being probed', async () => {
     const caches = fakeCaches({
       hitPaths: [MAJOR_REGIONS_PATH, SUB_REGIONS_PATH, MICRO_REGIONS_PATH, RESORTS_PATH],
     });
@@ -135,7 +135,9 @@ describe('l3 (bulletin groupings)', () => {
 
     await window.pwaLayerSyncStatus.refresh();
 
-    expect(dotState('l3')).toBe('uncached');
+    // Network-only in sw.js — a distinct "never cacheable" state (hollow
+    // dot), not the grey "uncached" fill.
+    expect(dotState('l3')).toBe('unavailable');
     // Exactly the 4 GeoJSON rows are probed — l3 contributes no 5th call.
     expect(caches.match).toHaveBeenCalledTimes(4);
   });
@@ -248,5 +250,40 @@ describe('Cache Storage unsupported', () => {
       expect(dotState(key)).toBe('unknown');
     }
     expect(basemapDotState()).toBe('unknown');
+  });
+});
+
+describe('markCached (optimistic live update)', () => {
+  it('flips a cacheable row to "cached" with no probe', () => {
+    // No caches / pwaDb stubbed — markCached is probe-free by design.
+    expect('caches' in window).toBe(false);
+
+    window.pwaLayerSyncStatus.markCached('l1');
+    window.pwaLayerSyncStatus.markCached('favourites');
+
+    expect(dotState('l1')).toBe('cached');
+    expect(dotState('favourites')).toBe('cached');
+  });
+
+  it('no-ops for l3 (network-only, never cached) so its dot stays unknown', () => {
+    window.pwaLayerSyncStatus.markCached('l3');
+    expect(dotState('l3')).toBe('unknown');
+  });
+
+  it('no-ops for a key absent from OVERLAY_RESOURCES', () => {
+    expect(() => window.pwaLayerSyncStatus.markCached('country.ch')).not.toThrow();
+    expect(() => window.pwaLayerSyncStatus.markCached('nonsense')).not.toThrow();
+  });
+
+  it('is corrected by a later refresh() that probes a real miss', async () => {
+    // Optimistic green, then a popover-open refresh finds no cache entry —
+    // the row reverts to uncached (the self-correcting re-verify contract).
+    window.pwaLayerSyncStatus.markCached('l1');
+    expect(dotState('l1')).toBe('cached');
+
+    vi.stubGlobal('caches', fakeCaches({ hitPaths: [] }));
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l1')).toBe('uncached');
   });
 });

@@ -2209,6 +2209,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // favourites layer, so the recompute inside syncFavouritedResortIds
       // won't have run — reapply the exclusion here.
       if (key === 'favourites') applyResortsFavouritedFilter();
+      // SNOW-505: a successful lazy-load means the tier's GeoJSON has now
+      // flowed through the SW (STATIC_PATHS → stale-while-revalidate cache)
+      // or been written to the overlay IDB store, so it is now available
+      // offline. Optimistically flip its sync dot green in real time —
+      // tying the toggle action to its offline availability — rather than
+      // waiting for the next popover open to re-probe. ``overlayLoaded[key]``
+      // is true only after a successful fetch (the offline-toast paths in
+      // ``_loadOverlay`` early-return, leaving it false), so this never
+      // over-claims on a failed load; markCached itself no-ops for l3
+      // (network-only, genuinely never cached) so that dot stays grey.
+      if (overlayLoaded[key]) window.pwaLayerSyncStatus?.markCached(key);
     }).catch(() => {});
   });
 
@@ -4670,6 +4681,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
         toast.classList.remove('hidden');
         toast.classList.add('flex');
       }
+      // SNOW-505: "Cache this area" has just warmed the shell + basemap
+      // caches (the SW's warm-cache handler awaits its cache.put calls
+      // before replying, so this re-probe races nothing). Re-probe every
+      // sync dot against real cache state so the layers popover reflects the
+      // newly-warmed feeds/tiles on its next open — and immediately, if it's
+      // still open behind the completion toast.
+      window.pwaLayerSyncStatus?.refresh();
     };
 
     if (typeof window.pwaWarmCache === 'function') {
