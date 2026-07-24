@@ -6,6 +6,7 @@ deletion, natural key support on MicroRegion, and fixture loading.
 """
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 
 from regions.models import MicroRegion, Resort
@@ -53,6 +54,35 @@ class TestResortModel:
         """The default factory produces a saved, valid Resort."""
         resort = ResortFactory.create()
         assert resort.pk is not None
+        resort.full_clean()
+
+    def test_metadata_fields_default_to_empty(self) -> None:
+        """A bare factory instance has the metadata fields unset (SNOW-500)."""
+        resort = ResortFactory.create()
+        assert resort.operator_name == ""
+        assert resort.website == ""
+        assert resort.num_lifts is None
+        assert resort.num_runs is None
+        assert resort.total_piste_km is None
+        assert resort.base_elevation_m is None
+        assert resort.top_elevation_m is None
+        assert resort.typical_season_open == ""
+        assert resort.typical_season_close == ""
+
+    def test_typical_season_rejects_malformed_month_day(self) -> None:
+        """A malformed season value fails full_clean() (SNOW-500)."""
+        resort = ResortFactory.create(typical_season_open="13-40")
+        with pytest.raises(ValidationError):
+            resort.full_clean()
+
+    def test_typical_season_accepts_valid_month_day(self) -> None:
+        """A well-formed month-day value passes full_clean() (SNOW-500)."""
+        resort = ResortFactory.create(typical_season_open="12-01")
+        resort.full_clean()
+
+    def test_typical_season_accepts_blank(self) -> None:
+        """A blank season value passes full_clean() (SNOW-500)."""
+        resort = ResortFactory.create(typical_season_open="")
         resort.full_clean()
 
 
