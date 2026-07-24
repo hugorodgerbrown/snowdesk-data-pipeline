@@ -1566,8 +1566,6 @@ def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
         raising, so a future observation type doesn't break the page.
 
     """
-    from observations.models import FieldObservation  # noqa: PLC0415
-
     result: list[tuple[str, int]] = []
     for key, count in raw.items():
         try:
@@ -1651,7 +1649,6 @@ def _get_local_observation_counts(
     """
     if not waffle.flag_is_active(request, "field_observations"):
         return LocalObservationResult(visible=False, scope="region", counts=[])
-    from observations.models import FieldObservation  # noqa: PLC0415
 
     if resort.latitude is not None and resort.longitude is not None:
         raw = FieldObservation.objects.counts_near_point_for_day(
