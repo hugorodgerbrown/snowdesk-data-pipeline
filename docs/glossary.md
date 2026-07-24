@@ -64,6 +64,7 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | WeatherSnapshot | Open-Meteo weather for one (region, date): WMO `weather_code` 0–99, sunrise/sunset | `bulletins/models.py`; fetched by `bulletins/services/weather_fetcher.py` |
 | is_day projection | Render-time check that "now" falls between that region's sunrise and sunset — never stored | `is_day()` in `bulletins/services/weather_display.py` |
 | Bulletin header | Context dict for `templates/includes/bulletin_header.html` ("weather header" is its historical name) | `bulletin_header_context()` in `bulletins/services/weather_display.py` |
+| Weather panel | Shared bucket-coloured weather partial (SNOW-509); included by both the bulletin masthead and the resort page | `templates/includes/_weather_panel.html` |
 
 ## Field observations
 
