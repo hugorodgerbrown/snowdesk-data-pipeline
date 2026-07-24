@@ -168,6 +168,14 @@
   /* Form validation */
   --color-form-error:     #ef4444;   /* inline error text (red-500)         */
 
+  /* Sync-status dots (SNOW-505) — the map layers popover's two-state
+     cached/not-cached indicator (.sync-dot, static/js/map_layer_sync_status.js).
+     Deliberately a plain green/red pair, not the eaws/status-* tokens above —
+     this is a binary availability signal, not a danger level or a flash-message
+     severity. */
+  --color-sync-ok:  #16a34a;   /* green-600 — resource is cached, available offline */
+  --color-sync-off: #dc2626;   /* red-600   — resource is not cached                */
+
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
@@ -357,6 +365,10 @@
 
   /* Form validation */
   --color-form-error:     #f87171;
+
+  /* Sync-status dots — lighter variants for contrast on the dark card surface. */
+  --color-sync-ok:  #4ade80;   /* green-400 */
+  --color-sync-off: #f87171;   /* red-400   */
 
   /* Misc interactive */
   --color-card-hover:     #353330;

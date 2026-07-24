@@ -225,6 +225,47 @@
     border-radius: 3px;
 }
 
+/* SNOW-505: sync-status dot — two-state cached (green) / not-cached (red)
+   indicator painted onto each overlay row and the basemap caption below by
+   static/js/map_layer_sync_status.js. Server-rendered "unknown" (hidden)
+   until the popover's first open resolves every probe. Colour comes from
+   the --color-sync-* tokens (src/css/main.css @theme), never a literal
+   here, so light/dark contrast is handled centrally. Data-attribute
+   selector is the design-system's sanctioned exception for state-driven
+   styling (see CLAUDE.md "Design system"). */
+.sync-dot {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.sync-dot[data-sync-state="cached"] {
+    background: var(--color-sync-ok);
+}
+
+.sync-dot[data-sync-state="uncached"] {
+    background: var(--color-sync-off);
+}
+
+.sync-dot[data-sync-state="unknown"] {
+    display: none;
+}
+
+/* SNOW-505: basemap sync-status caption row — a non-interactive li carrying
+   its own dot plus honest "browsed areas only" copy, distinct from the
+   clickable .basemap-menu-item rows above/below it. */
+.basemap-menu-caption {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 12px 6px;
+    font-size: 11px;
+    color: var(--color-text-2, var(--color-text-1));
+    pointer-events: none;
+}
+
 /* SNOW-492: "Cache this area for offline" is a one-shot command, not a
    persistent toggle — it never sets aria-checked, so the shared radio-dot
    glyph would otherwise sit permanently empty. Hide it for this item only. */
