@@ -101,7 +101,9 @@ def _check_frontmatter(path: Path) -> list[Violation]:
         ]
     for key in REQUIRED_KEYS:
         if not fields.get(key):
-            violations.append(Violation(path, f"frontmatter key `{key}` missing or empty"))
+            violations.append(
+                Violation(path, f"frontmatter key `{key}` missing or empty")
+            )
     if "name" in fields and fields.get("name") and fields["name"] != path.stem:
         violations.append(
             Violation(
@@ -122,7 +124,9 @@ def _check_frontmatter(path: Path) -> list[Violation]:
     reviewed = fields.get("last-reviewed")
     if reviewed and not DATE_RE.match(reviewed):
         violations.append(
-            Violation(path, f"frontmatter `last-reviewed: {reviewed}` must be YYYY-MM-DD")
+            Violation(
+                path, f"frontmatter `last-reviewed: {reviewed}` must be YYYY-MM-DD"
+            )
         )
     description = fields.get("description", "")
     if len(description) > MAX_DESCRIPTION_LEN:
