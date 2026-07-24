@@ -33,6 +33,7 @@ Covers:
                         hard-delete (SNOW-311).
 """
 
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from statistics import median
@@ -256,6 +257,31 @@ class TestSubscribePartial:
             **_HTMX_HEADERS,
         )
         assert b"Check your inbox" in response.content
+
+    def test_case_a_and_b_responses_are_byte_equal(self) -> None:
+        """Case A (new) and Case B (existing-unverified) must be byte-equal.
+
+        This is the anti-enumeration invariant documented in docs/accounts.md:
+        an unauthenticated submitter must not be able to tell whether an address
+        is already on the system. Case B seeds an unverified account first; Case
+        A subscribes a fresh address. After stripping the per-response CSP nonce,
+        the two fragments must be identical.
+        """
+        region = MicroRegionFactory.create()
+        AccountFactory.create(user__email="pending@example.com", is_verified=False)
+        client = Client()
+        resp_b = client.post(  # existing-unverified account
+            reverse("accounts:subscribe"),
+            data={"email": "pending@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        resp_a = client.post(  # brand-new account
+            reverse("accounts:subscribe"),
+            data={"email": "newuser@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        nonce_re = re.compile(rb'\s?nonce="[^"]+"')
+        assert nonce_re.sub(b"", resp_a.content) == nonce_re.sub(b"", resp_b.content)
 
     # ---- Case C: existing active account, new region ----
 
