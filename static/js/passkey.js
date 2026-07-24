@@ -7,11 +7,14 @@
  *     Feature-detects conditional mediation, fires navigator.credentials.get()
  *     with mediation:"conditional" so passkeys appear inline in the email
  *     field autofill dropdown.  Silently no-ops if the browser does not
- *     support conditional UI.
+ *     support conditional UI, if a conditional ceremony is already pending,
+ *     or if an explicit ceremony (see signInWithPasskey) is in flight — the
+ *     two ceremonies share a session challenge and must never overlap.
  *
  *   abortConditionalSignIn()
  *     Cancels a pending conditional sign-in (e.g. when the user starts typing
- *     an email address to use the magic-link flow instead).
+ *     an email address to use the magic-link flow instead, or submits the
+ *     form).
  *
  *   registerPasskey(regRequestUrl, regResponseUrl)
  *     Runs the full passkey registration ceremony and POSTs the credential
@@ -32,8 +35,11 @@
 (function () {
   'use strict';
 
-  /** @type {AbortController|null} */
+  /** @type {AbortController|null} Non-null while a conditional ceremony is pending/active. */
   let _conditionalController = null;
+
+  /** @type {boolean} True from an explicit ceremony's options-fetch through settle. */
+  let _explicitInFlight = false;
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -48,23 +54,50 @@
    *
    * On success the user is redirected to /account/manage/.
    *
+   * No-ops if the browser does not support conditional UI, if a conditional
+   * ceremony is already pending, or if an explicit ceremony is in flight —
+   * conditional and explicit ceremonies share a session challenge and must
+   * never overlap.
+   *
    * @param {string} authRequestUrl  URL to GET authentication options from.
    * @param {string} authResponseUrl URL to POST the credential to.
    */
   async function startConditionalSignIn(authRequestUrl, authResponseUrl) {
     if (!_supportsConditionalUI()) return;
+    if (_conditionalController || _explicitInFlight) return;
+
+    // Created eagerly, before any await, so abortConditionalSignIn() can
+    // cancel this ceremony even mid-setup (e.g. while awaiting availability
+    // or the options fetch).
+    const controller = new AbortController();
+    _conditionalController = controller;
 
     const available = await PublicKeyCredential.isConditionalMediationAvailable().catch(
       () => false
     );
-    if (!available) return;
+    if (!available || controller.signal.aborted) {
+      _finishConditional(controller);
+      return;
+    }
 
     let options;
     try {
-      const resp = await fetch(authRequestUrl);
-      if (!resp.ok) return;
+      const resp = await fetch(authRequestUrl, { signal: controller.signal });
+      if (!resp.ok) {
+        _finishConditional(controller);
+        return;
+      }
       options = await resp.json();
     } catch {
+      _finishConditional(controller);
+      return;
+    }
+
+    // The abort may have landed while the fetch was in flight, or this
+    // ceremony may have been superseded by a newer one — either way the
+    // session challenge may have moved on, so bail without proceeding.
+    if (controller.signal.aborted || _conditionalController !== controller) {
+      _finishConditional(controller);
       return;
     }
 
@@ -72,24 +105,28 @@
     try {
       parsed = PublicKeyCredential.parseRequestOptionsFromJSON(options);
     } catch {
+      _finishConditional(controller);
       return;
     }
-
-    _conditionalController = new AbortController();
 
     let credential;
     try {
       credential = await navigator.credentials.get({
         publicKey: parsed,
         mediation: 'conditional',
-        signal: _conditionalController.signal,
+        signal: controller.signal,
       });
     } catch (err) {
-      if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+      if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+        _finishConditional(controller);
+        return;
+      }
       console.error('[passkey] conditional sign-in error:', err);
+      _finishConditional(controller);
       return;
     }
 
+    _finishConditional(controller);
     await _sendAuthResponse(authResponseUrl, credential);
   }
 
@@ -97,11 +134,26 @@
    * Abort a pending conditional sign-in ceremony.
    *
    * Call this when the user switches to the magic-link flow (e.g. starts
-   * typing in the email field) so the conditional prompt is dismissed.
+   * typing in the email field), submits the form, or starts an explicit
+   * passkey ceremony, so the conditional prompt is dismissed.
    */
   function abortConditionalSignIn() {
     if (_conditionalController) {
       _conditionalController.abort();
+      _conditionalController = null;
+    }
+  }
+
+  /**
+   * Clear the module-level conditional controller if it still refers to
+   * the ceremony that is finishing — never clobbers a newer controller
+   * that may have been installed since (e.g. by a fresh
+   * startConditionalSignIn() call).
+   *
+   * @param {AbortController} controller
+   */
+  function _finishConditional(controller) {
+    if (_conditionalController === controller) {
       _conditionalController = null;
     }
   }
@@ -114,46 +166,53 @@
    * with a passkey" button rather than autofill.
    *
    * Aborts any pending conditional sign-in first (the two flows share a session
-   * challenge — only one can be active at a time).
+   * challenge — only one can be active at a time), and no-ops if another
+   * explicit ceremony is already in flight.
    *
    * @param {string} authRequestUrl  URL to GET authentication options from.
    * @param {string} authResponseUrl URL to POST the credential to.
    */
   async function signInWithPasskey(authRequestUrl, authResponseUrl) {
     if (!window.PublicKeyCredential) return;
+    if (_explicitInFlight) return;
 
     abortConditionalSignIn();
 
-    let options;
+    _explicitInFlight = true;
     try {
-      const resp = await fetch(authRequestUrl);
-      if (!resp.ok) return;
-      options = await resp.json();
-    } catch {
-      return;
-    }
+      let options;
+      try {
+        const resp = await fetch(authRequestUrl);
+        if (!resp.ok) return;
+        options = await resp.json();
+      } catch {
+        return;
+      }
 
-    let parsed;
-    try {
-      parsed = PublicKeyCredential.parseRequestOptionsFromJSON(options);
-    } catch {
-      return;
-    }
+      let parsed;
+      try {
+        parsed = PublicKeyCredential.parseRequestOptionsFromJSON(options);
+      } catch {
+        return;
+      }
 
-    let credential;
-    try {
-      credential = await navigator.credentials.get({
-        publicKey: parsed,
-        mediation: 'required',
-      });
-    } catch (err) {
-      if (err.name === 'NotAllowedError' || err.name === 'AbortError') return;
-      console.error('[passkey] sign-in error:', err);
-      return;
-    }
+      let credential;
+      try {
+        credential = await navigator.credentials.get({
+          publicKey: parsed,
+          mediation: 'required',
+        });
+      } catch (err) {
+        if (err.name === 'NotAllowedError' || err.name === 'AbortError') return;
+        console.error('[passkey] sign-in error:', err);
+        return;
+      }
 
-    if (credential) {
-      await _sendAuthResponse(authResponseUrl, credential);
+      if (credential) {
+        await _sendAuthResponse(authResponseUrl, credential);
+      }
+    } finally {
+      _explicitInFlight = false;
     }
   }
 
