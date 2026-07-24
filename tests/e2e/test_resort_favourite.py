@@ -115,7 +115,7 @@ def test_star_creates_resort_favourite(
 
     with django_db_blocker.unblock():
         favourite = Favourite.objects.get(resort=resort)
-        assert favourite.user == favourites_page.subscriber.user
+        assert favourite.user == favourites_page.account.user
         assert favourite.name == "Verbier"
 
 
@@ -132,7 +132,7 @@ def test_star_unfavourites_existing_resort_favourite(
     """
     with django_db_blocker.unblock():
         resort = ResortFactory.create(name="Zermatt", latitude=46.0, longitude=7.75)
-        favourite = create_resort_favourite(favourites_page.subscriber.user, resort)
+        favourite = create_resort_favourite(favourites_page.account.user, resort)
         favourite_pk = favourite.pk
 
     page = favourites_page.page
@@ -183,7 +183,7 @@ def test_favourited_resort_returns_to_resort_layer_when_favourites_hidden(
     """
     with django_db_blocker.unblock():
         resort = ResortFactory.create(name="Davos", latitude=46.8, longitude=9.83)
-        create_resort_favourite(favourites_page.subscriber.user, resort)
+        create_resort_favourite(favourites_page.account.user, resort)
 
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)

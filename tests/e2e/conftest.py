@@ -48,7 +48,7 @@ Fixtures defined here:
 ``favourites_page`` (SNOW-414)
     A plain ``page`` + ``live_server`` combination (no ``pwa_page`` — the
     favourites map-surface tests don't drive the SW lifecycle) with a
-    session cookie for a regular ``Subscriber``. Tests using it still need
+    session cookie for a regular ``Account``. Tests using it still need
     ``@override_flag("favourites", active=True)`` — ``override_flag``
     mutates the ``Flag.everyone`` DB column (see ``waffle.testutils``),
     which is visible to the live-server thread since pytest-django's
@@ -70,8 +70,8 @@ from django.test import Client
 from playwright.sync_api import BrowserContext, Page
 from pytest_django.live_server_helper import LiveServer
 
-from accounts.models import Subscriber
-from tests.factories import SubscriberFactory
+from accounts.models import Account
+from tests.factories import AccountFactory
 from tests.seeding import seed_test_dataset
 
 # Kept local (not imported from a test file) so this conftest has no
@@ -462,21 +462,21 @@ def _session_login(context: BrowserContext, live_server_url: str, user: User) ->
 
 @dataclass
 class SignedInPage(PwaPage):
-    """A ``PwaPage`` authenticated as a freshly-created ``Subscriber``.
+    """A ``PwaPage`` authenticated as a freshly-created ``Account``.
 
     Reused by the P12 manage-page journey (reset local data), which needs
     a signed-in session before ``/account/manage/`` renders anything but
     a redirect to sign-in.
     """
 
-    subscriber: Subscriber
+    account: Account
 
 
 @pytest.fixture()
 def signed_in_page(pwa_page: PwaPage, django_db_blocker: Any) -> SignedInPage:
-    """``pwa_page``, plus a Django session cookie for a fresh ``Subscriber``.
+    """``pwa_page``, plus a Django session cookie for a fresh ``Account``.
 
-    Q5 (SNOW-389 plan step 1): the ``SubscriberFactory.create()`` +
+    Q5 (SNOW-389 plan step 1): the ``AccountFactory.create()`` +
     ``force_login`` + ``add_cookies`` round-trip measured well under the
     plan's 2s cutoff — see ``tests/e2e/_spike_results.py`` — so the full
     manage-page journey ships directly rather than splitting off a cheaper
@@ -486,27 +486,27 @@ def signed_in_page(pwa_page: PwaPage, django_db_blocker: Any) -> SignedInPage:
         pwa_page: The real-SW page to attach the session cookie to.
         django_db_blocker: pytest-django's DB-access guard — ``pwa_page``
             does not itself request DB access, so this fixture must
-            explicitly unblock it to create the ``Subscriber``.
+            explicitly unblock it to create the ``Account``.
 
     Returns:
         A ``SignedInPage`` — the same interface as ``PwaPage`` plus the
-        authenticated ``subscriber``.
+        authenticated ``account``.
 
     """
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
-    _session_login(pwa_page.page.context, pwa_page.live_server_url, subscriber.user)
+        account = AccountFactory.create()
+    _session_login(pwa_page.page.context, pwa_page.live_server_url, account.user)
     return SignedInPage(
         page=pwa_page.page,
         live_server_url=pwa_page.live_server_url,
         page_errors=pwa_page.page_errors,
-        subscriber=subscriber,
+        account=account,
     )
 
 
 @dataclass
 class FavouritesPage:
-    """A plain (no real-SW) ``Page`` authenticated as a regular Subscriber.
+    """A plain (no real-SW) ``Page`` authenticated as a regular Account.
 
     Unlike ``signed_in_page``, this does not go through ``pwa_page`` — the
     favourites map-surface tests don't need a real service-worker
@@ -517,14 +517,14 @@ class FavouritesPage:
 
     page: Page
     live_server_url: str
-    subscriber: Subscriber
+    account: Account
 
 
 @pytest.fixture()
 def favourites_page(
     live_server: LiveServer, page: Page, django_db_blocker: Any
 ) -> FavouritesPage:
-    """A live-server ``page``, navigated nowhere yet, with a subscriber session.
+    """A live-server ``page``, navigated nowhere yet, with an account session.
 
     Tests using this fixture are responsible for their own ``page.goto()``
     (mirroring ``tests/e2e/test_home_ribbon.py``'s ``_navigate_home``
@@ -537,15 +537,13 @@ def favourites_page(
             fixture doesn't disable it, but favourites tests don't drive
             the SW lifecycle either way).
         django_db_blocker: pytest-django's DB-access guard, unblocked here
-            to create the ``Subscriber``.
+            to create the ``Account``.
 
     Returns:
-        A ``FavouritesPage`` bundling the page, server URL, and subscriber.
+        A ``FavouritesPage`` bundling the page, server URL, and account.
 
     """
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
-    _session_login(page.context, live_server.url, subscriber.user)
-    return FavouritesPage(
-        page=page, live_server_url=live_server.url, subscriber=subscriber
-    )
+        account = AccountFactory.create()
+    _session_login(page.context, live_server.url, account.user)
+    return FavouritesPage(page=page, live_server_url=live_server.url, account=account)

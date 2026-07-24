@@ -5,7 +5,7 @@ Exercises the end-to-end capture path: builds a synthetic request via
 RequestFactory, patches geo_lookup to return a deterministic GeoLookup, and
 asserts that the returned RequestLog row has all fields correctly populated.
 
-Also verifies that anonymous (unauthenticated) requests leave subscriber=None
+Also verifies that anonymous (unauthenticated) requests leave account=None
 and that authenticated requests link to request.user.
 """
 
@@ -19,7 +19,7 @@ from django.test import RequestFactory
 from bulletins.services.geoip import GeoLookup
 from core.models import RequestLog
 from core.services.request_log import capture
-from tests.factories import SubscriberFactory
+from tests.factories import AccountFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -162,20 +162,20 @@ class TestCapture:
             log = capture(request)
         assert log.session_key == "mysession123"
 
-    def test_anonymous_request_leaves_subscriber_null(self, rf: RequestFactory) -> None:
-        """Anonymous requests (unauthenticated) result in subscriber=None."""
+    def test_anonymous_request_leaves_account_null(self, rf: RequestFactory) -> None:
+        """Anonymous requests (unauthenticated) result in account=None."""
         request = _make_request(rf, user=None)
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
-        assert log.subscriber is None
+        assert log.account is None
 
-    def test_authenticated_request_links_subscriber(self, rf: RequestFactory) -> None:
-        """Authenticated requests link the RequestLog to the Subscriber profile on request.user."""
-        subscriber = SubscriberFactory.create()
-        request = _make_request(rf, user=subscriber.user)
+    def test_authenticated_request_links_account(self, rf: RequestFactory) -> None:
+        """Authenticated requests link the RequestLog to the Account profile on request.user."""
+        account = AccountFactory.create()
+        request = _make_request(rf, user=account.user)
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
-        assert log.subscriber_id == subscriber.pk
+        assert log.account_id == account.pk
 
     def test_sec_purpose_captured(self, rf: RequestFactory) -> None:
         """capture() stores the Sec-Purpose header on sec_purpose."""

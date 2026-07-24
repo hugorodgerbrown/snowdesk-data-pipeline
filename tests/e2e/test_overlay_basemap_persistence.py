@@ -47,7 +47,7 @@ from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
-from tests.factories import FavouriteFactory, SubscriberFactory
+from tests.factories import AccountFactory, FavouriteFactory
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
@@ -195,11 +195,11 @@ def test_favourite_pin_survives_basemap_swap(
     though ``favouritesGeojsonCache`` still held the data.
     """
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
-        favourite = FavouriteFactory.create(user=subscriber.user, name="Swap Peak")
+        account = AccountFactory.create()
+        favourite = FavouriteFactory.create(user=account.user, name="Swap Peak")
     fav_uuid = str(favourite.uuid)
 
-    _session_login(page.context, live_server.url, subscriber.user)
+    _session_login(page.context, live_server.url, account.user)
     _navigate_home(page, live_server.url)
 
     page.wait_for_function(

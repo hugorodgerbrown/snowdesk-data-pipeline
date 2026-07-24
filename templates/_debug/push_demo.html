@@ -70,7 +70,7 @@
             <ul class="text-xs text-text-2 space-y-1">
                 {% for sub in subscriptions %}
                     <li class="font-mono break-all">
-                        {{ sub.subscriber.email|default:"(anon)" }}
+                        {{ sub.account.user.email|default:"(anon)" }}
                         — {{ sub.endpoint|slice:":80" }}…
                     </li>
                 {% empty %}

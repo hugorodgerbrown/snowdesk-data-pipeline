@@ -244,8 +244,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
-# Django's default auth.User is the user model.  Subscribers are linked via
-# a OneToOneField on accounts.Subscriber (related_name="subscriber").
+# Django's default auth.User is the user model.  Public-user accounts are
+# linked via a OneToOneField on accounts.Account (related_name="account").
 
 AUTHENTICATION_BACKENDS = [
     # Verifies signed magic-link tokens; used by account_view and passkey auth.

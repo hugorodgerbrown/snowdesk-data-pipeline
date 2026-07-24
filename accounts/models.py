@@ -3,16 +3,17 @@ accounts/models.py — Database models for the accounts application.
 
 Defines the following concrete models:
 
-- Subscriber: a thin profile linked to Django's built-in User model via
-  OneToOneField (related_name="subscriber").  Tracks the subscription
-  lifecycle (pending / active) for an email address that has opted in to
-  receive avalanche bulletin notifications.  Email is stored exclusively on
-  User.email; ``Subscriber`` carries only domain-specific fields.
-- Subscription: links a Subscriber to a specific MicroRegion so that
-  notifications can be scoped to the regions the subscriber cares about.
+- Account: the single public-user identity, a thin profile linked to
+  Django's built-in User model via OneToOneField (related_name="account").
+  Auto-created at every public entry point (subscribe, sign-in, register).
+  ``is_verified`` is the sole "email proven reachable" gate, set by every
+  email-proving link.  Email is stored exclusively on User.email; ``Account``
+  carries only domain-specific fields.
+- Subscription: links an Account to a specific MicroRegion so that
+  notifications can be scoped to the regions the account cares about.
 - PasskeyCredential: a WebAuthn platform passkey registered by a User,
   storing the FIDO2 public key and metadata needed to verify future sign-ins.
-- PushSubscription: a Web Push (VAPID) subscription for a Subscriber.
+- PushSubscription: a Web Push (VAPID) subscription for an Account.
 
 Keep business logic out of models — put it in accounts/services/ instead.
 """
@@ -40,180 +41,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Subscriber queryset / manager
-# ---------------------------------------------------------------------------
-
-
-class SubscriberQuerySet(models.QuerySet["Subscriber"]):
-    """Custom queryset for Subscriber."""
-
-    def active(self) -> SubscriberQuerySet:
-        """Return only active subscribers."""
-        return self.filter(status=Subscriber.Status.ACTIVE)
-
-    def by_email(self, email: str) -> SubscriberQuerySet:
-        """Return subscribers matching the given email (normalised to lowercase)."""
-        return self.filter(user__email=email.lower())
-
-    def get_or_create_for_email(
-        self,
-        email: str,
-        *,
-        defaults: dict | None = None,
-    ) -> tuple[Subscriber, bool]:
-        """Get or create a (User, Subscriber) pair for the given email address.
-
-        Email is normalised to lowercase at this single entry point (Invariant 2).
-        The User is created with ``username = email = email_lower`` so that
-        ``auth.User``'s unique ``username`` field carries the uniqueness
-        constraint.  If the User already exists, the Subscriber profile is
-        looked up or created against that User.
-
-        Args:
-            email: Raw email address (may be mixed-case).
-            defaults: Extra keyword arguments forwarded to the Subscriber
-                get_or_create call (e.g. ``status``, ``acquisition_request``).
-
-        Returns:
-            ``(subscriber, created)`` — ``created`` is True when the Subscriber
-            row was freshly created (the User may already have existed).
-
-        """
-        email_lower = email.strip().lower()
-        User = get_user_model()  # noqa: N806 — conventional upper-case alias
-        user, _user_created = User.objects.get_or_create(
-            username=email_lower,
-            defaults={"email": email_lower},
-        )
-        # Ensure email is always in sync even if the User pre-existed.
-        if user.email != email_lower:
-            user.email = email_lower
-            user.save(update_fields=["email"])
-        subscriber, created = Subscriber.objects.get_or_create(
-            user=user,
-            defaults=defaults or {},
-        )
-        return subscriber, created
-
-
-class SubscriberManager(models.Manager["Subscriber"]):
-    """Manager for Subscriber that exposes the SubscriberQuerySet methods."""
-
-    def get_queryset(self) -> SubscriberQuerySet:
-        """Return the custom queryset."""
-        return SubscriberQuerySet(self.model, using=self._db)
-
-    def active(self) -> SubscriberQuerySet:
-        """Return only active subscribers."""
-        return self.get_queryset().active()
-
-    def by_email(self, email: str) -> SubscriberQuerySet:
-        """Return subscribers matching the given email (normalised to lowercase)."""
-        return self.get_queryset().by_email(email)
-
-    def get_or_create_for_email(
-        self,
-        email: str,
-        *,
-        defaults: dict | None = None,
-    ) -> tuple[Subscriber, bool]:
-        """Get or create a (User, Subscriber) pair for the given email address.
-
-        Delegates to SubscriberQuerySet.get_or_create_for_email.
-
-        Args:
-            email: Raw email address (may be mixed-case).
-            defaults: Extra keyword arguments forwarded to the Subscriber
-                get_or_create call.
-
-        Returns:
-            ``(subscriber, created)`` tuple.
-
-        """
-        return self.get_queryset().get_or_create_for_email(email, defaults=defaults)
-
-
-# ---------------------------------------------------------------------------
-# Subscriber
-# ---------------------------------------------------------------------------
-
-
-class Subscriber(BaseModel):
-    """
-    Profile model linked to Django's built-in User via OneToOneField.
-
-    An email address subscribed to avalanche bulletin notifications.
-    ``request.user`` is a plain ``auth.User``; the subscriber profile is
-    accessed via ``request.user.subscriber`` (related_name="subscriber").
-
-    Email is stored exclusively on ``User.email``.  Access it as
-    ``subscriber.user.email``.  The ``status`` field tracks the subscription
-    lifecycle:
-
-    - ``pending``: address captured but not yet confirmed via a link click.
-    - ``active``: confirmed at least once; ``is_active`` returns True.
-    """
-
-    class Status(models.TextChoices):
-        """Lifecycle status for a Subscriber."""
-
-        PENDING = "pending", "Pending"
-        ACTIVE = "active", "Active"
-
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="subscriber",
-    )
-    acquisition_request = models.ForeignKey(
-        "core.RequestLog",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="acquired_subscribers",
-        help_text=(
-            "Request that first created this subscriber. "
-            "First-observation wins; never overwritten."
-        ),
-    )
-    status = models.CharField(
-        max_length=16,
-        choices=Status.choices,
-        default=Status.PENDING,
-        db_index=True,
-    )
-    confirmed_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Timestamp of first account-link verification.",
-    )
-
-    objects = SubscriberManager()
-
-    class Meta(BaseModel.Meta):
-        """Model metadata."""
-
-        ordering = ["-created_at"]
-
-    @property
-    def is_active(self) -> bool:
-        """Return True when the subscriber is confirmed (status=active)."""
-        return self.status == self.Status.ACTIVE
-
-    def to_string(self) -> str:
-        """Return a human-readable representation."""
-        return self.user.email
-
-    def __str__(self) -> str:
-        """Return a human-readable representation."""
-        return self.to_string()
-
-    def has_passkeys(self) -> bool:
-        """Return True if this subscriber has at least one registered passkey."""
-        return self.user.passkeys.exists()
-
-
-# ---------------------------------------------------------------------------
 # Account queryset / manager
 # ---------------------------------------------------------------------------
 
@@ -237,12 +64,12 @@ class AccountQuerySet(models.QuerySet["Account"]):
     ) -> tuple[Account, bool]:
         """Get or create a (User, Account) pair for the given email address.
 
-        Mirrors ``SubscriberQuerySet.get_or_create_for_email``: the email is
-        normalised to lowercase (Invariant 2) and the User is created with
-        ``username = email = email_lower`` so ``auth.User``'s unique
-        ``username`` field carries the uniqueness constraint.  No Subscriber
-        row is created — registration treats the User as a first-class object
-        independent of any bulletin subscription.
+        The email is normalised to lowercase (Invariant 2) and the User is
+        created with ``username = email = email_lower`` so ``auth.User``'s
+        unique ``username`` field carries the uniqueness constraint.  If the
+        User already exists, the Account profile is looked up or created
+        against that User — the single public-user identity, auto-created at
+        every public entry point (subscribe, sign-in, register).
 
         Args:
             email: Raw email address (may be mixed-case).
@@ -319,8 +146,9 @@ class Account(BaseModel):
     Identity profile linked to Django's built-in User via OneToOneField.
 
     Registration (SNOW-430) treats users as first-class objects independent of
-    any bulletin subscription: an ``Account`` may exist with no ``Subscriber``
-    row.  Access it via ``request.user.account`` (related_name="account").
+    any bulletin subscription: an ``Account`` may exist with no
+    ``Subscription`` rows.  Access it via ``request.user.account``
+    (related_name="account").
 
     ``is_verified`` records that the *current* email address has been proven
     reachable via a verification link.  It is deliberately distinct from
@@ -334,6 +162,17 @@ class Account(BaseModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="account",
+    )
+    acquisition_request = models.ForeignKey(
+        "core.RequestLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="acquired_accounts",
+        help_text=(
+            "Request that first created this account. "
+            "First-observation wins; never overwritten."
+        ),
     )
     is_verified = models.BooleanField(
         default=False,
@@ -465,23 +304,15 @@ def user_is_verified(user: AbstractBaseUser | AnonymousUser) -> bool:
 class SubscriptionQuerySet(models.QuerySet["Subscription"]):
     """Custom queryset for Subscription."""
 
-    def for_subscriber(self, subscriber: Subscriber) -> SubscriptionQuerySet:
-        """Return all subscriptions belonging to the given subscriber."""
-        return self.filter(subscriber=subscriber)
-
-    def active(self) -> SubscriptionQuerySet:
-        """Return subscriptions whose subscriber is active."""
-        return self.filter(subscriber__status=Subscriber.Status.ACTIVE)
-
 
 class Subscription(models.Model):
     """
-    Links a Subscriber to an SLF warning Region.
+    Links an Account to an SLF warning Region.
 
-    A subscriber may have many subscriptions, one per region of interest.
-    The unique_together constraint prevents duplicate subscriber/region pairs.
+    An account may have many subscriptions, one per region of interest.
+    The unique_together constraint prevents duplicate account/region pairs.
 
-    ``geo_match_kind`` and ``geo_matched_region`` record how the subscriber's
+    ``geo_match_kind`` and ``geo_matched_region`` record how the account's
     geolocation (read from ``subscribed_via``) relates to the subscribed region
     at the moment of sign-up.  These fields are frozen on INSERT; they are
     never updated after the row is created.  Raw geo and language fields live
@@ -490,7 +321,7 @@ class Subscription(models.Model):
     """
 
     class GeoMatchKind(models.TextChoices):
-        """Region-relative classification of the subscriber's geolocation.
+        """Region-relative classification of the account's geolocation.
 
         Literal values must stay in sync with the constants in
         ``regions.services.point_match``.  A unit test in
@@ -507,8 +338,8 @@ class Subscription(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    subscriber = models.ForeignKey(
-        Subscriber,
+    account = models.ForeignKey(
+        Account,
         on_delete=models.CASCADE,
         related_name="subscriptions",
     )
@@ -525,7 +356,7 @@ class Subscription(models.Model):
         related_name="initiated_subscriptions",
         help_text=(
             "Request that created this subscription. "
-            "First-observation wins on the (subscriber, region) pair."
+            "First-observation wins on the (account, region) pair."
         ),
     )
     geo_match_kind = models.CharField(
@@ -534,7 +365,7 @@ class Subscription(models.Model):
         default=GeoMatchKind.UNKNOWN,
         db_index=True,
         help_text=(
-            "How the subscriber's geolocation (from subscribed_via) relates to "
+            "How the account's geolocation (from subscribed_via) relates to "
             "the subscribed region at sign-up time. Frozen on INSERT; never "
             "updated. Raw geo fields live on subscribed_via (RequestLog)."
         ),
@@ -546,7 +377,7 @@ class Subscription(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
         help_text=(
-            "The specific MicroRegion the subscriber's geolocation fell inside "
+            "The specific MicroRegion the account's geolocation fell inside "
             "(target region itself, or the first matching neighbour). Null when "
             "geo_match_kind is elsewhere or unknown. Analytics-only; not surfaced "
             "on the public region API."
@@ -558,12 +389,12 @@ class Subscription(models.Model):
     class Meta:
         """Model metadata."""
 
-        unique_together = [("subscriber", "region")]
+        unique_together = [("account", "region")]
         ordering = ["region__region_id"]
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.subscriber.user.email} → {self.region.region_id}"
+        return f"{self.account.user.email} → {self.region.region_id}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
@@ -679,10 +510,6 @@ class PasskeyCredential(models.Model):
 class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
     """Custom queryset for PushSubscription."""
 
-    def for_subscriber(self, subscriber: Subscriber) -> PushSubscriptionQuerySet:
-        """Return all push subscriptions belonging to the given subscriber."""
-        return self.filter(subscriber=subscriber)
-
     def active(self) -> PushSubscriptionQuerySet:
         """Return only subscriptions that have not been marked inactive.
 
@@ -696,17 +523,17 @@ class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
 
 class PushSubscription(models.Model):
     """
-    A browser/device Web Push subscription registered for a Subscriber.
+    A browser/device Web Push subscription registered for an Account.
 
     Stores the three pieces returned by ``PushManager.subscribe()`` on the
     client: the endpoint URL (one of Apple/Mozilla/Google's push services),
     plus the P-256 ECDH ``p256dh`` key and HMAC ``auth`` secret used to
     encrypt the payload.
 
-    For the spike we let ``subscriber`` be nullable so a staff tester on
+    For the spike we let ``account`` be nullable so a staff tester on
     the ``/_push-demo/`` page (which uses ``staff_member_required``, not
-    the regular subscriber session) can opt their device in without
-    needing a regular subscriber account first.
+    the regular account session) can opt their device in without
+    needing a regular account first.
 
     ``mechanism`` records which browser API produced the subscription: the
     ``sw`` (service-worker parsed) path used by every browser today, or the
@@ -732,8 +559,8 @@ class PushSubscription(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    subscriber = models.ForeignKey(
-        Subscriber,
+    account = models.ForeignKey(
+        Account,
         on_delete=models.CASCADE,
         related_name="push_subscriptions",
         null=True,
@@ -772,7 +599,7 @@ class PushSubscription(models.Model):
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        who = self.subscriber.user.email if self.subscriber else "anon"
+        who = self.account.user.email if self.account else "anon"
         return f"{who} — {self.endpoint[:60]}…"
 
     def __str__(self) -> str:

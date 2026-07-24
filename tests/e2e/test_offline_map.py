@@ -78,7 +78,7 @@ from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from tests.e2e.conftest import PwaPage, _session_login
-from tests.factories import FavouriteFactory, SubscriberFactory
+from tests.factories import AccountFactory, FavouriteFactory
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -247,8 +247,8 @@ def test_favourites_offline_toast_when_nothing_cached_yet(
     ``#map-offline-toast-favourites`` rather than silently no-opping.
     """
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
-    _session_login(page.context, live_server.url, subscriber.user)
+        account = AccountFactory.create()
+    _session_login(page.context, live_server.url, account.user)
 
     page.add_init_script(
         "Object.defineProperty(navigator, 'serviceWorker', "
@@ -268,7 +268,7 @@ def test_favourites_overlay_installs_from_cache_after_offline_reload(
 ) -> None:
     """An offline reload installs favourites from the write-through cache.
 
-    Online: navigate as an already-authenticated subscriber (favourites is
+    Online: navigate as an already-authenticated account (favourites is
     default-on, so the boot-time ``ensureOverlayLoaded('favourites')`` fetch
     fires automatically and, per SNOW-492, writes the payload into
     ``data:map_overlays`` via ``map_overlay_offline_cache.js``). Offline:
@@ -276,13 +276,13 @@ def test_favourites_overlay_installs_from_cache_after_offline_reload(
     that cached copy instead of leaving the favourites source empty.
     """
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
+        account = AccountFactory.create()
         favourite = FavouriteFactory.create(
-            user=subscriber.user, name="Cached Offline Peak"
+            user=account.user, name="Cached Offline Peak"
         )
     fav_uuid = str(favourite.uuid)
 
-    _authenticated_pwa_navigate(page, live_server.url, subscriber.user)
+    _authenticated_pwa_navigate(page, live_server.url, account.user)
 
     _poll(
         page,

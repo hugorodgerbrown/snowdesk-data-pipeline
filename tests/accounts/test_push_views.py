@@ -6,7 +6,7 @@ Covers all three push endpoints (push_register, push_unregister, push_test):
   - Non-staff authenticated users are also redirected (302).
   - Staff POST without CSRF token is rejected (403) when enforce_csrf_checks=True.
   - Staff POST succeeds (200) and the expected side effect occurs.
-  - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
+  - SNOW-311 caplog regression: log records contain pk=, never the account email.
 
 In the push_test tests, enqueue_push is patched so no real task is enqueued.
 dispatch_push is patched in the push_service tests but is not relevant here.
@@ -29,7 +29,7 @@ import pytest
 from django.test import Client
 
 from accounts.models import PushSubscription
-from tests.factories import PushSubscriptionFactory, SubscriberFactory, UserFactory
+from tests.factories import AccountFactory, PushSubscriptionFactory, UserFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -70,14 +70,14 @@ def _post_json(client: Client, url: str, data: dict[str, Any]) -> Any:
 
 @pytest.fixture()
 def staff_user(db: Any) -> Any:
-    """Return a staff Subscriber."""
+    """Return a staff User."""
     return UserFactory.create()
 
 
 @pytest.fixture()
 def regular_user(db: Any) -> Any:
-    """Return a non-staff (regular) Subscriber."""
-    return SubscriberFactory.create()
+    """Return a non-staff (regular) Account."""
+    return AccountFactory.create()
 
 
 @pytest.fixture()
@@ -133,17 +133,17 @@ class TestPushRegister:
             endpoint=_REGISTER_BODY["endpoint"]
         ).exists()
 
-    def test_staff_register_without_profile_has_null_subscriber(
+    def test_staff_register_without_profile_has_null_account(
         self, staff_client: Client, staff_user: Any
     ) -> None:
-        """A staff user with no Subscriber profile registers with subscriber=None.
+        """A staff user with no Account profile registers with account=None.
 
-        Push registrations are staff-only; a plain staff User (no Subscriber
-        profile) will result in a PushSubscription with a null subscriber FK.
+        Push registrations are staff-only; a plain staff User (no Account
+        profile) will result in a PushSubscription with a null account FK.
         """
         _post_json(staff_client, _REGISTER_URL, _REGISTER_BODY)
         sub = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
-        assert sub.subscriber_id is None
+        assert sub.account_id is None
 
     def test_missing_fields_returns_400(self, staff_client: Client) -> None:
         """POST with missing fields returns 400."""
@@ -397,20 +397,20 @@ class TestPushTest:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-311 — caplog regression: no subscriber email in push_views log output
+# SNOW-311 — caplog regression: no account email in push_views log output
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestPushRegisterLogging:
-    """SNOW-311: push_register logs pk + endpoint, never the subscriber email."""
+    """SNOW-311: push_register logs pk + endpoint, never the account email."""
 
     def test_register_log_contains_pk_not_email(
         self,
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """push_register log record contains pk= and never the subscriber email.
+        """push_register log record contains pk= and never the account email.
 
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.

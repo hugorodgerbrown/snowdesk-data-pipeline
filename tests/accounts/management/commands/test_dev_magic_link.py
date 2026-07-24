@@ -3,8 +3,8 @@ tests/accounts/management/commands/test_dev_magic_link.py — Tests for the
 dev_magic_link management command.
 
 Covers:
-  - A new subscriber is created and a magic-link URL is printed.
-  - An existing pending subscriber is reactivated to ACTIVE.
+  - A new account is created (verified) and a magic-link URL is printed.
+  - An existing unverified account is verified.
   - Email addresses are normalised to lowercase (Invariant 2).
   - The --email argument is required.
   - Production refusal: when DEBUG=False the command raises CommandError.
@@ -19,9 +19,9 @@ from django.core.management import CommandError, call_command
 from django.test import override_settings
 from django.utils import timezone
 
-from accounts.models import Subscriber
+from accounts.models import Account
 from accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
-from tests.factories import SubscriberFactory
+from tests.factories import AccountFactory
 
 User = get_user_model()
 
@@ -33,18 +33,18 @@ def _run(email: str, capsys: pytest.CaptureFixture[str]) -> str:
 
 
 @pytest.mark.django_db
-class TestDevMagicLinkCreatesSubscriber:
-    """Subscriber-creation behaviour."""
+class TestDevMagicLinkCreatesAccount:
+    """Account-creation behaviour."""
 
-    def test_creates_subscriber_when_absent(
+    def test_creates_account_when_absent(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """A subscriber is created for an unknown email."""
-        assert not Subscriber.objects.by_email("new@example.com").exists()
+        """An account is created for an unknown email."""
+        assert not Account.objects.by_email("new@example.com").exists()
         _run("new@example.com", capsys)
-        subscriber = Subscriber.objects.get(user__email="new@example.com")
-        assert subscriber.status == Subscriber.Status.ACTIVE
-        assert subscriber.confirmed_at is not None
+        account = Account.objects.get(user__email="new@example.com")
+        assert account.is_verified
+        assert account.verified_at is not None
 
     def test_prints_magic_link_url(self, capsys: pytest.CaptureFixture[str]) -> None:
         """The printed URL is the account-access magic link for the email."""
@@ -55,48 +55,46 @@ class TestDevMagicLinkCreatesSubscriber:
 
 
 @pytest.mark.django_db
-class TestDevMagicLinkReactivates:
-    """Reactivation of an existing pending subscriber."""
+class TestDevMagicLinkVerifies:
+    """Verification of an existing unverified account."""
 
-    def test_reactivates_pending_subscriber(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """A pending subscriber is promoted to ACTIVE with confirmed_at set."""
-        subscriber = SubscriberFactory.create(
+    def test_verifies_pending_account(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """An unverified account is verified with verified_at set."""
+        account = AccountFactory.create(
             user__email="pending@example.com",
-            status=Subscriber.Status.PENDING,
-            confirmed_at=None,
+            is_verified=False,
+            verified_at=None,
         )
         _run("pending@example.com", capsys)
-        subscriber.refresh_from_db()
-        assert subscriber.status == Subscriber.Status.ACTIVE
-        assert subscriber.confirmed_at is not None
+        account.refresh_from_db()
+        assert account.is_verified
+        assert account.verified_at is not None
 
     def test_does_not_create_duplicate_for_existing(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Running against an existing email does not create a second subscriber."""
-        SubscriberFactory.create(
+        """Running against an existing email does not create a second account."""
+        AccountFactory.create(
             user__email="pending@example.com",
-            status=Subscriber.Status.PENDING,
+            is_verified=False,
         )
         _run("pending@example.com", capsys)
-        assert Subscriber.objects.by_email("pending@example.com").count() == 1
+        assert Account.objects.by_email("pending@example.com").count() == 1
 
-    def test_leaves_active_subscriber_active(
+    def test_leaves_verified_account_verified(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """An already-active subscriber stays active and keeps its confirmed_at."""
-        confirmed = timezone.now()
-        subscriber = SubscriberFactory.create(
+        """An already-verified account stays verified and keeps its verified_at."""
+        verified = timezone.now()
+        account = AccountFactory.create(
             user__email="active@example.com",
-            status=Subscriber.Status.ACTIVE,
-            confirmed_at=confirmed,
+            is_verified=True,
+            verified_at=verified,
         )
         _run("active@example.com", capsys)
-        subscriber.refresh_from_db()
-        assert subscriber.status == Subscriber.Status.ACTIVE
-        assert subscriber.confirmed_at == confirmed
+        account.refresh_from_db()
+        assert account.is_verified
+        assert account.verified_at == verified
 
 
 @pytest.mark.django_db
@@ -104,19 +102,19 @@ class TestDevMagicLinkEmailNormalisation:
     """Email-lowercasing (Invariant 2)."""
 
     def test_email_lowercased(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """A mixed-case email is stored lowercase and resolves to one subscriber."""
+        """A mixed-case email is stored lowercase and resolves to one account."""
         _run("MixedCase@Example.com", capsys)
-        assert Subscriber.objects.by_email("mixedcase@example.com").exists()
+        assert Account.objects.by_email("mixedcase@example.com").exists()
         user = User.objects.get(username="mixedcase@example.com")
         assert user.email == "mixedcase@example.com"
 
     def test_mixed_case_matches_existing_lowercase(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """A mixed-case argument reuses an existing lowercase subscriber."""
-        SubscriberFactory.create(user__email="user@example.com")
+        """A mixed-case argument reuses an existing lowercase account."""
+        AccountFactory.create(user__email="user@example.com")
         _run("User@Example.com", capsys)
-        assert Subscriber.objects.by_email("user@example.com").count() == 1
+        assert Account.objects.by_email("user@example.com").count() == 1
 
 
 @pytest.mark.django_db

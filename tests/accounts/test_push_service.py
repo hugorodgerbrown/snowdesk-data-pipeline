@@ -9,7 +9,7 @@ Patches pywebpush.webpush to test several branches:
     returns {ok: False}.
   - WebPushException with 500 (transient error): row survives, returns {ok: False}.
   - Declarative vs sw payload shape (SNOW-380).
-  - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
+  - SNOW-311 caplog regression: log records contain pk=, never the account email.
 
 Also tests _worker_dispatch_push (SNOW-319):
   - Happy path: loads the subscription by PK and calls dispatch_push.
@@ -28,7 +28,7 @@ from pywebpush import WebPushException
 
 from accounts.models import PushSubscription
 from accounts.push_service import _worker_dispatch_push, dispatch_push
-from tests.factories import PushSubscriptionFactory, SubscriberFactory
+from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
 def _make_webpush_exception(status_code: int) -> WebPushException:
@@ -173,27 +173,27 @@ class TestDispatchPush:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-311 — caplog regression: no subscriber email in push_service log output
+# SNOW-311 — caplog regression: no account email in push_service log output
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestDispatchPushLogging:
-    """SNOW-311: dispatch_push logs pk + endpoint, never the subscriber email."""
+    """SNOW-311: dispatch_push logs pk + endpoint, never the account email."""
 
     def test_410_log_contains_pk_not_email(
         self,
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A 410 error log record contains pk= and never the subscriber email.
+        """A 410 error log record contains pk= and never the account email.
 
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
         monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
-        subscriber = SubscriberFactory.create(user__email="push-caplog@example.com")
-        sub = PushSubscriptionFactory.create(subscriber=subscriber)
+        account = AccountFactory.create(user__email="push-caplog@example.com")
+        sub = PushSubscriptionFactory.create(account=account)
         exc = WebPushException(
             "Push failed with 410",
             response=MagicMock(status_code=410),
@@ -209,7 +209,7 @@ class TestDispatchPushLogging:
         # Plaintext email must not appear.
         for msg in all_messages:
             assert "push-caplog@example.com" not in msg, (
-                f"Subscriber email found in log: {msg!r}"
+                f"Account email found in log: {msg!r}"
             )
 
         # At least one record must mention pk=.
@@ -260,15 +260,15 @@ class TestWorkerDispatchPush:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """SNOW-311: DoesNotExist log record contains pk= and never a subscriber email.
+        """SNOW-311: DoesNotExist log record contains pk= and never an account email.
 
-        Creates a subscriber so there is a real email in the database, then
+        Creates an account so there is a real email in the database, then
         exercises the DoesNotExist path with a non-existent PK. The log message
         must reference the pk= only — no email should be emitted.
         """
         monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
-        subscriber = SubscriberFactory.create(user__email="worker-caplog@example.com")
-        nonexistent_pk = subscriber.pk + 999999
+        account = AccountFactory.create(user__email="worker-caplog@example.com")
+        nonexistent_pk = account.pk + 999999
         payload = {"title": "Hi", "body": "Test", "url": "/"}
 
         with (
@@ -282,7 +282,7 @@ class TestWorkerDispatchPush:
         # Plaintext email must not appear.
         for msg in all_messages:
             assert "worker-caplog@example.com" not in msg, (
-                f"Subscriber email found in DoesNotExist log: {msg!r}"
+                f"Account email found in DoesNotExist log: {msg!r}"
             )
 
         # At least one record must mention pk=.

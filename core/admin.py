@@ -32,16 +32,16 @@ class RequestLogAdmin(admin.ModelAdmin):
         "country_code",
         "city",
         "language",
-        "subscriber",
+        "account",
         "created_at",
     ]
     list_filter = ["country_code", "method", "language"]
-    search_fields = ["ip_address", "path", "subscriber__email", "city"]
-    list_select_related = ["subscriber"]
+    search_fields = ["ip_address", "path", "account__user__email", "city"]
+    list_select_related = ["account", "account__user"]
     ordering = ["-created_at"]
     readonly_fields = [
         "uuid",
-        "subscriber",
+        "account",
         "session_key",
         "method",
         "path",
@@ -59,7 +59,7 @@ class RequestLogAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
-    raw_id_fields = ["subscriber"]
+    raw_id_fields = ["account"]
 
 
 @admin.register(IdempotencyRecord)

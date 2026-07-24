@@ -26,11 +26,12 @@ from django.test import Client
 from django.urls import reverse
 from pytest_django.fixtures import SettingsWrapper
 
+from accounts.models import Account
 from accounts.services.token import (
     generate_password_reset_token,
     verify_password_reset_token,
 )
-from tests.factories import UserFactory
+from tests.factories import AccountFactory, UserFactory
 
 _OLD = "Old-Passw0rd!"
 _NEW = "New-Passw0rd!"
@@ -186,6 +187,36 @@ class TestResetConfirmView:
         user.refresh_from_db()
         assert user.check_password(_NEW) is True
         assert "_auth_user_id" in client.session
+
+    def test_post_verifies_account(self, client: Client) -> None:
+        """SNOW-514 addendum: clicking a reset link proves the address is
+        reachable, so the POST also verifies the Account (creating one if the
+        user had none, e.g. a subscribe-flow-only user).
+        """
+        user = _user_with_password()
+        assert not Account.objects.filter(user=user).exists()
+        client.post(
+            self._confirm_url(user),
+            {"new_password1": _NEW, "new_password2": _NEW},
+        )
+        account = Account.objects.get(user=user)
+        assert account.is_verified
+        assert account.verified_at is not None
+
+    def test_post_does_not_unset_verified_at_for_already_verified_account(
+        self, client: Client
+    ) -> None:
+        """Re-verifying an already-verified account does not clear verified_at."""
+        user = _user_with_password()
+        existing = AccountFactory.create(user=user, is_verified=True)
+        original_verified_at = existing.verified_at
+        client.post(
+            self._confirm_url(user),
+            {"new_password1": _NEW, "new_password2": _NEW},
+        )
+        existing.refresh_from_db()
+        assert existing.is_verified
+        assert existing.verified_at == original_verified_at
 
     def test_mismatch_rerenders(self, client: Client) -> None:
         user = _user_with_password()

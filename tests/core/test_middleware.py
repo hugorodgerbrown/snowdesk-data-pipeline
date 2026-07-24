@@ -10,7 +10,7 @@ from accounts.services.token import (
     generate_token,
     generate_unsubscribe_token,
 )
-from tests.factories import MicroRegionFactory, SubscriberFactory, SubscriptionFactory
+from tests.factories import AccountFactory, MicroRegionFactory, SubscriptionFactory
 
 
 @pytest.mark.django_db
@@ -76,8 +76,8 @@ def test_account_view_get_sets_same_origin() -> None:
     HTTPS (SNOW-438). ``same-origin`` still strips the token-bearing URL from
     any cross-origin request.
     """
-    subscriber = SubscriberFactory.create()
-    token = generate_token(subscriber.user.email, salt=SALT_ACCOUNT_ACCESS)
+    account = AccountFactory.create()
+    token = generate_token(account.user.email, salt=SALT_ACCOUNT_ACCESS)
     response = Client().get(f"/account/access/{token}/")
     assert response.status_code == 200
     assert response["Referrer-Policy"] == "same-origin"
@@ -95,9 +95,9 @@ def test_account_view_error_keeps_no_referrer() -> None:
 def test_unsubscribe_view_get_sets_same_origin() -> None:
     """unsubscribe_view GET renders a POST form → same-origin (SNOW-438)."""
     region = MicroRegionFactory.create()
-    subscriber = SubscriberFactory.create()
-    SubscriptionFactory.create(subscriber=subscriber, region=region)
-    token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
+    account = AccountFactory.create()
+    SubscriptionFactory.create(account=account, region=region)
+    token = generate_unsubscribe_token(account.user.email, region.region_id)
     response = Client().get(f"/account/unsubscribe/{token}/")
     assert response.status_code == 200
     assert response["Referrer-Policy"] == "same-origin"
@@ -107,9 +107,9 @@ def test_unsubscribe_view_get_sets_same_origin() -> None:
 def test_view_override_takes_precedence_over_middleware_default() -> None:
     """A view-set Referrer-Policy survives the middleware (not overwritten)."""
     region = MicroRegionFactory.create()
-    subscriber = SubscriberFactory.create()
-    SubscriptionFactory.create(subscriber=subscriber, region=region)
-    token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
+    account = AccountFactory.create()
+    SubscriptionFactory.create(account=account, region=region)
+    token = generate_unsubscribe_token(account.user.email, region.region_id)
     response = Client().get(f"/account/unsubscribe/{token}/")
     # Must be the view-set value, not the middleware default.
     assert response["Referrer-Policy"] == "same-origin"

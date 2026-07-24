@@ -23,18 +23,18 @@ from django.urls import reverse
 from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Subscriber
+from accounts.models import Account
 from bulletins.models import Bulletin
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from public.views import BULLETIN_SOURCE_LINKS
 from regions.models import MicroRegion
 from tests.factories import (
+    AccountFactory,
     BulletinFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     SubRegionFactory,
-    SubscriberFactory,
     SubscriptionFactory,
 )
 
@@ -1019,11 +1019,10 @@ class TestDebuggingAids:
     ) -> None:
         """Superuser sees raw_data script even when DEBUG=False."""
         settings.DEBUG = False
-        superuser = SubscriberFactory.create(
+        superuser = AccountFactory.create(
             user__email="super@example.com",
             user__is_superuser=True,
             user__is_staff=True,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 19)
         _make_am_bulletin(
@@ -1049,11 +1048,10 @@ class TestDebuggingAids:
     ) -> None:
         """Regular (non-superuser) authenticated user does not see raw_data."""
         settings.DEBUG = False
-        user = SubscriberFactory.create(
+        user = AccountFactory.create(
             user__email="regular@example.com",
             user__is_superuser=False,
             user__is_staff=False,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 20)
         _make_am_bulletin(
@@ -1113,11 +1111,10 @@ class TestSuperuserDebugAffordances:
     ) -> None:
         """Superuser sees the debug block with the correct data-testid."""
         settings.DEBUG = False
-        superuser = SubscriberFactory.create(
+        superuser = AccountFactory.create(
             user__email="super2@example.com",
             user__is_superuser=True,
             user__is_staff=True,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 22)
         _make_am_bulletin(
@@ -1140,11 +1137,10 @@ class TestSuperuserDebugAffordances:
     ) -> None:
         """PDF link is rendered when bulletin.pdf_url is truthy."""
         settings.DEBUG = False
-        superuser = SubscriberFactory.create(
+        superuser = AccountFactory.create(
             user__email="super3@example.com",
             user__is_superuser=True,
             user__is_staff=True,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 23)
         _make_am_bulletin(
@@ -1170,11 +1166,10 @@ class TestSuperuserDebugAffordances:
     ) -> None:
         """PDF link is not rendered when bulletin.pdf_url is empty."""
         settings.DEBUG = False
-        superuser = SubscriberFactory.create(
+        superuser = AccountFactory.create(
             user__email="super4@example.com",
             user__is_superuser=True,
             user__is_staff=True,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 24)
         _make_am_bulletin(
@@ -1222,11 +1217,10 @@ class TestSuperuserDebugAffordances:
     ) -> None:
         """Staff-but-not-superuser does not see the debug block."""
         settings.DEBUG = False
-        staff_user = SubscriberFactory.create(
+        staff_user = AccountFactory.create(
             user__email="staffonly@example.com",
             user__is_superuser=False,
             user__is_staff=True,
-            status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 26)
         _make_am_bulletin(
@@ -3376,10 +3370,10 @@ class TestStructuredData:
 _TOKEN_BACKEND = "accounts.backends.TokenBackend"
 
 
-def _make_session_client(subscriber: Subscriber) -> Client:
-    """Return a test client logged in as subscriber via Django auth."""
+def _make_session_client(account: Account) -> Client:
+    """Return a test client logged in as account via Django auth."""
     client = Client()
-    client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
+    client.force_login(account.user, backend=_TOKEN_BACKEND)
     return client
 
 
@@ -3408,8 +3402,8 @@ class TestSubscribePanelStates:
         self, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
         """Authenticated visitor with no subscription sees the 'Add region' CTA."""
-        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        client = _make_session_client(subscriber)
+        account = AccountFactory.create()
+        client = _make_session_client(account)
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
@@ -3423,9 +3417,9 @@ class TestSubscribePanelStates:
         self, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
         """Authenticated visitor already subscribed sees the 'Unsubscribe' CTA."""
-        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        SubscriptionFactory.create(subscriber=subscriber, region=region)
-        client = _make_session_client(subscriber)
+        account = AccountFactory.create()
+        SubscriptionFactory.create(account=account, region=region)
+        client = _make_session_client(account)
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200

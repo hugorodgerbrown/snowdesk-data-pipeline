@@ -83,7 +83,7 @@ class RequestLogManager(models.Manager["RequestLog"]):
         ``bulletins.services.geoip.geo_lookup``, parses the primary language
         tag from ``Accept-Language``, and saves the row in one call.
 
-        The subscriber FK is set when ``request.user`` is authenticated.
+        The account FK is set when ``request.user`` is authenticated.
         Anonymous requests (before sign-up / sign-in) leave it null.
 
         Args:
@@ -104,24 +104,24 @@ class RequestLogManager(models.Manager["RequestLog"]):
         accept_language: str = request.META.get("HTTP_ACCEPT_LANGUAGE", "")
         language = primary_language(accept_language)
 
-        # Resolve the Subscriber profile for the authenticated user.  A plain
-        # staff User (created via createsuperuser) has no Subscriber profile;
+        # Resolve the Account profile for the authenticated user.  A plain
+        # staff User (created via createsuperuser) has no Account profile;
         # guard the reverse accessor so anonymous requests and staff-only
-        # sessions both yield subscriber=None.
-        subscriber = None
+        # sessions both yield account=None.
+        account = None
         if request.user.is_authenticated:
-            from accounts.models import Subscriber  # noqa: PLC0415
+            from accounts.models import Account  # noqa: PLC0415
 
             try:
-                subscriber = request.user.subscriber
-            except Subscriber.DoesNotExist:
-                subscriber = None
+                account = request.user.account
+            except Account.DoesNotExist:
+                account = None
 
         sec_purpose_raw = request.headers.get("Sec-Purpose", "")
         sec_purpose = sec_purpose_raw[:64]
 
         return self.create(
-            subscriber=subscriber,
+            account=account,
             session_key=(request.session.session_key or ""),
             method=request.method or "",
             path=request.path,
@@ -152,14 +152,14 @@ class RequestLog(BaseModel):
     for future data-protection work and is never called automatically.
     """
 
-    subscriber = models.ForeignKey(
-        "accounts.Subscriber",
+    account = models.ForeignKey(
+        "accounts.Account",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="request_logs",
         help_text=(
-            "Authenticated subscriber at request time, if any. "
+            "Authenticated account at request time, if any. "
             "Null for anonymous requests (e.g. sign-up before the row exists)."
         ),
     )

@@ -21,7 +21,6 @@ from accounts.models import (
     Account,
     PasskeyCredential,
     PushSubscription,
-    Subscriber,
     Subscription,
 )
 from bulletins.models import (
@@ -364,7 +363,7 @@ class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):
 
         model = RequestLog
 
-    subscriber = None  # nullable — anonymous requests are the common case
+    account = None  # nullable — anonymous requests are the common case
     session_key = factory.Sequence(lambda n: f"session-{n:04d}")
     method = "POST"
     path = "/"
@@ -382,7 +381,7 @@ class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):
 
 
 class UserFactory(factory.django.DjangoModelFactory[User]):
-    """Factory for plain Django auth.User instances (non-subscriber staff).
+    """Factory for plain Django auth.User instances (non-account staff).
 
     ``username`` is derived from ``email`` via LazyAttribute so that the
     production invariant (username == email) is upheld by default.  Override
@@ -399,30 +398,6 @@ class UserFactory(factory.django.DjangoModelFactory[User]):
     username = factory.LazyAttribute(lambda obj: obj.email)
     password = factory.django.Password("pass")
     is_staff = True
-
-
-class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
-    """Factory for Subscriber profile instances.
-
-    Each factory creates a linked User (is_staff=False by default) and a
-    Subscriber profile pointing to that User.  ``user__username`` is derived
-    from ``user__email`` via LazyAttribute so that overriding ``user__email``
-    at call sites also fixes the username — matching the production invariant
-    enforced by ``get_or_create_for_email``.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = Subscriber
-
-    user = factory.SubFactory(
-        UserFactory,
-        is_staff=False,
-        email=factory.Sequence(lambda n: f"subscriber{n}@example.com"),
-    )
-    status = Subscriber.Status.ACTIVE
-    acquisition_request = None  # nullable — not always set
 
 
 class AccountFactory(factory.django.DjangoModelFactory[Account]):
@@ -460,7 +435,7 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 
         model = Subscription
 
-    subscriber = factory.SubFactory(SubscriberFactory)
+    account = factory.SubFactory(AccountFactory)
     region = factory.SubFactory(MicroRegionFactory)
     subscribed_via = None  # nullable — not always set
     geo_match_kind = Subscription.GeoMatchKind.UNKNOWN
@@ -470,9 +445,9 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):
     """Factory for PasskeyCredential instances.
 
-    Passkeys are keyed to auth.User (not to Subscriber), so the factory uses
-    UserFactory as its subfactory.  If you need a passkey for a subscriber,
-    pass ``user=subscriber.user`` at the call site.
+    Passkeys are keyed to auth.User (not to Account), so the factory uses
+    UserFactory as its subfactory.  If you need a passkey for an account,
+    pass ``user=account.user`` at the call site.
     """
 
     class Meta:
@@ -526,7 +501,7 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
 
         model = PushSubscription
 
-    subscriber = None  # nullable — use SubscriberFactory.create() to set
+    account = None  # nullable — use AccountFactory.create() to set
     endpoint = factory.Sequence(lambda n: f"https://push.example.com/endpoint/{n:04d}")
     p256dh = factory.Sequence(lambda n: f"p256dh-key-{n:04d}")
     auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")

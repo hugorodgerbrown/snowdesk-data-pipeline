@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import PasskeyCredential, Subscriber
+from accounts.models import Account, PasskeyCredential
 from accounts.services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
@@ -491,16 +491,16 @@ class TestPasskeyServiceLogging:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-334 — staff User without Subscriber can register and authenticate
+# SNOW-334 — staff User without Account can register and authenticate
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestStaffUserWithoutSubscriber:
-    """SNOW-334: a staff auth.User with no Subscriber can use passkeys."""
+class TestStaffUserWithoutAccount:
+    """SNOW-334: a staff auth.User with no Account can use passkeys."""
 
     def test_registration_options_for_staff_user(self) -> None:
-        """generate_registration_options works for a User with no Subscriber."""
+        """generate_registration_options works for a User with no Account."""
         user = UserFactory.create(is_staff=True)
         session: Any = {}
         result = generate_registration_options(user, session)
@@ -518,10 +518,10 @@ class TestStaffUserWithoutSubscriber:
         ):
             passkey = verify_and_save_registration("{}", session, user)
         assert passkey.user == user
-        assert not Subscriber.objects.filter(user=user).exists()
+        assert not Account.objects.filter(user=user).exists()
 
     def test_authentication_returns_staff_user(self) -> None:
-        """verify_authentication_response returns the auth.User directly (no Subscriber hop)."""
+        """verify_authentication_response returns the auth.User directly (no Account hop)."""
         user = UserFactory.create(is_staff=True)
         PasskeyCredentialFactory.create(user=user, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})

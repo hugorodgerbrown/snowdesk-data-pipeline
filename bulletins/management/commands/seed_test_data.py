@@ -755,7 +755,7 @@ class Command(BaseCommand):
         """
         from django.contrib.auth import get_user_model
 
-        from accounts.models import Subscriber, Subscription
+        from accounts.models import Account, Subscription
         from regions.models import MicroRegion
 
         user_model = get_user_model()
@@ -773,24 +773,20 @@ class Command(BaseCommand):
         user_super.set_password(DEV_USER_PASSWORD)
         user_super.save()
 
-        # Active, region-subscribed normal user.
+        # Verified, region-subscribed normal user.
         email_dev = NORMAL_USER_EMAIL.lower()
-        subscriber, _ = Subscriber.objects.get_or_create_for_email(
+        now = django_timezone.now()
+        account, _ = Account.objects.get_or_create_for_email(
             email_dev,
-            defaults={
-                "status": Subscriber.Status.ACTIVE,
-                "confirmed_at": django_timezone.now(),
-            },
+            defaults={"is_verified": True, "verified_at": now},
         )
         # get_or_create_for_email leaves an unusable password; set it explicitly
         # so the account is immediately usable for manual testing.
-        subscriber.user.set_password(DEV_USER_PASSWORD)
-        subscriber.user.save()
-        if subscriber.status != Subscriber.Status.ACTIVE:
-            subscriber.status = Subscriber.Status.ACTIVE
-            if subscriber.confirmed_at is None:
-                subscriber.confirmed_at = django_timezone.now()
-            subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
+        account.user.set_password(DEV_USER_PASSWORD)
+        account.user.save()
+        if not account.is_verified:
+            account.mark_verified(now)
+            account.save(update_fields=["is_verified", "verified_at", "updated_at"])
 
         try:
             region = MicroRegion.objects.get(region_id=SUBSCRIBED_REGION_ID)
@@ -801,14 +797,14 @@ class Command(BaseCommand):
                 "uv run python manage.py loaddata eaws_CH resorts"
             ) from exc
         Subscription.objects.get_or_create(
-            subscriber=subscriber,
+            account=account,
             region=region,
             defaults={"geo_match_kind": Subscription.GeoMatchKind.IN_REGION},
         )
 
         if verbosity >= 2:
             self.stdout.write(f"  Created dev accounts: {email_super}, {email_dev}")
-        return 2, subscriber.user
+        return 2, account.user
 
     def _seed_bulletin_family(
         self,

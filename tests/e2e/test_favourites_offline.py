@@ -64,7 +64,7 @@ def test_offline_reload_repaints_favourites_list_from_cache(
         region = MicroRegionFactory.create()
         RegionDayRatingFactory.create(region=region, max_rating="considerable")
         favourite = FavouriteFactory.create(
-            user=signed_in_page.subscriber.user, name="Cache Peak", region=region
+            user=signed_in_page.account.user, name="Cache Peak", region=region
         )
     fav_uuid = str(favourite.uuid)
 
@@ -107,7 +107,7 @@ def test_offline_expired_rating_shows_expired_not_stale_chip(
     """
     with django_db_blocker.unblock():
         favourite = FavouriteFactory.create(
-            user=signed_in_page.subscriber.user, name="Stale Peak"
+            user=signed_in_page.account.user, name="Stale Peak"
         )
     fav_uuid = str(favourite.uuid)
 

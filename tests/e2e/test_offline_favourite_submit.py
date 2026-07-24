@@ -57,7 +57,7 @@ from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from tests.e2e.conftest import _session_login
-from tests.factories import SubscriberFactory
+from tests.factories import AccountFactory
 
 DB_NAME = "snowdesk-pwa-v1"
 
@@ -146,9 +146,9 @@ def test_offline_favourite_creation_syncs_without_duplicate(
 ) -> None:
     """Offline Save enqueues + confirms optimistically; reconnect syncs once."""
     with django_db_blocker.unblock():
-        subscriber = SubscriberFactory.create()
+        account = AccountFactory.create()
 
-    _session_login(page.context, live_server.url, subscriber.user)
+    _session_login(page.context, live_server.url, account.user)
     _navigate_home_with_sw_stripped(page, live_server.url)
 
     _open_create_form_at(page, lat=46.2, lon=7.6)
@@ -212,7 +212,7 @@ def test_offline_favourite_creation_syncs_without_duplicate(
     with django_db_blocker.unblock():
         assert Favourite.objects.count() == 1
         fav = Favourite.objects.get()
-        assert fav.user == subscriber.user
+        assert fav.user == account.user
         assert fav.name == "Offline Peak"
         assert float(fav.latitude) == pytest.approx(46.2, abs=0.01)
         assert float(fav.longitude) == pytest.approx(7.6, abs=0.01)

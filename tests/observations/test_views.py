@@ -3,13 +3,13 @@ tests/observations/test_views.py — Tests for observations.views.
 
 Covers:
   report_form   — flag off → 404; non-HTMX → 400; anonymous → 403;
-                  authenticated user without Subscriber profile → 200;
+                  authenticated non-staff user → 200;
                   no coords → 200 MANUAL state (GPS gate removed SNOW-330);
                   returns form with region banner;
                   returns form with "couldn't match" when no region;
                   returns form with "choose on map" status when no coords.
   report_submit — flag off → 404; non-HTMX → 400; anonymous → 403;
-                  authenticated user without Subscriber profile → 200 + creates row;
+                  authenticated non-staff user → 200 + creates row;
                   missing GPS → 400; missing/invalid location_source → 400;
                   missing/invalid observation_type → 400;
                   valid GPS submit → creates row + returns confirmation;
@@ -37,7 +37,6 @@ from observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
     MicroRegionFactory,
-    SubscriberFactory,
     UserFactory,
 )
 
@@ -89,10 +88,8 @@ class TestReportFormFlagGate:
         assert response.status_code == 403
 
     @override_flag("field_observations", active=True)
-    def test_authenticated_user_without_subscriber_profile_gets_200(
-        self, client: Client
-    ) -> None:
-        """Authenticated user with no Subscriber profile gets 200 (SNOW-333)."""
+    def test_authenticated_non_staff_user_gets_200(self, client: Client) -> None:
+        """A non-staff authenticated user gets 200 (SNOW-333)."""
         user = _verified_user(is_staff=False)
         client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
@@ -618,10 +615,8 @@ class TestReportSubmitSuccess:
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
 
     @override_flag("field_observations", active=True)
-    def test_authenticated_user_without_subscriber_creates_row(
-        self, client: Client
-    ) -> None:
-        """Authenticated user without a Subscriber profile can submit (SNOW-333)."""
+    def test_authenticated_non_staff_user_creates_row(self, client: Client) -> None:
+        """A non-staff authenticated user can submit (SNOW-333)."""
         user = _verified_user(is_staff=False)
         client.force_login(user)
 
@@ -1043,39 +1038,3 @@ class TestReportSubmitRateLimit:
 
             resp = report_submit(request)
             assert resp.status_code == 429
-
-
-# ---------------------------------------------------------------------------
-# SNOW-333: SubscriberFactory-based tests (backward compat).
-#
-# Tests that pass a Subscriber's underlying user to force_login — these verify
-# that Subscriber users (who still have a linked User) can also submit reports.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestReportSubmitSubscriberUser:
-    """Subscriber users (who have a linked User record) can submit reports."""
-
-    @override_flag("field_observations", active=True)
-    def test_subscriber_user_can_submit(self, client: Client) -> None:
-        """A Subscriber's linked user (verified) can submit a field report."""
-        subscriber = SubscriberFactory.create()
-        AccountFactory.create(user=subscriber.user, is_verified=True)
-        client.force_login(subscriber.user)
-
-        with patch("observations.views.region_for_point", return_value=None):
-            response = client.post(
-                SUBMIT_URL,
-                {
-                    "lat": "46.1",
-                    "lon": "7.1",
-                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
-                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
-                },
-                **HTMX_HEADERS,
-            )
-
-        assert response.status_code == 200
-        obs = FieldObservation.objects.get(user=subscriber.user)
-        assert obs.user == subscriber.user

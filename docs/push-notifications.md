@@ -137,7 +137,7 @@ a misconfigured environment before it reaches production silently.
 
 Per spec §8.2.5: `PushSubscription.unsubscribe()` (the browser API call,
 distinct from the Django model) must only ever run from an explicit,
-user-initiated "Disable push" action. Signing out of a Subscriber session
+user-initiated "Disable push" action. Signing out of an account session
 is **not** the same thing as opting out of push, and calling
 `unsubscribe()` from a logout hook would silently break notifications for
 a user who just wanted a fresh session on the same device.

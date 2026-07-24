@@ -30,9 +30,9 @@ from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Subscriber
+from accounts.models import Account
 from public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
-from tests.factories import SubscriberFactory, UserFactory
+from tests.factories import AccountFactory, UserFactory
 
 
 def _all_categories() -> list[FoundationCategory]:
@@ -52,9 +52,9 @@ def staff_user(db: Any) -> User:
 
 
 @pytest.fixture()
-def regular_user(db: Any) -> Subscriber:
-    """Return a non-staff Subscriber."""
-    return SubscriberFactory.create()
+def regular_user(db: Any) -> Account:
+    """Return a non-staff Account."""
+    return AccountFactory.create()
 
 
 @pytest.fixture()
@@ -95,7 +95,7 @@ class TestComponentLibraryIndex:
         assert "/admin/login/" in response["Location"]
 
     def test_non_staff_user_redirected_to_admin_login(
-        self, regular_user: Subscriber
+        self, regular_user: Account
     ) -> None:
         """A logged-in non-staff user is also bounced to admin login."""
         client = Client()

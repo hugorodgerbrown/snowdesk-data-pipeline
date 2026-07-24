@@ -12,7 +12,7 @@ Covers:
                              wrong user → 404; rate-limited 429.
   caplog regression        — plaintext emails never appear in log output; pk= form
                              appears instead (SNOW-311).
-  SNOW-334                 — staff auth.User with no Subscriber can register a
+  SNOW-334                 — staff auth.User with no Account can register a
                              passkey and authenticate.
 """
 
@@ -27,9 +27,9 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import PasskeyCredential, Subscriber
+from accounts.models import Account, PasskeyCredential
 from accounts.services.passkey import PasskeyError, PasskeyUnknownCredentialError
-from tests.factories import PasskeyCredentialFactory, SubscriberFactory, UserFactory
+from tests.factories import AccountFactory, PasskeyCredentialFactory, UserFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -192,15 +192,15 @@ class TestPasskeyRegisterRequest:
     """Tests for the passkey_register_request view."""
 
     def test_authenticated_returns_200_json(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         resp = client.get(reverse("accounts:passkey_register_request"))
         assert resp.status_code == 200
         assert resp["Content-Type"] == "application/json"
 
     def test_authenticated_response_contains_challenge(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         resp = client.get(reverse("accounts:passkey_register_request"))
         data = json.loads(resp.content)
         assert "challenge" in data
@@ -211,16 +211,16 @@ class TestPasskeyRegisterRequest:
         assert resp.status_code == 403
 
     def test_post_not_allowed(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         resp = client.post(reverse("accounts:passkey_register_request"))
         assert resp.status_code == 405
 
-    def test_staff_user_without_subscriber_can_register(self) -> None:
-        """SNOW-334: staff auth.User with no Subscriber gets registration options."""
+    def test_staff_user_without_account_can_register(self) -> None:
+        """SNOW-334: staff auth.User with no Account gets registration options."""
         staff_user = UserFactory.create(is_staff=True)
-        # Confirm no Subscriber profile exists.
-        assert not Subscriber.objects.filter(user=staff_user).exists()
+        # Confirm no Account profile exists.
+        assert not Account.objects.filter(user=staff_user).exists()
         client = _make_session_client(staff_user)
         resp = client.get(reverse("accounts:passkey_register_request"))
         assert resp.status_code == 200
@@ -238,10 +238,10 @@ class TestPasskeyRegisterResponse:
     """Tests for the passkey_register_response view."""
 
     def test_success_returns_200_with_passkey_data(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         _set_reg_challenge(client, "dGVzdA")
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
+        passkey = PasskeyCredentialFactory.create(user=account.user)
 
         with patch(
             "accounts.views_passkey.verify_and_save_registration",
@@ -269,8 +269,8 @@ class TestPasskeyRegisterResponse:
         assert resp.status_code == 403
 
     def test_verification_failure_returns_400(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
@@ -286,8 +286,8 @@ class TestPasskeyRegisterResponse:
         assert resp.status_code == 400
 
     def test_empty_body_returns_400(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         resp = client.post(
             reverse("accounts:passkey_register_response"),
             data="",
@@ -296,15 +296,15 @@ class TestPasskeyRegisterResponse:
         assert resp.status_code == 400
 
     def test_get_not_allowed(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         resp = client.get(reverse("accounts:passkey_register_response"))
         assert resp.status_code == 405
 
-    def test_staff_user_without_subscriber_can_complete_registration(self) -> None:
-        """SNOW-334: staff auth.User with no Subscriber can complete passkey registration."""
+    def test_staff_user_without_account_can_complete_registration(self) -> None:
+        """SNOW-334: staff auth.User with no Account can complete passkey registration."""
         staff_user = UserFactory.create(is_staff=True)
-        assert not Subscriber.objects.filter(user=staff_user).exists()
+        assert not Account.objects.filter(user=staff_user).exists()
         client = _make_session_client(staff_user)
         _set_reg_challenge(client, "dGVzdA")
         passkey = PasskeyCredentialFactory.create(user=staff_user)
@@ -334,9 +334,9 @@ class TestPasskeyDelete:
     """Tests for the passkey_delete HTMX view."""
 
     def test_success_returns_200(self) -> None:
-        subscriber = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        client = _make_session_client(account.user)
         resp = client.post(
             reverse(
                 "accounts:passkey_delete",
@@ -347,9 +347,9 @@ class TestPasskeyDelete:
         assert resp.status_code == 200
 
     def test_success_deletes_passkey(self) -> None:
-        subscriber = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        client = _make_session_client(account.user)
         client.post(
             reverse(
                 "accounts:passkey_delete",
@@ -360,8 +360,8 @@ class TestPasskeyDelete:
         assert not PasskeyCredential.objects.filter(uuid=passkey.uuid).exists()
 
     def test_no_session_returns_403(self) -> None:
-        subscriber = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
         client = Client()
         resp = client.post(
             reverse(
@@ -373,9 +373,9 @@ class TestPasskeyDelete:
         assert resp.status_code == 403
 
     def test_non_htmx_returns_400(self) -> None:
-        subscriber = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        client = _make_session_client(account.user)
         resp = client.post(
             reverse(
                 "accounts:passkey_delete",
@@ -385,10 +385,10 @@ class TestPasskeyDelete:
         assert resp.status_code == 400
 
     def test_other_users_passkey_returns_404(self) -> None:
-        subscriber_a = SubscriberFactory.create()
-        subscriber_b = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber_b.user)
-        client = _make_session_client(subscriber_a.user)
+        account_a = AccountFactory.create()
+        account_b = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account_b.user)
+        client = _make_session_client(account_a.user)
         resp = client.post(
             reverse(
                 "accounts:passkey_delete",
@@ -399,8 +399,8 @@ class TestPasskeyDelete:
         assert resp.status_code == 404
 
     def test_unknown_uuid_returns_404(self) -> None:
-        subscriber = SubscriberFactory.create()
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
         import uuid
 
         resp = client.post(
@@ -413,9 +413,9 @@ class TestPasskeyDelete:
         assert resp.status_code == 404
 
     def test_get_not_allowed(self) -> None:
-        subscriber = SubscriberFactory.create()
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        client = _make_session_client(account.user)
         resp = client.get(
             reverse(
                 "accounts:passkey_delete",
@@ -490,10 +490,8 @@ class TestPasskeyViewsLogging:
 
         monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(
-            user__email="passkey-reg-fail@example.com"
-        )
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create(user__email="passkey-reg-fail@example.com")
+        client = _make_session_client(account.user)
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
@@ -516,8 +514,8 @@ class TestPasskeyViewsLogging:
             )
 
         # At least one record must mention the user's pk.
-        assert any(str(subscriber.user.pk) in msg for msg in all_messages), (
-            f"No log record contains pk={subscriber.user.pk}; records: {all_messages}"
+        assert any(str(account.user.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={account.user.pk}; records: {all_messages}"
         )
 
     def test_passkey_deleted_logs_pk_not_email(
@@ -530,9 +528,9 @@ class TestPasskeyViewsLogging:
 
         monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(user__email="passkey-del@example.com")
-        passkey = PasskeyCredentialFactory.create(user=subscriber.user)
-        client = _make_session_client(subscriber.user)
+        account = AccountFactory.create(user__email="passkey-del@example.com")
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        client = _make_session_client(account.user)
 
         with caplog.at_level(logging.INFO, logger="accounts.views_passkey"):
             client.post(
@@ -552,24 +550,24 @@ class TestPasskeyViewsLogging:
             )
 
         # At least one record must mention the user's pk.
-        assert any(str(subscriber.user.pk) in msg for msg in all_messages), (
-            f"No log record contains pk={subscriber.user.pk}; records: {all_messages}"
+        assert any(str(account.user.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={account.user.pk}; records: {all_messages}"
         )
 
 
 # ---------------------------------------------------------------------------
-# SNOW-334 — staff auth.User with no Subscriber can authenticate
+# SNOW-334 — staff auth.User with no Account can authenticate
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestStaffUserPasskeyAuth:
-    """SNOW-334: staff auth.User with no Subscriber can sign in via passkey."""
+    """SNOW-334: staff auth.User with no Account can sign in via passkey."""
 
     def test_staff_user_auth_response_logs_in(self) -> None:
-        """passkey_auth_response logs in a staff User that has no Subscriber."""
+        """passkey_auth_response logs in a staff User that has no Account."""
         staff_user = UserFactory.create(is_staff=True)
-        assert not Subscriber.objects.filter(user=staff_user).exists()
+        assert not Account.objects.filter(user=staff_user).exists()
 
         client = Client()
         _set_auth_challenge(client, "dGVzdA")
@@ -590,9 +588,9 @@ class TestStaffUserPasskeyAuth:
         assert client.session.get("_auth_user_id") == str(staff_user.pk)
 
     def test_staff_user_can_delete_own_passkey(self) -> None:
-        """passkey_delete allows a staff User with no Subscriber to delete their passkey."""
+        """passkey_delete allows a staff User with no Account to delete their passkey."""
         staff_user = UserFactory.create(is_staff=True)
-        assert not Subscriber.objects.filter(user=staff_user).exists()
+        assert not Account.objects.filter(user=staff_user).exists()
         passkey = PasskeyCredentialFactory.create(user=staff_user)
         client = _make_session_client(staff_user)
 

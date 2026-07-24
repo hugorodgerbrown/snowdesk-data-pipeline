@@ -8,8 +8,8 @@ verifying a magic-link token or a WebAuthn passkey assertion.
 
 ``TokenBackend.get_user()`` is called by ``AuthenticationMiddleware`` on every
 subsequent request to reload the User from the session.  It returns a plain
-``auth.User`` instance; the subscriber profile (if any) is accessed via
-``user.subscriber`` (the OneToOneField reverse accessor).
+``auth.User`` instance; the account profile (if any) is accessed via
+``user.account`` (the OneToOneField reverse accessor).
 
 ``ModelBackend`` still handles staff password logins via the Django admin form.
 """

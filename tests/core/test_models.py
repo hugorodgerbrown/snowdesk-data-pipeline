@@ -15,7 +15,7 @@ from django.test import RequestFactory
 
 from bulletins.services.geoip import GeoLookup
 from core.models import RequestLog
-from tests.factories import RequestLogFactory, SubscriberFactory
+from tests.factories import AccountFactory, RequestLogFactory
 
 
 @pytest.mark.django_db
@@ -33,10 +33,10 @@ class TestRequestLogFactory:
         log = RequestLogFactory.create()
         assert log.method == "POST"
 
-    def test_subscriber_defaults_to_none(self) -> None:
-        """Factory leaves subscriber null by default."""
+    def test_account_defaults_to_none(self) -> None:
+        """Factory leaves account null by default."""
         log = RequestLogFactory.create()
-        assert log.subscriber is None
+        assert log.account is None
 
     def test_country_code_defaults_to_empty(self) -> None:
         """Factory defaults country_code to empty string."""
@@ -156,19 +156,17 @@ class TestRequestLogFromRequest:
         assert str(log.ip_address) == "203.0.113.5"
         assert log.user_agent == "TestAgent/1.0"
 
-    def test_from_request_links_authenticated_subscriber(
-        self, rf: RequestFactory
-    ) -> None:
-        """Authenticated requests link the log to the Subscriber profile on request.user."""
-        subscriber = SubscriberFactory.create()
+    def test_from_request_links_authenticated_account(self, rf: RequestFactory) -> None:
+        """Authenticated requests link the log to the Account profile on request.user."""
+        account = AccountFactory.create()
         request = rf.post("/", REMOTE_ADDR="203.0.113.1")
         request.session = type("S", (), {"session_key": "y"})()
-        request.user = subscriber.user  # noqa: PGH003 — auth.User is request.user
+        request.user = account.user  # noqa: PGH003 — auth.User is request.user
 
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = RequestLog.objects.from_request(request)
 
-        assert log.subscriber_id == subscriber.pk
+        assert log.account_id == account.pk
 
     def test_from_request_with_geo(self, rf: RequestFactory) -> None:
         """from_request() maps GeoLookup fields onto the RequestLog."""
