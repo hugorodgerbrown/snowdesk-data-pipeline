@@ -398,6 +398,65 @@ def test_map_layer_menu_section_order() -> None:
 
 
 @pytest.mark.django_db
+def test_map_layer_menu_renders_sync_status_dots() -> None:
+    """
+    SNOW-505: each always-rendered overlay row (l1/l2/l4/l3/resorts) carries
+    a server-rendered ``.sync-dot`` starting at ``data-sync-state="unknown"``
+    — ``map_layer_sync_status.js`` resolves it to cached/uncached the first
+    time the popover opens.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    for key in ("l1", "l2", "l4", "l3", "resorts"):
+        key_idx = content.index(f'data-overlay-key="{key}"')
+        button_close_idx = content.index("</button>", key_idx)
+        button_scope = content[key_idx:button_close_idx]
+        assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+
+
+@override_flag("favourites", active=True)
+@override_flag("community_reports", active=True)
+@pytest.mark.django_db
+def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
+    """
+    SNOW-505: favourites and community_reports also carry a sync-dot once
+    their waffle flags render the row at all.
+    """
+    subscriber = SubscriberFactory.create()
+    client = Client()
+    client.force_login(subscriber.user)
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    for key in ("favourites", "community_reports"):
+        key_idx = content.index(f'data-overlay-key="{key}"')
+        button_close_idx = content.index("</button>", key_idx)
+        button_scope = content[key_idx:button_close_idx]
+        assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+
+
+@pytest.mark.django_db
+def test_basemap_menu_renders_sync_status_caption() -> None:
+    """
+    SNOW-505: the "Base map" section carries a ``#basemap-sync-status``
+    caption row with its own sync-dot, distinct from the per-overlay dots
+    above it — the basemap's coverage is a property of the shared
+    BASEMAP_CACHE, not any one basemap option.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    assert 'id="basemap-sync-status"' in content
+    caption_idx = content.index('id="basemap-sync-status"')
+    caption_close_idx = content.index("</li>", caption_idx)
+    caption_scope = content[caption_idx:caption_close_idx]
+    assert 'class="sync-dot" data-sync-state="unknown"' in caption_scope
+
+
+@pytest.mark.django_db
 class TestMapPageDataDrivenSeasonBounds:
     """
     SNOW-173: data-season-start / data-season-end reflect the actual
