@@ -44,7 +44,8 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; flag off → 404;
                     non-HTMX → 400; empty state when the user has none
-                    (SNOW-415).
+                    (SNOW-415); each row carries an "Open page →" link to
+                    favourites:detail (SNOW-507).
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; flag off → 404; each feature
@@ -1380,6 +1381,20 @@ class TestFavouriteList:
         assert "Mine" in content
         assert "Theirs" not in content
         assert str(mine.uuid) in content
+
+    @override_flag("favourites", active=True)
+    def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
+        """Each row carries an "Open page →" permalink to favourites:detail (SNOW-507)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="favourite-list-open-page-link"' in content
+        assert _detail_url(favourite.uuid) in content
 
     @override_flag("favourites", active=True)
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
