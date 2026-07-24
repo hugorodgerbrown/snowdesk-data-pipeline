@@ -233,7 +233,10 @@ try {
 // SNOW-505 iteration: v35 — l3 (bulletin groupings) now renders a distinct
 // hollow "unavailable" dot (never-cacheable) rather than the grey "not cached
 // yet" fill — shell JS/CSS bytes changed (map_layer_sync_status.js, map.css).
-const CACHE_VERSION = 'snowdesk-shell-v35';
+// SNOW-511: v36 — the layers popover now clamps its height to the visible map
+// area on open/resize so its top rows no longer clip behind the header on
+// short viewports — shell JS/CSS bytes changed (map.js, map.css).
+const CACHE_VERSION = 'snowdesk-shell-v36';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

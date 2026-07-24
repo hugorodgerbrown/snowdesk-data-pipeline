@@ -141,8 +141,13 @@
     padding: 4px;
     list-style: none;
     min-width: 148px;
-    /* Anchored at the bottom baseline, the menu grows upward over the full
-       viewport; cap its height so the top never clips, leaving a top margin. */
+    /* Anchored at the bottom baseline, the menu grows upward. This dvh cap is
+       the no-JS floor; it stops the menu overrunning the whole viewport but
+       does NOT reserve the chrome above #map (nav + the conditional off-season
+       banner + the top safe-area). basemapPickerInit (static/js/map.js,
+       SNOW-511) tightens max-height on open/resize to the measured room
+       between #map's top and the menu's baseline so the top rows (the
+       Countries section) never clip behind the header on short viewports. */
     max-height: calc(100dvh - 96px);
     overflow-y: auto;
     background: var(--color-card);
