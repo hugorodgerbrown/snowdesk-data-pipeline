@@ -1,16 +1,27 @@
-# .github/dependabot.yml — Keep GitHub Actions current (SNOW-506).
+# .github/dependabot.yml — Keep GitHub Actions and the uv-locked Python
+# toolchain current (SNOW-506, SNOW-510).
 #
 # Third-party actions in .github/workflows/ are pinned to immutable commit
 # SHAs (with a `# vX.Y.Z` comment recording the human-readable version) so a
 # moved upstream tag cannot execute new code in CI unreviewed. Dependabot's
 # github-actions ecosystem opens a PR when a newer release exists, updating
 # both the SHA and the version comment — that is how the pins stay current
-# without hand-maintenance. Scope is deliberately github-actions only; the
-# pip (uv) and npm ecosystems are out of scope for this ticket.
+# without hand-maintenance.
+#
+# Every tox env now installs from uv.lock (SNOW-510, see
+# docs/decisions/tox-envs-install-from-uv-lock.md), so uv.lock is the single
+# place a stale Python tool/runtime pin can hide. Dependabot's `uv`
+# ecosystem reads pyproject.toml/uv.lock and opens a PR bumping the lock —
+# the npm ecosystem is still out of scope.
 
 version: 2
 updates:
   - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
