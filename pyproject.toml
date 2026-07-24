@@ -82,7 +82,7 @@ e2e = [
     {include-group = "test"},
 ]
 dev = [
-    "pre-commit>=4.2.0,<5",
+    "pre-commit>=4.6.1,<5",
     "tox>=4.52.1,<5",
     "tox-uv>=1.0,<2",
     "tox-gh-actions>=3.5.0,<4",
