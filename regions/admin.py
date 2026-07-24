@@ -97,6 +97,7 @@ class ResortAdmin(admin.ModelAdmin):
         "name_alt",
         "region",
         "canton",
+        "num_lifts",
         "latitude",
         "longitude",
         "geocode_source",
@@ -116,6 +117,26 @@ class ResortAdmin(admin.ModelAdmin):
     ]
     fieldsets = (
         (None, {"fields": ("name", "name_alt", "region", "canton", "notes")}),
+        (
+            "Resort details",
+            {
+                "fields": (
+                    "operator_name",
+                    "website",
+                    "num_lifts",
+                    "num_runs",
+                    "total_piste_km",
+                    "base_elevation_m",
+                    "top_elevation_m",
+                    "typical_season_open",
+                    "typical_season_close",
+                ),
+                "description": (
+                    "Manually-curated descriptive fields — not sourced from "
+                    "any bulletin feed. Edit here directly."
+                ),
+            },
+        ),
         (
             "Geocoding",
             {

@@ -155,6 +155,15 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     geocode_confidence = None
     geocoded_at = None
     needs_review = False
+    operator_name = ""
+    website = ""
+    num_lifts = None
+    num_runs = None
+    total_piste_km = None
+    base_elevation_m = None
+    top_elevation_m = None
+    typical_season_open = ""
+    typical_season_close = ""
     forecast_point = None
 
 
