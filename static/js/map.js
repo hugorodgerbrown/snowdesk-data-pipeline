@@ -1917,6 +1917,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // menu reflects the newly-available offline data. Guarded on the same
       // feature-presence checks as the merges above; markCached no-ops for keys
       // not actually loaded.
+      //
+      // The "cached" signal is country-agnostic: this greens L1/L2/L4 off ANY
+      // country's feed (e.g. ``?country=at``), even though ``_loadOverlay``
+      // later fetches ``?country=ch`` specifically and ``_staleWhileRevalidate``
+      // caches per full URL. That matches the dashboard's own probe contract —
+      // ``_probeGeoJson`` uses ``ignoreSearch: true`` (map_layer_sync_status.js),
+      // so a re-open ``refresh()`` would paint the same country-agnostic green.
+      // A per-country dot would need a probe change in that (frozen) module.
       if (newRegions && newRegions.features) window.pwaLayerSyncStatus?.markCached('l4');
       if (newMajor && newMajor.features) window.pwaLayerSyncStatus?.markCached('l1');
       if (newSub && newSub.features) window.pwaLayerSyncStatus?.markCached('l2');
@@ -2437,7 +2445,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // offline. ``overlayLoaded[key]`` is only true after a successful load
     // (the offline-toast paths in ``_loadOverlay`` early-return leaving it
     // false), so this never over-claims; markCached itself no-ops for keys
-    // it doesn't recognise.
+    // it doesn't recognise. If the user toggles the same tier on mid-restore,
+    // ``ensureOverlayLoaded`` hands both callers the one in-flight promise, so
+    // markCached can fire twice for a single load — harmless, as it just
+    // repaints the dot to the same "cached" state.
     const restoreOverlay = (key) =>
       ensureOverlayLoaded(key)
         .then(() => {

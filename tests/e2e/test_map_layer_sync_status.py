@@ -165,13 +165,18 @@ def test_boot_restore_greens_a_dot_without_a_toggle(
     Seeds ``localStorage['snowdesk.map.overlay.l2'] = 'true'`` (via
     ``add_init_script``, so it lands before map.js's boot-time overlay
     restore reads ``overlayState`` from localStorage) so l2 restores at
-    boot, and seeds ``/api/sub-regions.geojson`` into a throwaway
-    Cache-Storage cache so the feed the restore fetches is already
-    available offline. Pre-change, the l2 dot stays "unknown" until the
-    popover is first opened — only ``refresh()`` on open paints it. Post
-    this ticket's change, the boot-restore path's ``restoreOverlay`` helper
-    calls ``markCached('l2')`` the moment its ``ensureOverlayLoaded`` call
-    resolves, greening the dot with no popover open and no toggle click.
+    boot. The assertion targets the optimistic ``markCached`` flip, not a
+    probe: the restore's own ``ensureOverlayLoaded('l2')`` fetch hits the
+    live server directly for a fresh entry. The ``/api/sub-regions.geojson``
+    throwaway-cache seed is defensive — if the new ``visibilitychange``
+    handler's ``refresh()`` happens to run during the test, its
+    (``ignoreSearch``) probe finds this entry and so can't flip the dot back
+    to "uncached" before the assertion lands. Pre-change, the l2 dot stays
+    "unknown" until the popover is first opened — only ``refresh()`` on open
+    paints it. Post this ticket's change, the boot-restore path's
+    ``restoreOverlay`` helper calls ``markCached('l2')`` the moment its
+    ``ensureOverlayLoaded`` call resolves, greening the dot with no popover
+    open and no toggle click.
     """
     page.add_init_script(
         """
