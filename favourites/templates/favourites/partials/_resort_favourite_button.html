@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+favourites/templates/favourites/partials/_resort_favourite_button.html —
+Resort-page favourite/unfavourite toggle button (SNOW-504).
+
+Rendered by ``public.views.resort_detail`` (initial state, included from
+``public/templates/public/resort.html``) and by
+``favourites.views.favourite_resort_toggle`` (the post-toggle swap). A
+simple, online-only HTMX toggle — deliberately distinct from the map's
+offline-capable resort star (``favourite_create_from_resort`` /
+``favourite_delete``, driven by ``static/js/favourites.js``'s client
+mutation queue). Not wrapped in a ``<form>``, so the CSRF token rides via
+``hx-headers`` (mirrors ``templates/includes/bulletin_header.html``).
+
+Context:
+  resort         — regions.Resort instance.
+  favourited     — bool: True when the requesting user already has a
+                   Favourite for this resort.
+  can_favourite  — bool: True when the ``favourites`` flag is active AND the
+                   requesting user is authenticated.
+  signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
+{% endcomment %}
+{% if can_favourite %}
+    <button
+        type="button"
+        hx-post="{% url 'favourites:resort_toggle' resort.pk %}"
+        hx-target="this"
+        hx-swap="outerHTML"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        data-testid="resort-favourite-toggle"
+        data-favourited="{{ favourited|yesno:'true,false' }}"
+        aria-pressed="{{ favourited|yesno:'true,false' }}"
+        class="flex items-center gap-2 self-start rounded-pill border border-border px-3 py-1.5 text-sm font-medium text-text-1 hover:border-text-2"
+    >
+        <span aria-hidden="true">{% if favourited %}★{% else %}☆{% endif %}</span>
+        {% if favourited %}
+            {% trans "Saved" %}
+        {% else %}
+            {% trans "Save resort" %}
+        {% endif %}
+    </button>
+{% else %}
+    <a
+        href="{{ signin_url }}"
+        data-testid="resort-favourite-signin"
+        class="self-start text-sm font-medium text-status-info-text underline"
+    >
+        {% trans "Sign in to save this resort" %}
+    </a>
+{% endif %}

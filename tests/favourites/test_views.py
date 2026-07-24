@@ -12,6 +12,11 @@ Covers:
                       flag off → 404; anonymous → 403; non-HTMX → 400;
                       missing/non-integer resort_id → 400; unknown
                       resort_id → 404; ungeocoded resort → 422.
+  favourite_resort_toggle (SNOW-504) — first POST creates, second POST
+                      deletes the (user, resort) Favourite; cap reached →
+                      409 with the limit partial; flag off → 404;
+                      anonymous → 403; non-HTMX → 400; unknown resort_id →
+                      404; ungeocoded resort → 422; rate-limited → 429.
   favourite_rename — owner isolation (user A cannot rename user B's pin);
                       name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
@@ -104,6 +109,11 @@ def _delete_url(uuid: object) -> str:
 def _card_url(uuid: object) -> str:
     """Build the detail-card URL for a favourite's uuid."""
     return f"/favourites/partials/{uuid}/card/"
+
+
+def _resort_toggle_url(resort_id: object) -> str:
+    """Build the resort-favourite-toggle URL for a resort's pk (SNOW-504)."""
+    return f"/favourites/partials/resort/{resort_id}/toggle/"
 
 
 def _problem_card_render_model(elevation: dict[str, Any] | None) -> dict[str, Any]:
@@ -632,6 +642,174 @@ class TestFavouriteCreateFromResortCap:
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
+
+        assert response.status_code == 409
+        assert Favourite.objects.filter(user=user).count() == 1
+        content = response.content.decode()
+        assert "limit" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# favourite_resort_toggle — POST /favourites/partials/resort/<id>/toggle/ (SNOW-504)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleFlagGate:
+    """Flag-off → 404."""
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_returns_404(self, client: Client) -> None:
+        """When the favourites flag is inactive, POST returns 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleAuthGate:
+    """Anonymous users are rejected with 403."""
+
+    @override_flag("favourites", active=True)
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous POST returns 403."""
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleHtmxGate:
+    """Non-HTMX requests are rejected with 400."""
+
+    @override_flag("favourites", active=True)
+    def test_non_htmx_returns_400(self, client: Client) -> None:
+        """A plain POST without HX-Request returns 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(_resort_toggle_url(resort.pk))
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleValidation:
+    """An unknown resort_id → 404."""
+
+    @override_flag("favourites", active=True)
+    def test_unknown_resort_id_returns_404(self, client: Client) -> None:
+        """A resort_id with no matching row → 404."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(_resort_toggle_url(999999), **HTMX_HEADERS)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleUngeocoded:
+    """An ungeocoded resort cannot be favourited — 422."""
+
+    @override_flag("favourites", active=True)
+    def test_ungeocoded_resort_returns_422(self, client: Client) -> None:
+        """A resort with no latitude/longitude returns 422, no row created."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=None, longitude=None)
+
+        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+
+        assert response.status_code == 422
+        assert not Favourite.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleRateLimit:
+    """Rate limit returns 429 when exceeded."""
+
+    @override_flag("favourites", active=True)
+    def test_rate_limited_branch_returns_429(self, client: Client) -> None:
+        """When request.limited is True (set by ratelimit decorator), view returns 429.
+
+        Mirrors ``TestFavouriteCreateFromResortRateLimit`` above for the
+        resort-toggle view — django-ratelimit ORs a pre-set
+        ``request.limited=True`` with its own (unmet) check, so pre-setting
+        it short-circuits into the 429 branch.
+        """
+        user = UserFactory.create()
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+        from django.contrib.sessions.backends.db import SessionStore  # noqa: PLC0415
+        from django.test import RequestFactory  # noqa: PLC0415
+        from django_htmx.middleware import HtmxMiddleware  # noqa: PLC0415
+
+        rf = RequestFactory()
+        request = rf.post(
+            _resort_toggle_url(resort.pk),
+            HTTP_HX_REQUEST="true",
+        )
+        request.limited = True  # type: ignore[attr-defined]
+        request.user = user
+        request.session = SessionStore()
+
+        from django.http import HttpResponse as _HR  # noqa: PLC0415
+
+        htmx_mw = HtmxMiddleware(lambda r: _HR())
+        htmx_mw(request)
+
+        with patch("favourites.views._require_favourites_flag", return_value=None):
+            from favourites.views import favourite_resort_toggle  # noqa: PLC0415
+
+            resp = favourite_resort_toggle(request, resort.pk)
+            assert resp.status_code == 429
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleSuccess:
+    """Toggling creates then deletes the (user, resort) Favourite."""
+
+    @override_flag("favourites", active=True)
+    def test_toggle_creates_then_deletes(self, client: Client) -> None:
+        """First POST creates a Favourite; second POST deletes it."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            name="Verbier", region=region, latitude=46.1, longitude=7.4
+        )
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            first = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+            assert first.status_code == 200
+            assert Favourite.objects.filter(user=user, resort=resort).exists()
+            assert 'data-favourited="true"' in first.content.decode()
+
+            second = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+            assert second.status_code == 200
+            assert not Favourite.objects.filter(user=user, resort=resort).exists()
+            assert 'data-favourited="false"' in second.content.decode()
+
+
+@pytest.mark.django_db
+class TestFavouriteResortToggleCap:
+    """Reaching the per-user cap renders the limit-reached partial at 409."""
+
+    @override_flag("favourites", active=True)
+    def test_cap_reached_returns_409_with_limit_partial(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The toggle endpoint shares the same 409-at-cap contract when creating."""
+        settings.FAVOURITES_MAX_PER_USER = 1
+        user = UserFactory.create()
+        client.force_login(user)
+        _create_via_service(user)
+
+        resort = ResortFactory.create(latitude=47.0, longitude=8.0)
+        point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        with patch("favourites.services.resolve_forecast_point", return_value=point):
+            response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
 
         assert response.status_code == 409
         assert Favourite.objects.filter(user=user).count() == 1

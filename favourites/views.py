@@ -10,6 +10,13 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourite_create_from_resort`` (POST) — SNOW-499: creates a Favourite
   from a public ``regions.Resort`` (the resort-pin popup's star), returns
   the same saved-pin partial as ``favourite_create``.
+- ``favourite_resort_toggle`` (POST) — SNOW-504: a simple, online-only
+  toggle of the ``(user, resort)`` Favourite for the resort detail page's
+  favourite button — creates via ``create_resort_favourite`` if absent,
+  else deletes; returns the button partial in its new state. Deliberately
+  a second, simpler code path from ``favourite_create_from_resort`` — no
+  client mutation-queue / offline handling, since the resort page has no
+  offline affordance to protect.
 - ``favourite_rename`` (POST) — owner-checked rename of an existing
   Favourite, returns the updated partial.
 - ``favourite_delete`` (POST) — owner-checked deletion of a Favourite.
@@ -23,7 +30,7 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All seven are:
+All eight are:
   - flag-gated on ``favourites`` (404 when inactive);
   - authentication-gated (403 for anonymous users).
 
@@ -51,6 +58,7 @@ from uuid import UUID
 import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
@@ -426,6 +434,96 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
         request,
         "favourites/partials/_favourite.html",
         {"favourite": favourite},
+    )
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate="10/m", block=False)
+def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpResponse:
+    """Toggle the requesting user's Favourite for a resort; return the button partial.
+
+    Entry point is the resort detail page's favourite button
+    (``favourites/templates/favourites/partials/_resort_favourite_button.html``,
+    included by ``public/templates/public/resort.html``) — a simple, online
+    HTMX toggle (SNOW-504), deliberately distinct from the map's offline-
+    capable resort star (``favourite_create_from_resort`` / ``favourite_delete``,
+    driven by ``static/js/favourites.js``'s client mutation queue): the
+    resort page has no offline affordance to protect, and the map star's
+    create URL is read off the map element so it can't be reused verbatim
+    here.
+
+    When the user already holds a ``(user, resort)`` Favourite it is
+    deleted; otherwise one is created via ``create_resort_favourite``.
+    Either way the response is the button partial rendered in its NEW
+    state, which HTMX swaps in with ``hx-swap="outerHTML"``.
+
+    Errors:
+        403 — anonymous request.
+        400 — non-HTMX request.
+        404 — ``favourites`` flag inactive, or unknown ``resort_id``.
+        409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
+        422 — the resort has no latitude/longitude set (can't be favourited).
+        429 — rate limit exceeded (> 10 toggles/min per user).
+
+    Args:
+        request: The incoming HTMX POST request.
+        resort_id: The Resort's primary key, from the URL.
+
+    Returns:
+        The rendered favourite-button partial in its new state, or an
+        error response.
+
+    """
+    _require_favourites_flag(request)
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before toggling this favourite.",
+            status=429,
+        )
+
+    try:
+        resort = Resort.objects.select_related("region").get(pk=resort_id)
+    except Resort.DoesNotExist:
+        return HttpResponse("Resort not found.", status=404)
+
+    existing = Favourite.objects.filter(user=request.user, resort=resort).first()
+    if existing is not None:
+        existing.delete()
+        logger.info(
+            "Resort favourite deleted via toggle: user=%s resort=%s",
+            request.user.pk,
+            resort.pk,
+        )
+        favourited = False
+    else:
+        try:
+            create_resort_favourite(request.user, resort)
+        except FavouriteLimitReached:
+            logger.info(
+                "Resort favourite toggle blocked: user=%s hit the cap",
+                request.user.pk,
+            )
+            return render(
+                request, "favourites/partials/_favourite_limit.html", {}, status=409
+            )
+        except ResortNotGeocoded:
+            return HttpResponse("This resort has no location set yet.", status=422)
+        favourited = True
+
+    return render(
+        request,
+        "favourites/partials/_resort_favourite_button.html",
+        {
+            "resort": resort,
+            "favourited": favourited,
+            "can_favourite": True,
+            "signin_url": reverse("accounts:sign_in"),
+        },
     )
 
 
