@@ -10,18 +10,26 @@ Covers ``public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
   - An unknown resort_id returns 404.
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
+  - Distance-scoped field observations (SNOW-508): point-local when the
+    resort has coordinates, region-wide fallback when it doesn't, hidden
+    when the ``field_observations`` flag is inactive, and empty-state copy
+    when nothing is nearby.
 """
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
 from tests.factories import (
     FavouriteFactory,
+    FieldObservationFactory,
     ForecastPointFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -231,3 +239,92 @@ class TestResortDetailUrl:
             "public:resort", kwargs={"resort_id": resort.pk, "slug": "verbier"}
         )
         assert url == f"/resorts/{resort.pk}/verbier/"
+
+
+@pytest.mark.django_db
+class TestResortDetailLocalObservations:
+    """Distance-scoped field-observation panel (SNOW-508)."""
+
+    def _today_at_noon(self) -> datetime.datetime:
+        """Return a tz-aware datetime for noon today."""
+        today = timezone.localdate()
+        return datetime.datetime(
+            today.year, today.month, today.day, 12, 0, tzinfo=datetime.UTC
+        )
+
+    @override_flag("field_observations", active=True)
+    def test_point_local_scope_when_resort_has_coords(self) -> None:
+        """A geocoded resort shows the point-local heading and its own count."""
+        resort = ResortFactory.create(geocoded=True)  # (46.1, 7.4)
+        FieldObservationFactory.create(
+            latitude=resort.latitude,
+            longitude=resort.longitude,
+            observed_at=self._today_at_noon(),
+            observation_type="WHUMPFING",
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "Reported nearby" in content
+        assert "Reported in this region" not in content
+        assert "Whumpfing" in content
+
+    @override_flag("field_observations", active=True)
+    def test_region_wide_fallback_when_coords_null(self) -> None:
+        """A resort with no coordinates falls back to the region-wide count."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, latitude=None, longitude=None)
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._today_at_noon(),
+            observation_type="PINWHEELS",
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "Reported in this region" in content
+        assert "Reported nearby" not in content
+        assert "Pinwheels" in content
+
+    def test_panel_hidden_when_flag_inactive(self) -> None:
+        """The panel is absent entirely when field_observations is off."""
+        resort = ResortFactory.create(geocoded=True)
+        FieldObservationFactory.create(
+            latitude=resort.latitude,
+            longitude=resort.longitude,
+            observed_at=self._today_at_noon(),
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'id="obs-counts-heading"' not in content
+
+    @override_flag("field_observations", active=True)
+    def test_empty_state_point_local(self) -> None:
+        """A geocoded resort with nothing nearby shows the point empty-state copy."""
+        resort = ResortFactory.create(geocoded=True)
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "Reported nearby" in content
+        assert "No reports near here today." in content
+
+    @override_flag("field_observations", active=True)
+    def test_empty_state_region_wide(self) -> None:
+        """A coord-null resort with nothing in-region shows the region empty-state copy."""
+        resort = ResortFactory.create(latitude=None, longitude=None)
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "Reported in this region" in content
+        assert "No reports in this region today." in content
