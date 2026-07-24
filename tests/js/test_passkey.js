@@ -81,6 +81,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Only resets the conditional half of the module's state. There is no
+  // equivalent reset for `_explicitInFlight` — each test below drives any
+  // explicit ceremony it starts to completion (resolving or rejecting its
+  // mocked get() call) so the module's try/finally clears the flag itself.
+  // A future test that leaves an explicit ceremony pending without settling
+  // it would leak `_explicitInFlight = true` into later tests and silently
+  // no-op their startConditionalSignIn()/signInWithPasskey() calls.
   window.Passkey.abortConditionalSignIn();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -205,5 +212,34 @@ describe('signInWithPasskey() vs a pending conditional ceremony', () => {
     conditionalGetDeferred.reject(webauthnError('AbortError'));
     explicitGetDeferred.resolve(null);
     await Promise.allSettled([conditionalPromise, explicitPromise]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. startConditionalSignIn() yields to a running explicit ceremony.
+// ---------------------------------------------------------------------------
+
+describe('startConditionalSignIn() vs a running explicit ceremony', () => {
+  it('no-ops while an explicit sign-in is in flight', async () => {
+    fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+    const explicitGetDeferred = deferred();
+    navigator.credentials.get.mockReturnValue(explicitGetDeferred.promise);
+
+    const explicitPromise = window.Passkey.signInWithPasskey(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+    await flush(); // let the explicit ceremony reach navigator.credentials.get()
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(navigator.credentials.get).toHaveBeenCalledTimes(1);
+
+    window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+    await flush();
+
+    // No additional fetch/get beyond the explicit ceremony's own — the
+    // conditional start no-op'd immediately on the _explicitInFlight guard.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(navigator.credentials.get).toHaveBeenCalledTimes(1);
+
+    explicitGetDeferred.resolve(null); // let the explicit ceremony settle and clear _explicitInFlight
+    await explicitPromise;
   });
 });
