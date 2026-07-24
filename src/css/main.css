@@ -462,38 +462,44 @@
 /* Foreground (text) on the hero badge for each level — reuse the existing
    --color-eaws-*-fg tokens; no new tokens needed for levels 1–5. */
 
-/* —— Bulletin header panel ——————————————————
-   Unified panel carrying region/sub-region, date,
-   and weather. Bucket-coloured background preserves
-   the SNOW-98 day/night signal; a bg-black/35 overlay
-   in the markup normalises text contrast. Height is
-   content-driven (min-height in markup).
+/* —— Weather panel ———————————————————————————
+   Bucket-coloured background shared by every consumer
+   of includes/_weather_panel.html — the bulletin masthead
+   (includes/bulletin_header.html, <header class="bulletin-header
+   weather-bucket">) and the resort page's weather section
+   (public/templates/public/resort.html, <div class="weather-bucket
+   rounded-card">). Preserves the SNOW-98 day/night signal; a
+   bg-black/35 overlay in the markup normalises text contrast.
+   Height is content-driven (min-height in markup). SNOW-509
+   generalised this block off the bulletin-only `.bulletin-header`
+   hook onto `.weather-bucket` so both consumers share one set of
+   rules; `.bulletin-header` itself now carries no CSS of its own.
 
-   Usage in template (see includes/bulletin_header.html):
-     <header class="bulletin-header"
+   Usage in template (see includes/_weather_panel.html):
+     <header class="weather-bucket"
              data-weather-bucket="rain"
              data-time-of-day="day">…</header>
    ————————————————————————————————————————— */
 
-.bulletin-header {
+.weather-bucket {
   border-radius: var(--radius-card);
   background: var(--color-weather-fallback);   /* used when no snapshot is available */
 }
 
-.bulletin-header[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
-.bulletin-header[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
-.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
-.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
-.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
-.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
-.bulletin-header[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
-.bulletin-header[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
-.bulletin-header[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
-.bulletin-header[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
-.bulletin-header[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
-.bulletin-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
-.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
-.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
+.weather-bucket[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
+.weather-bucket[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
+.weather-bucket[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
+.weather-bucket[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
+.weather-bucket[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
+.weather-bucket[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
+.weather-bucket[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
+.weather-bucket[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
+.weather-bucket[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
+.weather-bucket[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
+.weather-bucket[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
+.weather-bucket[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
+.weather-bucket[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
+.weather-bucket[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
 
 
 /* —— Hero rating badge ——————————————————————

@@ -1,0 +1,181 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_weather_panel.html — shared weather-bucket panel (SNOW-509).
+
+Extracted from ``templates/includes/bulletin_header.html`` (SNOW-100/SNOW-98)
+so the bucket-coloured weather banner — hero icon, condition label,
+sunrise/sunset, optional region wayfinding — lives in exactly one place.
+Two consumers today:
+
+  * ``includes/bulletin_header.html`` — includes this partial with
+    ``panel_tag="header"``, the region ``<h1>``/subregion eyebrow, and the
+    share button. Its rendered output is unchanged by this extraction.
+  * ``public/templates/public/resort.html`` — includes this partial with no
+    region name (the resort page already has its own ``<h1>``) and no share
+    button, showing the *parent region's* ``WeatherSnapshot`` (SNOW-509,
+    product decision: Option 1 — no per-resort Open-Meteo fetches; point
+    weather stays a favourite-page feature).
+
+The bucket colour (SNOW-98) and the ``bg-black/50`` overlay that normalises
+text contrast are unconditional; the SNOW-161 layout-shift fix (an invisible
+64x64 icon placeholder standing in for the hero ``<img>`` when there is no
+snapshot) is preserved verbatim so the HTMX swap never shifts the text
+column sideways.
+
+Context:
+  weather_display     — dict from ``build_weather_display()``, or None.
+  weather_htmx_trigger — bool: emit the belt-and-braces ``hx-post`` retry
+                         when ``weather_display`` is None.
+  region_id            — EAWS micro-region id, used to build the retry URL.
+  page_date            — datetime.date rendered in the meta strip and used
+                         to build the retry URL.
+  htmx_variant         — bool: append ``?variant=panel`` to the retry URL so
+                         the endpoint re-renders this partial directly
+                         instead of the bulletin masthead. Omit (falsy) to
+                         get the masthead back — the bulletin header's case.
+  region_name          — display name for an optional ``<h1>``; the ``<h1>``
+                         (and its wrapping row) is omitted entirely when
+                         this is falsy.
+  subregion_name       — optional eyebrow line above the ``<h1>``.
+  show_share           — truthy to render the share button (bulletin only).
+  share_region         — object carrying ``region_id``, used on the share
+                         button's ``data-region-id`` attribute.
+  share_date           — date used on the share button's ``data-date``
+                         attribute.
+  panel_tag            — root element tag name. Defaults to ``div``; the
+                         bulletin masthead passes ``header``.
+  panel_extra_classes  — extra classes appended to the root element, after
+                         the shared ``weather-bucket relative overflow-hidden``
+                         set. The bulletin masthead passes
+                         ``bulletin-header mb-4``.
+  panel_testid         — ``data-testid`` on the root element. Defaults to
+                         ``weather-panel``.
+  testid_prefix        — prefix for child ``data-testid``s (``-hero-icon``,
+                         ``-subregion``, ``-region``, ``-meta``). Defaults
+                         to ``weather-panel``.
+{% endcomment %}
+<{{ panel_tag|default:"div" }}
+    class="weather-bucket relative overflow-hidden{% if panel_extra_classes %} {{ panel_extra_classes }}{% endif %}"
+    {% if weather_display %}
+        data-weather-bucket="{{ weather_display.bucket }}"
+        data-time-of-day="{{ weather_display.time_of_day }}"
+        data-weather-code="{{ weather_display.weather.weather_code }}"
+    {% else %}
+        data-weather-bucket="none"
+        {% if weather_htmx_trigger %}
+            hx-post="{% url 'public:weather_snippet' region_id=region_id date_str=page_date|date:'Y-m-d' %}{% if htmx_variant %}?variant=panel{% endif %}"
+            hx-trigger="load"
+            hx-swap="outerHTML"
+            hx-target="this"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        {% endif %}
+    {% endif %}
+    data-testid="{{ panel_testid|default:'weather-panel' }}"
+>
+    {# Dark overlay normalises text contrast across all bucket × time-of-day combinations. #}
+    <div class="absolute inset-0 bg-black/50" aria-hidden="true"></div>
+
+    {# Share button — top-right slot. Only rendered when a bulletin exists   #}
+    {# (empty-state pages and the resort panel have no URL to share).       #}
+    {% if show_share %}
+        {# p-2.5 expands the hit area to ≥44×44pt around the 20×20 SVG icon (WCAG 2.5.5). #}
+        {# -m-2.5 pulls the visual padding back so the visible footprint is unchanged.     #}
+        <button
+            type="button"
+            class="absolute top-3 right-3 z-10 p-2.5 -m-2.5 text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+            data-bulletin-share-button
+            data-testid="bulletin-share-button"
+            data-region-id="{{ share_region.region_id }}"
+            data-date="{{ share_date|date:'Y-m-d' }}"
+            aria-label="Share bulletin"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                {# Heroicons arrow-up-on-square outline #}
+                <path d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15" />
+                <path d="M12 3v13.5m0-13.5-3 3m3-3 3 3" />
+            </svg>
+        </button>
+    {% endif %}
+    <div class="relative flex items-center gap-3 pl-2 py-4 min-h-[112px]">
+        {% if weather_display %}
+            <img
+                src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
+                class="w-16 h-16 flex-shrink-0"
+                alt=""
+                data-testid="{{ testid_prefix|default:'weather-panel' }}-hero-icon"
+            >
+        {% else %}
+            <div class="w-16 h-16 flex-shrink-0" aria-hidden="true"></div>
+        {% endif %}
+        <div class="flex-1 min-w-0 text-white">
+            {% if subregion_name %}
+                <p
+                    class="text-xs font-mono uppercase tracking-widest text-white leading-snug"
+                    data-testid="{{ testid_prefix|default:'weather-panel' }}-subregion"
+                >
+                    {{ subregion_name }}
+                </p>
+            {% endif %}
+            {% if region_name %}
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h1
+                        class="text-2xl font-bold leading-tight tracking-tight text-balance"
+                        data-testid="{{ testid_prefix|default:'weather-panel' }}-region"
+                    >
+                        {{ region_name }}
+                    </h1>
+                </div>
+            {% endif %}
+            <div
+                class="text-xs text-white mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
+                data-testid="{{ testid_prefix|default:'weather-panel' }}-meta"
+            >
+                <span>{{ page_date|date:"D j M" }}</span>
+                {% if weather_display %}
+                    <span aria-hidden="true">·</span>
+                    {# Sunrise + sunset are a single inline-flex group so they wrap   #}
+                    {# together to a new line rather than separately when the meta    #}
+                    {# strip overflows. The parent flex-wrap row's gap-x-2 separates  #}
+                    {# the group visually from the condition label.                   #}
+                    <span class="inline-flex items-center gap-x-1">
+                        <img
+                            src="{% static 'icons/weather/sunrise.svg' %}"
+                            class="w-4 h-4"
+                            alt=""
+                            title="{% trans 'Sunrise' %}"
+                        >
+                        {# sr-only labels carry the semantic meaning for screen   #}
+                        {# readers; the icon's ``alt=""`` keeps it decorative and #}
+                        {# the visible time string stays a bare number.            #}
+                        <span class="sr-only">{% trans "Sunrise" %}</span>
+                        <span>{{ weather_display.sunrise_local }}</span>
+                        <span aria-hidden="true">-</span>
+                        <span class="inline-flex items-center gap-x-1">
+                            {% comment ignore icon to give more space %}
+                            <img
+                                src="{% static 'icons/weather/sunset.svg' %}"
+                                class="w-4 h-4"
+                                alt=""
+                                title="{% trans 'Sunset' %}"
+                            >
+                            <span class="sr-only">{% trans "Sunset" %}</span> {% endcomment %}
+                            <span>{{ weather_display.sunset_local }}</span>
+                        </span>
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{{ weather_display.condition_label }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</{{ panel_tag|default:"div" }}>

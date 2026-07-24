@@ -63,6 +63,7 @@ from public._component_fixtures import (
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
+    WEATHER_PANEL_VARIANTS,
 )
 
 
@@ -688,6 +689,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/bulletin_header.html",
         variants=WEATHER_HEADER_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="weather-panel",
+        label="Weather panel",
+        description=(
+            "Shared weather-bucket panel (SNOW-509) extracted from the "
+            "bulletin masthead — rendered here without the region H1 or "
+            "share button, the shape the resort page consumes to show the "
+            "parent region's weather."
+        ),
+        kind="components",
+        partial="includes/_weather_panel.html",
+        variants=WEATHER_PANEL_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(

@@ -214,6 +214,54 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
 WEATHER_HEADER_VARIANTS: tuple[dict[str, Any], ...] = _build_weather_header_variants()
 
 
+def _build_weather_panel_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-panel variant matrix (SNOW-509).
+
+    Mirrors ``_build_weather_header_variants``'s bucket × day/night grid
+    plus the no-snapshot fallback, but panel-shaped: ``region_name=""``
+    (no ``<h1>``) so the library shows the resort-page surface — the shape
+    ``includes/_weather_panel.html`` renders for
+    ``public/templates/public/resort.html``, not the bulletin masthead's
+    region-wayfinding variant (already covered by ``WEATHER_HEADER_VARIANTS``).
+    No hero-badge grid here — ``morning_rating`` is bulletin-only context.
+    """
+    today = datetime.date(2026, 2, 14)  # mid-season, deterministic
+
+    entries: list[dict[str, Any]] = []
+    for icon_bucket in WEATHER_ICON_BUCKETS:
+        code = _sample_code_for_bucket(icon_bucket)
+        bucket_label = _ICON_BUCKET_LABEL[icon_bucket]
+        for time_of_day in ("day", "night"):
+            entries.append(
+                {
+                    "caption": f"{bucket_label} · {time_of_day}",
+                    "context": {
+                        "weather_display": synthetic_weather_display(code, time_of_day),
+                        "region_name": "",
+                        "subregion_name": "",
+                        "page_date": today,
+                    },
+                }
+            )
+
+    entries.append(
+        {
+            "caption": "No snapshot · fallback",
+            "context": {
+                "weather_display": None,
+                "region_name": "",
+                "subregion_name": "",
+                "page_date": today,
+            },
+            "solo": True,
+        }
+    )
+    return tuple(entries)
+
+
+WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_weather_panel_variants()
+
+
 # Day-windows panel (SNOW-107) ---------------------------------------------
 # Mirrors the dict shape produced by ``_build_day_windows`` in
 # ``public/views.py``. Labels and numbers below mirror ``_DANGER_PANEL_META``

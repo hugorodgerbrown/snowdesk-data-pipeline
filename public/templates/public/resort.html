@@ -16,7 +16,13 @@ Sections, top to bottom:
      parent region's evergreen bulletin page.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Field-observation counts (SNOW-508) — point-local, scoped to
+  4. Weather (SNOW-509) — the parent region's ``WeatherSnapshot``, via the
+     shared ``includes/_weather_panel.html`` partial (no region ``<h1>``, no
+     share button; this page already has its own resort ``<h1>``). Product
+     decision: Option 1 — no per-resort Open-Meteo fetch; point weather
+     stays a favourite-page feature. See
+     ``docs/decisions/resort-page-weather-shows-region-snapshot.md``.
+  5. Field-observation counts (SNOW-508) — point-local, scoped to
      ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
      coordinates, falling back to the region-wide count (the ``bulletin.html``
      pattern) when the resort has no coordinates.
@@ -28,6 +34,8 @@ Context expected (built by ``public.views.resort_detail``):
   resort                        — regions.Resort instance.
   region                        — regions.MicroRegion instance (resort.region,
                                    select_related region).
+  region_id                     — str: region.region_id, for the weather
+                                   panel's HTMX retry URL.
   day_rating                    — bulletins.RegionDayRating for today, or None.
   target_date                   — datetime.date: today.
   bulletin_url                  — str: the region's evergreen bulletin URL.
@@ -39,6 +47,12 @@ Context expected (built by ``public.views.resort_detail``):
                                    visible / scope ("point"|"region") /
                                    counts (list[(label, count)]).
   observation_has_user_located  — bool.
+  weather_display                — dict from ``build_weather_display()``, or
+                                   None (region's ``WeatherSnapshot`` for
+                                   ``target_date``).
+  weather_htmx_trigger           — bool: True when ``weather_display`` is
+                                   None, so the panel fires the
+                                   belt-and-braces HTMX retry.
 {% endcomment %}
 {% load i18n snowdesk_time %}
 
@@ -89,6 +103,11 @@ Context expected (built by ``public.views.resort_detail``):
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
         </div>
+
+        {# ── Weather (SNOW-509) — parent region's WeatherSnapshot ── #}
+        <section data-testid="resort-weather-section">
+            {% include "includes/_weather_panel.html" with weather_display=weather_display weather_htmx_trigger=weather_htmx_trigger region_id=region_id page_date=target_date htmx_variant=True region_name="" subregion_name="" panel_testid="resort-weather" testid_prefix="resort-weather" panel_extra_classes="rounded-card mb-4" %}
+        </section>
 
         {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
         {% if local_observations.visible %}

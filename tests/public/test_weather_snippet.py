@@ -306,6 +306,67 @@ class TestFetchWeatherSnippetExistingSnapshot:
 
 
 # ---------------------------------------------------------------------------
+# Panel variant (SNOW-509) — resort page's belt-and-braces retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherSnippetPanelVariant:
+    """``?variant=panel`` returns the bare ``_weather_panel.html`` fragment."""
+
+    def test_panel_variant_returns_weather_panel_fragment(self) -> None:
+        """``?variant=panel`` renders the panel, not the bulletin masthead."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=today,
+            weather_code=0,  # clear sky
+        )
+
+        client = Client()
+        url = _weather_url(region.region_id.lower(), today.isoformat()) + (
+            "?variant=panel"
+        )
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
+        template_names = [t.name for t in response.templates]
+        assert "includes/_weather_panel.html" in template_names
+        assert "includes/bulletin_header.html" not in template_names
+        content = response.content.decode()
+        assert 'data-testid="resort-weather"' in content
+        assert 'data-testid="resort-weather-hero-icon"' in content
+        # No region <h1> — the panel variant is used by the resort page,
+        # which supplies its own <h1>.
+        assert 'data-testid="resort-weather-region"' not in content
+        # weather_htmx_trigger is always False in the snippet response, so
+        # the panel does not re-fire the retry it was rendered from.
+        assert "hx-post" not in content
+
+    def test_default_variant_still_returns_masthead(self) -> None:
+        """Omitting ``variant`` still returns the bulletin masthead (unchanged)."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=today,
+            weather_code=0,
+        )
+
+        client = Client()
+        url = _weather_url(region.region_id.lower(), today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
+        template_names = [t.name for t in response.templates]
+        assert "includes/bulletin_header.html" in template_names
+        content = response.content.decode()
+        assert 'data-testid="bulletin-header"' in content
+        assert 'data-testid="bulletin-header-region"' in content
+
+
+# ---------------------------------------------------------------------------
 # Failure path
 # ---------------------------------------------------------------------------
 
