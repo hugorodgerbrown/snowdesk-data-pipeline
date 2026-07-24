@@ -86,6 +86,7 @@ class TestDumpResortsFixture:
                 region=region,
                 latitude=46.0,
                 longitude=7.0,
+                operator_name="Téléverbier",
             )
             call_command("dump_resorts_fixture", "--commit", verbosity=0)
 
@@ -99,5 +100,7 @@ class TestDumpResortsFixture:
             assert roundtrip.latitude == 46.0
             assert roundtrip.longitude == 7.0
             assert roundtrip.region.region_id == "CH-9999"
+            # Metadata fields (SNOW-500) survive the dump/loaddata round trip.
+            assert roundtrip.operator_name == "Téléverbier"
         finally:
             FIXTURE_PATH.write_text(original, encoding="utf-8")
