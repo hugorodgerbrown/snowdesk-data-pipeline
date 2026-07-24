@@ -28,10 +28,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default: every job gets a read-only token unless it
+# overrides this with a narrower/wider scope (SNOW-506).
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detect docs-only diff
     runs-on: ubuntu-latest
+    # The docs-only filter lists PR files via the REST API, which needs
+    # pull-requests:read on top of the default contents:read.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       # "true" unless this is a docs-only pull request; push and schedule
       # runs skip the filter step and fall through to "true".
@@ -72,7 +82,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
       - name: Install pip-audit
         run: pip install pip-audit
@@ -114,6 +124,12 @@ jobs:
   secrets:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
+    # gitleaks-action reads the PR commit range via the REST API on
+    # pull_request events, so it needs pull-requests:read alongside the
+    # checkout's contents:read.
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Check out the repository
@@ -124,6 +140,6 @@ jobs:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
