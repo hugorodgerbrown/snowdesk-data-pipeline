@@ -26,7 +26,7 @@ only the map-anchor affordance is skipped, and this page has none.
 Context expected (built by ``public.views.resort_detail``):
   resort                        — regions.Resort instance.
   region                        — regions.MicroRegion instance (resort.region,
-                                   select_related subregion__major).
+                                   select_related region).
   day_rating                    — bulletins.RegionDayRating for today, or None.
   target_date                   — datetime.date: today.
   bulletin_url                  — str: the region's evergreen bulletin URL.

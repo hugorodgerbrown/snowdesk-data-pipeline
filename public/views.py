@@ -3723,7 +3723,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region__subregion__major"),
+        Resort.objects.select_related("region"),
         pk=resort_id,
     )
 
