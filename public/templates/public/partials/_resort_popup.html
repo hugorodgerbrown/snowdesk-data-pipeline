@@ -16,7 +16,8 @@ Content:
   2. Parent region name.
   3. Either the favourite/unfavourite star (``can_favourite``) or a
      sign-in CTA.
-  4. "View bulletin" CTA linking to the region's evergreen bulletin page.
+  4. "View resort →" CTA linking to the resort's own page (SNOW-504) — the
+     bulletin link itself now lives on that page rather than in the popup.
 
 Context variables expected:
   resort         — regions.Resort instance.
@@ -28,7 +29,7 @@ Context variables expected:
   can_favourite  — bool: True when the ``favourites`` flag is active AND the
                    requesting user is authenticated.
   signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
-  bulletin_url   — str: URL to the region's evergreen bulletin page.
+  resort_url     — str: URL to the resort's own page (SNOW-504).
 {% endcomment %}
 <div class="flex flex-col gap-2" data-testid="resort-popup" data-resort-id="{{ resort.pk }}">
     <div>
@@ -66,5 +67,5 @@ Context variables expected:
             {% trans "Sign in to save this resort" %}
         </a>
     {% endif %}
-    {% include "includes/_button.html" with label=_("View bulletin →") href=bulletin_url variant="secondary" size="compact" %}
+    {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" size="compact" %}
 </div>

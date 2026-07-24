@@ -822,15 +822,19 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     ``maplibregl.Popup`` on ``/map/`` when a resort pin is tapped (SNOW-499),
     mirroring ``region_summary``'s ``{"html": ...}`` shape. Content: resort
     name (+ alternative name), parent region name, a favourite/unfavourite
-    star, and a "View bulletin" link.
+    star, and a "View resort →" link.
 
     Unlike ``region_summary``, this endpoint is **public** — resorts are a
     public reference layer, so anonymous visitors see the same name/region/
-    bulletin-link content everyone else does. Only the favourite star is
+    resort-link content everyone else does. Only the favourite star is
     gated: it renders (with the correct favourited state + the existing
     favourite's uuid, for unfavourite) when the ``favourites`` waffle flag is
     active AND the requester is authenticated; otherwise the popup shows a
     sign-in CTA in its place (``can_favourite=False``).
+
+    SNOW-504: the CTA now reads "View resort →" and links to the resort's
+    own page (``resort.get_absolute_url()``) rather than straight to the
+    region bulletin — the bulletin link now lives on that page instead.
 
     Deliberately **not** cached (unlike ``resorts_geojson``) — the
     favourited state is per-user, so caching this response would leak one
@@ -861,8 +865,6 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
-    bulletin_url = resort.region.get_absolute_url()
-
     response = JsonResponse(
         {
             "html": render_to_string(
@@ -874,7 +876,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
                     "favourite_uuid": str(favourite.uuid) if favourite else "",
                     "can_favourite": can_favourite,
                     "signin_url": reverse("accounts:sign_in"),
-                    "bulletin_url": bulletin_url,
+                    "resort_url": resort.get_absolute_url(),
                 },
                 request=request,
             ),
