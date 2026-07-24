@@ -738,8 +738,7 @@ reachable via the SNOW-81 deep-link in the masthead.
            (SNOW-504). Reverse FK (Resort.region → MicroRegion.resorts),
            alphabetical per Resort.Meta.ordering. Hidden when the region
            has no fixture-seeded resorts. Shares the "Adjoining regions"
-           list pattern above — SNOW-507's "Your favourites here" section
-           will reuse it too.
+           list pattern above.
         {% endcomment %}
         {% if resorts_in_region %}
             <section
@@ -761,6 +760,44 @@ reachable via the SNOW-81 deep-link in the masthead.
                                 href="{{ resort.get_absolute_url }}"
                             >
                                 {{ resort.name }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
+        {% comment %}
+           Your favourites here — cross-link to each of the signed-in
+           user's own favourites in this region, and on to their own page
+           (SNOW-507). Hidden for anonymous users and when the user has no
+           favourites resolved to this region. Shares the "Adjoining
+           regions" / "Resorts in this region" list pattern above.
+        {% endcomment %}
+        {% if favourites_in_region %}
+            <section
+                class="mt-8 pt-4 border-t border-border"
+                data-testid="favourites-in-region"
+                aria-labelledby="favourites-in-region-heading"
+            >
+                <h2
+                    id="favourites-in-region-heading"
+                    class="font-mono uppercase tracking-wider text-meta text-text-3 mb-2"
+                >
+                    {% trans "Your favourites here" %}
+                </h2>
+                <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    {% for favourite in favourites_in_region %}
+                        <li>
+                            <a
+                                class="text-text-2 underline hover:text-text-1"
+                                href="{% url 'favourites:detail' favourite.uuid %}"
+                            >
+                                {% if favourite.name %}
+                                    {{ favourite.name }}
+                                {% else %}
+                                    {{ favourite.latitude|floatformat:3 }}, {{ favourite.longitude|floatformat:3 }}
+                                {% endif %}
                             </a>
                         </li>
                     {% endfor %}
