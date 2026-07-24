@@ -185,3 +185,16 @@ class TestDefaultShellSources:
         sources = sw_shell._default_shell_sources()
 
         assert new_module in sources
+
+
+class TestRepoRelative:
+    """Tests for _repo_relative()'s outside-REPO_ROOT fallback."""
+
+    def test_falls_back_to_posix_form_outside_repo_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A path outside REPO_ROOT returns its own POSIX form, not an error."""
+        monkeypatch.setattr(sw_shell, "REPO_ROOT", tmp_path / "elsewhere")
+        outside_path = tmp_path / "not_under_repo_root.js"
+
+        assert sw_shell._repo_relative(outside_path) == outside_path.as_posix()
