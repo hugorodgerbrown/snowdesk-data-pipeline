@@ -2,7 +2,8 @@
 tests/regions/models/test_resort.py — Tests for the Resort model.
 
 Covers model creation, ordering, string representation, cascade
-deletion, natural key support on MicroRegion, and fixture loading.
+deletion, natural key support on MicroRegion, fixture loading, and the
+SNOW-504 resort-page URL helpers (``name_slug`` / ``get_absolute_url``).
 """
 
 import pytest
@@ -21,6 +22,32 @@ class TestResortModel:
         """String representation includes the resort name and region_id."""
         resort = ResortFactory.create(name="Zermatt")
         assert str(resort) == f"Zermatt ({resort.region.region_id})"
+
+    def test_str_delegates_to_to_string(self) -> None:
+        """__str__ returns the same value as to_string()."""
+        resort = ResortFactory.create(name="Zermatt")
+        assert str(resort) == resort.to_string()
+
+    def test_to_string_returns_name_and_region_id(self) -> None:
+        """to_string() includes the resort name and region_id."""
+        resort = ResortFactory.create(name="Zermatt")
+        assert resort.to_string() == f"Zermatt ({resort.region.region_id})"
+
+    def test_name_slug_is_slugified_name(self) -> None:
+        """name_slug is the slugified resort name (SNOW-504)."""
+        resort = ResortFactory.create(name="Crans-Montana")
+        assert resort.name_slug == "crans-montana"
+
+    def test_name_slug_reflects_current_name(self) -> None:
+        """name_slug is derived live from name, not cached at creation."""
+        resort = ResortFactory.create(name="Old Name")
+        resort.name = "New Name"
+        assert resort.name_slug == "new-name"
+
+    def test_get_absolute_url_returns_resort_page_url(self) -> None:
+        """get_absolute_url() builds /resorts/<id>/<slug>/ (SNOW-504)."""
+        resort = ResortFactory.create(name="Verbier")
+        assert resort.get_absolute_url() == f"/resorts/{resort.pk}/verbier/"
 
     def test_default_ordering_is_by_name(self) -> None:
         """Resorts are ordered alphabetically by name."""

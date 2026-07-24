@@ -652,4 +652,30 @@ class Resort(BaseModel):
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return a concise canonical string (name + region_id)."""
         return f"{self.name} ({self.region.region_id})"
+
+    @property
+    def name_slug(self) -> str:
+        """Slugified resort name for the resort-page URL's second path component.
+
+        Mirrors ``MicroRegion.name_slug`` — re-derived from ``self.name`` on
+        every access rather than stored, so an edited resort name is
+        reflected immediately without a migration/backfill step.
+        """
+        return slugify(self.name)
+
+    def get_absolute_url(self) -> str:
+        """Return the canonical resort-page URL (SNOW-504).
+
+        Mirrors ``MicroRegion.get_absolute_url`` — ``/resorts/<id>/<slug>/``,
+        always the primary key plus the name-derived slug, so callers and
+        search engines see a single canonical URL per resort.
+        """
+        return reverse(
+            "public:resort",
+            kwargs={"resort_id": self.pk, "slug": self.name_slug},
+        )
