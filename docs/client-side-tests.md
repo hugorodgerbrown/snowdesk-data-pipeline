@@ -283,6 +283,12 @@ every push to `main`, triggered by changes to `**/*.py`, `**/*.html`,
 The Playwright binary cache is keyed on `uv.lock` so cache hits are
 common (the binary version is tied to the `playwright` package).
 
+`tox -e e2e` also runs with `--reruns 2 --reruns-delay 1`
+(pytest-rerunfailures, `e2e` dependency group only) — a bounded automatic
+retry net for the real-SW/CacheStorage timing flakes that can't be made
+fully deterministic (SNOW-516). The unit `test` env deliberately has no
+rerun behaviour, so its determinism is preserved.
+
 ---
 
 ## Known limitations
