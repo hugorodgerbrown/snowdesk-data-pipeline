@@ -1548,6 +1548,35 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
     return ctx
 
 
+def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
+    """Map raw ``OBSERVATION_TYPE`` counts to sorted, human-readable pairs.
+
+    Shared by ``_get_observation_counts`` (region-wide) and
+    ``_get_local_observation_counts`` (SNOW-508, point-local) so the
+    key→label mapping lives in exactly one place.
+
+    Args:
+        raw: Mapping from ``OBSERVATION_TYPE`` value string to count, as
+            returned by ``counts_for_region_day`` / ``counts_near_point_for_day``.
+
+    Returns:
+        List of ``(label, count)`` pairs sorted by label, where ``label`` is
+        the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
+        An unrecognised key falls back to a title-cased rendering rather than
+        raising, so a future observation type doesn't break the page.
+
+    """
+    result: list[tuple[str, int]] = []
+    for key, count in raw.items():
+        try:
+            label = FieldObservation.OBSERVATION_TYPE(key).label
+        except ValueError:
+            label = key.replace("_", " ").title()
+        result.append((label, count))
+    result.sort(key=lambda pair: pair[0])
+    return result
+
+
 def _get_observation_counts(
     request: HttpRequest,
     region: "MicroRegion",
@@ -1575,15 +1604,67 @@ def _get_observation_counts(
     from observations.models import FieldObservation  # noqa: PLC0415
 
     raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
-    result: list[tuple[str, int]] = []
-    for key, count in raw.items():
-        try:
-            label = FieldObservation.OBSERVATION_TYPE(key).label
-        except ValueError:
-            label = key.replace("_", " ").title()
-        result.append((label, count))
-    result.sort(key=lambda pair: pair[0])
-    return result
+    return _labelled_counts(raw)
+
+
+@dataclasses.dataclass(frozen=True)
+class LocalObservationResult:
+    """Structured result for a distance-scoped field-observation lookup.
+
+    Distinguishes "checked, nothing nearby" (``visible=True``, empty
+    ``counts``) from "feature off" (``visible=False``) so the template can
+    render the correct empty-state copy rather than silently omitting the
+    panel. ``scope`` tells the template which heading/empty-state copy to
+    use: ``"point"`` when coordinates were available for a point-local
+    query, ``"region"`` when falling back to the region-wide count.
+
+    """
+
+    visible: bool
+    scope: str
+    counts: "list[tuple[str, int]]"
+
+
+def _get_local_observation_counts(
+    request: HttpRequest,
+    resort: "Resort",
+    day: datetime.date,
+) -> LocalObservationResult:
+    """Return a distance-scoped field-observation result for a resort page.
+
+    Point-local when the resort has both coordinates (SNOW-508); falls back
+    to the existing region-wide count (``counts_for_region_day``) when the
+    resort's coordinates are null. Returns ``visible=False`` when the
+    ``field_observations`` flag is inactive, so the caller can hide the
+    panel entirely rather than show an empty one.
+
+    Args:
+        request: The current HTTP request (used for waffle flag lookup).
+        resort: The Resort to look up observations near.
+        day: The calendar day to count observations on.
+
+    Returns:
+        A ``LocalObservationResult`` — see its docstring for field meanings.
+
+    """
+    if not waffle.flag_is_active(request, "field_observations"):
+        return LocalObservationResult(visible=False, scope="region", counts=[])
+
+    if resort.latitude is not None and resort.longitude is not None:
+        raw = FieldObservation.objects.counts_near_point_for_day(
+            resort.latitude,
+            resort.longitude,
+            settings.FIELD_OBSERVATION_RADIUS_KM,
+            day,
+        )
+        return LocalObservationResult(
+            visible=True, scope="point", counts=_labelled_counts(raw)
+        )
+
+    raw = FieldObservation.objects.counts_for_region_day(resort.region, day)
+    return LocalObservationResult(
+        visible=True, scope="region", counts=_labelled_counts(raw)
+    )
 
 
 def _get_observation_has_user_located(
@@ -3736,11 +3817,12 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     Reuses the context-building already proven by ``public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
     and by ``public.api.region_summary`` (today's ``RegionDayRating`` lookup
-    for the danger chip). Observation counts are region-wide, today-only —
-    the same honest placeholder the bulletin page uses until SNOW-508 adds
-    point-local observations; ``_get_observation_counts`` already
-    short-circuits to an empty list when the ``field_observations`` flag is
-    inactive, so no extra gating is needed here.
+    for the danger chip). Field-observation counts are point-local — scoped
+    to ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
+    coordinates (SNOW-508) — falling back to the region-wide count when the
+    resort has no coordinates; ``_get_local_observation_counts`` already
+    short-circuits to ``visible=False`` when the ``field_observations`` flag
+    is inactive, so no extra gating is needed here.
 
     Args:
         request: The incoming HTTP request.
@@ -3781,7 +3863,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
         "signin_url": reverse("accounts:sign_in"),
-        "observation_counts": _get_observation_counts(request, region, today),
+        "local_observations": _get_local_observation_counts(request, resort, today),
         "observation_has_user_located": _get_observation_has_user_located(
             request, region, today
         ),

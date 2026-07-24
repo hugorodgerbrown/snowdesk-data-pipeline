@@ -58,6 +58,11 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | `observations_page` | `superusers=True` | The `/observations/` page — a signed-in stream of the last 48h of `FieldObservation` rows (`public.views.observations_list`). Own reports always show; other users' reports show only when `community_reports` is also active for the viewer, with timestamps floored to the nearest 15 minutes. Separate flag so the page can ship independently of the map overlay. | SNOW-476. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 
+The resort page's `field_observations` panel is point-local, scoped to the
+configurable `FIELD_OBSERVATION_RADIUS_KM` setting (default 10 km) around
+the resort's own coordinates, with a region-wide fallback for resorts
+missing coordinates — no new flag (SNOW-508).
+
 Keep this table up to date as new flags land. The **source of truth for
 which flags exist** is `core/fixtures/waffle_flags.json` (SNOW-502) — the
 `sync_waffle_flags` management command reconciles the DB to that manifest
