@@ -112,6 +112,11 @@ Context expected (built by ``public.views.resort_detail``):
                             </li>
                         {% endfor %}
                     </ul>
+                    {% if observation_has_user_located %}
+                        <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
+                            {% trans "Some reports were placed manually" %}
+                        </p>
+                    {% endif %}
                 {% else %}
                     <p class="text-sm text-text-3" data-testid="resort-observations-empty">
                         {% if local_observations.scope == "point" %}
@@ -119,11 +124,6 @@ Context expected (built by ``public.views.resort_detail``):
                         {% else %}
                             {% trans "No reports in this region today." %}
                         {% endif %}
-                    </p>
-                {% endif %}
-                {% if observation_has_user_located %}
-                    <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
-                        {% trans "Some reports were placed manually" %}
                     </p>
                 {% endif %}
             </section>

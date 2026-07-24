@@ -27,6 +27,7 @@ from django.utils import timezone
 from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
+from observations.models import FieldObservation
 from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
@@ -328,3 +329,31 @@ class TestResortDetailLocalObservations:
         content = response.content.decode()
         assert "Reported in this region" in content
         assert "No reports in this region today." in content
+
+    @override_flag("field_observations", active=True)
+    def test_manual_footnote_absent_when_local_counts_are_empty(self) -> None:
+        """The 'placed manually' footnote never contradicts the empty state.
+
+        Regression: ``observation_has_user_located`` is a region-wide check
+        (FK match only, no distance filter) — a MANUAL report can exist
+        somewhere in the resort's region while sitting well outside the
+        point-local radius, leaving ``local_observations.counts`` empty. The
+        footnote must not render alongside the "no reports" empty state.
+        """
+        resort = ResortFactory.create(geocoded=True)  # (46.1, 7.4)
+        assert resort.latitude is not None
+        assert resort.longitude is not None
+        FieldObservationFactory.create(
+            region=resort.region,
+            latitude=resort.latitude + 1.0,  # ~111 km away — outside 10 km
+            longitude=resort.longitude,
+            observed_at=self._today_at_noon(),
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "No reports near here today." in content
+        assert "Some reports were placed manually" not in content
