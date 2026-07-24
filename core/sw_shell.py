@@ -26,6 +26,13 @@ normalising the ``CACHE_VERSION = '...'`` line out of ``sw.js`` before
 hashing it (replacing the value with a fixed placeholder), so a version
 bump alone never changes the computed hash. ``static/js/sw-shell.hash``
 itself is deliberately excluded from ``SHELL_SOURCES``.
+
+The hash is byte-exact and therefore line-ending-sensitive: it reads each
+shell source as raw bytes, so a checkout that rewrites LF to CRLF (Windows
+with ``git autocrlf=true`` and no ``.gitattributes`` pinning these files to
+LF) would compute a digest that diverges from one committed on macOS/Linux.
+The project runs on macOS + Render (Linux) today, so this is latent, not
+current — noted here so it is understood before it bites a new contributor.
 """
 
 from __future__ import annotations

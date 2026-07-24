@@ -70,13 +70,13 @@ def _write() -> int:
 
 def _check() -> int:
     """Exit 0 when in sync, 1 when the shell changed without a bump."""
+    current = read_cache_version()
     if not bump_owed():
-        print(f"In sync at {read_cache_version()}.")
+        print(f"In sync at {current}.")
         return 0
     print(
         "Shell sources changed without a CACHE_VERSION bump — run "
-        f"`bin/sw-version --write` (would bump to "
-        f"{next_version(read_cache_version())})."
+        f"`bin/sw-version --write` (would bump to {next_version(current)})."
     )
     return 1
 
