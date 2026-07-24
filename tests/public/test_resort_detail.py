@@ -14,6 +14,10 @@ Covers ``public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
     resort has coordinates, region-wide fallback when it doesn't, hidden
     when the ``field_observations`` flag is inactive, and empty-state copy
     when nothing is nearby.
+  - Weather (SNOW-509): the page shows the parent region's WeatherSnapshot
+    (never a per-resort forecast), falls back to the no-snapshot panel with
+    the ``?variant=panel`` HTMX retry when none exists, and renders
+    regardless of favourite/auth state or ``needs_review``/coordinate gaps.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from tests.factories import (
     RegionDayRatingFactory,
     ResortFactory,
     UserFactory,
+    WeatherSnapshotFactory,
 )
 
 
@@ -357,3 +362,125 @@ class TestResortDetailLocalObservations:
         content = response.content.decode()
         assert "No reports near here today." in content
         assert "Some reports were placed manually" not in content
+
+
+@pytest.mark.django_db
+class TestResortDetailWeather:
+    """The parent region's WeatherSnapshot renders on the resort page (SNOW-509).
+
+    Product decision (Option 1): the resort page shows the region's
+    snapshot — never a per-resort forecast — so no per-resort Open-Meteo
+    fetch happens here; point weather stays a favourite-page feature.
+    """
+
+    def test_snapshot_present_shows_region_weather(self) -> None:
+        """A WeatherSnapshot for the resort's region renders the populated panel."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,  # clear sky
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'data-testid="resort-weather-section"' in content
+        assert 'data-testid="resort-weather"' in content
+        assert 'data-weather-bucket="clear"' in content
+        assert 'data-testid="resort-weather-hero-icon"' in content
+        assert 'data-testid="resort-weather-meta"' in content
+        # No region <h1> inside the weather panel — the page's own resort
+        # <h1> is the only heading (SNOW-509: region_name="").
+        assert 'data-testid="resort-weather-region"' not in content
+
+    def test_no_snapshot_shows_fallback_and_panel_variant_trigger(self) -> None:
+        """No WeatherSnapshot → the panel falls back with the ?variant=panel retry."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        # Deliberately no WeatherSnapshot for this region.
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert response.context["weather_display"] is None
+        assert response.context["weather_htmx_trigger"] is True
+        content = response.content.decode()
+        assert 'data-testid="resort-weather"' in content
+        assert 'data-weather-bucket="none"' in content
+        assert "hx-post" in content
+        assert "?variant=panel" in content
+
+    def test_anonymous_visitor_sees_region_weather(self) -> None:
+        """An anonymous (non-favourited) visitor still sees the region weather."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=timezone.localdate(), weather_code=3
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert 'data-testid="resort-weather"' in response.content.decode()
+
+    def test_favourited_visitor_sees_same_region_weather(self) -> None:
+        """A signed-in visitor who has favourited the resort sees the same panel."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=timezone.localdate(), weather_code=3
+        )
+        user = UserFactory.create()
+        FavouriteFactory.create(user=user, resort=resort)
+
+        client = Client()
+        client.force_login(user)
+        with override_flag("favourites", active=True):
+            response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'data-testid="resort-weather"' in content
+        assert 'data-weather-bucket="cloudy"' in content
+
+    def test_needs_review_resort_still_shows_weather(self) -> None:
+        """A needs_review resort still shows its region's weather."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, needs_review=True)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=timezone.localdate(), weather_code=0
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert 'data-testid="resort-weather"' in response.content.decode()
+
+    def test_no_coordinates_resort_still_shows_weather(self) -> None:
+        """A resort with no lat/lon still shows its (region-keyed) weather."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, latitude=None, longitude=None)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=timezone.localdate(), weather_code=0
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert 'data-testid="resort-weather"' in response.content.decode()
+
+    def test_snapshot_for_other_region_does_not_leak(self) -> None:
+        """A snapshot for a different region must not surface on this page."""
+        region = MicroRegionFactory.create()
+        other = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=other, valid_for_date=timezone.localdate(), weather_code=0
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert response.context["weather_display"] is None
