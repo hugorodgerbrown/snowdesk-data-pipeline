@@ -14,7 +14,8 @@ Covers the endpoints consumed by the /map/ page:
                                   English breadcrumb, date caption, and bulletin
                                   CTA (SNOW-174). Resort list removed.
 * ``api:resort_popup``          — SNOW-499: minimal resort-pin popup (name,
-                                  region, favourite star, bulletin link).
+                                  region, favourite star, "View resort →"
+                                  link to the resort's own page — SNOW-504).
                                   Public; the star is gated on the
                                   ``favourites`` flag + authentication.
 
@@ -741,6 +742,24 @@ def test_resort_popup_returns_html_for_known_resort() -> None:
     assert set(data.keys()) == {"html"}
     assert "Verbier" in data["html"]
     assert "Martigny" in data["html"]
+
+
+@pytest.mark.django_db
+def test_resort_popup_cta_links_to_resort_page() -> None:
+    """SNOW-504: the "View resort →" CTA links to the resort's own page."""
+    region = MicroRegionFactory.create(name="Martigny – Verbier")
+    resort = ResortFactory.create(
+        name="Verbier", region=region, latitude=46.1, longitude=7.4
+    )
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "View resort" in html
+    assert resort.get_absolute_url() in html
+    assert region.get_absolute_url() not in html
 
 
 @pytest.mark.django_db

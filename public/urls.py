@@ -10,6 +10,9 @@ URL structure:
                                                help page (SNOW-456).
   /observations/                                Signed-in stream of recent
                                                field observations (SNOW-476).
+  /resorts/<id>/<slug>/                         Resort detail page — danger
+                                               chip, bulletin link, favourite
+                                               toggle (SNOW-504).
   /examples/random/                            Renders a random bulletin inline
                                                using the canonical view.
   /examples/category/<danger_level>/           Renders a random bulletin matching
@@ -80,6 +83,15 @@ urlpatterns = [
     # generic <region_id:region_id>/ patterns so "observations" never
     # resolves as a region id.
     path("observations/", views.observations_list, name="observations"),
+    # Resort detail page (SNOW-504) — registered before the generic
+    # <region_id:region_id>/ patterns so "resorts" never resolves as a
+    # region id (though the RegionIdConverter regex already rejects it,
+    # since it requires a two-letter-country-code + digit prefix).
+    path(
+        "resorts/<int:resort_id>/<slug:slug>/",
+        views.resort_detail,
+        name="resort",
+    ),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(
