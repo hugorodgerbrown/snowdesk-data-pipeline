@@ -82,7 +82,12 @@ e2e = [
     # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
     # that can't be made fully deterministic (SNOW-516) — e2e-only, see
     # tox.ini's [testenv:e2e] and docs/client-side-tests.md.
-    "pytest-rerunfailures>=15,<16",
+    # Floor is >=16: 15.x predates pytest 9's fixture-finalizer internals, so
+    # a rerun of any test using a finalizer-bearing fixture (live_server, the
+    # pytest-playwright page/context) errored with `assert not self._finalizers`
+    # instead of retrying — the net never worked. 16.x requires pytest>=8.2 and
+    # handles the pytest 9 lifecycle.
+    "pytest-rerunfailures>=16,<17",
     {include-group = "test"},
 ]
 dev = [
