@@ -105,5 +105,5 @@ jobs:
 
       - name: Install tox and run js env
         run: |
-          pip install tox
+          pip install tox tox-uv
           tox -e js
