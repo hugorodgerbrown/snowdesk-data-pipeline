@@ -39,7 +39,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.13,<0.16",
+    # Pinned EXACT (not a range) so `uv lock --upgrade` can't silently float
+    # ruff ahead of the tox / pre-commit pins and re-drift CI. Bump this,
+    # tox.ini's fmt+lint deps, and .pre-commit-config.yaml's rev in lockstep
+    # (SNOW-512). See CODING_STANDARDS.md §6.5.
+    "ruff==0.16.0",
     "pre-commit>=4.2.0,<5",
     "django-stubs>=6.0.2,<7",
     "pytest>=9.0.3,<10",
@@ -123,6 +127,13 @@ line-length = 88
 # misleads the reader. ruff has never linted prose docs, so exclude Markdown
 # from ruff entirely rather than pinning ruff back (SNOW-506).
 extend-exclude = ["docs/research", "*.md"]
+# Extensionless Python scripts in bin/ (shebang `#!/usr/bin/env python`). ruff's
+# directory scan only discovers *.py by extension, so `ruff format/check .` in
+# tox+CI would skip these — but the pre-commit ruff hook (types: [python])
+# detects them by shebang and checks them. Listing them here keeps all three
+# surfaces on the same file set (SNOW-512). Add any new bin/ Python script here;
+# the other bin/ entries are shell scripts and must stay out.
+extend-include = ["bin/docs-lint", "bin/ds-lint"]
 
 [tool.ruff.lint]
 select = [

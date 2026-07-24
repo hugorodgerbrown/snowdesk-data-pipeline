@@ -434,9 +434,10 @@ catalogue and flag reference.
   `debug-statements`
 - `gitleaks` for committed secrets
 - Local `djangofmt` hook via `.venv/bin/djangofmt`
-- Local `mypy` hook via `.venv/bin/mypy core/ bulletins/ regions/
-  public/ accounts/ tests/ config/` (kept in sync with the
-  `tox -e mypy` target)
+- Local `mypy` hook via `.venv/bin/mypy …` — the target package list must
+  be **identical** to the `commands` in `tox.ini`'s `[testenv:mypy]`, so a
+  local commit can't pass while CI mypy fails on a package the hook skipped.
+  Change both together.
 
 Install with `uv run pre-commit install`. Do not bypass hooks with
 `--no-verify` — if a hook fails, fix the underlying issue and create a
@@ -467,6 +468,28 @@ Run the default suite locally with `tox` before pushing.
 - All ruff, mypy, pytest, coverage, django-stubs, and uv config lives in
   [pyproject.toml](pyproject.toml). There is no `mypy.ini`,
   `.ruff.toml`, or `pytest.ini` — don't create one.
+
+### 6.5 Tool-version pinning across surfaces
+
+The same tool runs on three surfaces — local pre-commit, local tox, and CI
+tox (CI just runs the same tox envs). A formatter or linter that floats to a
+newer version on one surface but not the others produces a "clean locally,
+red in CI" failure: SNOW-500 hit exactly this when an unpinned `ruff` in tox
+floated to a release whose formatter disagreed with the pinned pre-commit
+hook.
+
+To prevent it, `ruff` is pinned to an **exact** version (`==`, not a range)
+in all three places, and they are bumped **in lockstep**:
+
+- [.pre-commit-config.yaml](.pre-commit-config.yaml) — `ruff-pre-commit` `rev`
+- [tox.ini](tox.ini) — `[testenv:fmt]` and `[testenv:lint]` `deps`
+- [pyproject.toml](pyproject.toml) — the `dev` dependency group (which pins
+  `.venv/bin/ruff` via `uv.lock`)
+
+`djangofmt` follows the same rule: its `[testenv:djangofmt]` pin must match
+the `pyproject.toml` dev dep (and therefore `.venv/bin/djangofmt`, which the
+pre-commit hook invokes). When bumping either tool, change every surface in
+one commit and re-run `tox` to confirm all envs agree.
 
 ---
 

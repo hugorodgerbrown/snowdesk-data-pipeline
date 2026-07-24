@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.22
+    rev: v0.16.0
     hooks:
       - id: ruff-check
         args: [--fix]
@@ -35,7 +35,10 @@ repos:
 
       - id: mypy
         name: mypy
-        entry: .venv/bin/mypy core/ bulletins/ regions/ public/ accounts/ tests/ config/
+        # Target list MUST match tox.ini's [testenv:mypy] command exactly, so a
+        # local commit can't pass while CI mypy fails on a package the hook
+        # skipped (SNOW-512).
+        entry: .venv/bin/mypy core/ bulletins/ regions/ public/ accounts/ analytics/ tests/ config/ observations/ favourites/ mcp_server/ schedule.py
         language: system
         types: [python]
         pass_filenames: false
