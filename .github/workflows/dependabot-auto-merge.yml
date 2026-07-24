@@ -1,0 +1,42 @@
+# .github/workflows/dependabot-auto-merge.yml — Auto-merge low-risk
+# Dependabot updates once CI is green.
+#
+# On every Dependabot pull request this reads the update metadata and, for
+# patch and minor version bumps only, turns on GitHub's native auto-merge
+# (squash). Auto-merge does not bypass anything: the "Main branch rules"
+# ruleset still gates the merge on all required status checks and on signed
+# commits, so a PR whose checks fail simply sits open and never reaches
+# staging. Major version bumps are deliberately excluded — they can pass CI
+# yet change behaviour, so they wait for a human to merge them.
+#
+# Uses GitHub's documented pattern (github.actor guard + fetch-metadata):
+# the pull_request trigger grants a Dependabot run a read-only token by
+# default, so the write permissions below are required for `gh pr merge`.
+
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge for patch/minor
+    runs-on: ubuntu-latest
+    # Only ever act on Dependabot's own pull requests.
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch update metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge (patch and minor only)
+        if: >
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
