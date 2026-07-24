@@ -50,6 +50,15 @@ from pytest_django.live_server_helper import LiveServer
 # well within the window, short enough not to slow the suite down.
 _ROUTE_DELAY_S = 1.0
 
+# Explicit, named ceiling for the shared page-boot wait (SNOW-516) — makes
+# the timeout self-documenting rather than relying on Playwright's implicit
+# default, and gives a slow CI runner headroom for the map/scrubber boot
+# sequence, which is unrelated to the actual race being tested.
+_BOOT_TIMEOUT_MS = 30_000
+# Same rationale as _BOOT_TIMEOUT_MS, for the post-settle wait after the
+# deliberately delayed fetch resolves (SNOW-516).
+_SETTLE_TIMEOUT_MS = 30_000
+
 
 def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     """Load / with navigator.serviceWorker stripped, wait for the map to boot."""
@@ -59,9 +68,12 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+    page.wait_for_selector(
+        '#season-scrubber[data-state="ready"]', timeout=_BOOT_TIMEOUT_MS
+    )
     page.wait_for_function(
-        "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
+        "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()",
+        timeout=_BOOT_TIMEOUT_MS,
     )
 
 
@@ -189,7 +201,9 @@ def test_overlay_reenabled_before_fetch_settles_does_not_duplicate(
     # Let the delayed fetch(es) settle: with the pre-fix code two requests
     # were in flight and both would merge, so wait past the route delay to
     # give any second merge time to land before asserting.
-    page.wait_for_function("() => !!MAP.getSource('major-regions')", timeout=10000)
+    page.wait_for_function(
+        "() => !!MAP.getSource('major-regions')", timeout=_SETTLE_TIMEOUT_MS
+    )
     page.wait_for_timeout(int(_ROUTE_DELAY_S * 1000))
 
     stats = _major_region_feature_stats(page)
