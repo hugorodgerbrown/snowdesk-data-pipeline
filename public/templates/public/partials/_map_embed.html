@@ -360,11 +360,14 @@ Optional context:
                         {% trans "Auto-zoom" %}
                     </button>
                 </li>
-                {# SNOW-492: "Cache this area for offline" — a command, not a  #}
+                {# SNOW-492/SNOW-521: "Download basemap" — a command, not a   #}
                 {# persistent toggle, so role="menuitem" rather than the      #}
                 {# menuitemcheckbox affordance the other Options item uses.   #}
-                {# map.js assembles the current view's data-feed + basemap-   #}
-                {# tile URLs and posts them to the SW's warm-cache handler.   #}
+                {# Clicking it no longer fetches directly — it opens the      #}
+                {# docked #basemap-download-bar confirm step below, which     #}
+                {# map.js's cacheNowInit keeps live as the viewport changes   #}
+                {# before assembling the URL list and posting it to the SW's  #}
+                {# warm-cache handler.                                        #}
                 <li role="none">
                     <button
                         id="cache-now-toggle"
@@ -373,7 +376,7 @@ Optional context:
                         class="basemap-menu-item basemap-menu-item--action"
                         data-action="cache-now"
                     >
-                        {% trans "Cache this area for offline" %}
+                        {% trans "Download basemap" %}
                     </button>
                 </li>
                 <li role="separator" class="basemap-menu-separator"></li>
@@ -877,16 +880,39 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-492/SNOW-493: "Cache this area for offline" completion toasts —    #}
-{# map.js reveals exactly one of these three once the SW's warm-cache     #}
-{# handler reports its {ok, failed} counts back, branching on how many    #}
-{# URLs actually succeeded (SNOW-493 finding 7): "complete" when every    #}
-{# URL cached, "partial" when some did and some didn't (a handful of tile #}
-{# misses still leaves most of the area usable offline), "failed" when    #}
-{# none did — that variant deliberately never claims "available offline". #}
-{% trans "This area is now available offline." as cache_now_toast_complete_body %}
+{# SNOW-521: "Download basemap" docked confirm bar — hidden by default.    #}
+{# map.js's cacheNowInit reveals it on the menu click (framing phase),     #}
+{# keeps #basemap-download-estimate live via a moveend listener (pure      #}
+{# arithmetic, no network), then on Download swaps that same span to      #}
+{# n/total progress before hiding the bar again on completion. Anchored    #}
+{# to the viewport like the sw-update banner (same floating shape/tokens   #}
+{# as includes/_overlay_banner.html), not to any single map feature.       #}
+<div
+    id="basemap-download-bar"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-banner)] w-[calc(100vw-2rem)] max-w-md"
+    role="status"
+    aria-live="polite"
+>
+    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3 flex items-center gap-3">
+        <p id="basemap-download-estimate" class="min-w-0 flex-1 text-sm font-semibold leading-snug">
+            {% trans "Download basemap" %}
+        </p>
+        <div class="flex flex-none items-center gap-2">
+            {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id="basemap-download-confirm" extra_classes="whitespace-nowrap" label=_("Download") %}
+            {% include "includes/_button.html" with variant="ghost" size="compact" button_type="button" button_id="basemap-download-cancel" extra_classes="whitespace-nowrap" label=_("Cancel") %}
+        </div>
+    </div>
+</div>
+{# SNOW-492/SNOW-493/SNOW-521: "Download basemap" completion toasts — map.js #}
+{# reveals exactly one of these three once the SW's warm-cache handler     #}
+{# reports its {ok, failed} counts back, branching on how many URLs        #}
+{# actually succeeded (SNOW-493 finding 7): "complete" when every URL      #}
+{# cached, "partial" when some did and some didn't (a handful of tile      #}
+{# misses still leaves most of the area usable offline), "failed" when     #}
+{# none did — that variant deliberately never claims "available offline".  #}
+{% trans "Basemap downloaded — this area is now available offline." as cache_now_toast_complete_body %}
 {% include "includes/_toast.html" with id="map-cache-now-toast-complete" kind="success" body=cache_now_toast_complete_body dismissible=True timeout=5000 %}
-{% trans "This area is partly available offline — some data couldn't be cached." as cache_now_toast_partial_body %}
+{% trans "Basemap partly downloaded — some tiles couldn't be saved." as cache_now_toast_partial_body %}
 {% include "includes/_toast.html" with id="map-cache-now-toast-partial" kind="warning" body=cache_now_toast_partial_body dismissible=True timeout=6000 %}
-{% trans "Couldn't cache this area for offline — check your connection and try again." as cache_now_toast_failed_body %}
+{% trans "Couldn't download the basemap — check your connection and try again." as cache_now_toast_failed_body %}
 {% include "includes/_toast.html" with id="map-cache-now-toast-failed" kind="error" body=cache_now_toast_failed_body dismissible=True timeout=6000 %}

@@ -100,69 +100,42 @@ function buildFallbackStyle() {
   };
 }
 
-// SNOW-492: minimal slippy-map (Web Mercator) tile math, used only by the
-// "Cache this area for offline" control (cacheNowInit, further down) to
-// enumerate the vector tile URLs covering the current viewport. Pure
-// functions, no MapLibre dependency.
-function _lonToTileX(lon, z) {
-  return Math.floor(((lon + 180) / 360) * 2 ** z);
-}
-function _latToTileY(lat, z) {
-  const rad = (lat * Math.PI) / 180;
-  return Math.floor(
-    ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * 2 ** z,
-  );
-}
-
-// SNOW-492: cap the number of tile URLs one "Cache this area" run can
-// enqueue. sw.js's BASEMAP_CACHE_MAX_ENTRIES is 600 — this leaves headroom
-// under that ceiling for ordinary stale-while-revalidate browsing to keep
-// adding entries without a single click evicting everything else out of
-// the LRU trim.
-const CACHE_NOW_MAX_TILES = 400;
-
-// SNOW-492: zoom levels either side of the current view to also warm, so a
-// small zoom in/out after reconnecting still hits a warm cache rather than
-// only the exact level the button was pressed at.
-const CACHE_NOW_ZOOM_RADIUS = 1;
-
-// SNOW-492: enumerate the vector tile URLs covering `map`'s current
-// viewport across a small zoom range around its current zoom level. Reads
-// the *resolved* tile URL template off each vector source's runtime
-// instance (`map.getSource(id).tiles`) rather than the static style JSON —
-// a TileJSON-backed source only populates `tiles` once its tilejson fetch
+// SNOW-521: enumerate the vector tile URLs covering `map`'s current
+// viewport across the zoom band `window.pwaBasemapDownloadCore.zoomBand`
+// computes down to its z14 detail floor. Reads the *resolved* tile URL
+// template off each vector source's runtime instance
+// (`map.getSource(id).tiles`) rather than the static style JSON — a
+// TileJSON-backed source only populates `tiles` once its tilejson fetch
 // resolves. Returns [] for a style with no vector sources (the offline
-// fallback style, SNOW-483) or before the style has finished loading.
-function computeBasemapTileURLs(map) {
-  if (!map || !map.isStyleLoaded()) return [];
+// fallback style, SNOW-483), before the style has finished loading, or if
+// the core module hasn't loaded (see home.html's script order). `maxTiles`
+// defaults to the core's download ceiling; cacheNowInit's framing phase
+// passes one tile past that ceiling to detect "area too large" without
+// truncating the real count. The cap is a single budget shared across
+// every vector source, not per-source.
+function computeBasemapTileURLs(map, maxTiles) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!map || !core || !map.isStyleLoaded()) return [];
   const style = map.getStyle();
   if (!style || !style.sources) return [];
   const bounds = map.getBounds();
-  const centreZoom = Math.round(map.getZoom());
-  const minZ = Math.max(0, centreZoom - CACHE_NOW_ZOOM_RADIUS);
-  const maxZ = Math.min(20, centreZoom + CACHE_NOW_ZOOM_RADIUS);
+  const { minZ, maxZ } = core.zoomBand(map.getZoom(), core.BASEMAP_DETAIL_FLOOR_ZOOM);
+  const boundsObj = {
+    west: bounds.getWest(),
+    east: bounds.getEast(),
+    north: bounds.getNorth(),
+    south: bounds.getSouth(),
+  };
+  const cap = typeof maxTiles === 'number' ? maxTiles : core.BASEMAP_DOWNLOAD_CEILING_TILES;
   const urls = [];
   for (const sourceId of Object.keys(style.sources)) {
     if (style.sources[sourceId].type !== 'vector') continue;
     const runtime = map.getSource(sourceId);
     const template = runtime && Array.isArray(runtime.tiles) && runtime.tiles[0];
     if (!template) continue;
-    for (let z = minZ; z <= maxZ && urls.length < CACHE_NOW_MAX_TILES; z++) {
-      const xMin = _lonToTileX(bounds.getWest(), z);
-      const xMax = _lonToTileX(bounds.getEast(), z);
-      const yMin = _latToTileY(bounds.getNorth(), z);
-      const yMax = _latToTileY(bounds.getSouth(), z);
-      for (let x = xMin; x <= xMax && urls.length < CACHE_NOW_MAX_TILES; x++) {
-        for (let y = yMin; y <= yMax && urls.length < CACHE_NOW_MAX_TILES; y++) {
-          urls.push(
-            template
-              .replace('{z}', String(z))
-              .replace('{x}', String(x))
-              .replace('{y}', String(y)),
-          );
-        }
-      }
-    }
+    urls.push(
+      ...core.enumerateTileURLs(template, boundsObj, minZ, maxZ, cap - urls.length),
+    );
   }
   return urls;
 }
@@ -4656,25 +4629,94 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// SNOW-492: "Cache this area for offline" control. Listens for the
-// snowdesk:cache-now CustomEvent dispatched by basemapPickerInit's item
-// click loop above (the button lives inside that IIFE's popover markup,
-// which already owns closing the menu on click — same bridge idiom as
-// snowdesk:overlay-load / snowdesk:country-toggle). Reads every URL
-// straight off the #map element's data-* attributes (module-scope
-// readable from any IIFE, unlike the main IIFE's own consts derived from
-// them) plus the module-scope RATINGS_URL / MAP globals, so this needs no
-// access to the main IIFE's internals at all.
+// SNOW-521: "Download basemap" control. Listens for the snowdesk:cache-now
+// CustomEvent dispatched by basemapPickerInit's item click loop above (the
+// menu item lives inside that IIFE's popover markup, which already owns
+// closing the menu on click — same bridge idiom as snowdesk:overlay-load /
+// snowdesk:country-toggle). Reads every URL straight off the #map
+// element's data-* attributes (module-scope readable from any IIFE, unlike
+// the main IIFE's own consts derived from them) plus the module-scope
+// RATINGS_URL / MAP globals, so this needs no access to the main IIFE's
+// internals at all.
+//
+// Three phases, replacing the old fire-on-click behaviour:
+//   Framing  — the menu click only reveals the docked #basemap-download-bar
+//              and computes a live "up to N MB" estimate (pure arithmetic,
+//              no network) that stays current as the user pans/zooms via a
+//              moveend listener.
+//   Download — the bar's Download button removes that listener, assembles
+//              the full URL list (unchanged from SNOW-492/493) and hands it
+//              to the SW's warm-cache handler with `pinned: true`, showing
+//              n/total progress and, on completion, one of the three
+//              reworded toasts.
+//   Cancel   — the bar's Cancel button tears down the listener and hides
+//              the bar. No fetches.
 (function cacheNowInit() {
   const btn = document.getElementById('cache-now-toggle');
-  if (!btn) return;
+  const bar = document.getElementById('basemap-download-bar');
+  const estimateEl = document.getElementById('basemap-download-estimate');
+  const confirmBtn = document.getElementById('basemap-download-confirm');
+  const cancelBtn = document.getElementById('basemap-download-cancel');
+  if (!btn || !bar || !estimateEl || !confirmBtn || !cancelBtn) return;
   const mapEl = document.getElementById('map');
+
+  // True only while the Download URL fetch burst is in flight — guards
+  // against a second Download click and against the framing handler
+  // re-opening the bar mid-transfer.
   let busy = false;
+  // True while the docked bar is open and its moveend listener is attached
+  // — lets the framing handler detach any stale listener before attaching
+  // a fresh one, so re-opening the bar (menu → Download basemap again)
+  // can't double-register the same function reference.
+  let framing = false;
+
+  /**
+   * Recompute the live "up to N MB" estimate for the current viewport.
+   * Pure arithmetic against `window.pwaBasemapDownloadCore` — no network.
+   * Probes one tile past the download ceiling (rather than the ceiling
+   * itself) so a viewport whose true tile count exceeds it is detected
+   * rather than silently truncated into an under-reported estimate.
+   */
+  function recompute() {
+    const core = self.pwaBasemapDownloadCore;
+    if (!core || !MAP) return;
+    const tileCount = computeBasemapTileURLs(MAP, core.BASEMAP_DOWNLOAD_CEILING_TILES + 1).length;
+    if (tileCount > core.BASEMAP_DOWNLOAD_CEILING_TILES) {
+      estimateEl.textContent = 'Area too large — zoom in to download';
+      confirmBtn.disabled = true;
+      confirmBtn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+    const bytes = core.estimateBytes(tileCount, core.BASEMAP_WORST_CASE_BYTES_PER_TILE);
+    estimateEl.textContent = `Download basemap — up to ${core.formatUpToMB(bytes)}`;
+    confirmBtn.disabled = false;
+    confirmBtn.removeAttribute('aria-disabled');
+  }
 
   document.addEventListener('snowdesk:cache-now', () => {
     if (busy || !MAP) return;
+    if (framing) MAP.off('moveend', recompute);
+    framing = true;
+    bar.classList.remove('hidden');
+    recompute();
+    MAP.on('moveend', recompute);
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    if (framing && MAP) MAP.off('moveend', recompute);
+    framing = false;
+    bar.classList.add('hidden');
+  });
+
+  confirmBtn.addEventListener('click', () => {
+    if (busy || confirmBtn.disabled) return;
+    if (framing && MAP) MAP.off('moveend', recompute);
+    framing = false;
     busy = true;
-    btn.setAttribute('aria-disabled', 'true');
+    confirmBtn.disabled = true;
+    confirmBtn.setAttribute('aria-disabled', 'true');
+    cancelBtn.disabled = true;
+    cancelBtn.setAttribute('aria-disabled', 'true');
 
     // Same-origin data feeds the STATIC_PATHS set in sw.js already serves
     // stale-while-revalidate — warming them here just refreshes the entry
@@ -4726,9 +4768,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
     urls.push(...computeBasemapSpriteURLs(MAP));
     urls.push(...computeBasemapTileURLs(MAP));
 
+    // SNOW-521: n/total progress — sw_register.js calls this on every
+    // 'warm-cache-progress' message the SW posts (throttled to ~every 5%).
+    const onProgress = (done, total) => {
+      estimateEl.textContent = `Downloading basemap — ${done}/${total}`;
+    };
+
     const finish = (result) => {
       busy = false;
-      btn.removeAttribute('aria-disabled');
+      confirmBtn.disabled = false;
+      confirmBtn.removeAttribute('aria-disabled');
+      cancelBtn.disabled = false;
+      cancelBtn.removeAttribute('aria-disabled');
+      bar.classList.add('hidden');
       // No result at all (no active worker, or the SW never replied within
       // its timeout) — unchanged from before: the feature is unavailable
       // this session, so stay silent rather than claim any outcome.
@@ -4754,17 +4806,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
         toast.classList.remove('hidden');
         toast.classList.add('flex');
       }
-      // SNOW-505: "Cache this area" has just warmed the shell + basemap
-      // caches (the SW's warm-cache handler awaits its cache.put calls
-      // before replying, so this re-probe races nothing). Re-probe every
-      // sync dot against real cache state so the layers popover reflects the
-      // newly-warmed feeds/tiles on its next open — and immediately, if it's
-      // still open behind the completion toast.
+      // SNOW-505: the warm-cache run has just warmed the shell + pinned
+      // basemap caches (the SW's warm-cache handler awaits its cache.put
+      // calls before replying, so this re-probe races nothing). Re-probe
+      // every sync dot against real cache state so the layers popover
+      // reflects the newly-warmed feeds/tiles on its next open — and
+      // immediately, if it's still open behind the completion toast.
       window.pwaLayerSyncStatus?.refresh();
     };
 
+    // SNOW-521: `pinned: true` routes the basemap-origin writes into
+    // sw.js's dedicated BASEMAP_PINNED_CACHE, exempt from the passive
+    // browsing LRU trim — a deliberate download can't be evicted by
+    // casual panning elsewhere.
     if (typeof window.pwaWarmCache === 'function') {
-      window.pwaWarmCache(urls).then(finish).catch(() => finish(null));
+      window.pwaWarmCache(urls, { pinned: true, onProgress }).then(finish).catch(() => finish(null));
     } else {
       finish(null);
     }
