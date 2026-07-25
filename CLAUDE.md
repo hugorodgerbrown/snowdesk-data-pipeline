@@ -274,7 +274,7 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every env (fmt, lint, mypy, django-checks, test)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, docs-lint, sw-version, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks
@@ -284,7 +284,7 @@ uv run tox -e ds-lint         # design-system template linter (see "Design syste
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 uv run tox -e audit           # pip-audit on the locked dependency set
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
-uv run tox -e js              # Vitest JS-unit tests (opt-in, see docs/client-side-tests.md)
+uv run tox -e js              # Vitest JS-unit tests (in default envlist; fast, see docs/client-side-tests.md)
 uv run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
