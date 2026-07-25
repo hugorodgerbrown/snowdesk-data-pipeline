@@ -257,7 +257,7 @@ try {
 // BASEMAP_CACHE, exempt from the passive stale-while-revalidate LRU trim.
 // Shell JS/HTML bytes changed (map.js, sw_register.js, _map_embed.html)
 // plus the new static/js/basemap_download_core.js module.
-const CACHE_VERSION = 'snowdesk-shell-v41';
+const CACHE_VERSION = 'snowdesk-shell-v42';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
