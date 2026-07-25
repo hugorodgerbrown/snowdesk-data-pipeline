@@ -14,8 +14,24 @@
  * Deliberately client-side-only — no new service-worker plumbing. The
  * probes below inspect Cache Storage and IndexedDB directly and are
  * re-run each time the popover opens (static/js/map.js's
- * basemapPickerInit calls ``refresh()`` from its ``setMenuOpen``), so the
- * dots need not be live while the menu is closed.
+ * basemapPickerInit calls ``refresh()`` from its ``setMenuOpen``), and on
+ * every ``snowdesk:connectivity-changed`` (broadcast by pwa_offline.js), so
+ * the menu reacts the instant the device goes offline/online rather than
+ * only on the next popover open.
+ *
+ * Offline gating (offline-integrity)
+ * ----------------------------------
+ * The dots don't just advise — while ``navigator.onLine === false`` they
+ * GATE interaction. A cacheable resource that isn't cached, and l3 (never
+ * cacheable), can't be loaded offline, so its row gets the red
+ * ``unavailable-offline`` dot AND is disabled (``aria-disabled``, honoured
+ * by the picker's click handler and dimmed by map.css). Basemaps are gated
+ * too: each basemap row carries its own dot, and a basemap whose style
+ * isn't cached is non-selectable offline — except the active basemap, which
+ * is always available (you're already on it). Disabling a row never hides a
+ * layer already on the map; it only locks the menu control ("keep shown,
+ * lock the toggle"). Online, an uncached row stays the grey advisory
+ * "view online first" and fully interactive.
  *
  * Row → resource map (the single source of truth driving every probe):
  *
@@ -67,15 +83,25 @@
   'use strict';
 
   const IDB_STORE = 'data:map_overlays';
-  const BASEMAP_CACHE_PREFIX = 'snowdesk-basemap-';
 
   const CACHED_LABEL = 'Available offline';
   const UNCACHED_LABEL = 'Not cached — view online first';
   // l3 is a distinct third state (a hollow dot): not "not cached yet" but
   // "can never be cached", so a different message from UNCACHED_LABEL.
   const UNAVAILABLE_LABEL = 'Not available offline';
-  const BASEMAP_CACHED_LABEL = 'Cached tiles available offline (browsed areas only)';
-  const BASEMAP_UNCACHED_LABEL = 'No offline map tiles yet';
+  // Offline + uncached: genuinely unavailable *right now* (red dot, disabled
+  // row) — distinct from the grey advisory "view online first" (which only
+  // applies while online, when viewing online is actually an option).
+  const OFFLINE_BLOCKED_LABEL = 'Unavailable offline — not cached';
+  const BASEMAP_CACHED_LABEL = 'Available offline';
+  const BASEMAP_UNCACHED_LABEL = 'Not cached — view online first';
+  const BASEMAP_OFFLINE_BLOCKED_LABEL = 'Unavailable offline — switch back online to load';
+
+  // Marker set on any menu row this module disabled for the offline+uncached
+  // case, so the reverse transition only re-enables what it disabled (never
+  // a row disabled for another reason). Mirrors pwa_offline.js's
+  // ``data-was-disabled-offline`` idiom, namespaced to this module.
+  const DISABLED_MARKER = 'data-sync-disabled-offline';
 
   // The core row→resource constant. Keys are the overlay rows'
   // ``data-overlay-key`` values; the basemap indicator is handled
@@ -106,43 +132,119 @@
   }
 
   /**
-   * The basemap section's single ``.sync-dot``, or ``null`` if the
-   * caption row isn't rendered.
+   * The menu-row ``button`` that owns ``dot`` (the ``.basemap-menu-item``),
+   * so a resolved state can also gate the row's interactivity. Null when
+   * the dot has no such ancestor.
    *
-   * @returns {Element | null}
+   * @param {Element | null} dot
+   * @returns {HTMLElement | null}
    */
-  function _basemapDot() {
-    return document.querySelector('#basemap-sync-status .sync-dot');
+  function _rowOf(dot) {
+    return dot ? dot.closest('.basemap-menu-item') : null;
   }
 
   /**
-   * Paint a resolved cached/uncached state onto a dot: ``data-sync-state``
-   * plus an accessible name (``role="img"`` + ``aria-label``) and a
-   * ``title`` tooltip. Dots start ``aria-hidden="true"`` (per the
-   * server-rendered ``unknown`` state); resolving to a real state makes
-   * the dot's accessible name available too.
+   * Every basemap radio row (one per configured basemap) — the
+   * ``menuitemradio`` buttons carrying ``data-basemap-url``. Excludes the
+   * overlay checkboxes, which carry ``data-overlay-key`` and no basemap URL.
+   *
+   * @returns {HTMLElement[]}
+   */
+  function _basemapItems() {
+    return Array.from(
+      document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-url]'),
+    );
+  }
+
+  /**
+   * True when the app is offline. Read live from ``navigator.onLine`` on
+   * every ``refresh()`` (and every ``snowdesk:connectivity-changed``), so
+   * the gating reflects the connection state at paint time.
+   *
+   * @returns {boolean}
+   */
+  function _offline() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  /**
+   * Enable / disable a menu row for the offline+uncached case. Uses
+   * ``aria-disabled`` (the picker's click handler in map.js honours it, and
+   * map.css already dims + not-allowed-cursors ``[aria-disabled="true"]``
+   * rows) rather than the native ``disabled`` property, so a screen reader
+   * still announces the row and its red dot. Only rows this module disabled
+   * (tagged with ``DISABLED_MARKER``) are re-enabled, so a row disabled for
+   * another reason is never clobbered.
+   *
+   * @param {HTMLElement | null} row
+   * @param {boolean} disabled
+   * @returns {void}
+   */
+  function _setRowDisabled(row, disabled) {
+    if (!row) return;
+    if (disabled) {
+      row.setAttribute('aria-disabled', 'true');
+      row.setAttribute(DISABLED_MARKER, '1');
+    } else if (row.getAttribute(DISABLED_MARKER) === '1') {
+      row.removeAttribute('aria-disabled');
+      row.removeAttribute(DISABLED_MARKER);
+    }
+  }
+
+  /**
+   * Resolve and paint a cacheable resource's dot AND gate its row, given
+   * real cache state and the live connection state:
+   *
+   *   - cached           → green, row enabled (available offline right now).
+   *   - uncached, online → grey "view online first", row enabled.
+   *   - uncached, offline→ red "unavailable offline", row DISABLED.
+   *
+   * The offline+uncached row is disabled so the user can't toggle a layer
+   * whose data can't be fetched — but a row already switched ON keeps its
+   * on-map layer (this only locks the menu control; it never hides a
+   * visible layer), matching the "keep shown, lock the toggle" rule.
    *
    * @param {Element | null} dot
    * @param {boolean} cached
    * @param {string} cachedLabel
    * @param {string} uncachedLabel
+   * @param {string} blockedLabel
    * @returns {void}
    */
-  function _applyState(dot, cached, cachedLabel, uncachedLabel) {
-    _paintDot(dot, cached ? 'cached' : 'uncached', cached ? cachedLabel : uncachedLabel);
+  function _applyState(dot, cached, cachedLabel, uncachedLabel, blockedLabel) {
+    const offline = _offline();
+    if (cached) {
+      _paintDot(dot, 'cached', cachedLabel);
+      _setRowDisabled(_rowOf(dot), false);
+    } else if (offline) {
+      _paintDot(dot, 'unavailable-offline', blockedLabel);
+      _setRowDisabled(_rowOf(dot), true);
+    } else {
+      _paintDot(dot, 'uncached', uncachedLabel);
+      _setRowDisabled(_rowOf(dot), false);
+    }
   }
 
   /**
-   * Paint the distinct "never cacheable" state onto a dot (l3): a hollow,
-   * border-only dot (styled in static/css/map.css via
-   * ``[data-sync-state="unavailable"]``), visually separate from the grey
-   * "not cached yet" fill.
+   * Paint l3's distinct state and gate its row. l3 (bulletin groupings) is
+   * network-only in sw.js — it can never be cached:
+   *
+   *   - online  → hollow "never cacheable" dot, row enabled (it still
+   *               fetches live).
+   *   - offline → red "unavailable offline", row DISABLED (genuinely
+   *               un-loadable now).
    *
    * @param {Element | null} dot
    * @returns {void}
    */
   function _applyUnavailable(dot) {
-    _paintDot(dot, 'unavailable', UNAVAILABLE_LABEL);
+    if (_offline()) {
+      _paintDot(dot, 'unavailable-offline', OFFLINE_BLOCKED_LABEL);
+      _setRowDisabled(_rowOf(dot), true);
+    } else {
+      _paintDot(dot, 'unavailable', UNAVAILABLE_LABEL);
+      _setRowDisabled(_rowOf(dot), false);
+    }
   }
 
   /**
@@ -204,27 +306,30 @@
   }
 
   /**
-   * True when ANY ``snowdesk-basemap-*`` cache exists and holds at least
-   * one entry. sw.js (SNOW-521) now keeps two partitions under this
-   * prefix — ``BASEMAP_CACHE`` (passive browsing) and
-   * ``BASEMAP_PINNED_CACHE`` (deliberate "Download basemap" runs) — so
-   * every matching cache is checked, not just the first ``caches.keys()``
-   * happens to return; a pinned-only download must still read as cached
-   * here. Caches are discovered by prefix (not a hardcoded name) so a
-   * version bump in sw.js never breaks this probe. Never throws.
+   * True when ``url`` (a basemap's cross-origin style URL) is present in
+   * ANY Cache Storage cache — the per-basemap "available offline" proxy.
+   * The style JSON is cached both by passive browsing (sw.js's
+   * ``_basemapStaleWhileRevalidate`` writes ``BASEMAP_CACHE``) and by a
+   * deliberate "Download basemap" run (which pins the active basemap's
+   * style into ``BASEMAP_PINNED_CACHE``), so a globally-searched
+   * ``caches.match`` covers both partitions without hardcoding either
+   * versioned name.
    *
+   * Limitation: a cached style proves the basemap has been loaded/downloaded
+   * before, not that every tile for the current viewport is present. The
+   * residual tile gap is handled downstream — sw.js serves cached tiles and
+   * the map's fallback style (SNOW-483) + overlay re-install cover a
+   * mid-pan miss — so style-presence is the honest, cheap availability
+   * signal for the menu. Never throws.
+   *
+   * @param {string} url - a basemap style URL (``data-basemap-url``).
    * @returns {Promise<boolean>}
    */
-  async function _probeBasemap() {
+  async function _probeUrlCached(url) {
     try {
-      const names = await caches.keys();
-      const basemapCacheNames = names.filter((name) => name.startsWith(BASEMAP_CACHE_PREFIX));
-      for (const name of basemapCacheNames) {
-        const cache = await caches.open(name);
-        const keys = await cache.keys();
-        if (keys.length > 0) return true;
-      }
-      return false;
+      if (!url) return false;
+      const response = await caches.match(new Request(url), { ignoreSearch: true });
+      return !!response;
     } catch (_e) {
       return false;
     }
@@ -264,20 +369,44 @@
           : _probeIdbRow(resource.key);
       tasks.push(
         probe
-          .then((cached) => _applyState(dot, cached, CACHED_LABEL, UNCACHED_LABEL))
-          .catch(() => _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL)),
+          .then((cached) =>
+            _applyState(dot, cached, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
+          )
+          .catch(() =>
+            _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
+          ),
       );
     }
 
-    const basemapDot = _basemapDot();
-    if (basemapDot) {
+    // Per-basemap availability. A basemap is available offline if its style
+    // is cached (browsed/downloaded before) OR it is the active basemap
+    // (already loaded this session — never disabled, or the user would be
+    // stranded on a map they can't leave). Offline + unavailable ⟹ red dot
+    // and a disabled row, so switching to a basemap that can't load offline
+    // (the trigger for the micro-region overlay loss) is simply not offered.
+    for (const item of _basemapItems()) {
+      const dot = item.querySelector('.sync-dot');
+      if (!dot) continue;
+      const isActive = item.getAttribute('aria-checked') === 'true';
       tasks.push(
-        _probeBasemap()
+        _probeUrlCached(item.dataset.basemapUrl)
           .then((cached) =>
-            _applyState(basemapDot, cached, BASEMAP_CACHED_LABEL, BASEMAP_UNCACHED_LABEL),
+            _applyState(
+              dot,
+              cached || isActive,
+              BASEMAP_CACHED_LABEL,
+              BASEMAP_UNCACHED_LABEL,
+              BASEMAP_OFFLINE_BLOCKED_LABEL,
+            ),
           )
           .catch(() =>
-            _applyState(basemapDot, false, BASEMAP_CACHED_LABEL, BASEMAP_UNCACHED_LABEL),
+            _applyState(
+              dot,
+              isActive,
+              BASEMAP_CACHED_LABEL,
+              BASEMAP_UNCACHED_LABEL,
+              BASEMAP_OFFLINE_BLOCKED_LABEL,
+            ),
           ),
       );
     }
@@ -305,8 +434,23 @@
     // network-only in sw.js — a successful load doesn't make it available
     // offline — so its hollow dot stays put. Unknown keys are ignored.
     if (!resource || (resource.kind !== 'geojson' && resource.kind !== 'idb')) return;
-    _applyState(_overlayDot(key), true, CACHED_LABEL, UNCACHED_LABEL);
+    // A successful load only happens online; ``_applyState`` with cached=true
+    // paints green and clears any offline-disabled marker on the row.
+    _applyState(_overlayDot(key), true, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL);
   }
+
+  // Re-run the full probe on every connectivity transition (broadcast by
+  // pwa_offline.js), so going offline immediately reds-out + disables the
+  // uncached rows/basemaps and coming back online re-enables them — the menu
+  // reflects reality without waiting for the next popover open. refresh()
+  // never rejects, so the bare .catch is belt-and-braces.
+  document.addEventListener('snowdesk:connectivity-changed', () => {
+    try {
+      refresh();
+    } catch (_e) {
+      // refresh() is internally guarded; ignore any synchronous throw.
+    }
+  });
 
   Object.defineProperty(window, 'pwaLayerSyncStatus', {
     value: Object.freeze({ refresh, markCached }),

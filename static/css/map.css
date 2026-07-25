@@ -268,6 +268,13 @@
     border: 1.5px solid var(--color-sync-off);
 }
 
+/* Offline AND not cached: a solid red fill. Distinct from the grey "not
+   cached yet" (online, advisory) — here the resource genuinely cannot be
+   loaded, and its menu row is disabled to match (aria-disabled below). */
+.sync-dot[data-sync-state="unavailable-offline"] {
+    background: var(--color-sync-blocked);
+}
+
 .sync-dot[data-sync-state="unknown"] {
     display: none;
 }
@@ -1342,8 +1349,11 @@
     box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
 }
 
-/* over_ceiling — flagged server-side, never runnable. */
-.region-readout-download[data-download-state="disabled"] {
+/* over_ceiling — flagged server-side, never runnable. "offline" — the
+   device is offline, so a download can't be started (no downloading of
+   layers while offline); both read as greyed + not-allowed. */
+.region-readout-download[data-download-state="disabled"],
+.region-readout-download[data-download-state="offline"] {
     opacity: 0.4;
     cursor: not-allowed;
 }
@@ -1365,6 +1375,7 @@
 
 .region-readout-download[data-download-state="idle"] .region-readout-download-icon--idle,
 .region-readout-download[data-download-state="disabled"] .region-readout-download-icon--idle,
+.region-readout-download[data-download-state="offline"] .region-readout-download-icon--idle,
 .region-readout-download[data-download-state="busy"] .region-readout-download-icon--idle,
 .region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
     display: block;

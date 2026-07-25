@@ -412,6 +412,22 @@
   }
 
   /**
+   * Broadcast the connection state to any listener that needs to react
+   * beyond the blunt ``data-network-required`` disable — chiefly the map's
+   * layers menu (map_layer_sync_status.js), which gates each row against
+   * *cache* state (offline + uncached ⟹ disabled + red dot) rather than
+   * disabling everything wholesale. A single event keeps every consumer off
+   * its own ``navigator.onLine`` poll and in lockstep with the banner.
+   *
+   * @param {boolean} online
+   */
+  function broadcastConnectivity(online) {
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:connectivity-changed', { detail: { online } }),
+    );
+  }
+
+  /**
    * Bind ``online`` / ``offline`` events on window so the banner and
    * network-required elements track the connection state without
    * requiring a page reload.
@@ -420,10 +436,12 @@
     window.addEventListener('online', () => {
       renderBanner(true);
       syncNetworkRequired(true);
+      broadcastConnectivity(true);
     });
     window.addEventListener('offline', () => {
       renderBanner(false);
       syncNetworkRequired(false);
+      broadcastConnectivity(false);
     });
   }
 
@@ -468,6 +486,10 @@
     await hydratePersistedClocks();
     renderBanner(navigator.onLine);
     syncNetworkRequired(navigator.onLine);
+    // Prime consumers with the initial state so a page that loaded offline
+    // (via the SW cache) gets its cache-aware gating applied at boot, not
+    // only on the next transition.
+    broadcastConnectivity(navigator.onLine);
   }
 
   init();

@@ -265,3 +265,68 @@ describe('storage-eviction heuristic (db.js -> telemetry.js)', () => {
     expect(rows.find((r) => r.event === 'pwa.storage.evicted_probable')).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Offline gating — no network sends while offline (offline-integrity).
+// Events still enqueue; delivery defers to the next flush on reconnect.
+// ---------------------------------------------------------------------------
+
+function setOnline(value) {
+  Object.defineProperty(window.navigator, 'onLine', { value, configurable: true });
+}
+
+describe('offline gating', () => {
+  afterEach(() => setOnline(true));
+
+  it('flush() makes no fetch while offline and leaves rows queued', async () => {
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await window.pwaTelemetry.setOptIn(true);
+    await window.pwaTelemetry.emit('pwa.install.prompted');
+    expect(await window.pwaDb.count('queue:events')).toBe(1);
+
+    setOnline(false);
+    await window.pwaTelemetry.flush();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // Rows stay put for the next (online) drain.
+    expect(await window.pwaDb.count('queue:events')).toBe(1);
+  });
+
+  it('a critical event offline skips sendBeacon but still enqueues', async () => {
+    setOnline(false);
+    await window.pwaTelemetry.setOptIn(true);
+
+    await window.pwaTelemetry.emit('pwa.kill_switch.activated', { reason: 'test' });
+
+    expect(navigator.sendBeacon).not.toHaveBeenCalled();
+    const rows = await queueEvents();
+    expect(rows.length).toBe(1);
+    expect(rows[0].event).toBe('pwa.kill_switch.activated');
+  });
+
+  it('drains the backlog once back online', async () => {
+    const captured = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        captured.push(JSON.parse(init.body));
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    await window.pwaTelemetry.setOptIn(true);
+    setOnline(false);
+    await window.pwaTelemetry.emit('pwa.install.prompted');
+    await window.pwaTelemetry.flush();
+    expect(captured.length).toBe(0);
+    expect(await window.pwaDb.count('queue:events')).toBe(1);
+
+    setOnline(true);
+    await window.pwaTelemetry.flush();
+
+    expect(captured.length).toBe(1);
+    expect(await window.pwaDb.count('queue:events')).toBe(0);
+  });
+});

@@ -260,6 +260,14 @@
       if (typeof navigator === 'undefined' || !navigator.sendBeacon) {
         return false;
       }
+      // Offline-integrity: no network sends while offline. The envelope has
+      // already been enqueued by the caller (critical events always enqueue),
+      // so skipping the beacon just defers delivery to the next flush — which
+      // the ``online`` lifecycle trigger runs on reconnect — instead of
+      // firing a doomed request that surfaces as a console network error.
+      if (navigator.onLine === false) {
+        return false;
+      }
       const blob = new Blob([JSON.stringify(envelope)], {
         type: 'application/json',
       });
@@ -356,6 +364,14 @@
     // Nothing is ever enqueued while disabled, but guard here too so a
     // manual ``flush()`` call is a no-op rather than a stray fetch.
     if (!_enabled()) return Promise.resolve();
+    // Offline-integrity: don't drain to the network while offline — the POST
+    // can only fail (and litters the console with a network error, as seen
+    // on the offline map). Rows stay queued; the ``online`` lifecycle
+    // trigger drains them on reconnect. The pagehide keepalive path is
+    // included: a keepalive fetch offline can't deliver either.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve();
+    }
     if (_flushInFlight) return _flushInFlight;
     const keepalive = !!(opts && opts.keepalive);
     _flushInFlight = (async () => {

@@ -341,6 +341,12 @@ Optional context:
                             data-basemap-url="{{ bm.url }}"
                             aria-checked="false"
                         >
+                            {# Offline-integrity: sync-status dot per basemap —  #}
+                            {# hidden (unknown) until map_layer_sync_status.js     #}
+                            {# resolves it on menu-open. Green = cached tiles      #}
+                            {# available offline; red = offline and uncached (the #}
+                            {# row is disabled to match).                          #}
+                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                             {{ bm.label }}
                         </button>
                     </li>
