@@ -55,7 +55,7 @@ Context variables expected:
                 <a
                     href="{{ resort.website }}"
                     target="_blank"
-                    rel="noopener"
+                    rel="noopener noreferrer"
                     class="text-xs text-status-info-text underline"
                 >{% trans "Official website" %}</a>
             {% else %}
@@ -70,11 +70,11 @@ Context variables expected:
                 </span>
             {% endif %}
         </div>
-        {% include "public/partials/_resort_meta_row.html" with label=_("Lifts") value=resort.num_lifts is_staff=is_staff staff_hint=_("Add lift count") %}
-        {% include "public/partials/_resort_meta_row.html" with label=_("Runs") value=resort.num_runs is_staff=is_staff staff_hint=_("Add run count") %}
+        {% include "public/partials/_resort_meta_row.html" with label=_("Lifts") value=resort.num_lifts|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add lift count") %}
+        {% include "public/partials/_resort_meta_row.html" with label=_("Runs") value=resort.num_runs|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add run count") %}
         <div class="flex items-center justify-between gap-2">
             <span class="text-xs text-text-3">{% trans "Piste length" %}</span>
-            {% if resort.total_piste_km %}
+            {% if resort.total_piste_km is not None %}
                 <span class="text-xs text-text-2">{{ resort.total_piste_km|floatformat:"-1" }} km</span>
             {% else %}
                 <span
@@ -90,7 +90,7 @@ Context variables expected:
         </div>
         <div class="flex items-center justify-between gap-2">
             <span class="text-xs text-text-3">{% trans "Elevation" %}</span>
-            {% if resort.base_elevation_m and resort.top_elevation_m %}
+            {% if resort.base_elevation_m is not None and resort.top_elevation_m is not None %}
                 <span class="text-xs text-text-2">{{ resort.base_elevation_m }}&ndash;{{ resort.top_elevation_m }}
                     m</span>
             {% else %}
@@ -107,21 +107,21 @@ Context variables expected:
         </div>
         <div class="flex items-center justify-between gap-2">
             <span class="text-xs text-text-3">{% trans "Season" %}</span>
-            {% if resort.typical_season_open and resort.typical_season_close %}
-                <span
-                    class="text-xs text-text-2"
-                >{{ resort.typical_season_open|month_day|date:"j M" }}&ndash;{{ resort.typical_season_close|month_day|date:"j M" }}</span>
-            {% else %}
-                <span
-                    class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
-                >
-                    {% if is_staff %}
-                        {% trans "Add typical season" %}
-                    {% else %}
-                        &mdash;
-                    {% endif %}
-                </span>
-            {% endif %}
+            {% with s_open=resort.typical_season_open|month_day s_close=resort.typical_season_close|month_day %}
+                {% if s_open and s_close %}
+                    <span class="text-xs text-text-2">{{ s_open|date:"j M" }}&ndash;{{ s_close|date:"j M" }}</span>
+                {% else %}
+                    <span
+                        class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                    >
+                        {% if is_staff %}
+                            {% trans "Add typical season" %}
+                        {% else %}
+                            &mdash;
+                        {% endif %}
+                    </span>
+                {% endif %}
+            {% endwith %}
         </div>
     </div>
     {% if can_favourite %}
