@@ -45,14 +45,16 @@
     gap: 8px;
 }
 
-/* PROTOTYPE (homepage rework): bottom-right control stack — layers + locate
-   pills in the conventional map-control corner, stacked vertically above the
-   report roundel (which sits at bottom:60px). 108px clears the 40px report
-   pill plus an 8px gap. */
+/* Bottom-right control stack — every roundel (basemap, locate, and the
+   flag-gated favourite + observation pills) in one bottom-anchored column,
+   with the help (?) roundel at the foot so it sits level with the bottom-left
+   (i) legend toggle (both at bottom:60px). Bottom-anchored + column means a
+   hidden roundel simply shortens the stack from the top: the column always
+   sits on the baseline, never leaving a gap above the corner. */
 .map-controls-br {
     position: absolute;
     right: calc(env(safe-area-inset-right, 0px) + 12px);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     z-index: 4;
     display: flex;
     flex-direction: column;
@@ -347,19 +349,17 @@
     border-radius: 999px;
 }
 
-/* SNOW-324: field-report roundel. Reuses .map-utility-pill for the 40×40
-   glass-circle look, but anchored bottom-right inside #map and floated
-   above the season scrubber (bottom 5px + ~43px pill, + safe-area), level
-   with the date pill, so it never overlaps the timeline. The
-   warning-triangle icon is tinted amber (status-warning) to stand out as
-   the report-a-hazard action; the SVG strokes inherit it via currentColor. */
+/* SNOW-324: field-report / observations roundel. Reuses .map-utility-pill for
+   the 40×40 glass-circle look. As of the homepage rework it is a member of the
+   bottom-right stack (#map-controls-br) rather than independently positioned,
+   so it shares the stack's flow — same 40×40 icon-pill geometry as the basemap
+   / locate pills. The warning-triangle icon is tinted amber (status-warning)
+   to stand out as the report-a-hazard action; the SVG strokes inherit it via
+   currentColor. */
 .map-report-control {
-    position: absolute;
-    right: calc(env(safe-area-inset-right, 0px) + 12px);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     width: 40px;
+    flex: 0 0 auto;
     justify-content: center;
-    z-index: 4;
     color: var(--color-status-warning-text);
 }
 
@@ -589,7 +589,9 @@
 .map-legend {
     position: absolute;
     /* PROTOTYPE (homepage rework): (i) legend moves to the bottom-left corner,
-       horizontally level with the report roundel (bottom:60px). */
+       horizontally level with the report roundel (bottom:60px). The scrubbed-
+       date ribbon sits to the right of the (i) toggle on the same row; the
+       legend card opens upward (above the row), so it clears both. */
     left: calc(env(safe-area-inset-left, 0px) + 12px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     z-index: 3;
@@ -652,12 +654,44 @@
     cursor: pointer;
 }
 
+/* Scrubbed-date ribbon — the timeline's own readout, sitting to the right of
+   the (i) legend toggle in the bottom-left cluster (a flex sibling on the same
+   row), close to the season scrubber that drives it. Moved here from the top
+   #region-readout so the timeline and the date it controls share the bottom
+   edge, leaving the top bar to name the region. The legend card opens upward
+   (above this row), so the two never overlap. Glass pill matching the (i)
+   toggle idiom; map.js fills the text and toggles [hidden]. */
+.map-date-ribbon[hidden] {
+    display: none;
+}
+
+.map-date-ribbon {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 12px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    user-select: none;
+}
+
 .map-legend-card {
     position: absolute;
-    /* PROTOTYPE: anchor to the right of the (i) toggle, bottom-aligned so the
-       card grows upward from the bottom-left corner. */
-    left: 40px;              /* 32px button + 8px gap */
-    bottom: 0;
+    /* Open upward: anchor the card above the (i)-toggle + date-ribbon row
+       (100% = row height) with an 8px gap, left-aligned to the toggle, so it
+       clears both controls instead of expanding over them. */
+    left: 0;
+    bottom: calc(100% + 8px);
     min-width: 200px;
     max-width: 260px;
     padding: 10px 12px;
@@ -670,9 +704,9 @@
     font-size: 11px;
     line-height: 1.5;
     color: var(--color-text-1);
-    transform-origin: top left;
+    transform-origin: bottom left;
     opacity: 0;
-    transform: translateX(-4px) scale(0.98);
+    transform: translateY(4px) scale(0.98);
     pointer-events: none;
     transition: opacity 160ms ease-out, transform 160ms ease-out;
 }
@@ -730,6 +764,10 @@
     border: 0.5px solid rgba(0, 0, 0, 0.15);
 }
 
+/* No-rating grey mirrors the choropleth's RATING_COLOURS.no_rating (#e0e0e0
+   in map.js) — the fill an unrated region gets on the map; no EAWS token
+   exists for it, so the literal is the single source of truth shared with JS. */
+.map-legend-swatch--no-rating    { background: #e0e0e0; }
 .map-legend-swatch--low          { background: var(--color-eaws-low); }
 .map-legend-swatch--moderate     { background: var(--color-eaws-moderate); }
 .map-legend-swatch--considerable { background: var(--color-eaws-considerable); }
@@ -747,6 +785,19 @@
     background: #1a1a1a;
     border: 1px solid #ffffff;
     box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+
+/* Favourite / observation legend keys — a 12×12 box that centres the marker
+   SVG (the star / flag reproduced from the on-map layers). Sized between the
+   10px rating swatches and the row text so the marker reads as a point of
+   interest, matching the resort-pin treatment above. */
+.map-legend-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
 }
 
 .maplibregl-ctrl-attrib {
@@ -1246,22 +1297,8 @@
     }
 }
 
-/* No region focused → date-only: drop the swatch and name so the chip reads as
-   a plain date (the action roundel is already hidden by its own sibling rule). */
-.region-readout:not(.has-region) .region-readout-swatch,
-.region-readout:not(.has-region) .region-readout-name {
-    display: none;
-}
-
-/* PROTOTYPE (homepage rework): the date leads the chip — mono, fixed-width
-   (the readout is mono throughout), and muted so the region name carries the
-   emphasis. */
-.region-readout-date {
-    color: var(--muted);
-}
-
-/* Colour block dividing the date from the region name; the background is the
-   EAWS danger colour, set inline by map.js (transparent when no_rating). */
+/* Colour block leading the chip; the background is the EAWS danger colour for
+   the scrubbed day, set inline by map.js (transparent when no_rating). */
 .region-readout-swatch {
     width: 10px;
     height: 10px;

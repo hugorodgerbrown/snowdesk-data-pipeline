@@ -4952,8 +4952,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   if (!fill || !trackEl) return;
 
   const readoutEl = document.getElementById('region-readout');
-  const readoutDate =
-    readoutEl && readoutEl.querySelector('.region-readout-date');
+  // The scrubbed date now lives in its own ribbon beside the scrubber
+  // (bottom-left), not in the top region chip — see updateReadout below.
+  const dateRibbonEl = document.getElementById('map-date-ribbon');
   const readoutSwatch =
     readoutEl && readoutEl.querySelector('.region-readout-swatch');
   const readoutCrumbs =
@@ -5066,18 +5067,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (MAP.triggerRepaint) MAP.triggerRepaint();
   };
 
-  // Update the persistent readout. Always shows the scrubbed date (a minimal
-  // date display even with no region focused); when a region IS focused it also
-  // shows the region name and a danger-coloured swatch. Pure in-memory lookup
+  // Update the two split readouts. The bottom #map-date-ribbon always shows
+  // the scrubbed date (the timeline's own readout, region or no region); the
+  // top #region-readout chip names the focused region and shows its danger
+  // swatch, and is hidden until a region is focused. Pure in-memory lookup
   // (no fetch), so it is safe to call on every scrub/preview/playback frame.
   const updateReadout = () => {
-    if (!readoutEl) return;
-    readoutEl.hidden = !dateKey;
-    if (!dateKey) return;
-    // SNOW-314 prototype: day-first, title-case date ("18 May 2026") matching
+    // Bottom date ribbon — day-first, title-case date ("18 May 2026") matching
     // the popup card; deliberately not the uppercase scrubber format.
-    if (readoutDate) readoutDate.textContent = formatDatePopup(dateKey);
-    const hasRegion = !!(regionId && regionName);
+    if (dateRibbonEl) {
+      dateRibbonEl.hidden = !dateKey;
+      if (dateKey) dateRibbonEl.textContent = formatDatePopup(dateKey);
+    }
+    if (!readoutEl) return;
+    const hasRegion = !!(dateKey && regionId && regionName);
+    readoutEl.hidden = !hasRegion;
     readoutEl.classList.toggle('has-region', hasRegion);
     if (hasRegion) {
       // Breadcrumb: Major (L1) › Minor (L2) › Micro (L4, the leaf), including

@@ -242,7 +242,14 @@ try {
 // SNOW-518: v38 — map.js now notifies the layers-menu sync dashboard from
 // the boot overlay-restore path and ensureCountryLoaded, and adds a
 // visibilitychange re-probe — shell JS bytes changed.
-const CACHE_VERSION = 'snowdesk-shell-v39';
+// Map bottom-bar rework — split the scrubbed date out of the top
+// #region-readout chip into a new #map-date-ribbon beside the bottom-left (i)
+// toggle; open the legend card upward so it clears that row; unify the
+// bottom-right roundels into one bottom-anchored stack with the (?) help
+// roundel at the foot (level with the (i)); add Favourites + Observations
+// keys to the legend. Shell HTML/JS/CSS bytes changed (_map_embed,
+// _season_ribbon, map.js, map.css); version stamped by bin/sw-version.
+const CACHE_VERSION = 'snowdesk-shell-v40';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
