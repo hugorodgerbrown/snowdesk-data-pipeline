@@ -83,12 +83,8 @@ and loads home_intro.js in addition to the shared map assets.
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
     {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
-    {# and favourites) — loaded once here, gated on either flag being    #}
-    {# active, rather than in each surface partial, so enabling only one #}
-    {# of the two flags never double-loads (or entirely misses) htmx.    #}
-    {% if report_visible or favourites_visible %}
-        <script defer src="{% static 'js/htmx.min.js' %}"></script>
-    {% endif %}
+    {# and favourites) — loaded once here, ahead of both surface partials. #}
+    <script defer src="{% static 'js/htmx.min.js' %}"></script>
     {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}

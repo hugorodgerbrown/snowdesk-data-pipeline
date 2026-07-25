@@ -7,9 +7,9 @@ Server-rendered by ``public.api.resort_popup`` and injected into a
 ``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in ``static/js/map.js``
 (SNOW-499). Public endpoint — resorts are a public reference layer, so this
 partial always renders the name/region/metadata content for anonymous
-visitors too. Only the favourite star is gated on authentication + the
-``favourites`` waffle flag (``can_favourite``); ineligible visitors see a
-sign-in CTA in its place instead of a hidden control.
+visitors too. Only the favourite star is gated on authentication
+(``can_favourite``); anonymous visitors see a sign-in CTA in its place
+instead of a hidden control.
 
 Content:
   1. Resort name (+ alternative/marketing name, when set).
@@ -32,8 +32,7 @@ Context variables expected:
                    Favourite for this resort.
   favourite_uuid — str: the existing Favourite's uuid (for unfavourite),
                    or "" when not favourited.
-  can_favourite  — bool: True when the ``favourites`` flag is active AND the
-                   requesting user is authenticated.
+  can_favourite  — bool: True when the requesting user is authenticated.
   signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
   resort_url     — str: URL to the resort's own page (SNOW-504).
   is_staff       — bool: True when the requesting user is staff (SNOW-501)

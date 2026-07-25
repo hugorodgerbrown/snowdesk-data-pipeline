@@ -20,7 +20,6 @@ from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from tests.factories import (
     AccountFactory,
@@ -415,13 +414,11 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
         assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
 
 
-@override_flag("favourites", active=True)
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db
 def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
     """
-    SNOW-505: favourites and community_reports also carry a sync-dot once
-    their waffle flags render the row at all.
+    SNOW-505: favourites (eligible-only) and community_reports also carry
+    a sync-dot.
     """
     account = AccountFactory.create()
     client = Client()
@@ -505,24 +502,8 @@ class TestMapPageDataDrivenSeasonBounds:
 
 
 @pytest.mark.django_db
-@override_flag("field_observations", active=False)
-def test_report_button_not_shown_when_flag_off() -> None:
-    """Report button is absent when field_observations flag is inactive."""
-    account = AccountFactory.create()
-    client = Client()
-    client.force_login(account.user)
-    response = client.get(reverse("public:home"))
-    content = response.content.decode()
-    # SNOW-457: the map-help coachmark always references "#report-btn" as a
-    # step target selector, so a bare substring check would be a false
-    # positive here — assert on the button's own id attribute instead.
-    assert 'id="report-btn"' not in content
-
-
-@pytest.mark.django_db
-@override_flag("field_observations", active=True)
 def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
-    """Report button is shown for anonymous users when flag is active (SNOW-333).
+    """Report button is shown for anonymous users (SNOW-333).
 
     Anonymous users see the button but are directed to sign in — report_eligible
     is False and data-signin-url is populated so report.js renders a CTA instead
@@ -543,9 +524,8 @@ def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("field_observations", active=True)
-def test_report_button_shown_for_account_with_flag() -> None:
-    """Report button and sheet are shown for an account when flag is active."""
+def test_report_button_shown_for_account() -> None:
+    """Report button and sheet are shown for a logged-in account."""
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
@@ -557,19 +537,6 @@ def test_report_button_shown_for_account_with_flag() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("field_observations", active=False)
-def test_report_js_not_loaded_when_flag_off() -> None:
-    """report.js is not referenced when the flag is inactive."""
-    account = AccountFactory.create()
-    client = Client()
-    client.force_login(account.user)
-    response = client.get(reverse("public:home"))
-    content = response.content.decode()
-    assert "report.js" not in content
-
-
-@pytest.mark.django_db
-@override_flag("field_observations", active=True)
 def test_report_eligible_true_for_verified_user() -> None:
     """A verified user has report_eligible=True in the rendered button.
 
@@ -589,7 +556,6 @@ def test_report_eligible_true_for_verified_user() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("field_observations", active=True)
 def test_report_unverified_for_authenticated_unverified_user() -> None:
     """An authenticated-but-unverified user is not eligible but is flagged unverified.
 

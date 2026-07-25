@@ -9,9 +9,8 @@ user with no Subscription rows sees the page with no subscription cards.
 Shows one card per subscribed region, ordered by region name. Each card
 shows the region name, region ID, and resort list. A per-region "Remove"
 button POSTs to accounts:remove_region via HTMX. A "Choose more
-regions on the map" link routes to /. A flag-gated "My favourites"
-section (SNOW-415) lazy-loads favourites:list via hx-get — no
-cross-app import, the view only checks the "favourites" waffle flag. A
+regions on the map" link routes to /. A "My favourites" section
+(SNOW-415) lazy-loads favourites:list via hx-get — no cross-app import. A
 passkeys section lists registered platform passkeys with delete buttons.
 An "Anonymous usage data" section (SNOW-387) hosts a role="switch" toggle
 bound to window.pwaTelemetry.setOptIn/.isOptIn(), with a link to the
@@ -165,27 +164,24 @@ account, shown for any authenticated account.
                 </div>
 
                 {% comment %}
-                    SNOW-415: "My favourites" section — flag-gated, lazy-loads
+                    SNOW-415: "My favourites" section — lazy-loads
                     favourites:list by URL name via hx-get on page load. No
                     cross-app import here: this template only reverses the
-                    URL name, and the view only calls
-                    waffle.flag_is_active(request, "favourites").
+                    URL name.
                 {% endcomment %}
-                {% if favourites_visible %}
-                    <section class="border-t border-border pt-8 mt-8">
-                        <h2 class="text-lg font-semibold text-text-1 mb-4">
-                            {% trans "My favourites" %}
-                        </h2>
-                        <div
-                            hx-get="{% url 'favourites:list' %}"
-                            hx-trigger="load"
-                            hx-target="this"
-                            hx-swap="innerHTML"
-                        >
-                            <p class="text-sm text-text-3">{% trans "Loading…" %}</p>
-                        </div>
-                    </section>
-                {% endif %}
+                <section class="border-t border-border pt-8 mt-8">
+                    <h2 class="text-lg font-semibold text-text-1 mb-4">
+                        {% trans "My favourites" %}
+                    </h2>
+                    <div
+                        hx-get="{% url 'favourites:list' %}"
+                        hx-trigger="load"
+                        hx-target="this"
+                        hx-swap="innerHTML"
+                    >
+                        <p class="text-sm text-text-3">{% trans "Loading…" %}</p>
+                    </div>
+                </section>
 
                 {% comment %}
                     Account email — SNOW-433. Shows the current verified address

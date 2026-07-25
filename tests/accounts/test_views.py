@@ -1409,32 +1409,21 @@ class TestManageViewAuthenticated:
 
 @pytest.mark.django_db
 class TestManageViewFavouritesSection:
-    """The flag-gated 'My favourites' section lazy-loads favourites:list.
+    """The 'My favourites' section lazy-loads favourites:list.
 
     Asserted purely via the reversed ``favourites:list`` URL appearing in
     the response HTML — this test module carries no import from the
     ``favourites`` app, matching ``manage_view`` itself.
     """
 
-    @override_flag("favourites", active=True)
-    def test_section_present_when_flag_active(self) -> None:
-        """With the flag active, the section lazy-loads favourites:list."""
+    def test_section_present(self) -> None:
+        """The section always lazy-loads favourites:list."""
         account = AccountFactory.create()
         client = _make_session_client(account)
         response = client.get(reverse("accounts:manage"))
         assert response.status_code == 200
         assert b"My favourites" in response.content
         assert reverse("favourites:list").encode() in response.content
-
-    @override_flag("favourites", active=False)
-    def test_section_absent_when_flag_inactive(self) -> None:
-        """With the flag inactive, the section (and its hx-get) is absent."""
-        account = AccountFactory.create()
-        client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
-        assert response.status_code == 200
-        assert b"My favourites" not in response.content
-        assert reverse("favourites:list").encode() not in response.content
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, UserFactory
@@ -41,7 +40,6 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     )
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_report_form_close_button_hides_sheet(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -69,7 +67,6 @@ def test_report_form_close_button_hides_sheet(
     page.wait_for_selector("#report-sheet[hidden]", state="attached")
 
 
-@override_flag("field_observations", active=True)
 def test_anonymous_signin_cta_has_close_button(
     live_server: LiveServer, page: Page
 ) -> None:
@@ -86,7 +83,6 @@ def test_anonymous_signin_cta_has_close_button(
     page.wait_for_selector("#report-sheet[hidden]", state="attached")
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_escape_key_closes_report_sheet(
     live_server: LiveServer, page: Page, django_db_blocker: Any

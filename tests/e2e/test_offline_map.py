@@ -75,7 +75,6 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import PwaPage, _session_login
 from tests.factories import AccountFactory, FavouriteFactory
@@ -232,7 +231,6 @@ def test_non_tile_error_with_no_style_loaded_still_engages_fallback(
 # ---------------------------------------------------------------------------
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourites_offline_toast_when_nothing_cached_yet(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -261,7 +259,6 @@ def test_favourites_offline_toast_when_nothing_cached_yet(
     page.wait_for_selector("#map-offline-toast-favourites:not(.hidden)", timeout=10000)
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourites_overlay_installs_from_cache_after_offline_reload(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -313,7 +310,6 @@ def test_favourites_overlay_installs_from_cache_after_offline_reload(
         page.context.set_offline(False)
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_community_reports_toggle_drops_expired_features_from_cache(
     live_server: LiveServer, page: Page

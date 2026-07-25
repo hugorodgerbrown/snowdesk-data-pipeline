@@ -44,7 +44,6 @@ import pytest
 from django.core.management import call_command
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, FavouriteFactory
@@ -179,7 +178,6 @@ def test_runtime_enabled_tier_survives_basemap_swap(
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourite_pin_survives_basemap_swap(
     live_server: LiveServer, page: Page, django_db_blocker: Any

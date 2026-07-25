@@ -6,11 +6,7 @@ persistent close (×) control / Esc dismissal on the favourite sheet.
 
 Uses the ``favourites_page`` fixture (``tests/e2e/conftest.py``) — a plain
 ``page`` + ``live_server`` with a subscriber session, no real service-worker
-lifecycle (the favourites surface doesn't need one). Every test still needs
-``@override_flag("favourites", active=True)`` since the flag is seeded
-``superusers=True`` in production and the fixture's subscriber isn't one;
-``override_flag`` mutates ``Flag.everyone`` in the DB, which the live-server
-thread sees immediately (pytest-django's ``live_server`` runs in-process).
+lifecycle (the favourites surface doesn't need one).
 
 Placing a favourite (SNOW-475) drives the touch-friendly place-picker
 rather than a canvas click: ``MAP.setCenter([lon, lat])`` inside
@@ -44,7 +40,6 @@ from django.urls import reverse
 from django.utils import timezone as django_timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from tests.e2e.conftest import FavouritesPage
@@ -61,7 +56,6 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_signed_in_add_flow_creates_favourite(
     favourites_page: FavouritesPage, django_db_blocker: Any
@@ -186,7 +180,6 @@ def _open_favourite_detail(page: Page, uuid: str, name: str) -> None:
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_rename_via_detail_popup_refreshes_label(
     favourites_page: FavouritesPage, django_db_blocker: Any
@@ -230,7 +223,6 @@ def test_rename_via_detail_popup_refreshes_label(
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_delete_removes_pin(
     favourites_page: FavouritesPage, django_db_blocker: Any
@@ -270,7 +262,6 @@ def test_delete_removes_pin(
         assert not Favourite.objects.filter(pk=favourite.pk).exists()
 
 
-@override_flag("favourites", active=True)
 def test_anonymous_add_shows_signin_cta(live_server: LiveServer, page: Page) -> None:
     """An anonymous visitor tapping Add favourite sees a sign-in CTA link."""
     _navigate_home(page, live_server.url)
@@ -287,7 +278,6 @@ def test_anonymous_add_shows_signin_cta(live_server: LiveServer, page: Page) -> 
     assert reverse("accounts:sign_in") in href
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_persists_across_reload(
     favourites_page: FavouritesPage,
@@ -317,7 +307,6 @@ def test_overlay_toggle_persists_across_reload(
     assert toggle.get_attribute("aria-checked") == "false"
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_create_form_close_button_hides_sheet(
     favourites_page: FavouritesPage,
@@ -339,7 +328,6 @@ def test_create_form_close_button_hides_sheet(
     page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
 
 
-@override_flag("favourites", active=True)
 def test_anonymous_signin_cta_has_close_button(
     live_server: LiveServer, page: Page
 ) -> None:
@@ -356,7 +344,6 @@ def test_anonymous_signin_cta_has_close_button(
     page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_escape_key_closes_favourite_sheet(
     favourites_page: FavouritesPage,
@@ -373,7 +360,6 @@ def test_escape_key_closes_favourite_sheet(
     page.wait_for_selector("#favourite-sheet[hidden]", state="attached")
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_forecast_panel_hourly_detail_expands_and_collapses(
     favourites_page: FavouritesPage, django_db_blocker: Any

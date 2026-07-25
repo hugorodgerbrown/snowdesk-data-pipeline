@@ -5515,8 +5515,6 @@ class TestObservationCountsStrip:
         """
         from datetime import date as _date
 
-        from waffle.testutils import override_flag
-
         region = MicroRegionFactory.create(
             region_id="CH-9100", name="Test Region", slug="test-counts"
         )
@@ -5530,11 +5528,8 @@ class TestObservationCountsStrip:
         ]
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9100"})
-        with override_flag("field_observations", active=True):
-            with patch(
-                "public.views._get_observation_counts", return_value=fake_counts
-            ):
-                response = client.get(url)
+        with patch("public.views._get_observation_counts", return_value=fake_counts):
+            response = client.get(url)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -5575,8 +5570,6 @@ class TestObservationCountsStrip:
         """
         from datetime import date as _date
 
-        from waffle.testutils import override_flag
-
         region = MicroRegionFactory.create(
             region_id="CH-9102", name="Footnote Region", slug="footnote-region"
         )
@@ -5586,14 +5579,11 @@ class TestObservationCountsStrip:
         fake_counts = [("Whumpfing", 2)]
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9102"})
-        with override_flag("field_observations", active=True):
-            with patch(
-                "public.views._get_observation_counts", return_value=fake_counts
-            ):
-                with patch(
-                    "public.views._get_observation_has_user_located", return_value=True
-                ):
-                    response = client.get(url)
+        with (
+            patch("public.views._get_observation_counts", return_value=fake_counts),
+            patch("public.views._get_observation_has_user_located", return_value=True),
+        ):
+            response = client.get(url)
 
         assert response.status_code == 200
         assert "Some reports were placed manually" in response.content.decode()
@@ -5606,8 +5596,6 @@ class TestObservationCountsStrip:
         """
         from datetime import date as _date
 
-        from waffle.testutils import override_flag
-
         region = MicroRegionFactory.create(
             region_id="CH-9103", name="GPS Only Region", slug="gps-only-region"
         )
@@ -5617,14 +5605,11 @@ class TestObservationCountsStrip:
         fake_counts = [("Whumpfing", 1)]
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9103"})
-        with override_flag("field_observations", active=True):
-            with patch(
-                "public.views._get_observation_counts", return_value=fake_counts
-            ):
-                with patch(
-                    "public.views._get_observation_has_user_located", return_value=False
-                ):
-                    response = client.get(url)
+        with (
+            patch("public.views._get_observation_counts", return_value=fake_counts),
+            patch("public.views._get_observation_has_user_located", return_value=False),
+        ):
+            response = client.get(url)
 
         assert response.status_code == 200
         assert "Some reports were placed manually" not in response.content.decode()

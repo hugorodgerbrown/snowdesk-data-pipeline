@@ -21,7 +21,6 @@ import pytest
 from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from bulletins.models import Bulletin, RegionDayRating
 from public.views import (
@@ -997,7 +996,6 @@ class TestResortsInRegion:
 class TestFavouritesInRegion:
     """Tests for the "Your favourites here" context entry and section (SNOW-507)."""
 
-    @override_flag("favourites", active=True)
     def test_section_shows_for_signed_in_user_with_favourite_in_region(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1023,7 +1021,6 @@ class TestFavouritesInRegion:
         assert "My spot" in content
         assert reverse("favourites:detail", args=[favourite.uuid]) in content
 
-    @override_flag("favourites", active=True)
     def test_section_hidden_for_anonymous(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1045,7 +1042,6 @@ class TestFavouritesInRegion:
         assert response.context["favourites_in_region"] == []
         assert b'data-testid="favourites-in-region"' not in response.content
 
-    @override_flag("favourites", active=True)
     def test_section_hidden_when_users_favourites_are_all_in_other_regions(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1057,32 +1053,6 @@ class TestFavouritesInRegion:
 
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["favourites_in_region"] == []
-        assert b'data-testid="favourites-in-region"' not in response.content
-
-    def test_section_hidden_when_flag_inactive(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """No section renders when the favourites flag is inactive, even for a signed-in user."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, region=region)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with (
-            override_flag("favourites", active=False),
-            _freeze("2026-03-15T10:00:00+00:00"),
-        ):
             url = reverse(
                 "public:bulletin_date",
                 kwargs={

@@ -22,7 +22,6 @@ from django.contrib.auth.models import AnonymousUser, User
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from tests.factories import UserFactory
 
@@ -79,18 +78,10 @@ class TestNavAdminMenu:
 
 @pytest.mark.django_db
 class TestNavObservationsLink:
-    """The Observations link was removed from the nav (menu cleanup)."""
+    """The Observations link was removed from the nav (menu cleanup, #497)."""
 
-    def test_link_absent_by_default(self, rf: RequestFactory) -> None:
-        """The link is absent when the observations_page flag is inactive."""
-        request = rf.get("/")
-        request.user = AnonymousUser()
-        html = render_to_string("includes/nav.html", {}, request=request)
-        assert reverse("public:observations") not in html
-
-    @override_flag("observations_page", active=True)
-    def test_link_absent_even_when_flag_active(self, rf: RequestFactory) -> None:
-        """The link no longer appears even when the flag is active."""
+    def test_link_absent(self, rf: RequestFactory) -> None:
+        """The link is absent for every viewer."""
         request = rf.get("/")
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)

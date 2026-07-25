@@ -30,14 +30,13 @@ SNOW-252 — peak semantics:
 
 SNOW-419:
 * ``api:community_reports_geojson`` — anonymised, 48h-windowed
-  ``FieldObservation`` overlay. Flag-gated on ``community_reports``.
+  ``FieldObservation`` overlay.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
-from typing import Generator
 from unittest.mock import patch
 
 import pytest
@@ -48,7 +47,6 @@ from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
 from observations.models import FieldObservation
@@ -776,7 +774,6 @@ def test_resort_popup_unknown_resort_returns_404() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("favourites", active=True)
 def test_resort_popup_anonymous_shows_signin_cta_no_star() -> None:
     """An anonymous visitor sees a sign-in CTA and no favourite star."""
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -791,7 +788,6 @@ def test_resort_popup_anonymous_shows_signin_cta_no_star() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("favourites", active=True)
 def test_resort_popup_authenticated_not_favourited_shows_star() -> None:
     """An authenticated, not-yet-favouriting user sees the star, unfavourited."""
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -808,7 +804,6 @@ def test_resort_popup_authenticated_not_favourited_shows_star() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("favourites", active=True)
 def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> None:
     """An already-favourited resort shows data-favourited=true + the favourite's uuid."""
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -830,21 +825,6 @@ def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> No
     html = response.json()["html"]
     assert 'data-favourited="true"' in html
     assert str(favourite.uuid) in html
-
-
-@pytest.mark.django_db
-def test_resort_popup_flag_inactive_shows_signin_cta_no_star() -> None:
-    """An authenticated user sees the sign-in CTA when the flag is inactive."""
-    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-    user = UserFactory.create()
-
-    client = Client()
-    client.force_login(user)
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
-
-    assert response.status_code == 200
-    html = response.json()["html"]
-    assert "data-resort-star" not in html
 
 
 @pytest.mark.django_db
@@ -2175,18 +2155,6 @@ def test_region_summary_covered_no_rating_shows_no_bulletin_tooltip() -> None:
 class TestCommunityReportsGeojson:
     """community_reports_geojson — anonymised 48h FieldObservation overlay."""
 
-    @pytest.fixture(autouse=True)
-    def _enable_community_reports_flag(self) -> Generator[None, None, None]:
-        """Force ``community_reports=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes we use
-        an autouse fixture that wraps each test in the context manager
-        (mirrors ``TestEditResortsQueue`` in test_edit_resorts_api.py).
-        """
-        with override_flag("community_reports", active=True):
-            yield
-
     def test_feature_collection_shape(self) -> None:
         """Returns a FeatureCollection of Point features."""
         region = MicroRegionFactory.create(name="Martigny-Verbier")
@@ -2331,9 +2299,10 @@ class TestCommunityReportsGeojson:
     def test_cache_control_prevents_shared_caching(self) -> None:
         """SNOW-459: response is private/no-store, never public.
 
-        The overlay is gated per-user by the ``community_reports`` flag, so a
-        shared cache must not be able to replay one user's flag decision to
-        another. ``public`` must be absent; ``no-store`` present.
+        The overlay is per-user (each viewer's own reports are surfaced
+        distinctly), so a shared cache must not be able to replay one user's
+        response to another. Making it publicly cacheable is deferred to
+        SNOW-469. ``public`` must be absent; ``no-store`` present.
         """
         response = Client().get(reverse("api:community_reports_geojson"))
         cache_control = response.get("Cache-Control", "")
@@ -2352,11 +2321,3 @@ class TestCommunityReportsGeojson:
             response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
         assert "no-store" in response.get("Cache-Control", "")
-
-
-@pytest.mark.django_db
-def test_community_reports_geojson_404_when_flag_inactive() -> None:
-    """The endpoint 404s when the community_reports flag is inactive."""
-    with override_flag("community_reports", active=False):
-        response = Client().get(reverse("api:community_reports_geojson"))
-    assert response.status_code == 404

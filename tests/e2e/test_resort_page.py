@@ -22,7 +22,6 @@ import pytest
 from django.utils import timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from regions.models import Resort
 from tests.factories import FieldObservationFactory, WeatherSnapshotFactory
@@ -60,7 +59,6 @@ def test_bulletin_to_resort_and_back_round_trips_to_same_region(
     assert "/ch-4115/" in page.url
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_resort_page_shows_point_local_observation_count(
     live_server: LiveServer,

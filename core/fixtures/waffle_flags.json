@@ -6,26 +6,6 @@
       "superusers": true
     },
     {
-      "name": "favourites",
-      "note": "Gates the saved-map-pin favourites feature (SNOW-413).",
-      "superusers": true
-    },
-    {
-      "name": "field_observations",
-      "note": "Gates the GPS-gated field-report ('Waze-style Report') button on /map/ (SNOW-324).",
-      "superusers": true
-    },
-    {
-      "name": "community_reports",
-      "note": "Gates the community-reports read overlay on /map/ (SNOW-419) — anonymised, clustered pins from the last 48 hours of FieldObservation rows.",
-      "superusers": true
-    },
-    {
-      "name": "observations_page",
-      "note": "Gates the /observations/ page (SNOW-476) — a signed-in stream of the last 48 hours of FieldObservation rows.",
-      "superusers": true
-    },
-    {
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true

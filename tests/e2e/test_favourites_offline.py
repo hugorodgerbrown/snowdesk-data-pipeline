@@ -28,7 +28,6 @@ from typing import Any
 
 import pytest
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import SignedInPage
 from tests.factories import FavouriteFactory, MicroRegionFactory, RegionDayRatingFactory
@@ -47,7 +46,6 @@ _WAIT_FOR_CACHED_UUID_JS = """async (uuid) => {
 }"""
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_reload_repaints_favourites_list_from_cache(
     signed_in_page: SignedInPage, django_db_blocker: Any
@@ -93,7 +91,6 @@ def test_offline_reload_repaints_favourites_list_from_cache(
         page.context.set_offline(False)
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_expired_rating_shows_expired_not_stale_chip(
     signed_in_page: SignedInPage, django_db_blocker: Any

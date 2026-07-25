@@ -18,10 +18,9 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/resorts/<resort_id>/popup/``      — SNOW-499: pre-rendered minimal
   popup HTML for a resort pin (name, region, favourite star, bulletin link).
   Public (no auth gate — resorts are a public layer); the favourite star
-  itself is gated on the ``favourites`` waffle flag + authentication.
+  itself is gated on authentication.
 * ``/api/community-reports.geojson``       — anonymised, clustered
-  ``FieldObservation`` pins from the last 48 hours (SNOW-419). Flag-gated
-  on ``community_reports``.
+  ``FieldObservation`` pins from the last 48 hours (SNOW-419).
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
 Flag-gated endpoints powering the in-map resort editor (SNOW-74,
@@ -836,9 +835,9 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     public reference layer, so anonymous visitors see the same name/region/
     resort-link content everyone else does. Only the favourite star is
     gated: it renders (with the correct favourited state + the existing
-    favourite's uuid, for unfavourite) when the ``favourites`` waffle flag is
-    active AND the requester is authenticated; otherwise the popup shows a
-    sign-in CTA in its place (``can_favourite=False``).
+    favourite's uuid, for unfavourite) when the requester is authenticated;
+    otherwise the popup shows a sign-in CTA in its place
+    (``can_favourite=False``).
 
     SNOW-504: the CTA now reads "View resort →" and links to the resort's
     own page (``resort.get_absolute_url()``) rather than straight to the
@@ -869,7 +868,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
 
     can_favourite = False
     favourite = None
-    if waffle.flag_is_active(request, "favourites") and request.user.is_authenticated:
+    if request.user.is_authenticated:
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
@@ -896,22 +895,8 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
 
 
 # ---------------------------------------------------------------------------
-# Community reports overlay (SNOW-419) — flag-gated on ``community_reports``
+# Community reports overlay (SNOW-419)
 # ---------------------------------------------------------------------------
-
-
-def _require_community_reports_flag(request: HttpRequest) -> None:
-    """Raise Http404 unless the ``community_reports`` waffle flag is active.
-
-    Mirrors ``_require_edit_map_flag`` below: an unauthorised caller hitting
-    the API directly must see the same 404 the map page's overlay toggle
-    would give them when the flag is inactive for the request user. Flag is
-    seeded with ``superusers=True`` by migration
-    ``observations/migrations/0006_seed_community_reports_flag.py``;
-    extend / disable via ``/admin/waffle/flag/community_reports/``.
-    """
-    if not waffle.flag_is_active(request, "community_reports"):
-        raise Http404("community_reports flag is inactive for this request.")
 
 
 def _truncate_to_quarter_hour(value: datetime) -> datetime:
@@ -934,12 +919,8 @@ def _truncate_to_quarter_hour(value: datetime) -> datetime:
     return value.replace(minute=floored_minute, second=0, microsecond=0)
 
 
-# SNOW-459: private/no-store, NOT public. The response is gated per-user by
-# the ``community_reports`` waffle flag (superuser/beta targeting), and a
-# per-user decision must never be shared by a CDN or proxy — a cached 200
-# primed by a superuser would leak to anonymous callers, and a cached 404
-# would hide the overlay from enabled users. Public caching can only return
-# here once the gate is global (a waffle Switch) — tracked in SNOW-469.
+# SNOW-459: private/no-store, NOT public — CDN/proxy caching of this
+# response is left for SNOW-469 (tracked separately, out of scope here).
 @cache_control(private=True, no_store=True)
 def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     """
@@ -948,7 +929,7 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     Covers ``FieldObservation`` rows from the last 48 hours
     (``_COMMUNITY_REPORTS_WINDOW_HOURS``), rendered as a "Community
     reports" overlay on ``/map/`` (SNOW-419) — a Waze-like shared layer of
-    clustered pins, gated on the ``community_reports`` waffle flag.
+    clustered pins.
 
     Anonymisation is applied server-side, once, here — the client never
     receives full-precision coordinates or anything that identifies the
@@ -979,9 +960,6 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
           ]
         }
 
-    Errors:
-        404 — ``community_reports`` waffle flag inactive for this request.
-
     Args:
         request: The incoming HTTP request.
 
@@ -989,8 +967,6 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
         A JsonResponse with a FeatureCollection payload.
 
     """
-    _require_community_reports_flag(request)
-
     since = timezone.now() - timedelta(hours=_COMMUNITY_REPORTS_WINDOW_HOURS)
     features: list[dict[str, Any]] = []
     newest: datetime | None = None

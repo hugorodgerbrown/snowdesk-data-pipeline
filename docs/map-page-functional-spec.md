@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), basemaps, season scrubber
 status: current
-last-reviewed: 2026-07-23
+last-reviewed: 2026-07-25
 ---
 
 # Map page — functional specification
@@ -172,52 +172,48 @@ files from the map while out in the terrain — "I heard whumpfing here",
 pinwheels, wind striations, fractures, and shooting cracks. These are the
 raw material for a crowd-sourced snowpack-signal layer.
 
-There are two distinct surfaces over this data, gated by two separate
-flags so they can ship independently:
+There are two distinct surfaces over this data, always-on for eligible
+users so they can be used independently:
 
-**Submission — the "Report" flow** (`field_observations` flag):
+**Submission — the "Report" flow:**
 
-- **Who can use it.** Signed-in users for whom the flag is active
-  (currently superusers). It requires a location: the report captures the
-  device GPS fix (which the user can refine by dragging the pin) or a
-  manually-placed point, records how the location was determined, stamps
-  the observation time, and best-effort resolves the point to a
-  micro-region.
+- **Who can use it.** Signed-in, email-verified users. It requires a
+  location: the report captures the device GPS fix (which the user can
+  refine by dragging the pin) or a manually-placed point, records how the
+  location was determined, stamps the observation time, and best-effort
+  resolves the point to a micro-region.
 - **When.** A report can be filed offline — it is queued and replays when
   connectivity returns, stamped with the time the user actually observed
   the signal, not the time it eventually uploads.
 
-**Read overlay — "Community reports"** (`community_reports` flag):
+**Read overlay — "Community reports":**
 
 - **What it shows.** Anonymised, clustered pins of everyone's field
   observations from the **last 48 hours**, fading with age. It answers
   "what are other people seeing out there right now?"
-- **Who can use it.** Anyone the `community_reports` flag is active for
-  (currently superusers). **Off by default** — a user opts into a shared
-  layer rather than having other people's reports appear unannounced.
+- **Who can use it.** Everyone, including anonymous visitors — the overlay
+  shows anonymised, publicly-shared data with no per-user eligibility gate.
+  **Off by default** — a user opts into a shared layer rather than having
+  other people's reports appear unannounced.
 - **Privacy.** The feed is deliberately coarse: coordinates are rounded to
   ~100 m, timestamps are floored to the nearest 15 minutes, and no user
-  identity, exact location, GPS fix, or accuracy is ever exposed. It is
-  per-user gated and not shared-cacheable, so one user's flag decision can
-  never leak another user's view.
+  identity, exact location, GPS fix, or accuracy is ever exposed.
 
 (A third surface, the `/observations/` page — a signed-in 48-hour stream
-of reports — is gated on its own `observations_page` flag. Own reports
-always show; others' reports show only when `community_reports` is also
-active for the viewer.)
+of reports — always shows the viewer's own reports plus other users'
+reports.)
 
 ### 3.4 UGC eligibility at a glance
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
-| Favourites | `favourites` flag + signed in | Owner only, 10/min | On (eligible users) | Private, per-user |
+| Favourites | Signed in | Owner only, 10/min | On (eligible users) | Private, per-user |
 | Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
-| Community reports | `community_reports` flag | via Report flow below | Off | Anonymised, public |
-| Report (submit) | `field_observations` flag + signed in + location | The reporter | n/a (a control, not an overlay) | Raw observation |
+| Community reports | Public | via Report flow below | Off | Anonymised, public |
+| Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
-All feature flags are currently scoped to superusers during rollout;
-[`feature-flags.md`](feature-flags.md) is the operator reference for
-widening them.
+`edit_map` remains a superuser-scoped feature flag during rollout;
+[`feature-flags.md`](feature-flags.md) is the operator reference.
 
 ---
 
@@ -332,8 +328,8 @@ map.
   (version/freshness headers, mutation queue, reset).
 - [`compressed-views-rating-rule.md`](compressed-views-rating-rule.md) —
   the peak-rating rule the choropleth and tooltip follow.
-- [`feature-flags.md`](feature-flags.md) — the flags gating favourites,
-  observations, community reports, and the resort editor.
+- [`feature-flags.md`](feature-flags.md) — the flag gating the resort
+  editor (`edit_map`).
 - [`glossary.md`](glossary.md) — domain term → code symbol map (EAWS
   tiers, MicroRegion, FieldObservation, Resort, RegionDayRating).
 </content>

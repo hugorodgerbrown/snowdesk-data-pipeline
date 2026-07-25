@@ -27,7 +27,6 @@ from __future__ import annotations
 from django.conf import settings
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
@@ -40,7 +39,6 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-@override_flag("community_reports", active=True)
 def test_empty_cached_collection_installs_zero_markers_without_warning(
     live_server: LiveServer, page: Page
 ) -> None:

@@ -22,7 +22,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from waffle.testutils import override_flag
 
 from regions.models import MicroRegion
 from tests.e2e.conftest import FavouritesPage
@@ -33,7 +32,6 @@ from tests.factories import FavouriteFactory
 _REGION_ID = "CH-4115"
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.usefixtures("_load_test_data")
 def test_region_page_links_to_favourite_and_back(
@@ -82,7 +80,6 @@ def test_region_page_links_to_favourite_and_back(
     page.wait_for_selector('[data-testid="favourites-in-region"]')
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_foreign_favourite_uuid_returns_404(
     favourites_page: FavouritesPage, django_db_blocker: Any

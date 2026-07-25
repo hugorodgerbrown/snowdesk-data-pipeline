@@ -35,7 +35,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
 from tests.e2e.conftest import FavouritesPage
@@ -67,7 +66,6 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourite_tap_does_not_select_region_underneath(
     favourites_page: FavouritesPage,
@@ -225,8 +223,6 @@ def test_region_tap_still_selects_when_no_marker_near(
     assert detail["region_id"]
 
 
-@override_flag("favourites", active=True)
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_pin_markers_stay_above_a_later_installed_overlay(
     favourites_page: FavouritesPage,

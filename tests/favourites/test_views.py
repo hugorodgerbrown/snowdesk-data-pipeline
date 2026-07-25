@@ -2,38 +2,37 @@
 tests/favourites/test_views.py — Tests for favourites.views.
 
 Covers:
-  favourite_create — flag off → 404; anonymous → 403; non-HTMX → 400;
-                      rate-limited → 429; invalid lat/lon → 400;
-                      name over max_length → 400;
+  favourite_create — anonymous → 403; non-HTMX → 400; rate-limited → 429;
+                      invalid lat/lon → 400; name over max_length → 400;
                       valid submit → 200 + creates row;
                       cap reached → 409 with the limit-reached partial.
   favourite_create_from_resort (SNOW-499) — happy path (200 + resort FK
                       set); cap reached → 409 with the limit partial;
-                      flag off → 404; anonymous → 403; non-HTMX → 400;
-                      missing/non-integer resort_id → 400; unknown
-                      resort_id → 404; ungeocoded resort → 422.
+                      anonymous → 403; non-HTMX → 400; missing/non-integer
+                      resort_id → 400; unknown resort_id → 404; ungeocoded
+                      resort → 422.
   favourite_resort_toggle (SNOW-504) — first POST creates, second POST
                       deletes the (user, resort) Favourite; cap reached →
-                      409 with the limit partial; flag off → 404;
-                      anonymous → 403; non-HTMX → 400; unknown resort_id →
-                      404; ungeocoded resort → 422; rate-limited → 429.
+                      409 with the limit partial; anonymous → 403;
+                      non-HTMX → 400; unknown resort_id → 404; ungeocoded
+                      resort → 422; rate-limited → 429.
   favourite_rename — owner isolation (user A cannot rename user B's pin);
                       name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
                       row survives when a non-owner attempts deletion.
   favourite_card — owner GET 200; non-owner uuid → 404 (no existence
-                    oracle); anon → 403; flag off → 404; non-HTMX → 400;
-                    region-null → no-coverage note; region + rating →
-                    danger tile + bulletin link; unnamed favourite →
-                    coordinate fallback; no weather snapshot yet →
-                    "coming soon" empty state (SNOW-415); with
-                    ForecastPointWeather rows → forecast panel (day strip +
-                    hourly detail) renders, response carries
-                    X-Data-Generated-At (SNOW-417).
+                    oracle); anon → 403; non-HTMX → 400; region-null →
+                    no-coverage note; region + rating → danger tile +
+                    bulletin link; unnamed favourite → coordinate
+                    fallback; no weather snapshot yet → "coming soon"
+                    empty state (SNOW-415); with ForecastPointWeather
+                    rows → forecast panel (day strip + hourly detail)
+                    renders, response carries X-Data-Generated-At
+                    (SNOW-417).
   favourite_detail (SNOW-507) — owner GET 200 full page with page chrome
                     plus the card content; non-owner uuid → 404; unknown
-                    uuid → 404; anon → 403; flag off → 404; response
-                    carries Cache-Control: private, no-store.
+                    uuid → 404; anon → 403; response carries
+                    Cache-Control: private, no-store.
   favourite_card problems — elevation-aware avalanche-problem highlighting
                     (SNOW-422): a region + today's bulletin renders one
                     rating-block per problem card plus an altitude-relevance
@@ -42,14 +41,14 @@ Covers:
                     section never contains the word "safe" (safety-sensitive
                     — copy is altitude-relative only).
   favourite_list — owner sees only their own favourites; another user's
-                    favourites are absent; anon → 403; flag off → 404;
-                    non-HTMX → 400; empty state when the user has none
-                    (SNOW-415); each row carries an "Open page →" link to
-                    favourites:detail (SNOW-507).
+                    favourites are absent; anon → 403; non-HTMX → 400;
+                    empty state when the user has none (SNOW-415); each
+                    row carries an "Open page →" link to favourites:detail
+                    (SNOW-507).
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
-                        anonymous → 403; flag off → 404; each feature
-                        carries resort_id (null for a plain pin, SNOW-499).
+                        anonymous → 403; each feature carries resort_id
+                        (null for a plain pin, SNOW-499).
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -77,7 +76,6 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from favourites.models import Favourite
@@ -241,25 +239,9 @@ def _create_via_service(
 
 
 @pytest.mark.django_db
-class TestFavouriteCreateFlagGate:
-    """Flag-off → 404."""
-
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, POST returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.post(
-            CREATE_URL, {"lat": "46.1", "lon": "7.4"}, **HTMX_HEADERS
-        )
-        assert response.status_code == 404
-
-
-@pytest.mark.django_db
 class TestFavouriteCreateAuthGate:
     """Anonymous users are rejected with 403."""
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         response = client.post(
@@ -272,7 +254,6 @@ class TestFavouriteCreateAuthGate:
 class TestFavouriteCreateHtmxGate:
     """Non-HTMX requests are rejected with 400."""
 
-    @override_flag("favourites", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain POST without HX-Request returns 400."""
         user = UserFactory.create()
@@ -285,7 +266,6 @@ class TestFavouriteCreateHtmxGate:
 class TestFavouriteCreateValidation:
     """Missing/unparseable lat or lon returns 400."""
 
-    @override_flag("favourites", active=True)
     def test_missing_lat_returns_400(self, client: Client) -> None:
         """No lat provided → 400."""
         user = UserFactory.create()
@@ -293,7 +273,6 @@ class TestFavouriteCreateValidation:
         response = client.post(CREATE_URL, {"lon": "7.4"}, **HTMX_HEADERS)
         assert response.status_code == 400
 
-    @override_flag("favourites", active=True)
     def test_unparseable_lat_returns_400(self, client: Client) -> None:
         """A non-float lat → 400."""
         user = UserFactory.create()
@@ -303,7 +282,6 @@ class TestFavouriteCreateValidation:
         )
         assert response.status_code == 400
 
-    @override_flag("favourites", active=True)
     def test_name_over_max_length_returns_400(self, client: Client) -> None:
         """A name longer than max_length is rejected with 400, not a DB error."""
         user = UserFactory.create()
@@ -325,7 +303,6 @@ class TestFavouriteCreateValidation:
             ("46.1", "200"),  # longitude > 180
         ],
     )
-    @override_flag("favourites", active=True)
     def test_invalid_coordinates_return_400_no_row_no_external_call(
         self, client: Client, lat: str, lon: str
     ) -> None:
@@ -345,7 +322,6 @@ class TestFavouriteCreateValidation:
 class TestFavouriteCreateSuccess:
     """A valid submission creates a row and returns the saved-pin partial."""
 
-    @override_flag("favourites", active=True)
     def test_valid_submit_creates_favourite(self, client: Client) -> None:
         """Valid lat/lon creates a Favourite and returns 200."""
         user = UserFactory.create()
@@ -372,7 +348,6 @@ class TestFavouriteCreateSuccess:
 class TestFavouriteCreateCap:
     """Reaching the per-user cap renders the limit-reached partial at 409."""
 
-    @override_flag("favourites", active=True)
     def test_cap_reached_returns_409_with_limit_partial(
         self, client: Client, settings: Any
     ) -> None:
@@ -406,7 +381,6 @@ class TestFavouriteCreateCap:
 class TestFavouriteCreateRateLimit:
     """Rate limit returns 429 when exceeded."""
 
-    @override_flag("favourites", active=True)
     def test_rate_limited_branch_returns_429(self, client: Client) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
@@ -435,11 +409,10 @@ class TestFavouriteCreateRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        with patch("favourites.views._require_favourites_flag", return_value=None):
-            from favourites.views import favourite_create  # noqa: PLC0415
+        from favourites.views import favourite_create  # noqa: PLC0415
 
-            resp = favourite_create(request)
-            assert resp.status_code == 429
+        resp = favourite_create(request)
+        assert resp.status_code == 429
 
 
 # ---------------------------------------------------------------------------
@@ -448,26 +421,9 @@ class TestFavouriteCreateRateLimit:
 
 
 @pytest.mark.django_db
-class TestFavouriteCreateFromResortFlagGate:
-    """Flag-off → 404."""
-
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, POST returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        response = client.post(
-            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
-        )
-        assert response.status_code == 404
-
-
-@pytest.mark.django_db
 class TestFavouriteCreateFromResortAuthGate:
     """Anonymous users are rejected with 403."""
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -481,7 +437,6 @@ class TestFavouriteCreateFromResortAuthGate:
 class TestFavouriteCreateFromResortHtmxGate:
     """Non-HTMX requests are rejected with 400."""
 
-    @override_flag("favourites", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain POST without HX-Request returns 400."""
         user = UserFactory.create()
@@ -495,7 +450,6 @@ class TestFavouriteCreateFromResortHtmxGate:
 class TestFavouriteCreateFromResortValidation:
     """Missing/non-integer resort_id → 400; unknown resort_id → 404."""
 
-    @override_flag("favourites", active=True)
     def test_missing_resort_id_returns_400(self, client: Client) -> None:
         """No resort_id provided → 400."""
         user = UserFactory.create()
@@ -503,7 +457,6 @@ class TestFavouriteCreateFromResortValidation:
         response = client.post(RESORT_CREATE_URL, {}, **HTMX_HEADERS)
         assert response.status_code == 400
 
-    @override_flag("favourites", active=True)
     def test_non_integer_resort_id_returns_400(self, client: Client) -> None:
         """A non-integer resort_id → 400."""
         user = UserFactory.create()
@@ -513,7 +466,6 @@ class TestFavouriteCreateFromResortValidation:
         )
         assert response.status_code == 400
 
-    @override_flag("favourites", active=True)
     def test_unknown_resort_id_returns_404(self, client: Client) -> None:
         """A resort_id with no matching row → 404."""
         user = UserFactory.create()
@@ -526,7 +478,6 @@ class TestFavouriteCreateFromResortValidation:
 class TestFavouriteCreateFromResortRateLimit:
     """Rate limit returns 429 when exceeded."""
 
-    @override_flag("favourites", active=True)
     def test_rate_limited_branch_returns_429(self, client: Client) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
@@ -557,18 +508,16 @@ class TestFavouriteCreateFromResortRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        with patch("favourites.views._require_favourites_flag", return_value=None):
-            from favourites.views import favourite_create_from_resort  # noqa: PLC0415
+        from favourites.views import favourite_create_from_resort  # noqa: PLC0415
 
-            resp = favourite_create_from_resort(request)
-            assert resp.status_code == 429
+        resp = favourite_create_from_resort(request)
+        assert resp.status_code == 429
 
 
 @pytest.mark.django_db
 class TestFavouriteCreateFromResortUngeocoded:
     """An ungeocoded resort cannot be favourited — 422."""
 
-    @override_flag("favourites", active=True)
     def test_ungeocoded_resort_returns_422(self, client: Client) -> None:
         """A resort with no latitude/longitude returns 422, no row created."""
         user = UserFactory.create()
@@ -587,7 +536,6 @@ class TestFavouriteCreateFromResortUngeocoded:
 class TestFavouriteCreateFromResortSuccess:
     """A valid submission creates a resort-linked Favourite and returns 200."""
 
-    @override_flag("favourites", active=True)
     def test_valid_submit_creates_resort_favourite(self, client: Client) -> None:
         """A geocoded resort_id creates a Favourite with the resort FK set."""
         user = UserFactory.create()
@@ -609,7 +557,6 @@ class TestFavouriteCreateFromResortSuccess:
         assert favourite.region == region
         assert favourite.name == "Verbier"
 
-    @override_flag("favourites", active=True)
     def test_repeat_submit_is_idempotent(self, client: Client) -> None:
         """POSTing the same resort_id twice returns 200 both times, one row."""
         user = UserFactory.create()
@@ -636,7 +583,6 @@ class TestFavouriteCreateFromResortSuccess:
 class TestFavouriteCreateFromResortCap:
     """Reaching the per-user cap renders the limit-reached partial at 409."""
 
-    @override_flag("favourites", active=True)
     def test_cap_reached_returns_409_with_limit_partial(
         self, client: Client, settings: Any
     ) -> None:
@@ -665,24 +611,9 @@ class TestFavouriteCreateFromResortCap:
 
 
 @pytest.mark.django_db
-class TestFavouriteResortToggleFlagGate:
-    """Flag-off → 404."""
-
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, POST returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
-        assert response.status_code == 404
-
-
-@pytest.mark.django_db
 class TestFavouriteResortToggleAuthGate:
     """Anonymous users are rejected with 403."""
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -694,7 +625,6 @@ class TestFavouriteResortToggleAuthGate:
 class TestFavouriteResortToggleHtmxGate:
     """Non-HTMX requests are rejected with 400."""
 
-    @override_flag("favourites", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain POST without HX-Request returns 400."""
         user = UserFactory.create()
@@ -708,7 +638,6 @@ class TestFavouriteResortToggleHtmxGate:
 class TestFavouriteResortToggleValidation:
     """An unknown resort_id → 404."""
 
-    @override_flag("favourites", active=True)
     def test_unknown_resort_id_returns_404(self, client: Client) -> None:
         """A resort_id with no matching row → 404."""
         user = UserFactory.create()
@@ -721,7 +650,6 @@ class TestFavouriteResortToggleValidation:
 class TestFavouriteResortToggleUngeocoded:
     """An ungeocoded resort cannot be favourited — 422."""
 
-    @override_flag("favourites", active=True)
     def test_ungeocoded_resort_returns_422(self, client: Client) -> None:
         """A resort with no latitude/longitude returns 422, no row created."""
         user = UserFactory.create()
@@ -738,7 +666,6 @@ class TestFavouriteResortToggleUngeocoded:
 class TestFavouriteResortToggleRateLimit:
     """Rate limit returns 429 when exceeded."""
 
-    @override_flag("favourites", active=True)
     def test_rate_limited_branch_returns_429(self, client: Client) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
@@ -768,18 +695,16 @@ class TestFavouriteResortToggleRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        with patch("favourites.views._require_favourites_flag", return_value=None):
-            from favourites.views import favourite_resort_toggle  # noqa: PLC0415
+        from favourites.views import favourite_resort_toggle  # noqa: PLC0415
 
-            resp = favourite_resort_toggle(request, resort.pk)
-            assert resp.status_code == 429
+        resp = favourite_resort_toggle(request, resort.pk)
+        assert resp.status_code == 429
 
 
 @pytest.mark.django_db
 class TestFavouriteResortToggleSuccess:
     """Toggling creates then deletes the (user, resort) Favourite."""
 
-    @override_flag("favourites", active=True)
     def test_toggle_creates_then_deletes(self, client: Client) -> None:
         """First POST creates a Favourite; second POST deletes it."""
         user = UserFactory.create()
@@ -806,7 +731,6 @@ class TestFavouriteResortToggleSuccess:
 class TestFavouriteResortToggleCap:
     """Reaching the per-user cap renders the limit-reached partial at 409."""
 
-    @override_flag("favourites", active=True)
     def test_cap_reached_returns_409_with_limit_partial(
         self, client: Client, settings: Any
     ) -> None:
@@ -836,7 +760,6 @@ class TestFavouriteResortToggleCap:
 class TestFavouriteRenameOwnerIsolation:
     """Owner isolation — user A cannot rename user B's pin."""
 
-    @override_flag("favourites", active=True)
     def test_owner_can_rename(self, client: Client) -> None:
         """The owning user can rename their own favourite."""
         user = UserFactory.create()
@@ -851,7 +774,6 @@ class TestFavouriteRenameOwnerIsolation:
         favourite.refresh_from_db()
         assert favourite.name == "New name"
 
-    @override_flag("favourites", active=True)
     def test_other_user_cannot_rename(self, client: Client) -> None:
         """A different user attempting to rename gets 404, and the row is unchanged."""
         owner = UserFactory.create()
@@ -867,19 +789,6 @@ class TestFavouriteRenameOwnerIsolation:
         favourite.refresh_from_db()
         assert favourite.name != "Hijacked"
 
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, POST returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.post(
-            _rename_url("00000000-0000-0000-0000-000000000000"),
-            {"name": "x"},
-            **HTMX_HEADERS,
-        )
-        assert response.status_code == 404
-
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         response = client.post(
@@ -889,7 +798,6 @@ class TestFavouriteRenameOwnerIsolation:
         )
         assert response.status_code == 403
 
-    @override_flag("favourites", active=True)
     def test_name_over_max_length_returns_400(self, client: Client) -> None:
         """A name longer than max_length is rejected with 400, not a DB error."""
         user = UserFactory.create()
@@ -904,7 +812,6 @@ class TestFavouriteRenameOwnerIsolation:
         favourite.refresh_from_db()
         assert favourite.name != "x" * 101
 
-    @override_flag("favourites", active=True)
     def test_updated_at_advances_after_rename(self, client: Client) -> None:
         """updated_at is newer after a rename than at creation (regression)."""
         user = UserFactory.create()
@@ -933,7 +840,6 @@ class TestFavouriteRenameOwnerIsolation:
 class TestFavouriteDeleteOwnerIsolation:
     """Owner isolation — user A cannot delete user B's pin."""
 
-    @override_flag("favourites", active=True)
     def test_owner_can_delete(self, client: Client) -> None:
         """The owning user can delete their own favourite."""
         user = UserFactory.create()
@@ -945,7 +851,6 @@ class TestFavouriteDeleteOwnerIsolation:
         assert response.status_code == 200
         assert not Favourite.objects.filter(pk=favourite.pk).exists()
 
-    @override_flag("favourites", active=True)
     def test_other_user_cannot_delete(self, client: Client) -> None:
         """A different user attempting to delete gets 404, row survives."""
         owner = UserFactory.create()
@@ -958,7 +863,6 @@ class TestFavouriteDeleteOwnerIsolation:
         assert response.status_code == 404
         assert Favourite.objects.filter(pk=favourite.pk).exists()
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         response = client.post(
@@ -976,7 +880,6 @@ class TestFavouriteDeleteOwnerIsolation:
 class TestFavouriteCard:
     """favourite_card — owner-scoped detail card (SNOW-415)."""
 
-    @override_flag("favourites", active=True)
     def test_owner_gets_200_with_name_and_altitude(self, client: Client) -> None:
         """Owner GET renders the card with the favourite's name and altitude."""
         user = UserFactory.create()
@@ -990,7 +893,6 @@ class TestFavouriteCard:
         assert "My spot" in content
         assert "1834" in content
 
-    @override_flag("favourites", active=True)
     def test_unnamed_favourite_falls_back_to_coordinates(self, client: Client) -> None:
         """An unnamed favourite's title falls back to formatted coordinates."""
         user = UserFactory.create()
@@ -1006,7 +908,6 @@ class TestFavouriteCard:
         assert "46.10123" in content
         assert "7.40456" in content
 
-    @override_flag("favourites", active=True)
     def test_non_owner_uuid_returns_404(self, client: Client) -> None:
         """A different user's uuid returns 404, not 403 — no existence oracle."""
         owner = UserFactory.create()
@@ -1018,7 +919,6 @@ class TestFavouriteCard:
 
         assert response.status_code == 404
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""
         response = client.get(
@@ -1026,17 +926,6 @@ class TestFavouriteCard:
         )
         assert response.status_code == 403
 
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, GET returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.get(
-            _card_url("00000000-0000-0000-0000-000000000000"), **HTMX_HEADERS
-        )
-        assert response.status_code == 404
-
-    @override_flag("favourites", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain GET without HX-Request returns 400."""
         user = UserFactory.create()
@@ -1047,7 +936,6 @@ class TestFavouriteCard:
 
         assert response.status_code == 400
 
-    @override_flag("favourites", active=True)
     def test_region_null_shows_no_coverage_note(self, client: Client) -> None:
         """A favourite with region=None shows the no-coverage note, no rating."""
         user = UserFactory.create()
@@ -1061,7 +949,6 @@ class TestFavouriteCard:
         assert "No bulletin coverage" in content
         assert "danger-tile" not in content
 
-    @override_flag("favourites", active=True)
     def test_region_with_rating_shows_chip_and_bulletin_link(
         self, client: Client
     ) -> None:
@@ -1079,7 +966,6 @@ class TestFavouriteCard:
         assert "danger-tile" in content
         assert region.get_absolute_url() in content
 
-    @override_flag("favourites", active=True)
     def test_no_weather_snapshot_shows_coming_soon(self, client: Client) -> None:
         """Without a ForecastPointWeather snapshot, the weather slot shows 'coming soon'."""
         user = UserFactory.create()
@@ -1092,7 +978,6 @@ class TestFavouriteCard:
         content = response.content.decode()
         assert "coming soon" in content.lower()
 
-    @override_flag("favourites", active=True)
     def test_forecast_panel_renders_day_strip_and_hourly_detail(
         self, client: Client
     ) -> None:
@@ -1120,7 +1005,6 @@ class TestFavouriteCard:
         assert "coming soon" not in content.lower()
         assert "X-Data-Generated-At" in response
 
-    @override_flag("favourites", active=True)
     def test_no_forecast_rows_omits_generated_at_fallback(self, client: Client) -> None:
         """With no ForecastPointWeather rows, freshness headers still stamp (fallback to now)."""
         user = UserFactory.create()
@@ -1142,7 +1026,6 @@ class TestFavouriteCard:
 class TestFavouriteDetail:
     """favourite_detail — the favourite's own full, bookmarkable page (SNOW-507)."""
 
-    @override_flag("favourites", active=True)
     def test_owner_gets_200_full_page(self, client: Client) -> None:
         """Owner GET renders a full page with page chrome and the card content."""
         user = UserFactory.create()
@@ -1164,7 +1047,6 @@ class TestFavouriteDetail:
         assert 'data-testid="favourite-card-bulletin-link"' in content
         assert region.get_absolute_url() in content
 
-    @override_flag("favourites", active=True)
     def test_back_link_present_when_region_set(self, client: Client) -> None:
         """A "Region bulletin" back-link is shown when favourite.region is set."""
         user = UserFactory.create()
@@ -1179,7 +1061,6 @@ class TestFavouriteDetail:
         assert 'data-testid="favourite-detail-back-link"' in content
         assert region.get_absolute_url() in content
 
-    @override_flag("favourites", active=True)
     def test_back_link_absent_when_region_none(self, client: Client) -> None:
         """No back-link is shown when the favourite has no resolved region."""
         user = UserFactory.create()
@@ -1193,7 +1074,6 @@ class TestFavouriteDetail:
         assert 'data-testid="favourite-detail-back-link"' not in content
         assert 'data-testid="favourite-card-no-coverage"' in content
 
-    @override_flag("favourites", active=True)
     def test_non_owner_uuid_returns_404(self, client: Client) -> None:
         """A different user's uuid returns 404, not 403 — no existence oracle."""
         owner = UserFactory.create()
@@ -1205,7 +1085,6 @@ class TestFavouriteDetail:
 
         assert response.status_code == 404
 
-    @override_flag("favourites", active=True)
     def test_unknown_uuid_returns_404(self, client: Client) -> None:
         """An unknown uuid returns 404."""
         user = UserFactory.create()
@@ -1215,21 +1094,11 @@ class TestFavouriteDetail:
 
         assert response.status_code == 404
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""
         response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
         assert response.status_code == 403
 
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, GET returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
-        assert response.status_code == 404
-
-    @override_flag("favourites", active=True)
     def test_cache_control_is_private_no_store(self, client: Client) -> None:
         """The response is never cacheable by a shared cache — it's per-user."""
         user = UserFactory.create()
@@ -1241,7 +1110,6 @@ class TestFavouriteDetail:
         assert response.status_code == 200
         assert response["Cache-Control"] == "private, no-store"
 
-    @override_flag("favourites", active=True)
     def test_response_carries_freshness_header(self, client: Client) -> None:
         """The page stamps the SNOW-370/418 freshness headers, same as the card."""
         user = UserFactory.create()
@@ -1253,7 +1121,6 @@ class TestFavouriteDetail:
         assert response.status_code == 200
         assert "X-Data-Generated-At" in response
 
-    @override_flag("favourites", active=True)
     def test_no_htmx_header_required(self, client: Client) -> None:
         """Unlike favourite_card, a plain (non-HTMX) GET is not rejected — it's a real page."""
         user = UserFactory.create()
@@ -1274,7 +1141,6 @@ class TestFavouriteDetail:
 class TestFavouriteCardProblems:
     """favourite_card — elevation-aware problem highlighting (SNOW-422)."""
 
-    @override_flag("favourites", active=True)
     def test_region_with_bulletin_renders_one_rating_block_per_card(
         self, client: Client
     ) -> None:
@@ -1296,7 +1162,6 @@ class TestFavouriteCardProblems:
         assert 'data-testid="altitude-relevance-chip"' in content
         assert 'data-relevance="APPLIES"' in content
 
-    @override_flag("favourites", active=True)
     def test_region_less_favourite_has_no_problems_section(
         self, client: Client
     ) -> None:
@@ -1312,7 +1177,6 @@ class TestFavouriteCardProblems:
         assert "Avalanche problems" not in content
         assert 'data-testid="rating-block"' not in content
 
-    @override_flag("favourites", active=True)
     def test_problems_section_never_uses_the_word_safe(self, client: Client) -> None:
         """Copy is altitude-relative only — 'safe' must never appear (safety-sensitive).
 
@@ -1337,7 +1201,6 @@ class TestFavouriteCardProblems:
         assert re.search(r"\bsafe\b", content_without_comments) is None
         assert 'data-relevance="above"' in content
 
-    @override_flag("favourites", active=True)
     def test_problem_with_no_elevation_band_renders_unannotated(
         self, client: Client
     ) -> None:
@@ -1365,7 +1228,6 @@ class TestFavouriteCardProblems:
 class TestFavouriteList:
     """favourite_list — owner-scoped favourites list (SNOW-415)."""
 
-    @override_flag("favourites", active=True)
     def test_owner_sees_only_own_favourites(self, client: Client) -> None:
         """Another user's favourites never appear in the requester's list."""
         user = UserFactory.create()
@@ -1382,7 +1244,6 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
-    @override_flag("favourites", active=True)
     def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
         """Each row carries an "Open page →" permalink to favourites:detail (SNOW-507)."""
         user = UserFactory.create()
@@ -1396,7 +1257,6 @@ class TestFavouriteList:
         assert 'data-testid="favourite-list-open-page-link"' in content
         assert _detail_url(favourite.uuid) in content
 
-    @override_flag("favourites", active=True)
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy."""
         user = UserFactory.create()
@@ -1407,21 +1267,11 @@ class TestFavouriteList:
         assert response.status_code == 200
         assert b"no saved favourites" in response.content.lower()
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""
         response = client.get(LIST_URL, **HTMX_HEADERS)
         assert response.status_code == 403
 
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, GET returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-        assert response.status_code == 404
-
-    @override_flag("favourites", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain GET without HX-Request returns 400."""
         user = UserFactory.create()
@@ -1439,7 +1289,6 @@ class TestFavouriteList:
 class TestFavouritesGeojson:
     """favourites_geojson — per-user FeatureCollection, [lon, lat] order."""
 
-    @override_flag("favourites", active=True)
     def test_returns_only_requesters_own_pins(self, client: Client) -> None:
         """Another user's favourites are never included in the response."""
         user = UserFactory.create()
@@ -1455,7 +1304,6 @@ class TestFavouritesGeojson:
         uuids = [f["properties"]["uuid"] for f in data["features"]]
         assert uuids == [str(mine.uuid)]
 
-    @override_flag("favourites", active=True)
     def test_coordinates_are_lon_lat_order(self, client: Client) -> None:
         """GeoJSON coordinates are [longitude, latitude] per RFC 7946."""
         user = UserFactory.create()
@@ -1471,7 +1319,6 @@ class TestFavouritesGeojson:
             favourite.latitude,
         ]
 
-    @override_flag("favourites", active=True)
     def test_cache_control_is_private_no_store(self, client: Client) -> None:
         """The response carries Cache-Control: private, no-store."""
         user = UserFactory.create()
@@ -1479,7 +1326,6 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
         assert response["Cache-Control"] == "private, no-store"
 
-    @override_flag("favourites", active=True)
     def test_resort_id_is_null_for_a_plain_pin(self, client: Client) -> None:
         """A dropped-pin favourite's resort_id property is null (SNOW-499)."""
         user = UserFactory.create()
@@ -1491,7 +1337,6 @@ class TestFavouritesGeojson:
         data = response.json()
         assert data["features"][0]["properties"]["resort_id"] is None
 
-    @override_flag("favourites", active=True)
     def test_resort_id_is_set_for_a_resort_favourite(self, client: Client) -> None:
         """A resort favourite's resort_id property matches the linked Resort (SNOW-499)."""
         from favourites.services import create_resort_favourite  # noqa: PLC0415
@@ -1508,19 +1353,10 @@ class TestFavouritesGeojson:
         data = response.json()
         assert data["features"][0]["properties"]["resort_id"] == resort.pk
 
-    @override_flag("favourites", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""
         response = client.get(GEOJSON_URL)
         assert response.status_code == 403
-
-    @override_flag("favourites", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When the favourites flag is inactive, GET returns 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.get(GEOJSON_URL)
-        assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -1532,7 +1368,6 @@ class TestFavouritesGeojson:
 class TestFavouriteCardFreshness:
     """favourite_card — freshness headers + cache_payload sidecar (SNOW-418)."""
 
-    @override_flag("favourites", active=True)
     def test_emits_generated_at_and_unsafe_after_with_rating(
         self, client: Client
     ) -> None:
@@ -1555,7 +1390,6 @@ class TestFavouriteCardFreshness:
         )
         assert response["X-Data-Unsafe-After"] == "172800"
 
-    @override_flag("favourites", active=True)
     def test_no_region_omits_unsafe_after_header(self, client: Client) -> None:
         """A favourite with no region has no rating, so no unsafe-after header."""
         user = UserFactory.create()
@@ -1568,7 +1402,6 @@ class TestFavouriteCardFreshness:
         assert "X-Data-Generated-At" in response
         assert "X-Data-Unsafe-After" not in response
 
-    @override_flag("favourites", active=True)
     def test_cache_payload_sidecar_has_expected_keys(self, client: Client) -> None:
         """The rendered card carries a favourite-card-cache json_script sidecar."""
         user = UserFactory.create()
@@ -1596,7 +1429,6 @@ class TestFavouriteCardFreshness:
         assert payload["unsafe_after_seconds"] == 172800
         assert "generated_at" in payload
 
-    @override_flag("favourites", active=True)
     def test_freshness_indicator_shown_when_rating_exists(self, client: Client) -> None:
         """The card renders the freshness indicator partial when a rating exists."""
         user = UserFactory.create()
@@ -1611,7 +1443,6 @@ class TestFavouriteCardFreshness:
         content = response.content.decode()
         assert 'data-testid="freshness-indicator"' in content
 
-    @override_flag("favourites", active=True)
     def test_no_freshness_indicator_without_rating(self, client: Client) -> None:
         """No rating for today → no freshness indicator (nothing to date-stamp)."""
         user = UserFactory.create()
@@ -1630,7 +1461,6 @@ class TestFavouriteCardFreshness:
 class TestFavouriteListFreshness:
     """favourite_list — freshness headers + roster_payload sidecar (SNOW-418)."""
 
-    @override_flag("favourites", active=True)
     def test_no_ratings_omits_unsafe_after_header(self, client: Client) -> None:
         """With no ratings at all, the response has no unsafe-after header."""
         user = UserFactory.create()
@@ -1643,7 +1473,6 @@ class TestFavouriteListFreshness:
         assert "X-Data-Generated-At" in response
         assert "X-Data-Unsafe-After" not in response
 
-    @override_flag("favourites", active=True)
     def test_generated_at_is_the_oldest_present_rating(self, client: Client) -> None:
         """generated_at is the OLDEST rating's updated_at, not the newest."""
         user = UserFactory.create()
@@ -1668,7 +1497,6 @@ class TestFavouriteListFreshness:
         )
         assert response["X-Data-Unsafe-After"] == "172800"
 
-    @override_flag("favourites", active=True)
     def test_roster_payload_sidecar_has_expected_keys(self, client: Client) -> None:
         """The rendered list carries a favourites-roster-cache json_script sidecar."""
         user = UserFactory.create()
@@ -1692,7 +1520,6 @@ class TestFavouriteListFreshness:
         assert "generated_at" in record
         assert record["unsafe_after_seconds"] == 172800
 
-    @override_flag("favourites", active=True)
     def test_rating_lookup_is_batched_not_n_plus_one(self, client: Client) -> None:
         """The rating lookup query count does not scale with favourite count.
 

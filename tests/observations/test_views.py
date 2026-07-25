@@ -2,13 +2,13 @@
 tests/observations/test_views.py — Tests for observations.views.
 
 Covers:
-  report_form   — flag off → 404; non-HTMX → 400; anonymous → 403;
+  report_form   — non-HTMX → 400; anonymous → 403;
                   authenticated non-staff user → 200;
                   no coords → 200 MANUAL state (GPS gate removed SNOW-330);
                   returns form with region banner;
                   returns form with "couldn't match" when no region;
                   returns form with "choose on map" status when no coords.
-  report_submit — flag off → 404; non-HTMX → 400; anonymous → 403;
+  report_submit — non-HTMX → 400; anonymous → 403;
                   authenticated non-staff user → 200 + creates row;
                   missing GPS → 400; missing/invalid location_source → 400;
                   missing/invalid observation_type → 400;
@@ -31,7 +31,6 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
 from tests.factories import (
@@ -70,24 +69,14 @@ def _verified_user(**kwargs: Any) -> User:
 
 
 @pytest.mark.django_db
-class TestReportFormFlagGate:
-    """Flag-off → 404; anonymous → 403."""
+class TestReportFormAuthGate:
+    """Anonymous → 403; authenticated non-staff user → 200."""
 
-    @override_flag("field_observations", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """When field_observations flag is inactive, GET returns 404."""
-        user = _verified_user()
-        client.force_login(user)
-        response = client.get(FORM_URL, **HTMX_HEADERS)
-        assert response.status_code == 404
-
-    @override_flag("field_observations", active=True)
-    def test_flag_on_anonymous_gets_403(self, client: Client) -> None:
+    def test_anonymous_gets_403(self, client: Client) -> None:
         """Anonymous users are rejected with 403."""
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 403
 
-    @override_flag("field_observations", active=True)
     def test_authenticated_non_staff_user_gets_200(self, client: Client) -> None:
         """A non-staff authenticated user gets 200 (SNOW-333)."""
         user = _verified_user(is_staff=False)
@@ -100,7 +89,6 @@ class TestReportFormFlagGate:
 class TestReportFormHtmxGate:
     """Non-HTMX requests are rejected with 400."""
 
-    @override_flag("field_observations", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain GET without HX-Request returns 400."""
         user = _verified_user()
@@ -118,7 +106,6 @@ class TestReportFormNoCoords:
     in "choose on map" state instead of returning 400.
     """
 
-    @override_flag("field_observations", active=True)
     def test_missing_lat_lon_returns_200(self, client: Client) -> None:
         """No lat/lon query params → 200 with the MANUAL form state."""
         user = _verified_user()
@@ -127,7 +114,6 @@ class TestReportFormNoCoords:
         assert response.status_code == 200
         assert "report-form" in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_missing_lon_returns_200(self, client: Client) -> None:
         """Only lat provided — treated as no valid fix → 200 MANUAL state."""
         user = _verified_user()
@@ -135,7 +121,6 @@ class TestReportFormNoCoords:
         response = client.get(FORM_URL, {"lat": "46.1"}, **HTMX_HEADERS)
         assert response.status_code == 200
 
-    @override_flag("field_observations", active=True)
     def test_unparseable_lat_returns_200(self, client: Client) -> None:
         """Non-float lat — treated as no valid fix → 200 MANUAL state."""
         user = _verified_user()
@@ -145,7 +130,6 @@ class TestReportFormNoCoords:
         )
         assert response.status_code == 200
 
-    @override_flag("field_observations", active=True)
     def test_no_coords_form_shows_manual_status_text(self, client: Client) -> None:
         """Form without coords shows the 'choose on map' status message."""
         user = _verified_user()
@@ -165,7 +149,6 @@ class TestReportFormManualInputsPresent:
     populate them after a MANUAL map-click, allowing the POST to carry lat/lon.
     """
 
-    @override_flag("field_observations", active=True)
     def test_manual_form_contains_lat_input(self, client: Client) -> None:
         """Form rendered without coords (MANUAL state) contains name="lat"."""
         user = _verified_user()
@@ -174,7 +157,6 @@ class TestReportFormManualInputsPresent:
         assert response.status_code == 200
         assert 'name="lat"' in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_manual_form_contains_lon_input(self, client: Client) -> None:
         """Form rendered without coords (MANUAL state) contains name="lon"."""
         user = _verified_user()
@@ -183,7 +165,6 @@ class TestReportFormManualInputsPresent:
         assert response.status_code == 200
         assert 'name="lon"' in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_manual_form_lat_input_is_empty(self, client: Client) -> None:
         """lat hidden input has an empty value when no coords are passed."""
         user = _verified_user()
@@ -193,7 +174,6 @@ class TestReportFormManualInputsPresent:
         content = response.content.decode()
         assert 'name="lat" value=""' in content
 
-    @override_flag("field_observations", active=True)
     def test_manual_form_lon_input_is_empty(self, client: Client) -> None:
         """lon hidden input has an empty value when no coords are passed."""
         user = _verified_user()
@@ -208,7 +188,6 @@ class TestReportFormManualInputsPresent:
 class TestReportFormSuccess:
     """Successful GET returns the report form partial."""
 
-    @override_flag("field_observations", active=True)
     def test_returns_200_with_form(self, client: Client) -> None:
         """Valid lat/lon with flag active + authenticated user returns 200."""
         user = _verified_user()
@@ -223,7 +202,6 @@ class TestReportFormSuccess:
         content = response.content.decode()
         assert "report-form" in content
 
-    @override_flag("field_observations", active=True)
     def test_returns_region_banner_when_matched(self, client: Client) -> None:
         """Region banner appears when region_for_point returns a region."""
         user = _verified_user()
@@ -239,7 +217,6 @@ class TestReportFormSuccess:
         assert response.status_code == 200
         assert "Zermatt-Saas" in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_returns_fallback_banner_when_no_region(self, client: Client) -> None:
         """'couldn't match' text appears when region_for_point returns None."""
         user = _verified_user()
@@ -254,7 +231,6 @@ class TestReportFormSuccess:
         assert response.status_code == 200
         assert "couldn" in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_form_contains_problem_buttons(self, client: Client) -> None:
         """Each OBSERVATION_TYPE value appears as a submit button in the form."""
         user = _verified_user()
@@ -270,7 +246,6 @@ class TestReportFormSuccess:
         for value in FieldObservation.OBSERVATION_TYPE.values:
             assert value in content
 
-    @override_flag("field_observations", active=True)
     def test_gps_status_text_with_coords(self, client: Client) -> None:
         """Form with GPS coords shows 'Using current GPS location' status."""
         user = _verified_user()
@@ -298,24 +273,11 @@ class TestReportFormSuccess:
 
 
 @pytest.mark.django_db
-class TestReportSubmitFlagGate:
-    """Flag-off → 404; anonymous → 403."""
+class TestReportSubmitAuthGate:
+    """Anonymous → 403."""
 
-    @override_flag("field_observations", active=False)
-    def test_flag_off_returns_404(self, client: Client) -> None:
-        """POST with flag inactive returns 404."""
-        user = _verified_user()
-        client.force_login(user)
-        response = client.post(
-            SUBMIT_URL,
-            {"lat": "46.1", "lon": "7.1"},
-            **HTMX_HEADERS,
-        )
-        assert response.status_code == 404
-
-    @override_flag("field_observations", active=True)
     def test_anonymous_gets_403(self, client: Client) -> None:
-        """Anonymous POST with flag active gets 403."""
+        """Anonymous POST gets 403."""
         response = client.post(
             SUBMIT_URL,
             {"lat": "46.1", "lon": "7.1"},
@@ -333,7 +295,6 @@ class TestReportVerificationGate:
     form.
     """
 
-    @override_flag("field_observations", active=True)
     def test_form_no_account_gets_403(self, client: Client) -> None:
         """Authenticated user with no Account profile → 403 on the form."""
         user = UserFactory.create()
@@ -341,7 +302,6 @@ class TestReportVerificationGate:
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 403
 
-    @override_flag("field_observations", active=True)
     def test_form_unverified_account_gets_403(self, client: Client) -> None:
         """Authenticated user with an unverified Account → 403 on the form."""
         account = AccountFactory.create(is_verified=False)
@@ -349,7 +309,6 @@ class TestReportVerificationGate:
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 403
 
-    @override_flag("field_observations", active=True)
     def test_submit_no_account_gets_403(self, client: Client) -> None:
         """Authenticated user with no Account profile → 403 on submit."""
         user = UserFactory.create()
@@ -361,7 +320,6 @@ class TestReportVerificationGate:
         )
         assert response.status_code == 403
 
-    @override_flag("field_observations", active=True)
     def test_submit_unverified_account_gets_403(self, client: Client) -> None:
         """Authenticated user with an unverified Account → 403 on submit."""
         account = AccountFactory.create(is_verified=False)
@@ -378,7 +336,6 @@ class TestReportVerificationGate:
         )
         assert response.status_code == 403
 
-    @override_flag("field_observations", active=True)
     def test_submit_unverified_creates_no_row(self, client: Client) -> None:
         """A rejected unverified submit must not create a FieldObservation."""
         account = AccountFactory.create(is_verified=False)
@@ -400,7 +357,6 @@ class TestReportVerificationGate:
 class TestReportSubmitHtmxGate:
     """Non-HTMX POST returns 400."""
 
-    @override_flag("field_observations", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """POST without HX-Request returns 400."""
         user = _verified_user()
@@ -413,7 +369,6 @@ class TestReportSubmitHtmxGate:
 class TestReportSubmitGpsGate:
     """Missing or bad lat/lon returns 400."""
 
-    @override_flag("field_observations", active=True)
     def test_missing_gps_returns_400(self, client: Client) -> None:
         """POST with no lat/lon → 400."""
         user = _verified_user()
@@ -421,7 +376,6 @@ class TestReportSubmitGpsGate:
         response = client.post(SUBMIT_URL, {}, **HTMX_HEADERS)
         assert response.status_code == 400
 
-    @override_flag("field_observations", active=True)
     def test_unparseable_lon_returns_400(self, client: Client) -> None:
         """Non-float lon → 400."""
         user = _verified_user()
@@ -450,7 +404,6 @@ class TestReportSubmitInvalidCoordinates:
             ("46.1", "-200"),  # longitude < -180
         ],
     )
-    @override_flag("field_observations", active=True)
     def test_invalid_coordinates_return_400_and_create_no_row(
         self, client: Client, lat: str, lon: str
     ) -> None:
@@ -473,7 +426,6 @@ class TestReportSubmitInvalidCoordinates:
         # The region lookup runs only after coordinates parse — never reached.
         mock_region.assert_not_called()
 
-    @override_flag("field_observations", active=True)
     def test_negative_accuracy_is_dropped_not_persisted(self, client: Client) -> None:
         """A present-but-invalid accuracy is dropped to None, never stored.
 
@@ -504,7 +456,6 @@ class TestReportSubmitInvalidCoordinates:
 class TestReportSubmitLocationSourceGate:
     """Missing or invalid location_source returns 400."""
 
-    @override_flag("field_observations", active=True)
     def test_missing_location_source_returns_400(self, client: Client) -> None:
         """POST with valid GPS but no location_source → 400."""
         user = _verified_user()
@@ -521,7 +472,6 @@ class TestReportSubmitLocationSourceGate:
             )
         assert response.status_code == 400
 
-    @override_flag("field_observations", active=True)
     def test_invalid_location_source_returns_400(self, client: Client) -> None:
         """POST with an unknown location_source value → 400."""
         user = _verified_user()
@@ -544,7 +494,6 @@ class TestReportSubmitLocationSourceGate:
 class TestReportSubmitObservationTypeGate:
     """Missing or invalid observation_type returns 400."""
 
-    @override_flag("field_observations", active=True)
     def test_missing_observation_type_returns_400(self, client: Client) -> None:
         """POST with valid GPS but no observation_type → 400."""
         user = _verified_user()
@@ -561,7 +510,6 @@ class TestReportSubmitObservationTypeGate:
             )
         assert response.status_code == 400
 
-    @override_flag("field_observations", active=True)
     def test_invalid_observation_type_returns_400(self, client: Client) -> None:
         """POST with an unknown observation_type value → 400."""
         user = _verified_user()
@@ -584,7 +532,6 @@ class TestReportSubmitObservationTypeGate:
 class TestReportSubmitSuccess:
     """Valid POST creates a FieldObservation and returns confirmation."""
 
-    @override_flag("field_observations", active=True)
     def test_creates_observation_row(self, client: Client) -> None:
         """A valid GPS POST creates exactly one FieldObservation row."""
         user = _verified_user()
@@ -614,7 +561,6 @@ class TestReportSubmitSuccess:
         assert obs.gps_longitude == 7.1
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
 
-    @override_flag("field_observations", active=True)
     def test_authenticated_non_staff_user_creates_row(self, client: Client) -> None:
         """A non-staff authenticated user can submit (SNOW-333)."""
         user = _verified_user(is_staff=False)
@@ -636,7 +582,6 @@ class TestReportSubmitSuccess:
         obs = FieldObservation.objects.get(user=user)
         assert obs.user == user
 
-    @override_flag("field_observations", active=True)
     def test_stores_the_submitted_type(self, client: Client) -> None:
         """The stored observation_type matches what was submitted."""
         user = _verified_user()
@@ -657,7 +602,6 @@ class TestReportSubmitSuccess:
         obs = FieldObservation.objects.get(user=user)
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.FRACTURES
 
-    @override_flag("field_observations", active=True)
     def test_returns_confirmation_partial(self, client: Client) -> None:
         """Valid POST returns the thank-you confirmation fragment."""
         user = _verified_user()
@@ -678,7 +622,6 @@ class TestReportSubmitSuccess:
         assert response.status_code == 200
         assert "Thank you" in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_confirmation_shows_region_name(self, client: Client) -> None:
         """Confirmation fragment includes region name when matched."""
         user = _verified_user()
@@ -700,7 +643,6 @@ class TestReportSubmitSuccess:
         assert response.status_code == 200
         assert "Verbier" in response.content.decode()
 
-    @override_flag("field_observations", active=True)
     def test_multiple_reports_same_day_allowed(self, client: Client) -> None:
         """Multiple reports from the same user on the same day are all created.
 
@@ -731,7 +673,6 @@ class TestReportSubmitSuccess:
 
         assert FieldObservation.objects.filter(user=user).count() == 3
 
-    @override_flag("field_observations", active=True)
     def test_accuracy_converted_metres_to_km(self, client: Client) -> None:
         """accuracy_m in metres is stored as accuracy_radius_km (divided by 1000)."""
         user = _verified_user()
@@ -753,7 +694,6 @@ class TestReportSubmitSuccess:
         obs = FieldObservation.objects.get(user=user)
         assert obs.accuracy_radius_km == pytest.approx(0.5)
 
-    @override_flag("field_observations", active=True)
     def test_gps_refined_stores_differing_report_and_gps_coords(
         self, client: Client
     ) -> None:
@@ -785,7 +725,6 @@ class TestReportSubmitSuccess:
         assert obs.gps_latitude == pytest.approx(46.10)
         assert obs.gps_longitude == pytest.approx(7.10)
 
-    @override_flag("field_observations", active=True)
     def test_manual_pin_outside_region_creates_row_with_null_region(
         self, client: Client
     ) -> None:
@@ -815,7 +754,6 @@ class TestReportSubmitSuccess:
         assert obs.gps_latitude is None
         assert obs.gps_longitude is None
 
-    @override_flag("field_observations", active=True)
     def test_manual_submit_has_null_gps_coords(self, client: Client) -> None:
         """MANUAL path (no GPS fix) stores None for gps_latitude/gps_longitude."""
         user = _verified_user()
@@ -848,7 +786,6 @@ class TestReportSubmitObservedAt:
     server well after the fact on replay.
     """
 
-    @override_flag("field_observations", active=True)
     def test_valid_client_observed_at_is_stored(self, client: Client) -> None:
         """A valid ISO 8601 instant a few hours in the past is stored verbatim."""
         user = _verified_user()
@@ -872,7 +809,6 @@ class TestReportSubmitObservedAt:
         obs = FieldObservation.objects.get(user=user)
         assert obs.observed_at == observed_at
 
-    @override_flag("field_observations", active=True)
     def test_absent_observed_at_falls_back_to_now(self, client: Client) -> None:
         """No observed_at in the POST → the model default (timezone.now) fires."""
         user = _verified_user()
@@ -896,7 +832,6 @@ class TestReportSubmitObservedAt:
         obs = FieldObservation.objects.get(user=user)
         assert before <= obs.observed_at <= after
 
-    @override_flag("field_observations", active=True)
     def test_naive_observed_at_is_made_aware(self, client: Client) -> None:
         """A naive (no offset) observed_at value is accepted and made aware."""
         user = _verified_user()
@@ -920,7 +855,6 @@ class TestReportSubmitObservedAt:
         obs = FieldObservation.objects.get(user=user)
         assert timezone.is_aware(obs.observed_at)
 
-    @override_flag("field_observations", active=True)
     def test_malformed_observed_at_returns_400_and_creates_no_row(
         self, client: Client
     ) -> None:
@@ -944,7 +878,6 @@ class TestReportSubmitObservedAt:
         assert response.status_code == 400
         assert FieldObservation.objects.filter(user=user).count() == 0
 
-    @override_flag("field_observations", active=True)
     def test_future_observed_at_beyond_tolerance_returns_400(
         self, client: Client
     ) -> None:
@@ -969,7 +902,6 @@ class TestReportSubmitObservedAt:
         assert response.status_code == 400
         assert FieldObservation.objects.filter(user=user).count() == 0
 
-    @override_flag("field_observations", active=True)
     def test_too_old_observed_at_returns_400(self, client: Client) -> None:
         """observed_at older than the accepted window (30 days) → 400, no row."""
         user = _verified_user()
@@ -997,7 +929,6 @@ class TestReportSubmitObservedAt:
 class TestReportSubmitRateLimit:
     """Rate limit returns 429 when exceeded."""
 
-    @override_flag("field_observations", active=True)
     def test_rate_limited_branch_returns_429(self) -> None:
         """When request.limited is True (set by ratelimit decorator), view returns 429.
 
@@ -1030,11 +961,7 @@ class TestReportSubmitRateLimit:
         htmx_mw = HtmxMiddleware(lambda _: _HR())
         htmx_mw(request)
 
-        # Exercise the 429 branch by patching the gate helper to pass.
-        with patch(
-            "observations.views._require_field_observations_flag", return_value=None
-        ):
-            from observations.views import report_submit  # noqa: PLC0415
+        from observations.views import report_submit  # noqa: PLC0415
 
-            resp = report_submit(request)
-            assert resp.status_code == 429
+        resp = report_submit(request)
+        assert resp.status_code == 429

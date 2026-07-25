@@ -10,11 +10,8 @@ collapsible panels reusing includes/_collapsible_panel.html. Each panel's
 body copy lives in its own small content partial under
 public/templates/public/help/.
 
-The Favourites, Field-observations, Recent-observations, and Sync-log
-panels, plus a handful of sentences inside the Map panel, are gated on
-the per-user waffle booleans computed by public.views.help_page
-(favourites_visible / report_visible / community_reports_visible /
-observations_page_visible / sync_log_visible) — a user never sees
+The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
+boolean computed by public.views.help_page — a user never sees
 documentation for a feature they cannot use.
 {% endcomment %}
 {% load i18n %}
@@ -46,20 +43,14 @@ documentation for a feature they cannot use.
         {% translate "The map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
 
-        {% if favourites_visible %}
-            {% translate "Favourites" as t_favourites %}
-            {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" body_template="public/help/_topic_favourites.html" %}
-        {% endif %}
+        {% translate "Favourites" as t_favourites %}
+        {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" body_template="public/help/_topic_favourites.html" %}
 
-        {% if report_visible %}
-            {% translate "Field observations" as t_observations %}
-            {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
-        {% endif %}
+        {% translate "Field observations" as t_observations %}
+        {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
 
-        {% if observations_page_visible %}
-            {% translate "Recent observations" as t_recent_observations %}
-            {% include "includes/_collapsible_panel.html" with title=t_recent_observations data_testid="help-topic-recent-observations" body_template="public/help/_topic_recent_observations.html" %}
-        {% endif %}
+        {% translate "Recent observations" as t_recent_observations %}
+        {% include "includes/_collapsible_panel.html" with title=t_recent_observations data_testid="help-topic-recent-observations" body_template="public/help/_topic_recent_observations.html" %}
 
         {% translate "The season timeline & calendar" as t_timeline %}
         {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
