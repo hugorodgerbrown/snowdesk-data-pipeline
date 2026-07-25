@@ -8,13 +8,13 @@ Right-side auth area
 --------------------
 Authenticated subscriber:
   An avatar button (first letter of email) opens a dropdown showing up to
-  three subscribed region links, a "Manage alerts" link, and a "Sign out"
+  three subscribed region links, a "My account" link, and a "Sign out"
   button.  Region links are provided by the nav_subscriptions context
   processor (accounts/context_processors.py).
 
 Not authenticated:
-  A "Register" link routes to /account/register/ and a "Sign in" link to
-  /account/sign-in/.
+  A single "Sign in" button routes to /account/sign-in/; that page carries
+  the "Create an account" link for new users.
 
 Staff overlay (separate from subscriber auth):
   A cog-icon button opens an admin dropdown: Component library, Push demo,
@@ -117,14 +117,7 @@ Usage
         {# ── Right-side auth + admin area ── #}
         {# SNOW-445: Help lives in the footer (public/templates/public/_site_footer.html) #}
         {# only — it was removed from the header to declutter the nav bar.         #}
-        {# The Observations link (SNOW-476, flag-gated) stays in the header — it   #}
-        {# has no footer entry and is the only nav route to that page.            #}
         <div class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
-            {% flag "observations_page" %}
-            <a href="{% url 'public:observations' %}" class="text-sm text-text-2 hover:text-text-1">
-                {% trans "Observations" %}
-            </a>
-            {% endflag %}
             {# SNOW-376: mutation-queue sync badge. Hidden by default;             #}
             {# static/js/mutation_queue.js reveals it with the live non-"failed"   #}
             {# queue:mutations count, and swaps the colour to the status-error     #}
@@ -190,7 +183,7 @@ Usage
                             href="{% url 'accounts:manage' %}"
                             class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
                         >
-                            {% trans "Manage alerts" %}
+                            {% trans "My account" %}
                         </a>
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
@@ -206,18 +199,9 @@ Usage
                     </div>
                 </div>
             {% else %}
-                <a
-                    href="{% url 'accounts:register' %}"
-                    class="text-sm text-text-2 hover:text-text-1"
-                >
-                    {% trans "Register" %}
-                </a>
-                <a
-                    href="{% url 'accounts:sign_in' %}"
-                    class="text-sm text-text-2 hover:text-text-1"
-                >
-                    {% trans "Sign in" %}
-                </a>
+                {% trans "Sign in" as sign_in_label %}
+                {% url 'accounts:sign_in' as sign_in_href %}
+                {% include "includes/_button.html" with label=sign_in_label href=sign_in_href variant="primary" size="compact" %}
             {% endif %}
 
             {% if request.user.is_staff %}

@@ -326,8 +326,12 @@ class TestStatusPageChildren:
         assert "bg-card" in html
         assert "rounded-card" in html
         assert "Check your inbox" in html
-        # No CTA block rendered
-        assert "inline-block" not in html
+        # No CTA block rendered. Scope the check to the status card column
+        # (marked by `max-w-md`) so the nav's own "Sign in" anchor button —
+        # which legitimately carries `inline-block` for anonymous viewers —
+        # does not register as a false CTA.
+        status_card = html.split("max-w-md", 1)[1]
+        assert "inline-block" not in status_card
 
     def test_manage_saved_has_cta_button(self, anon_request: HttpRequest) -> None:
         """manage_saved.html renders the 'Back to Snowdesk' primary anchor."""
