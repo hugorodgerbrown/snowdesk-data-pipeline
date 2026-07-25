@@ -1,18 +1,21 @@
-# .github/workflows/lint-guards.yml — Design-system, documentation, and
-# template-formatting linters.
+# .github/workflows/lint-guards.yml — Design-system, documentation,
+# template-formatting, and SW shell cache-version linters.
 #
 # Runs ``tox -e ds-lint`` (template design-token guard), ``tox -e docs-lint``
-# (docs frontmatter + CLAUDE.md routing guard), and ``tox -e djangofmt``
-# (template formatting — the CI backstop for the bypassable pre-commit hook).
+# (docs frontmatter + CLAUDE.md routing guard), ``tox -e djangofmt``
+# (template formatting — the CI backstop for the bypassable pre-commit
+# hook), and ``tox -e sw-version`` (SNOW-517 — CACHE_VERSION must be
+# bumped whenever a shell source changes; see core/sw_shell.py and
+# docs/offline-map.md).
 #
-# The three job contexts are required status checks in the "Main branch
-# rules" ruleset, so the ``pull_request`` trigger runs on every PR with no
-# path filter — a path-filtered required check never reports on PRs outside
+# The job contexts are required status checks in the "Main branch rules"
+# ruleset, so the ``pull_request`` trigger runs on every PR with no path
+# filter — a path-filtered required check never reports on PRs outside
 # its paths and leaves them stuck at "Expected" (SNOW-435). The ``push``
 # trigger keeps a path filter: pushes to main/release are not merge-gated,
-# so it only needs to run when templates, docs, or the linters change.
-# Isolated from ci.yml so the guards stay a fast, focused gate without
-# triggering the full Python matrix.
+# so it only needs to run when templates, docs, the linters, or a shell
+# source change. Isolated from ci.yml so the guards stay a fast, focused
+# gate without triggering the full Python matrix.
 
 name: Lint guards
 
@@ -27,6 +30,14 @@ on:
       - "CLAUDE.md"
       - "bin/ds-lint"
       - "bin/docs-lint"
+      - "bin/sw-version"
+      - "core/sw_shell.py"
+      - "static/js/**"
+      - "src/css/**"
+      - "public/templates/public/base.html"
+      - "public/templates/public/home.html"
+      - "public/templates/public/partials/_map_embed.html"
+      - "static/offline.html"
       - "tox.ini"
       - ".github/workflows/lint-guards.yml"
 
@@ -47,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, docs-lint, djangofmt]
+        toxenv: [ds-lint, docs-lint, djangofmt, sw-version]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

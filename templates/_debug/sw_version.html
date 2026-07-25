@@ -1,0 +1,44 @@
+{% extends "public/base.html" %}
+{% load static %}
+
+{% block title %}SW shell version — debug{% endblock %}
+
+{% block content %}
+    <main class="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        <header class="space-y-2">
+            <p class="text-text-3 text-sm uppercase tracking-wide">debug</p>
+            <h1 class="text-2xl font-semibold text-text-1">Service-worker shell version</h1>
+            <p class="text-text-2">
+                Deployed vs live-controlling values for the SW shell cache version (SNOW-517). Deployed values are
+                server-rendered; the live value is filled in by a message to the active service worker, when one is
+                controlling this page.
+            </p>
+        </header>
+
+        <section class="bg-card border border-border rounded-card p-4 space-y-2">
+            <h2 class="font-semibold text-text-1">Deployed</h2>
+            <dl class="grid grid-cols-[10rem_1fr] gap-y-1 text-sm">
+                <dt class="text-text-3">CACHE_VERSION</dt>
+                <dd data-testid="sw-deployed-version" class="text-text-1 font-mono">{{ cache_version }}</dd>
+                <dt class="text-text-3">APP_VERSION</dt>
+                <dd data-testid="sw-app-version" class="text-text-1 font-mono">{{ app_version }}</dd>
+            </dl>
+        </section>
+
+        <section class="bg-card border border-border rounded-card p-4 space-y-2">
+            <h2 class="font-semibold text-text-1">Live (this browser)</h2>
+            <dl class="grid grid-cols-[10rem_1fr] gap-y-1 text-sm">
+                <dt class="text-text-3">Controlling SW</dt>
+                <dd data-testid="sw-live-version" class="text-text-1 font-mono">—</dd>
+            </dl>
+            <p class="text-text-3 text-xs">
+                Populated by a live probe to the active service worker. Stays "—" if no service worker currently
+                controls this page (JS disabled, or first visit).
+            </p>
+        </section>
+    </main>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/pwa_sw_version_probe.js' %}" defer></script>
+{% endblock %}
