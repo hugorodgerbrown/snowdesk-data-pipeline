@@ -19,7 +19,6 @@ the map page (SNOW-324):
   back to the model's ``timezone.now`` default when absent.
 
 Both endpoints are:
-  - flag-gated on ``field_observations`` (404 when inactive);
   - authentication-gated (403 for anonymous users);
   - verification-gated (403 unless the user has a verified ``Account``,
     SNOW-430);
@@ -35,7 +34,6 @@ import datetime
 import logging
 from typing import cast
 
-import waffle
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -69,27 +67,6 @@ _OBSERVED_AT_MAX_AGE = datetime.timedelta(days=30)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _require_field_observations_flag(request: HttpRequest) -> None:
-    """Raise Http404 unless the ``field_observations`` waffle flag is active.
-
-    Mirrors the pattern used by ``public.api._require_edit_map_flag``.
-    Flag is seeded with ``superusers=True`` by
-    ``observations/migrations/0002_seed_field_observations_flag.py``;
-    extend / disable via ``/admin/waffle/flag/field_observations/``.
-
-    Args:
-        request: The current HTTP request.
-
-    Raises:
-        Http404: When the flag is inactive for the current request.
-
-    """
-    from django.http import Http404  # noqa: PLC0415
-
-    if not waffle.flag_is_active(request, "field_observations"):
-        raise Http404("field_observations flag is inactive for this request.")
 
 
 def _auth_gate(request: HttpRequest) -> HttpResponse | None:
@@ -227,8 +204,6 @@ def report_form(request: HttpRequest) -> HttpResponse:
         Rendered ``_report_form.html`` partial.
 
     """
-    _require_field_observations_flag(request)
-
     gate = _auth_gate(request)
     if gate is not None:
         return gate
@@ -297,8 +272,6 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         Rendered confirmation partial, or an error response.
 
     """
-    _require_field_observations_flag(request)
-
     gate = _auth_gate(request)
     if gate is not None:
         return gate

@@ -34,9 +34,7 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All nine are:
-  - flag-gated on ``favourites`` (404 when inactive);
-  - authentication-gated (403 for anonymous users).
+All nine are authentication-gated (403 for anonymous users).
 
 ``favourite_card``, ``favourite_detail``, and ``favourite_rename``/
 ``favourite_delete`` are owner-scoped via ``Favourite.objects.for_user()``
@@ -59,7 +57,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -103,27 +100,6 @@ _NAME_MAX_LENGTH = 100
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _require_favourites_flag(request: HttpRequest) -> None:
-    """Raise Http404 unless the ``favourites`` waffle flag is active.
-
-    Mirrors the pattern used by ``observations.views._require_field_observations_flag``.
-    Flag is seeded with ``superusers=True`` by
-    ``favourites/migrations/0002_seed_favourites_flag.py``; extend / disable
-    via ``/admin/waffle/flag/favourites/``.
-
-    Args:
-        request: The current HTTP request.
-
-    Raises:
-        Http404: When the flag is inactive for the current request.
-
-    """
-    from django.http import Http404  # noqa: PLC0415
-
-    if not waffle.flag_is_active(request, "favourites"):
-        raise Http404("favourites flag is inactive for this request.")
 
 
 def _parse_latlon(
@@ -325,8 +301,6 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
         Rendered saved-pin or limit-reached partial, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -386,7 +360,7 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     Errors:
         403 — anonymous request.
         400 — non-HTMX request; missing/non-integer ``resort_id``.
-        404 — ``favourites`` flag inactive, or unknown ``resort_id``.
+        404 — unknown ``resort_id``.
         409 — the user has reached ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set.
         429 — rate limit exceeded (> 10 creations/min per user).
@@ -398,8 +372,6 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
         Rendered saved-pin or limit-reached partial, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -465,7 +437,7 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
     Errors:
         403 — anonymous request.
         400 — non-HTMX request.
-        404 — ``favourites`` flag inactive, or unknown ``resort_id``.
+        404 — unknown ``resort_id``.
         409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set (can't be favourited).
         429 — rate limit exceeded (> 10 toggles/min per user).
@@ -479,8 +451,6 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
         error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -545,8 +515,6 @@ def favourite_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
         Rendered updated saved-pin partial, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -587,8 +555,6 @@ def favourite_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         An empty 200 response on success, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -709,8 +675,6 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
         Rendered ``_favourite_card.html``, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -740,9 +704,8 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     ``@require_htmx`` — this is a real page a user can navigate to
     directly or bookmark, not a fragment.
 
-    Same gating and owner scoping as ``favourite_card``:
-    ``_require_favourites_flag`` (404 when the flag is inactive), 403 for
-    an anonymous request, and 404 (never 403) for a non-owner or unknown
+    Same gating and owner scoping as ``favourite_card``: 403 for an
+    anonymous request, and 404 (never 403) for a non-owner or unknown
     uuid — no existence oracle. Builds its context via the shared
     ``_favourite_card_context`` helper and applies the same freshness
     headers.
@@ -759,8 +722,6 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
         Rendered ``favourites/favourite_detail.html``, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -807,8 +768,6 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         Rendered ``_favourite_list.html``, or an error response.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -881,8 +840,6 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
         A JsonResponse with a FeatureCollection payload, or a 403/404 error.
 
     """
-    _require_favourites_flag(request)
-
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 

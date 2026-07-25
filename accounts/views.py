@@ -1412,11 +1412,6 @@ def manage_view(request: HttpRequest) -> HttpResponse:
         subscriptions      — queryset of Subscription rows for the account.
         just_confirmed     — True when arriving via the confirmation link.
         today              — today's date (datetime.date) for the bulletin link label.
-        favourites_visible — True when the ``favourites`` waffle flag is
-                              active for this request (SNOW-415). Gates the
-                              "My favourites" section, which lazy-loads
-                              ``favourites:list`` by URL name — this module
-                              never imports the ``favourites`` app.
         sync_log_visible   — True when the ``sync_log`` waffle flag is
                               active for this request (SNOW-482). Gates the
                               sync-log panel, which reads
@@ -1458,7 +1453,6 @@ def manage_view(request: HttpRequest) -> HttpResponse:
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
             "today": timezone.now().date(),
-            "favourites_visible": waffle.flag_is_active(request, "favourites"),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         },
     )

@@ -749,10 +749,8 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
       ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
-      ``community_reports_visible`` — True when the ``community_reports``
-                                flag is active (SNOW-419).
       ``community_reports_geojson_url`` — URL for the community-reports
-                                GeoJSON endpoint (only when visible).
+                                GeoJSON endpoint (SNOW-419).
 
     Args:
         request: The incoming HTTP request.
@@ -1145,12 +1143,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     feature (SNOW-456) — distinct from ``how_to_read_bulletin``, which
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
-    builtin. The per-user waffle booleans control which topic panels
-    render — most mirror the flags checked on the map page itself
-    (``_favourites_context``, ``_report_context``,
-    ``_community_reports_context``) so a user never sees documentation
-    for a feature they cannot use; ``sync_log_visible`` (SNOW-482) mirrors
-    the same flag gating the manage-page sync-log panel.
+    builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
+    the manage-page sync-log panel.
 
     Args:
         request: The incoming HTTP request.
@@ -1160,14 +1154,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
 
     """
     context = {
-        "favourites_visible": waffle.flag_is_active(request, "favourites"),
-        "report_visible": waffle.flag_is_active(request, "field_observations"),
-        "community_reports_visible": waffle.flag_is_active(
-            request, "community_reports"
-        ),
-        "observations_page_visible": waffle.flag_is_active(
-            request, "observations_page"
-        ),
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
     }
     return render(request, "public/help.html", context)
@@ -1177,14 +1163,9 @@ def observations_list(request: HttpRequest) -> HttpResponse:
     """
     Render the /observations page — a signed-in stream of recent reports.
 
-    Gated on the ``observations_page`` waffle flag (SNOW-476); raises
-    Http404 when inactive so the route doesn't exist for users without
-    access. Shows FieldObservation rows from the last 48 hours, newest
-    first. An anonymous visitor sees a sign-in call to action instead of
-    the list. A signed-in viewer always sees their own reports; other
-    users' reports are included only when the ``community_reports`` flag
-    is active for them — mirroring the eligibility rule for the map's
-    community-reports overlay.
+    Shows FieldObservation rows from the last 48 hours, newest first. An
+    anonymous visitor sees a sign-in call to action instead of the list. A
+    signed-in viewer sees their own reports plus other users' reports.
 
     Other users' timestamps are floored to the preceding 15-minute mark
     (the same anonymisation the map overlay applies) via
@@ -1199,9 +1180,6 @@ def observations_list(request: HttpRequest) -> HttpResponse:
         The rendered observations page.
 
     """
-    if not waffle.flag_is_active(request, "observations_page"):
-        raise Http404("Observations page is not enabled.")
-
     from public.api import _truncate_to_quarter_hour
 
     window_hours = 48
@@ -1209,12 +1187,9 @@ def observations_list(request: HttpRequest) -> HttpResponse:
     rows: list[dict[str, Any]] = []
 
     if request.user.is_authenticated:
-        show_others = waffle.flag_is_active(request, "community_reports")
         queryset = FieldObservation.objects.recent(since).select_related(
             "region", "user"
         )
-        if not show_others:
-            queryset = queryset.filter(user=request.user)
 
         for observation in queryset:
             is_own = observation.user_id == request.user.pk
@@ -1422,8 +1397,6 @@ def _default_region_label() -> tuple[str, str, str, str]:
 def _report_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the field-report affordance.
 
-    ``report_visible`` is True when the ``field_observations`` waffle flag is
-    active — this controls whether the roundel and sheet are rendered at all.
     ``report_eligible`` is True only when the user is authenticated **and** has
     a verified ``Account`` — eligible users get the report flow.  This mirrors
     the server-side gate in ``observations/views.py`` exactly (both call
@@ -1434,118 +1407,83 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
     silent stall.  Anonymous users are neither eligible nor unverified and get
     the sign-in CTA.
 
-    When ``report_visible`` is True the dict also includes the HTMX endpoint
-    URLs and a sign-in URL for the anonymous CTA.
-
     Args:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``report_visible``, ``report_eligible``,
-        ``report_unverified``, and (when visible) ``report_form_url``,
-        ``report_submit_url``, ``report_signin_url``.
+        Dict with ``report_eligible``, ``report_unverified``,
+        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
 
     """
-    report_visible = waffle.flag_is_active(request, "field_observations")
     report_eligible = user_is_verified(request.user)
     report_unverified = request.user.is_authenticated and not report_eligible
-    ctx: dict[str, Any] = {
-        "report_visible": report_visible,
+    return {
         "report_eligible": report_eligible,
         "report_unverified": report_unverified,
+        "report_form_url": reverse("observations:report_form"),
+        "report_submit_url": reverse("observations:report_submit"),
+        "report_signin_url": reverse("accounts:sign_in"),
     }
-    if report_visible:
-        ctx.update(
-            {
-                "report_form_url": reverse("observations:report_form"),
-                "report_submit_url": reverse("observations:report_submit"),
-                "report_signin_url": reverse("accounts:sign_in"),
-            }
-        )
-    return ctx
 
 
 def _favourites_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the saved-pin favourites affordance.
 
-    ``favourites_visible`` is True when the ``favourites`` waffle flag is
-    active — this controls whether the "Add favourite" control and the
-    overlay toggle are rendered at all (seeded with ``superusers=True`` by
-    ``favourites/migrations/0002_seed_favourites_flag.py``).
-    ``favourites_eligible`` additionally requires the user to be
-    authenticated — favourites.js and map.js branch on this to show the
-    real add/rename/delete flow versus an anonymous sign-in CTA.
+    ``favourites_eligible`` requires the user to be authenticated —
+    favourites.js and map.js branch on this to show the real add/rename/
+    delete flow versus an anonymous sign-in CTA.
 
-    When ``favourites_visible`` is True the dict also includes the HTMX
-    endpoint URLs, a sign-in URL for the anonymous CTA, and two
-    ``__UUID__``-templated URLs (mirroring ``edit_save_url_template`` in
-    ``home()``) that favourites.js string-replaces at runtime to build the
-    rename/delete requests for a pin selected on the map — there is no
-    server-side "fetch one favourite" endpoint, so the client reconstructs
-    the same rename/delete markup ``favourites/partials/_favourite.html``
-    renders after create.
+    The dict also includes the HTMX endpoint URLs, a sign-in URL for the
+    anonymous CTA, and two ``__UUID__``-templated URLs (mirroring
+    ``edit_save_url_template`` in ``home()``) that favourites.js
+    string-replaces at runtime to build the rename/delete requests for a
+    pin selected on the map — there is no server-side "fetch one
+    favourite" endpoint, so the client reconstructs the same rename/delete
+    markup ``favourites/partials/_favourite.html`` renders after create.
 
     Args:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``favourites_visible``, ``favourites_eligible``, and (when
-        visible) ``favourites_geojson_url``, ``favourite_create_url``,
-        ``favourite_rename_url_template``, ``favourite_delete_url_template``,
-        and ``favourites_signin_url``.
+        Dict with ``favourites_eligible``, ``favourites_geojson_url``,
+        ``favourite_create_url``, ``favourite_rename_url_template``,
+        ``favourite_delete_url_template``, and ``favourites_signin_url``.
 
     """
-    favourites_visible = waffle.flag_is_active(request, "favourites")
-    favourites_eligible = favourites_visible and request.user.is_authenticated
-    ctx: dict[str, Any] = {
-        "favourites_visible": favourites_visible,
+    favourites_eligible = request.user.is_authenticated
+    # __UUID__ placeholder, mirroring the __ID__ trick used above for
+    # edit_save_url_template — reverse with a dummy uuid, then string-
+    # replace at runtime with the uuid of the pin actually selected.
+    dummy_uuid = uuid.UUID(int=0)
+    return {
         "favourites_eligible": favourites_eligible,
+        "favourites_geojson_url": reverse("favourites:geojson"),
+        "favourite_create_url": reverse("favourites:create"),
+        "favourite_rename_url_template": reverse(
+            "favourites:rename", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        "favourite_delete_url_template": reverse(
+            "favourites:delete", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        "favourites_signin_url": reverse("accounts:sign_in"),
     }
-    if favourites_visible:
-        # __UUID__ placeholder, mirroring the __ID__ trick used above for
-        # edit_save_url_template — reverse with a dummy uuid, then string-
-        # replace at runtime with the uuid of the pin actually selected.
-        dummy_uuid = uuid.UUID(int=0)
-        ctx.update(
-            {
-                "favourites_geojson_url": reverse("favourites:geojson"),
-                "favourite_create_url": reverse("favourites:create"),
-                "favourite_rename_url_template": reverse(
-                    "favourites:rename", args=[dummy_uuid]
-                ).replace(str(dummy_uuid), "__UUID__"),
-                "favourite_delete_url_template": reverse(
-                    "favourites:delete", args=[dummy_uuid]
-                ).replace(str(dummy_uuid), "__UUID__"),
-                "favourites_signin_url": reverse("accounts:sign_in"),
-            }
-        )
-    return ctx
 
 
 def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the community-reports map overlay.
 
-    ``community_reports_visible`` is True when the ``community_reports``
-    waffle flag is active — this controls whether the overlay toggle
-    renders at all (seeded with ``superusers=True`` by
-    ``observations/migrations/0006_seed_community_reports_flag.py``).
     Unlike favourites, there is no per-user eligibility split: the overlay
-    shows anonymised, publicly-shared data, so any request for whom the
-    flag is active sees the toggle.
+    shows anonymised, publicly-shared data, so every request sees the
+    toggle.
 
     Args:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``community_reports_visible`` and, when visible,
-        ``community_reports_geojson_url``.
+        Dict with ``community_reports_geojson_url``.
 
     """
-    community_reports_visible = waffle.flag_is_active(request, "community_reports")
-    ctx: dict[str, Any] = {"community_reports_visible": community_reports_visible}
-    if community_reports_visible:
-        ctx["community_reports_geojson_url"] = reverse("api:community_reports_geojson")
-    return ctx
+    return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
 
 
 def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
@@ -1584,23 +1522,17 @@ def _get_observation_counts(
 ) -> "list[tuple[str, int]]":
     """Return per-type field-observation counts for a region on a calendar day.
 
-    Returns an empty list when the ``field_observations`` flag is inactive
-    (zero-overhead on historic pages and for non-flagged users).
-
     Args:
-        request: The current HTTP request (used for waffle flag lookup).
+        request: The current HTTP request.
         region: The MicroRegion to count observations for.
         day: The calendar day to count observations on.
 
     Returns:
         List of ``(label, count)`` pairs sorted by label, where ``label`` is
         the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
-        Returns an empty list when the flag is inactive or no observations
-        exist.
+        Returns an empty list when no observations exist.
 
     """
-    if not waffle.flag_is_active(request, "field_observations"):
-        return []
     from observations.models import FieldObservation  # noqa: PLC0415
 
     raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
@@ -1634,12 +1566,10 @@ def _get_local_observation_counts(
 
     Point-local when the resort has both coordinates (SNOW-508); falls back
     to the existing region-wide count (``counts_for_region_day``) when the
-    resort's coordinates are null. Returns ``visible=False`` when the
-    ``field_observations`` flag is inactive, so the caller can hide the
-    panel entirely rather than show an empty one.
+    resort's coordinates are null.
 
     Args:
-        request: The current HTTP request (used for waffle flag lookup).
+        request: The current HTTP request.
         resort: The Resort to look up observations near.
         day: The calendar day to count observations on.
 
@@ -1647,9 +1577,6 @@ def _get_local_observation_counts(
         A ``LocalObservationResult`` — see its docstring for field meanings.
 
     """
-    if not waffle.flag_is_active(request, "field_observations"):
-        return LocalObservationResult(visible=False, scope="region", counts=[])
-
     if resort.latitude is not None and resort.longitude is not None:
         raw = FieldObservation.objects.counts_near_point_for_day(
             resort.latitude,
@@ -1674,22 +1601,19 @@ def _get_observation_has_user_located(
 ) -> bool:
     """Return True if any user-located report exists for region on day.
 
-    Guards behind the ``field_observations`` waffle flag and behind ``is_today``
-    (only the calling site invokes this on today's bulletin page).  Returns
-    False when the flag is inactive — zero overhead on historic pages.
+    Guarded behind ``is_today`` at the calling site (only invoked on
+    today's bulletin page).
 
     Args:
-        request: The current HTTP request (used for waffle flag lookup).
+        request: The current HTTP request.
         region: The MicroRegion to check.
         day: The calendar day to check.
 
     Returns:
         True when at least one MANUAL or GPS_REFINED report exists for the
-        region on the given day and the flag is active.
+        region on the given day.
 
     """
-    if not waffle.flag_is_active(request, "field_observations"):
-        return False
     from observations.models import FieldObservation  # noqa: PLC0415
 
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
@@ -1700,10 +1624,9 @@ def _get_favourites_in_region(
 ) -> list[Favourite]:
     """Return the requesting user's own favourites resolved to a region (SNOW-507).
 
-    Guarded on ``request.user.is_authenticated`` (checked before the
-    ``favourites`` waffle flag, since anonymous is the common case) so
-    anonymous requests issue zero extra queries — mirrors
-    ``user_subscribed_to_region``'s per-user pattern on the bulletin page.
+    Guarded on ``request.user.is_authenticated`` so anonymous requests issue
+    zero extra queries — mirrors ``user_subscribed_to_region``'s per-user
+    pattern on the bulletin page.
 
     Args:
         request: The current HTTP request.
@@ -1711,12 +1634,10 @@ def _get_favourites_in_region(
 
     Returns:
         The user's favourites in this region, or an empty list when
-        anonymous or the ``favourites`` flag is inactive.
+        anonymous.
 
     """
-    if not request.user.is_authenticated or not waffle.flag_is_active(
-        request, "favourites"
-    ):
+    if not request.user.is_authenticated:
         return []
     return list(Favourite.objects.for_user_region(request.user, region))
 
@@ -3820,9 +3741,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     for the danger chip). Field-observation counts are point-local — scoped
     to ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
     coordinates (SNOW-508) — falling back to the region-wide count when the
-    resort has no coordinates; ``_get_local_observation_counts`` already
-    short-circuits to ``visible=False`` when the ``field_observations`` flag
-    is inactive, so no extra gating is needed here.
+    resort has no coordinates.
 
     Weather (SNOW-509, product decision: Option 1) shows the *parent
     region's* ``WeatherSnapshot`` — never a per-resort forecast — so the
@@ -3856,7 +3775,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 
     can_favourite = False
     favourite = None
-    if waffle.flag_is_active(request, "favourites") and request.user.is_authenticated:
+    if request.user.is_authenticated:
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
