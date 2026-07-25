@@ -5,11 +5,11 @@ Covers:
 
   * ``GET /help/`` returns HTTP 200 for an anonymous user; the URL reverses
     to ``/help/``; the heading marker is present.
-  * The seven always-on topic panels render regardless of waffle flag state.
-  * The Favourites, Field-observations, and Sync-log panels, plus the map
-    panel's favourites-overlay, community-reports, and Report-button
-    sentences, are gated on the matching per-user waffle flag — absent by
-    default, present under ``@override_flag``.
+  * The ten always-on topic panels render regardless of waffle flag state.
+  * The map panel's favourites-overlay, community-reports, and
+    Report-button sentences are always present.
+  * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
+    absent by default, present under ``@override_flag``.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -33,9 +33,18 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-bulletins",
     "help-topic-weather",
     "help-topic-map",
+    "help-topic-favourites",
+    "help-topic-observations",
+    "help-topic-recent-observations",
     "help-topic-timeline",
     "help-topic-accounts",
     "help-topic-install",
+]
+
+ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
+    "help-map-favourites",
+    "help-map-community",
+    "help-map-report",
 ]
 
 
@@ -59,6 +68,11 @@ class TestHelpPage:
         response = client.get(reverse("public:help"))
         assert f'data-testid="{testid}"'.encode() in response.content
 
+    @pytest.mark.parametrize("testid", ALWAYS_ON_MAP_SENTENCE_TESTIDS)
+    def test_always_on_map_sentences_present(self, client: Client, testid: str) -> None:
+        response = client.get(reverse("public:help"))
+        assert f'data-testid="{testid}"'.encode() in response.content
+
     def test_links_to_bulletin_guide(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert reverse("public:how_to_read_bulletin").encode() in response.content
@@ -66,71 +80,11 @@ class TestHelpPage:
 
 @pytest.mark.django_db
 class TestHelpPageFlagGating:
-    """Flag-gated topics render only for users who can see the feature."""
-
-    def test_favourites_panel_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-favourites"' not in response.content
-
-    def test_observations_panel_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-observations"' not in response.content
-
-    def test_recent_observations_panel_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-recent-observations"' not in response.content
-
-    def test_map_favourites_sentence_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-favourites"' not in response.content
-
-    def test_map_community_sentence_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-community"' not in response.content
-
-    def test_map_report_sentence_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-report"' not in response.content
+    """The Sync-log topic renders only for users who can see the feature."""
 
     def test_sync_log_panel_absent_by_default(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' not in response.content
-
-    @override_flag("favourites", active=True)
-    def test_favourites_panel_present_when_flag_active(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-favourites"' in response.content
-
-    @override_flag("favourites", active=True)
-    def test_map_favourites_sentence_present_when_flag_active(
-        self, client: Client
-    ) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-favourites"' in response.content
-
-    @override_flag("field_observations", active=True)
-    def test_observations_panel_present_when_flag_active(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-observations"' in response.content
-
-    @override_flag("field_observations", active=True)
-    def test_map_report_sentence_present_when_flag_active(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-report"' in response.content
-
-    @override_flag("community_reports", active=True)
-    def test_map_community_sentence_present_when_flag_active(
-        self, client: Client
-    ) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-map-community"' in response.content
-
-    @override_flag("observations_page", active=True)
-    def test_recent_observations_panel_present_when_flag_active(
-        self, client: Client
-    ) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-recent-observations"' in response.content
 
     @override_flag("sync_log", active=True)
     def test_sync_log_panel_present_when_flag_active(self, client: Client) -> None:
