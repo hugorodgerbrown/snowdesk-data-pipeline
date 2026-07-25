@@ -67,12 +67,16 @@ function basemapDotState() {
 
 /**
  * A fake `CacheStorage`: `match` resolves truthy for any request whose
- * pathname is in `hitPaths`; `keys` reports `basemapCache.name` (if any);
- * `open` returns an object exposing `keys()` for `basemapCache.entries`.
- * Each method optionally throws when the matching `throws.<method>` flag
- * is set, for the "a probe that throws" cases.
+ * pathname is in `hitPaths`; `keys` reports every `basemapCaches` entry's
+ * `name`; `open` returns an object exposing `keys()` for the matching
+ * entry's `entries`. `basemapCache` (singular) is still accepted as a
+ * convenience for the single-cache cases — it's just wrapped into a
+ * one-element `basemapCaches` array. Each method optionally throws when
+ * the matching `throws.<method>` flag is set, for the "a probe that
+ * throws" cases.
  */
-function fakeCaches({ hitPaths = [], basemapCache = null, throws = {} } = {}) {
+function fakeCaches({ hitPaths = [], basemapCache = null, basemapCaches = null, throws = {} } = {}) {
+  const caches = basemapCaches || (basemapCache ? [basemapCache] : []);
   return {
     match: vi.fn(async (request) => {
       if (throws.match) throw new Error('match failed');
@@ -81,12 +85,13 @@ function fakeCaches({ hitPaths = [], basemapCache = null, throws = {} } = {}) {
     }),
     keys: vi.fn(async () => {
       if (throws.keys) throw new Error('keys failed');
-      return basemapCache ? [basemapCache.name] : [];
+      return caches.map((c) => c.name);
     }),
     open: vi.fn(async (name) => {
       if (throws.open) throw new Error('open failed');
+      const match = caches.find((c) => c.name === name);
       return {
-        keys: async () => (basemapCache && basemapCache.name === name ? basemapCache.entries : []),
+        keys: async () => (match ? match.entries : []),
       };
     }),
   };
@@ -215,6 +220,28 @@ describe('basemap indicator', () => {
     await window.pwaLayerSyncStatus.refresh();
 
     expect(basemapDotState()).toBe('uncached');
+  });
+
+  it('resolves cached when only the pinned partition (SNOW-521) holds entries', async () => {
+    // Two snowdesk-basemap-* caches, mirroring sw.js's BASEMAP_CACHE +
+    // BASEMAP_PINNED_CACHE: the passive-browsing cache is empty (nothing
+    // browsed this session) but a deliberate "Download basemap" run has
+    // populated the pinned one. The dot must still read cached — the old
+    // `.find()`-first-cache implementation would have stopped at the
+    // empty passive cache and wrongly reported uncached.
+    vi.stubGlobal(
+      'caches',
+      fakeCaches({
+        basemapCaches: [
+          { name: 'snowdesk-basemap-v1', entries: [] },
+          { name: 'snowdesk-basemap-pinned-v1', entries: [{}] },
+        ],
+      }),
+    );
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState()).toBe('cached');
   });
 });
 
