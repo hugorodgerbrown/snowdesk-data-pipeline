@@ -47,7 +47,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
 from tests.e2e.conftest import _session_login
@@ -101,7 +100,6 @@ def _poll(
     )
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_report_submission_syncs_without_duplicate(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -223,7 +221,6 @@ def test_offline_report_submission_syncs_without_duplicate(
         assert FieldObservation.objects.count() == 1
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_reset_required_state_shows_error_toast_not_false_confirmation(
     live_server: LiveServer, page: Page, django_db_blocker: Any

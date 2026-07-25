@@ -35,7 +35,6 @@ import pytest
 from django.conf import settings
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import FavouritesPage
 from tests.factories import FavouriteFactory
@@ -158,7 +157,6 @@ def test_overlay_label_font_follows_active_basemap(
     assert page_errors == [], f"unexpected JS errors: {page_errors}"
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourites_pin_is_glyph_free_icon(
     favourites_page: FavouritesPage, django_db_blocker: Any

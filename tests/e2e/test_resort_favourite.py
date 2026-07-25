@@ -28,7 +28,6 @@ from typing import Any
 import pytest
 from django.urls import reverse
 from playwright.sync_api import Page
-from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from favourites.services import create_resort_favourite
@@ -71,7 +70,6 @@ def _inject_resort_popup(page: Page, live_server_url: str, resort_id: int) -> No
     page.wait_for_selector("#e2e-resort-popup-host [data-resort-star]")
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_star_creates_resort_favourite(
     favourites_page: FavouritesPage, django_db_blocker: Any
@@ -119,7 +117,6 @@ def test_star_creates_resort_favourite(
         assert favourite.name == "Verbier"
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_star_unfavourites_existing_resort_favourite(
     favourites_page: FavouritesPage, django_db_blocker: Any
@@ -161,7 +158,6 @@ def test_star_unfavourites_existing_resort_favourite(
         assert not Favourite.objects.filter(pk=favourite_pk).exists()
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_favourited_resort_returns_to_resort_layer_when_favourites_hidden(
     favourites_page: FavouritesPage, django_db_blocker: Any

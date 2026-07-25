@@ -29,7 +29,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, FavouriteFactory
@@ -79,7 +78,6 @@ def _poll(
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_favourites_cache_never_leaks_across_account_switch(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -124,7 +122,6 @@ def test_offline_favourites_cache_never_leaks_across_account_switch(
     )
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_community_reports_cache_survives_account_switch(
     live_server: LiveServer, page: Page, django_db_blocker: Any

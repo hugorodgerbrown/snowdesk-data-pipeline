@@ -53,7 +53,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from favourites.models import Favourite
 from tests.e2e.conftest import _session_login
@@ -139,7 +138,6 @@ def _go_online(page: Page) -> None:
     )
 
 
-@override_flag("favourites", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_offline_favourite_creation_syncs_without_duplicate(
     live_server: LiveServer, page: Page, django_db_blocker: Any

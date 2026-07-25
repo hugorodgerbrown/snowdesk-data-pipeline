@@ -6,12 +6,7 @@ here since they share the ``observations.FieldObservation`` model.
 
 Uses plain ``page`` + ``live_server`` fixtures (no signed-in session
 needed — unlike favourites, the overlay shows anonymised, publicly-shared
-data with no per-user eligibility gate). Every test still needs
-``@override_flag("community_reports", active=True)`` since the flag is
-seeded ``superusers=True`` in production and the test client is
-anonymous; ``override_flag`` mutates the ``Flag.everyone`` DB column,
-visible to the live-server thread since pytest-django's ``live_server``
-runs in-process (mirrors ``test_favourites.py``).
+data with no per-user eligibility gate).
 
 The SNOW-475 test below is signed-in (``field_observations`` requires
 authentication + a verified account — see ``observations.views._auth_gate``)
@@ -29,7 +24,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from observations.models import FieldObservation
 from tests.e2e.conftest import _session_login
@@ -46,7 +40,6 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_installs_clustered_source(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -109,7 +102,6 @@ def test_overlay_toggle_installs_clustered_source(
     assert feature["geometry"]["coordinates"] == [7.6, 46.2]
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_point_tap_popup_shows_type_and_time_without_region(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -175,7 +167,6 @@ def test_point_tap_popup_shows_type_and_time_without_region(
     assert region_name not in popup.inner_text()
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_cluster_tap_does_not_also_select_the_region_underneath(
     live_server: LiveServer,
@@ -255,7 +246,6 @@ def test_cluster_tap_does_not_also_select_the_region_underneath(
     assert page.locator(".region-popup").count() == 0
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_cluster_tap_zooms_to_expansion_level(
     live_server: LiveServer,
@@ -330,7 +320,6 @@ def test_cluster_tap_zooms_to_expansion_level(
     assert page.evaluate("() => window.__easeCalls[0].zoom") == 15
 
 
-@override_flag("community_reports", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_persists_across_reload(
     live_server: LiveServer, page: Page
@@ -359,7 +348,6 @@ def test_overlay_toggle_persists_across_reload(
     assert toggle.get_attribute("aria-checked") == "true"
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_report_manual_path_uses_centre_pin_without_a_map_click(
     live_server: LiveServer, page: Page, django_db_blocker: Any

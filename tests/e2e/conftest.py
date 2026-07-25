@@ -48,12 +48,7 @@ Fixtures defined here:
 ``favourites_page`` (SNOW-414)
     A plain ``page`` + ``live_server`` combination (no ``pwa_page`` — the
     favourites map-surface tests don't drive the SW lifecycle) with a
-    session cookie for a regular ``Account``. Tests using it still need
-    ``@override_flag("favourites", active=True)`` — ``override_flag``
-    mutates the ``Flag.everyone`` DB column (see ``waffle.testutils``),
-    which is visible to the live-server thread since pytest-django's
-    ``live_server`` runs in-process, so it works the same as in a
-    Django-test-client test.
+    session cookie for a regular ``Account``.
 """
 
 from __future__ import annotations
@@ -528,9 +523,7 @@ class FavouritesPage:
 
     Unlike ``signed_in_page``, this does not go through ``pwa_page`` — the
     favourites map-surface tests don't need a real service-worker
-    lifecycle, and skipping it keeps the fixture cheap. The ``favourites``
-    waffle flag still needs ``@override_flag("favourites", active=True)``
-    on the test itself (this fixture only handles the session cookie).
+    lifecycle, and skipping it keeps the fixture cheap.
     """
 
     page: Page

@@ -27,7 +27,6 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, UserFactory
@@ -53,7 +52,6 @@ def _navigate_home_with_sw_stripped(page: Page, live_server_url: str) -> None:
     page.wait_for_selector("#report-btn")
 
 
-@override_flag("field_observations", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_unverified_user_sees_verify_prompt_no_form_load(
     live_server: LiveServer, page: Page, django_db_blocker: Any
