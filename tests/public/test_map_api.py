@@ -18,6 +18,11 @@ Covers the endpoints consumed by the /map/ page:
                                   link to the resort's own page — SNOW-504).
                                   Public; the star is gated on the
                                   ``favourites`` flag + authentication.
+                                  SNOW-501: curated metadata rows (operator,
+                                  website, lift/run counts, piste length,
+                                  elevation range, typical season) — blank
+                                  fields render a placeholder instead of
+                                  being omitted, staff-worded via ``is_staff``.
 
 SNOW-252 — peak semantics:
 * ``api:ratings`` choropleth emits peak (max_rating) for two-period escalating days.
@@ -851,6 +856,98 @@ def test_resort_popup_not_cached() -> None:
     response = client.get(reverse("api:resort_popup", args=[resort.pk]))
 
     assert "public" not in response.get("Cache-Control", "")
+
+
+_PLACEHOLDER_CLASS = "border-dashed"
+
+
+@pytest.mark.django_db
+def test_resort_popup_populated_metadata_renders_values() -> None:
+    """SNOW-501: a fully-populated resort renders every metadata value, no placeholders."""
+    resort = ResortFactory.create(
+        name="Verbier",
+        latitude=46.1,
+        longitude=7.4,
+        operator_name="Téléverbier SA",
+        website="https://www.televerbier.ch",
+        num_lifts=25,
+        num_runs=90,
+        total_piste_km=88.5,
+        base_elevation_m=1500,
+        top_elevation_m=3330,
+        typical_season_open="12-01",
+        typical_season_close="04-30",
+    )
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "Téléverbier SA" in html
+    assert "https://www.televerbier.ch" in html
+    assert "25" in html
+    assert "90" in html
+    assert "88.5" in html
+    assert "1500" in html
+    assert "3330" in html
+    assert "1 Dec" in html
+    assert "30 Apr" in html
+    assert _PLACEHOLDER_CLASS not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_metadata_anonymous_shows_em_dash_placeholder() -> None:
+    """Blank fields for an anonymous visitor render an em-dash placeholder, not a hint."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert _PLACEHOLDER_CLASS in html
+    assert "&mdash;" in html
+    assert "Add operator name" not in html
+    assert "Add website" not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_metadata_staff_shows_curation_hints() -> None:
+    """Blank fields for a staff user render explicit "Add <field>" curation hints."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+    staff_user = UserFactory.create(is_staff=True)
+
+    client = Client()
+    client.force_login(staff_user)
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "Add operator name" in html
+    assert "Add website" in html
+    assert "Add lift count" in html
+    assert "Add run count" in html
+    assert "Add piste length" in html
+    assert "Add elevation range" in html
+    assert "Add typical season" in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_metadata_non_staff_shows_em_dash_placeholder() -> None:
+    """Blank fields for a non-staff authenticated user show em-dash, not a staff hint."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+    user = UserFactory.create(is_staff=False)
+
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert _PLACEHOLDER_CLASS in html
+    assert "&mdash;" in html
+    assert "Add operator name" not in html
 
 
 @pytest.mark.django_db
