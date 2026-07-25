@@ -242,7 +242,7 @@ try {
 // SNOW-518: v38 — map.js now notifies the layers-menu sync dashboard from
 // the boot overlay-restore path and ensureCountryLoaded, and adds a
 // visibilitychange re-probe — shell JS bytes changed.
-const CACHE_VERSION = 'snowdesk-shell-v38';
+const CACHE_VERSION = 'snowdesk-shell-v39';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
