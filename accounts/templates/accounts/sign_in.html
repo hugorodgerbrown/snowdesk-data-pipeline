@@ -119,7 +119,15 @@ the manage page can be authenticated-only.
     </div>
 
     {% comment %}
-        Passkey conditional UI — start on page load.
+        Passkey conditional UI — started when the user focuses the email field,
+        not on page load. WebAuthn credential providers (1Password, Dashlane,
+        iCloud Keychain, the browser's own manager, …) surface their UI in
+        response to the navigator.credentials.get() call itself, so calling it
+        at page load pops an unsolicited passkey prompt for anyone running a
+        third-party provider (SNOW-519). Deferring the ceremony to first focus
+        of the email field ties it to a deliberate sign-in gesture — nothing
+        appears on a bare page load.
+
         On successful passkey sign-in the page is reloaded; the sign_in_view
         then detects request.user.is_authenticated and redirects to manage.
     {% endcomment %}
@@ -155,17 +163,23 @@ the manage page can be authenticated-only.
             }
 
             /* Conditional UI — passkeys surface in email-field autofill dropdown.
-               Typing an email or submitting the form aborts any pending
-               conditional ceremony (SNOW-515) so it never overlaps the
+               Started on first focus of the email field rather than on page
+               load (SNOW-519): every WebAuthn provider surfaces its UI in
+               response to the get() call, so calling it at load pops an
+               unsolicited prompt for third-party providers. Focusing the email
+               field is a deliberate sign-in gesture, so it is the right moment
+               to begin the ceremony. Typing an email or submitting the form
+               aborts the pending ceremony (SNOW-515) so it never overlaps the
                explicit "Sign in with a passkey" button's ceremony.
                passkey.js loads synchronously in the <script src> above, so
                window.Passkey is trusted here at the same level as the
                startConditionalSignIn() call itself — only the elements are
                guarded on existence. */
-            window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
-
             var emailInput = form ? form.querySelector('input[name="email"]') : null;
             if (emailInput) {
+                emailInput.addEventListener("focus", function () {
+                    window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+                }, { once: true });
                 emailInput.addEventListener("input", function () {
                     window.Passkey.abortConditionalSignIn();
                 });
