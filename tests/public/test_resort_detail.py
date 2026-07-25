@@ -28,7 +28,6 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
 from observations.models import FieldObservation
@@ -174,7 +173,6 @@ class TestResortDetailEdgeCases:
 class TestResortDetailFavouriteState:
     """Favourite-star state mirrors public.api.resort_popup's contract."""
 
-    @override_flag("favourites", active=True)
     def test_anonymous_shows_signin_cta(self) -> None:
         """An anonymous visitor sees the sign-in CTA, not the toggle button."""
         resort = ResortFactory.create()
@@ -186,7 +184,6 @@ class TestResortDetailFavouriteState:
         assert 'data-testid="resort-favourite-signin"' in content
         assert 'data-testid="resort-favourite-toggle"' not in content
 
-    @override_flag("favourites", active=True)
     def test_authenticated_not_favourited_shows_unfavourited_button(self) -> None:
         """An eligible, not-yet-favouriting user sees the toggle, unfavourited."""
         resort = ResortFactory.create()
@@ -200,7 +197,6 @@ class TestResortDetailFavouriteState:
         assert 'data-testid="resort-favourite-toggle"' in content
         assert 'data-favourited="false"' in content
 
-    @override_flag("favourites", active=True)
     def test_authenticated_already_favourited_shows_saved_state(self) -> None:
         """An already-favourited resort shows the toggle in its saved state."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
@@ -219,19 +215,6 @@ class TestResortDetailFavouriteState:
         response = client.get(resort.get_absolute_url())
 
         assert 'data-favourited="true"' in response.content.decode()
-
-    def test_flag_inactive_shows_signin_cta(self) -> None:
-        """An authenticated user sees the sign-in CTA when the flag is inactive."""
-        resort = ResortFactory.create()
-        user = UserFactory.create()
-
-        client = Client()
-        client.force_login(user)
-        response = client.get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert 'data-testid="resort-favourite-toggle"' not in content
-        assert 'data-testid="resort-favourite-signin"' in content
 
 
 @pytest.mark.django_db
@@ -258,7 +241,6 @@ class TestResortDetailLocalObservations:
             today.year, today.month, today.day, 12, 0, tzinfo=datetime.UTC
         )
 
-    @override_flag("field_observations", active=True)
     def test_point_local_scope_when_resort_has_coords(self) -> None:
         """A geocoded resort shows the point-local heading and its own count."""
         resort = ResortFactory.create(geocoded=True)  # (46.1, 7.4)
@@ -277,7 +259,6 @@ class TestResortDetailLocalObservations:
         assert "Reported in this region" not in content
         assert "Whumpfing" in content
 
-    @override_flag("field_observations", active=True)
     def test_region_wide_fallback_when_coords_null(self) -> None:
         """A resort with no coordinates falls back to the region-wide count."""
         region = MicroRegionFactory.create()
@@ -296,22 +277,6 @@ class TestResortDetailLocalObservations:
         assert "Reported nearby" not in content
         assert "Pinwheels" in content
 
-    def test_panel_hidden_when_flag_inactive(self) -> None:
-        """The panel is absent entirely when field_observations is off."""
-        resort = ResortFactory.create(geocoded=True)
-        FieldObservationFactory.create(
-            latitude=resort.latitude,
-            longitude=resort.longitude,
-            observed_at=self._today_at_noon(),
-        )
-
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert 'id="obs-counts-heading"' not in content
-
-    @override_flag("field_observations", active=True)
     def test_empty_state_point_local(self) -> None:
         """A geocoded resort with nothing nearby shows the point empty-state copy."""
         resort = ResortFactory.create(geocoded=True)
@@ -323,7 +288,6 @@ class TestResortDetailLocalObservations:
         assert "Reported nearby" in content
         assert "No reports near here today." in content
 
-    @override_flag("field_observations", active=True)
     def test_empty_state_region_wide(self) -> None:
         """A coord-null resort with nothing in-region shows the region empty-state copy."""
         resort = ResortFactory.create(latitude=None, longitude=None)
@@ -335,7 +299,6 @@ class TestResortDetailLocalObservations:
         assert "Reported in this region" in content
         assert "No reports in this region today." in content
 
-    @override_flag("field_observations", active=True)
     def test_manual_footnote_absent_when_local_counts_are_empty(self) -> None:
         """The 'placed manually' footnote never contradicts the empty state.
 
@@ -438,8 +401,7 @@ class TestResortDetailWeather:
 
         client = Client()
         client.force_login(user)
-        with override_flag("favourites", active=True):
-            response = client.get(resort.get_absolute_url())
+        response = client.get(resort.get_absolute_url())
 
         content = response.content.decode()
         assert 'data-testid="resort-weather"' in content
