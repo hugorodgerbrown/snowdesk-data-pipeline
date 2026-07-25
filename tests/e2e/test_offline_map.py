@@ -446,7 +446,9 @@ def test_cache_now_warms_same_origin_urls_into_cache_storage(
     )
 
 
-def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None:
+def test_cache_now_button_completes_and_reveals_toast(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
     """Clicking the micro "Download basemap" icon shows a completion toast.
 
     Smoke test for the real per-region download wiring
@@ -454,35 +456,73 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     ``/api/region-basemap-tiles/`` fetch -> ``pwaWarmCache`` -> the
     completion toast) — does not assert on how many basemap tiles were
     actually cached, since tile-URL assembly depends on the active
-    basemap's CDN being reachable to resolve a tile template (see the
-    module docstring). Like
-    ``test_favourites_overlay_installs_from_cache_after_offline_reload``,
-    this test still depends on ``pwa_page``'s own boot reaching a real
-    basemap (``MAP`` existing is enough here — the click handler degrades
-    gracefully to warming zero tile URLs if the style never loaded), so it
-    carries the same theoretical live-CDN flakiness risk documented in the
-    module docstring, even though the completion toast itself never
-    depends on the CDN succeeding. The ``/api/region-basemap-tiles/``
+    basemap's CDN being reachable to resolve a tile template (this test
+    leaves ``activeBasemapTileTemplate`` un-stubbed, so it degrades to
+    warming zero tile URLs whenever the CDN isn't reachable — see the
+    module docstring). Same-origin data feeds and the completion toast
+    are what this test actually verifies. The ``/api/region-basemap-tiles/``
     fetch itself is same-origin (the real ``live_server``, not a
     third-party CDN) so it's left un-stubbed here.
 
     SNOW-493 finding 7: the completion toast branches on the actual {ok,
     failed} counts (complete/partial/failed — see
     ``test_cache_this_area.py`` for coverage of each branch with stubbed
-    counts), so this smoke test accepts whichever of the three the live
-    CDN outcome happens to produce rather than asserting a specific one.
+    counts), so this smoke test accepts whichever of the three actually
+    lands rather than asserting a specific one.
 
     SNOW-521 rework: the old viewport-anchored docked confirm bar
     (``#cache-now-toggle`` -> ``#basemap-download-bar`` ->
     ``#basemap-download-confirm``) was replaced by per-crumb icons in the
     ``#region-readout`` chip — this test now drives the always-shown
     micro icon (``#region-download-micro``) for the homepage's
-    default-focus region.
+    default-focus region. That icon only appears once
+    ``FEATURE_BY_REGION_ID`` is populated — normally from a
+    ``regions.geojson`` fetch gated behind ``map.on('load')``, which in
+    turn needs the active basemap's style to load; a real third-party
+    basemap CDN is documented elsewhere as unreachable in this harness
+    (``test_offline_basemap_cache.py``'s module docstring;
+    ``test_cache_this_area.py``'s module docstring has the full
+    confirmation). This test sidesteps that chain the same way — writing
+    a synthetic entry into ``FEATURE_BY_REGION_ID`` directly and
+    dispatching the real ``snowdesk:region-selected`` event — so the
+    real button-click -> fetch -> toast wiring is still exercised
+    end to end, independent of the CDN. Also requests ``_load_test_data``
+    (via ``loaddata eaws_CH``) purely so ``_season_ribbon.html``'s
+    ``{% if ribbon %}`` gate renders the icon markup at all (it needs a
+    real, DB-backed default region — see ``test_cache_this_area.py``'s
+    module docstring); ``pwa_page``'s own first navigation can race that
+    seed (fixture instantiation order between two same-scope,
+    non-dependent fixtures is unspecified), so this re-navigates to
+    ``/`` once seeding is guaranteed to have landed.
     """
     page = pwa_page.page
+    page.goto(pwa_page.live_server_url + "/")
+    page.wait_for_load_state("load")
     page.wait_for_function(
         "() => typeof MAP !== 'undefined' && MAP !== null && "
         "typeof window.pwaWarmCache === 'function'"
+    )
+    page.evaluate(
+        """() => {
+            FEATURE_BY_REGION_ID['CH-4115'] = {
+                type: 'Feature',
+                properties: {
+                    id: 'CH-4115',
+                    regionID: 'CH-4115',
+                    download: {
+                        micro: {
+                            count: 1,
+                            mb: 1,
+                            over_ceiling: false,
+                            centre_tile: { z: 14, x: 100, y: 100 },
+                        },
+                    },
+                },
+            };
+            document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+                detail: { region_id: 'CH-4115' },
+            }));
+        }"""
     )
 
     icon = page.locator("#region-download-micro")

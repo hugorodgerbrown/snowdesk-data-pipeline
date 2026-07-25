@@ -4944,8 +4944,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 
   // Pick up the homepage's server-rendered default focus once its
-  // geojson feature (and download data) has loaded — mirrors
-  // seasonRibbonInit's own setHighlight listener for the same event.
+  // geojson feature (and download data) has loaded. The initial CH
+  // load populates FEATURE_BY_REGION_ID directly in the main IIFE's
+  // map.on('load') handler WITHOUT dispatching snowdesk:regions-loaded
+  // (that event is SNOW-172-lazy-country-load-only) — MAP_READY_PROMISE
+  // resolves right after that handler's install step, by which point
+  // FEATURE_BY_REGION_ID is populated, so it's the reliable signal for
+  // the initial default-region case. snowdesk:regions-loaded is also
+  // listened for as a safety net (a deep-linked/default region in a
+  // country loaded lazily later), mirroring seasonRibbonInit's own
+  // setHighlight listener for that event.
+  MAP_READY_PROMISE.then(() => {
+    if (currentRegionId) applyRegion(currentRegionId);
+  });
   document.addEventListener('snowdesk:regions-loaded', () => {
     if (currentRegionId) applyRegion(currentRegionId);
   });
