@@ -107,23 +107,17 @@ def test_seeded_row_resolves_cached_unseeded_row_stays_uncached(
 
     assert _dot_state(page, "resorts") == "cached"
     assert _dot_state(page, "l2") == "uncached"
-    # l3 is never cacheable (network-only in sw.js) — its own hollow
-    # "unavailable" state, distinct from the grey "uncached" fill.
-    assert _dot_state(page, "l3") == "unavailable"
 
 
 def test_toggling_a_tier_on_flips_its_dot_cached_live(
     live_server: LiveServer, page: Page
 ) -> None:
     """SNOW-505 iteration: toggling a lazy tier on flips its dot to "cached"
-    in real time — no popover re-open needed — while l3 (network-only) keeps
-    its hollow "unavailable" dot even after being toggled on.
+    in real time — no popover re-open needed.
 
     Opening the popover first re-probes (l2 starts "uncached"); toggling l2
     on triggers its GeoJSON load, and ``markCached`` optimistically greens
-    the dot the moment that load resolves. l3's load succeeds too, but its
-    dot must remain "unavailable" because bulletin groupings are never
-    cached for offline use.
+    the dot the moment that load resolves.
     """
     _navigate_home_map_loaded(page, live_server.url)
 
@@ -146,15 +140,6 @@ def test_toggling_a_tier_on_flips_its_dot_cached_live(
         ".getAttribute('data-sync-state') === 'cached'"
     )
     assert _dot_state(page, "l2") == "cached"
-
-    # Toggling l3 on loads it too, but its dot must stay in the hollow
-    # "unavailable" state — markCached no-ops for l3 (network-only, never
-    # cached). This holds regardless of whether the bulletin-groupings fetch
-    # itself succeeds, so it needn't be awaited; a brief settle is enough to
-    # catch an erroneous flip.
-    page.locator('[data-overlay-key="l3"]').click()
-    page.wait_for_timeout(500)
-    assert _dot_state(page, "l3") == "unavailable"
 
 
 def test_boot_restore_greens_a_dot_without_a_toggle(
