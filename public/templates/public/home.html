@@ -107,6 +107,10 @@ and loads home_intro.js in addition to the shared map assets.
     {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}
     {# setMenuOpen on every popover open.                                    #}
     <script defer src="{% static 'js/map_layer_sync_status.js' %}"></script>
+    {# SNOW-521: pure tile-math + "up to N MB" estimate for the "Download   #}
+    {# basemap" control (window.pwaBasemapDownloadCore). Must load before   #}
+    {# map.js, whose cacheNowInit delegates to it.                          #}
+    <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
