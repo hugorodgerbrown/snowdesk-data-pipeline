@@ -16,8 +16,7 @@ Context:
   resort         — regions.Resort instance.
   favourited     — bool: True when the requesting user already has a
                    Favourite for this resort.
-  can_favourite  — bool: True when the ``favourites`` flag is active AND the
-                   requesting user is authenticated.
+  can_favourite  — bool: True when the requesting user is authenticated.
   signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
 {% endcomment %}
 {% if can_favourite %}

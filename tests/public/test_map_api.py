@@ -2163,9 +2163,10 @@ class TestCommunityReportsGeojson:
     def test_cache_control_prevents_shared_caching(self) -> None:
         """SNOW-459: response is private/no-store, never public.
 
-        The overlay is gated per-user by the ``community_reports`` flag, so a
-        shared cache must not be able to replay one user's flag decision to
-        another. ``public`` must be absent; ``no-store`` present.
+        The overlay is per-user (each viewer's own reports are surfaced
+        distinctly), so a shared cache must not be able to replay one user's
+        response to another. Making it publicly cacheable is deferred to
+        SNOW-469. ``public`` must be absent; ``no-store`` present.
         """
         response = Client().get(reverse("api:community_reports_geojson"))
         cache_control = response.get("Cache-Control", "")
