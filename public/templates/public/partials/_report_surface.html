@@ -2,8 +2,7 @@
 {% comment %}
 public/partials/_report_surface.html — Field-report sheet and JS (SNOW-333).
 
-Included from home.html. Rendered only when report_visible is True (i.e.
-the field_observations waffle flag is active for the request).
+Included from home.html.
 
 The roundel button lives in _map_embed.html (inside #map so it floats above
 the season scrubber). This partial owns the viewport-anchored sheet panel
@@ -15,20 +14,17 @@ swapped-in form submits via hx-post, so htmx.min.js must precede it in
 document order, which home.html's include ordering guarantees.
 
 Context expected:
-  report_visible  — bool: whether the feature flag is active.
-  (No other context keys are required here; report.js reads data-* attributes
+  (No context keys are required here; report.js reads data-* attributes
   from #report-btn which is rendered by _map_embed.html.)
 {% endcomment %}
-{% if report_visible %}
-    {# Sheet container — hidden until report.js opens it. SNOW-486:         #}
-    {# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
-    {% trans "Field observation report" as report_sheet_aria_label %}
-    {% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
-    {# SNOW-475: shared touch-friendly place-picker — must precede          #}
-    {# report.js in document order (both are defer, so document-order      #}
-    {# defer execution guarantees window.PlacePicker exists first).        #}
-    <script defer src="{% static 'js/place_picker.js' %}"></script>
-    {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
-    {# Deferred so it executes in document order after the map assets.      #}
-    <script defer src="{% static 'js/report.js' %}"></script>
-{% endif %}
+{# Sheet container — hidden until report.js opens it. SNOW-486:         #}
+{# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
+{% trans "Field observation report" as report_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
+{# SNOW-475: shared touch-friendly place-picker — must precede          #}
+{# report.js in document order (both are defer, so document-order      #}
+{# defer execution guarantees window.PlacePicker exists first).        #}
+<script defer src="{% static 'js/place_picker.js' %}"></script>
+{# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
+{# Deferred so it executes in document order after the map assets.      #}
+<script defer src="{% static 'js/report.js' %}"></script>

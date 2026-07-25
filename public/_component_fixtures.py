@@ -1374,11 +1374,7 @@ TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
 # bare logo, back-link variant, season-trigger variant, and authed subscriber.
 # ``request.user`` and ``nav_subscriptions`` are overridden via SimpleNamespace
 # so the partial's auth-area branches can be exercised without touching the
-# context processor. ``GET={}`` is required (SNOW-476) — nav.html's
-# ``{% flag "observations_page" %}`` tag calls waffle's ``flag_is_active``,
-# which reads ``request.GET`` unconditionally when ``WAFFLE_OVERRIDE`` is set
-# (true in development/test settings); without it, rendering this fixture
-# raises ``AttributeError``.
+# context processor.
 
 _NAV_REGION = SimpleNamespace(region_id="CH-VS-3431", name="Bex-Villars")
 
@@ -1393,7 +1389,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
-                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1410,7 +1405,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
-                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1426,7 +1420,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="",
                 ),
                 csp_nonce="",
-                GET={},
             ),
             "nav_subscriptions": [],
         },
@@ -1441,7 +1434,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                     email="alice@example.com",
                 ),
                 csp_nonce="",
-                GET={},
             ),
             "nav_subscriptions": [
                 SimpleNamespace(region=_NAV_REGION),

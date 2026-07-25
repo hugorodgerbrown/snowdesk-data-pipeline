@@ -2,12 +2,7 @@
 public/templates/public/help/_topic_map.html — "The map" panel body.
 
 Content partial for the help page (SNOW-456); included via the
-body_template parameter of includes/_collapsible_panel.html. The
-favourites-overlay, community-reports-overlay, and Report-button
-sentences are individually gated on favourites_visible /
-community_reports_visible / report_visible — context inherited through
-the parent {% include %} — so a user only sees documentation for
-features they can actually see on the map.
+body_template parameter of includes/_collapsible_panel.html.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -25,27 +20,21 @@ features they can actually see on the map.
             basemap (Swisstopo, IGN, basemap.at) where available.
         {% endblocktrans %}
     </p>
-    {% if favourites_visible %}
-        <p class="mb-3 last:mb-0" data-testid="help-map-favourites">
-            {% blocktrans trimmed %}
-                An overlay toggle shows your saved favourite pins directly on the map, alongside the resorts layer.
-            {% endblocktrans %}
-        </p>
-    {% endif %}
-    {% if community_reports_visible %}
-        <p class="mb-3 last:mb-0" data-testid="help-map-community">
-            {% blocktrans trimmed %}
-                A community-reports overlay shows anonymised, publicly-shared field observations from other Snowdesk
-                users on the map.
-            {% endblocktrans %}
-        </p>
-    {% endif %}
-    {% if report_visible %}
-        <p class="mb-3 last:mb-0" data-testid="help-map-report">
-            {% blocktrans trimmed %}
-                The Report button lets you submit a quick field observation &mdash; conditions you've seen in person
-                &mdash; for the region you're viewing.
-            {% endblocktrans %}
-        </p>
-    {% endif %}
+    <p class="mb-3 last:mb-0" data-testid="help-map-favourites">
+        {% blocktrans trimmed %}
+            An overlay toggle shows your saved favourite pins directly on the map, alongside the resorts layer.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-community">
+        {% blocktrans trimmed %}
+            A community-reports overlay shows anonymised, publicly-shared field observations from other Snowdesk users
+            on the map.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-report">
+        {% blocktrans trimmed %}
+            The Report button lets you submit a quick field observation &mdash; conditions you've seen in person &mdash;
+            for the region you're viewing.
+        {% endblocktrans %}
+    </p>
 </div>
