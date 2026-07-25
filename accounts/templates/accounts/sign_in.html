@@ -114,6 +114,12 @@ the manage page can be authenticated-only.
                 >
                 </p>
             </div>
+            <p class="text-text-3 text-sm mt-6 text-center">
+                {% url 'accounts:register' as register_url %}
+                {% blocktrans trimmed %}
+                    New to Snowdesk? <a href="{{ register_url }}" class="underline">Create an account</a>.
+                {% endblocktrans %}
+            </p>
             {% endcard %}
         </div>
     </div>

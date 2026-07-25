@@ -79,19 +79,49 @@ class TestNavAdminMenu:
 
 @pytest.mark.django_db
 class TestNavObservationsLink:
-    """SNOW-476: the Observations link is gated on the observations_page flag."""
+    """The Observations link was removed from the nav (menu cleanup)."""
 
     def test_link_absent_by_default(self, rf: RequestFactory) -> None:
-        """The link is absent when the flag is inactive."""
+        """The link is absent when the observations_page flag is inactive."""
         request = rf.get("/")
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)
         assert reverse("public:observations") not in html
 
     @override_flag("observations_page", active=True)
-    def test_link_present_when_flag_active(self, rf: RequestFactory) -> None:
-        """The link appears once the flag is active for the viewer."""
+    def test_link_absent_even_when_flag_active(self, rf: RequestFactory) -> None:
+        """The link no longer appears even when the flag is active."""
         request = rf.get("/")
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert reverse("public:observations") in html
+        assert reverse("public:observations") not in html
+
+
+@pytest.mark.django_db
+class TestNavAuthArea:
+    """The unauthenticated auth area shows a single "Sign in" button."""
+
+    def test_anonymous_sees_sign_in_button(self, rf: RequestFactory) -> None:
+        """Anonymous users see a "Sign in" link to the sign-in page..."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:sign_in") in html
+        assert "Sign in" in html
+
+    def test_anonymous_sees_no_register_link(self, rf: RequestFactory) -> None:
+        """...and no standalone Register link (registration lives on sign-in)."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:register") not in html
+
+    def test_authenticated_sees_my_account_link(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Authenticated users see the "My account" menu item."""
+        request = rf.get("/")
+        request.user = regular_user
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:manage") in html
+        assert "My account" in html
