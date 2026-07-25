@@ -10,29 +10,11 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name="majorregion",
-            name="basemap_download",
-            field=models.JSONField(
-                blank=True,
-                help_text="Precomputed offline-basemap tile coverage for this region at the 'major' tier's zoom band (regions.services.basemap_tiles.TIER_BANDS), populated by `manage.py compute_basemap_download --commit`. {band, count, mb, over_ceiling, centre_tile, z} — see regions/services/basemap_tiles.py for the shape. Never computed at request time; region geometry is static reference data so this never changes once computed.",
-                null=True,
-            ),
-        ),
-        migrations.AddField(
             model_name="microregion",
             name="basemap_download",
             field=models.JSONField(
                 blank=True,
-                help_text="Precomputed offline-basemap tile coverage for this region at the 'micro' tier's zoom band (regions.services.basemap_tiles.TIER_BANDS), populated by `manage.py compute_basemap_download --commit` from a bbox derived from `boundary` (MicroRegion has no stored bbox field). See MajorRegion.basemap_download for the shape.",
-                null=True,
-            ),
-        ),
-        migrations.AddField(
-            model_name="subregion",
-            name="basemap_download",
-            field=models.JSONField(
-                blank=True,
-                help_text="Precomputed offline-basemap tile coverage for this region at the 'minor' tier's zoom band (regions.services.basemap_tiles.TIER_BANDS), populated by `manage.py compute_basemap_download --commit`. See MajorRegion.basemap_download for the shape.",
+                help_text="Precomputed offline-basemap tile coverage for this region (regions.services.basemap_tiles.MICRO_BAND), populated by `manage.py compute_basemap_download --commit` from a bbox derived from `boundary` (MicroRegion has no stored bbox field). {band, count, mb, over_ceiling, centre_tile, z} — see regions/services/basemap_tiles.py for the shape. Never computed at request time; region geometry is static reference data so this never changes once computed.",
                 null=True,
             ),
         ),

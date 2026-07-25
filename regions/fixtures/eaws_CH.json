@@ -945,53 +945,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 443,
-        "mb": 44,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2134,
-          "y": 1447
-        },
-        "z": {
-          "8": [
-            132,
-            134,
-            90,
-            90
-          ],
-          "9": [
-            265,
-            268,
-            180,
-            181
-          ],
-          "10": [
-            531,
-            536,
-            360,
-            363
-          ],
-          "11": [
-            1062,
-            1072,
-            720,
-            727
-          ],
-          "12": [
-            2125,
-            2144,
-            1440,
-            1455
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -1584,53 +1538,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 231,
-        "mb": 23,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2144,
-          "y": 1443
-        },
-        "z": {
-          "8": [
-            133,
-            134,
-            89,
-            90
-          ],
-          "9": [
-            267,
-            268,
-            179,
-            181
-          ],
-          "10": [
-            534,
-            537,
-            359,
-            362
-          ],
-          "11": [
-            1069,
-            1075,
-            718,
-            724
-          ],
-          "12": [
-            2138,
-            2150,
-            1437,
-            1448
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -1638,7 +1546,7 @@
     "fields": {
       "prefix": "CH-3",
       "country": "CH",
-      "name_native": "Östliche Voralpen",
+      "name_native": "\u00d6stliche Voralpen",
       "name_en": "Eastern Prealps",
       "centre": {
         "lon": 9.217028449999999,
@@ -2267,53 +2175,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 215,
-        "mb": 21,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2152,
-          "y": 1438
-        },
-        "z": {
-          "8": [
-            134,
-            134,
-            89,
-            90
-          ],
-          "9": [
-            268,
-            269,
-            179,
-            180
-          ],
-          "10": [
-            536,
-            539,
-            358,
-            361
-          ],
-          "11": [
-            1073,
-            1079,
-            716,
-            722
-          ],
-          "12": [
-            2147,
-            2158,
-            1433,
-            1444
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -3434,53 +3296,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 378,
-        "mb": 37,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2135,
-          "y": 1452
-        },
-        "z": {
-          "8": [
-            132,
-            134,
-            90,
-            91
-          ],
-          "9": [
-            265,
-            268,
-            180,
-            182
-          ],
-          "10": [
-            531,
-            536,
-            361,
-            364
-          ],
-          "11": [
-            1063,
-            1072,
-            723,
-            729
-          ],
-          "12": [
-            2126,
-            2144,
-            1446,
-            1459
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -3488,7 +3304,7 @@
     "fields": {
       "prefix": "CH-5",
       "country": "CH",
-      "name_native": "Nord- und Mittelbünden",
+      "name_native": "Nord- und Mittelb\u00fcnden",
       "name_en": "Northern and Central Grisons",
       "centre": {
         "lon": 9.427051368421052,
@@ -4341,53 +4157,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 317,
-        "mb": 31,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2154,
-          "y": 1445
-        },
-        "z": {
-          "8": [
-            134,
-            135,
-            89,
-            90
-          ],
-          "9": [
-            268,
-            270,
-            179,
-            181
-          ],
-          "10": [
-            536,
-            540,
-            359,
-            362
-          ],
-          "11": [
-            1073,
-            1081,
-            719,
-            725
-          ],
-          "12": [
-            2146,
-            2162,
-            1439,
-            1451
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -5460,53 +5230,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 246,
-        "mb": 25,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2148,
-          "y": 1453
-        },
-        "z": {
-          "8": [
-            133,
-            134,
-            90,
-            91
-          ],
-          "9": [
-            267,
-            269,
-            180,
-            182
-          ],
-          "10": [
-            535,
-            538,
-            361,
-            365
-          ],
-          "11": [
-            1071,
-            1076,
-            723,
-            730
-          ],
-          "12": [
-            2143,
-            2153,
-            1446,
-            1460
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -5514,7 +5238,7 @@
     "fields": {
       "prefix": "CH-7",
       "country": "CH",
-      "name_native": "Engadin und Südbünden",
+      "name_native": "Engadin und S\u00fcdb\u00fcnden",
       "name_en": "Engadine and Southern Grisons",
       "centre": {
         "lon": 10.0838698,
@@ -6667,53 +6391,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 253,
-        "mb": 25,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2161,
-          "y": 1447
-        },
-        "z": {
-          "8": [
-            134,
-            135,
-            90,
-            90
-          ],
-          "9": [
-            269,
-            270,
-            180,
-            181
-          ],
-          "10": [
-            538,
-            541,
-            360,
-            363
-          ],
-          "11": [
-            1077,
-            1083,
-            720,
-            726
-          ],
-          "12": [
-            2155,
-            2167,
-            1440,
-            1453
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -8054,53 +7732,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 716,
-        "mb": 70,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2128,
-          "y": 1440
-        },
-        "z": {
-          "8": [
-            132,
-            133,
-            89,
-            90
-          ],
-          "9": [
-            264,
-            267,
-            178,
-            181
-          ],
-          "10": [
-            529,
-            534,
-            357,
-            362
-          ],
-          "11": [
-            1058,
-            1069,
-            715,
-            725
-          ],
-          "12": [
-            2116,
-            2139,
-            1430,
-            1451
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -10101,53 +9733,7 @@
       },
       "display_on_map": true,
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          8,
-          12
-        ],
-        "count": 1703,
-        "mb": 167,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 12,
-          "x": 2136,
-          "y": 1441
-        },
-        "z": {
-          "8": [
-            132,
-            134,
-            89,
-            90
-          ],
-          "9": [
-            264,
-            269,
-            178,
-            181
-          ],
-          "10": [
-            528,
-            539,
-            356,
-            363
-          ],
-          "11": [
-            1057,
-            1078,
-            713,
-            727
-          ],
-          "12": [
-            2115,
-            2157,
-            1427,
-            1455
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -10533,53 +10119,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 417,
-        "mb": 41,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4257,
-          "y": 2899
-        },
-        "z": {
-          "9": [
-            265,
-            266,
-            180,
-            181
-          ],
-          "10": [
-            531,
-            532,
-            361,
-            363
-          ],
-          "11": [
-            1062,
-            1065,
-            722,
-            727
-          ],
-          "12": [
-            2125,
-            2131,
-            1444,
-            1455
-          ],
-          "13": [
-            4251,
-            4263,
-            2888,
-            2910
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -11349,53 +10889,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 957,
-        "mb": 94,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4274,
-          "y": 2892
-        },
-        "z": {
-          "9": [
-            266,
-            268,
-            180,
-            181
-          ],
-          "10": [
-            532,
-            536,
-            360,
-            362
-          ],
-          "11": [
-            1064,
-            1072,
-            720,
-            725
-          ],
-          "12": [
-            2129,
-            2144,
-            1440,
-            1451
-          ],
-          "13": [
-            4259,
-            4288,
-            2881,
-            2903
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -11657,53 +11151,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 116,
-        "mb": 12,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4253,
-          "y": 2905
-        },
-        "z": {
-          "9": [
-            265,
-            266,
-            181,
-            181
-          ],
-          "10": [
-            531,
-            532,
-            362,
-            363
-          ],
-          "11": [
-            1062,
-            1064,
-            725,
-            727
-          ],
-          "12": [
-            2125,
-            2128,
-            1450,
-            1455
-          ],
-          "13": [
-            4250,
-            4256,
-            2900,
-            2910
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -12253,53 +11701,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 530,
-        "mb": 52,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4288,
-          "y": 2882
-        },
-        "z": {
-          "9": [
-            267,
-            268,
-            179,
-            180
-          ],
-          "10": [
-            534,
-            537,
-            359,
-            361
-          ],
-          "11": [
-            1069,
-            1075,
-            718,
-            722
-          ],
-          "12": [
-            2138,
-            2150,
-            1437,
-            1444
-          ],
-          "13": [
-            4276,
-            4300,
-            2875,
-            2889
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -12569,53 +11971,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 300,
-        "mb": 30,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4292,
-          "y": 2889
-        },
-        "z": {
-          "9": [
-            267,
-            268,
-            180,
-            181
-          ],
-          "10": [
-            535,
-            537,
-            360,
-            362
-          ],
-          "11": [
-            1071,
-            1074,
-            720,
-            724
-          ],
-          "12": [
-            2143,
-            2149,
-            1440,
-            1448
-          ],
-          "13": [
-            4287,
-            4298,
-            2881,
-            2897
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -12937,53 +12293,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 213,
-        "mb": 21,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4301,
-          "y": 2881
-        },
-        "z": {
-          "9": [
-            268,
-            269,
-            179,
-            180
-          ],
-          "10": [
-            537,
-            538,
-            359,
-            361
-          ],
-          "11": [
-            1074,
-            1076,
-            718,
-            722
-          ],
-          "12": [
-            2148,
-            2153,
-            1437,
-            1444
-          ],
-          "13": [
-            4297,
-            4306,
-            2875,
-            2888
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -13493,53 +12803,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 652,
-        "mb": 64,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4305,
-          "y": 2876
-        },
-        "z": {
-          "9": [
-            268,
-            269,
-            179,
-            180
-          ],
-          "10": [
-            536,
-            539,
-            358,
-            360
-          ],
-          "11": [
-            1073,
-            1079,
-            716,
-            721
-          ],
-          "12": [
-            2147,
-            2158,
-            1433,
-            1443
-          ],
-          "13": [
-            4295,
-            4316,
-            2866,
-            2886
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -13741,53 +13005,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 59,
-        "mb": 6,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4313,
-          "y": 2876
-        },
-        "z": {
-          "9": [
-            269,
-            269,
-            179,
-            179
-          ],
-          "10": [
-            538,
-            539,
-            359,
-            359
-          ],
-          "11": [
-            1077,
-            1078,
-            718,
-            719
-          ],
-          "12": [
-            2155,
-            2157,
-            1436,
-            1439
-          ],
-          "13": [
-            4311,
-            4315,
-            2872,
-            2879
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -14445,53 +13663,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 518,
-        "mb": 51,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4261,
-          "y": 2910
-        },
-        "z": {
-          "9": [
-            265,
-            266,
-            181,
-            182
-          ],
-          "10": [
-            531,
-            533,
-            362,
-            364
-          ],
-          "11": [
-            1063,
-            1067,
-            725,
-            729
-          ],
-          "12": [
-            2126,
-            2135,
-            1450,
-            1459
-          ],
-          "13": [
-            4252,
-            4271,
-            2901,
-            2919
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -15221,53 +14393,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 802,
-        "mb": 79,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4278,
-          "y": 2905
-        },
-        "z": {
-          "9": [
-            266,
-            268,
-            180,
-            182
-          ],
-          "10": [
-            533,
-            536,
-            361,
-            364
-          ],
-          "11": [
-            1066,
-            1072,
-            723,
-            729
-          ],
-          "12": [
-            2133,
-            2144,
-            1446,
-            1458
-          ],
-          "13": [
-            4267,
-            4288,
-            2892,
-            2917
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -15277,8 +14403,8 @@
       "major": [
         "CH-5"
       ],
-      "name_native": "Prättigau und Davos",
-      "name_en": "Prättigau and Davos",
+      "name_native": "Pr\u00e4ttigau und Davos",
+      "name_en": "Pr\u00e4ttigau and Davos",
       "centre": {
         "lon": 9.653637,
         "lat": 46.85405978571429
@@ -15845,53 +14971,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 512,
-        "mb": 50,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4312,
-          "y": 2885
-        },
-        "z": {
-          "9": [
-            268,
-            270,
-            179,
-            180
-          ],
-          "10": [
-            537,
-            540,
-            359,
-            361
-          ],
-          "11": [
-            1074,
-            1081,
-            719,
-            722
-          ],
-          "12": [
-            2149,
-            2162,
-            1439,
-            1445
-          ],
-          "13": [
-            4298,
-            4325,
-            2879,
-            2891
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -15901,7 +14981,7 @@
       "major": [
         "CH-5"
       ],
-      "name_native": "Mittelbünden und Vorderrhein",
+      "name_native": "Mittelb\u00fcnden und Vorderrhein",
       "name_en": "Central Grisons and Anterior Rhine",
       "centre": {
         "lon": 9.294876416666666,
@@ -16537,53 +15617,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 660,
-        "mb": 65,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4306,
-          "y": 2894
-        },
-        "z": {
-          "9": [
-            268,
-            270,
-            180,
-            181
-          ],
-          "10": [
-            536,
-            540,
-            360,
-            362
-          ],
-          "11": [
-            1073,
-            1080,
-            721,
-            725
-          ],
-          "12": [
-            2146,
-            2160,
-            1443,
-            1451
-          ],
-          "13": [
-            4292,
-            4320,
-            2887,
-            2902
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -17509,53 +16543,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 759,
-        "mb": 75,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4295,
-          "y": 2907
-        },
-        "z": {
-          "9": [
-            267,
-            269,
-            180,
-            182
-          ],
-          "10": [
-            535,
-            538,
-            361,
-            365
-          ],
-          "11": [
-            1071,
-            1076,
-            723,
-            730
-          ],
-          "12": [
-            2143,
-            2152,
-            1446,
-            1460
-          ],
-          "13": [
-            4286,
-            4304,
-            2893,
-            2920
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -17857,53 +16845,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 126,
-        "mb": 13,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4304,
-          "y": 2903
-        },
-        "z": {
-          "9": [
-            268,
-            269,
-            181,
-            181
-          ],
-          "10": [
-            537,
-            538,
-            362,
-            363
-          ],
-          "11": [
-            1075,
-            1076,
-            724,
-            727
-          ],
-          "12": [
-            2150,
-            2153,
-            1448,
-            1454
-          ],
-          "13": [
-            4301,
-            4307,
-            2897,
-            2908
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -18609,53 +17551,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 641,
-        "mb": 63,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4325,
-          "y": 2892
-        },
-        "z": {
-          "9": [
-            269,
-            270,
-            180,
-            181
-          ],
-          "10": [
-            539,
-            541,
-            360,
-            362
-          ],
-          "11": [
-            1078,
-            1083,
-            720,
-            725
-          ],
-          "12": [
-            2157,
-            2167,
-            1440,
-            1451
-          ],
-          "13": [
-            4315,
-            4334,
-            2881,
-            2903
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -18665,8 +17561,8 @@
       "major": [
         "CH-7"
       ],
-      "name_native": "Bergell, Puschlav, Münstertal",
-      "name_en": "Bergell, Poschiavo, Münstertal",
+      "name_native": "Bergell, Puschlav, M\u00fcnstertal",
+      "name_en": "Bergell, Poschiavo, M\u00fcnstertal",
       "centre": {
         "lon": 10.03945175,
         "lat": 46.39207025
@@ -19307,53 +18203,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 532,
-        "mb": 52,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4323,
-          "y": 2899
-        },
-        "z": {
-          "9": [
-            269,
-            270,
-            180,
-            181
-          ],
-          "10": [
-            538,
-            541,
-            361,
-            363
-          ],
-          "11": [
-            1077,
-            1083,
-            723,
-            726
-          ],
-          "12": [
-            2155,
-            2167,
-            1446,
-            1453
-          ],
-          "13": [
-            4311,
-            4334,
-            2892,
-            2907
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -19807,53 +18657,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 641,
-        "mb": 63,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4242,
-          "y": 2891
-        },
-        "z": {
-          "9": [
-            264,
-            265,
-            180,
-            181
-          ],
-          "10": [
-            529,
-            531,
-            360,
-            362
-          ],
-          "11": [
-            1058,
-            1063,
-            720,
-            725
-          ],
-          "12": [
-            2116,
-            2126,
-            1440,
-            1451
-          ],
-          "13": [
-            4233,
-            4252,
-            2880,
-            2902
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -20863,53 +19667,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 1001,
-        "mb": 98,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4263,
-          "y": 2872
-        },
-        "z": {
-          "9": [
-            265,
-            267,
-            178,
-            180
-          ],
-          "10": [
-            531,
-            534,
-            357,
-            360
-          ],
-          "11": [
-            1062,
-            1069,
-            715,
-            720
-          ],
-          "12": [
-            2124,
-            2139,
-            1430,
-            1441
-          ],
-          "13": [
-            4248,
-            4279,
-            2861,
-            2883
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -21667,53 +20425,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 1541,
-        "mb": 151,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4246,
-          "y": 2893
-        },
-        "z": {
-          "9": [
-            264,
-            266,
-            179,
-            181
-          ],
-          "10": [
-            528,
-            532,
-            359,
-            363
-          ],
-          "11": [
-            1057,
-            1065,
-            719,
-            727
-          ],
-          "12": [
-            2115,
-            2131,
-            1438,
-            1455
-          ],
-          "13": [
-            4231,
-            4262,
-            2876,
-            2910
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -22447,53 +21159,7 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 1370,
-        "mb": 134,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4276,
-          "y": 2874
-        },
-        "z": {
-          "9": [
-            266,
-            268,
-            178,
-            180
-          ],
-          "10": [
-            532,
-            536,
-            357,
-            361
-          ],
-          "11": [
-            1064,
-            1073,
-            715,
-            722
-          ],
-          "12": [
-            2129,
-            2146,
-            1430,
-            1444
-          ],
-          "13": [
-            4259,
-            4292,
-            2860,
-            2888
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
@@ -23383,60 +22049,14 @@
         ]
       },
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z",
-      "basemap_download": {
-        "band": [
-          9,
-          13
-        ],
-        "count": 929,
-        "mb": 91,
-        "over_ceiling": false,
-        "centre_tile": {
-          "z": 13,
-          "x": 4301,
-          "y": 2865
-        },
-        "z": {
-          "9": [
-            267,
-            269,
-            178,
-            179
-          ],
-          "10": [
-            535,
-            539,
-            356,
-            359
-          ],
-          "11": [
-            1071,
-            1078,
-            713,
-            719
-          ],
-          "12": [
-            2143,
-            2157,
-            1427,
-            1438
-          ],
-          "13": [
-            4287,
-            4315,
-            2854,
-            2876
-          ]
-        }
-      }
+      "updated_at": "2026-01-01T00:00:00Z"
     }
   },
   {
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1111",
-      "name": "Waadtländer Voralpen",
+      "name": "Waadtl\u00e4nder Voralpen",
       "slug": "ch-1111",
       "subregion": [
         "CH-11"
@@ -24598,7 +23218,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1122",
-      "name": "Gruyère",
+      "name": "Gruy\u00e8re",
       "slug": "ch-1122",
       "subregion": [
         "CH-11"
@@ -25232,7 +23852,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1212",
-      "name": "Östliche Berner Voralpen",
+      "name": "\u00d6stliche Berner Voralpen",
       "slug": "ch-1212",
       "subregion": [
         "CH-12"
@@ -27556,7 +26176,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1232",
-      "name": "Blüemlisalp",
+      "name": "Bl\u00fcemlisalp",
       "slug": "ch-1232",
       "subregion": [
         "CH-12"
@@ -32078,7 +30698,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2211",
-      "name": "Schächental",
+      "name": "Sch\u00e4chental",
       "slug": "ch-2211",
       "subregion": [
         "CH-22"
@@ -32847,7 +31467,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2223",
-      "name": "Nördliches Urseren",
+      "name": "N\u00f6rdliches Urseren",
       "slug": "ch-2223",
       "subregion": [
         "CH-22"
@@ -33027,7 +31647,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2224",
-      "name": "Südliches Urseren",
+      "name": "S\u00fcdliches Urseren",
       "slug": "ch-2224",
       "subregion": [
         "CH-22"
@@ -33384,7 +32004,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3112",
-      "name": "Glarus Süd-Grosstal",
+      "name": "Glarus S\u00fcd-Grosstal",
       "slug": "ch-3112",
       "subregion": [
         "CH-31"
@@ -33603,7 +32223,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3113",
-      "name": "Glarus Süd-Sernftal",
+      "name": "Glarus S\u00fcd-Sernftal",
       "slug": "ch-3113",
       "subregion": [
         "CH-31"
@@ -35795,7 +34415,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4112",
-      "name": "Génépi",
+      "name": "G\u00e9n\u00e9pi",
       "slug": "ch-4112",
       "subregion": [
         "CH-41"
@@ -37340,7 +35960,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4122",
-      "name": "Val d'Hérens",
+      "name": "Val d'H\u00e9rens",
       "slug": "ch-4122",
       "subregion": [
         "CH-41"
@@ -38110,7 +36730,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4211",
-      "name": "Leukerbad - Lötschental",
+      "name": "Leukerbad - L\u00f6tschental",
       "slug": "ch-4211",
       "subregion": [
         "CH-42"
@@ -39253,7 +37873,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4221",
-      "name": "Untere Vispertäler",
+      "name": "Untere Vispert\u00e4ler",
       "slug": "ch-4221",
       "subregion": [
         "CH-42"
@@ -40227,7 +38847,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4231",
-      "name": "Nördliches Simplon Gebiet",
+      "name": "N\u00f6rdliches Simplon Gebiet",
       "slug": "ch-4231",
       "subregion": [
         "CH-42"
@@ -40425,7 +39045,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4232",
-      "name": "Südliches Simplon Gebiet",
+      "name": "S\u00fcdliches Simplon Gebiet",
       "slug": "ch-4232",
       "subregion": [
         "CH-42"
@@ -41050,7 +39670,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4243",
-      "name": "Nördliches Obergoms",
+      "name": "N\u00f6rdliches Obergoms",
       "slug": "ch-4243",
       "subregion": [
         "CH-42"
@@ -41236,7 +39856,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4244",
-      "name": "Südliches Obergoms",
+      "name": "S\u00fcdliches Obergoms",
       "slug": "ch-4244",
       "subregion": [
         "CH-42"
@@ -41453,7 +40073,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5111",
-      "name": "Nördliches Prättigau",
+      "name": "N\u00f6rdliches Pr\u00e4ttigau",
       "slug": "ch-5111",
       "subregion": [
         "CH-51"
@@ -41841,7 +40461,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5112",
-      "name": "Südliches Prättigau",
+      "name": "S\u00fcdliches Pr\u00e4ttigau",
       "slug": "ch-5112",
       "subregion": [
         "CH-51"
@@ -43248,7 +41868,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5211",
-      "name": "Nördliches Tujetsch",
+      "name": "N\u00f6rdliches Tujetsch",
       "slug": "ch-5211",
       "subregion": [
         "CH-52"
@@ -43446,7 +42066,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5212",
-      "name": "Südliches Tujetsch",
+      "name": "S\u00fcdliches Tujetsch",
       "slug": "ch-5212",
       "subregion": [
         "CH-52"
@@ -46462,7 +45082,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6114",
-      "name": "Obere Maggiatäler",
+      "name": "Obere Maggiat\u00e4ler",
       "slug": "ch-6114",
       "subregion": [
         "CH-61"
@@ -46959,7 +45579,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6121",
-      "name": "Untere Maggiatäler",
+      "name": "Untere Maggiat\u00e4ler",
       "slug": "ch-6121",
       "subregion": [
         "CH-61"
@@ -50092,7 +48712,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-7122",
-      "name": "Östliche Silvretta",
+      "name": "\u00d6stliche Silvretta",
       "slug": "ch-7122",
       "subregion": [
         "CH-71"
@@ -50622,7 +49242,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-7125",
-      "name": "Val dal Spöl",
+      "name": "Val dal Sp\u00f6l",
       "slug": "ch-7125",
       "subregion": [
         "CH-71"
@@ -51722,7 +50342,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-7231",
-      "name": "Münstertal",
+      "name": "M\u00fcnstertal",
       "slug": "ch-7231",
       "subregion": [
         "CH-72"
@@ -52166,7 +50786,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8112",
-      "name": "Vallée de Joux",
+      "name": "Vall\u00e9e de Joux",
       "slug": "ch-8112",
       "subregion": [
         "CH-81"
@@ -54121,7 +52741,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8216",
-      "name": "Olten-Gösgen",
+      "name": "Olten-G\u00f6sgen",
       "slug": "ch-8216",
       "subregion": [
         "CH-82"
@@ -55114,7 +53734,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8224",
-      "name": "Delsberg– Bellelay",
+      "name": "Delsberg\u2013 Bellelay",
       "slug": "ch-8224",
       "subregion": [
         "CH-82"
@@ -58090,7 +56710,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-9311",
-      "name": "Östliches Mittelland",
+      "name": "\u00d6stliches Mittelland",
       "slug": "ch-9311",
       "subregion": [
         "CH-93"

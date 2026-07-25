@@ -50,7 +50,7 @@ from freezegun import freeze_time
 
 from bulletins.models import RegionDayRating
 from observations.models import FieldObservation
-from regions.services.basemap_tiles import TIER_BANDS, blob_summary, build_blob
+from regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
 from tests.factories import (
     BulletinGroupingFactory,
     FavouriteFactory,
@@ -646,14 +646,13 @@ def test_sub_regions_geojson_returns_feature_collection() -> None:
 
 
 # ---------------------------------------------------------------------------
-# properties.download + region-basemap-tiles  (SNOW-521 rework)
+# properties.download + region-basemap-tiles  (SNOW-521 — MicroRegion only)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_major_regions_geojson_carries_download_summary() -> None:
-    """A MajorRegion with basemap_download set carries a download summary."""
-    blob = build_blob([6.0, 45.5, 8.0, 47.0], *TIER_BANDS["major"])
+def test_major_regions_geojson_never_carries_download() -> None:
+    """MajorRegion (L1) has no basemap_download field — the key never appears."""
     MajorRegionFactory.create(
         prefix="AT-1",
         country="AT",
@@ -663,28 +662,6 @@ def test_major_regions_geojson_carries_download_summary() -> None:
                 [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
             ],
         },
-        basemap_download=blob,
-    )
-    client = Client()
-    data = client.get(reverse("api:major_regions_geojson") + "?country=at").json()
-    feature = next(f for f in data["features"] if f["properties"]["prefix"] == "AT-1")
-    assert feature["properties"]["download"] == blob_summary(blob)
-    assert "z" not in feature["properties"]["download"]
-
-
-@pytest.mark.django_db
-def test_major_regions_geojson_omits_download_when_unset() -> None:
-    """A MajorRegion with basemap_download=None omits the download key entirely."""
-    MajorRegionFactory.create(
-        prefix="AT-1",
-        country="AT",
-        boundary={
-            "type": "Polygon",
-            "coordinates": [
-                [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
-            ],
-        },
-        basemap_download=None,
     )
     client = Client()
     data = client.get(reverse("api:major_regions_geojson") + "?country=at").json()
@@ -693,10 +670,9 @@ def test_major_regions_geojson_omits_download_when_unset() -> None:
 
 
 @pytest.mark.django_db
-def test_sub_regions_geojson_carries_download_summary() -> None:
-    """A SubRegion with basemap_download set carries a download summary."""
+def test_sub_regions_geojson_never_carries_download() -> None:
+    """SubRegion (L2) has no basemap_download field — the key never appears."""
     major = MajorRegionFactory.create(prefix="AT-1", country="AT")
-    blob = build_blob([6.0, 45.5, 8.0, 47.0], *TIER_BANDS["minor"])
     SubRegionFactory.create(
         prefix="AT-11",
         major=major,
@@ -706,42 +682,26 @@ def test_sub_regions_geojson_carries_download_summary() -> None:
                 [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
             ],
         },
-        basemap_download=blob,
     )
     client = Client()
     data = client.get(reverse("api:sub_regions_geojson") + "?country=at").json()
     feature = next(f for f in data["features"] if f["properties"]["prefix"] == "AT-11")
-    assert feature["properties"]["download"] == blob_summary(blob)
+    assert "download" not in feature["properties"]
 
 
 @pytest.mark.django_db
-def test_regions_geojson_download_denormalises_all_three_tiers() -> None:
-    """L4's properties.download nests micro/minor/major summaries + ids.
-
-    Each ancestor's summary is tagged with its own region_id so the
-    client can fetch that tier's full blob without a second lookup; the
-    micro summary needs no region_id (it's the feature's own
-    properties.id).
-    """
+def test_regions_geojson_download_is_flat_micro_summary() -> None:
+    """L4's properties.download is the region's own flat summary, no tier nesting."""
     boundary = {
         "type": "Polygon",
         "coordinates": [
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
-    major_blob = build_blob([6.0, 45.5, 8.0, 47.0], *TIER_BANDS["major"])
-    minor_blob = build_blob([6.5, 45.8, 7.5, 46.6], *TIER_BANDS["minor"])
-    micro_blob = build_blob([6.9, 46.4, 7.0, 46.5], *TIER_BANDS["micro"])
-    major = MajorRegionFactory.create(
-        prefix="CH-4", country="CH", basemap_download=major_blob
-    )
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, basemap_download=minor_blob
-    )
+    micro_blob = build_blob([6.9, 46.4, 7.0, 46.5], *MICRO_BAND)
     MicroRegionFactory.create(
         region_id="CH-4115",
         boundary=boundary,
-        subregion=sub,
         basemap_download=micro_blob,
     )
 
@@ -749,58 +709,25 @@ def test_regions_geojson_download_denormalises_all_three_tiers() -> None:
     data = client.get(reverse("api:regions_geojson") + "?country=ch").json()
     feature = next(f for f in data["features"] if f["properties"]["id"] == "CH-4115")
     download = feature["properties"]["download"]
-    assert download["micro"] == blob_summary(micro_blob)
-    assert download["minor"] == {"region_id": "CH-41", **blob_summary(minor_blob)}
-    assert download["major"] == {"region_id": "CH-4", **blob_summary(major_blob)}
-
-
-@pytest.mark.django_db
-def test_regions_geojson_download_omits_missing_ancestor_tiers() -> None:
-    """A missing ancestor basemap_download only omits that tier's sub-key."""
-    boundary = {
-        "type": "Polygon",
-        "coordinates": [
-            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
-        ],
-    }
-    micro_blob = build_blob([6.9, 46.4, 7.0, 46.5], *TIER_BANDS["micro"])
-    major = MajorRegionFactory.create(
-        prefix="CH-4", country="CH", basemap_download=None
-    )
-    sub = SubRegionFactory.create(prefix="CH-41", major=major, basemap_download=None)
-    MicroRegionFactory.create(
-        region_id="CH-4115",
-        boundary=boundary,
-        subregion=sub,
-        basemap_download=micro_blob,
-    )
-
-    client = Client()
-    data = client.get(reverse("api:regions_geojson") + "?country=ch").json()
-    feature = next(f for f in data["features"] if f["properties"]["id"] == "CH-4115")
-    download = feature["properties"]["download"]
-    assert download == {"micro": blob_summary(micro_blob)}
+    assert download == blob_summary(micro_blob)
+    assert "z" not in download
+    assert "micro" not in download
     assert "minor" not in download
     assert "major" not in download
 
 
 @pytest.mark.django_db
-def test_regions_geojson_omits_download_when_every_tier_unset() -> None:
-    """The whole download key is omitted when no tier has a computed blob."""
+def test_regions_geojson_omits_download_when_unset() -> None:
+    """The download key is omitted when the region has no computed blob."""
     boundary = {
         "type": "Polygon",
         "coordinates": [
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
-    major = MajorRegionFactory.create(
-        prefix="CH-4", country="CH", basemap_download=None
-    )
-    sub = SubRegionFactory.create(prefix="CH-41", major=major, basemap_download=None)
     MicroRegionFactory.create(
         region_id="CH-4115",
         boundary=boundary,
-        subregion=sub,
         basemap_download=None,
     )
 
@@ -813,7 +740,7 @@ def test_regions_geojson_omits_download_when_every_tier_unset() -> None:
 @pytest.mark.django_db
 def test_region_basemap_tiles_returns_full_blob_for_micro_region() -> None:
     """?id=<region_id> resolves a MicroRegion and returns its full blob incl. z."""
-    blob = build_blob([6.9, 46.4, 7.0, 46.5], *TIER_BANDS["micro"])
+    blob = build_blob([6.9, 46.4, 7.0, 46.5], *MICRO_BAND)
     MicroRegionFactory.create(region_id="CH-4115", basemap_download=blob)
 
     client = Client()
@@ -824,36 +751,26 @@ def test_region_basemap_tiles_returns_full_blob_for_micro_region() -> None:
 
 
 @pytest.mark.django_db
-def test_region_basemap_tiles_resolves_sub_region_prefix() -> None:
-    """?id=<prefix> resolves a SubRegion (L2) when no MicroRegion matches."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH")
-    blob = build_blob([6.5, 45.8, 7.5, 46.6], *TIER_BANDS["minor"])
-    SubRegionFactory.create(prefix="CH-41", major=major, basemap_download=blob)
-
-    client = Client()
-    response = client.get(reverse("api:region_basemap_tiles") + "?id=CH-41")
-    assert response.status_code == 200
-    assert response.json() == blob
-
-
-@pytest.mark.django_db
-def test_region_basemap_tiles_resolves_major_region_prefix() -> None:
-    """?id=<prefix> resolves a MajorRegion (L1) when no L2/L4 matches."""
-    blob = build_blob([6.0, 45.5, 8.0, 47.0], *TIER_BANDS["major"])
-    MajorRegionFactory.create(prefix="CH-4", country="CH", basemap_download=blob)
-
-    client = Client()
-    response = client.get(reverse("api:region_basemap_tiles") + "?id=CH-4")
-    assert response.status_code == 200
-    assert response.json() == blob
-
-
-@pytest.mark.django_db
 def test_region_basemap_tiles_unknown_id_returns_404() -> None:
-    """An id matching no region tier 404s."""
+    """An id matching no MicroRegion 404s."""
     client = Client()
     response = client.get(reverse("api:region_basemap_tiles") + "?id=ZZ-9999")
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_region_basemap_tiles_does_not_resolve_major_or_sub_region_prefix() -> None:
+    """A MajorRegion/SubRegion prefix never resolves — MicroRegion only."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    SubRegionFactory.create(prefix="CH-41", major=major)
+
+    client = Client()
+    assert (
+        client.get(reverse("api:region_basemap_tiles") + "?id=CH-4").status_code == 404
+    )
+    assert (
+        client.get(reverse("api:region_basemap_tiles") + "?id=CH-41").status_code == 404
+    )
 
 
 @pytest.mark.django_db
@@ -875,7 +792,7 @@ def test_region_basemap_tiles_missing_id_returns_400() -> None:
 @pytest.mark.django_db
 def test_region_basemap_tiles_cache_control_header() -> None:
     """The endpoint sets the same public/24h Cache-Control as the geojson feeds."""
-    blob = build_blob([6.9, 46.4, 7.0, 46.5], *TIER_BANDS["micro"])
+    blob = build_blob([6.9, 46.4, 7.0, 46.5], *MICRO_BAND)
     MicroRegionFactory.create(region_id="CH-4115", basemap_download=blob)
     client = Client()
     response = client.get(reverse("api:region_basemap_tiles") + "?id=CH-4115")

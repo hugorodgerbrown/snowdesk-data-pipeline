@@ -57,9 +57,8 @@ urlpatterns = [
         name="sub_regions_geojson",
     ),
     # SNOW-521: full precomputed basemap_download blob (incl. z tile
-    # ranges) for one region, fetched on demand when a per-crumb download
-    # icon is clicked — see api.region_basemap_tiles for the resolution
-    # order across the three region tiers.
+    # ranges) for one MicroRegion, fetched on demand when the
+    # #region-readout download icon is clicked.
     path(
         "region-basemap-tiles/",
         api.region_basemap_tiles,

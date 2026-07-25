@@ -21,11 +21,14 @@ functions — keeping the tile math lon-first matches both its GeoJSON
 input and its JS counterpart, so a reader porting between the two never
 has to mentally swap axes.
 
-Per-tier zoom bands — a whole major region rendered at the micro tier's
-z14 detail floor would be enormous, so each tier downloads to a shallower
-floor:
+SNOW-521 final shape: a single **micro-region-only** download. An
+earlier iteration computed per-tier bands for Major/Minor/Micro, but
+each tier's own shallower detail floor made the sizes non-monotonic with
+containment (an L1 region could read smaller than an L2 it contains),
+which read as a bug — so the tiered machinery was dropped in favour of
+one band, always at the micro-region's full detail:
 
-    TIER_BANDS = {"major": (8, 12), "minor": (9, 13), "micro": (10, 14)}
+    MICRO_BAND = (10, 14)
 
 Public API:
     lon_lat_to_tile(lon, lat, z)   — Web Mercator (lon, lat) → (x, y) tile
@@ -45,7 +48,7 @@ Public API:
                                       ranges — those are fetched on demand
                                       from ``region_basemap_tiles``).
 
-Stored blob shape (``MajorRegion``/``SubRegion``/``MicroRegion.basemap_download``)::
+Stored blob shape (``MicroRegion.basemap_download``)::
 
     {
       "band": [10, 14],
@@ -62,14 +65,10 @@ from __future__ import annotations
 import math
 from typing import Any, TypedDict
 
-# Per-tier zoom bands: (min_z, max_z) inclusive. A whole major region
-# rendered down to the micro tier's z14 detail floor would be an
-# unreasonably large download, so coarser tiers stop shallower.
-TIER_BANDS: dict[str, tuple[int, int]] = {
-    "major": (8, 12),
-    "minor": (9, 13),
-    "micro": (10, 14),
-}
+# The micro-region download's zoom band: (min_z, max_z) inclusive. See the
+# module docstring for why Major/Minor were dropped in favour of this
+# single band.
+MICRO_BAND: tuple[int, int] = (10, 14)
 
 # A conservative upper bound for a dense Liberty-style vector tile, so the
 # stored "mb" estimate is a true worst-case ceiling rather than a
@@ -77,11 +76,10 @@ TIER_BANDS: dict[str, tuple[int, int]] = {
 # ``BASEMAP_WORST_CASE_BYTES_PER_TILE`` client-side constant.
 WORST_CASE_BYTES_PER_TILE: int = 100 * 1024
 
-# Per-tier download hard ceiling. A region whose worst-case estimate
-# exceeds this is flagged ``over_ceiling`` — a backstop against a
-# pathological outlier within a tier (e.g. an unusually large major
-# region), surfaced client-side as a disabled download icon rather than
-# starting a run with no sensible bound.
+# Download hard ceiling. A region whose worst-case estimate exceeds this
+# is flagged ``over_ceiling`` — a backstop against a pathologically large
+# micro-region, surfaced client-side as a disabled download icon rather
+# than starting a run with no sensible bound.
 DOWNLOAD_CEILING_MB: int = 200
 
 # Keys copied from a full blob into its "summary" projection — everything
@@ -206,12 +204,12 @@ def centre_tile(bbox: list[float], z: int) -> CentreTile:
 
     This is the "done-probe" key: the client checks whether this single
     tile is present in the pinned cache as a proxy for "this region's
-    download completed", matching the toast completion rule (the same
-    proxy the pre-rework viewport control used for its own zoom level).
+    download completed" (the same proxy the pre-rework viewport control
+    used for its own zoom level).
 
     Args:
         bbox: ``[west, south, east, north]`` in degrees.
-        z: Zoom level — the tier's detail floor (``TIER_BANDS[tier][1]``).
+        z: Zoom level — the download's detail floor (``MICRO_BAND[1]``).
 
     Returns:
         ``{"z": z, "x": int, "y": int}``.
@@ -229,8 +227,8 @@ def build_blob(bbox: list[float], min_z: int, max_z: int) -> dict[str, Any]:
 
     Args:
         bbox: ``[west, south, east, north]`` in degrees.
-        min_z: The tier's shallowest zoom level (``TIER_BANDS[tier][0]``).
-        max_z: The tier's detail floor (``TIER_BANDS[tier][1]``).
+        min_z: The shallowest zoom level (``MICRO_BAND[0]``).
+        max_z: The detail floor (``MICRO_BAND[1]``).
 
     Returns:
         The full blob dict — see the module docstring for its shape.
@@ -254,10 +252,10 @@ def blob_summary(blob: dict[str, Any]) -> dict[str, Any]:
     """Project a full blob down to its small API-inline summary.
 
     Drops the ``z`` tile ranges (and ``band``) — the summary is what
-    ``regions_geojson``/``major_regions_geojson``/``sub_regions_geojson``
-    embed inline on every feature; the full blob (incl. ``z``) is only
-    fetched on demand from ``region_basemap_tiles`` when the user clicks
-    a download icon.
+    ``regions_geojson`` embeds inline on every feature as
+    ``properties.download``; the full blob (incl. ``z``) is only fetched
+    on demand from ``region_basemap_tiles`` when the user clicks the
+    download icon.
 
     Args:
         blob: A full blob as returned by ``build_blob``.

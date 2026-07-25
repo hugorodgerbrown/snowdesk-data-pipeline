@@ -42,7 +42,6 @@ class MajorRegionAdmin(admin.ModelAdmin):
         "centre",
         "bbox",
         "boundary",
-        "basemap_download",
         "created_at",
         "updated_at",
     ]
@@ -62,7 +61,6 @@ class SubRegionAdmin(admin.ModelAdmin):
         "centre",
         "bbox",
         "boundary",
-        "basemap_download",
         "created_at",
         "updated_at",
     ]

@@ -13,7 +13,7 @@ Covers:
                       over_ceiling flag for a small vs. a pathologically
                       large bbox.
   blob_summary      — drops the "z" (and "band") keys.
-  TIER_BANDS        — the three tier constants.
+  MICRO_BAND        — the single micro-region zoom-band constant.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import math
 
 from regions.services.basemap_tiles import (
     DOWNLOAD_CEILING_MB,
-    TIER_BANDS,
+    MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE,
     bbox_from_boundary,
     blob_summary,
@@ -164,7 +164,7 @@ def test_centre_tile_of_symmetric_bbox_around_null_island() -> None:
 def test_build_blob_shape_and_arithmetic() -> None:
     """The blob carries band/count/mb/over_ceiling/centre_tile/z, consistently."""
     bbox = [7.0, 46.0, 8.0, 47.0]
-    min_z, max_z = TIER_BANDS["micro"]
+    min_z, max_z = MICRO_BAND
     blob = build_blob(bbox, min_z, max_z)
 
     assert blob["band"] == [min_z, max_z]
@@ -180,15 +180,15 @@ def test_build_blob_shape_and_arithmetic() -> None:
 def test_build_blob_small_region_is_under_ceiling() -> None:
     """A realistic single micro-region bbox stays well under the 200 MB ceiling."""
     bbox = [7.0, 46.0, 7.2, 46.2]
-    min_z, max_z = TIER_BANDS["micro"]
+    min_z, max_z = MICRO_BAND
     blob = build_blob(bbox, min_z, max_z)
     assert blob["over_ceiling"] is False
 
 
 def test_build_blob_pathologically_large_bbox_flags_over_ceiling() -> None:
-    """A near-continental bbox at the micro tier's z10-14 band exceeds the ceiling."""
+    """A near-continental bbox at the micro band's z10-14 range exceeds the ceiling."""
     bbox = [-10.0, 30.0, 20.0, 60.0]
-    min_z, max_z = TIER_BANDS["micro"]
+    min_z, max_z = MICRO_BAND
     blob = build_blob(bbox, min_z, max_z)
     assert blob["over_ceiling"] is True
 
@@ -201,7 +201,7 @@ def test_build_blob_pathologically_large_bbox_flags_over_ceiling() -> None:
 def test_blob_summary_drops_z_ranges_and_band() -> None:
     """The summary keeps only count/mb/over_ceiling/centre_tile."""
     bbox = [7.0, 46.0, 8.0, 47.0]
-    min_z, max_z = TIER_BANDS["major"]
+    min_z, max_z = MICRO_BAND
     blob = build_blob(bbox, min_z, max_z)
     summary = blob_summary(blob)
     assert set(summary.keys()) == {"count", "mb", "over_ceiling", "centre_tile"}
@@ -212,14 +212,10 @@ def test_blob_summary_drops_z_ranges_and_band() -> None:
 
 
 # ---------------------------------------------------------------------------
-# TIER_BANDS
+# MICRO_BAND
 # ---------------------------------------------------------------------------
 
 
-def test_tier_bands_constants() -> None:
-    """The three tiers' zoom bands match the SNOW-521 rework spec."""
-    assert TIER_BANDS == {
-        "major": (8, 12),
-        "minor": (9, 13),
-        "micro": (10, 14),
-    }
+def test_micro_band_constant() -> None:
+    """The micro-region download's zoom band matches the SNOW-521 final spec."""
+    assert MICRO_BAND == (10, 14)
