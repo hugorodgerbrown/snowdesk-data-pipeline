@@ -38,6 +38,37 @@ When stopping at a non-default checkpoint, tell the user explicitly:
 
 Resuming uses the existing branch state. No re-plan, no re-review.
 
+## Test tiers — what runs locally vs on CI
+
+The iterative loop is kept fast by running only the quick, deterministic
+checks locally and letting CI own the slow, flaky, comprehensive ones. CI
+runs every tier below as a **required check on the PR** (`ci.yml`, `e2e.yml`,
+`js.yml`, `lighthouse.yml`, `lint-guards.yml`), so a check run locally in the
+loop is a *duplicate* of what the PR will run anyway — its only value is
+catching a failure one round-trip earlier, which is not worth paying for the
+slow tiers on every iteration.
+
+**Local gate (run before push — steps 4 and 5):**
+
+- Targeted `uv run pytest <touched paths>` while implementing.
+- `uv run tox` — the **default envlist**
+  (`fmt, lint, mypy, django-checks, ds-lint, docs-lint, sw-version, test, js`).
+  This is the pre-push gate. It is fast and deterministic. `js` (Vitest) is in
+  it, so JavaScript changes are covered automatically — no separate step.
+- `monitor_query_counts` (step 5a).
+
+**Delegated to CI — do NOT run in the loop (slow / flaky):**
+
+- `tox -e e2e` (Playwright, ~6–9 min + flaky) → `e2e.yml`
+- `npm run lh` (Lighthouse, ~90s) → `lighthouse.yml`
+
+Writing an e2e / js test when the scope calls for one is still in scope —
+author the test, but let CI execute the full browser suite. Do not run the
+whole e2e suite locally to "confirm" it. If CI later goes red on one of these
+tiers, fix it as a follow-up push on the same branch (step 6 watches the
+checks); a red e2e run that reproduces only under CI is diagnosed against CI
+logs, not by looping the local suite.
+
 ## Step 1 — Detect mode
 
 Two entry modes:
@@ -143,8 +174,11 @@ forked context. Pass it:
 
 - The ticket number
 - The branch name
-- An instruction to check: tests pass, linter clean, scope acceptance
-  criteria met, no obvious mistakes or omissions
+- An instruction to check: the default `uv run tox` passes, scope acceptance
+  criteria met, no obvious mistakes or omissions. The reviewer does **not**
+  run `tox -e e2e` or `npm run lh` — those are CI's gate (see Test tiers).
+  Its value is reading the diff for correctness, security, and convention
+  issues, not re-running the slow suites.
 
 The reviewer returns one of: **clean**, **blockers** (with specifics), or
 **suggestions** (non-blocking).
@@ -189,7 +223,17 @@ mismatch against `perf/query_counts.txt`.
     back into step 4 with the diff as a blocker. Do not push a known
     regression.
 
-### 5b. Push
+### 5b. Run the local gate, then push
+
+Run the default envlist once before pushing — the fast, deterministic tier
+that catches the "works on my machine" cross-env gaps. It includes `js`
+(Vitest); do **not** add `-e e2e`, which runs on CI (see Test tiers).
+
+```bash
+uv run tox
+```
+
+Fix any failure before pushing. Then:
 
 ```bash
 git log origin/main..HEAD --oneline
@@ -230,13 +274,30 @@ from the output.
 Use Linear MCP `save_issue` with the ticket's internal `id` and `In Review`
 state. Post a comment on the ticket with the PR URL via `save_comment`.
 
-## Step 6 — Report
+## Step 6 — Report and watch CI
 
-> "PR opened: <url>. SNOW-NN is now In Review."
+> "PR opened: <url>. SNOW-NN is now In Review. CI is running the full matrix
+> (e2e, Lighthouse, js, security) — I'll report back when it settles."
 
-If the reviewer left non-blocking suggestions earlier, list them again here
-so the user can decide whether to address them in a follow-up.
+The slow tiers were delegated to CI (see Test tiers), so the PR **is** where
+they run for the first time. Watch the checks rather than declaring done at
+push:
 
-Stop. The user takes it from here — review, merge. Linear's GitHub
-integration will auto-transition to Done on merge if the `Closes SNOW-NN`
-line is in the PR body.
+```bash
+gh pr checks <pr-number> --watch
+```
+
+- **All green:** report success. Done.
+- **A CI check goes red (e2e / Lighthouse / js / any other):** pull the
+  failing job's logs (`gh run view <run-id> --log-failed`), decide whether it
+  is a real regression or a known flake (e2e reruns absorb transient flakes; a
+  check that stays red after CI's own reruns is real). Fix real failures with
+  a follow-up commit + push on the same branch — no new PR. For e2e, diagnose
+  against the CI logs; do not loop the full local suite to reproduce.
+
+If the reviewer left non-blocking suggestions earlier, list them here so the
+user can decide whether to address them in a follow-up.
+
+Once CI is green, stop. The user takes it from here — review, merge. Linear's
+GitHub integration will auto-transition to Done on merge if the
+`Closes SNOW-NN` line is in the PR body.

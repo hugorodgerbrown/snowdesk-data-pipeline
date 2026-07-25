@@ -110,17 +110,27 @@ and tests section are your guide.
 `bin/ds-lint` mechanically enforces the above on every PR via `tox -e ds-lint`;
 catching violations before the commit is faster than fixing them at review time.
 
-### 6. Run the test suite
+### 6. Run the local gate (fast tier only)
 
-- `uv run tox` — must pass cleanly before opening the PR. `ds-lint` is in
-  the default envlist; visual changes that bypass the design system fail here.
-- `npm run lh` — for any change touching a public page.
+- `uv run tox` — the **default envlist**
+  (`fmt, lint, mypy, django-checks, ds-lint, docs-lint, sw-version, test,
+  js`) — must pass cleanly before opening the PR. It is fast and
+  deterministic. `ds-lint` is in it, so visual changes that bypass the design
+  system fail here; `js` (Vitest) is in it, so JavaScript changes are covered
+  automatically.
+- **Do not run the slow tiers locally.** `tox -e e2e` (Playwright) and
+  `npm run lh` (Lighthouse) are **delegated to CI** — each is a required
+  check on the PR (`e2e.yml`, `lighthouse.yml`). Running them in the local
+  loop duplicates CI at high cost and, for the flaky e2e suite, burns time
+  diagnosing flakes that CI's reruns absorb. Author a new e2e test when the
+  scope calls for one, but let CI execute the browser suite.
 
-Fix every failure before opening the PR. Don't paper over flaky tests;
-if a test is genuinely flaky, surface it and stop. For `ds-lint` failures,
-fix the violation (extract a partial, switch to a token, or add an explicit
-`ds-lint-allow` comment with a specific reason) — don't add the file to
-`PATH_ALLOWLIST` as a shortcut.
+Fix every default-envlist failure before opening the PR. For `ds-lint`
+failures, fix the violation (extract a partial, switch to a token, or add an
+explicit `ds-lint-allow` comment with a specific reason) — don't add the file
+to `PATH_ALLOWLIST` as a shortcut. After the PR opens, watch the CI checks
+(`gh pr checks <n> --watch`); fix any red slow-tier check with a follow-up
+push on the same branch.
 
 ### 7. Push the branch and open the PR
 
@@ -170,8 +180,9 @@ would otherwise have to reverse-engineer from the diff.
 - Any manual verification done (URLs hit, management commands run).
 
 ## Screenshots / Lighthouse
-For any change touching a public page: before/after screenshots and a
-note on the latest `npm run lh` scores.
+For any change touching a public page: before/after screenshots. The
+Lighthouse scores come from the CI `lighthouse.yml` check on this PR — cite
+those rather than a local `npm run lh` run.
 ```
 
 ### The `Closes SNOW-xxx` line is mandatory

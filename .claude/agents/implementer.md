@@ -66,7 +66,7 @@ If the plan adds new behaviour, it needs tests. Match the existing test style in
 the repo — use existing fixtures, follow existing naming. If you're unsure how
 to test something, look at how similar features are tested.
 
-### 6. Run the full suite before reporting done
+### 6. Run the fast local gate before reporting done
 
 ```bash
 uv run pytest
@@ -74,6 +74,17 @@ uv run ruff check
 ```
 
 Both must pass. If they don't, fix before reporting.
+
+If you edited any JavaScript, the Vitest env is in the default envlist, so
+`uv run tox -e js` runs it locally (fast, deterministic) — use it to check
+JS changes as you go.
+
+**Do not run the slow suites in the loop.** `tox -e e2e` (Playwright) and
+`npm run lh` (Lighthouse) are delegated to CI — they run as required checks
+on the PR. If the scope calls for a new e2e test, **write** it (it's in
+scope), but do not execute the full browser suite locally to confirm it; CI
+is its gate. The orchestrator runs the default `uv run tox` (which includes
+`js`) once before pushing — you don't need to run the full gate yourself.
 
 ## Snowdesk conventions
 

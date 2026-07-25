@@ -69,9 +69,12 @@ vs simulated" below.
 uv run tox -e js
 ```
 
-Same opt-in shape as `tox -e e2e` (not in the default `tox` envlist — `npm
-ci` is a needless cost on the common local loop). Runs `npm ci && npm run
-test:js` (`vitest run`).
+`js` is **in the default `tox` envlist** (as of SNOW faster-iterative mode,
+2026-07-25): Vitest is fast and deterministic, so `uv run tox` runs it
+automatically. The one cost is the `npm ci` clean install the env runs first;
+CI's dedicated `js.yml` runs the same env as the backstop. This differs from
+`tox -e e2e`, which stays **out** of the default envlist (slow + flaky) and
+is delegated to CI. Runs `npm ci && npm run test:js` (`vitest run`).
 
 ### What the JS-unit layer covers (SNOW-495, SNOW-496)
 

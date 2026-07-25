@@ -86,34 +86,27 @@ with thin or hand-wavy reasons.
       an explicit justification in the PR body. File-level suppression is
       a last resort, not a quick fix.
 
-### Lighthouse (accessibility / SEO / performance / best-practices)
+### Lighthouse and e2e — do NOT run these in review
 
-Run `npm run lh` before concluding the review — it's the same command
-CI runs on the PR. The script collects static files under
-`config.settings.perf` (mirrors production WhiteNoise + GZip) and
-starts its own Django dev server on port 8765 for audits.
-`lighthouserc.json` is the source of truth for URLs and budgets:
+`npm run lh` (Lighthouse, ~90s) and `tox -e e2e` (Playwright, ~6–9 min +
+flaky) are **delegated to CI** — they run as required checks on the PR
+(`lighthouse.yml`, `e2e.yml`). Running them in the review loop duplicates CI
+at high cost and is the single biggest drain on the iterative flow. Do not
+run either.
 
-- accessibility ≥ 0.95 — **error**
-- SEO ≥ 0.95 — **error**
-- performance ≥ 0.85 — warn
-- best-practices ≥ 0.9 — warn
+Your job on these surfaces is **static** — read the diff, don't execute the
+browser:
 
-`includePassedAssertions` is on, so every category score is printed
-in the terminal.
-
-- [ ] `npm run lh` exits 0 (no assertion errors)
-- [ ] Report any warnings (perf / best-practices) with the category and
-      URL so the implementer can decide whether to address them now or
-      track them
-- [ ] For every new public page in the diff, confirm the page carries
-      a `<meta name="description">` and a `<link rel="icon">` — both
-      are CI-enforced and easy to forget.
-
-HTML reports land in `.lighthouseci/` (gitignored); `npm run lh:open`
-opens the representative report per URL (macOS). The run takes ~90s;
-if the Django server fails to start or pages 404 locally, note that
-in the review rather than failing silently.
+- [ ] For every new public page in the diff, confirm the page carries a
+      `<meta name="description">` and a `<link rel="icon">` — both are
+      CI-enforced by Lighthouse and easy to forget. Flagging a missing one
+      here saves a red CI round-trip.
+- [ ] If the diff touches accessibility-relevant markup (headings, labels,
+      alt text, contrast tokens, ARIA), call out anything likely to drop the
+      Lighthouse a11y/SEO score below the 0.95 error thresholds in
+      `lighthouserc.json`, so the implementer can fix it before CI runs.
+- [ ] If the diff touches a surface with a `tests/e2e/` test, confirm the
+      test was updated to match. Do not run the suite — CI does.
 
 ## Output format
 
