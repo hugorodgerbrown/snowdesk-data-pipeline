@@ -221,12 +221,14 @@ def test_date_changed_updates_region_readout(
     )
 
     # date-changed updates the displayed date text (formatDatePopup → "8 Apr 2026").
+    # The scrubbed date lives in the bottom #map-date-ribbon beside the scrubber,
+    # not the top region chip (the date was split out of #region-readout).
     _dispatch_date_changed(page, "2026-04-08")
     page.wait_for_timeout(150)
 
-    date_text = page.locator("#region-readout .region-readout-date").inner_text()
+    date_text = page.locator("#map-date-ribbon").inner_text()
     assert "2026" in date_text and "8" in date_text, (
-        f"readout date should update to the dispatched day; got {date_text!r}"
+        f"date ribbon should update to the dispatched day; got {date_text!r}"
     )
 
     assert page_errors == [], f"JS errors: {page_errors}"

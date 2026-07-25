@@ -40,18 +40,17 @@ active-day highlight in sync.
             names the region whose season is painted into the scrubber track and
             shows its danger swatch for the currently-scrubbed day. The chip is
             info-only (a <div>); the bulletin link is the separate
-            #region-readout-action roundel below. map.js fills the date/swatch/
+            #region-readout-action roundel below. map.js fills the swatch/
             breadcrumb text and toggles .has-region; cache-fed so it survives
-            playback. With no region focused it degrades to a plain date chip.
+            playback. It is hidden until a region is focused — the scrubbed date
+            now lives in the #map-date-ribbon beside the scrubber (bottom-left),
+            leaving the top bar to name the region the user picked on the map.
             {% endcomment %}
-            {# PROTOTYPE (homepage rework): chip reads date · colour-swatch     #}
-            {# divider · region name. The mono date matches the popup format    #}
-            {# ("18 May 2026"); the swatch is the danger colour and doubles as  #}
-            {# the divider between date and name. map.js fills the date/name    #}
-            {# text and the swatch background. The pill is now an info display; #}
-            {# the bulletin link is the separate action roundel below.          #}
+            {# Chip reads colour-swatch · region name. The swatch is the danger  #}
+            {# colour for the scrubbed day and leads the chip; map.js fills the  #}
+            {# name text and the swatch background. The pill is an info display; #}
+            {# the bulletin link is the separate action roundel below.           #}
             <div id="region-readout" class="region-readout" aria-live="polite" hidden>
-                <span class="region-readout-date"></span>
                 <span class="region-readout-swatch" aria-hidden="true"></span>
                 {# region name as a Major › Minor › Micro breadcrumb: the    #}
                 {# crumbs prefix (L1/L2) mirrors the visible map overlays and #}
