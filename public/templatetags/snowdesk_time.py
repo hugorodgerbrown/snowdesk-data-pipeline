@@ -92,8 +92,11 @@ def month_day(value: str | None) -> date | None:
     if not value:
         return None
     try:
-        parsed = datetime.strptime(value.strip(), "%m-%d")
-        return date(2001, parsed.month, parsed.day)
+        # The anchor year is baked into the parsed string itself (rather than
+        # parsed with a bare "%m-%d" format) — a year-less strptime is
+        # ambiguous about leap days and is deprecated as of Python 3.14.
+        parsed = datetime.strptime(f"2001-{value.strip()}", "%Y-%m-%d")
+        return parsed.date()
     except ValueError, AttributeError:
         logger.debug("month_day: could not parse %r", value)
         return None
