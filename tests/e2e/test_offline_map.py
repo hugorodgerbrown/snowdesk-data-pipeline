@@ -2,7 +2,8 @@
 tests/e2e/test_offline_map.py — Playwright coverage for SNOW-492 ("Further
 adventures in offline sync"): the blank-map bug fix, the favourites /
 community-reports offline overlay cache, the per-overlay "unavailable
-offline" toast, and the "Cache this area for offline" control.
+offline" toast, and the "Download basemap" control (SNOW-521's reframe of
+the original "Cache this area for offline" button).
 
 Scope and deliberate omissions
 ------------------------------
@@ -446,13 +447,14 @@ def test_cache_now_warms_same_origin_urls_into_cache_storage(
 
 
 def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None:
-    """Clicking "Cache this area for offline" completes and shows a toast.
+    """Clicking "Download basemap" then Download confirm shows a toast.
 
     Smoke test for the real button wiring (basemapPickerInit's
-    ``snowdesk:cache-now`` dispatch -> cacheNowInit -> ``pwaWarmCache`` ->
-    the completion toast) — does not assert on how many basemap tiles were
-    actually cached, since that depends on the active basemap's CDN being
-    reachable (see the module docstring). Like
+    ``snowdesk:cache-now`` dispatch -> cacheNowInit's framing phase ->
+    the docked bar's Download button -> ``pwaWarmCache`` -> the completion
+    toast) — does not assert on how many basemap tiles were actually
+    cached, since that depends on the active basemap's CDN being reachable
+    (see the module docstring). Like
     ``test_favourites_overlay_installs_from_cache_after_offline_reload``,
     this test still depends on ``pwa_page``'s own boot reaching a real
     basemap (``MAP`` existing is enough here — the click handler degrades
@@ -466,6 +468,11 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     ``test_cache_this_area.py`` for coverage of each branch with stubbed
     counts), so this smoke test accepts whichever of the three the live
     CDN outcome happens to produce rather than asserting a specific one.
+
+    SNOW-521: the menu click alone no longer starts the run — it opens
+    ``#basemap-download-bar``'s confirm step, so this test now also drives
+    ``#basemap-download-confirm`` (``test_cache_this_area.py`` covers the
+    framing phase itself, with a stubbed tile count).
     """
     page = pwa_page.page
     page.wait_for_function(
@@ -477,6 +484,8 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
     button = page.locator("#cache-now-toggle")
     button.wait_for(state="visible")
     button.click()
+    page.locator("#basemap-download-bar").wait_for(state="visible")
+    page.click("#basemap-download-confirm")
 
     page.wait_for_selector(
         "#map-cache-now-toast-complete:not(.hidden), "
@@ -484,5 +493,5 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
         "#map-cache-now-toast-failed:not(.hidden)",
         timeout=15000,
     )
-    # The button re-enables once the run completes (busy guard cleared).
-    assert button.get_attribute("aria-disabled") is None
+    # The bar hides once the run completes (busy guard cleared).
+    page.locator("#basemap-download-bar").wait_for(state="hidden")

@@ -168,7 +168,7 @@ def _open_download_bar(page: Page) -> None:
 
 
 def _estimate_text(page: Page) -> str:
-    return page.locator("#basemap-download-estimate").inner_text()
+    return str(page.locator("#basemap-download-estimate").inner_text())
 
 
 def _toast_class(page: Page, toast_id: str) -> str:
