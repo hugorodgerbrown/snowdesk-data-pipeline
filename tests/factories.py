@@ -51,6 +51,16 @@ from regions.models import (
     Resort,
     SubRegion,
 )
+from regions.services.basemap_tiles import TIER_BANDS, build_blob
+
+# A small representative Alpine bbox (roughly Valais) used as every region
+# tier factory's ``basemap_download`` default — SNOW-521's rework needs a
+# valid blob on every factory-built region so pytest/API tests exercise the
+# ``download`` property without each test hand-building one. Not derived
+# from any factory's own ``bbox``/``boundary`` (those default to None/unset
+# and are set explicitly per test where geometry matters) — this is a
+# canned, schema-valid placeholder, independent of the actual geometry.
+_FACTORY_BASEMAP_BBOX = [7.0, 46.0, 8.0, 47.5]
 
 
 class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
@@ -79,6 +89,9 @@ class MajorRegionFactory(factory.django.DjangoModelFactory[MajorRegion]):
     name_native = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
     name_en = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
     display_on_map = True
+    basemap_download = factory.LazyFunction(
+        lambda: build_blob(_FACTORY_BASEMAP_BBOX, *TIER_BANDS["major"])
+    )
 
 
 class SubRegionFactory(factory.django.DjangoModelFactory[SubRegion]):
@@ -97,6 +110,9 @@ class SubRegionFactory(factory.django.DjangoModelFactory[SubRegion]):
     )
     name_native = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
     name_en = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
+    basemap_download = factory.LazyFunction(
+        lambda: build_blob(_FACTORY_BASEMAP_BBOX, *TIER_BANDS["minor"])
+    )
 
 
 class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
@@ -116,6 +132,9 @@ class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
     )
     centre = factory.LazyFunction(lambda: {"lon": 7.5, "lat": 46.8})
     boundary = None
+    basemap_download = factory.LazyFunction(
+        lambda: build_blob(_FACTORY_BASEMAP_BBOX, *TIER_BANDS["micro"])
+    )
 
 
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):

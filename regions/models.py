@@ -145,6 +145,19 @@ class MajorRegion(BaseModel):
             "Computed by refresh_eaws_fixtures from the union of L4 children."
         ),
     )
+    basemap_download = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Precomputed offline-basemap tile coverage for this region at "
+            "the 'major' tier's zoom band (regions.services.basemap_tiles."
+            "TIER_BANDS), populated by `manage.py compute_basemap_download "
+            "--commit`. {band, count, mb, over_ceiling, centre_tile, z} — "
+            "see regions/services/basemap_tiles.py for the shape. Never "
+            "computed at request time; region geometry is static reference "
+            "data so this never changes once computed."
+        ),
+    )
     display_on_map = models.BooleanField(
         default=True,
         help_text=(
@@ -219,6 +232,16 @@ class SubRegion(BaseModel):
     centre = models.JSONField(null=True, blank=True)
     bbox = models.JSONField(null=True, blank=True)
     boundary = models.JSONField(null=True, blank=True)
+    basemap_download = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Precomputed offline-basemap tile coverage for this region at "
+            "the 'minor' tier's zoom band (regions.services.basemap_tiles."
+            "TIER_BANDS), populated by `manage.py compute_basemap_download "
+            "--commit`. See MajorRegion.basemap_download for the shape."
+        ),
+    )
 
     objects = SubRegionQuerySet.as_manager()
 
@@ -334,6 +357,18 @@ class MicroRegion(BaseModel):
             "Region boundary as a GeoJSON Polygon geometry object "
             '({"type": "Polygon", "coordinates": [...]}). '
             "Stored as JSON rather than a PostGIS geometry type."
+        ),
+    )
+    basemap_download = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Precomputed offline-basemap tile coverage for this region at "
+            "the 'micro' tier's zoom band (regions.services.basemap_tiles."
+            "TIER_BANDS), populated by `manage.py compute_basemap_download "
+            "--commit` from a bbox derived from `boundary` (MicroRegion has "
+            "no stored bbox field). See MajorRegion.basemap_download for "
+            "the shape."
         ),
     )
     neighbours: models.ManyToManyField[MicroRegion, MicroRegionNeighbour] = (

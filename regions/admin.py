@@ -42,6 +42,7 @@ class MajorRegionAdmin(admin.ModelAdmin):
         "centre",
         "bbox",
         "boundary",
+        "basemap_download",
         "created_at",
         "updated_at",
     ]
@@ -61,6 +62,7 @@ class SubRegionAdmin(admin.ModelAdmin):
         "centre",
         "bbox",
         "boundary",
+        "basemap_download",
         "created_at",
         "updated_at",
     ]
@@ -74,7 +76,15 @@ class MicroRegionAdmin(admin.ModelAdmin):
     list_filter = ["subregion__major", "subregion"]
     search_fields = ["region_id", "name"]
     ordering = ["region_id"]
-    readonly_fields = ["id", "slug", "centre", "boundary", "created_at", "updated_at"]
+    readonly_fields = [
+        "id",
+        "slug",
+        "centre",
+        "boundary",
+        "basemap_download",
+        "created_at",
+        "updated_at",
+    ]
 
 
 @admin.register(RegionAlias)
