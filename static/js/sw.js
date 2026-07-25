@@ -835,6 +835,18 @@ async function _warmCache(urls, options) {
  * cross-origin in default (``cors``) mode, so ``opaque`` is not expected
  * in practice — the type check is defence-in-depth, not a workaround for
  * an observed MapLibre behaviour.
+ *
+ * SNOW-521: on a ``BASEMAP_CACHE`` miss, also checks ``BASEMAP_PINNED_CACHE``
+ * before falling to the network — a deliberate "Download basemap" run may
+ * have already written this exact tile there. This path is READ-ONLY
+ * against the pinned cache: it never writes to or trims it (that stays
+ * ``_warmCache``'s pinned path's job alone), so ordinary browsing can
+ * neither grow nor evict a deliberate download. The background
+ * revalidation fetch (``fetchPromise`` below) still only ever writes/trims
+ * ``BASEMAP_CACHE``, even when the response actually served came from the
+ * pinned partition — an online revisit of a pinned tile opportunistically
+ * promotes it into the passive cache too, which is the existing SNOW-484
+ * behaviour, unchanged.
  */
 async function _basemapStaleWhileRevalidate(request) {
   const cache = await caches.open(BASEMAP_CACHE);
@@ -849,11 +861,22 @@ async function _basemapStaleWhileRevalidate(request) {
     })
     .catch(() => null);
   if (cached) return cached;
-  // Cache miss: fall through to the network. If that also fails (e.g.
-  // offline and never previously cached), this deliberately does NOT
-  // throw — the caller (_guardedRespond via the fetch handler) still
-  // needs a Response, and a 504 here is more informative than an
-  // unhandled rejection reaching the page as a raw network error.
+  // SNOW-521: BASEMAP_CACHE miss — check the pinned partition before
+  // falling through to the network. Defensive: a pinned-cache lookup
+  // failure must not break the existing miss -> network -> 504 chain.
+  try {
+    const pinnedCache = await caches.open(BASEMAP_PINNED_CACHE);
+    const pinnedHit = await pinnedCache.match(request);
+    if (pinnedHit) return pinnedHit;
+  } catch (_err) {
+    // Fall through to the network/504 path below.
+  }
+  // Cache miss (both partitions): fall through to the network. If that
+  // also fails (e.g. offline and never previously cached), this
+  // deliberately does NOT throw — the caller (_guardedRespond via the
+  // fetch handler) still needs a Response, and a 504 here is more
+  // informative than an unhandled rejection reaching the page as a raw
+  // network error.
   const network = await fetchPromise;
   if (network) return network;
   // SNOW-490: stamp the synthesized fallback so pwa_offline.js can't
