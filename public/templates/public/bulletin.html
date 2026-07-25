@@ -806,9 +806,8 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% endif %}
 
         {# ── Field-observation counts (SNOW-324) ────────────────────── #}
-        {# Shown only on today's page when the field_observations flag is  #}
-        {# active and at least one report has been submitted for this      #}
-        {# region today.                                                   #}
+        {# Shown only on today's page when at least one report has been   #}
+        {# submitted for this region today.                               #}
         {% if is_today and observation_counts %}
             <section class="mt-6" aria-labelledby="obs-counts-heading">
                 <h2

@@ -11,9 +11,8 @@ Covers ``public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
   - Distance-scoped field observations (SNOW-508): point-local when the
-    resort has coordinates, region-wide fallback when it doesn't, hidden
-    when the ``field_observations`` flag is inactive, and empty-state copy
-    when nothing is nearby.
+    resort has coordinates, region-wide fallback when it doesn't, and
+    empty-state copy when nothing is nearby.
   - Weather (SNOW-509): the page shows the parent region's WeatherSnapshot
     (never a per-resort forecast), falls back to the no-snapshot panel with
     the ``?variant=panel`` HTMX retry when none exists, and renders

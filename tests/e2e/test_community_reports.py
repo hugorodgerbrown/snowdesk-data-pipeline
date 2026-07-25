@@ -8,7 +8,7 @@ Uses plain ``page`` + ``live_server`` fixtures (no signed-in session
 needed — unlike favourites, the overlay shows anonymised, publicly-shared
 data with no per-user eligibility gate).
 
-The SNOW-475 test below is signed-in (``field_observations`` requires
+The SNOW-475 test below is signed-in (field reports require
 authentication + a verified account — see ``observations.views._auth_gate``)
 and drives the MANUAL location-source path by dispatching
 ``snowdesk:geolocate-error`` directly rather than waiting on a real
