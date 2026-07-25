@@ -1,27 +1,29 @@
 """
 tests/e2e/test_cache_this_area.py — Playwright regression tests for the
-per-region "Download basemap" icons (SNOW-492, SNOW-493, SNOW-521 rework).
+single-region "Download basemap" icon (SNOW-492, SNOW-493, SNOW-521 final
+shape).
 
-SNOW-521 was first shipped as a viewport-anchored docked confirm bar
-(``#basemap-download-bar``). In review that UX proved poor — it required
-zooming in tight before the viewport was small enough to accept, the
-exact friction the ticket meant to remove. This rework replaces it with
-one download icon per breadcrumb tier (Major/Minor/Micro,
-``#region-download-{major,minor,micro}`` in ``_season_ribbon.html``'s
-``#region-readout`` chip), each independently shown/sized from
-precomputed server-side data and run on click. This file covers: the
-micro icon's idle→busy→done flow and completion toast; a visible
-minor/major crumb icon downloading its own tier; a reselected region
-that was already downloaded reading ``done`` from real cache state
-rather than in-page memory; and the toast branches (complete/partial/
-failed) SNOW-493 established, still exercised through the new UX.
+SNOW-521 went through two intermediate shapes before landing here: first a
+viewport-anchored docked confirm bar (``#basemap-download-bar``), then a
+per-breadcrumb-tier set of icons (Major/Minor/Micro). Both were dropped —
+the docked bar required zooming in tight before the viewport was small
+enough to accept; the per-tier icons made download size non-monotonic with
+containment (an L1 region could read smaller than an L2 it contains),
+which read as a bug. The shipped shape is a single icon
+(``#region-download-micro`` in ``_season_ribbon.html``'s ``#region-readout``
+chip) for the focused MICRO region only, with no completion toast — the
+icon itself carries the outcome (a green "available offline" circle on
+success, reverting to idle otherwise). This file covers: the icon's
+idle→busy→done flow, a reselected region reading ``done`` from real cache
+state rather than in-page memory, and the disabled/over_ceiling and
+partial/failed-run branches.
 
 Every test requests ``_load_test_data`` (``pytestmark`` below) — not for
 its ratings/bulletin rows, but because ``_season_ribbon.html``'s
-``{% if ribbon %}`` gate (and so the per-tier icon markup itself) only
-renders when ``build_season_ribbon()`` resolves a real, DB-backed
-default region; against an unseeded DB the icons don't exist in the DOM
-at all. ``pwa_page``'s own first navigation can race that seed (fixture
+``{% if ribbon %}`` gate (and so the icon markup itself) only renders when
+``build_season_ribbon()`` resolves a real, DB-backed default region;
+against an unseeded DB the icon doesn't exist in the DOM at all.
+``pwa_page``'s own first navigation can race that seed (fixture
 instantiation order between two same-scope, non-dependent fixtures is
 unspecified), so every test's first action is ``_reload_home`` — a
 second ``page.goto('/')`` — mirroring ``test_pwa_lifecycle_offline.py``'s
@@ -103,8 +105,6 @@ _MICRO_SUMMARY: dict[str, Any] = {
     "over_ceiling": False,
     "centre_tile": _CENTRE_TILE,
 }
-_MINOR_SUMMARY: dict[str, Any] = {**_MICRO_SUMMARY, "region_id": "CH-41"}
-_MAJOR_SUMMARY: dict[str, Any] = {**_MICRO_SUMMARY, "region_id": "CH-4"}
 
 
 def _reload_home(pwa_page: PwaPage) -> None:
@@ -118,7 +118,7 @@ def _reload_home(pwa_page: PwaPage) -> None:
     page.wait_for_load_state("load")
 
 
-def _select_region(page: Page, region_id: str, download: dict[str, Any]) -> None:
+def _select_region(page: Page, region_id: str, download: dict[str, Any] | None) -> None:
     """Inject a synthetic ``FEATURE_BY_REGION_ID`` entry and focus it.
 
     See the module docstring for why this bypasses the real
@@ -127,8 +127,9 @@ def _select_region(page: Page, region_id: str, download: dict[str, Any]) -> None
     Args:
         page: The Playwright page.
         region_id: e.g. ``"CH-4115"``.
-        download: The ``properties.download`` shape — ``{"micro": {...}
-            [, "minor": {...}, "major": {...}]}``.
+        download: The flat ``properties.download`` summary
+            (``{count, mb, over_ceiling, centre_tile}``), or ``None``
+            for a region with no computed blob.
 
     """
     page.evaluate(
@@ -237,13 +238,13 @@ def _wait_for_map_ready(page: Page) -> None:
     )
 
 
-def _wait_for_state(page: Page, tier: str, state: str, timeout: int = 10000) -> None:
+def _wait_for_state(page: Page, state: str, timeout: int = 10000) -> None:
     page.wait_for_function(
-        """([tier, state]) => {
-            const btn = document.getElementById('region-download-' + tier);
+        """(state) => {
+            const btn = document.getElementById('region-download-micro');
             return !!btn && btn.dataset.downloadState === state;
         }""",
-        arg=[tier, state],
+        arg=state,
         timeout=timeout,
     )
 
@@ -256,18 +257,14 @@ def _recorded_pinned(worker: SWWorker) -> Any:
     return worker.evaluate("() => self.__snow521Pinned")
 
 
-def _toast_class(page: Page, toast_id: str) -> str:
-    return page.locator(f"#{toast_id}").get_attribute("class") or ""
-
-
 def test_micro_icon_visible_idle_with_size_for_default_region(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """A focused region with a computed micro summary shows an idle icon."""
+    """A focused region with a computed download summary shows an idle icon."""
     _reload_home(pwa_page)
     page = pwa_page.page
     _wait_for_map_ready(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
@@ -275,10 +272,10 @@ def test_micro_icon_visible_idle_with_size_for_default_region(
     assert "MB" in (icon.get_attribute("aria-label") or "")
 
 
-def test_micro_icon_download_flow_busy_then_done_with_toast(
+def test_micro_icon_download_flow_busy_then_done(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """Clicking the idle micro icon goes busy, then done, with the complete toast."""
+    """Clicking the idle icon goes busy, then done — no toast, just the icon."""
     _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -288,19 +285,15 @@ def test_micro_icon_download_flow_busy_then_done_with_toast(
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
     _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle")
 
     icon.click()
-    _wait_for_state(page, "micro", "busy")
-    _wait_for_state(page, "micro", "done", timeout=10000)
-
-    toast = page.locator("#map-cache-now-toast-complete")
-    toast.wait_for(state="visible", timeout=10000)
-    assert "now available offline" in toast.inner_text()
+    _wait_for_state(page, "busy")
+    _wait_for_state(page, "done", timeout=10000)
 
     # SNOW-493 finding 6 continuity: same-origin data feeds (incl. the
     # default CH country) are still assembled alongside the tile URL.
@@ -310,85 +303,17 @@ def test_micro_icon_download_flow_busy_then_done_with_toast(
     assert _recorded_pinned(worker) is True
 
 
-def test_minor_icon_becomes_visible_and_downloads_its_own_tier(
-    pwa_page: PwaPage, _load_test_data: None
-) -> None:
-    """Enabling the L2 (minor) overlay reveals its icon, sized + runnable."""
-    _reload_home(pwa_page)
-    page = pwa_page.page
-    assert page.context.service_workers, "expected a registered service worker"
-    worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=1, failed=0)
-
-    _wait_for_map_ready(page)
-    _stub_active_basemap_template(page)
-    _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY, "minor": _MINOR_SUMMARY})
-
-    minor_icon = page.locator("#region-download-minor")
-    assert minor_icon.get_attribute("hidden") is not None
-
-    page.click("#basemap-toggle")
-    l2_toggle = page.locator('[data-overlay-key="l2"]')
-    l2_toggle.wait_for(state="visible")
-    l2_toggle.click()
-    page.keyboard.press("Escape")
-
-    minor_icon.wait_for(state="visible")
-    _wait_for_state(page, "minor", "idle")
-
-    minor_icon.click()
-    _wait_for_state(page, "minor", "done", timeout=10000)
-    page.locator("#map-cache-now-toast-complete").wait_for(
-        state="visible", timeout=10000
-    )
-
-
-def test_major_icon_becomes_visible_and_downloads_its_own_tier(
-    pwa_page: PwaPage, _load_test_data: None
-) -> None:
-    """Enabling the L1 (major) overlay reveals its icon, sized + runnable."""
-    _reload_home(pwa_page)
-    page = pwa_page.page
-    assert page.context.service_workers, "expected a registered service worker"
-    worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=1, failed=0)
-
-    _wait_for_map_ready(page)
-    _stub_active_basemap_template(page)
-    _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY, "major": _MAJOR_SUMMARY})
-
-    major_icon = page.locator("#region-download-major")
-    assert major_icon.get_attribute("hidden") is not None
-
-    page.click("#basemap-toggle")
-    l1_toggle = page.locator('[data-overlay-key="l1"]')
-    l1_toggle.wait_for(state="visible")
-    l1_toggle.click()
-    page.keyboard.press("Escape")
-
-    major_icon.wait_for(state="visible")
-    _wait_for_state(page, "major", "idle")
-
-    major_icon.click()
-    _wait_for_state(page, "major", "done", timeout=10000)
-    page.locator("#map-cache-now-toast-complete").wait_for(
-        state="visible", timeout=10000
-    )
-
-
 def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
     """A region's ``done`` state survives reselect — derived from real cache.
 
-    Downloads CH-4115's micro tier, then focuses a different region with
-    no computed micro summary (clearing the in-page tierData for
-    CH-4115 and hiding its icon), then reselects CH-4115 — the icon
-    must read ``done`` again purely from ``regionDownloadInit``'s real
-    ``BASEMAP_PINNED_CACHE`` probe, not a remembered JS flag (the
-    "layers menu is a live cache-state dashboard" invariant).
+    Downloads CH-4115, then focuses a different region with no computed
+    summary (clearing the in-page microData for CH-4115 and hiding its
+    icon), then reselects CH-4115 — the icon must read ``done`` again
+    purely from ``regionDownloadInit``'s real ``BASEMAP_PINNED_CACHE``
+    probe, not a remembered JS flag (the "layers menu is a live
+    cache-state dashboard" invariant).
     """
     _reload_home(pwa_page)
     page = pwa_page.page
@@ -399,29 +324,43 @@ def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
     _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle")
     icon.click()
-    _wait_for_state(page, "micro", "done", timeout=10000)
+    _wait_for_state(page, "done", timeout=10000)
 
-    # Focus a different region with no computed micro summary — CH-4115's
-    # icon hides.
-    _select_region(page, "CH-1111", {})
+    # Focus a different region with no computed summary — the icon hides.
+    _select_region(page, "CH-1111", None)
     icon.wait_for(state="hidden")
 
     # Reselect CH-4115 — done, without a second click.
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "done", timeout=10000)
+    _wait_for_state(page, "done", timeout=10000)
 
 
-def test_toast_partial_when_some_urls_fail(
+def test_icon_disabled_when_over_ceiling(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """``ok > 0 and failed > 0`` reverts the icon to idle and shows "partial"."""
+    """A summary flagged over_ceiling shows a disabled icon, unclickable."""
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    _wait_for_map_ready(page)
+    _select_region(page, "CH-4115", {**_MICRO_SUMMARY, "over_ceiling": True})
+
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "disabled")
+    assert "too large" in (icon.get_attribute("aria-label") or "")
+
+
+def test_icon_reverts_to_idle_when_some_urls_fail(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """``ok > 0 and failed > 0`` reverts the icon to idle, not done."""
     _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -431,21 +370,19 @@ def test_toast_partial_when_some_urls_fail(
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
     _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle")
     icon.click()
-
-    page.wait_for_selector("#map-cache-now-toast-partial:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-failed")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle", timeout=10000)
 
 
-def test_toast_failed_when_ok_is_zero(pwa_page: PwaPage, _load_test_data: None) -> None:
-    """``ok === 0`` reverts the icon to idle and shows "failed", never "done"."""
+def test_icon_reverts_to_idle_when_ok_is_zero(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """``ok === 0`` reverts the icon to idle, never claims done."""
     _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -455,20 +392,16 @@ def test_toast_failed_when_ok_is_zero(pwa_page: PwaPage, _load_test_data: None) 
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
     _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle")
     icon.click()
-
-    page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle", timeout=10000)
 
 
-def test_toast_never_complete_for_vacuous_run(
+def test_icon_never_claims_done_for_vacuous_run(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
     """``{ok: 0, failed: 0}`` never claims "available offline"."""
@@ -481,13 +414,10 @@ def test_toast_never_complete_for_vacuous_run(
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
     _stub_region_basemap_tiles(page)
-    _select_region(page, "CH-4115", {"micro": _MICRO_SUMMARY})
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
     icon = page.locator("#region-download-micro")
     icon.wait_for(state="visible")
-    _wait_for_state(page, "micro", "idle")
+    _wait_for_state(page, "idle")
     icon.click()
-
-    page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
+    _wait_for_state(page, "idle", timeout=10000)

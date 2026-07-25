@@ -446,54 +446,49 @@ def test_cache_now_warms_same_origin_urls_into_cache_storage(
     )
 
 
-def test_cache_now_button_completes_and_reveals_toast(
+def test_cache_now_button_leaves_busy_state(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """Clicking the micro "Download basemap" icon shows a completion toast.
+    """Clicking the micro "Download basemap" icon leaves the busy state.
 
     Smoke test for the real per-region download wiring
     (``regionDownloadInit``'s click handler -> the real
-    ``/api/region-basemap-tiles/`` fetch -> ``pwaWarmCache`` -> the
-    completion toast) — does not assert on how many basemap tiles were
-    actually cached, since tile-URL assembly depends on the active
-    basemap's CDN being reachable to resolve a tile template (this test
-    leaves ``activeBasemapTileTemplate`` un-stubbed, so it degrades to
-    warming zero tile URLs whenever the CDN isn't reachable — see the
-    module docstring). Same-origin data feeds and the completion toast
-    are what this test actually verifies. The ``/api/region-basemap-tiles/``
-    fetch itself is same-origin (the real ``live_server``, not a
-    third-party CDN) so it's left un-stubbed here.
+    ``/api/region-basemap-tiles/`` fetch -> ``pwaWarmCache``) — does not
+    assert on how many basemap tiles were actually cached, since
+    tile-URL assembly depends on the active basemap's CDN being
+    reachable to resolve a tile template (this test leaves
+    ``activeBasemapTileTemplate`` un-stubbed, so it degrades to warming
+    zero tile URLs whenever the CDN isn't reachable — see the module
+    docstring). The ``/api/region-basemap-tiles/`` fetch itself is
+    same-origin (the real ``live_server``, not a third-party CDN) so
+    it's left un-stubbed here.
 
-    SNOW-493 finding 7: the completion toast branches on the actual {ok,
-    failed} counts (complete/partial/failed — see
-    ``test_cache_this_area.py`` for coverage of each branch with stubbed
-    counts), so this smoke test accepts whichever of the three actually
-    lands rather than asserting a specific one.
-
-    SNOW-521 rework: the old viewport-anchored docked confirm bar
-    (``#cache-now-toggle`` -> ``#basemap-download-bar`` ->
-    ``#basemap-download-confirm``) was replaced by per-crumb icons in the
-    ``#region-readout`` chip — this test now drives the always-shown
-    micro icon (``#region-download-micro``) for the homepage's
-    default-focus region. That icon only appears once
-    ``FEATURE_BY_REGION_ID`` is populated — normally from a
-    ``regions.geojson`` fetch gated behind ``map.on('load')``, which in
-    turn needs the active basemap's style to load; a real third-party
-    basemap CDN is documented elsewhere as unreachable in this harness
-    (``test_offline_basemap_cache.py``'s module docstring;
-    ``test_cache_this_area.py``'s module docstring has the full
-    confirmation). This test sidesteps that chain the same way — writing
-    a synthetic entry into ``FEATURE_BY_REGION_ID`` directly and
-    dispatching the real ``snowdesk:region-selected`` event — so the
-    real button-click -> fetch -> toast wiring is still exercised
-    end to end, independent of the CDN. Also requests ``_load_test_data``
-    (via ``loaddata eaws_CH``) purely so ``_season_ribbon.html``'s
-    ``{% if ribbon %}`` gate renders the icon markup at all (it needs a
-    real, DB-backed default region — see ``test_cache_this_area.py``'s
-    module docstring); ``pwa_page``'s own first navigation can race that
-    seed (fixture instantiation order between two same-scope,
-    non-dependent fixtures is unspecified), so this re-navigates to
-    ``/`` once seeding is guaranteed to have landed.
+    SNOW-521 final shape: the icon carries the outcome itself (a green
+    "available offline" circle on a clean success, idle otherwise) — no
+    completion toast, so this smoke test only asserts the transient
+    'busy' state is left (done vs. idle — see ``test_cache_this_area.py``
+    for coverage of each branch with stubbed {ok, failed} counts). That
+    file replaces the earlier per-crumb icon set (Major/Minor/Micro) this
+    test used to drive — the shipped shape is a single icon
+    (``#region-download-micro``) for the focused MICRO region only. That
+    icon only appears once ``FEATURE_BY_REGION_ID`` is populated —
+    normally from a ``regions.geojson`` fetch gated behind
+    ``map.on('load')``, which in turn needs the active basemap's style to
+    load; a real third-party basemap CDN is documented elsewhere as
+    unreachable in this harness (``test_offline_basemap_cache.py``'s
+    module docstring; ``test_cache_this_area.py``'s module docstring has
+    the full confirmation). This test sidesteps that chain the same way —
+    writing a synthetic entry into ``FEATURE_BY_REGION_ID`` directly and
+    dispatching the real ``snowdesk:region-selected`` event — so the real
+    button-click -> fetch -> state wiring is still exercised end to end,
+    independent of the CDN. Also requests ``_load_test_data`` (via
+    ``loaddata eaws_CH``) purely so ``_season_ribbon.html``'s ``{% if
+    ribbon %}`` gate renders the icon markup at all (it needs a real,
+    DB-backed default region — see ``test_cache_this_area.py``'s module
+    docstring); ``pwa_page``'s own first navigation can race that seed
+    (fixture instantiation order between two same-scope, non-dependent
+    fixtures is unspecified), so this re-navigates to ``/`` once seeding
+    is guaranteed to have landed.
     """
     page = pwa_page.page
     page.goto(pwa_page.live_server_url + "/")
@@ -510,12 +505,10 @@ def test_cache_now_button_completes_and_reveals_toast(
                     id: 'CH-4115',
                     regionID: 'CH-4115',
                     download: {
-                        micro: {
-                            count: 1,
-                            mb: 1,
-                            over_ceiling: false,
-                            centre_tile: { z: 14, x: 100, y: 100 },
-                        },
+                        count: 1,
+                        mb: 1,
+                        over_ceiling: false,
+                        centre_tile: { z: 14, x: 100, y: 100 },
                     },
                 },
             };
@@ -529,15 +522,9 @@ def test_cache_now_button_completes_and_reveals_toast(
     icon.wait_for(state="visible")
     icon.click()
 
-    page.wait_for_selector(
-        "#map-cache-now-toast-complete:not(.hidden), "
-        "#map-cache-now-toast-partial:not(.hidden), "
-        "#map-cache-now-toast-failed:not(.hidden)",
-        timeout=15000,
-    )
     # The icon reverts to idle unless the run was a clean, non-vacuous
     # success — either way it must leave the transient 'busy' state.
     page.wait_for_function(
         "() => document.getElementById('region-download-micro').dataset.downloadState !== 'busy'",
-        timeout=5000,
+        timeout=15000,
     )
