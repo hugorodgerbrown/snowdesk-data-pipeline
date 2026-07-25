@@ -100,44 +100,28 @@ function buildFallbackStyle() {
   };
 }
 
-// SNOW-521: enumerate the vector tile URLs covering `map`'s current
-// viewport across the zoom band `window.pwaBasemapDownloadCore.zoomBand`
-// computes down to its z14 detail floor. Reads the *resolved* tile URL
-// template off each vector source's runtime instance
+// SNOW-521: resolve the active basemap's vector-tile URL template — the
+// same lookup `computeBasemapTileURLs` used to do before per-region
+// download replaced viewport tile enumeration. Reads the *resolved*
+// tile URL template off the first vector source's runtime instance
 // (`map.getSource(id).tiles`) rather than the static style JSON — a
 // TileJSON-backed source only populates `tiles` once its tilejson fetch
-// resolves. Returns [] for a style with no vector sources (the offline
-// fallback style, SNOW-483), before the style has finished loading, or if
-// the core module hasn't loaded (see home.html's script order). `maxTiles`
-// defaults to the core's download ceiling; cacheNowInit's framing phase
-// passes one tile past that ceiling to detect "area too large" without
-// truncating the real count. The cap is a single budget shared across
-// every vector source, not per-source.
-function computeBasemapTileURLs(map, maxTiles) {
-  const core = self.pwaBasemapDownloadCore;
-  if (!map || !core || !map.isStyleLoaded()) return [];
+// resolves. Returns null for a style with no vector sources (the offline
+// fallback style, SNOW-483) or before the style has finished loading.
+// `regionDownloadInit` substitutes this template into a region's stored
+// tile-index ranges (`pwaBasemapDownloadCore.rangesToTileURLs`) rather
+// than enumerating anything itself.
+function activeBasemapTileTemplate(map) {
+  if (!map || !map.isStyleLoaded()) return null;
   const style = map.getStyle();
-  if (!style || !style.sources) return [];
-  const bounds = map.getBounds();
-  const { minZ, maxZ } = core.zoomBand(map.getZoom(), core.BASEMAP_DETAIL_FLOOR_ZOOM);
-  const boundsObj = {
-    west: bounds.getWest(),
-    east: bounds.getEast(),
-    north: bounds.getNorth(),
-    south: bounds.getSouth(),
-  };
-  const cap = typeof maxTiles === 'number' ? maxTiles : core.BASEMAP_DOWNLOAD_CEILING_TILES;
-  const urls = [];
+  if (!style || !style.sources) return null;
   for (const sourceId of Object.keys(style.sources)) {
     if (style.sources[sourceId].type !== 'vector') continue;
     const runtime = map.getSource(sourceId);
     const template = runtime && Array.isArray(runtime.tiles) && runtime.tiles[0];
-    if (!template) continue;
-    urls.push(
-      ...core.enumerateTileURLs(template, boundsObj, minZ, maxZ, cap - urls.length),
-    );
+    if (template) return template;
   }
-  return urls;
+  return null;
 }
 
 // SNOW-492: sprite JSON/PNG URLs (1x and 2x) for `map`'s current style, if
@@ -4513,17 +4497,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
-      // SNOW-492: "Cache this area for offline" — a one-shot command, not
-      // a checkbox/radio, so it's dispatched before either of those
-      // branches rather than folded into them. countryState / MAP /
-      // ensureOverlayLoaded etc. are all scoped to the main IIFE, hence
-      // the CustomEvent bridge (same idiom as snowdesk:overlay-load).
-      if (item.dataset.action === 'cache-now') {
-        setMenuOpen(false);
-        document.dispatchEvent(new CustomEvent('snowdesk:cache-now'));
-        return;
-      }
-
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
@@ -4629,118 +4602,221 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// SNOW-521: "Download basemap" control. Listens for the snowdesk:cache-now
-// CustomEvent dispatched by basemapPickerInit's item click loop above (the
-// menu item lives inside that IIFE's popover markup, which already owns
-// closing the menu on click — same bridge idiom as snowdesk:overlay-load /
-// snowdesk:country-toggle). Reads every URL straight off the #map
-// element's data-* attributes (module-scope readable from any IIFE, unlike
-// the main IIFE's own consts derived from them) plus the module-scope
-// RATINGS_URL / MAP globals, so this needs no access to the main IIFE's
-// internals at all.
+// SNOW-521 rework: per-region "Download basemap" icons in the
+// #region-readout chip — replaces the viewport-anchored cacheNowInit
+// (SNOW-492/493). One icon per breadcrumb tier (major/minor/micro,
+// #region-download-major/minor/micro in _season_ribbon.html); each is
+// independently shown, sized, and run.
 //
-// Three phases, replacing the old fire-on-click behaviour:
-//   Framing  — the menu click only reveals the docked #basemap-download-bar
-//              and computes a live "up to N MB" estimate (pure arithmetic,
-//              no network) that stays current as the user pans/zooms via a
-//              moveend listener.
-//   Download — the bar's Download button removes that listener, assembles
-//              the full URL list (unchanged from SNOW-492/493) and hands it
-//              to the SW's warm-cache handler with `pinned: true`, showing
-//              n/total progress and, on completion, one of the three
-//              reworded toasts.
-//   Cancel   — the bar's Cancel button tears down the listener and hides
-//              the bar. No fetches.
-(function cacheNowInit() {
-  const btn = document.getElementById('cache-now-toggle');
-  const bar = document.getElementById('basemap-download-bar');
-  const estimateEl = document.getElementById('basemap-download-estimate');
-  const confirmBtn = document.getElementById('basemap-download-confirm');
-  const cancelBtn = document.getElementById('basemap-download-cancel');
-  if (!btn || !bar || !estimateEl || !confirmBtn || !cancelBtn) return;
-  const mapEl = document.getElementById('map');
+// Data source — no client-side tile enumeration any more. Region tile
+// coverage is precomputed server-side (regions/services/basemap_tiles.py)
+// and already sits on FEATURE_BY_REGION_ID[regionId].properties.download
+// once regions.geojson has loaded (the same payload the choropleth
+// itself needs), so showing a tier's size is a pure in-memory lookup —
+// no extra fetch until the user actually clicks Download.
+//
+// Show/hide + size — driven by the same two events seasonRibbonInit
+// listens to (snowdesk:region-selected, snowdesk:overlays-changed), so
+// the two IIFEs stay in lockstep without sharing state: the micro icon
+// whenever a region is focused; major/minor mirror the
+// overlayVisible.l1/l2 crumb-visibility rule the text breadcrumb above
+// already follows.
+//
+// State (idle/busy/done/disabled, data-download-state) — idle/done are
+// derived from a real BASEMAP_PINNED_CACHE probe every time a tier is
+// (re)shown, never a stored flag (the "layers menu is a live cache-state
+// dashboard" invariant — see docs/offline-map.md); disabled is the
+// server-flagged over_ceiling backstop.
+//
+// Click (idle only) — fetches the tier's full blob (incl. z tile ranges)
+// from /api/region-basemap-tiles/, assembles the URL list
+// (rangesToTileURLs + same-origin data feeds + active basemap style +
+// sprites — mirrors SNOW-492/493's assembly, minus tile enumeration) and
+// hands it to the SW's warm-cache handler with `pinned: true`, updating
+// a live percentage from onProgress, then one of the three reworded
+// toasts (unchanged copy/ids from SNOW-492/493).
+(function regionDownloadInit() {
+  const buttons = {
+    major: document.getElementById('region-download-major'),
+    minor: document.getElementById('region-download-minor'),
+    micro: document.getElementById('region-download-micro'),
+  };
+  if (!buttons.major && !buttons.minor && !buttons.micro) return;
 
-  // True only while the Download URL fetch burst is in flight — guards
-  // against a second Download click and against the framing handler
-  // re-opening the bar mid-transfer.
-  let busy = false;
-  // True while the docked bar is open and its moveend listener is attached
-  // — lets the framing handler detach any stale listener before attaching
-  // a fresh one, so re-opening the bar (menu → Download basemap again)
-  // can't double-register the same function reference.
-  let framing = false;
+  const ribbonEl = document.getElementById('season-ribbon');
+
+  const TIER_LABELS = { major: 'Major', minor: 'Minor', micro: 'Micro' };
+
+  // caches.keys() prefix match (not a hardcoded full cache name) so a
+  // sw.js version bump of the pinned cache's own suffix never breaks
+  // this probe — same rationale as map_layer_sync_status.js's
+  // BASEMAP_CACHE_PREFIX, narrowed to the *pinned* partition only:
+  // ordinary passive-browsing tile caching must never read as "this
+  // region was deliberately downloaded".
+  const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+
+  const TOAST_IDS = {
+    complete: 'map-cache-now-toast-complete',
+    partial: 'map-cache-now-toast-partial',
+    failed: 'map-cache-now-toast-failed',
+  };
+
+  const overlayVisible = {
+    l1: readBoolStorage('snowdesk.map.overlay.l1', false),
+    l2: readBoolStorage('snowdesk.map.overlay.l2', false),
+  };
+
+  // Per-tier { regionId, summary } for the currently-focused region, or
+  // null when that tier has no computed data. `summary` is the small
+  // {count, mb, over_ceiling, centre_tile[, region_id]} shape carried on
+  // regions.geojson's properties.download.
+  const tierData = { major: null, minor: null, micro: null };
+
+  let currentRegionId = (ribbonEl && ribbonEl.dataset.defaultRegionId) || null;
 
   /**
-   * Recompute the live "up to N MB" estimate for the current viewport.
-   * Pure arithmetic against `window.pwaBasemapDownloadCore` — no network.
-   * Probes one tile past the download ceiling (rather than the ceiling
-   * itself) so a viewport whose true tile count exceeds it is detected
-   * rather than silently truncated into an under-reported estimate.
+   * Open the (single) Cache Storage cache whose name starts with
+   * BASEMAP_PINNED_CACHE_PREFIX, or null if Cache Storage is
+   * unsupported or no such cache exists yet (nothing pinned this
+   * session). Never throws.
+   *
+   * @returns {Promise<Cache | null>}
    */
-  function recompute() {
-    const core = self.pwaBasemapDownloadCore;
-    if (!core || !MAP) return;
-    const tileCount = computeBasemapTileURLs(MAP, core.BASEMAP_DOWNLOAD_CEILING_TILES + 1).length;
-    if (tileCount > core.BASEMAP_DOWNLOAD_CEILING_TILES) {
-      estimateEl.textContent = 'Area too large — zoom in to download';
-      confirmBtn.disabled = true;
-      confirmBtn.setAttribute('aria-disabled', 'true');
-      return;
+  async function _openPinnedBasemapCache() {
+    if (!('caches' in window)) return null;
+    try {
+      const names = await caches.keys();
+      const name = names.find((n) => n.startsWith(BASEMAP_PINNED_CACHE_PREFIX));
+      return name ? await caches.open(name) : null;
+    } catch (_e) {
+      return null;
     }
-    const bytes = core.estimateBytes(tileCount, core.BASEMAP_WORST_CASE_BYTES_PER_TILE);
-    estimateEl.textContent = `Download basemap — up to ${core.formatUpToMB(bytes)}`;
-    confirmBtn.disabled = false;
-    confirmBtn.removeAttribute('aria-disabled');
   }
 
-  document.addEventListener('snowdesk:cache-now', () => {
-    if (busy || !MAP) return;
-    if (framing) MAP.off('moveend', recompute);
-    framing = true;
-    bar.classList.remove('hidden');
-    recompute();
-    MAP.on('moveend', recompute);
-  });
+  /**
+   * True when `summary`'s centre tile is present in the pinned cache —
+   * the done-probe proxy for "this region's download completed".
+   *
+   * @param {Object} summary
+   * @returns {Promise<boolean>}
+   */
+  async function _probeDone(summary) {
+    const core = self.pwaBasemapDownloadCore;
+    const template = activeBasemapTileTemplate(MAP);
+    if (!core || !template) return false;
+    const url = core.centreTileURL(template, summary);
+    if (!url) return false;
+    const cache = await _openPinnedBasemapCache();
+    if (!cache) return false;
+    try {
+      return !!(await cache.match(url));
+    } catch (_e) {
+      return false;
+    }
+  }
 
-  cancelBtn.addEventListener('click', () => {
-    if (framing && MAP) MAP.off('moveend', recompute);
-    framing = false;
-    bar.classList.add('hidden');
-  });
+  /**
+   * Paint `state` onto `tier`'s button: data-download-state, the busy
+   * percentage text, and an aria-label/title carrying the tier's size.
+   *
+   * @param {string} tier
+   * @param {string} state - 'idle' | 'busy' | 'done' | 'disabled'.
+   * @param {number} mb
+   * @param {number} [pct] - Only meaningful for state 'busy'.
+   * @returns {void}
+   */
+  function setState(tier, state, mb, pct) {
+    const btn = buttons[tier];
+    if (!btn) return;
+    btn.dataset.downloadState = state;
+    const percentEl = btn.querySelector('.region-readout-download-percent');
+    if (percentEl) percentEl.textContent = state === 'busy' ? `${pct || 0}%` : '';
+    const label = TIER_LABELS[tier];
+    const text = {
+      idle: `Download ${label} region basemap — up to ${mb} MB`,
+      busy: `Downloading ${label} region basemap — ${pct || 0}%`,
+      done: `${label} region basemap downloaded — available offline`,
+      disabled: `${label} region basemap is too large to download`,
+    }[state];
+    btn.setAttribute('aria-label', text);
+    btn.title = text;
+  }
 
-  confirmBtn.addEventListener('click', () => {
-    if (busy || confirmBtn.disabled) return;
-    if (framing && MAP) MAP.off('moveend', recompute);
-    framing = false;
-    busy = true;
-    confirmBtn.disabled = true;
-    confirmBtn.setAttribute('aria-disabled', 'true');
-    cancelBtn.disabled = true;
-    cancelBtn.setAttribute('aria-disabled', 'true');
+  /**
+   * Show/hide and (re)probe one tier's icon against its current
+   * tierData entry and crumb visibility. A stale async resolution
+   * (tierData changed, or a run started, while the probe was in
+   * flight) is discarded rather than clobbering a newer state.
+   *
+   * @param {string} tier
+   * @returns {Promise<void>}
+   */
+  async function renderTier(tier) {
+    const btn = buttons[tier];
+    if (!btn) return;
+    const data = tierData[tier];
+    const crumbVisible =
+      tier === 'micro' || (tier === 'major' ? overlayVisible.l1 : overlayVisible.l2);
+    if (!data || !crumbVisible) {
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    if (btn.dataset.downloadState === 'busy') return;
+    if (data.summary.over_ceiling) {
+      setState(tier, 'disabled', data.summary.mb);
+      return;
+    }
+    const done = await _probeDone(data.summary);
+    if (tierData[tier] !== data || btn.dataset.downloadState === 'busy') return;
+    setState(tier, done ? 'done' : 'idle', data.summary.mb);
+  }
 
-    // Same-origin data feeds the STATIC_PATHS set in sw.js already serves
-    // stale-while-revalidate — warming them here just refreshes the entry
-    // sooner than the next natural fetch would. Deliberately EXCLUDES
-    // favourites/community-reports: those two are 'network'-classified in
-    // sw.js's _classifySync (not in STATIC_PATHS, no static-shell
-    // extension), so the SW never respondWith()s them and would never read
-    // back whatever _warmCache wrote for them — their real offline path is
-    // entirely the data:map_overlays IndexedDB write-through in
-    // ensureOverlayLoaded (map_overlay_offline_cache.js), which only runs
-    // when the user actually toggles the overlay on, not on a warm-cache
-    // call. Including them here would let this control claim success while
-    // leaving them genuinely unavailable offline.
-    //
-    // SNOW-493 finding 6: iterate every currently-ENABLED country
-    // (COUNTRY_STATE, the module-scope mirror the country-toggle buttons
-    // keep current), not just a hardcoded ?country=ch. Previously "Cache
-    // this area" only ever warmed Switzerland's feeds — a user who'd also
-    // enabled France/Austria/Italy would have those regions vanish on the
-    // very next offline reload despite the control reporting success.
+  function refreshAll() {
+    renderTier('major');
+    renderTier('minor');
+    renderTier('micro');
+  }
+
+  /**
+   * Adopt `regionId` as the focused region: pull its per-tier download
+   * summaries straight off the already-loaded
+   * FEATURE_BY_REGION_ID[regionId].properties.download (no fetch) and
+   * re-render every icon.
+   *
+   * @param {string | null} regionId
+   * @returns {void}
+   */
+  function applyRegion(regionId) {
+    currentRegionId = regionId;
+    const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
+    const download = (feature && feature.properties && feature.properties.download) || null;
+    tierData.micro =
+      download && download.micro ? { regionId: regionId, summary: download.micro } : null;
+    tierData.minor =
+      download && download.minor
+        ? { regionId: download.minor.region_id, summary: download.minor }
+        : null;
+    tierData.major =
+      download && download.major
+        ? { regionId: download.major.region_id, summary: download.major }
+        : null;
+    refreshAll();
+  }
+
+  /**
+   * Same-origin data-feed + active-basemap-style URL list — everything
+   * a tier's download warms besides its own tile ranges. Mirrors
+   * SNOW-492/493's assembly (see the removed cacheNowInit for the full
+   * exclusion rationale re: favourites/community-reports) minus tile
+   * enumeration, which now comes from the fetched blob.
+   *
+   * @returns {string[]}
+   */
+  function _assembleFeedURLs() {
+    const mapEl = document.getElementById('map');
     const urls = [];
-    const enabledCountries = Object.keys(COUNTRY_STATE).filter(
-      code => COUNTRY_STATE[code],
-    );
+    const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
     const addCountryFeeds = (base) => {
       if (!base) return;
       for (const code of enabledCountries) {
@@ -4756,62 +4832,77 @@ const repaintRegionsForDate = (dateKey, cache) => {
         urls.push(RATINGS_URL + '?country=' + code);
       }
     }
-
-    // The active basemap's own style JSON — read off the checked radio in
-    // the popover (basemapPickerInit's markup is the single source of
-    // truth for each basemap's (key, url) pair) rather than re-deriving it.
     const activeBasemap = document.querySelector(
       '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
     );
     if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
-
     urls.push(...computeBasemapSpriteURLs(MAP));
-    urls.push(...computeBasemapTileURLs(MAP));
+    return urls;
+  }
 
-    // SNOW-521: n/total progress — sw_register.js calls this on every
-    // 'warm-cache-progress' message the SW posts (throttled to ~every 5%).
+  /**
+   * Run one tier's download: fetch its full blob, assemble the URL
+   * list, and hand it to the SW's warm-cache handler.
+   *
+   * @param {string} tier
+   * @returns {Promise<void>}
+   */
+  async function handleClick(tier) {
+    const btn = buttons[tier];
+    const data = tierData[tier];
+    if (!btn || !data || btn.dataset.downloadState !== 'idle') return;
+    setState(tier, 'busy', data.summary.mb, 0);
+
+    let blob;
+    try {
+      const response = await fetch(
+        '/api/region-basemap-tiles/?id=' + encodeURIComponent(data.regionId),
+      );
+      if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
+      blob = await response.json();
+    } catch (_e) {
+      // Never got as far as a warm-cache attempt — nothing to report,
+      // so revert silently (matches the pre-rework "no active worker"
+      // silent-degrade behaviour) rather than claim a failed download.
+      setState(tier, 'idle', data.summary.mb);
+      return;
+    }
+
+    const core = self.pwaBasemapDownloadCore;
+    const template = activeBasemapTileTemplate(MAP);
+    const tileUrls = core && template ? core.rangesToTileURLs(template, blob) : [];
+    const urls = [..._assembleFeedURLs(), ...tileUrls];
+
     const onProgress = (done, total) => {
-      estimateEl.textContent = `Downloading basemap — ${done}/${total}`;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      setState(tier, 'busy', data.summary.mb, pct);
     };
 
     const finish = (result) => {
-      busy = false;
-      confirmBtn.disabled = false;
-      confirmBtn.removeAttribute('aria-disabled');
-      cancelBtn.disabled = false;
-      cancelBtn.removeAttribute('aria-disabled');
-      bar.classList.add('hidden');
-      // No result at all (no active worker, or the SW never replied within
-      // its timeout) — unchanged from before: the feature is unavailable
-      // this session, so stay silent rather than claim any outcome.
-      if (!result) return;
-      // SNOW-493 finding 7: branch the completion toast on the actual
-      // {ok, failed} counts instead of always claiming "available
-      // offline" — a run where every URL failed to cache must never say
-      // that, and a partially-successful run should say so rather than
-      // over-claim full coverage. "Complete" requires at least one
-      // success as well as no failures, so a vacuous run (``ok === 0``,
-      // nothing cached) never claims the area is available offline —
-      // matching the acceptance criterion for any ``ok === 0`` result.
-      let toastId;
-      if (result.ok > 0 && result.failed === 0) {
-        toastId = 'map-cache-now-toast-complete';
-      } else if (result.ok > 0) {
-        toastId = 'map-cache-now-toast-partial';
-      } else {
-        toastId = 'map-cache-now-toast-failed';
+      if (!result) {
+        setState(tier, 'idle', data.summary.mb);
+        return;
       }
-      const toast = document.getElementById(toastId);
-      if (toast) {
-        toast.classList.remove('hidden');
-        toast.classList.add('flex');
+      // SNOW-493 finding 7: branch the completion toast on the actual
+      // {ok, failed} counts — "complete" requires at least one success
+      // as well as no failures; a partial or vacuous run reverts the
+      // icon to idle (so the user can retry) rather than claiming
+      // "downloaded".
+      if (result.ok > 0 && result.failed === 0) {
+        setState(tier, 'done', data.summary.mb);
+        _showToast(TOAST_IDS.complete);
+      } else if (result.ok > 0) {
+        setState(tier, 'idle', data.summary.mb);
+        _showToast(TOAST_IDS.partial);
+      } else {
+        setState(tier, 'idle', data.summary.mb);
+        _showToast(TOAST_IDS.failed);
       }
       // SNOW-505: the warm-cache run has just warmed the shell + pinned
-      // basemap caches (the SW's warm-cache handler awaits its cache.put
-      // calls before replying, so this re-probe races nothing). Re-probe
-      // every sync dot against real cache state so the layers popover
-      // reflects the newly-warmed feeds/tiles on its next open — and
-      // immediately, if it's still open behind the completion toast.
+      // basemap caches (the SW's warm-cache handler awaits its
+      // cache.put calls before replying, so this re-probe races
+      // nothing). Re-probe every sync dot against real cache state so
+      // the layers popover reflects the newly-warmed feeds/tiles.
       window.pwaLayerSyncStatus?.refresh();
     };
 
@@ -4824,7 +4915,42 @@ const repaintRegionsForDate = (dateKey, cache) => {
     } else {
       finish(null);
     }
+  }
+
+  function _showToast(id) {
+    const toast = document.getElementById(id);
+    if (toast) {
+      toast.classList.remove('hidden');
+      toast.classList.add('flex');
+    }
+  }
+
+  for (const tier of ['major', 'minor', 'micro']) {
+    const btn = buttons[tier];
+    if (!btn) continue;
+    btn.addEventListener('click', () => handleClick(tier));
+  }
+
+  document.addEventListener('snowdesk:region-selected', (e) => {
+    applyRegion((e.detail && e.detail.region_id) || null);
   });
+
+  document.addEventListener('snowdesk:overlays-changed', (e) => {
+    const key = e.detail && e.detail.key;
+    if (key === 'l1' || key === 'l2') {
+      overlayVisible[key] = !!(e.detail && e.detail.visible);
+      refreshAll();
+    }
+  });
+
+  // Pick up the homepage's server-rendered default focus once its
+  // geojson feature (and download data) has loaded — mirrors
+  // seasonRibbonInit's own setHighlight listener for the same event.
+  document.addEventListener('snowdesk:regions-loaded', () => {
+    if (currentRegionId) applyRegion(currentRegionId);
+  });
+
+  if (currentRegionId) applyRegion(currentRegionId);
 })();
 
 // SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers

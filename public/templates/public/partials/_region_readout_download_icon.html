@@ -1,0 +1,71 @@
+{% comment %}
+public/partials/_region_readout_download_icon.html — one per-tier
+"Download basemap" icon (SNOW-521).
+
+Extracted out of _season_ribbon.html, which includes this three times
+(tier="major"/"minor"/"micro") rather than repeating the identical
+markup inline — the only difference between the three is the id/
+data-tier suffix.
+
+Context expected:
+  tier — str: "major", "minor", or "micro".
+
+Hidden by default; map.js's regionDownloadInit shows/hides each icon,
+sets its title/aria-label to the tier's size, and drives
+data-download-state (idle/busy/done/disabled) from real
+BASEMAP_PINNED_CACHE contents. Styled in static/css/map.css off the
+existing .region-readout-action roundel.
+{% endcomment %}
+<button
+    type="button"
+    id="region-download-{{ tier }}"
+    class="region-readout-download"
+    data-tier="{{ tier }}"
+    data-download-state="idle"
+    hidden
+>
+    <svg
+        class="region-readout-download-icon region-readout-download-icon--idle"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+    </svg>
+    <svg
+        class="region-readout-download-icon region-readout-download-icon--busy"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+    <svg
+        class="region-readout-download-icon region-readout-download-icon--done"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20 6 9 17l-5-5" />
+    </svg>
+    <span class="region-readout-download-percent" aria-hidden="true"></span>
+</button>

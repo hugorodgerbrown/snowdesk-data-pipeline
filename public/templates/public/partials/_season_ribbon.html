@@ -59,6 +59,23 @@ active-day highlight in sync.
                         class="region-readout-leaf"
                     ></span></span>
             </div>
+            {# SNOW-521: per-region "Download basemap" icons — one roundel   #}
+            {# per breadcrumb tier (Major/Minor/Micro), each precomputed     #}
+            {# server-side (regions.services.basemap_tiles) and served on    #}
+            {# the always-loaded regions.geojson payload. map.js's           #}
+            {# regionDownloadInit shows/hides each icon (micro whenever a    #}
+            {# region is focused; major/minor mirror the same               #}
+            {# overlayVisible.l1/l2 crumb-visibility rule the text           #}
+            {# breadcrumb above already uses), sets its title/aria-label to  #}
+            {# the tier's size, and drives data-download-state              #}
+            {# (idle/busy/done/disabled) from real BASEMAP_PINNED_CACHE      #}
+            {# contents — never a stored flag. Styled in static/css/map.css  #}
+            {# off the existing .region-readout-action roundel.              #}
+            <div class="region-readout-downloads">
+                {% include "public/partials/_region_readout_download_icon.html" with tier="major" %}
+                {% include "public/partials/_region_readout_download_icon.html" with tier="minor" %}
+                {% include "public/partials/_region_readout_download_icon.html" with tier="micro" %}
+            </div>
             {# View-bulletin action: a roundel holding just an arrow, with a   #}
             {# "View bulletin" tooltip. Shown only when a region is focused    #}
             {# (CSS sibling rule); map.js sets its href to the dated bulletin. #}

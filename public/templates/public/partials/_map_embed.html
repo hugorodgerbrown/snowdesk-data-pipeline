@@ -360,25 +360,11 @@ Optional context:
                         {% trans "Auto-zoom" %}
                     </button>
                 </li>
-                {# SNOW-492/SNOW-521: "Download basemap" — a command, not a   #}
-                {# persistent toggle, so role="menuitem" rather than the      #}
-                {# menuitemcheckbox affordance the other Options item uses.   #}
-                {# Clicking it no longer fetches directly — it opens the      #}
-                {# docked #basemap-download-bar confirm step below, which     #}
-                {# map.js's cacheNowInit keeps live as the viewport changes   #}
-                {# before assembling the URL list and posting it to the SW's  #}
-                {# warm-cache handler.                                        #}
-                <li role="none">
-                    <button
-                        id="cache-now-toggle"
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-item basemap-menu-item--action"
-                        data-action="cache-now"
-                    >
-                        {% trans "Download basemap" %}
-                    </button>
-                </li>
+                {# SNOW-521: the layers-menu "Download basemap" command was   #}
+                {# replaced by per-crumb download icons in the                #}
+                {# #region-readout chip (_season_ribbon.html) — a per-region  #}
+                {# download rather than a viewport-anchored one. See          #}
+                {# regionDownloadInit in map.js.                              #}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
@@ -880,37 +866,6 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-521: "Download basemap" docked confirm bar — hidden by default.    #}
-{# map.js's cacheNowInit reveals it on the menu click (framing phase),     #}
-{# keeps #basemap-download-estimate live via a moveend listener (pure      #}
-{# arithmetic, no network), then on Download swaps that same span to      #}
-{# n/total progress before hiding the bar again on completion. Anchored    #}
-{# to the viewport like the sw-update banner (same floating shape/tokens   #}
-{# as includes/_overlay_banner.html) — but not built via that partial:    #}
-{# _overlay_banner.html's floating variant only exposes a single CTA slot #}
-{# (plus a bare "×" dismiss, not a labelled Cancel) and a static body/     #}
-{# title pair, with no stable id for a span JS needs to keep rewriting    #}
-{# live (the estimate, then n/total progress). This bar needs two named   #}
-{# buttons and a JS-addressable text node, so the shape is reproduced     #}
-{# inline with the SAME tokens rather than extending the shared partial   #}
-{# for a single caller.                                                   #}
-{# ds-lint-allow: reuses _overlay_banner.html's floating-variant token set (bg-card/text-text-1/rounded-card/border-border/shadow-glass/z-[var(--z-banner)]) rather than the partial itself — that partial supports only one CTA slot and no stable-id, JS-rewritten estimate/progress span, which this dual-button, live-text bar needs #}
-<div
-    id="basemap-download-bar"
-    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-banner)] w-[calc(100vw-2rem)] max-w-md"
-    role="status"
-    aria-live="polite"
->
-    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3 flex items-center gap-3">
-        <p id="basemap-download-estimate" class="min-w-0 flex-1 text-sm font-semibold leading-snug">
-            {% trans "Download basemap" %}
-        </p>
-        <div class="flex flex-none items-center gap-2">
-            {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id="basemap-download-confirm" extra_classes="whitespace-nowrap" label=_("Download") %}
-            {% include "includes/_button.html" with variant="ghost" size="compact" button_type="button" button_id="basemap-download-cancel" extra_classes="whitespace-nowrap" label=_("Cancel") %}
-        </div>
-    </div>
-</div>
 {# SNOW-492/SNOW-493/SNOW-521: "Download basemap" completion toasts — map.js #}
 {# reveals exactly one of these three once the SW's warm-cache handler     #}
 {# reports its {ok, failed} counts back, branching on how many URLs        #}

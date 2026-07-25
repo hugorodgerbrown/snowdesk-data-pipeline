@@ -1297,6 +1297,113 @@
     }
 }
 
+/* SNOW-521: per-tier "Download basemap" icons — one small roundel per
+   breadcrumb tier (Major/Minor/Micro), the same frosted-glass shape as
+   .region-readout-action above but sized down (22px vs 26px) so three
+   can sit in a row beside the chip without crowding it. Hidden by
+   default (the `hidden` attribute in the template); map.js's
+   regionDownloadInit reveals each independently — micro whenever a
+   region is focused, major/minor mirroring the same crumb-visibility
+   rule .region-readout-crumbs already follows. */
+.region-readout-downloads {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.region-readout-download {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    padding: 0;
+    border-radius: 999px;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.75);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--border);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: box-shadow 120ms ease, background 120ms ease;
+}
+
+.region-readout-download[hidden] {
+    display: none;
+}
+
+.region-readout-download:hover,
+.region-readout-download:focus-visible {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+}
+
+/* over_ceiling — flagged server-side, never runnable. */
+.region-readout-download[data-download-state="disabled"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .region-readout-download {
+        transition: none;
+    }
+}
+
+/* Only the active state's icon renders; the percent readout is busy-only. */
+.region-readout-download-icon {
+    display: none;
+}
+
+.region-readout-download[data-download-state="idle"] .region-readout-download-icon--idle,
+.region-readout-download[data-download-state="disabled"] .region-readout-download-icon--idle,
+.region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy,
+.region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
+    display: block;
+}
+
+.region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy {
+    animation: region-readout-download-spin 900ms linear infinite;
+}
+
+@keyframes region-readout-download-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy {
+        animation: none;
+    }
+}
+
+.region-readout-download-percent {
+    display: none;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    margin-left: 1px;
+}
+
+.region-readout-download[data-download-state="busy"] .region-readout-download-percent {
+    display: inline;
+}
+
+/* Mobile: the text breadcrumb prefix hides below 640px (the block
+   above) — the major/minor icons lose their labelled context at the
+   same breakpoint, so they hide too; the micro icon (the leaf, always
+   labelled by the region name itself) stays. */
+@media (max-width: 640px) {
+    .region-readout-download[data-tier="major"],
+    .region-readout-download[data-tier="minor"] {
+        display: none !important;
+    }
+}
+
 /* Colour block leading the chip; the background is the EAWS danger colour for
    the scrubbed day, set inline by map.js (transparent when no_rating). */
 .region-readout-swatch {
