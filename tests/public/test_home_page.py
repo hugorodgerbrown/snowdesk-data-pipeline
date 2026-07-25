@@ -572,18 +572,7 @@ class TestHomePageReportButtonParity:
     Guards against the report context not being propagated into home().
     """
 
-    @override_flag("field_observations", active=False)
-    def test_report_button_absent_when_flag_off(self) -> None:
-        """No report button on the homepage when the flag is inactive."""
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        # SNOW-457: the map-help coachmark always references "#report-btn" as
-        # a step target selector, so a bare substring check would be a false
-        # positive here — assert on the button's own id attribute instead.
-        assert 'id="report-btn"' not in content
-
-    @override_flag("field_observations", active=True)
-    def test_report_button_shown_for_anonymous_with_flag(self) -> None:
+    def test_report_button_shown_for_anonymous(self) -> None:
         """Homepage shows the report button for anonymous users (parity with /map/)."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
@@ -596,7 +585,6 @@ class TestHomePageReportButtonParity:
         # sign-in CTA in place of the report form.
         assert "data-signin-url" in content
 
-    @override_flag("field_observations", active=True)
     def test_report_button_eligible_for_verified_account(self) -> None:
         """Homepage marks the button eligible for a logged-in, verified account.
 
@@ -611,7 +599,6 @@ class TestHomePageReportButtonParity:
         assert 'data-report-eligible="true"' in content
         assert 'data-report-unverified="false"' in content
 
-    @override_flag("field_observations", active=True)
     def test_report_button_unverified_for_unverified_account(self) -> None:
         """Homepage marks the button unverified for a logged-in, unverified user.
 
@@ -633,11 +620,8 @@ class TestFavouritesContext:
     """Unit tests for _favourites_context() (SNOW-414).
 
     Called directly (via RequestFactory) rather than through the full
-    home() round-trip so the {flag on/off} x {anon/auth} matrix is cheap
-    to exercise — mirrors the existing _default_region_label() unit tests
-    in TestDefaultRegionLabel above. django_db is required even for the
-    "build" (unsaved) cases: waffle.flag_is_active() queries the Flag
-    table regardless of override_flag's monkeypatched active state.
+    home() round-trip — mirrors the existing _default_region_label() unit
+    tests in TestDefaultRegionLabel above.
     """
 
     def _request(self, *, user: "AbstractBaseUser | AnonymousUser") -> HttpRequest:
@@ -645,30 +629,9 @@ class TestFavouritesContext:
         request.user = user  # type: ignore[assignment]
         return request
 
-    @override_flag("favourites", active=False)
-    def test_flag_off_anon_not_visible_not_eligible(self) -> None:
-        """Flag off + anonymous: neither visible nor eligible, no URLs."""
+    def test_anon_not_eligible(self) -> None:
+        """Anonymous: not eligible, but the URLs are always present (anon CTA)."""
         ctx = _favourites_context(self._request(user=AnonymousUser()))
-        assert ctx["favourites_visible"] is False
-        assert ctx["favourites_eligible"] is False
-        assert "favourites_geojson_url" not in ctx
-
-    @override_flag("favourites", active=False)
-    def test_flag_off_auth_not_visible_not_eligible(self) -> None:
-        """Flag off + authenticated: still neither visible nor eligible.
-
-        The flag gates the feature entirely, regardless of auth state.
-        """
-        account = AccountFactory.create()
-        ctx = _favourites_context(self._request(user=account.user))
-        assert ctx["favourites_visible"] is False
-        assert ctx["favourites_eligible"] is False
-
-    @override_flag("favourites", active=True)
-    def test_flag_on_anon_visible_not_eligible(self) -> None:
-        """Flag on + anonymous: visible (so the anon CTA can render), not eligible."""
-        ctx = _favourites_context(self._request(user=AnonymousUser()))
-        assert ctx["favourites_visible"] is True
         assert ctx["favourites_eligible"] is False
         assert ctx["favourites_geojson_url"] == reverse("favourites:geojson")
         assert ctx["favourite_create_url"] == reverse("favourites:create")
@@ -676,12 +639,10 @@ class TestFavouritesContext:
         assert "__UUID__" in ctx["favourite_rename_url_template"]
         assert "__UUID__" in ctx["favourite_delete_url_template"]
 
-    @override_flag("favourites", active=True)
-    def test_flag_on_auth_visible_and_eligible(self) -> None:
-        """Flag on + authenticated: both visible and eligible."""
+    def test_auth_eligible(self) -> None:
+        """Authenticated: eligible."""
         account = AccountFactory.create()
         ctx = _favourites_context(self._request(user=account.user))
-        assert ctx["favourites_visible"] is True
         assert ctx["favourites_eligible"] is True
 
 
@@ -689,21 +650,7 @@ class TestFavouritesContext:
 class TestHomePageFavouritesParity:
     """The favourites map controls render on / per SNOW-414's eligibility rules."""
 
-    @override_flag("favourites", active=False)
-    def test_favourite_controls_absent_when_flag_off(self) -> None:
-        """No Add-favourite control, overlay toggle, or #map data-* when the flag is off."""
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        # SNOW-457: the map-help coachmark always references
-        # "#favourite-add-btn" as a step target selector, so a bare
-        # substring check would be a false positive — assert on the
-        # button's own id attribute instead.
-        assert 'id="favourite-add-btn"' not in content
-        assert 'data-overlay-key="favourites"' not in content
-        assert "data-favourites-url" not in content
-
-    @override_flag("favourites", active=True)
-    def test_add_control_shown_for_anonymous_with_flag(self) -> None:
+    def test_add_control_shown_for_anonymous(self) -> None:
         """Anonymous visitors see the Add-favourite control (with a sign-in CTA)
         but not the overlay toggle (eligible-only) or the geojson URL.
         """
@@ -715,7 +662,6 @@ class TestHomePageFavouritesParity:
         assert 'data-overlay-key="favourites"' not in content
         assert "data-favourites-url" not in content
 
-    @override_flag("favourites", active=True)
     def test_add_control_and_overlay_eligible_for_account(self) -> None:
         """A logged-in account sees the Add control, the overlay toggle,
         and #map carries the per-user geojson URL.
@@ -735,10 +681,9 @@ class TestCommunityReportsContext:
     """Unit tests for _community_reports_context() (SNOW-419).
 
     Called directly (via RequestFactory) rather than through the full
-    home() round-trip — mirrors TestFavouritesContext above. Unlike
-    favourites there is no per-user eligibility split: the overlay shows
-    anonymised, publicly-shared data, so the flag alone controls
-    visibility regardless of authentication state.
+    home() round-trip — mirrors TestFavouritesContext above. There is no
+    per-user eligibility split: the overlay shows anonymised,
+    publicly-shared data to every request regardless of auth state.
     """
 
     def _request(self, *, user: "AbstractBaseUser | AnonymousUser") -> HttpRequest:
@@ -746,28 +691,17 @@ class TestCommunityReportsContext:
         request.user = user  # type: ignore[assignment]
         return request
 
-    @override_flag("community_reports", active=False)
-    def test_flag_off_not_visible_no_url(self) -> None:
-        """Flag off: not visible, no geojson URL, regardless of auth state."""
+    def test_url_present_for_anonymous(self) -> None:
+        """Anonymous: carries the geojson URL."""
         ctx = _community_reports_context(self._request(user=AnonymousUser()))
-        assert ctx["community_reports_visible"] is False
-        assert "community_reports_geojson_url" not in ctx
-
-    @override_flag("community_reports", active=True)
-    def test_flag_on_visible_with_url_for_anonymous(self) -> None:
-        """Flag on + anonymous: visible, carries the geojson URL."""
-        ctx = _community_reports_context(self._request(user=AnonymousUser()))
-        assert ctx["community_reports_visible"] is True
         assert ctx["community_reports_geojson_url"] == reverse(
             "api:community_reports_geojson"
         )
 
-    @override_flag("community_reports", active=True)
-    def test_flag_on_visible_with_url_for_authenticated(self) -> None:
-        """Flag on + authenticated: also visible — no eligibility gate."""
+    def test_url_present_for_authenticated(self) -> None:
+        """Authenticated: also carries the geojson URL — no eligibility gate."""
         account = AccountFactory.create()
         ctx = _community_reports_context(self._request(user=account.user))
-        assert ctx["community_reports_visible"] is True
         assert ctx["community_reports_geojson_url"] == reverse(
             "api:community_reports_geojson"
         )
@@ -777,18 +711,8 @@ class TestCommunityReportsContext:
 class TestHomePageCommunityReportsParity:
     """The community-reports map controls render on / per SNOW-419's rules."""
 
-    @override_flag("community_reports", active=False)
-    def test_controls_absent_when_flag_off(self) -> None:
-        """No overlay toggle or #map data-* when the flag is off."""
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        assert 'data-overlay-key="community_reports"' not in content
-        assert "data-community-reports-url" not in content
-        assert 'data-community-reports-eligible="false"' in content
-
-    @override_flag("community_reports", active=True)
-    def test_controls_shown_when_flag_on(self) -> None:
-        """Overlay toggle and #map geojson URL render when the flag is on."""
+    def test_controls_shown(self) -> None:
+        """Overlay toggle and #map geojson URL always render."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
         assert 'data-overlay-key="community_reports"' in content
