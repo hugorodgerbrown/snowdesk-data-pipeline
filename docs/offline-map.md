@@ -412,46 +412,52 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 `public/templates/public/partials/_map_embed.html`).
 
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
-SNOW-492) is now a **per-region** download, one icon per breadcrumb tier
-(Major/Minor/Micro) in the `#region-readout` chip
-(`#region-download-{major,minor,micro}`, `_season_ribbon.html`) —
-replacing SNOW-521's first-pass viewport-anchored docked bar
-(`#cache-now-toggle` / `#basemap-download-bar`), which required zooming
-in tight before the viewport was small enough to accept.
+SNOW-492) is a **single-region download** — one icon (`#region-download-micro`)
+for the focused MICRO (leaf) region in the `#region-readout` chip
+(`_season_ribbon.html`). This is the third and final shape of the SNOW-521
+rework: the first pass was a viewport-anchored docked bar
+(`#cache-now-toggle` / `#basemap-download-bar`), which required zooming in
+tight before the viewport was small enough to accept; the second pass added
+one icon per breadcrumb tier (Major/Minor/Micro), which was dropped because
+each tier's own shallower detail floor made the download size
+non-monotonic with containment (an L1 region could read smaller than an L2
+it contains) — read as a bug rather than a feature. The icon carries its
+own outcome (a green "available offline" circle on success) — there is no
+completion toast.
 
 Region boundaries are fixed reference data and the basemap tile grid is
 static, so each region's tile coverage never changes — it's
 **precomputed server-side** (`regions/services/basemap_tiles.py`,
 `manage.py compute_basemap_download`) rather than enumerated by the
-browser. See [`docs/map-and-api.md`](map-and-api.md) for the stored
-blob shape, the `properties.download` summary inlined on the geojson
-endpoints, and the `/api/region-basemap-tiles/` endpoint that serves
-the full blob (incl. tile ranges) on demand.
+browser, and only on `MicroRegion` — MajorRegion/SubRegion never carry a
+`basemap_download` field. See [`docs/map-and-api.md`](map-and-api.md) for
+the stored blob shape, the `properties.download` summary inlined on
+`regions.geojson`, and the `/api/region-basemap-tiles/` endpoint that
+serves the full blob (incl. tile ranges) on demand.
 
-**Show/size** — `static/js/map.js`'s `regionDownloadInit` reads each
-tier's summary straight off `FEATURE_BY_REGION_ID[regionId].properties.
+**Show/size** — `static/js/map.js`'s `regionDownloadInit` reads the
+region's summary straight off `FEATURE_BY_REGION_ID[regionId].properties.
 download` (already loaded via `regions.geojson` — no extra fetch): the
-micro icon whenever a region is focused, major/minor mirroring the same
-`overlayVisible.l1/l2` crumb-visibility rule the text breadcrumb
-follows. A tier flagged `over_ceiling` (a per-tier 200 MB backstop
-against a pathological outlier region) shows a `disabled` icon rather
-than starting an unbounded run.
+icon is visible whenever a region is focused, independent of which
+overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling` (a
+200 MB backstop against a pathologically large micro-region) shows a
+`disabled` icon rather than starting an unbounded run.
 
-**State** — `data-download-state` on each icon: `idle` (arrow, size in
-the tooltip), `busy` (spinner + live percentage), `done` (check),
-`disabled`. `idle`/`done` are derived from a real `BASEMAP_PINNED_CACHE`
-probe (`static/js/basemap_download_core.js`'s `centreTileURL` against
-the tier's `centre_tile`) every time an icon is (re)shown — never a
+**State** — `data-download-state` on the icon: `idle` (arrow, size in
+the tooltip), `busy` (bottom-up fill of the roundel, driven by a
+`--download-progress` CSS custom property — `static/css/map.css`),
+`done` (solid green circle + tick), `disabled`. `idle`/`done` are
+derived from a real `BASEMAP_PINNED_CACHE` probe
+(`static/js/basemap_download_core.js`'s `centreTileURL` against the
+region's `centre_tile`) every time the icon is (re)shown — never a
 stored flag, so a reselected region reads its true cache state, and a
 region that was downloaded in an earlier session still reads `done`
 after a reload.
 
 **Download**, on clicking an `idle` icon:
 
-1. `map.js` fetches the tier's full blob from
-   `/api/region-basemap-tiles/?id=<tier region_id>` (the region's own id
-   for micro; the ancestor `region_id` denormalised onto
-   `properties.download.{minor,major}` for the other two tiers).
+1. `map.js` fetches the region's full blob from
+   `/api/region-basemap-tiles/?id=<region_id>`.
 2. `static/js/basemap_download_core.js`'s `rangesToTileURLs` expands the
    blob's `z` tile-index ranges into `{z}/{x}/{y}` URLs against the
    active basemap's resolved tile template
@@ -478,19 +484,13 @@ after a reload.
    aborts the rest.
 6. `sw.js` posts a `warm-cache-progress` message (n/total) on every
    throttled batch. `sw_register.js` forwards these to `map.js` (which
-   updates the clicked icon's live percentage) and rearms the
-   30-second silence timeout on each tick, so a large download spanning
-   more than 30 seconds is never cut short as long as it keeps making
-   progress.
-7. On completion, the icon flips to `done` (complete) or reverts to
-   `idle` (partial/failed/vacuous — the user can retry), and exactly
-   one of three toasts is revealed based on the `{ok, failed}` counts:
-   - `#map-cache-now-toast-complete` ("Basemap downloaded — this area is
-     now available offline.") when every URL cached.
-   - `#map-cache-now-toast-partial` ("Basemap partly downloaded — some
-     tiles couldn't be saved.") when some succeeded and some failed.
-   - `#map-cache-now-toast-failed` ("Couldn't download the basemap —
-     check your connection and try again.") when none cached.
+   updates the icon's live bottom-up fill) and rearms the 30-second
+   silence timeout on each tick, so a large download spanning more than
+   30 seconds is never cut short as long as it keeps making progress.
+7. On completion, the icon flips to `done` (a clean, non-vacuous
+   success — at least one URL cached and none failed) or reverts to
+   `idle` (partial/failed/vacuous — the user can retry). No toast is
+   shown either way; the icon's own state is the only feedback.
 
 `_basemapStaleWhileRevalidate` (ordinary passive browsing) reads
 `BASEMAP_PINNED_CACHE` as a read-only fallback on a `BASEMAP_CACHE` miss, so
@@ -700,19 +700,24 @@ underlying PNGs.
   cold-boot fallback; a genuine style-load failure still does),
   favourites/community-reports offline install + expiry-on-read-back,
   the per-overlay "unavailable offline" toast, and `window.pwaWarmCache`
-  / the per-region "Download basemap" icons. See that file's module
+  / the single-region "Download basemap" icon. See that file's module
   docstring for which parts deliberately avoid the real basemap CDN (documented
   elsewhere as flaky/unreachable in this harness — see
   `tests/e2e/test_offline_basemap_cache.py`) and which offline-mutation
   scenarios are already covered by `test_offline_favourite_submit.py` /
   `test_offline_observation_submit.py` rather than duplicated here.
 - `tests/e2e/test_cache_this_area.py` (SNOW-492, SNOW-493, SNOW-521
-  rework, `tox -e e2e`) — the per-region download icons' full flow: the
-  micro icon's idle→busy→done transitions and completion toast; a
-  visible minor/major crumb icon downloading its own tier; a
-  reselected region reading `done` from real `BASEMAP_PINNED_CACHE`
-  state rather than in-page memory; and the complete/partial/failed/
-  vacuous toast branches.
+  final shape, `tox -e e2e`) — the micro download icon's full flow:
+  idle→busy→done transitions with no toast (the icon carries the
+  outcome); a reselected region reading `done` from real
+  `BASEMAP_PINNED_CACHE` state rather than in-page memory; the
+  `over_ceiling` disabled state; and the partial/failed/vacuous
+  `{ok, failed}` branches reverting to idle rather than done.
+- `tests/e2e/test_layers_menu_removed_items.py` (SNOW-521, `tox -e
+  e2e`) — a real layers-menu open asserting the three items dropped
+  alongside the download rework (`[data-overlay-key="l3"]`,
+  `#autozoom-toggle`, `#basemap-sync-status`) are absent from the live
+  DOM and the menu still functions.
 - `tests/core/test_sw_shell.py` (SNOW-517) — `read_cache_version()` /
   `next_version()` parsing, `compute_shell_hash()` / `bump_owed()`
   against a throwaway shell tree, and the chicken-and-egg guard (a
