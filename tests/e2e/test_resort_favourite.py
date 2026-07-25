@@ -19,6 +19,10 @@ injects it into the page, then drives the star exactly as a user tapping it
 inside the real popup would. This is deterministic, needs no WebGL frame,
 and still exercises the real template + the real ``[data-resort-star]``
 delegated handler in ``static/js/favourites.js``.
+
+``test_resort_popup_renders_rich_metadata`` (SNOW-501) reuses the same
+injection technique to assert the popup's curated metadata rows (operator,
+lift count, typical season) reach the DOM for a fully-populated resort.
 """
 
 from __future__ import annotations
@@ -246,3 +250,37 @@ def test_favourited_resort_returns_to_resort_layer_when_favourites_hidden(
         }""",
         arg=resort.pk,
     )
+
+
+@override_flag("favourites", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_resort_popup_renders_rich_metadata(
+    favourites_page: FavouritesPage, django_db_blocker: Any
+) -> None:
+    """SNOW-501: the injected popup renders curated metadata for a populated resort.
+
+    Reuses ``_inject_resort_popup`` (the real ``api:resort_popup`` partial,
+    landed in a plain host ``<div>``) to assert the operator name, a lift
+    count, and the formatted typical-season text all reach the DOM — the
+    same rendering path SNOW-499's favourite-star tests already exercise.
+    """
+    with django_db_blocker.unblock():
+        resort = ResortFactory.create(
+            name="Verbier",
+            latitude=46.1,
+            longitude=7.4,
+            operator_name="Téléverbier SA",
+            num_lifts=25,
+            typical_season_open="12-01",
+            typical_season_close="04-30",
+        )
+
+    page = favourites_page.page
+    _navigate_home(page, favourites_page.live_server_url)
+    _inject_resort_popup(page, favourites_page.live_server_url, resort.pk)
+
+    host_text = page.locator("#e2e-resort-popup-host").inner_text()
+    assert "Téléverbier SA" in host_text
+    assert "25" in host_text
+    assert "1 Dec" in host_text
+    assert "30 Apr" in host_text

@@ -16,11 +16,13 @@ The filter returns ``None`` on any parse failure so that downstream filters
 
 Also provides ``danger_level_key`` / ``danger_level_label`` for integer→string
 mapping and ``danger_level_digit`` for rating-key→display-digit mapping (used
-by the region tooltip danger chip).
+by the region tooltip danger chip), and ``month_day`` for parsing a
+``MM-DD`` string (``Resort.typical_season_open/close``) into a ``date`` on a
+fixed anchor year, for the resort popup's season row (SNOW-501).
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from django import template
@@ -64,6 +66,41 @@ def parse_iso(value: str | None) -> datetime | None:
         return dt
     except ValueError, AttributeError:
         logger.debug("parse_iso: could not parse %r", value)
+        return None
+
+
+@register.filter
+def month_day(value: str | None) -> date | None:
+    """
+    Parse a ``MM-DD`` string (e.g. ``Resort.typical_season_open``) into a ``date``.
+
+    A fixed non-leap year (2001) anchors the date so Django's ``date``
+    filter can format it without needing a real season year attached.
+    Returns ``None`` for ``None`` input, empty strings, or any value that
+    cannot be parsed — so downstream ``|default`` filters degrade
+    gracefully, mirroring ``parse_iso``.
+
+    Usage::
+
+        {{ resort.typical_season_open|month_day|date:"j M" }}
+
+    Args:
+        value: A ``MM-DD`` string, or ``None``.
+
+    Returns:
+        A ``date`` in the fixed anchor year 2001, or ``None`` on failure.
+
+    """
+    if not value:
+        return None
+    try:
+        # The anchor year is baked into the parsed string itself (rather than
+        # parsed with a bare "%m-%d" format) — a year-less strptime is
+        # ambiguous about leap days and is deprecated as of Python 3.14.
+        parsed = datetime.strptime(f"2001-{value.strip()}", "%Y-%m-%d")
+        return parsed.date()
+    except ValueError, AttributeError:
+        logger.debug("month_day: could not parse %r", value)
         return None
 
 
