@@ -20,7 +20,7 @@ by the region tooltip danger chip).
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from django import template
@@ -64,6 +64,38 @@ def parse_iso(value: str | None) -> datetime | None:
         return dt
     except ValueError, AttributeError:
         logger.debug("parse_iso: could not parse %r", value)
+        return None
+
+
+@register.filter
+def month_day(value: str | None) -> date | None:
+    """
+    Parse a ``MM-DD`` string (e.g. ``Resort.typical_season_open``) into a ``date``.
+
+    A fixed non-leap year (2001) anchors the date so Django's ``date``
+    filter can format it without needing a real season year attached.
+    Returns ``None`` for ``None`` input, empty strings, or any value that
+    cannot be parsed — so downstream ``|default`` filters degrade
+    gracefully, mirroring ``parse_iso``.
+
+    Usage::
+
+        {{ resort.typical_season_open|month_day|date:"j M" }}
+
+    Args:
+        value: A ``MM-DD`` string, or ``None``.
+
+    Returns:
+        A ``date`` in the fixed anchor year 2001, or ``None`` on failure.
+
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(value.strip(), "%m-%d")
+        return date(2001, parsed.month, parsed.day)
+    except ValueError, AttributeError:
+        logger.debug("month_day: could not parse %r", value)
         return None
 
 
