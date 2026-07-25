@@ -206,3 +206,10 @@ class TestMonthDay:
     def test_non_string_input_returns_none(self) -> None:
         """A non-string value triggers ``AttributeError`` and returns ``None``."""
         assert month_day(123) is None  # type: ignore[arg-type]
+
+    def test_leap_day_returns_none(self) -> None:
+        """``02-29`` is a valid MONTH_DAY_VALIDATOR string but doesn't exist in
+        the fixed non-leap anchor year 2001 — the resort popup falls back to
+        the season placeholder for this half (SNOW-501 review finding #5).
+        """
+        assert month_day("02-29") is None

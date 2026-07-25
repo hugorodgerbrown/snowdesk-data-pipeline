@@ -951,6 +951,45 @@ def test_resort_popup_blank_metadata_non_staff_shows_em_dash_placeholder() -> No
 
 
 @pytest.mark.django_db
+def test_resort_popup_zero_lifts_renders_zero_not_placeholder() -> None:
+    """SNOW-501 review: a real stored 0 is a value, not a blank field."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4, num_lifts=0)
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert ">0<" in html
+    assert "Add lift count" not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_unparseable_season_half_shows_placeholder() -> None:
+    """SNOW-501 review: an unparseable season half falls to the placeholder.
+
+    ``MONTH_DAY_VALIDATOR`` permits "02-29" (there is no 30-Feb check at the
+    model layer) but ``month_day`` can't resolve it against the fixed
+    non-leap anchor year — the season row must show the placeholder rather
+    than a degenerate half-range like "-30 Apr".
+    """
+    resort = ResortFactory.create(
+        latitude=46.1,
+        longitude=7.4,
+        typical_season_open="02-29",
+        typical_season_close="04-30",
+    )
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert "30 Apr" not in html
+    assert _PLACEHOLDER_CLASS in html
+
+
+@pytest.mark.django_db
 def test_region_summary_emits_freshness_headers() -> None:
     """SNOW-370: tooltip response carries the three freshness headers."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH")
