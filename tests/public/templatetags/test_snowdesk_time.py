@@ -5,15 +5,17 @@ tests/public/templatetags/test_snowdesk_time.py — Tests for the
 Covers ``parse_iso`` (Z-suffix and explicit-offset normalisation, naive
 fallback to UTC, falsy / malformed input), the integer→string mapping
 filters ``danger_level_key`` / ``danger_level_label`` (full 1–5 range
-plus the falsy / out-of-range / non-int guards), and the rating-key→digit
-filter ``danger_level_digit`` used by the region tooltip chip.
+plus the falsy / out-of-range / non-int guards), the rating-key→digit
+filter ``danger_level_digit`` used by the region tooltip chip, and
+``month_day`` (SNOW-501: ``Resort.typical_season_open/close`` ``MM-DD``
+strings → ``date`` for the resort popup's season row).
 
 All datetime literals carry ``tzinfo`` per the project test conventions.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pytest
@@ -22,6 +24,7 @@ from public.templatetags.snowdesk_time import (
     danger_level_digit,
     danger_level_key,
     danger_level_label,
+    month_day,
     parse_iso,
 )
 
@@ -177,3 +180,36 @@ class TestDangerLevelLabel:
     def test_non_int_returns_empty(self, level: Any) -> None:
         """Non-numeric inputs hit the ``except`` clause and return ""."""
         assert danger_level_label(level) == ""
+
+
+class TestMonthDay:
+    """Tests for the ``month_day`` template filter (SNOW-501)."""
+
+    def test_valid_month_day_parsed(self) -> None:
+        """A well-formed ``MM-DD`` string parses to the fixed anchor year 2001."""
+        assert month_day("12-01") == date(2001, 12, 1)
+
+    def test_end_of_february_parsed(self) -> None:
+        """``02-28`` parses cleanly against the fixed non-leap anchor year."""
+        assert month_day("02-28") == date(2001, 2, 28)
+
+    @pytest.mark.parametrize("falsy", [None, ""])
+    def test_falsy_input_returns_none(self, falsy: str | None) -> None:
+        """``None`` and the empty string short-circuit to ``None``."""
+        assert month_day(falsy) is None
+
+    @pytest.mark.parametrize("malformed", ["13-40", "xx", "not-a-date", "2001-12-01"])
+    def test_malformed_input_returns_none(self, malformed: str) -> None:
+        """Unparseable strings fall through the except clause to ``None``."""
+        assert month_day(malformed) is None
+
+    def test_non_string_input_returns_none(self) -> None:
+        """A non-string value triggers ``AttributeError`` and returns ``None``."""
+        assert month_day(123) is None  # type: ignore[arg-type]
+
+    def test_leap_day_returns_none(self) -> None:
+        """``02-29`` is a valid MONTH_DAY_VALIDATOR string but doesn't exist in
+        the fixed non-leap anchor year 2001 — the resort popup falls back to
+        the season placeholder for this half (SNOW-501 review finding #5).
+        """
+        assert month_day("02-29") is None

@@ -820,8 +820,16 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     The ``html`` key is a server-rendered snippet injected into a
     ``maplibregl.Popup`` on ``/map/`` when a resort pin is tapped (SNOW-499),
     mirroring ``region_summary``'s ``{"html": ...}`` shape. Content: resort
-    name (+ alternative name), parent region name, a favourite/unfavourite
-    star, and a "View resort →" link.
+    name (+ alternative name), parent region name, curated metadata rows
+    (operator, website, lift/run counts, piste length, elevation range,
+    typical season — SNOW-501), a favourite/unfavourite star, and a
+    "View resort →" link.
+
+    SNOW-501: every metadata row always renders, even when the underlying
+    field is blank — a blank field shows a dashed-box placeholder rather
+    than being omitted, so missing curation stays visible. ``is_staff`` in
+    the render context switches that placeholder from a public em-dash to
+    an explicit "Add <field>" curation hint.
 
     Unlike ``region_summary``, this endpoint is **public** — resorts are a
     public reference layer, so anonymous visitors see the same name/region/
@@ -876,6 +884,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
                     "can_favourite": can_favourite,
                     "signin_url": reverse("accounts:sign_in"),
                     "resort_url": resort.get_absolute_url(),
+                    "is_staff": request.user.is_staff,
                 },
                 request=request,
             ),

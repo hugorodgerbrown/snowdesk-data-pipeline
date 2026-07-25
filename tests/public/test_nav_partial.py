@@ -78,11 +78,41 @@ class TestNavAdminMenu:
 
 @pytest.mark.django_db
 class TestNavObservationsLink:
-    """SNOW-476: the Observations link always renders in the nav."""
+    """The Observations link was removed from the nav (menu cleanup, #497)."""
 
-    def test_link_present(self, rf: RequestFactory) -> None:
-        """The link is present for every viewer."""
+    def test_link_absent(self, rf: RequestFactory) -> None:
+        """The link is absent for every viewer."""
         request = rf.get("/")
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert reverse("public:observations") in html
+        assert reverse("public:observations") not in html
+
+
+@pytest.mark.django_db
+class TestNavAuthArea:
+    """The unauthenticated auth area shows a single "Sign in" button."""
+
+    def test_anonymous_sees_sign_in_button(self, rf: RequestFactory) -> None:
+        """Anonymous users see a "Sign in" link to the sign-in page..."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:sign_in") in html
+        assert "Sign in" in html
+
+    def test_anonymous_sees_no_register_link(self, rf: RequestFactory) -> None:
+        """...and no standalone Register link (registration lives on sign-in)."""
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:register") not in html
+
+    def test_authenticated_sees_my_account_link(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Authenticated users see the "My account" menu item."""
+        request = rf.get("/")
+        request.user = regular_user
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert reverse("accounts:manage") in html
+        assert "My account" in html
