@@ -1312,6 +1312,8 @@
 }
 
 .region-readout-download {
+    position: relative;
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1352,45 +1354,62 @@
     }
 }
 
-/* Only the active state's icon renders; the percent readout is busy-only. */
+/* Only the active state's icon renders; it sits above the busy fill. The
+   busy state keeps the download glyph (static) and shows progress as a
+   bottom-up fill of the roundel (below), not a numeric percentage. */
 .region-readout-download-icon {
     display: none;
+    position: relative;
+    z-index: 1;
 }
 
 .region-readout-download[data-download-state="idle"] .region-readout-download-icon--idle,
 .region-readout-download[data-download-state="disabled"] .region-readout-download-icon--idle,
-.region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy,
+.region-readout-download[data-download-state="busy"] .region-readout-download-icon--idle,
 .region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
     display: block;
 }
 
-.region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy {
-    animation: region-readout-download-spin 900ms linear infinite;
+/* Busy/done: the roundel fills from the bottom with --color-sync-ok — the
+   SAME green the layers-menu "available offline" sync dot uses — so the
+   download speaks one visual language with the cache dashboard. During a
+   run the fill rises to --download-progress (set by map.js on each
+   warm-cache tick), replacing the numeric percentage; a completed download
+   is a full green circle (below) with the check glyph on top, mirroring the
+   green dot. Clipped to the circle by the host's overflow:hidden. */
+.region-readout-download[data-download-state="busy"]::before,
+.region-readout-download[data-download-state="done"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--download-progress, 0%);
+    background: var(--color-sync-ok);
+    z-index: 0;
+    transition: height 220ms ease;
 }
 
-@keyframes region-readout-download-spin {
-    to {
-        transform: rotate(360deg);
-    }
+/* Done: the fill is pinned full — a solid green circle matching the dot. */
+.region-readout-download[data-download-state="done"]::before {
+    height: 100%;
+}
+
+/* White tick on the green fill (the glyph strokes currentColor). */
+.region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
+    color: #fff;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .region-readout-download[data-download-state="busy"] .region-readout-download-icon--busy {
-        animation: none;
+    .region-readout-download[data-download-state="busy"]::before,
+    .region-readout-download[data-download-state="done"]::before {
+        transition: none;
     }
 }
 
+/* The numeric percentage is replaced by the fill above; kept out of view. */
 .region-readout-download-percent {
     display: none;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 9px;
-    font-weight: 600;
-    line-height: 1;
-    margin-left: 1px;
-}
-
-.region-readout-download[data-download-state="busy"] .region-readout-download-percent {
-    display: inline;
 }
 
 /* Mobile: the text breadcrumb prefix hides below 640px (the block

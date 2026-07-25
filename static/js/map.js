@@ -4645,8 +4645,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   const ribbonEl = document.getElementById('season-ribbon');
 
-  const TIER_LABELS = { major: 'Major', minor: 'Minor', micro: 'Micro' };
-
   // caches.keys() prefix match (not a hardcoded full cache name) so a
   // sw.js version bump of the pinned cache's own suffix never breaks
   // this probe — same rationale as map_layer_sync_status.js's
@@ -4654,12 +4652,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // ordinary passive-browsing tile caching must never read as "this
   // region was deliberately downloaded".
   const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
-
-  const TOAST_IDS = {
-    complete: 'map-cache-now-toast-complete',
-    partial: 'map-cache-now-toast-partial',
-    failed: 'map-cache-now-toast-failed',
-  };
 
   const overlayVisible = {
     l1: readBoolStorage('snowdesk.map.overlay.l1', false),
@@ -4729,14 +4721,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const btn = buttons[tier];
     if (!btn) return;
     btn.dataset.downloadState = state;
-    const percentEl = btn.querySelector('.region-readout-download-percent');
-    if (percentEl) percentEl.textContent = state === 'busy' ? `${pct || 0}%` : '';
-    const label = TIER_LABELS[tier];
+    // Busy progress renders as a bottom-up fill of the roundel (map.css),
+    // driven by --download-progress rather than a numeric readout.
+    if (state === 'busy') {
+      btn.style.setProperty('--download-progress', `${pct || 0}%`);
+    } else {
+      btn.style.removeProperty('--download-progress');
+    }
+    // Only the micro (leaf) region is downloadable, so the copy is
+    // tier-agnostic — "this region" rather than naming the tier.
     const text = {
-      idle: `Download ${label} region basemap — up to ${mb} MB`,
-      busy: `Downloading ${label} region basemap — ${pct || 0}%`,
-      done: `${label} region basemap downloaded — available offline`,
-      disabled: `${label} region basemap is too large to download`,
+      idle: `Download this region's basemap — up to ${mb} MB`,
+      busy: `Downloading this region's basemap — ${pct || 0}%`,
+      done: `This region's basemap is downloaded — available offline`,
+      disabled: `This region's basemap is too large to download`,
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
@@ -4879,24 +4877,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     };
 
     const finish = (result) => {
-      if (!result) {
-        setState(tier, 'idle', data.summary.mb);
-        return;
-      }
-      // SNOW-493 finding 7: branch the completion toast on the actual
-      // {ok, failed} counts — "complete" requires at least one success
-      // as well as no failures; a partial or vacuous run reverts the
-      // icon to idle (so the user can retry) rather than claiming
-      // "downloaded".
-      if (result.ok > 0 && result.failed === 0) {
+      // The icon itself now carries the outcome — no toast. "done" (the
+      // green offline circle) requires at least one success and no
+      // failures; a partial, vacuous, or absent result reverts to idle so
+      // the user can retry, rather than claiming the region is downloaded.
+      if (result && result.ok > 0 && result.failed === 0) {
         setState(tier, 'done', data.summary.mb);
-        _showToast(TOAST_IDS.complete);
-      } else if (result.ok > 0) {
-        setState(tier, 'idle', data.summary.mb);
-        _showToast(TOAST_IDS.partial);
       } else {
         setState(tier, 'idle', data.summary.mb);
-        _showToast(TOAST_IDS.failed);
       }
       // SNOW-505: the warm-cache run has just warmed the shell + pinned
       // basemap caches (the SW's warm-cache handler awaits its
@@ -4914,14 +4902,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       window.pwaWarmCache(urls, { pinned: true, onProgress }).then(finish).catch(() => finish(null));
     } else {
       finish(null);
-    }
-  }
-
-  function _showToast(id) {
-    const toast = document.getElementById(id);
-    if (toast) {
-      toast.classList.remove('hidden');
-      toast.classList.add('flex');
     }
   }
 
