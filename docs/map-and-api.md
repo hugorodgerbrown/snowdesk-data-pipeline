@@ -1,6 +1,6 @@
 ---
 name: map-and-api
-description: / (public:home) MapLibre choropleth, scrubber, favourites/community-reports overlays, /api/ endpoints (ratings, geojson, summary, groupings)
+description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, region-basemap-tiles)
 status: current
 last-reviewed: 2026-07-25
 ---
@@ -147,12 +147,41 @@ appeared first.
 | `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). Cold open uses `?d=<today>&country=ch` (~2 KB); first scrubber interaction uses `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review` |
-| `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name` |
-| `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
-| `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
+| `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name`, plus `properties.download` (SNOW-521 — see below) when any tier has a precomputed offline-basemap size. |
+| `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`, plus `properties.download` (SNOW-521) when computed. |
+| `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`, plus `properties.download` (SNOW-521) when computed. |
+| `GET /api/region-basemap-tiles/?id=<region_id>` | `api:region_basemap_tiles` | The full precomputed `basemap_download` blob (incl. `z` tile-index ranges) for one region, resolved across all three tiers (`MicroRegion.region_id`, then `SubRegion.prefix`, then `MajorRegion.prefix`). 400 on a missing `?id=`; 404 for an unknown id or a region with no computed blob yet. Fetched on demand — see [`offline-map.md`](offline-map.md#offline-overlay-caches--download-basemap-snow-492-snow-521) for the full per-region download flow. |
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. |
 | `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings", `data-overlay-key="l3"`) now fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, floored to the nearest 15 min), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
+
+**Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
+the three geojson endpoints above is a small summary
+(`{count, mb, over_ceiling, centre_tile}`) projected from each region's
+precomputed `basemap_download` field
+(`regions/services/basemap_tiles.py`, populated by
+`manage.py compute_basemap_download`) — never computed at request time,
+since region geometry and the basemap tile grid are both static. The L4
+(`regions.geojson`) response additionally denormalises its parent
+minor/major ancestors' summaries onto each feature, tagged with their
+own `region_id`, so the `#region-readout` breadcrumb's three download
+icons (one per tier) have every tier's data from the single
+always-loaded payload:
+
+```json
+"download": {
+  "micro": {"count": 329, "mb": 33, "over_ceiling": false, "centre_tile": {...}},
+  "minor": {"region_id": "CH-41", "count": 512, "mb": 51, ...},
+  "major": {"region_id": "CH-4",  "count": 379, "mb": 37, ...}
+}
+```
+
+Each of `micro`/`minor`/`major` (and the whole `download` key on L1/L2)
+is omitted when that tier has no computed blob yet. The full blob
+(incl. the `z` tile-index ranges the client expands into tile URLs) is
+only fetched — via `region-basemap-tiles` above — when the user clicks
+a download icon. See [`offline-map.md`](offline-map.md) for the full
+client-side download flow.
 
 The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
 `regions.geojson?country=ch` in parallel. Once both resolve, it calls

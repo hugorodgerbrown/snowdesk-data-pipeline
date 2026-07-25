@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, icons, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE tile caching
+description: PWA shell — sw.js, /api/sw-config, kill switch A/B, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, per-region "Download basemap" icons
 status: current
 last-reviewed: 2026-07-25
 ---
@@ -412,71 +412,106 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 `public/templates/public/partials/_map_embed.html`).
 
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
-SNOW-492) — a two-step command in the map's Options menu (`#cache-now-toggle`).
-Clicking opens a docked bar (`#basemap-download-bar`) rather than firing a
-download immediately.
+SNOW-492) is now a **per-region** download, one icon per breadcrumb tier
+(Major/Minor/Micro) in the `#region-readout` chip
+(`#region-download-{major,minor,micro}`, `_season_ribbon.html`) —
+replacing SNOW-521's first-pass viewport-anchored docked bar
+(`#cache-now-toggle` / `#basemap-download-bar`), which required zooming
+in tight before the viewport was small enough to accept.
 
-**Framing phase** — while the bar is visible and before the user commits:
+Region boundaries are fixed reference data and the basemap tile grid is
+static, so each region's tile coverage never changes — it's
+**precomputed server-side** (`regions/services/basemap_tiles.py`,
+`manage.py compute_basemap_download`) rather than enumerated by the
+browser. See [`docs/map-and-api.md`](map-and-api.md) for the stored
+blob shape, the `properties.download` summary inlined on the geojson
+endpoints, and the `/api/region-basemap-tiles/` endpoint that serves
+the full blob (incl. tile ranges) on demand.
 
-- On every `moveend`, `map.js`'s `computeBasemapTileURLs` calls
-  `static/js/basemap_download_core.js`'s `enumerateTileURLs` to count tiles
-  covering the current viewport across a zoom band:
-  `minZ = max(0, round(z) − 1)` (one level shallower than the current zoom)
-  and `maxZ = min(20, max(round(z), 14))` — the z14 detail floor ensures a
-  download always covers street/piste-label detail even from a zoomed-out view.
-- The live estimate is `tile count × BASEMAP_WORST_CASE_BYTES_PER_TILE (100 KB)`
-  — pure tile arithmetic, no network requests on move. `formatUpToMB` rounds
-  the byte total up to the nearest whole MB, so the "up to N MB" readout in
-  `#basemap-download-estimate` never under-reports.
-- When the estimate exceeds `BASEMAP_DOWNLOAD_CEILING_MB` (200 MB), the Download
-  button is disabled and the bar reads "Area too large — zoom in to download".
-  Cancel dismisses the bar with no fetch.
+**Show/size** — `static/js/map.js`'s `regionDownloadInit` reads each
+tier's summary straight off `FEATURE_BY_REGION_ID[regionId].properties.
+download` (already loaded via `regions.geojson` — no extra fetch): the
+micro icon whenever a region is focused, major/minor mirroring the same
+`overlayVisible.l1/l2` crumb-visibility rule the text breadcrumb
+follows. A tier flagged `over_ceiling` (a per-tier 200 MB backstop
+against a pathological outlier region) shows a `disabled` icon rather
+than starting an unbounded run.
 
-**Download phase** — after clicking **Download**:
+**State** — `data-download-state` on each icon: `idle` (arrow, size in
+the tooltip), `busy` (spinner + live percentage), `done` (check),
+`disabled`. `idle`/`done` are derived from a real `BASEMAP_PINNED_CACHE`
+probe (`static/js/basemap_download_core.js`'s `centreTileURL` against
+the tier's `centre_tile`) every time an icon is (re)shown — never a
+stored flag, so a reselected region reads its true cache state, and a
+region that was downloaded in an earlier session still reads `done`
+after a reload.
 
-1. `map.js` assembles the URL list: same-origin data feeds in sw.js's
-   `STATIC_PATHS` (regions/major-regions/sub-regions/resorts/ratings), the
-   active basemap's style JSON + sprite JSON/PNG (1×/2×), and the vector tile
-   URLs for the current viewport. Glyph PBFs are deliberately excluded (MapLibre
-   only requests the specific glyph ranges the current labels use, and those are
-   almost always already in `BASEMAP_CACHE` from ordinary browsing). Favourites
-   and community-reports are also excluded — both are `network`-classified in
-   sw.js, so the SW never reads back whatever this would write; their offline
-   availability is handled by the `data:map_overlays` write-through above.
-2. `map.js` posts `{ type: 'warm-cache', urls, pinned: true }` to the SW via
-   `window.pwaWarmCache` (`opts.pinned = true` is new in SNOW-521).
-3. `sw.js`'s `_warmCache` handler writes basemap-origin resources into
+**Download**, on clicking an `idle` icon:
+
+1. `map.js` fetches the tier's full blob from
+   `/api/region-basemap-tiles/?id=<tier region_id>` (the region's own id
+   for micro; the ancestor `region_id` denormalised onto
+   `properties.download.{minor,major}` for the other two tiers).
+2. `static/js/basemap_download_core.js`'s `rangesToTileURLs` expands the
+   blob's `z` tile-index ranges into `{z}/{x}/{y}` URLs against the
+   active basemap's resolved tile template
+   (`activeBasemapTileTemplate(MAP)`).
+3. `map.js` assembles the rest of the URL list: same-origin data feeds
+   in sw.js's `STATIC_PATHS` (regions/major-regions/sub-regions/
+   resorts/ratings, one per currently-enabled country), the active
+   basemap's style JSON + sprite JSON/PNG (1×/2×). Glyph PBFs are
+   deliberately excluded (MapLibre only requests the specific glyph
+   ranges the current labels use, and those are almost always already
+   in `BASEMAP_CACHE` from ordinary browsing). Favourites and
+   community-reports are also excluded — both are `network`-classified
+   in sw.js, so the SW never reads back whatever this would write;
+   their offline availability is handled by the `data:map_overlays`
+   write-through above.
+4. `map.js` posts `{ type: 'warm-cache', urls, pinned: true }` to the SW
+   via `window.pwaWarmCache`.
+5. `sw.js`'s `_warmCache` handler writes basemap-origin resources into
    `BASEMAP_PINNED_CACHE` (`snowdesk-basemap-pinned-v1`,
    cap `BASEMAP_PINNED_CACHE_MAX_ENTRIES`) rather than the passive
-   `BASEMAP_CACHE`, shielding the deliberate download from the ordinary LRU
-   trim. Same-origin data feeds still go into the shell `CACHE_VERSION` cache.
-   Every URL is independent; one failure never aborts the rest.
-4. `sw.js` posts a `warm-cache-progress` message (n/total) on every throttled
-   batch. `sw_register.js` forwards these to `map.js` (which updates the bar's
-   estimate span to a live n/total readout) and rearms the 30-second silence
-   timeout on each tick, so a large download spanning more than 30 seconds is
-   never cut short as long as it keeps making progress.
-5. On completion, exactly one of three toasts is revealed based on the
-   `{ok, failed}` counts:
-   - `#map-cache-now-toast-complete` ("Basemap downloaded — this area is now
-     available offline.") when every URL cached.
-   - `#map-cache-now-toast-partial` ("Basemap partly downloaded — some tiles
-     couldn't be saved.") when some succeeded and some failed.
-   - `#map-cache-now-toast-failed` ("Couldn't download the basemap — check your
-     connection and try again.") when none cached.
+   `BASEMAP_CACHE`, shielding the deliberate download from the ordinary
+   LRU trim. Same-origin data feeds still go into the shell
+   `CACHE_VERSION` cache. Every URL is independent; one failure never
+   aborts the rest.
+6. `sw.js` posts a `warm-cache-progress` message (n/total) on every
+   throttled batch. `sw_register.js` forwards these to `map.js` (which
+   updates the clicked icon's live percentage) and rearms the
+   30-second silence timeout on each tick, so a large download spanning
+   more than 30 seconds is never cut short as long as it keeps making
+   progress.
+7. On completion, the icon flips to `done` (complete) or reverts to
+   `idle` (partial/failed/vacuous — the user can retry), and exactly
+   one of three toasts is revealed based on the `{ok, failed}` counts:
+   - `#map-cache-now-toast-complete` ("Basemap downloaded — this area is
+     now available offline.") when every URL cached.
+   - `#map-cache-now-toast-partial` ("Basemap partly downloaded — some
+     tiles couldn't be saved.") when some succeeded and some failed.
+   - `#map-cache-now-toast-failed` ("Couldn't download the basemap —
+     check your connection and try again.") when none cached.
 
 `_basemapStaleWhileRevalidate` (ordinary passive browsing) reads
 `BASEMAP_PINNED_CACHE` as a read-only fallback on a `BASEMAP_CACHE` miss, so
 tiles from a deliberate download serve offline. The passive path never writes to
 or trims the pinned partition — that is exclusively `_warmCache`'s pinned path.
 
-The pure tile-math functions (`zoomBand`, `enumerateTileURLs`, `estimateBytes`,
-`formatUpToMB`) and constants (`BASEMAP_WORST_CASE_BYTES_PER_TILE`,
-`BASEMAP_DOWNLOAD_CEILING_MB`, `BASEMAP_DOWNLOAD_CEILING_TILES`) live in the new
-module `static/js/basemap_download_core.js` (SNOW-521), loaded on the page before
-`map.js` and unit-tested directly without a MapLibre instance. The
-`_lonToTileX`/`_latToTileY` helpers previously inlined in `map.js` and the old
-`CACHE_NOW_MAX_TILES`/`CACHE_NOW_ZOOM_RADIUS` constants are removed.
+`static/js/basemap_download_core.js` is now two pure functions —
+`rangesToTileURLs(template, blob)` and `centreTileURL(template,
+summary)` — unit-tested directly without a MapLibre instance. Every
+other pure tile-math helper it used to hold (`zoomBand`,
+`enumerateTileURLs`, `estimateBytes`, `formatUpToMB`, and the underlying
+`_lonToTileX`/`_latToTileY` slippy-map math) moved server-side to
+`regions/services/basemap_tiles.py` — region geometry lives in the
+database, and each region's tile coverage is static, so precomputing it
+once beats re-deriving the same numbers in every client on every
+viewport move.
+
+**Known gap** — tile ranges cover each region's rectangular bbox, not
+its exact polygon; some tiles just outside the boundary are included
+(coarser tiers over-include more). Simple and compact; polygon-clipping
+at build time is a possible future refinement, not built.
 
 ## Cache version bump
 
@@ -665,12 +700,19 @@ underlying PNGs.
   cold-boot fallback; a genuine style-load failure still does),
   favourites/community-reports offline install + expiry-on-read-back,
   the per-overlay "unavailable offline" toast, and `window.pwaWarmCache`
-  / the "Download basemap" button. See that file's module docstring for
-  which parts deliberately avoid the real basemap CDN (documented
+  / the per-region "Download basemap" icons. See that file's module
+  docstring for which parts deliberately avoid the real basemap CDN (documented
   elsewhere as flaky/unreachable in this harness — see
   `tests/e2e/test_offline_basemap_cache.py`) and which offline-mutation
   scenarios are already covered by `test_offline_favourite_submit.py` /
   `test_offline_observation_submit.py` rather than duplicated here.
+- `tests/e2e/test_cache_this_area.py` (SNOW-492, SNOW-493, SNOW-521
+  rework, `tox -e e2e`) — the per-region download icons' full flow: the
+  micro icon's idle→busy→done transitions and completion toast; a
+  visible minor/major crumb icon downloading its own tier; a
+  reselected region reading `done` from real `BASEMAP_PINNED_CACHE`
+  state rather than in-page memory; and the complete/partial/failed/
+  vacuous toast branches.
 - `tests/core/test_sw_shell.py` (SNOW-517) — `read_cache_version()` /
   `next_version()` parsing, `compute_shell_hash()` / `bump_owed()`
   against a throwaway shell tree, and the chicken-and-egg guard (a
