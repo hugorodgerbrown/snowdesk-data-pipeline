@@ -110,9 +110,13 @@ def test_offline_uncached_overlay_row_is_red_and_disabled(
     assert _overlay_dot_state(page, "l2") == "unavailable-offline"
     assert _overlay_disabled(page, "l2") == "true"
 
-    # Click is inert — the disabled guard returns before any toggle.
+    # Click is inert — the picker's aria-disabled guard returns before any
+    # toggle. force=True bypasses Playwright's actionability wait (it treats
+    # aria-disabled="true" as not-actionable and would otherwise time out
+    # rather than dispatch), so the real click handler runs and we can prove
+    # it no-ops: aria-checked is unchanged.
     before = l2.get_attribute("aria-checked")
-    l2.click()
+    l2.click(force=True)
     assert l2.get_attribute("aria-checked") == before
 
 
