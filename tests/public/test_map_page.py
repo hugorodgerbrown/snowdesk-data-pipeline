@@ -372,8 +372,13 @@ def test_map_page_renders_scrubber_loading_state() -> None:
 def test_map_layer_menu_section_order() -> None:
     """
     SNOW-243: The basemap-menu popover must present sections in the order
-    Countries → Overlays → Options → Base map.  This is a presentation
-    reorder only; all items and their data-* attributes are unchanged.
+    Countries → Overlays → Base map.  This is a presentation reorder
+    only; all remaining items and their data-* attributes are unchanged.
+
+    SNOW-521: the Options section (Auto-zoom) was removed along with the
+    L3 bulletin-groupings overlay and the basemap sync-status caption —
+    see ``test_layers_menu_removed_items.py`` (e2e) for the absence
+    coverage.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -384,34 +389,35 @@ def test_map_layer_menu_section_order() -> None:
     # Find each label text after the first section-label class occurrence.
     idx_countries_label = content.index("Countries", idx_countries)
     idx_overlays_label = content.index("Overlays", idx_countries)
-    idx_options_label = content.index("Options", idx_countries)
     idx_basemap_label = content.index("Base map", idx_countries)
 
-    assert (
-        idx_countries_label < idx_overlays_label < idx_options_label < idx_basemap_label
-    ), (
+    assert idx_countries_label < idx_overlays_label < idx_basemap_label, (
         "Map layer menu sections are not in the expected order "
-        "(Countries < Overlays < Options < Base map)"
+        "(Countries < Overlays < Base map)"
     )
+    assert "Options" not in content
 
 
 @pytest.mark.django_db
 def test_map_layer_menu_renders_sync_status_dots() -> None:
     """
-    SNOW-505: each always-rendered overlay row (l1/l2/l4/l3/resorts) carries
+    SNOW-505: each always-rendered overlay row (l1/l2/l4/resorts) carries
     a server-rendered ``.sync-dot`` starting at ``data-sync-state="unknown"``
     — ``map_layer_sync_status.js`` resolves it to cached/uncached the first
     time the popover opens.
+
+    SNOW-521 dropped the L3 (bulletin groupings) overlay row entirely.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    for key in ("l1", "l2", "l4", "l3", "resorts"):
+    for key in ("l1", "l2", "l4", "resorts"):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_close_idx = content.index("</button>", key_idx)
         button_scope = content[key_idx:button_close_idx]
         assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+    assert 'data-overlay-key="l3"' not in content
 
 
 @pytest.mark.django_db
@@ -434,22 +440,18 @@ def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
 
 
 @pytest.mark.django_db
-def test_basemap_menu_renders_sync_status_caption() -> None:
+def test_basemap_menu_omits_sync_status_caption() -> None:
     """
-    SNOW-505: the "Base map" section carries a ``#basemap-sync-status``
-    caption row with its own sync-dot, distinct from the per-overlay dots
-    above it — the basemap's coverage is a property of the shared
-    BASEMAP_CACHE, not any one basemap option.
+    SNOW-521 removed the "Browsed areas only" ``#basemap-sync-status``
+    caption row from the "Base map" section — its coverage story is now
+    carried entirely by the per-region download icon in
+    ``#region-readout``, not a basemap-wide caption.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    assert 'id="basemap-sync-status"' in content
-    caption_idx = content.index('id="basemap-sync-status"')
-    caption_close_idx = content.index("</li>", caption_idx)
-    caption_scope = content[caption_idx:caption_close_idx]
-    assert 'class="sync-dot" data-sync-state="unknown"' in caption_scope
+    assert 'id="basemap-sync-status"' not in content
 
 
 @pytest.mark.django_db
