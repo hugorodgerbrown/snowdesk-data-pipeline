@@ -1,17 +1,18 @@
 {% comment %}
-public/partials/_region_readout_download_icon.html — one per-tier
-"Download basemap" icon (SNOW-521).
+public/partials/_region_readout_download_icon.html — the "Download
+basemap" icon for the focused micro region (SNOW-521).
 
-Extracted out of _season_ribbon.html, which includes this three times
-(tier="major"/"minor"/"micro") rather than repeating the identical
-markup inline — the only difference between the three is the id/
-data-tier suffix.
+Extracted out of _season_ribbon.html as a partial (rather than inlining
+the markup there) — an earlier iteration of this rework included it
+once per breadcrumb tier; the final shape includes it once, for the
+micro (leaf) region only.
 
 Context expected:
-  tier — str: "major", "minor", or "micro".
+  tier — str: "micro" (only value in use — kept as a template arg
+    rather than hardcoded so the id/data-tier suffix stays declarative).
 
-Hidden by default; map.js's regionDownloadInit shows/hides each icon,
-sets its title/aria-label to the tier's size, and drives
+Hidden by default; map.js's regionDownloadInit shows/hides the icon,
+sets its title/aria-label to the region's size, and drives
 data-download-state (idle/busy/done/disabled) from real
 BASEMAP_PINNED_CACHE contents. Styled in static/css/map.css off the
 existing .region-readout-action roundel.

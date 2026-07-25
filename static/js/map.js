@@ -4602,46 +4602,43 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// SNOW-521 rework: per-region "Download basemap" icons in the
-// #region-readout chip — replaces the viewport-anchored cacheNowInit
-// (SNOW-492/493). One icon per breadcrumb tier (major/minor/micro,
-// #region-download-major/minor/micro in _season_ribbon.html); each is
-// independently shown, sized, and run.
+// SNOW-521 final shape: a single "Download basemap" icon for the
+// focused MICRO region in the #region-readout chip
+// (#region-download-micro in _season_ribbon.html) — replaces the
+// viewport-anchored cacheNowInit (SNOW-492/493). An earlier iteration
+// of this rework also had major/minor crumb icons; they were dropped
+// because their own shallower detail floors made the sizes
+// non-monotonic with containment (an L1 region could read smaller than
+// an L2 it contains), which read as a bug.
 //
-// Data source — no client-side tile enumeration any more. Region tile
-// coverage is precomputed server-side (regions/services/basemap_tiles.py)
-// and already sits on FEATURE_BY_REGION_ID[regionId].properties.download
+// Data source — no client-side tile enumeration. Region tile coverage
+// is precomputed server-side (regions/services/basemap_tiles.py) and
+// already sits on FEATURE_BY_REGION_ID[regionId].properties.download
 // once regions.geojson has loaded (the same payload the choropleth
-// itself needs), so showing a tier's size is a pure in-memory lookup —
-// no extra fetch until the user actually clicks Download.
+// itself needs), so showing the size is a pure in-memory lookup — no
+// extra fetch until the user actually clicks Download.
 //
-// Show/hide + size — driven by the same two events seasonRibbonInit
-// listens to (snowdesk:region-selected, snowdesk:overlays-changed), so
-// the two IIFEs stay in lockstep without sharing state: the micro icon
-// whenever a region is focused; major/minor mirror the
-// overlayVisible.l1/l2 crumb-visibility rule the text breadcrumb above
-// already follows.
+// Show/size — the icon is visible whenever a region is focused
+// (snowdesk:region-selected), independent of which overlay tiers
+// (L1/L2) are toggled on.
 //
 // State (idle/busy/done/disabled, data-download-state) — idle/done are
-// derived from a real BASEMAP_PINNED_CACHE probe every time a tier is
+// derived from a real BASEMAP_PINNED_CACHE probe every time the icon is
 // (re)shown, never a stored flag (the "layers menu is a live cache-state
 // dashboard" invariant — see docs/offline-map.md); disabled is the
 // server-flagged over_ceiling backstop.
 //
-// Click (idle only) — fetches the tier's full blob (incl. z tile ranges)
-// from /api/region-basemap-tiles/, assembles the URL list
+// Click (idle only) — fetches the region's full blob (incl. z tile
+// ranges) from /api/region-basemap-tiles/, assembles the URL list
 // (rangesToTileURLs + same-origin data feeds + active basemap style +
 // sprites — mirrors SNOW-492/493's assembly, minus tile enumeration) and
 // hands it to the SW's warm-cache handler with `pinned: true`, updating
-// a live percentage from onProgress, then one of the three reworded
-// toasts (unchanged copy/ids from SNOW-492/493).
+// the roundel's live fill from onProgress. On completion the icon
+// itself carries the outcome (green offline circle on a clean success,
+// idle otherwise) — no toast.
 (function regionDownloadInit() {
-  const buttons = {
-    major: document.getElementById('region-download-major'),
-    minor: document.getElementById('region-download-minor'),
-    micro: document.getElementById('region-download-micro'),
-  };
-  if (!buttons.major && !buttons.minor && !buttons.micro) return;
+  const btn = document.getElementById('region-download-micro');
+  if (!btn) return;
 
   const ribbonEl = document.getElementById('season-ribbon');
 
@@ -4653,16 +4650,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // region was deliberately downloaded".
   const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
-  const overlayVisible = {
-    l1: readBoolStorage('snowdesk.map.overlay.l1', false),
-    l2: readBoolStorage('snowdesk.map.overlay.l2', false),
-  };
-
-  // Per-tier { regionId, summary } for the currently-focused region, or
-  // null when that tier has no computed data. `summary` is the small
-  // {count, mb, over_ceiling, centre_tile[, region_id]} shape carried on
-  // regions.geojson's properties.download.
-  const tierData = { major: null, minor: null, micro: null };
+  // { regionId, summary } for the currently-focused region, or null
+  // when it has no computed data. `summary` is the small {count, mb,
+  // over_ceiling, centre_tile} shape carried on regions.geojson's
+  // properties.download.
+  let microData = null;
 
   let currentRegionId = (ribbonEl && ribbonEl.dataset.defaultRegionId) || null;
 
@@ -4708,18 +4700,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Paint `state` onto `tier`'s button: data-download-state, the busy
-   * percentage text, and an aria-label/title carrying the tier's size.
+   * Paint `state` onto the download icon: data-download-state, the busy
+   * fill percentage, and an aria-label/title carrying the region's size.
    *
-   * @param {string} tier
    * @param {string} state - 'idle' | 'busy' | 'done' | 'disabled'.
    * @param {number} mb
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @returns {void}
    */
-  function setState(tier, state, mb, pct) {
-    const btn = buttons[tier];
-    if (!btn) return;
+  function setState(state, mb, pct) {
     btn.dataset.downloadState = state;
     // Busy progress renders as a bottom-up fill of the roundel (map.css),
     // driven by --download-progress rather than a numeric readout.
@@ -4728,8 +4717,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     } else {
       btn.style.removeProperty('--download-progress');
     }
-    // Only the micro (leaf) region is downloadable, so the copy is
-    // tier-agnostic — "this region" rather than naming the tier.
     const text = {
       idle: `Download this region's basemap — up to ${mb} MB`,
       busy: `Downloading this region's basemap — ${pct || 0}%`,
@@ -4741,46 +4728,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Show/hide and (re)probe one tier's icon against its current
-   * tierData entry and crumb visibility. A stale async resolution
-   * (tierData changed, or a run started, while the probe was in
-   * flight) is discarded rather than clobbering a newer state.
+   * Show/hide and (re)probe the icon against the current microData. A
+   * stale async resolution (microData changed, or a run started, while
+   * the probe was in flight) is discarded rather than clobbering a
+   * newer state.
    *
-   * @param {string} tier
    * @returns {Promise<void>}
    */
-  async function renderTier(tier) {
-    const btn = buttons[tier];
-    if (!btn) return;
-    const data = tierData[tier];
-    const crumbVisible =
-      tier === 'micro' || (tier === 'major' ? overlayVisible.l1 : overlayVisible.l2);
-    if (!data || !crumbVisible) {
+  async function renderMicro() {
+    const data = microData;
+    if (!data) {
       btn.hidden = true;
       return;
     }
     btn.hidden = false;
     if (btn.dataset.downloadState === 'busy') return;
     if (data.summary.over_ceiling) {
-      setState(tier, 'disabled', data.summary.mb);
+      setState('disabled', data.summary.mb);
       return;
     }
     const done = await _probeDone(data.summary);
-    if (tierData[tier] !== data || btn.dataset.downloadState === 'busy') return;
-    setState(tier, done ? 'done' : 'idle', data.summary.mb);
-  }
-
-  function refreshAll() {
-    renderTier('major');
-    renderTier('minor');
-    renderTier('micro');
+    if (microData !== data || btn.dataset.downloadState === 'busy') return;
+    setState(done ? 'done' : 'idle', data.summary.mb);
   }
 
   /**
-   * Adopt `regionId` as the focused region: pull its per-tier download
-   * summaries straight off the already-loaded
+   * Adopt `regionId` as the focused region: pull its download summary
+   * straight off the already-loaded
    * FEATURE_BY_REGION_ID[regionId].properties.download (no fetch) and
-   * re-render every icon.
+   * re-render the icon.
    *
    * @param {string | null} regionId
    * @returns {void}
@@ -4788,23 +4764,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
   function applyRegion(regionId) {
     currentRegionId = regionId;
     const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
-    const download = (feature && feature.properties && feature.properties.download) || null;
-    tierData.micro =
-      download && download.micro ? { regionId: regionId, summary: download.micro } : null;
-    tierData.minor =
-      download && download.minor
-        ? { regionId: download.minor.region_id, summary: download.minor }
-        : null;
-    tierData.major =
-      download && download.major
-        ? { regionId: download.major.region_id, summary: download.major }
-        : null;
-    refreshAll();
+    const summary = (feature && feature.properties && feature.properties.download) || null;
+    microData = summary ? { regionId: regionId, summary: summary } : null;
+    renderMicro();
   }
 
   /**
    * Same-origin data-feed + active-basemap-style URL list — everything
-   * a tier's download warms besides its own tile ranges. Mirrors
+   * the download warms besides its own tile ranges. Mirrors
    * SNOW-492/493's assembly (see the removed cacheNowInit for the full
    * exclusion rationale re: favourites/community-reports) minus tile
    * enumeration, which now comes from the fetched blob.
@@ -4839,17 +4806,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Run one tier's download: fetch its full blob, assemble the URL
+   * Run the download: fetch the region's full blob, assemble the URL
    * list, and hand it to the SW's warm-cache handler.
    *
-   * @param {string} tier
    * @returns {Promise<void>}
    */
-  async function handleClick(tier) {
-    const btn = buttons[tier];
-    const data = tierData[tier];
-    if (!btn || !data || btn.dataset.downloadState !== 'idle') return;
-    setState(tier, 'busy', data.summary.mb, 0);
+  async function handleClick() {
+    const data = microData;
+    if (!data || btn.dataset.downloadState !== 'idle') return;
+    setState('busy', data.summary.mb, 0);
 
     let blob;
     try {
@@ -4862,7 +4827,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // Never got as far as a warm-cache attempt — nothing to report,
       // so revert silently (matches the pre-rework "no active worker"
       // silent-degrade behaviour) rather than claim a failed download.
-      setState(tier, 'idle', data.summary.mb);
+      setState('idle', data.summary.mb);
       return;
     }
 
@@ -4873,18 +4838,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
     const onProgress = (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      setState(tier, 'busy', data.summary.mb, pct);
+      setState('busy', data.summary.mb, pct);
     };
 
     const finish = (result) => {
-      // The icon itself now carries the outcome — no toast. "done" (the
+      // The icon itself carries the outcome — no toast. "done" (the
       // green offline circle) requires at least one success and no
       // failures; a partial, vacuous, or absent result reverts to idle so
       // the user can retry, rather than claiming the region is downloaded.
       if (result && result.ok > 0 && result.failed === 0) {
-        setState(tier, 'done', data.summary.mb);
+        setState('done', data.summary.mb);
       } else {
-        setState(tier, 'idle', data.summary.mb);
+        setState('idle', data.summary.mb);
       }
       // SNOW-505: the warm-cache run has just warmed the shell + pinned
       // basemap caches (the SW's warm-cache handler awaits its
@@ -4905,22 +4870,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   }
 
-  for (const tier of ['major', 'minor', 'micro']) {
-    const btn = buttons[tier];
-    if (!btn) continue;
-    btn.addEventListener('click', () => handleClick(tier));
-  }
+  btn.addEventListener('click', () => handleClick());
 
   document.addEventListener('snowdesk:region-selected', (e) => {
     applyRegion((e.detail && e.detail.region_id) || null);
-  });
-
-  document.addEventListener('snowdesk:overlays-changed', (e) => {
-    const key = e.detail && e.detail.key;
-    if (key === 'l1' || key === 'l2') {
-      overlayVisible[key] = !!(e.detail && e.detail.visible);
-      refreshAll();
-    }
   });
 
   // Pick up the homepage's server-rendered default focus once its
