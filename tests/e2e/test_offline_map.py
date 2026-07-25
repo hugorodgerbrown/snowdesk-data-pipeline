@@ -447,32 +447,37 @@ def test_cache_now_warms_same_origin_urls_into_cache_storage(
 
 
 def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None:
-    """Clicking "Download basemap" then Download confirm shows a toast.
+    """Clicking the micro "Download basemap" icon shows a completion toast.
 
-    Smoke test for the real button wiring (basemapPickerInit's
-    ``snowdesk:cache-now`` dispatch -> cacheNowInit's framing phase ->
-    the docked bar's Download button -> ``pwaWarmCache`` -> the completion
-    toast) — does not assert on how many basemap tiles were actually
-    cached, since that depends on the active basemap's CDN being reachable
-    (see the module docstring). Like
+    Smoke test for the real per-region download wiring
+    (``regionDownloadInit``'s click handler -> the real
+    ``/api/region-basemap-tiles/`` fetch -> ``pwaWarmCache`` -> the
+    completion toast) — does not assert on how many basemap tiles were
+    actually cached, since tile-URL assembly depends on the active
+    basemap's CDN being reachable to resolve a tile template (see the
+    module docstring). Like
     ``test_favourites_overlay_installs_from_cache_after_offline_reload``,
     this test still depends on ``pwa_page``'s own boot reaching a real
     basemap (``MAP`` existing is enough here — the click handler degrades
     gracefully to warming zero tile URLs if the style never loaded), so it
     carries the same theoretical live-CDN flakiness risk documented in the
     module docstring, even though the completion toast itself never
-    depends on the CDN succeeding.
+    depends on the CDN succeeding. The ``/api/region-basemap-tiles/``
+    fetch itself is same-origin (the real ``live_server``, not a
+    third-party CDN) so it's left un-stubbed here.
 
-    SNOW-493 finding 7: the completion toast now branches on the actual
-    {ok, failed} counts (complete/partial/failed — see
+    SNOW-493 finding 7: the completion toast branches on the actual {ok,
+    failed} counts (complete/partial/failed — see
     ``test_cache_this_area.py`` for coverage of each branch with stubbed
     counts), so this smoke test accepts whichever of the three the live
     CDN outcome happens to produce rather than asserting a specific one.
 
-    SNOW-521: the menu click alone no longer starts the run — it opens
-    ``#basemap-download-bar``'s confirm step, so this test now also drives
-    ``#basemap-download-confirm`` (``test_cache_this_area.py`` covers the
-    framing phase itself, with a stubbed tile count).
+    SNOW-521 rework: the old viewport-anchored docked confirm bar
+    (``#cache-now-toggle`` -> ``#basemap-download-bar`` ->
+    ``#basemap-download-confirm``) was replaced by per-crumb icons in the
+    ``#region-readout`` chip — this test now drives the always-shown
+    micro icon (``#region-download-micro``) for the homepage's
+    default-focus region.
     """
     page = pwa_page.page
     page.wait_for_function(
@@ -480,12 +485,9 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
         "typeof window.pwaWarmCache === 'function'"
     )
 
-    page.click("#basemap-toggle")
-    button = page.locator("#cache-now-toggle")
-    button.wait_for(state="visible")
-    button.click()
-    page.locator("#basemap-download-bar").wait_for(state="visible")
-    page.click("#basemap-download-confirm")
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    icon.click()
 
     page.wait_for_selector(
         "#map-cache-now-toast-complete:not(.hidden), "
@@ -493,5 +495,9 @@ def test_cache_now_button_completes_and_reveals_toast(pwa_page: PwaPage) -> None
         "#map-cache-now-toast-failed:not(.hidden)",
         timeout=15000,
     )
-    # The bar hides once the run completes (busy guard cleared).
-    page.locator("#basemap-download-bar").wait_for(state="hidden")
+    # The icon reverts to idle unless the run was a clean, non-vacuous
+    # success — either way it must leave the transient 'busy' state.
+    page.wait_for_function(
+        "() => document.getElementById('region-download-micro').dataset.downloadState !== 'busy'",
+        timeout=5000,
+    )
