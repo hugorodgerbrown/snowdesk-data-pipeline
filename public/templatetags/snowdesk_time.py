@@ -16,7 +16,9 @@ The filter returns ``None`` on any parse failure so that downstream filters
 
 Also provides ``danger_level_key`` / ``danger_level_label`` for integer→string
 mapping and ``danger_level_digit`` for rating-key→display-digit mapping (used
-by the region tooltip danger chip).
+by the region tooltip danger chip), and ``month_day`` for parsing a
+``MM-DD`` string (``Resort.typical_season_open/close``) into a ``date`` on a
+fixed anchor year, for the resort popup's season row (SNOW-501).
 """
 
 import logging
