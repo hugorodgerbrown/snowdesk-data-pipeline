@@ -1041,6 +1041,39 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Next update", "context": {"text": "Next update"}},
 )
 
+# Resort meta row (SNOW-501) --------------------------------------------------
+# Populated value, plus both blank-placeholder wordings (public em-dash vs
+# staff curation hint) — same context shape _resort_popup.html feeds per row.
+RESORT_META_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Populated value",
+        "context": {
+            "label": "Operator",
+            "value": "Téléverbier SA",
+            "is_staff": False,
+            "staff_hint": "Add operator name",
+        },
+    },
+    {
+        "caption": "Blank — public placeholder",
+        "context": {
+            "label": "Operator",
+            "value": "",
+            "is_staff": False,
+            "staff_hint": "Add operator name",
+        },
+    },
+    {
+        "caption": "Blank — staff curation hint",
+        "context": {
+            "label": "Operator",
+            "value": "",
+            "is_staff": True,
+            "staff_hint": "Add operator name",
+        },
+    },
+)
+
 
 # Overlay primitives (SNOW-486) -----------------------------------------------
 # The four consolidated overlay shapes — banner, modal, sheet — each with a

@@ -52,6 +52,7 @@ from public._component_fixtures import (
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
+    RESORT_META_ROW_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SHEET_HEADER_VARIANTS,
@@ -1091,6 +1092,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_meta_cell.html",
         variants=META_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-meta-row",
+        label="Resort meta row",
+        description=(
+            "Label + value/placeholder row used for the single-value resort "
+            "metadata fields (operator, lifts, runs) in the resort-pin popup "
+            "(SNOW-501). A blank value never omits the row — it renders a "
+            "dashed-box placeholder: a public em-dash, or an explicit "
+            '"Add <field>" hint when ``is_staff`` is set, cueing curation.'
+        ),
+        kind="components",
+        partial="public/partials/_resort_meta_row.html",
+        variants=RESORT_META_ROW_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
