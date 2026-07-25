@@ -886,7 +886,15 @@ Optional context:
 {# arithmetic, no network), then on Download swaps that same span to      #}
 {# n/total progress before hiding the bar again on completion. Anchored    #}
 {# to the viewport like the sw-update banner (same floating shape/tokens   #}
-{# as includes/_overlay_banner.html), not to any single map feature.       #}
+{# as includes/_overlay_banner.html) — but not built via that partial:    #}
+{# _overlay_banner.html's floating variant only exposes a single CTA slot #}
+{# (plus a bare "×" dismiss, not a labelled Cancel) and a static body/     #}
+{# title pair, with no stable id for a span JS needs to keep rewriting    #}
+{# live (the estimate, then n/total progress). This bar needs two named   #}
+{# buttons and a JS-addressable text node, so the shape is reproduced     #}
+{# inline with the SAME tokens rather than extending the shared partial   #}
+{# for a single caller.                                                   #}
+{# ds-lint-allow: reuses _overlay_banner.html's floating-variant token set (bg-card/text-text-1/rounded-card/border-border/shadow-glass/z-[var(--z-banner)]) rather than the partial itself — that partial supports only one CTA slot and no stable-id, JS-rewritten estimate/progress span, which this dual-button, live-text bar needs #}
 <div
     id="basemap-download-bar"
     class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-banner)] w-[calc(100vw-2rem)] max-w-md"
