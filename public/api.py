@@ -10,8 +10,16 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
+  Each feature carries ``properties.download`` (SNOW-521): precomputed
+  offline-basemap size summaries for the micro region itself and its
+  minor/major ancestors, keyed ``{micro, minor, major}`` — see
+  ``regions_geojson``'s docstring for the exact shape.
 * ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
 * ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
+* ``/api/region-basemap-tiles/``           — SNOW-521: the full precomputed
+  basemap_download blob (incl. ``z`` tile ranges) for one region,
+  ``?id=<region_id>`` across any tier. Fetched on demand when the user
+  clicks a per-crumb download icon.
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
@@ -70,6 +78,7 @@ from regions.models import (
     Resort,
     SubRegion,
 )
+from regions.services.basemap_tiles import blob_summary
 
 from .decorators import lowercase_region_id
 from .views import (
@@ -152,6 +161,55 @@ _RATING_TO_INT: dict[str, int] = {
     RegionDayRating.Rating.HIGH: 4,
     RegionDayRating.Rating.VERY_HIGH: 5,
 }
+
+
+def _download_summary_or_none(blob: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Project a stored ``basemap_download`` blob to its API summary, or None.
+
+    Args:
+        blob: A region's ``basemap_download`` field value (may be None —
+            not yet computed, e.g. a region without geometry).
+
+    Returns:
+        ``blob_summary(blob)``, or ``None`` if ``blob`` is falsy.
+
+    """
+    return blob_summary(blob) if blob else None
+
+
+def _l4_download_property(region: MicroRegion, sub: SubRegion) -> dict[str, Any]:
+    """Build the L4 ``properties.download`` dict (SNOW-521).
+
+    Denormalises the micro region's own summary plus its minor/major
+    ancestors' summaries (each tagged with the ancestor's ``region_id``)
+    onto the L4 feature, so the ``#region-readout`` breadcrumb's
+    per-crumb download icons have every tier's data from the single
+    always-loaded ``regions.geojson`` payload. Each of
+    ``micro``/``minor``/``major`` is independently omitted when that
+    tier's own ``basemap_download`` is unset.
+
+    Args:
+        region: The MicroRegion (L4) whose feature is being built.
+        sub: Its parent SubRegion (L2) — ``region.subregion``, passed in
+            rather than re-derived since the caller already holds it
+            (``select_related("subregion__major")``).
+
+    Returns:
+        ``{}`` if no tier has a computed blob, otherwise a dict with
+        some subset of the ``micro``/``minor``/``major`` keys.
+
+    """
+    download: dict[str, Any] = {}
+    micro_summary = _download_summary_or_none(region.basemap_download)
+    if micro_summary is not None:
+        download["micro"] = micro_summary
+    minor_summary = _download_summary_or_none(sub.basemap_download)
+    if minor_summary is not None:
+        download["minor"] = {"region_id": sub.prefix, **minor_summary}
+    major_summary = _download_summary_or_none(sub.major.basemap_download)
+    if major_summary is not None:
+        download["major"] = {"region_id": sub.major.prefix, **major_summary}
+    return download
 
 
 def _build_ratings_payload(
@@ -386,6 +444,27 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     ``properties.id``, ``properties.name``, and ``properties.country``.
     Regions without a boundary are skipped.
 
+    SNOW-521: each feature also carries ``properties.download`` when at
+    least one of the region/its ancestors has a precomputed
+    ``basemap_download`` blob — the key is omitted entirely otherwise.
+    Denormalises all three tiers' summaries onto the L4 feature (rather
+    than requiring the L1/L2 GeoJSON to also be loaded) so the
+    ``#region-readout`` breadcrumb's per-crumb download icons always
+    have their data, independent of which overlay tiers are visible::
+
+        "download": {
+          "micro": {"count": ..., "mb": ..., "over_ceiling": ..., "centre_tile": ...},
+          "minor": {"region_id": "CH-41", "count": ..., ...},
+          "major": {"region_id": "CH-4", "count": ..., ...}
+        }
+
+    Each of ``micro``/``minor``/``major`` is independently omitted if
+    that tier's own ``basemap_download`` is unset — ``minor``/``major``
+    additionally carry the ancestor's ``region_id`` (its ``prefix``) so
+    the client can fetch that tier's full blob from
+    ``region_basemap_tiles`` without a second lookup; ``micro`` doesn't
+    need one — it's the feature's own ``properties.id``.
+
     The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
     pair prevents Django's ``SessionMiddleware`` from appending
     ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
@@ -436,25 +515,29 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         # the popup breadcrumb's field choice (_region_tooltip.html): English
         # name with the native name as fallback.
         major_name = sub.major.name_en or sub.major.name_native
+        properties: dict[str, Any] = {
+            "id": region.region_id,
+            "name": region.name,
+            # SNOW-314: name-derived slug for the bulletin URL's second
+            # path component, so the season-ribbon readout can link
+            # straight to /<region_id>/<slug>/<date>/ without a lookup.
+            "slug": region.name_slug,
+            "country": sub.major.country,
+            "subregion_name": subregion_name,
+            "major_name": major_name,
+            # SNOW-54: True when the pipeline has ever produced a rating
+            # for this region; False for permanently-uncovered regions
+            # (e.g. Swiss Lowlands / Jura, non-EUREGIO AT/IT areas).
+            "covered": region.region_id in covered,
+        }
+        download = _l4_download_property(region, sub)
+        if download:
+            properties["download"] = download
         features.append(
             {
                 "type": "Feature",
                 "geometry": region.boundary,
-                "properties": {
-                    "id": region.region_id,
-                    "name": region.name,
-                    # SNOW-314: name-derived slug for the bulletin URL's second
-                    # path component, so the season-ribbon readout can link
-                    # straight to /<region_id>/<slug>/<date>/ without a lookup.
-                    "slug": region.name_slug,
-                    "country": sub.major.country,
-                    "subregion_name": subregion_name,
-                    "major_name": major_name,
-                    # SNOW-54: True when the pipeline has ever produced a rating
-                    # for this region; False for permanently-uncovered regions
-                    # (e.g. Swiss Lowlands / Jura, non-EUREGIO AT/IT areas).
-                    "covered": region.region_id in covered,
-                },
+                "properties": properties,
             }
         )
     return JsonResponse(
@@ -475,6 +558,11 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     Returns 400 on an unrecognised value. Each feature carries
     ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
     Entries without a boundary are skipped.
+
+    SNOW-521: each feature also carries ``properties.download`` — this
+    tier's own precomputed offline-basemap size summary
+    (``{count, mb, over_ceiling, centre_tile}``) — omitted entirely when
+    ``basemap_download`` is unset.
 
     The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
     ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
@@ -498,15 +586,19 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     for major in MajorRegion.objects.filter(
         country=country_param, boundary__isnull=False, display_on_map=True
     ).iterator():
+        properties: dict[str, Any] = {
+            "prefix": major.prefix,
+            "name_en": major.name_en,
+            "country": major.country,
+        }
+        download = _download_summary_or_none(major.basemap_download)
+        if download is not None:
+            properties["download"] = download
         features.append(
             {
                 "type": "Feature",
                 "geometry": major.boundary,
-                "properties": {
-                    "prefix": major.prefix,
-                    "name_en": major.name_en,
-                    "country": major.country,
-                },
+                "properties": properties,
             }
         )
     return JsonResponse(
@@ -527,6 +619,11 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     Returns 400 on an unrecognised value. Each feature carries
     ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
     Entries without a boundary are skipped.
+
+    SNOW-521: each feature also carries ``properties.download`` — this
+    tier's own precomputed offline-basemap size summary
+    (``{count, mb, over_ceiling, centre_tile}``) — omitted entirely when
+    ``basemap_download`` is unset.
 
     The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
     ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
@@ -557,15 +654,19 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
         .iterator()
     )
     for sub in qs:
+        properties: dict[str, Any] = {
+            "prefix": sub.prefix,
+            "name_en": sub.name_en,
+            "country": sub.major.country,
+        }
+        download = _download_summary_or_none(sub.basemap_download)
+        if download is not None:
+            properties["download"] = download
         features.append(
             {
                 "type": "Feature",
                 "geometry": sub.boundary,
-                "properties": {
-                    "prefix": sub.prefix,
-                    "name_en": sub.name_en,
-                    "country": sub.major.country,
-                },
+                "properties": properties,
             }
         )
     return JsonResponse(
@@ -574,6 +675,56 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
             "features": features,
         }
     )
+
+
+@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
+@require_GET
+def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
+    """
+    Return the full precomputed ``basemap_download`` blob for one region.
+
+    ``?id=<region_id>`` — resolved against ``MicroRegion.region_id`` (L4),
+    then ``SubRegion.prefix`` (L2), then ``MajorRegion.prefix`` (L1), in
+    that order, so any tier's id (as advertised on ``regions_geojson``'s
+    ``properties.id``/``properties.download.{minor,major}.region_id``)
+    resolves. 404 for an unknown id or a region with no computed blob yet.
+
+    Unlike the ``download`` property inlined on the three geojson
+    endpoints (a small summary — no ``z`` ranges), this returns the
+    **full** blob including ``z`` — the per-zoom tile-index ranges the
+    client expands into tile URLs (``rangesToTileURLs`` in
+    ``basemap_download_core.js``). Fetched on demand, only when the user
+    clicks a download icon (not preloaded with the geojson), since most
+    users never trigger a download for most regions.
+
+    Region geometry — and therefore this blob — is static reference
+    data, so the same ``@cache_control(public=True, max_age=86400)`` +
+    ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the
+    geojson endpoints applies. See ``regions_geojson`` for the full
+    ``Vary: Cookie`` rationale.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the blob, or 400 (missing ``?id=``) / 404
+        (unknown region or no computed blob).
+
+    """
+    region_id = request.GET.get("id", "")
+    if not region_id:
+        return JsonResponse({"error": "missing_id"}, status=400)
+
+    region: MicroRegion | SubRegion | MajorRegion | None = (
+        MicroRegion.objects.filter(region_id=region_id).first()
+        or SubRegion.objects.filter(prefix=region_id).first()
+        or MajorRegion.objects.filter(prefix=region_id).first()
+    )
+    if region is None or not region.basemap_download:
+        raise Http404(f"No computed basemap_download for region {region_id!r}")
+
+    return JsonResponse(region.basemap_download)
 
 
 @cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
