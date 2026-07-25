@@ -270,21 +270,6 @@ Optional context:
                         {% trans "Micro regions" %}
                     </button>
                 </li>
-                {# SNOW-323: L3 bulletin groupings — dissolved outline of the #}
-                {# micro-regions sharing a bulletin. Off by default; loaded #}
-                {# lazily on first toggle via ensureOverlayLoaded('l3').    #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="l3"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Bulletin groupings" %}
-                    </button>
-                </li>
                 {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
                 {# circle pins above the L4 choropleth. Off by default;  #}
                 {# state persists in localStorage under                  #}
@@ -342,51 +327,9 @@ Optional context:
                         {% trans "Community reports" %}
                     </button>
                 </li>
-                {# SNOW-65: Options section — behaviours that modify interaction   #}
-                {# rather than visual layers. Uses the same checkbox affordance   #}
-                {# as the overlay items.                                          #}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Options" %}
-                </li>
-                <li role="none">
-                    <button
-                        id="autozoom-toggle"
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        aria-checked="false"
-                    >
-                        {% trans "Auto-zoom" %}
-                    </button>
-                </li>
-                {# SNOW-492: "Cache this area for offline" — a command, not a  #}
-                {# persistent toggle, so role="menuitem" rather than the      #}
-                {# menuitemcheckbox affordance the other Options item uses.   #}
-                {# map.js assembles the current view's data-feed + basemap-   #}
-                {# tile URLs and posts them to the SW's warm-cache handler.   #}
-                <li role="none">
-                    <button
-                        id="cache-now-toggle"
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-item basemap-menu-item--action"
-                        data-action="cache-now"
-                    >
-                        {% trans "Cache this area for offline" %}
-                    </button>
-                </li>
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
-                </li>
-                {# SNOW-505: basemap sync-status caption — an honest "partial" #}
-                {# indicator (browsed areas only, not the whole basemap) #}
-                {# rather than a per-basemap-option dot, since coverage is a #}
-                {# property of the shared BASEMAP_CACHE, not any one style. #}
-                <li id="basemap-sync-status" class="basemap-menu-caption" role="none">
-                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                    {% trans "Browsed areas only" %}
                 </li>
                 {% for bm in basemaps %}
                     <li role="none">
@@ -877,16 +820,6 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-492/SNOW-493: "Cache this area for offline" completion toasts —    #}
-{# map.js reveals exactly one of these three once the SW's warm-cache     #}
-{# handler reports its {ok, failed} counts back, branching on how many    #}
-{# URLs actually succeeded (SNOW-493 finding 7): "complete" when every    #}
-{# URL cached, "partial" when some did and some didn't (a handful of tile #}
-{# misses still leaves most of the area usable offline), "failed" when    #}
-{# none did — that variant deliberately never claims "available offline". #}
-{% trans "This area is now available offline." as cache_now_toast_complete_body %}
-{% include "includes/_toast.html" with id="map-cache-now-toast-complete" kind="success" body=cache_now_toast_complete_body dismissible=True timeout=5000 %}
-{% trans "This area is partly available offline — some data couldn't be cached." as cache_now_toast_partial_body %}
-{% include "includes/_toast.html" with id="map-cache-now-toast-partial" kind="warning" body=cache_now_toast_partial_body dismissible=True timeout=6000 %}
-{% trans "Couldn't cache this area for offline — check your connection and try again." as cache_now_toast_failed_body %}
-{% include "includes/_toast.html" with id="map-cache-now-toast-failed" kind="error" body=cache_now_toast_failed_body dismissible=True timeout=6000 %}
+{# SNOW-521: the "Download basemap" outcome is carried by the region-readout #}
+{# download icon itself (green offline circle on success, reverting to idle  #}
+{# otherwise) — no completion toast. #}

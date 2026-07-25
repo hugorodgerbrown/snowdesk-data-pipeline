@@ -56,6 +56,14 @@ urlpatterns = [
         api.sub_regions_geojson,
         name="sub_regions_geojson",
     ),
+    # SNOW-521: full precomputed basemap_download blob (incl. z tile
+    # ranges) for one MicroRegion, fetched on demand when the
+    # #region-readout download icon is clicked.
+    path(
+        "region-basemap-tiles/",
+        api.region_basemap_tiles,
+        name="region_basemap_tiles",
+    ),
     # SNOW-323: dissolved bulletin grouping boundaries keyed by date.
     # The whole-season payload is cached client-side by map.js.
     path(

@@ -40,6 +40,13 @@ uv run --no-sync python manage.py loaddata \
     regions/fixtures/resorts.json \
     regions/fixtures/region_aliases.json
 
+# Precompute per-region offline-basemap tile coverage (SNOW-521) on every
+# tier — pure function of each region's (static) geometry, so recomputing
+# in full on every deploy is safe and idempotent. The eaws_CH fixture
+# above already ships basemap_download for CH; this also backfills the
+# FR/AT/IT fixtures, which don't (see docs/offline-map.md).
+uv run --no-sync python manage.py compute_basemap_download --commit
+
 # Sync waffle.Flag rows to core/fixtures/waffle_flags.json — create + delete
 # only, never edit-in-place, so an operator's live admin-tuned targeting on
 # an existing flag survives every deploy. Idempotent (a no-op once the DB

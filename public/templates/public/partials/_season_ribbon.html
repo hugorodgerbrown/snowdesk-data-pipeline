@@ -59,6 +59,22 @@ active-day highlight in sync.
                         class="region-readout-leaf"
                     ></span></span>
             </div>
+            {# SNOW-521: "Download basemap" icon for the focused MICRO region #}
+            {# (the leaf). Only the micro tier is downloadable — Major/Minor  #}
+            {# were dropped because their per-tier detail floors made the     #}
+            {# sizes non-monotonic with containment (an L1 region could read  #}
+            {# smaller than the L2 it contains), which read as a bug. The     #}
+            {# tile coverage + size are precomputed server-side              #}
+            {# (regions.services.basemap_tiles) and served on the            #}
+            {# always-loaded regions.geojson payload. map.js's               #}
+            {# regionDownloadInit shows the icon whenever a region is        #}
+            {# focused, sets its title/aria-label to the size, and drives    #}
+            {# data-download-state (idle/busy/done/disabled) from real       #}
+            {# BASEMAP_PINNED_CACHE contents — never a stored flag. Styled   #}
+            {# in static/css/map.css off the .region-readout-action roundel. #}
+            <div class="region-readout-downloads">
+                {% include "public/partials/_region_readout_download_icon.html" with tier="micro" %}
+            </div>
             {# View-bulletin action: a roundel holding just an arrow, with a   #}
             {# "View bulletin" tooltip. Shown only when a region is focused    #}
             {# (CSS sibling rule); map.js sets its href to the dated bulletin. #}

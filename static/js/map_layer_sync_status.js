@@ -204,21 +204,27 @@
   }
 
   /**
-   * True when a ``snowdesk-basemap-*`` cache exists and holds at least
-   * one entry. The cache is discovered by prefix (not a hardcoded
-   * version) so a BASEMAP_CACHE version bump in sw.js never breaks this
-   * probe. Never throws.
+   * True when ANY ``snowdesk-basemap-*`` cache exists and holds at least
+   * one entry. sw.js (SNOW-521) now keeps two partitions under this
+   * prefix — ``BASEMAP_CACHE`` (passive browsing) and
+   * ``BASEMAP_PINNED_CACHE`` (deliberate "Download basemap" runs) — so
+   * every matching cache is checked, not just the first ``caches.keys()``
+   * happens to return; a pinned-only download must still read as cached
+   * here. Caches are discovered by prefix (not a hardcoded name) so a
+   * version bump in sw.js never breaks this probe. Never throws.
    *
    * @returns {Promise<boolean>}
    */
   async function _probeBasemap() {
     try {
       const names = await caches.keys();
-      const basemapCacheName = names.find((name) => name.startsWith(BASEMAP_CACHE_PREFIX));
-      if (!basemapCacheName) return false;
-      const cache = await caches.open(basemapCacheName);
-      const keys = await cache.keys();
-      return keys.length > 0;
+      const basemapCacheNames = names.filter((name) => name.startsWith(BASEMAP_CACHE_PREFIX));
+      for (const name of basemapCacheNames) {
+        const cache = await caches.open(name);
+        const keys = await cache.keys();
+        if (keys.length > 0) return true;
+      }
+      return false;
     } catch (_e) {
       return false;
     }

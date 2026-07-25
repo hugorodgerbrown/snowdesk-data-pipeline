@@ -336,6 +336,20 @@ class MicroRegion(BaseModel):
             "Stored as JSON rather than a PostGIS geometry type."
         ),
     )
+    basemap_download = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Precomputed offline-basemap tile coverage for this region "
+            "(regions.services.basemap_tiles.MICRO_BAND), populated by "
+            "`manage.py compute_basemap_download --commit` from a bbox "
+            "derived from `boundary` (MicroRegion has no stored bbox "
+            "field). {band, count, mb, over_ceiling, centre_tile, z} — "
+            "see regions/services/basemap_tiles.py for the shape. Never "
+            "computed at request time; region geometry is static "
+            "reference data so this never changes once computed."
+        ),
+    )
     neighbours: models.ManyToManyField[MicroRegion, MicroRegionNeighbour] = (
         models.ManyToManyField(
             "self",

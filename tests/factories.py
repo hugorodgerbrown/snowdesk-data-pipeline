@@ -51,6 +51,17 @@ from regions.models import (
     Resort,
     SubRegion,
 )
+from regions.services.basemap_tiles import MICRO_BAND, build_blob
+
+# A small representative Alpine bbox (roughly Valais) used as
+# MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework
+# needs a valid blob on every factory-built MicroRegion so pytest/API
+# tests exercise the ``download`` property without each test
+# hand-building one. Not derived from the factory's own
+# ``bbox``/``boundary`` (those default to None/unset and are set
+# explicitly per test where geometry matters) — this is a canned,
+# schema-valid placeholder, independent of the actual geometry.
+_FACTORY_BASEMAP_BBOX = [7.0, 46.0, 8.0, 47.5]
 
 
 class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
@@ -116,6 +127,9 @@ class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
     )
     centre = factory.LazyFunction(lambda: {"lon": 7.5, "lat": 46.8})
     boundary = None
+    basemap_download = factory.LazyFunction(
+        lambda: build_blob(_FACTORY_BASEMAP_BBOX, *MICRO_BAND)
+    )
 
 
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):

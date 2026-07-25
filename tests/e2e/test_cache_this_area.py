@@ -1,187 +1,423 @@
 """
-tests/e2e/test_cache_this_area.py — Playwright regression tests for
-SNOW-493 findings 6 and 7: "Cache this area for offline"'s URL coverage
-and its completion toast.
+tests/e2e/test_cache_this_area.py — Playwright regression tests for the
+single-region "Download basemap" icon (SNOW-492, SNOW-493, SNOW-521 final
+shape).
 
-Finding 6: ``cacheNowInit()`` (``static/js/map.js``) used to build its
-warm-cache URL list from a hardcoded ``?country=ch``, so a user who'd
-also enabled a foreign country would have that country's regions vanish
-on the next offline reload despite the control reporting success. It
-must now iterate every currently-enabled country (``COUNTRY_STATE``).
+SNOW-521 went through two intermediate shapes before landing here: first a
+viewport-anchored docked confirm bar (``#basemap-download-bar``), then a
+per-breadcrumb-tier set of icons (Major/Minor/Micro). Both were dropped —
+the docked bar required zooming in tight before the viewport was small
+enough to accept; the per-tier icons made download size non-monotonic with
+containment (an L1 region could read smaller than an L2 it contains),
+which read as a bug. The shipped shape is a single icon
+(``#region-download-micro`` in ``_season_ribbon.html``'s ``#region-readout``
+chip) for the focused MICRO region only, with no completion toast — the
+icon itself carries the outcome (a green "available offline" circle on
+success, reverting to idle otherwise). This file covers: the icon's
+idle→busy→done flow, a reselected region reading ``done`` from real cache
+state rather than in-page memory, and the disabled/over_ceiling and
+partial/failed-run branches.
 
-Finding 7: the completion toast used to be a single "available offline"
-message shown for any non-null result, even one where every URL failed
-to cache. It must now branch on the ``sw.js``-reported ``{ok, failed}``
-counts into three distinct toasts — complete / partial / failed — and
-"failed" (``ok === 0``) must never claim "available offline".
+Every test requests ``_load_test_data`` (``pytestmark`` below) — not for
+its ratings/bulletin rows, but because ``_season_ribbon.html``'s
+``{% if ribbon %}`` gate (and so the icon markup itself) only renders when
+``build_season_ribbon()`` resolves a real, DB-backed default region;
+against an unseeded DB the icon doesn't exist in the DOM at all.
+``pwa_page``'s own first navigation can race that seed (fixture
+instantiation order between two same-scope, non-dependent fixtures is
+unspecified), so every test's first action is ``_reload_home`` — a
+second ``page.goto('/')`` — mirroring ``test_pwa_lifecycle_offline.py``'s
+established pattern of navigating again inside the test body once
+seeding is guaranteed to have landed.
 
-Both need full, deterministic control over what the SW's warm-cache
-handler reports back, without depending on a live basemap CDN (documented
-elsewhere — ``test_offline_basemap_cache.py``, ``test_offline_map.py`` — as
-unreachable/flaky in this harness) and without being able to intercept the
-requests via ``page.route()`` (a service worker's own ``fetch()`` calls
-inside its message handler are invisible to it — confirmed empirically
-while building this test). ``sw.js`` declares ``_warmCache`` as a
-top-level classic-script function (no enclosing IIFE), so
-``worker.evaluate()`` (the same technique
-``test_offline_basemap_cache.py`` uses to seed SW-internal state) can
-directly reassign ``self._warmCache`` to a stub that returns a chosen
-``{ok, failed}`` and records the URL list it was called with — driving
-the REAL page-side event dispatch, the REAL ``cacheNowInit()`` URL
-assembly and toast-selection logic, and the REAL
-``sw_register.js``/``sw.js`` message round trip (SNOW-493 finding 9),
-while only the actual network/cache-write step is substituted.
+None of these tests wait for a real MapLibre style load. A real
+third-party basemap CDN (openfreemap.org) is documented elsewhere as
+unreachable in this harness (``test_offline_basemap_cache.py``'s module
+docstring; confirmed here too — the style fetch net::ERR_ABORTEDs when a
+real SW is controlling, since ``page.route()`` cannot intercept a
+request the SW's OWN fetch handler issues from inside its ``fetch()``
+call, the same finding ``_spike_results.py`` documents), and
+``regionDownloadInit`` doesn't need the map's style to have loaded at
+all — it only reads ``FEATURE_BY_REGION_ID[regionId].properties.
+download``, which the real boot sequence populates from a
+``regions.geojson`` fetch gated behind ``map.on('load')``. ``_select_region``
+sidesteps that whole chain by writing a synthetic entry into
+``FEATURE_BY_REGION_ID`` directly and dispatching the real
+``snowdesk:region-selected`` event — the same synthetic-injection idiom
+this suite's sibling files use for the blank-map regression — so every
+test here exercises ``regionDownloadInit``'s real listener/render/click
+logic deterministically, independent of the CDN.
+
+The SW round trip and the tile-URL assembly need the same kind of full,
+deterministic control:
+
+* ``sw.js`` declares ``_warmCache`` as a top-level classic-script
+  function (no enclosing IIFE), so ``worker.evaluate()`` (the same
+  technique ``test_offline_basemap_cache.py`` uses to seed SW-internal
+  state) can directly reassign ``self._warmCache`` to a stub that
+  returns a chosen ``{ok, failed}``, optionally drives
+  ``opts.onProgress``, and — for a ``pinned: true`` call with ``ok >
+  0`` — actually writes the warmed URLs into the real
+  ``BASEMAP_PINNED_CACHE`` (referenced directly, the same way
+  ``test_offline_basemap_cache.py``'s pinned-cache test does — Playwright
+  evaluates in the SW's own realm, where sw.js's top-level ``const``
+  is in scope) so a later done-probe against real Cache Storage is a
+  genuine test of that probe, not just the ``{ok, failed}`` branching.
+* ``map.js`` is similarly a classic, non-module script, so its
+  top-level ``function activeBasemapTileTemplate(...)`` declaration is
+  a plain, reassignable ``window`` property — stubbed to a fixed
+  template so tile-URL assembly doesn't depend on a resolved
+  basemap-CDN style.
+* The ``/api/region-basemap-tiles/`` fetch is a plain page-level
+  ``fetch()`` (not a service-worker-internal one), so it's stubbed via
+  ``page.route()`` — unlike the SW's own fetches, this one IS visible
+  to Playwright's request interception.
 """
 
 from __future__ import annotations
 
-from typing import cast
+import json
+from typing import Any, cast
 
-from playwright.sync_api import Page, Worker as SWWorker
+import pytest
+from playwright.sync_api import Page, Route, Worker as SWWorker
 
 from tests.e2e.conftest import PwaPage
 
+pytestmark = pytest.mark.usefixtures("_load_test_data")
 
-def _stub_warm_cache(worker: SWWorker, *, ok: int, failed: int) -> None:
-    """Replace ``self._warmCache`` with a stub reporting a fixed outcome.
+# A tiny, self-consistent blob: one z14 tile, matching its own
+# centre_tile exactly — so a stubbed-successful download always writes
+# the one URL the done-probe (centreTileURL) will check for.
+_STUB_TEMPLATE = "https://tiles.example.invalid/{z}/{x}/{y}.pbf"
+_CENTRE_TILE = {"z": 14, "x": 100, "y": 100}
+_STUB_BLOB: dict[str, Any] = {
+    "band": [10, 14],
+    "count": 1,
+    "mb": 1,
+    "over_ceiling": False,
+    "centre_tile": _CENTRE_TILE,
+    "z": {"14": [100, 100, 100, 100]},
+}
+_MICRO_SUMMARY: dict[str, Any] = {
+    "count": 1,
+    "mb": 1,
+    "over_ceiling": False,
+    "centre_tile": _CENTRE_TILE,
+}
 
-    Records the URL list it's called with on ``self.__snow493Urls`` for
-    finding 6's coverage assertions, and resolves with the caller-chosen
-    ``{ok, failed}`` for finding 7's toast-selection assertions — the real
-    ``sw.js``/``sw_register.js`` message round trip (including the
-    SNOW-493 finding 9 requestId echo) still carries this value back to
-    the page exactly as it would a genuine ``_warmCache`` result.
+
+def _reload_home(pwa_page: PwaPage) -> None:
+    """Re-navigate to ``/`` so the page reflects ``_load_test_data``'s rows.
+
+    See the module docstring for why this second navigation is needed —
+    ``pwa_page``'s own first ``goto`` races the DB seed.
     """
-    worker.evaluate(
-        """({ ok, failed }) => {
-            self._warmCache = async (urls) => {
-                self.__snow493Urls = urls;
-                return { ok, failed };
+    page = pwa_page.page
+    page.goto(pwa_page.live_server_url + "/")
+    page.wait_for_load_state("load")
+
+
+def _select_region(page: Page, region_id: str, download: dict[str, Any] | None) -> None:
+    """Inject a synthetic ``FEATURE_BY_REGION_ID`` entry and focus it.
+
+    See the module docstring for why this bypasses the real
+    ``regions.geojson`` boot fetch entirely.
+
+    Args:
+        page: The Playwright page.
+        region_id: e.g. ``"CH-4115"``.
+        download: The flat ``properties.download`` summary
+            (``{count, mb, over_ceiling, centre_tile}``), or ``None``
+            for a region with no computed blob.
+
+    """
+    page.evaluate(
+        """({ regionId, download }) => {
+            FEATURE_BY_REGION_ID[regionId] = {
+                type: 'Feature',
+                properties: { id: regionId, regionID: regionId, download },
             };
+            document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+                detail: { region_id: regionId },
+            }));
         }""",
-        {"ok": ok, "failed": failed},
+        {"regionId": region_id, "download": download},
     )
 
 
-def _recorded_urls(worker: SWWorker) -> list[str]:
-    return cast(list[str], worker.evaluate("() => self.__snow493Urls || []"))
+def _stub_warm_cache(
+    worker: SWWorker,
+    *,
+    ok: int,
+    failed: int,
+    progress_steps: list[tuple[int, int]] | None = None,
+    step_delay_ms: int = 0,
+) -> None:
+    """Replace ``self._warmCache`` with a stub reporting a fixed outcome.
+
+    Records the URL list and the ``pinned`` flag on ``self.__snow521Urls``
+    / ``self.__snow521Pinned``, resolves with the caller-chosen ``{ok,
+    failed}`` — the real ``sw.js``/``sw_register.js`` message round trip
+    still carries this back to the page exactly as a genuine
+    ``_warmCache`` result would — and, for a ``pinned`` call with ``ok >
+    0``, writes every URL into the real ``BASEMAP_PINNED_CACHE`` so a
+    subsequent done-probe (real Cache Storage read) succeeds.
+
+    ``progress_steps``, if given, drives ``options.onProgress(done,
+    total)`` once per tuple, spaced ``step_delay_ms`` apart so a test can
+    reliably observe an intermediate ``busy`` state via
+    ``page.wait_for_function`` before the run resolves.
+    """
+    worker.evaluate(
+        """({ ok, failed, progressSteps, stepDelayMs }) => {
+            self._warmCache = async (urls, options) => {
+                self.__snow521Urls = urls;
+                self.__snow521Pinned = !!(options && options.pinned);
+                const onProgress = options && options.onProgress;
+                for (const [done, total] of progressSteps) {
+                    if (typeof onProgress === 'function') onProgress(done, total);
+                    if (stepDelayMs > 0) {
+                        await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
+                    }
+                }
+                if (options && options.pinned && ok > 0) {
+                    const cache = await caches.open(BASEMAP_PINNED_CACHE);
+                    for (const url of urls) {
+                        await cache.put(url, new Response('stub-tile'));
+                    }
+                }
+                return { ok, failed };
+            };
+        }""",
+        {
+            "ok": ok,
+            "failed": failed,
+            "progressSteps": progress_steps or [],
+            "stepDelayMs": step_delay_ms,
+        },
+    )
+
+
+def _stub_active_basemap_template(page: Page, template: str = _STUB_TEMPLATE) -> None:
+    """Replace ``window.activeBasemapTileTemplate`` with a fixed template.
+
+    Real basemap style resolution depends on a reachable third-party CDN
+    (documented as unreachable in this harness — see the module
+    docstring). ``map.js`` is a classic (non-module) ``<script>``, so its
+    top-level ``function activeBasemapTileTemplate(...)`` declaration is
+    a plain, reassignable ``window`` property.
+    """
+    page.evaluate(
+        "(template) => { window.activeBasemapTileTemplate = () => template; }",
+        template,
+    )
+
+
+def _stub_region_basemap_tiles(page: Page, blob: dict[str, Any] = _STUB_BLOB) -> None:
+    """Route ``/api/region-basemap-tiles/`` to a fixed, deterministic blob.
+
+    A plain page-level ``fetch()`` (``regionDownloadInit``'s click
+    handler in ``map.js``), unlike the SW's own internal fetches — so
+    ``page.route()`` sees and can intercept it.
+    """
+
+    def _handle_route(route: Route) -> None:
+        route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(blob)
+        )
+
+    page.route("**/api/region-basemap-tiles/**", _handle_route)
 
 
 def _wait_for_map_ready(page: Page) -> None:
     page.wait_for_function(
         "() => typeof MAP !== 'undefined' && MAP !== null && "
-        "typeof window.pwaWarmCache === 'function'"
+        "typeof window.pwaWarmCache === 'function' && "
+        "typeof window.pwaBasemapDownloadCore !== 'undefined'"
     )
 
 
-def _open_menu_and_click_cache_now(page: Page) -> None:
-    page.click("#basemap-toggle")
-    button = page.locator("#cache-now-toggle")
-    button.wait_for(state="visible")
-    button.click()
-
-
-def _toast_class(page: Page, toast_id: str) -> str:
-    return page.locator(f"#{toast_id}").get_attribute("class") or ""
-
-
-def test_cache_this_area_covers_every_enabled_country(pwa_page: PwaPage) -> None:
-    """Finding 6: the warm-cache URL list covers every enabled country.
-
-    Enables France in the basemap picker before invoking "Cache this
-    area", then asserts the SW actually received at least one
-    ``?country=fr`` URL (regions/major/sub/ratings), not just the
-    hardcoded ``?country=ch`` the pre-fix code always sent.
-    """
-    page = pwa_page.page
-    assert page.context.service_workers, "expected a registered service worker"
-    worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=0, failed=0)
-
-    _wait_for_map_ready(page)
-
-    page.click("#basemap-toggle")
-    country_toggle = page.locator('[data-overlay-key="country.fr"]')
-    country_toggle.wait_for(state="visible")
-    country_toggle.click()
-    assert country_toggle.get_attribute("aria-checked") == "true"
-    page.keyboard.press("Escape")  # close the menu the country click left open
-
-    _open_menu_and_click_cache_now(page)
+def _wait_for_state(page: Page, state: str, timeout: int = 10000) -> None:
     page.wait_for_function(
-        "() => document.getElementById('cache-now-toggle').getAttribute('aria-disabled') === null"
-    )
-
-    urls = _recorded_urls(worker)
-    assert any("country=fr" in url for url in urls), (
-        f"expected at least one country=fr URL among the warmed list; got {urls!r}"
-    )
-    assert any("country=ch" in url for url in urls), (
-        f"expected country=ch to still be covered too; got {urls!r}"
+        """(state) => {
+            const btn = document.getElementById('region-download-micro');
+            return !!btn && btn.dataset.downloadState === state;
+        }""",
+        arg=state,
+        timeout=timeout,
     )
 
 
-def test_toast_complete_when_failed_is_zero(pwa_page: PwaPage) -> None:
-    """Finding 7: ``failed === 0`` shows the "complete" toast only."""
+def _recorded_urls(worker: SWWorker) -> list[str]:
+    return cast(list[str], worker.evaluate("() => self.__snow521Urls || []"))
+
+
+def _recorded_pinned(worker: SWWorker) -> Any:
+    return worker.evaluate("() => self.__snow521Pinned")
+
+
+def test_micro_icon_visible_idle_with_size_for_default_region(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """A focused region with a computed download summary shows an idle icon."""
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    _wait_for_map_ready(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    assert icon.get_attribute("data-download-state") == "idle"
+    assert "MB" in (icon.get_attribute("aria-label") or "")
+
+
+def test_micro_icon_download_flow_busy_then_done(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """Clicking the idle icon goes busy, then done — no toast, just the icon."""
+    _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=5, failed=0)
+    _stub_warm_cache(worker, ok=1, failed=0, progress_steps=[(1, 1)], step_delay_ms=200)
 
     _wait_for_map_ready(page)
-    _open_menu_and_click_cache_now(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    page.wait_for_selector("#map-cache-now-toast-complete:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-failed")
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+
+    icon.click()
+    _wait_for_state(page, "busy")
+    _wait_for_state(page, "done", timeout=10000)
+
+    # SNOW-493 finding 6 continuity: same-origin data feeds (incl. the
+    # default CH country) are still assembled alongside the tile URL.
+    urls = _recorded_urls(worker)
+    assert any("country=ch" in url for url in urls)
+    assert any(url.startswith("https://tiles.example.invalid/") for url in urls)
+    assert _recorded_pinned(worker) is True
 
 
-def test_toast_partial_when_some_urls_fail(pwa_page: PwaPage) -> None:
-    """Finding 7: ``ok > 0 and failed > 0`` shows the "partial" toast only."""
+def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """A region's ``done`` state survives reselect — derived from real cache.
+
+    Downloads CH-4115, then focuses a different region with no computed
+    summary (clearing the in-page microData for CH-4115 and hiding its
+    icon), then reselects CH-4115 — the icon must read ``done`` again
+    purely from ``regionDownloadInit``'s real ``BASEMAP_PINNED_CACHE``
+    probe, not a remembered JS flag (the "layers menu is a live
+    cache-state dashboard" invariant).
+    """
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+    _stub_warm_cache(worker, ok=1, failed=0)
+
+    _wait_for_map_ready(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "done", timeout=10000)
+
+    # Focus a different region with no computed summary — the icon hides.
+    _select_region(page, "CH-1111", None)
+    icon.wait_for(state="hidden")
+
+    # Reselect CH-4115 — done, without a second click.
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "done", timeout=10000)
+
+
+def test_icon_disabled_when_over_ceiling(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """A summary flagged over_ceiling shows a disabled icon, unclickable."""
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    _wait_for_map_ready(page)
+    _select_region(page, "CH-4115", {**_MICRO_SUMMARY, "over_ceiling": True})
+
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "disabled")
+    assert "too large" in (icon.get_attribute("aria-label") or "")
+
+
+def test_icon_reverts_to_idle_when_some_urls_fail(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """``ok > 0 and failed > 0`` reverts the icon to idle, not done."""
+    _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
     _stub_warm_cache(worker, ok=3, failed=2)
 
     _wait_for_map_ready(page)
-    _open_menu_and_click_cache_now(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    page.wait_for_selector("#map-cache-now-toast-partial:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-failed")
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "idle", timeout=10000)
 
 
-def test_toast_failed_when_ok_is_zero(pwa_page: PwaPage) -> None:
-    """Finding 7: ``ok === 0`` shows "failed", never "available offline"."""
+def test_icon_reverts_to_idle_when_ok_is_zero(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """``ok === 0`` reverts the icon to idle, never claims done."""
+    _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
     _stub_warm_cache(worker, ok=0, failed=4)
 
     _wait_for_map_ready(page)
-    _open_menu_and_click_cache_now(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "idle", timeout=10000)
 
 
-def test_toast_never_complete_for_vacuous_run(pwa_page: PwaPage) -> None:
-    """Finding 7: ``ok === 0`` never claims "available offline".
-
-    A vacuous run — ``{ok: 0, failed: 0}``, nothing cached — has no
-    successes, so the "complete" toast must stay hidden even though there
-    were no failures. "Complete" requires ``ok > 0`` as well as
-    ``failed === 0``.
-    """
+def test_icon_never_claims_done_for_vacuous_run(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """``{ok: 0, failed: 0}`` never claims "available offline"."""
+    _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
     _stub_warm_cache(worker, ok=0, failed=0)
 
     _wait_for_map_ready(page)
-    _open_menu_and_click_cache_now(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    page.wait_for_selector("#map-cache-now-toast-failed:not(.hidden)", timeout=10000)
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-complete")
-    assert "hidden" in _toast_class(page, "map-cache-now-toast-partial")
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "idle", timeout=10000)

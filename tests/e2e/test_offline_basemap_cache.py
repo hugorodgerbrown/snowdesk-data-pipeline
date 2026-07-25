@@ -44,6 +44,13 @@ on the real, activated SW) and a reserved, never-resolving RFC 2606
   exercises the real ``fetch`` event -> ``_classify()`` ->
   ``_basemapStaleWhileRevalidate()`` pipeline from the page side while
   the browser context is offline.
+- ``test_pinned_basemap_tile_served_from_cache_while_offline`` (SNOW-521)
+  seeds ``_basemapOrigins`` + a ``BASEMAP_PINNED_CACHE`` entry — and
+  deliberately no ``BASEMAP_CACHE`` entry — proving
+  ``_basemapStaleWhileRevalidate()``'s passive-cache-miss fallback reads
+  the pinned partition a "Download basemap" run wrote into, rather than
+  only ever falling through to the network/504 the way it did before this
+  fix.
 - ``test_hydrate_basemap_origins_repopulates_empty_set_from_meta_app``
   (SNOW-487) seeds only the durable ``meta:app`` row, resets
   ``_basemapOrigins`` to empty (simulating an idle-terminated-and-
@@ -222,6 +229,74 @@ def test_registered_basemap_origin_served_from_cache_while_offline(
 
     assert result["ok"], (
         f"expected the cached basemap response to resolve while offline: {result}"
+    )
+    assert result["text"] == tile_body
+
+
+def test_pinned_basemap_tile_served_from_cache_while_offline(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-521: a tile in BASEMAP_PINNED_CACHE (not BASEMAP_CACHE) still serves offline.
+
+    Reviewer-flagged blocker: ``_basemapStaleWhileRevalidate`` used to open
+    only ``BASEMAP_CACHE``, so a tile a "Download basemap" run had written
+    into the separate ``BASEMAP_PINNED_CACHE`` partition was invisible to
+    the fetch handler — every such tile fell through to the network while
+    offline and hit the synthesized 504, even though it was sitting in
+    Cache Storage the whole time. This seeds ONLY the pinned cache (the
+    same technique as
+    ``test_registered_basemap_origin_served_from_cache_while_offline``
+    above, minus any ``BASEMAP_CACHE`` entry) so a pass here can only mean
+    the real ``_basemapStaleWhileRevalidate`` actually checked the pinned
+    partition on its passive-cache miss, not that it happened to hit the
+    passive cache instead.
+    """
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+
+    tile_origin = "https://snow521-test-basemap.invalid"
+    tile_url = f"{tile_origin}/tile/0/0/0.pbf"
+    tile_body = "snow521-test-pinned-tile-bytes"
+
+    worker.evaluate(
+        """async ({ origin, url, body }) => {
+            _basemapOrigins = new Set([origin]);
+            const cache = await caches.open(BASEMAP_PINNED_CACHE);
+            await cache.put(
+              url,
+              new Response(body, {
+                status: 200,
+                headers: { 'Access-Control-Allow-Origin': '*' },
+              }),
+            );
+          }""",
+        {"origin": tile_origin, "url": tile_url, "body": tile_body},
+    )
+
+    # Same SNOW-516 rationale as the BASEMAP_CACHE test above — gate on an
+    # activated controller before going offline so the fetch below can't
+    # race a not-yet-taken-over SW and fall through to the network.
+    _wait_for_sw_control(page)
+    page.context.set_offline(True)
+    try:
+        result = page.evaluate(
+            """async (url) => {
+                try {
+                  const resp = await fetch(url, { mode: 'cors' });
+                  const text = await resp.text();
+                  return { ok: resp.ok, status: resp.status, text };
+                } catch (err) {
+                  return { ok: false, error: String(err) };
+                }
+              }""",
+            tile_url,
+        )
+    finally:
+        page.context.set_offline(False)
+
+    assert result["ok"], (
+        f"expected the pinned-cache response to resolve while offline: {result}"
     )
     assert result["text"] == tile_body
 

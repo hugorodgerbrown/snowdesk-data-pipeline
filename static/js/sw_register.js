@@ -187,6 +187,24 @@
       }
       return;
     }
+    // SNOW-521: a throttled progress step (~every 5%, plus the final one)
+    // for the in-flight warm-cache call. Only forwarded to the caller's
+    // onProgress if it matches the in-flight slot's requestId (same stale-
+    // reply guard as 'warm-cache-done') — and, critically, resets the
+    // silence timeout below so a long multi-tile download's own progress
+    // keeps it alive rather than resolving null mid-transfer.
+    if (data.type === 'warm-cache-progress') {
+      if (_warmCacheSlot && data.requestId === _warmCacheSlot.requestId) {
+        _warmCacheSlot.onTimeoutReset?.();
+        try {
+          _warmCacheSlot.onProgress?.(data.done, data.total);
+        } catch (_err) {
+          // A broken onProgress callback must never break the SW message
+          // channel or abort the in-flight call.
+        }
+      }
+      return;
+    }
     if (data.type === 'warm-cache-done') {
       // SNOW-493 finding 9: only resolve if this reply matches the
       // in-flight slot's requestId — a stale reply for a call that already
@@ -204,49 +222,89 @@
   // between receiving the message and posting the reply would otherwise
   // leave the caller's promise pending forever — cacheNowInit's button
   // would stay aria-disabled for the rest of the page's life.
+  //
+  // SNOW-521: this is now "30s of no progress", not a flat 30s from the
+  // call's start — every 'warm-cache-progress' message rearms the timer
+  // (see the message listener above), so a large "Download basemap" run
+  // that's still making progress past the 30s mark is never cut short.
   const WARM_CACHE_TIMEOUT_MS = 30000;
 
   /**
-   * SNOW-492: bridge for map.js's "Cache this area for offline" control.
-   * Posts the given URL list to the active worker's ``warm-cache`` message
-   * handler (``static/js/sw.js``) and resolves with its ``{ok, failed}``
-   * summary once the worker posts ``warm-cache-done`` back. Resolves
-   * ``null`` immediately when there's no active worker (unsupported
-   * browser, or the kill switch has unregistered every SW) — the caller
-   * degrades to "nothing to warm". Also resolves ``null`` if the worker
-   * hasn't replied within ``WARM_CACHE_TIMEOUT_MS`` (see its comment) —
-   * callers already treat ``null`` as "nothing to report" via the same
-   * no-active-worker branch.
+   * SNOW-492: bridge for map.js's "Download basemap" control. Posts the
+   * given URL list to the active worker's ``warm-cache`` message handler
+   * (``static/js/sw.js``) and resolves with its ``{ok, failed}`` summary
+   * once the worker posts ``warm-cache-done`` back. Resolves ``null``
+   * immediately when there's no active worker (unsupported browser, or the
+   * kill switch has unregistered every SW) — the caller degrades to
+   * "nothing to warm". Also resolves ``null`` if the worker goes
+   * ``WARM_CACHE_TIMEOUT_MS`` without a reply OR a progress message (see
+   * that constant's comment) — callers already treat ``null`` as "nothing
+   * to report" via the same no-active-worker branch.
    *
    * SNOW-493 finding 9: mints a ``requestId`` for this call and posts it
-   * alongside the URL list; ``sw.js`` echoes it back in
-   * ``warm-cache-done``. On timeout, this call's own promise still
-   * resolves ``null``, but the slot is only cleared if it still belongs to
-   * THIS request — otherwise a request that arrived and repopulated the
-   * slot in the interim (vanishingly unlikely given map.js's click-guard,
-   * but not impossible if a caller bypasses it) would have its slot wiped
-   * out from under it by this stale timeout.
+   * alongside the URL list; ``sw.js`` echoes it back in both
+   * ``warm-cache-progress`` and ``warm-cache-done``. On timeout, this
+   * call's own promise still resolves ``null``, but the slot is only
+   * cleared if it still belongs to THIS request — otherwise a request that
+   * arrived and repopulated the slot in the interim (vanishingly unlikely
+   * given map.js's click-guard, but not impossible if a caller bypasses
+   * it) would have its slot wiped out from under it by this stale timeout.
+   *
+   * SNOW-521: ``opts.pinned`` is forwarded verbatim in the posted message
+   * (``sw.js`` reads ``event.data.pinned``); ``opts.onProgress(done,
+   * total)``, if supplied, is invoked from the message listener above on
+   * every ``warm-cache-progress`` reply matching this call's requestId. A
+   * caller passing no ``opts`` at all (the pre-SNOW-521 call shape) still
+   * works — ``pinned`` defaults false and progress is simply not observed.
    *
    * @param {string[]} urls
+   * @param {{pinned?: boolean, onProgress?: (done: number, total: number) => void}} [opts]
    * @returns {Promise<{ok: number, failed: number} | null>}
    */
-  function warmCache(urls) {
+  function warmCache(urls, opts) {
     const active = navigator.serviceWorker.controller;
     if (!active) return Promise.resolve(null);
+    const options = opts || {};
     const requestId = _mintRequestId();
-    const reply = new Promise((resolve) => {
-      _warmCacheSlot = { requestId, resolve };
-      active.postMessage({ type: 'warm-cache', urls: urls || [], requestId });
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutHandle = null;
+
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        resolve(value);
+      };
+
+      // SNOW-521: (re)arms the silence timeout — called once up front and
+      // again from the message listener on every progress reply, so the
+      // effective wait is "30s since the last sign of life", not a flat
+      // 30s from the start of a possibly-long download.
+      const armTimeout = () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          if (_warmCacheSlot && _warmCacheSlot.requestId === requestId) {
+            _warmCacheSlot = null;
+          }
+          settle(null);
+        }, WARM_CACHE_TIMEOUT_MS);
+      };
+
+      _warmCacheSlot = {
+        requestId,
+        resolve: settle,
+        onProgress: options.onProgress,
+        onTimeoutReset: armTimeout,
+      };
+      armTimeout();
+      active.postMessage({
+        type: 'warm-cache',
+        urls: urls || [],
+        requestId,
+        pinned: !!options.pinned,
+      });
     });
-    const timeout = new Promise((resolve) => {
-      setTimeout(() => {
-        if (_warmCacheSlot && _warmCacheSlot.requestId === requestId) {
-          _warmCacheSlot = null;
-        }
-        resolve(null);
-      }, WARM_CACHE_TIMEOUT_MS);
-    });
-    return Promise.race([reply, timeout]);
   }
 
   Object.defineProperty(window, 'pwaWarmCache', {

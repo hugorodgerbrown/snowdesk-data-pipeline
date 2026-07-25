@@ -341,6 +341,10 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
         "/api/bulletin-groupings.geojson",
+        # SNOW-521: full basemap_download blob for one region (id-keyed,
+        # not country-filtered) — same static-reference-data caching
+        # rationale as the geojson endpoints above.
+        "/api/region-basemap-tiles/",
         # SNOW-419's community-reports overlay is deliberately NOT listed.
         # SNOW-459 made it private/no-store (its waffle-flag gate is per-user,
         # so the response can't be shared-cached), so there is no
