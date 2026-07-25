@@ -131,39 +131,12 @@ Optional context:
             <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
         </svg>
     </div>
-    {# PROTOTYPE (homepage rework): bottom-right control stack — the layers  #}
-    {# and locate pills move to the conventional map-control corner, stacked #}
-    {# above the report roundel. map.js binds these by their own ids, so the #}
-    {# relocation is DOM-only; #map-controls-br is added to the click guard.  #}
+    {# Bottom-right control stack — every roundel in one bottom-anchored      #}
+    {# column: basemap, locate, the flag-gated favourite + observation pills, #}
+    {# and the help (?) roundel at the foot (level with the bottom-left (i)    #}
+    {# toggle). map.js/report.js/favourites.js bind by id, so the ordering is #}
+    {# DOM-only; #map-controls-br is on the click guard.                       #}
     <div class="map-controls-br" id="map-controls-br">
-        {# SNOW-457: help / coachmark tour roundel — opens a first-run          #}
-        {# walkthrough of the map's controls (see #map-help-overlay below).    #}
-        {# Sits at the top of the stack so it reads as "the way to find out    #}
-        {# what everything does" rather than another control to learn.        #}
-        <div class="map-utility-pill map-utility-pill--help">
-            <button
-                id="map-help-toggle"
-                type="button"
-                class="map-utility-button"
-                aria-label='{% trans "How to use the map" %}'
-            >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-            </button>
-        </div>
         {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
         {# pill that opens a popover of basemap options. Choice persists in   #}
         {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
@@ -489,6 +462,68 @@ Optional context:
                 </button>
             </div>
         {% endif %}
+        {# SNOW-333: field-report / observations roundel — folded into the      #}
+        {# bottom-right stack (was an independently-positioned pill) so the      #}
+        {# stack bottom-anchors as one unit and shifts down when the flag-gated  #}
+        {# favourite/report roundels are absent. report.js binds #report-btn by  #}
+        {# id, so the relocation is DOM-only.                                    #}
+        {% if report_visible %}
+            <div class="map-utility-pill map-report-control">
+                <button
+                    id="report-btn"
+                    type="button"
+                    class="map-utility-button"
+                    data-report-form-url="{{ report_form_url }}"
+                    data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
+                    data-report-unverified="{{ report_unverified|yesno:'true,false' }}"
+                    data-signin-url="{{ report_signin_url }}"
+                    aria-label='{% trans "Report a field observation" %}'
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                    </svg>
+                </button>
+            </div>
+        {% endif %}
+        {# SNOW-457: help / coachmark tour roundel — the "how to use the map"    #}
+        {# affordance, moved to the BOTTOM of the stack so it sits level with    #}
+        {# the bottom-left (i) legend toggle on the shared bottom baseline.      #}
+        <div class="map-utility-pill map-utility-pill--help">
+            <button
+                id="map-help-toggle"
+                type="button"
+                class="map-utility-button"
+                aria-label='{% trans "How to use the map" %}'
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+            </button>
+        </div>
     </div>
     {% comment %}
     Map info panel (SNOW-38, redesigned SNOW-230). A single (i) toggle
@@ -508,7 +543,13 @@ Optional context:
             aria-label='{% trans "Map information" %}'
         >
             <section class="map-legend-section">
-                <div class="map-legend-title">{% trans "Today" %}</div>
+                <div class="map-legend-title">{% trans "EAWS Danger Scale" %}</div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--no-rating"
+                        aria-hidden="true"
+                    ></span>{% trans "No rating" %}
+                </div>
                 <div class="map-legend-row">
                     <span
                         class="map-legend-swatch map-legend-swatch--low"
@@ -533,6 +574,9 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "High (4)" %}
                 </div>
+            </section>
+            <section class="map-legend-section">
+                <div class="map-legend-title">{% trans "Map pins" %}</div>
                 {% comment %}
                 SNOW-78: Resorts overlay legend entry — only meaningful
                 when the user has enabled the layer in the basemap menu,
@@ -541,6 +585,28 @@ Optional context:
                 {% endcomment %}
                 <div class="map-legend-row" data-testid="map-legend-resorts">
                     <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
+                </div>
+                {# Favourites + observations keys — the solid star and flag    #}
+                {# reproduce the on-map markers (favourite-star / community-    #}
+                {# report-flag in map.js), in their icon-color tints, so the    #}
+                {# legend is a complete key for every marker the map can show.  #}
+                {# Font Awesome Free v7 paths, CC BY 4.0 — see map.js for the   #}
+                {# retained attribution. Hex fills mirror the map icon-color.   #}
+                <div class="map-legend-row" data-testid="map-legend-favourites">
+                    <span class="map-legend-icon" aria-hidden="true">
+                        {# ds-lint-allow: SVG fill mirrors the favourite-star icon-color in map.js (no CSS token exists for the map-marker tint) #}
+                        <svg width="12" height="12" viewBox="0 0 576 512" fill="#1a73e8">
+                            <path d="M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L442.2 329 546.6 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L385.1 150.3 316.9 18z" />
+                        </svg>
+                    </span>{% trans "Favourites" %}
+                </div>
+                <div class="map-legend-row" data-testid="map-legend-observations">
+                    <span class="map-legend-icon" aria-hidden="true">
+                        {# ds-lint-allow: SVG fill mirrors the community-report-flag icon-color in map.js (no CSS token exists for the map-marker tint) #}
+                        <svg width="12" height="12" viewBox="0 0 448 512" fill="#e8711a">
+                            <path d="M48 24C48 10.7 37.3 0 24 0S0 10.7 0 24L0 488c0 13.3 10.7 24 24 24s24-10.7 24-24l0-100 80.3-20.1c41.1-10.3 84.6-5.5 122.5 13.4 44.2 22.1 95.5 24.8 141.7 7.4l34.7-13c12.5-4.7 20.8-16.6 20.8-30l0-279.7c0-23-24.2-38-44.8-27.7l-9.6 4.8c-46.3 23.2-100.8 23.2-147.1 0-35.1-17.6-75.4-22-113.5-12.5L48 52 48 24z" />
+                        </svg>
+                    </span>{% trans "Observations" %}
                 </div>
             </section>
             <section class="map-legend-section">
@@ -607,6 +673,13 @@ Optional context:
                 <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
         </button>
+        {# Scrubbed-date ribbon — sits to the right of the (i) legend toggle in   #}
+        {# the bottom-left cluster, close to the season scrubber that drives it.   #}
+        {# map.js fills the text on every date-changed / preview / playback frame; #}
+        {# hidden until the first date is known (the date moved here from the top  #}
+        {# #region-readout). The legend card opens upward, above this row, so it   #}
+        {# never overlaps the toggle or the date.                                  #}
+        <div id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></div>
     </div>
     {# SNOW-445: the persistent off-season archive notice (SNOW-343) moved out #}
     {# of #map to a full-width bar above the map (see #map-offseason-bar at the #}
@@ -632,42 +705,9 @@ Optional context:
         <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
         {% include "public/partials/_season_scrubber_controls.html" %}
     </div>
-    {# SNOW-333: field-report roundel — rendered when the flag is active         #}
-    {# (report_visible) regardless of authentication state. report.js branches   #}
-    {# on three states: data-report-eligible (verified user) gets the report     #}
-    {# form; data-report-unverified (authenticated but email unverified, SNOW-477) #}
-    {# gets a "verify your email" prompt; anonymous users get a sign-in CTA via   #}
-    {# data-signin-url.                                                          #}
-    {% if report_visible %}
-        <div class="map-utility-pill map-report-control">
-            <button
-                id="report-btn"
-                type="button"
-                class="map-utility-button"
-                data-report-form-url="{{ report_form_url }}"
-                data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
-                data-report-unverified="{{ report_unverified|yesno:'true,false' }}"
-                data-signin-url="{{ report_signin_url }}"
-                aria-label='{% trans "Report a field observation" %}'
-            >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-                    <path d="M12 9v4" />
-                    <path d="M12 17h.01" />
-                </svg>
-            </button>
-        </div>
-    {% endif %}
+    {# SNOW-333: the field-report / observations roundel now lives inside        #}
+    {# #map-controls-br (folded into the bottom-right stack above); its sheet    #}
+    {# + scripts stay in _report_surface.html.                                   #}
     {# SNOW-457: help / coachmark tour — step definitions are server-rendered   #}
     {# as hidden <li> nodes so every string is translatable via {% trans %};   #}
     {# static/js/map_help.js reads them, drops any step whose data-help-target #}
@@ -677,7 +717,7 @@ Optional context:
     {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
     <ul id="map-help-steps" hidden>
         <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
-            {% trans "Shows the date and region selected." %}
+            {% trans "Names the region selected and its danger for the day." %}
         </li>
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
             {% trans "Click through to the bulletin detail page." %}
