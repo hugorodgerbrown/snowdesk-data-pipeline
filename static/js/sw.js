@@ -239,7 +239,10 @@ try {
 // SNOW-509: v37 — the weather-bucket CSS hook moved from `.bulletin-header`
 // to `.weather-bucket` (main.css), shared by the new resort-page weather
 // panel — shell CSS bytes changed.
-const CACHE_VERSION = 'snowdesk-shell-v37';
+// SNOW-518: v38 — map.js now notifies the layers-menu sync dashboard from
+// the boot overlay-restore path and ensureCountryLoaded, and adds a
+// visibilitychange re-probe — shell JS bytes changed.
+const CACHE_VERSION = 'snowdesk-shell-v38';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
