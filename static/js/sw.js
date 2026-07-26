@@ -742,11 +742,17 @@ async function _staleWhileRevalidate(request) {
         // module header. Gates IMMUTABLE_ONLY_PATHS entries (currently just
         // /api/bulletin-groupings.geojson) on the response's own
         // Cache-Control: immutable declaration so an unsettled date is
-        // never written to the shell cache.
+        // never written to the shell cache. The inline fallback mirrors
+        // shouldPersist()'s exact token-split/trim/includes match (not a
+        // bare substring test) so the two implementations can't disagree.
         const persist = self.pwaBasemapCacheCore
           ? self.pwaBasemapCacheCore.shouldPersist(url, response, IMMUTABLE_ONLY_PATHS)
           : !IMMUTABLE_ONLY_PATHS.has(url.pathname) ||
-            (response.headers.get('Cache-Control') || '').toLowerCase().includes('immutable');
+            (response.headers.get('Cache-Control') || '')
+              .toLowerCase()
+              .split(',')
+              .map((token) => token.trim())
+              .includes('immutable');
         if (persist) {
           cache.put(request, response.clone()).catch(() => {});
         }
