@@ -187,6 +187,9 @@ Optional context:
                         data-overlay-key="country.ch"
                         aria-checked="true"
                     >
+                        {# SNOW-524: per-country sync dot — green only when all #}
+                        {# four of this country's feeds are cached.             #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Switzerland" %}
                     </button>
                 </li>
@@ -198,6 +201,9 @@ Optional context:
                         data-overlay-key="country.fr"
                         aria-checked="false"
                     >
+                        {# SNOW-524: per-country sync dot — green only when all #}
+                        {# four of this country's feeds are cached.             #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "France" %}
                     </button>
                 </li>
@@ -209,6 +215,9 @@ Optional context:
                         data-overlay-key="country.at"
                         aria-checked="false"
                     >
+                        {# SNOW-524: per-country sync dot — green only when all #}
+                        {# four of this country's feeds are cached.             #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Austria" %}
                     </button>
                 </li>
@@ -220,6 +229,9 @@ Optional context:
                         data-overlay-key="country.it"
                         aria-checked="false"
                     >
+                        {# SNOW-524: per-country sync dot — green only when all #}
+                        {# four of this country's feeds are cached.             #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                         {% trans "Italy" %}
                     </button>
                 </li>

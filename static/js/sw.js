@@ -263,7 +263,13 @@ try {
 // place_picker.js and map_edit_resorts.js; map.js closes any open popup on
 // entry. Shell JS/HTML bytes changed (place_picker.js, map_edit_resorts.js,
 // map.js, home.html) plus the new module.
-const CACHE_VERSION = 'snowdesk-shell-v45';
+// SNOW-524: per-country sync dots in the layers menu — country rows carry
+// their own dot probed exactly (no ignoreSearch) across all four
+// ?country=-scoped feeds, uncached countries are disabled offline, and a
+// country click paints a new pulsing "syncing" dot state until its data
+// lands. Shell JS/HTML/CSS bytes changed (map.js, map_layer_sync_status.js,
+// map.css, _map_embed.html).
+const CACHE_VERSION = 'snowdesk-shell-v46';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

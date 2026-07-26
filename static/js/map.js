@@ -1802,12 +1802,46 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // SNOW-172: Lazy-fetch a country's L1 + L2 + L4 GeoJSON and merge it
   // into the existing MapLibre sources. loadedCountries prevents re-fetching.
-  const ensureCountryLoaded = async (code) => {
+  //
+  // SNOW-524: make sure a country's season-ratings feed is present in Cache
+  // Storage, fetching it only if it isn't. Used for the boot country, whose
+  // ratings were fetched too early in the page's life to be seen by the
+  // service worker on a first-ever visit; on every later visit the entry is
+  // already there and this makes no request at all.
+  //
+  // Resolves true when the feed is cached (or was just fetched successfully) —
+  // i.e. when the country's dot may honestly go green. Never throws.
+  const ensureRatingsCached = async (code) => {
+    const url = RATINGS_URL + '?country=' + code;
+    try {
+      if ('caches' in window) {
+        const hit = await caches.match(new Request(new URL(url, location.origin)));
+        if (hit) return true;
+      }
+    } catch (_e) {
+      // Cache Storage unavailable — fall through to the network.
+    }
+    return fetch(url).then(r => r.ok).catch(() => false);
+  };
+
+  // SNOW-524: ``isBootCountry`` marks the one country the boot block has
+  // already partly loaded on the critical path (CH). It is NOT a
+  // default-country exemption — boot runs this function for CH exactly as for
+  // any country the user toggles on, so CH ends up with the same four feeds
+  // cached. The flag only avoids redoing work boot already did:
+  //
+  //   - L4 geometry is already fetched AND installed, so re-fetching it here
+  //     would merge CH's polygons into ``geojsonCache`` a second time and
+  //     duplicate every feature.
+  //   - Season ratings are already fetched into ``SEASON_RATINGS_PROMISE``,
+  //     which IS the cache this function otherwise merges into — so there is
+  //     nothing to merge and no second fetch to make.
+  const ensureCountryLoaded = async (code, { isBootCountry = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
     try {
       const [newRegions, newMajor, newSub] = await Promise.all([
-        REGIONS_URL ? fetch(REGIONS_URL + '?country=' + code).then(r => {
+        REGIONS_URL && !isBootCountry ? fetch(REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('regions fetch failed');
           return r.json();
         }) : Promise.resolve(null),
@@ -1887,13 +1921,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // feature-presence checks as the merges above; markCached no-ops for keys
       // not actually loaded.
       //
-      // The "cached" signal is country-agnostic: this greens L1/L2/L4 off ANY
-      // country's feed (e.g. ``?country=at``), even though ``_loadOverlay``
-      // later fetches ``?country=ch`` specifically and ``_staleWhileRevalidate``
-      // caches per full URL. That matches the dashboard's own probe contract —
-      // ``_probeGeoJson`` uses ``ignoreSearch: true`` (map_layer_sync_status.js),
-      // so a re-open ``refresh()`` would paint the same country-agnostic green.
-      // A per-country dot would need a probe change in that (frozen) module.
+      // SNOW-524: these tier marks stay optimistic, but the dashboard's probe
+      // is no longer country-agnostic — ``_probeEveryCountry`` now requires the
+      // tier to be cached for EVERY enabled country before it paints green. So
+      // a mark here can briefly over-claim (this country is cached, another
+      // enabled one isn't); the next popover-open ``refresh()`` re-probes and
+      // corrects it. The country's own dot is marked at the end of this
+      // function, once its ratings feed has been fetched too.
       if (newRegions && newRegions.features) window.pwaLayerSyncStatus?.markCached('l4');
       if (newMajor && newMajor.features) window.pwaLayerSyncStatus?.markCached('l1');
       if (newSub && newSub.features) window.pwaLayerSyncStatus?.markCached('l2');
@@ -1904,10 +1938,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // season cache so scrubber/timelapse frames immediately include it.
       // Also paint the current visible date so new regions colour straight
       // away without waiting for the next scrubber interaction.
-      if (RATINGS_URL) {
+      // SNOW-524: did every feed this country's dot depends on actually land?
+      // L1/L2 swallow their own errors (``.catch(() => null)``) so a partial
+      // load doesn't reject — which means the country dot must not be greened
+      // off a successful *call*, only off complete data.
+      let ratingsOk = false;
+      if (RATINGS_URL && isBootCountry) {
+        // Boot already fetched this country's season ratings into
+        // SEASON_RATINGS_PROMISE, so there is nothing to fetch or merge — but
+        // that fetch can still be missing from Cache Storage: on a first-ever
+        // visit it runs before the service worker controls the page, so it is
+        // never intercepted and never cached. Top it up only when it really is
+        // absent, which costs one request on a first visit and none after.
+        ratingsOk = await ensureRatingsCached(code);
+      } else if (RATINGS_URL) {
         const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
           .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
           .catch(() => null);
+        ratingsOk = !!countryRatings;
         if (countryRatings) {
           // Merge into SEASON_RATINGS_PROMISE payload if it has resolved.
           if (SEASON_RATINGS_PROMISE) {
@@ -1961,9 +2009,41 @@ const repaintRegionsForDate = (dateKey, cache) => {
           }
         }
       }
+      // SNOW-524: green the country's own dot, but only once all four of its
+      // feeds have actually flowed through the SW cache — a skipped feed was
+      // already fetched by boot, so it counts. Optimistic on purpose: the SW's
+      // ``cache.put`` isn't awaited inside ``_staleWhileRevalidate``, so an
+      // immediate re-probe would race the write; the next popover-open
+      // ``refresh()`` re-verifies against real cache state and self-corrects.
+      const allFeedsLoaded =
+        (skipRegions || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
+      if (allFeedsLoaded) {
+        window.pwaLayerSyncStatus?.markCached('country.' + code);
+      } else {
+        // Partial load — let a real probe decide, rather than leaving the row
+        // pulsing forever after an optimistic markSyncing.
+        window.pwaLayerSyncStatus?.refresh();
+      }
     } catch (err) {
       console.warn('[map] Failed to load country', upper, err);
-      // Leave toggle visually on so the user can retry — don't reset countryState.
+      // SNOW-524: the load failed (offline with this country uncached is the
+      // common case), so revert the toggle rather than leaving it switched on
+      // over an empty map with no feedback. The layers menu now gates the row
+      // offline, so reaching here means either a genuine network error online
+      // or a stale cached shell without the gate.
+      countryState[code] = false;
+      COUNTRY_STATE[code] = false;
+      writeStorage(COUNTRY_STORAGE_KEY(code), 'false');
+      const row = document.querySelector(
+        `#basemap-menu [data-overlay-key="country.${code}"]`,
+      );
+      if (row) row.setAttribute('aria-checked', 'false');
+      applyCountryFilters();
+      // SNOW-524: the country is no longer enabled, so re-probe to re-judge the
+      // country-scoped tier dots without it — otherwise they'd stay stuck grey
+      // on account of a country that's just been switched back off.
+      window.pwaLayerSyncStatus?.refresh();
+      revealOfflineToast('map-offline-toast-layer');
     }
   };
 
@@ -2236,6 +2316,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // scrubber IIFE can read the latest state for effective-last computation.
     COUNTRY_STATE[code] = next;
     writeStorage(COUNTRY_STORAGE_KEY(code), String(next));
+    // SNOW-524: show the dashboard populating. Turning a country ON fetches
+    // its L1/L2/L4 + ratings, so the country row and all three tier rows go
+    // grey-and-pulsing synchronously here, then green one by one from
+    // ``ensureCountryLoaded`` as each response lands. This is deliberately
+    // marked, not probed — an async ``refresh()`` here would race the fetches
+    // it represents (see markSyncing's docstring). Turning a country OFF
+    // starts no fetch, so that branch takes the ordinary re-probe, which also
+    // re-greens any tier that was only grey on the dropped country's account.
+    const sync = window.pwaLayerSyncStatus;
+    // Only a toggle-ON that will actually fetch may paint the pending state —
+    // otherwise nothing would ever arrive to green the dots and they'd pulse
+    // forever. ``loadedCountries.has(code)`` means this country's feeds were
+    // fetched earlier this session, so ``ensureCountryLoaded`` returns
+    // immediately without calling markCached.
+    const willFetch = next && !!map && !loadedCountries.has(code);
+    if (willFetch) {
+      sync?.markSyncing('country.' + code);
+      for (const tier of sync?.COUNTRY_SCOPED_TIER_KEYS || []) sync.markSyncing(tier);
+    } else {
+      // Nothing in flight — re-probe for the real state. On toggle-OFF this
+      // also re-greens any tier that was grey only on the dropped country's
+      // account; on a re-enable of an already-loaded country it confirms the
+      // feeds are still cached.
+      sync?.refresh();
+    }
     if (map) {
       if (next) {
         ensureCountryLoaded(code).then(() => {
@@ -2364,8 +2469,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // first requested. The styledata re-install handler below is
     // already null-safe (passes null caches ⇒ early-returns cleanly).
 
-    // SNOW-172: CH geometry is now loaded; record it and apply initial filter.
-    loadedCountries.add('ch');
+    // SNOW-172: CH geometry is now loaded; apply the initial filter.
+    // SNOW-524: CH is deliberately NOT added to ``loadedCountries`` here any
+    // more — that marked it loaded off the critical-path L4 + ratings fetches
+    // alone, so its L1/L2 were never fetched and Switzerland could never reach
+    // the same cached state as a country the user toggles on. The restore loop
+    // below now runs the country load for CH too (skipping the two feeds this
+    // block already fetched), and that call is what records it.
     applyCountryFilters();
 
     // SNOW-239: Paint today's choropleth via setFeatureState.
@@ -2395,11 +2505,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
       map.on('sourcedata', onSourceData);
     }
 
-    // Restore any countries that were previously enabled in localStorage.
+    // Load every enabled country — the ones restored from localStorage AND
+    // Switzerland. SNOW-524: CH used to be excluded here, which is why it
+    // alone never fetched its L1/L2 and could never reach the cached state
+    // every other country reaches. It now takes the same path, minus the two
+    // work the boot block above already did (L4 geometry, season ratings).
+    // The L1/L2 fetches still run, landing in the offline cache off the
+    // critical path so SNOW-235's trimmed first paint is preserved.
     for (const code of COUNTRY_KEYS) {
-      if (code !== 'ch' && countryState[code]) {
-        ensureCountryLoaded(code).catch(() => {});
-      }
+      if (!countryState[code]) continue;
+      ensureCountryLoaded(code, { isBootCountry: code === 'ch' }).catch(() => {});
     }
 
     // SNOW-235: Restore any overlay tiers the user had enabled in a prior
