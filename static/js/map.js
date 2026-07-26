@@ -2842,6 +2842,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     document.addEventListener('snowdesk:resort-popup-close', closeDetailPopup);
     document.addEventListener('snowdesk:favourite-detail-close', closeDetailPopup);
 
+    // Pin-positioning focus (static/js/map_placement_focus.js) clears every
+    // app layer off the basemap while the user places a favourite, an
+    // observation, or a resort. The popups are the other things floating over
+    // the map, and one anchored to a region that is no longer drawn is a
+    // leftover rather than context — dismiss both on entry. Nothing reopens
+    // them on exit: by then the user has usually panned the map, so the old
+    // anchor no longer points at anything they are looking at. The region
+    // *selection* is untouched (its highlight is a layer, so it comes back
+    // with the rest), which is why this is closePopupOnly and not clearTooltip.
+    document.addEventListener('snowdesk:placement-focus', (e) => {
+      if (!(e.detail && e.detail.active)) return;
+      closePopupOnly();
+      closeDetailPopup();
+    });
+
     // Clear the selection state for the currently-focused region (deselects
     // the map highlight) and keep the URL hash in sync. Called on genuine
     // empty-map-canvas taps and on back-button navigation.

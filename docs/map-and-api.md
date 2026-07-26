@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, region-basemap-tiles)
 status: current
-last-reviewed: 2026-07-25
+last-reviewed: 2026-07-26
 ---
 
 # Map page and JSON API
@@ -133,6 +133,38 @@ called at the end of **every** layer-install path (`installRegionsLayers`,
 `installOverlayLayers`, `installResortsLayer`, `installFavouritesLayer`,
 `installCommunityReportsLayer`, `installBulletinGroupingsLayer`) — so any new
 install must keep that call, or a later overlay will paint over the pins.
+
+**Placement focus (`static/js/map_placement_focus.js`)**: while a pin is
+being positioned — a favourite, a field observation, or a resort in the
+Edit-resorts tool — every layer the app draws over the basemap is hidden,
+then restored to exactly its previous visibility when the flow ends.
+`window.PlacementFocus` exposes `enter()` / `exit()` / `isActive()`;
+`enter()` snapshots each layer's `visibility` before setting it to `none`,
+so an overlay the user had switched off (resorts, say) is still off
+afterwards. Re-entry while already focused is a no-op, so the snapshot
+can't be clobbered by a double-arm.
+
+The set of layers to hide is **derived, not enumerated**: every Snowdesk
+layer hangs off a `geojson` source this app adds, and every basemap layer
+hangs off a `vector`/`raster` source (or is a sourceless `background`
+layer, as in the offline fallback style), so the module hides exactly the
+geojson-sourced layers. A new overlay is covered without touching the
+module — unlike the `OVERLAY_LAYER_IDS` lists in `map.js`, which must
+enumerate ids because they map *menu rows* to layers.
+
+Callers: `place_picker.js`'s `activate()`/`deactivate()` (which covers the
+favourite-create and field-observation flows, both of which position via
+the shared centre pin), and `map_edit_resorts.js`'s
+`placeDraftMarker()`/`removeDraftMarker()` — the draft marker's lifetime is
+exactly the positioning phase, since Save and Cancel are enabled only while
+it exists. `enter()`/`exit()` dispatch `snowdesk:placement-focus
+{active}`; map.js listens for it and closes any open region/detail popup on
+entry (a card anchored to a region that is no longer drawn is a leftover).
+Popups are not reopened on exit. A basemap swap mid-placement re-installs
+every overlay visible, so the module re-hides and re-snapshots on
+`snowdesk:basemap-changed`. Tests: `tests/js/test_map_placement_focus.js`
+(module bookkeeping against a fake map) and
+`tests/e2e/test_map_placement_focus.py` (the real wiring).
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns

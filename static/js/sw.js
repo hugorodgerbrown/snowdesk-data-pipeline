@@ -257,7 +257,13 @@ try {
 // BASEMAP_CACHE, exempt from the passive stale-while-revalidate LRU trim.
 // Shell JS/HTML bytes changed (map.js, sw_register.js, _map_embed.html)
 // plus the new static/js/basemap_download_core.js module.
-const CACHE_VERSION = 'snowdesk-shell-v45';
+// Distraction-free pin positioning: the new static/js/map_placement_focus.js
+// module (window.PlacementFocus) clears every app layer off the basemap while
+// a favourite / observation / resort pin is being positioned, wired in from
+// place_picker.js and map_edit_resorts.js; map.js closes any open popup on
+// entry. Shell JS/HTML bytes changed (place_picker.js, map_edit_resorts.js,
+// map.js, home.html) plus the new module.
+const CACHE_VERSION = 'snowdesk-shell-v46';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
