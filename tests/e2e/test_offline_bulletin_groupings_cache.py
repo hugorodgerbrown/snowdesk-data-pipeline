@@ -197,15 +197,25 @@ def test_unsettled_date_is_not_persisted_to_the_shell_cache(
     negative assertion below is trusted. Without the control, a broken
     probe, a typo'd URL, or a SW that had simply stopped caching entirely
     would all make the negative assertion pass for the wrong reason.
+
+    Both halves run against a SINGLE patched threshold, with the two dates
+    straddling it, rather than re-patching between them.
+    ``public.api._cached_earliest_mutable_date()`` memoises the threshold
+    for 60s (SNOW-526), so the first request warms the memo and a later
+    re-patch would be ignored — which is exactly how an earlier version of
+    this test failed on CI: the negative half was still being classified
+    against the positive half's threshold, so the "unsettled" date came
+    back ``immutable`` and was cached. One threshold also mirrors
+    production, where a single boundary classifies every date.
     """
     cache.clear()
+    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2026, 1, 1))
 
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     _wait_for_sw_control(page)
 
-    # Positive control — a settled date persists.
-    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2099, 1, 1))
+    # Positive control — a date before the threshold is settled, so it persists.
     settled_url = "/api/bulletin-groupings.geojson?d=2025-12-01"
     settled_online = _fetch(page, settled_url)
     assert settled_online["ok"], (
@@ -218,8 +228,7 @@ def test_unsettled_date_is_not_persisted_to_the_shell_cache(
         "prove nothing"
     )
 
-    # Negative — an unsettled date never persists.
-    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2000, 1, 1))
+    # Negative — a date on/after the threshold is unsettled, so it never persists.
     unsettled_url = "/api/bulletin-groupings.geojson?d=2026-04-16"
     unsettled_online = _fetch(page, unsettled_url)
     assert unsettled_online["ok"], (
