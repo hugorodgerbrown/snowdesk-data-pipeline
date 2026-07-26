@@ -15,8 +15,9 @@ chip) for the focused MICRO region only, with no completion toast — the
 icon itself carries the outcome (a green "available offline" circle on
 success, reverting to idle otherwise). This file covers: the icon's
 idle→busy→done flow, a reselected region reading ``done`` from real cache
-state rather than in-page memory, and the disabled/over_ceiling and
-partial/failed-run branches.
+state rather than in-page memory, a probe that couldn't resolve the
+active basemap's tile template re-running once the style settles, and
+the disabled/over_ceiling and partial/failed-run branches.
 
 Every test requests ``_load_test_data`` (``pytestmark`` below) — not for
 its ratings/bulletin rows, but because ``_season_ribbon.html``'s
@@ -421,3 +422,55 @@ def test_icon_never_claims_done_for_vacuous_run(
     _wait_for_state(page, "idle")
     icon.click()
     _wait_for_state(page, "idle", timeout=10000)
+
+
+def test_done_state_resolves_once_the_style_settles(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """An unresolvable tile template re-probes instead of settling on idle.
+
+    ``activeBasemapTileTemplate`` is gated on ``map.isStyleLoaded()``,
+    which is false for the whole of the boot sequence that first paints
+    this icon — the overlay sources are added inside ``map.on('load')``
+    itself, so the style is still dirty when ``MAP_READY_PROMISE``
+    resolves. The first done-probe of a page load therefore has no URL to
+    look up, which used to paint a durable ``idle`` over an
+    already-downloaded region until the user reselected it.
+
+    Reproduced here by nulling the template stub — the harness's own
+    permanent condition (no reachable basemap CDN) is the same one the
+    real boot sequence passes through transiently. The icon must re-probe
+    real cache state on the next MapLibre ``idle`` and flip to ``done``
+    with no reselect.
+    """
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+    _stub_warm_cache(worker, ok=1, failed=0)
+
+    _wait_for_map_ready(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+
+    icon = page.locator("#region-download-micro")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "done", timeout=10000)
+
+    # Style not settled: the template is unresolvable, so the probe can't
+    # tell — the icon reads idle (actionable, carrying the region's size).
+    page.evaluate("() => { window.activeBasemapTileTemplate = () => null; }")
+    _select_region(page, "CH-1111", None)
+    icon.wait_for(state="hidden")
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+
+    # Style settles: the queued re-probe reads the real pinned cache and
+    # the icon flips to done without the region being reselected.
+    _stub_active_basemap_template(page)
+    page.evaluate("() => MAP.fire('idle')")
+    _wait_for_state(page, "done", timeout=10000)
