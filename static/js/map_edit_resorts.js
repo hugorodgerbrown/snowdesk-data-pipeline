@@ -377,6 +377,17 @@
   };
 
   // Draft marker ------------------------------------------------------------
+  //
+  // The draft marker's lifetime *is* the pin-positioning phase — Save and
+  // Cancel are enabled only while it exists — so it is also the window in
+  // which the map is cleared down to the basemap
+  // (window.PlacementFocus, static/js/map_placement_focus.js). Choosing
+  // where to click keeps full region context; refining the dropped pin
+  // does not. One consequence worth knowing: with the resort-points layer
+  // hidden, ``onMapClick``'s "did this tap hit an existing resort?" query
+  // finds nothing, so while a draft is live every map click repositions
+  // the draft rather than jumping to another resort — pick the other
+  // resort from the panel list instead.
 
   const placeDraftMarker = (lng, lat) => {
     removeDraftMarker();
@@ -387,6 +398,7 @@
     draftMarker.on('dragend', () => {
       renderTarget();
     });
+    window.PlacementFocus?.enter();
   };
 
   const removeDraftMarker = () => {
@@ -395,6 +407,7 @@
       draftMarker = null;
     }
     if (pasteInput) pasteInput.value = '';
+    window.PlacementFocus?.exit();
   };
 
   // Parse a "lat, lon" string of the kind Google Maps shows above its
