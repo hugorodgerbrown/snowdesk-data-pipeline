@@ -2023,27 +2023,53 @@ def _make_groupings_fixture() -> None:
 
     Row 1: date=2026-01-15, countries=['CH']
     Row 2: date=2026-01-16, countries=['AT', 'IT']
+
+    Each row is paired with a RegionDayRating naming its bulletin as the
+    ``source_bulletin`` for the same day. That pairing is not decoration: the
+    endpoint only serves groupings whose bulletin won at least one region that
+    day, which is how it drops the duplicate outline produced by the
+    morning-of-X and previous-evening issues both targeting X. Ingest always
+    writes both rows together (``upsert_bulletin`` calls
+    ``apply_bulletin_day_ratings`` then ``compute_bulletin_grouping_boundary``),
+    so a grouping with no matching rating is a state production cannot reach.
     """
-    BulletinGroupingFactory.create(
-        target_date=dt.date(2026, 1, 15),
-        countries=["CH"],
-        boundary={
-            "type": "Polygon",
-            "coordinates": [
-                [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
-            ],
-        },
-    )
-    BulletinGroupingFactory.create(
-        target_date=dt.date(2026, 1, 16),
-        countries=["AT", "IT"],
-        boundary={
-            "type": "Polygon",
-            "coordinates": [
-                [[10.0, 46.0], [11.0, 46.0], [11.0, 47.0], [10.0, 47.0], [10.0, 46.0]]
-            ],
-        },
-    )
+    for target_date, countries, boundary in (
+        (
+            dt.date(2026, 1, 15),
+            ["CH"],
+            {
+                "type": "Polygon",
+                "coordinates": [
+                    [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+                ],
+            },
+        ),
+        (
+            dt.date(2026, 1, 16),
+            ["AT", "IT"],
+            {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [10.0, 46.0],
+                        [11.0, 46.0],
+                        [11.0, 47.0],
+                        [10.0, 47.0],
+                        [10.0, 46.0],
+                    ]
+                ],
+            },
+        ),
+    ):
+        grouping = BulletinGroupingFactory.create(
+            target_date=target_date,
+            countries=countries,
+            boundary=boundary,
+        )
+        RegionDayRatingFactory.create(
+            date=target_date,
+            source_bulletin=grouping.bulletin,
+        )
 
 
 def _groupings_url(date_key: str, country: str | None = None) -> str:
@@ -2109,6 +2135,41 @@ def test_groupings_returns_only_requested_date() -> None:
     fc = response.json()
     assert len(fc["features"]) == 1
     assert fc["features"][0]["properties"]["date"] == "2026-01-16"
+
+
+@pytest.mark.django_db
+def test_groupings_excludes_the_superseded_issue_for_the_day() -> None:
+    """Only the bulletin that won the day is drawn, not every one targeting it.
+
+    SLF publishes twice daily, and both the morning-of-X issue and the
+    previous evening's satisfy ``_target_day(b) == X``, so both hold a
+    BulletinGrouping row for X. ``recompute_region_day`` picks one winner per
+    region; the endpoint must follow that verdict rather than returning two
+    overlapping outlines for the same terrain.
+    """
+    winner = BulletinGroupingFactory.create(
+        target_date=dt.date(2026, 2, 10),
+        countries=["CH"],
+    )
+    superseded = BulletinGroupingFactory.create(
+        target_date=dt.date(2026, 2, 10),
+        countries=["CH"],
+    )
+    # Only the winner is named as a source_bulletin for the day — exactly what
+    # the day-rating arbitration leaves behind.
+    RegionDayRatingFactory.create(
+        date=dt.date(2026, 2, 10),
+        source_bulletin=winner.bulletin,
+    )
+
+    response = Client().get(_groupings_url("2026-02-10"))
+    assert response.status_code == 200
+    features = response.json()["features"]
+
+    assert len(features) == 1
+    assert features[0]["properties"]["bulletin_id"] == winner.bulletin.bulletin_id
+    served = {f["properties"]["bulletin_id"] for f in features}
+    assert superseded.bulletin.bulletin_id not in served
 
 
 @pytest.mark.django_db

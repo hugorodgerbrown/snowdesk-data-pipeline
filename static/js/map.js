@@ -478,10 +478,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Visibility is user-driven via the basemap picker popover and
   // persisted in localStorage; the ``style.load`` handler re-applies
   // it after a basemap swap.
+  // No ``l3`` entry: the bulletin-boundary layer has no toggle and no
+  // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR below.
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
-    l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
     // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
@@ -494,19 +495,34 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // L4 defaults to visible: hiding it leaves only the basemap and any
   // active overlay tiers, which is intended. SNOW-78 resorts default off
   // so the map opens uncluttered.
-  // SNOW-323: l3 (bulletin groupings) defaults off so the map opens uncluttered.
   // SNOW-414: favourites defaults ON — a user's own saved pins should be
   // visible without an extra toggle-hunt, unlike resorts (a public dataset).
   // SNOW-419: community_reports defaults OFF — a shared layer of other
   // people's reports is an opt-in, unlike a user's own favourites.
   const overlayState = {
-    l1: false, l2: false, l3: false, l4: true, resorts: false,
+    l1: false, l2: false, l4: true, resorts: false,
     favourites: true, community_reports: false,
   };
+
+  // The bulletin-boundary layer (internal key ``l3``) is not an overlay the
+  // user toggles — it is a companion to the micro-region tier, drawn whenever
+  // L4 is drawn. It keeps its own key for the lazy-load machinery (its data is
+  // per-date and fetched separately from the region geometry), but its
+  // visibility is governed by L4's state rather than its own. This maps an
+  // overlay key to the key that governs it; a key absent here governs itself.
+  //
+  // Rationale: the boundary answers "which of these regions share one
+  // bulletin?", which is only a meaningful question while the regions it
+  // subdivides are on screen. Shown alone it is a set of outlines around
+  // nothing; hidden while L4 is on, the choropleth implies each micro-region
+  // was judged independently when most were not.
+  const OVERLAY_VISIBILITY_GOVERNOR = { l3: 'l4' };
+  const governorFor = (key) => OVERLAY_VISIBILITY_GOVERNOR[key] || key;
+
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
+  for (const key of ['l1', 'l2', 'resorts', 'community_reports']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
@@ -1630,8 +1646,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // 'regions-line-selected' so it sits between the choropleth and the
   // selection ring in the layer stack.
   //
-  // Visibility is seeded from overlayState.l3 so a page-reload with l3
-  // persisted to localStorage makes the layer appear immediately.
+  // Visibility is seeded from overlayState.l4 — the boundary is a companion
+  // to the micro-region tier and has no state of its own (see
+  // OVERLAY_VISIBILITY_GOVERNOR).
   // SNOW-323: the FC currently drawn into the bulletin-groupings source (kept
   // so the basemap-swap handler can re-install the layer without a refetch),
   // and whether that layer is currently showing data vs blanked for scrub.
@@ -1647,7 +1664,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         type: 'line',
         source: 'bulletin-groupings',
         layout: {
-          visibility: overlayState.l3 ? 'visible' : 'none',
+          visibility: overlayState.l4 ? 'visible' : 'none',
           'line-join': 'round',
           'line-cap': 'round',
         },
@@ -2147,14 +2164,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
       subGeojsonCache = mergeRegionFeatures(subGeojsonCache, data);
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
-      // SNOW-323: enabling L3 is a deliberate, settled action — fetch the
-      // currently-displayed day's boundary and draw it immediately (no
-      // settle delay; that only applies while the scrubber is moving).
+      // Fetch the currently-displayed day's boundary and draw it immediately
+      // (no settle delay; that only applies while the scrubber is moving).
       if (!BULLETIN_GROUPINGS_URL) return;
       const dateKey = currentDisplayedDate || bootDateKey;
       const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
       if (!fc) {
-        revealOfflineToast('map-offline-toast-layer');
+        // Deliberately silent, unlike every other tier here. Those load in
+        // response to the user clicking their toggle, so a failure owes them
+        // an explanation. This one loads automatically alongside L4 — and its
+        // endpoint is network-only (per-date data, excluded from sw.js's
+        // STATIC_PATHS), so it fails on every offline boot. Toasting that
+        // would fire an "unavailable offline" message at a user who asked for
+        // nothing and whose choropleth is working fine.
         return;
       }
       installBulletinGroupingsLayer(fc);
@@ -2275,6 +2297,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // We fetch the GeoJSON, install the layers, then make them visible.
   document.addEventListener('snowdesk:overlay-load', (e) => {
     const { key } = e.detail;
+    // Captured before the await: ensureOverlayLoaded short-circuits for an
+    // already-loaded key, so this distinguishes a first load (which fetches
+    // the current day itself) from a re-enable (which does not, and may be
+    // holding a boundary for whatever day was showing when it was hidden).
+    const wasLoaded = overlayLoaded[key];
     ensureOverlayLoaded(key).then(() => {
       // SNOW-493 finding 4: the fetch above is async, so the user may have
       // toggled the overlay off again before it settled. Unconditionally
@@ -2285,13 +2312,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // re-seeded from it at boot and after a basemap swap, per the
       // SNOW-473 comment above the ``styledata`` handler) — rather than
       // trusting the boot-time ``overlayState`` value.
-      const stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[key], overlayState[key]);
-      overlayState[key] = stillEnabled;
+      // Read the governing key, not necessarily this one: the bulletin
+      // boundary (l3) has no persisted state and follows L4 (see
+      // OVERLAY_VISIBILITY_GOVERNOR). Every other key governs itself.
+      const gov = governorFor(key);
+      const stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[gov], overlayState[gov]);
+      overlayState[gov] = stillEnabled;
       const visibility = stillEnabled ? 'visible' : 'none';
       for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', visibility);
         }
+      }
+      // The boundary is per-date, and scrubbing while L4 is off deliberately
+      // skips refetching it (see the date-changed handler). So a re-enable can
+      // reveal a boundary belonging to an earlier day, sitting over a
+      // choropleth that has moved on. Refetch for the day now showing.
+      if (key === 'l3' && stillEnabled && wasLoaded) {
+        scheduleGroupingsForDate(currentDisplayedDate || bootDateKey);
       }
       // SNOW-499: making the favourites overlay (re-)visible means any
       // favourited resort should hide its plain dot again, now the star is
@@ -2415,8 +2453,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // settle-debounced fetch for that day. Playback fires this per frame, so
   // the debounce collapses a run of frames into a single fetch once motion
   // stops — the boundary is only ever drawn for a day the user rests on.
+  // Also skipped while L4 is off: the boundary is hidden then, so refetching
+  // it per scrubbed date would be pure network cost for nothing on screen.
   document.addEventListener('snowdesk:date-changed', (e) => {
-    if (!overlayLoaded.l3) return;
+    if (!overlayLoaded.l3 || !overlayState.l4) return;
     const dk = (e.detail && e.detail.date) || null;
     if (!dk) return;
     scheduleGroupingsForDate(dk);
@@ -2567,6 +2607,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     for (const key of ['l1', 'l2', 'resorts']) {
       if (overlayState[key]) restoreOverlay(key);
     }
+
+    // The bulletin boundary rides along with the micro-region tier rather
+    // than having a toggle of its own, so it loads at boot whenever L4 is on
+    // (which is the default). Its data is per-date and network-only, so this
+    // is a real fetch on every boot, not a cache read — it degrades silently
+    // when it fails (see the l3 branch of _loadOverlay).
+    if (overlayState.l4) restoreOverlay('l3');
 
     // SNOW-414: favourites is default-ON (unlike the tiers above), so an
     // eligible user's saved pins load at boot rather than waiting for a
@@ -3766,9 +3813,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // the picker keeps current) before any install fn reads overlayState.
       // Mirrors the boot-seed near line 350 — keep the two in sync when adding
       // an overlay key.
-      for (const key of ['l1', 'l2', 'l3', 'resorts', 'community_reports']) {
+      for (const key of ['l1', 'l2', 'resorts', 'community_reports']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
+      // l4 is re-seeded before any install fn runs because the bulletin
+      // boundary's visibility is derived from it, not from a key of its own.
       overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
       overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
 
@@ -4672,9 +4721,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const OVERLAY_LAYER_IDS = {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
-    // SNOW-323: l3 — bulletin groupings, lazily loaded on first toggle.
-    l3: ['bulletin-groupings-line'],
-    l4: ['regions-fill', 'regions-line', 'regions-label'],
+    // ``bulletin-groupings-line`` rides in the l4 list rather than owning a
+    // row of its own: the boundary has no toggle and is shown whenever the
+    // micro-region tier is, so the picker flips it in lockstep with L4's own
+    // layers. There is no l3 entry here for the same reason.
+    l4: [
+      'regions-fill', 'regions-line', 'regions-label', 'bulletin-groupings-line',
+    ],
     resorts: ['resorts-pin', 'resorts-label'],
     favourites: ['favourites-pin', 'favourites-label'],
     community_reports: [
@@ -4686,7 +4739,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
-    l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
     favourites: 'snowdesk.map.overlay.favourites',
@@ -4741,13 +4793,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE
             // listener handles both the fetch and the setLayoutProperty call,
             // so we return here without running the direct visibility loop.
-            // SNOW-323: l3 (bulletin groupings) is also lazy — same pattern.
             document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
               detail: { key: overlayKey },
             }));
@@ -4765,6 +4816,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
             // to make the freshly-added layers visible.
             if (next && overlayKey === 'l4' && !MAP.getLayer('regions-fill')) {
               document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+            }
+            // Enabling L4 also brings its companion bulletin boundary back.
+            // That layer IS lazy — its per-date data may never have been
+            // fetched (first enable) or may belong to a day the user scrubbed
+            // past while it was hidden — so it needs the load path, not just
+            // the visibility flip below. The main IIFE re-reads L4's key to
+            // decide the final visibility, so this is safe if the user
+            // toggles off again before the fetch settles.
+            if (next && overlayKey === 'l4') {
+              document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
+                detail: { key: 'l3' },
+              }));
             }
             for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
               if (MAP.getLayer(layerId)) {
