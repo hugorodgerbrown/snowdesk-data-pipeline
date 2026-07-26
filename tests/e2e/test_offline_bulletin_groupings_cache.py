@@ -12,12 +12,26 @@ only writes the shell cache when the response declares itself ``immutable``
 ``IMMUTABLE_ONLY_PATHS``). These tests drive the real endpoint and the real
 SW end to end:
 
-* ``test_settled_date_served_from_cache_while_offline`` — a settled date's
-  response is written to the shell cache online and replayed from it
-  offline (``X-SW-Cache: hit``, stamped by ``_stampCacheHit``).
-* ``test_unsettled_date_not_served_while_offline`` — an unsettled (e.g.
-  today's) date's response is never written, so the same online-then-offline
-  sequence fails offline instead of replaying stale data.
+* ``test_settled_date_second_fetch_is_served_from_shell_cache`` — a settled
+  date's response is written to Cache Storage and a later fetch replays it
+  (``X-SW-Cache: hit``, stamped by ``_stampCacheHit``).
+* ``test_unsettled_date_is_not_persisted_to_the_shell_cache`` — an unsettled
+  (e.g. today's) date's response is never written, probed directly against
+  Cache Storage, with a settled-date positive control in the same session.
+
+**Neither test uses ``page.context.set_offline``.** It only blocks *page*
+-side network — it does not govern fetches the service worker issues from
+its own fetch handler. ``_staleWhileRevalidate`` on a cache MISS awaits its
+own ``fetch(request)`` from inside the worker, and that reaches the real
+live server regardless of the browser context's offline flag; an earlier
+revision of this file relied on ``set_offline`` to prove the unsettled case
+failed offline and got a false failure in CI (`{'ok': True, 'status': 200,
+'swCache': None}`) — the "offline" fetch simply went straight to the
+network. What SNOW-526 actually changed is which responses get *written* to
+Cache Storage, so these tests probe Cache Storage directly (``caches.match``
+— the same read path ``static/js/map_layer_sync_status.js``'s
+``_probeExact`` uses) rather than inferring persistence from a failed
+network call.
 
 ``public.api.earliest_mutable_date`` is monkeypatched directly (rather than
 seeding ``Bulletin``/``BulletinGrouping`` rows and letting the real fetcher
@@ -59,7 +73,7 @@ def _fetch(page: Page, url: str) -> dict[str, Any]:
     Returns:
         ``{"ok": bool, "status": int, "swCache": str | None}`` on a
         resolved response, or ``{"ok": False, "error": str}`` if the fetch
-        itself rejected (the offline/uncached case).
+        itself rejected.
 
     """
     result: dict[str, Any] = page.evaluate(
@@ -80,10 +94,66 @@ def _fetch(page: Page, url: str) -> dict[str, Any]:
     return result
 
 
-def test_settled_date_served_from_cache_while_offline(
+def _cache_contains_within(
+    page: Page, url: str, timeout_ms: int = 1000, poll_ms: int = 100
+) -> bool:
+    """Poll Cache Storage for ``url``, returning ``True`` the first time it's found.
+
+    Runs entirely inside one ``page.evaluate`` call (a single round trip)
+    rather than a Python-side poll loop calling back into the page —
+    matches the ``wait_for_event``/``wait_for_...`` one-round-trip pattern
+    already established in ``tests/e2e/conftest.py``.
+
+    Only ever returns early on a HIT. A caller checking for the ABSENCE of
+    an entry gets the full ``timeout_ms`` window polled before concluding
+    ``False`` — ``cache.put()`` in ``_staleWhileRevalidate`` is
+    fire-and-forget, so a bare immediate check could pass simply by running
+    before a write that was always going to land; polling the whole window
+    is what makes a negative result meaningful.
+
+    Args:
+        page: The Playwright page to probe Cache Storage from.
+        url: A same-origin path (relative to ``location.origin``).
+        timeout_ms: Total window to poll before giving up.
+        poll_ms: Interval between polls.
+
+    Returns:
+        ``True`` if any poll within the window found a matching Cache
+        Storage entry, ``False`` if the window elapsed with none found.
+
+    """
+    result: bool = page.evaluate(
+        """async ({ url, timeoutMs, pollMs }) => {
+            const request = new Request(new URL(url, location.origin));
+            const deadline = Date.now() + timeoutMs;
+            while (Date.now() < deadline) {
+              const hit = await caches.match(request);
+              if (hit) return true;
+              await new Promise((resolve) => setTimeout(resolve, pollMs));
+            }
+            return false;
+          }""",
+        {"url": url, "timeoutMs": timeout_ms, "pollMs": poll_ms},
+    )
+    return result
+
+
+def test_settled_date_second_fetch_is_served_from_shell_cache(
     pwa_page: PwaPage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A settled date's response is written to the shell cache and replayed offline."""
+    """A settled date's response, once written, is replayed from Cache Storage.
+
+    Deliberately not gated on ``page.context.set_offline`` — see the module
+    docstring for why that can't prove anything here. What DOES prove a
+    cache replay is ``_stampCacheHit``'s ``X-SW-Cache: hit`` header:
+    ``_staleWhileRevalidate`` only sets it when the response resolves from
+    a ``cache.match`` hit, which it returns immediately — before its
+    background revalidate ``fetch()`` is even awaited. A second fetch
+    coming back stamped ``'hit'`` is therefore direct evidence the first
+    fetch's write landed and the SW is now serving this response from
+    Cache Storage without needing the network — the same code path that
+    makes the resource usable offline.
+    """
     cache.clear()
     monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2099, 1, 1))
 
@@ -95,62 +165,67 @@ def test_settled_date_served_from_cache_while_offline(
     online = _fetch(page, url)
     assert online["ok"], f"expected the online fetch to succeed: {online}"
 
-    # _staleWhileRevalidate's cache.put() is fire-and-forget
-    # (`.catch(() => {})`, not awaited by the response the page's fetch()
-    # resolves on) — so the write can still be in flight when the first
-    # fetch above resolves, and an immediate set_offline(True) could race
-    # it into a 504. A second fetch, still online, proves the write landed
-    # the moment it comes back stamped as a cache hit; a short poll absorbs
-    # any residual scheduling delay without weakening what's being proved.
-    warmed = None
+    # cache.put() is fire-and-forget (`.catch(() => {})`, not awaited by the
+    # response the first fetch() above resolved on), so the write can still
+    # be in flight. Poll a second fetch until it comes back stamped as a
+    # cache replay.
+    replay = None
     for _ in range(20):
-        warmed = _fetch(page, url)
-        if warmed.get("swCache") == "hit":
+        replay = _fetch(page, url)
+        if replay.get("swCache") == "hit":
             break
         page.wait_for_timeout(100)
-    assert warmed is not None and warmed["swCache"] == "hit", (
-        f"expected a second ONLINE fetch to prove the write landed in the "
-        f"shell cache before going offline: {warmed}"
-    )
-
-    page.context.set_offline(True)
-    try:
-        offline = _fetch(page, url)
-    finally:
-        page.context.set_offline(False)
-
-    assert offline["ok"], (
-        f"expected the settled-date response to be served from the shell "
-        f"cache while offline: {offline}"
-    )
-    assert offline["swCache"] == "hit", (
-        f"expected the offline response to be stamped as a cache replay: {offline}"
+    assert replay is not None and replay["swCache"] == "hit", (
+        f"expected a second fetch of the settled date to be served from "
+        f"Cache Storage: {replay}"
     )
 
 
-def test_unsettled_date_not_served_while_offline(
+def test_unsettled_date_is_not_persisted_to_the_shell_cache(
     pwa_page: PwaPage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An unsettled (e.g. today's) date's response is never written to the shell cache."""
+    """An unsettled date's response is never written to Cache Storage.
+
+    Probes Cache Storage directly (``caches.match``) rather than inferring
+    absence from a failed "offline" fetch — see the module docstring for
+    why that approach doesn't work here (Playwright's ``set_offline``
+    doesn't block the service worker's own outbound fetches).
+
+    Includes a **positive control** in the same browser session: a settled
+    date is fetched first and asserted to land in Cache Storage, proving
+    the probe, the URL, and the SW's persist path all work before the
+    negative assertion below is trusted. Without the control, a broken
+    probe, a typo'd URL, or a SW that had simply stopped caching entirely
+    would all make the negative assertion pass for the wrong reason.
+    """
     cache.clear()
-    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2000, 1, 1))
 
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     _wait_for_sw_control(page)
 
-    url = "/api/bulletin-groupings.geojson?d=2026-04-16"
-    online = _fetch(page, url)
-    assert online["ok"], f"expected the online fetch to succeed: {online}"
+    # Positive control — a settled date persists.
+    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2099, 1, 1))
+    settled_url = "/api/bulletin-groupings.geojson?d=2025-12-01"
+    settled_online = _fetch(page, settled_url)
+    assert settled_online["ok"], (
+        f"expected the settled date's online fetch to succeed: {settled_online}"
+    )
+    assert _cache_contains_within(page, settled_url, timeout_ms=2000), (
+        "positive control failed: expected the settled date's response to "
+        "land in Cache Storage — if this fails, the probe/URL/SW caching "
+        "path itself is broken and the negative assertion below would "
+        "prove nothing"
+    )
 
-    page.context.set_offline(True)
-    try:
-        offline = _fetch(page, url)
-    finally:
-        page.context.set_offline(False)
-
-    assert not offline["ok"], (
-        f"expected the unsettled-date response to be ABSENT from the shell "
-        f"cache while offline (a real network failure, not a cache replay): "
-        f"{offline}"
+    # Negative — an unsettled date never persists.
+    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2000, 1, 1))
+    unsettled_url = "/api/bulletin-groupings.geojson?d=2026-04-16"
+    unsettled_online = _fetch(page, unsettled_url)
+    assert unsettled_online["ok"], (
+        f"expected the unsettled date's online fetch to succeed: {unsettled_online}"
+    )
+    assert not _cache_contains_within(page, unsettled_url, timeout_ms=1000), (
+        "expected the unsettled date's response to NEVER appear in Cache "
+        "Storage within the poll window"
     )
