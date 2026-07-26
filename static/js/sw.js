@@ -273,7 +273,7 @@ try {
 // cache once the MapLibre style settles, so a reload of an
 // already-downloaded region no longer paints the idle download icon until
 // the region is reselected. Shell JS bytes changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v53';
+const CACHE_VERSION = 'snowdesk-shell-v54';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
