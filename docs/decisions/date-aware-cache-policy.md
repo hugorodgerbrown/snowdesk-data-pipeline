@@ -59,14 +59,68 @@ Cache Storage entries persist until the SW's own version bump or LRU trim
 evicts them — so shortening this window costs nothing on the offline path
 and only bounds the shared-cache staleness window.
 
+**Known limitations — the two cases where `is_settled()` can be wrong.**
+
+- **The partial-source case.** `earliest_mutable_date()` drops a `None`
+  source entirely from its `min()` — a source with no rows yet imposes no
+  constraint on the *others*. But that same source's own
+  `Command._default_start_date` returns `settings.SEASON_START_DATE` when
+  its `latest_date_fn()` is `None`, so its *next* fetch run resumes from the
+  season start, not from wherever the other sources' dates put the
+  threshold. Concretely: if ALBINA and Météo-France both have rows but
+  SLF's table is empty, `earliest_mutable_date()` is `min(ALBINA, MF)` —
+  which is very likely later than `SEASON_START_DATE` — so this module can
+  declare a date settled that SLF's next run will still walk straight
+  through (it resumes all the way back at the season start). The
+  **all-empty** case (every source `None`) is handled correctly —
+  `earliest_mutable_date()` also falls back to `SEASON_START_DATE`, matching
+  every individual source's own fallback — it's specifically the **mixed**
+  case, one source empty while others aren't, where the two disagree.
+  Accepted because a genuinely empty provider table outside of a
+  cold-started dev/test DB is itself an operational anomaly (a stalled
+  pipeline), at which point stale cached geometry is a symptom, not the
+  root problem.
+
+- **`latest_slf_date()` is a global, not an SLF-scoped, maximum.** Unlike
+  `latest_albina_date()` / `latest_meteofrance_date()`, which filter on
+  their own `Bulletin.Source`, SLF's registry entry
+  (`bulletins/services/slf_fetcher.py`'s `latest_slf_date()`) calls the
+  unfiltered `Bulletin.objects.latest_valid_from_date()` — the most recent
+  `valid_from` across **every** provider's rows, not just SLF's. So when
+  another provider is further ahead than SLF, `earliest_mutable_date()`'s
+  `min()` is really asking "how far has *any* source got", not "how far has
+  SLF got". This is safe for **cache correctness** — it can only push the
+  threshold *later* (more conservative, fewer dates declared settled), never
+  earlier — but it does mean a day SLF genuinely hasn't ingested yet can
+  still be declared settled by this module, and SLF's own next scheduled
+  run won't necessarily backfill it (it resumes from the same global max,
+  not from SLF's actual last date); an explicit re-run/backfill targeting
+  SLF is needed to fill that gap. This is pre-existing `fetch_bulletins`
+  behaviour, predating SNOW-526 — but SNOW-526 is the first feature whose
+  correctness leans on it, so it's named here rather than left implicit.
+
 **Consequences.** The server-side `cache.get_or_set` timeout for the
 payload itself stays at 300 s regardless of settled state — lengthening it
 would make a manual backfill much harder to flush and buys nothing the
 `Cache-Control` header doesn't already deliver for the offline case.
-`is_settled()` runs a fixed number of DB aggregate queries (one per
-registered `BulletinSource`) on every request to this endpoint, including
-cache hits — accepted as a small, bounded cost, tracked in
-`tests/public/test_map_api.py::test_groupings_query_count`'s query budget.
+
+`earliest_mutable_date()` runs a fixed number of DB aggregate queries (one
+per registered `BulletinSource`) — cheap in isolation, but
+`bulletin_groupings_geojson` needs the answer on every request, including a
+payload cache hit. Rather than pay that cost every time, `public/api.py`
+memoises the threshold at the call site
+(`_cached_earliest_mutable_date()`, `cache.get_or_set` for
+`_SETTLED_THRESHOLD_CACHE_TIMEOUT` = 60 s, a key distinct from the
+per-`(country, date)` payload cache) rather than inside
+`bulletins.services.settled` itself — that module stays a pure, uncached
+derivation any other caller can trust for a live answer. A stale memoised
+value is safe by construction: staleness can only make the threshold OLDER
+(smaller), so it can only under-report which dates are settled, never
+wrongly mark a still-mutable one. `tests/public/test_map_api.py`'s
+`test_groupings_query_count` warms the memo explicitly (a direct call, not
+an HTTP round trip) before measuring, so its query budget reflects steady
+warm-cache traffic, not a cold-memo request.
+
 A sparse fixture/dev DB (one provider with no rows) drags the threshold
 back to `settings.SEASON_START_DATE`, so nothing looks settled locally
 without seeding bulletins for every source or patching `get_sources()` —

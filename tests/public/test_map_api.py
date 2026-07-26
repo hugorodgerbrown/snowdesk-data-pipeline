@@ -52,6 +52,7 @@ from freezegun import freeze_time
 from bulletins.models import RegionDayRating
 from bulletins.services.slf_fetcher import BulletinSource
 from observations.models import FieldObservation
+from public import api as public_api
 from regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
 from tests.factories import (
     BulletinGroupingFactory,
@@ -2331,21 +2332,28 @@ def test_groupings_cache_hit_avoids_db_on_second_call() -> None:
 def test_groupings_query_count() -> None:
     """Endpoint uses a bounded number of DB queries (no N+1).
 
-    Two queries build the payload (the ``RegionDayRating`` filter and the
-    ``select_related`` grouping query), plus one ``latest_date_fn`` aggregate
-    per registered ``BulletinSource`` (SNOW-526's ``is_settled`` check) — a
-    fixed count, not a per-row N+1.
+    Two queries build the payload: the ``RegionDayRating`` filter and the
+    ``select_related`` grouping query. SNOW-526's settled-threshold check
+    (``bulletins.services.settled.earliest_mutable_date()``, one aggregate
+    per registered ``BulletinSource``) is memoised at the call site
+    (``public.api._cached_earliest_mutable_date``) for 60s, so it must NOT
+    show up here as extra queries on every request — only on a cold memo.
+    Warmed explicitly below (a direct call, not an HTTP round trip, so it
+    can't also warm the payload cache key this test measures).
     """
     _make_groupings_fixture()
     url = _groupings_url("2026-01-15", country="ch")
 
-    # Warm the cache; then clear it so the next call actually queries.
+    # Clear everything, then warm ONLY the settled-threshold memo — real
+    # traffic keeps it warm too, since it's shared across every date and
+    # country for its 60s window.
     cache.clear()
+    public_api._cached_earliest_mutable_date()
 
     with CaptureQueriesContext(connection) as ctx:
         response = Client().get(url)
     assert response.status_code == 200
-    assert len(ctx.captured_queries) <= 5
+    assert len(ctx.captured_queries) <= 3
 
 
 # ---------------------------------------------------------------------------

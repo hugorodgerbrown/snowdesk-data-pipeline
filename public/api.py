@@ -69,7 +69,7 @@ from django_ratelimit.decorators import ratelimit
 from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
-from bulletins.services.settled import is_settled
+from bulletins.services.settled import earliest_mutable_date
 from core.freshness import apply_freshness_headers
 from favourites.models import Favourite
 from observations.models import FieldObservation
@@ -134,6 +134,21 @@ _DYNAMIC_CACHE_MAX_AGE = 300
 # from the service worker's Cache Storage entry, which ignores max-age
 # entirely, so nothing is lost by keeping this short.
 _SETTLED_CACHE_MAX_AGE = 604800  # 7 days
+
+# Memoisation window for ``bulletins.services.settled.earliest_mutable_date()``
+# (SNOW-526). That call runs one DB aggregate per registered ``BulletinSource``
+# (see its docstring), and ``bulletin_groupings_geojson`` needs the result on
+# every request — including a server-cache hit on the payload itself, which
+# would otherwise still pay the settled-date DB cost on every scrubber-settle
+# fetch. A stale memoised value is safe by construction: staleness can only
+# make the threshold OLDER (smaller) than the true value, i.e. it can only
+# under-report which dates are settled, never wrongly mark a still-mutable
+# date as settled. Kept short (well under ``_DYNAMIC_CACHE_MAX_AGE``) so a
+# fresh ingest run's new threshold is picked up promptly. Distinct cache key
+# from the per-``(country, date)`` payload cache below — this caches the
+# threshold itself, not any one date's answer.
+_SETTLED_THRESHOLD_CACHE_KEY = "bulletin_groupings:settled_threshold"
+_SETTLED_THRESHOLD_CACHE_TIMEOUT = 60
 
 # Client-side freshness window for the community-reports overlay (SNOW-419).
 # The endpoint itself is no-store (per-user flag-gated, SNOW-459), so this is
@@ -726,11 +741,16 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     ``patch_cache_control`` rather than the ``@cache_control`` decorator so
     it can branch per response:
 
-    * a settled date (``bulletins.services.settled.is_settled`` — before
-      the earliest date any provider's next ingest run could still
-      change) gets ``public, max_age=604800, immutable`` — the ``sw.js``
-      service worker treats ``immutable`` as its signal to persist the
-      response for offline use;
+    * a settled date (before ``earliest_mutable_date()`` —
+      ``bulletins.services.settled`` — the earliest date any provider's
+      next ingest run could still change) gets
+      ``public, max_age=604800, immutable`` — the ``sw.js`` service worker
+      treats ``immutable`` as its signal to persist the response for
+      offline use. The threshold itself is memoised for
+      ``_SETTLED_THRESHOLD_CACHE_TIMEOUT`` seconds (a stale value can only
+      under-report which dates are settled, never mis-mark a mutable one)
+      so this doesn't add a per-``BulletinSource`` DB query to every
+      request;
     * today and the still-mutable tail keep the existing
       ``public, max_age=300`` and stay network-only.
 
@@ -781,13 +801,45 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
         timeout=_DYNAMIC_CACHE_MAX_AGE,
     )
     response = JsonResponse(payload)
-    if is_settled(parsed_date):
+    if parsed_date < _cached_earliest_mutable_date():
         patch_cache_control(
             response, public=True, max_age=_SETTLED_CACHE_MAX_AGE, immutable=True
         )
     else:
         patch_cache_control(response, public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
     return response
+
+
+def _cached_earliest_mutable_date() -> date:
+    """
+    Return ``earliest_mutable_date()``, memoised for a short window (SNOW-526).
+
+    ``earliest_mutable_date()`` (``bulletins.services.settled``) runs one DB
+    aggregate per registered ``BulletinSource`` — cheap in isolation, but
+    ``bulletin_groupings_geojson`` needs the answer on every request
+    (including a server-cache hit on the payload itself), so calling it
+    unmemoised would add that DB cost to every scrubber-settle fetch.
+    Memoised here, at the call site, rather than inside
+    ``bulletins.services.settled`` itself — that module stays a pure,
+    uncached derivation any other caller can trust for a live answer.
+
+    A stale cached value is safe by construction: staleness can only make
+    the returned threshold OLDER (smaller) than the true current value, so
+    it can only under-report which dates are settled — never mark a
+    still-mutable date as settled early. See
+    ``docs/decisions/date-aware-cache-policy.md``.
+
+    Returns:
+        The (possibly up to ``_SETTLED_THRESHOLD_CACHE_TIMEOUT`` seconds
+        stale) earliest-mutable-date threshold.
+
+    """
+    result = cache.get_or_set(
+        _SETTLED_THRESHOLD_CACHE_KEY,
+        earliest_mutable_date,
+        timeout=_SETTLED_THRESHOLD_CACHE_TIMEOUT,
+    )
+    return cast(date, result)
 
 
 def _build_groupings_payload(
