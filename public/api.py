@@ -795,6 +795,17 @@ def _build_groupings_payload(
     for grouping in qs.iterator():
         if country_param and country_param not in grouping.countries:
             continue
+        # SPIKE ONLY — throwaway. Expose the bulletin's peak rating so the
+        # dissolved polygon can carry the choropleth colour. N+1 by design;
+        # a real implementation would denormalise this onto BulletinGrouping
+        # at ingest, not join per request.
+        spike_rating = (
+            RegionDayRating.objects.filter(
+                source_bulletin=grouping.bulletin, date=target_date
+            )
+            .values_list("max_rating", flat=True)
+            .first()
+        )
         features.append(
             {
                 "type": "Feature",
@@ -803,6 +814,7 @@ def _build_groupings_payload(
                     "bulletin_id": grouping.bulletin.bulletin_id,
                     "date": date_key,
                     "countries": grouping.countries,
+                    "rating": spike_rating or "no_rating",  # SPIKE ONLY
                 },
             }
         )

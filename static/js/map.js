@@ -774,6 +774,111 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   };
 
+  // ---------------------------------------------------------------------
+  // SPIKE ONLY — throwaway. Drives the layer-architecture A/B via ?spike=.
+  // Tokens (comma-separated):
+  //   block   hide the micro-region stroke and raise fill opacity, so a
+  //           bulletin's regions merge into one flat block of colour
+  //   hair    keep the micro stroke but as a faint hairline instead
+  //   solid   redraw the dissolved bulletin boundary solid, not dashed
+  // Remove this block and its two call sites before any real work lands.
+  // ---------------------------------------------------------------------
+  const SPIKE = new Set(
+    (new URLSearchParams(window.location.search).get('spike') || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const applySpikeOverrides = () => {
+    if (!SPIKE.size) return;
+    if (map.getLayer('regions-fill') && (SPIKE.has('block') || SPIKE.has('hair'))) {
+      const base = SPIKE.has('opaque') ? 1.0 : 0.75;
+      map.setPaintProperty('regions-fill', 'fill-opacity', [
+        'case',
+        [
+          'any',
+          ['boolean', ['feature-state', 'selected'], false],
+          ['boolean', ['feature-state', 'previewing'], false],
+        ], SPIKE.has('opaque') ? 1.0 : 0.9,
+        base,
+      ]);
+      // Is the seam alpha compounding between the two abutting polygons'
+      // antialiased edges, or a genuine gap in the geometry? Turning AA off
+      // separates the two causes.
+      if (SPIKE.has('noaa')) {
+        map.setPaintProperty('regions-fill', 'fill-antialias', false);
+      }
+    }
+    if (map.getLayer('regions-line')) {
+      if (SPIKE.has('hair')) {
+        map.setLayoutProperty('regions-line', 'visibility', 'visible');
+        map.setPaintProperty('regions-line', 'line-color', 'rgba(0,0,0,0.13)');
+        map.setPaintProperty('regions-line', 'line-width', [
+          'interpolate', ['linear'], ['zoom'], 5, 0.5, 9, 0.4, 22, 0.4,
+        ]);
+      } else if (SPIKE.has('block') || SPIKE.has('dissolve')) {
+        map.setLayoutProperty('regions-line', 'visibility', 'none');
+      }
+    }
+    // 'dissolve': paint the choropleth from the dissolved bulletin polygons
+    // instead of the micro-regions — one polygon per bulletin, so there are
+    // no internal edges to compound and the fill can stay translucent.
+    // Self-fetching rather than piggy-backing the l3 overlay: that lazy path
+    // depends on the basemap style loading, which fails behind this
+    // container's proxy, and the failure silently produced a no-op variant.
+    if (SPIKE.has('dissolve')) {
+      if (map.getLayer('regions-fill')) {
+        map.setPaintProperty('regions-fill', 'fill-opacity', 0);
+      }
+      if (!map.getLayer('spike-bulletin-fill') && !window.__spikeDissolvePending) {
+        window.__spikeDissolvePending = true;
+        const d = new URLSearchParams(window.location.search).get('d');
+        fetch(`/api/bulletin-groupings.geojson?d=${encodeURIComponent(d || '')}`)
+          .then((r) => r.json())
+          .then((fc) => {
+            if (map.getSource('spike-bulletin')) return;
+            map.addSource('spike-bulletin', { type: 'geojson', data: fc });
+            map.addLayer({
+              id: 'spike-bulletin-fill',
+              type: 'fill',
+              source: 'spike-bulletin',
+              paint: {
+                'fill-color': [
+                  'match', ['get', 'rating'],
+                  'low',          RATING_COLOURS.low,
+                  'moderate',     RATING_COLOURS.moderate,
+                  'considerable', RATING_COLOURS.considerable,
+                  'high',         RATING_COLOURS.high,
+                  'very_high',    RATING_COLOURS.very_high,
+                  RATING_COLOURS.no_rating,
+                ],
+                'fill-opacity': SPIKE.has('opaque') ? 1.0 : 0.55,
+              },
+            }, 'regions-line-selected');
+            if (SPIKE.has('solid')) {
+              map.addLayer({
+                id: 'spike-bulletin-line',
+                type: 'line',
+                source: 'spike-bulletin',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                  'line-color': 'rgba(20,20,20,0.7)',
+                  'line-width': 1.6,
+                },
+              }, 'regions-line-selected');
+            }
+            raiseMarkerLayers();
+          })
+          .catch(() => { window.__spikeDissolvePending = false; });
+      }
+    }
+    if (map.getLayer('bulletin-groupings-line') && SPIKE.has('solid')) {
+      map.setPaintProperty('bulletin-groupings-line', 'line-dasharray', [1, 0]);
+      map.setPaintProperty('bulletin-groupings-line', 'line-color', 'rgba(20,20,20,0.7)');
+      map.setPaintProperty('bulletin-groupings-line', 'line-width', 1.6);
+    }
+  };
+
   // SNOW-58: source + layer install, factored out so it can be re-applied
   // after MAP.setStyle() wipes the style. Idempotent — refuses to re-add
   // if the source is still around (defensive, MapLibre normally drops
@@ -1022,6 +1127,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
     BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
     raiseMarkerLayers();
+    applySpikeOverrides();  // SPIKE ONLY
   };
 
   // SNOW-59: install the L1 / L2 outline overlays plus their labels.
@@ -1665,6 +1771,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     BASE_LAYER_FILTERS['bulletin-groupings-line'] =
       map.getFilter('bulletin-groupings-line') ?? null;
     raiseMarkerLayers();
+    applySpikeOverrides();  // SPIKE ONLY
   };
 
   // SNOW-323: L3 boundaries are fetched one day at a time, lazily, and only
