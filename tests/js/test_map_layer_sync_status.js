@@ -384,8 +384,15 @@ describe('country rows (SNOW-524)', () => {
   });
 });
 
-describe('l3 (bulletin groupings)', () => {
-  it('online: hollow "unavailable" state, row enabled', async () => {
+describe('l3 (bulletin groupings, SNOW-526)', () => {
+  const GROUPINGS_PATH = '/api/bulletin-groupings.geojson';
+
+  afterEach(() => {
+    // Reset the scrubber date back to boot/today between tests.
+    window.history.pushState({}, '', '/');
+  });
+
+  it('no ?d= (boot/today, never settled): hollow "unavailable" state, row enabled', async () => {
     vi.stubGlobal('caches', fakeCaches());
 
     await window.pwaLayerSyncStatus.refresh();
@@ -394,7 +401,7 @@ describe('l3 (bulletin groupings)', () => {
     expect(rowDisabled('l3')).toBe(false);
   });
 
-  it('offline: red "unavailable-offline" state, row disabled', async () => {
+  it('no ?d=, offline: red "unavailable-offline" state, row disabled', async () => {
     setOnline(false);
     vi.stubGlobal('caches', fakeCaches());
 
@@ -402,6 +409,48 @@ describe('l3 (bulletin groupings)', () => {
 
     expect(dotState('l3')).toBe('unavailable-offline');
     expect(rowDisabled('l3')).toBe(true);
+  });
+
+  it('?d= for a cached (settled) date: green "cached" state', async () => {
+    window.history.pushState({}, '', '/map/?d=2025-12-01');
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: [`${GROUPINGS_PATH}?d=2025-12-01`] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l3')).toBe('cached');
+    expect(rowDisabled('l3')).toBe(false);
+  });
+
+  it('?d= for an uncached date: grey "uncached" state, row enabled while online', async () => {
+    window.history.pushState({}, '', '/map/?d=2026-04-16');
+    vi.stubGlobal('caches', fakeCaches());
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l3')).toBe('uncached');
+    expect(rowDisabled('l3')).toBe(false);
+  });
+
+  it('?d= for an uncached date, offline: red "unavailable-offline", row disabled', async () => {
+    window.history.pushState({}, '', '/map/?d=2026-04-16');
+    setOnline(false);
+    vi.stubGlobal('caches', fakeCaches());
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l3')).toBe('unavailable-offline');
+    expect(rowDisabled('l3')).toBe(true);
+  });
+
+  it('probes the exact ?d= query, without ignoreSearch', async () => {
+    window.history.pushState({}, '', '/map/?d=2025-12-01');
+    const caches = fakeCaches({ hitQueries: [`${GROUPINGS_PATH}?d=2025-12-01`] });
+    vi.stubGlobal('caches', caches);
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    const call = caches.match.mock.calls.find((c) => new URL(c[0].url).pathname === GROUPINGS_PATH);
+    expect(call[1]).toBeUndefined();
   });
 });
 
@@ -587,7 +636,7 @@ describe('markCached (optimistic live update)', () => {
     expect(rowDisabled('l1')).toBe(false);
   });
 
-  it('no-ops for l3 (network-only, never cached) so its dot stays unknown', () => {
+  it('no-ops for l3 (dated-geojson, outside the geojson/idb allowlist) so its dot stays unknown', () => {
     window.pwaLayerSyncStatus.markCached('l3');
     expect(dotState('l3')).toBe('unknown');
   });
