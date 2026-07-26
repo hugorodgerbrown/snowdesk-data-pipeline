@@ -269,7 +269,7 @@ try {
 // country click paints a new pulsing "syncing" dot state until its data
 // lands. Shell JS/HTML/CSS bytes changed (map.js, map_layer_sync_status.js,
 // map.css, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v47';
+const CACHE_VERSION = 'snowdesk-shell-v50';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

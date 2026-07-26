@@ -1756,6 +1756,27 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // 'in' expression requires a literal keyword as its first argument; passing
   // ['get', 'country'] (an expression) as the keyword causes the filter to
   // evaluate incorrectly in MapLibre v4, hiding all features.
+  // SNOW-524: append ``incoming``'s features onto ``existing``, skipping any
+  // whose ``properties.prefix`` is already present.
+  //
+  // The L1/L2 caches are merged from two directions now: the country load
+  // (which fetches all three tiers for every enabled country, CH included
+  // since boot stopped special-casing it) and a tier's own lazy enable, which
+  // fetches ``?country=ch``. Both used to be append-only and disjoint; now
+  // they overlap on CH, and a plain concat would draw every Swiss outline
+  // twice. Keyed on ``prefix`` because that is what the L1/L2 API emits as
+  // the stable per-feature identifier (public/api.py).
+  const mergeRegionFeatures = (existing, incoming) => {
+    if (!incoming || !incoming.features) return existing;
+    if (!existing) return incoming;
+    const seen = new Set(existing.features.map(f => f.properties && f.properties.prefix));
+    const fresh = incoming.features.filter(
+      f => !seen.has(f.properties && f.properties.prefix),
+    );
+    if (fresh.length === 0) return existing;
+    return { ...existing, features: [...existing.features, ...fresh] };
+  };
+
   const applyCountryFilters = () => {
     const enabled = COUNTRY_KEYS
       .filter(code => countryState[code])
@@ -1902,23 +1923,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // here if it doesn't exist yet so the data survives for that later
       // enable to pick up (see the matching merge in ensureOverlayLoaded).
       if (newMajor && newMajor.features) {
-        majorGeojsonCache = majorGeojsonCache
-          ? {
-              ...majorGeojsonCache,
-              features: [...majorGeojsonCache.features, ...newMajor.features],
-            }
-          : { type: 'FeatureCollection', features: [...newMajor.features] };
+        majorGeojsonCache = mergeRegionFeatures(
+          majorGeojsonCache,
+          { type: 'FeatureCollection', features: [...newMajor.features] },
+        );
         const majorSource = map.getSource('major-regions');
         if (majorSource) majorSource.setData(majorGeojsonCache);
       }
 
       if (newSub && newSub.features) {
-        subGeojsonCache = subGeojsonCache
-          ? {
-              ...subGeojsonCache,
-              features: [...subGeojsonCache.features, ...newSub.features],
-            }
-          : { type: 'FeatureCollection', features: [...newSub.features] };
+        subGeojsonCache = mergeRegionFeatures(
+          subGeojsonCache,
+          { type: 'FeatureCollection', features: [...newSub.features] },
+        );
         const subSource = map.getSource('sub-regions');
         if (subSource) subSource.setData(subGeojsonCache);
       }
@@ -2024,7 +2041,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // immediate re-probe would race the write; the next popover-open
       // ``refresh()`` re-verifies against real cache state and self-corrects.
       const allFeedsLoaded =
-        (skipRegions || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
+        (isBootCountry || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
       if (allFeedsLoaded) {
         window.pwaLayerSyncStatus?.markCached('country.' + code);
       } else {
@@ -2116,12 +2133,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // first enable) rather than overwriting it — otherwise this first
       // fetch would wipe out data for a country that's already loaded and
       // will never be re-fetched.
-      majorGeojsonCache = majorGeojsonCache
-        ? {
-            ...majorGeojsonCache,
-            features: [...majorGeojsonCache.features, ...data.features],
-          }
-        : data;
+      majorGeojsonCache = mergeRegionFeatures(majorGeojsonCache, data);
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l2') {
       if (!SUB_REGIONS_URL) return;
@@ -2132,12 +2144,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         return;
       }
       // SNOW-493 finding 5: same merge as L1 above, for L2's retained data.
-      subGeojsonCache = subGeojsonCache
-        ? {
-            ...subGeojsonCache,
-            features: [...subGeojsonCache.features, ...data.features],
-          }
-        : data;
+      subGeojsonCache = mergeRegionFeatures(subGeojsonCache, data);
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
       // SNOW-323: enabling L3 is a deliberate, settled action — fetch the
