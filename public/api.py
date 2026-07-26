@@ -778,8 +778,26 @@ def _build_groupings_payload(
         A GeoJSON FeatureCollection dict for the requested date.
 
     """
+    # Restrict to bulletins that actually won at least one region for the day.
+    #
+    # Two bulletins routinely target the same day: the morning-of-X issue and
+    # the previous evening's, which both satisfy ``_target_day(b) == X``. Both
+    # get a BulletinGrouping row, so without this filter the endpoint returns
+    # two near-identical overlapping outlines for most days — invisible while
+    # the layer was an opt-in dashed overlay, obvious now it is drawn
+    # alongside every micro-region view. ``recompute_region_day`` already
+    # arbitrates between them per region; reusing its verdict here keeps the
+    # boundary consistent with the colour it encloses rather than
+    # re-implementing the morning-wins rule.
+    winning_bulletin_ids = set(
+        RegionDayRating.objects.filter(
+            date=target_date, source_bulletin__isnull=False
+        ).values_list("source_bulletin_id", flat=True)
+    )
+
     qs = (
         BulletinGrouping.objects.for_date(target_date)
+        .filter(bulletin_id__in=winning_bulletin_ids)
         .select_related("bulletin")
         .order_by("bulletin__bulletin_id")
     )
