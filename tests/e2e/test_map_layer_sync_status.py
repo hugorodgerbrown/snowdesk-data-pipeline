@@ -56,6 +56,16 @@ def _navigate_home_map_loaded(page: Page, live_server_url: str) -> None:
     race — the basemap tile CDN is unreachable in the harness, so this
     resolves once the SNOW-483 inline fallback style has loaded.
     """
+    # SNOW-524: the layers menu disables an uncached row while offline, and
+    # the picker's click handler honours that. Headless Chromium in this
+    # harness has no route to the internet and can report
+    # ``navigator.onLine === false``, which would silently make every row
+    # inert and any toggle below a no-op. Pin it true so the test controls
+    # connectivity rather than inheriting the runner's.
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'onLine', "
+        "{ value: true, configurable: true });"
+    )
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector('#season-scrubber[data-state="ready"]')
@@ -63,6 +73,10 @@ def _navigate_home_map_loaded(page: Page, live_server_url: str) -> None:
         "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
     )
     page.wait_for_function("() => typeof window.pwaLayerSyncStatus === 'object'")
+    # SNOW-524: boot's country load fetches L1/L2/L4 + ratings and greens
+    # their dots when it resolves. Settling on network idle keeps those
+    # optimistic writes from landing in the middle of an assertion below.
+    page.wait_for_load_state("networkidle")
 
 
 def _dot_state(page: Page, key: str) -> str | None:
@@ -109,37 +123,37 @@ def test_seeded_row_resolves_cached_unseeded_row_stays_uncached(
     assert _dot_state(page, "l2") == "uncached"
 
 
-def test_toggling_a_tier_on_flips_its_dot_cached_live(
+def test_boot_country_load_greens_the_country_scoped_tier_dots(
     live_server: LiveServer, page: Page
 ) -> None:
-    """SNOW-505 iteration: toggling a lazy tier on flips its dot to "cached"
-    in real time — no popover re-open needed.
+    """SNOW-524: booting greens l1/l2/l4 without the user touching a tier.
 
-    Opening the popover first re-probes (l2 starts "uncached"); toggling l2
-    on triggers its GeoJSON load, and ``markCached`` optimistically greens
-    the dot the moment that load resolves.
+    Replaces the older "toggle l2 on and watch its dot flip" case, whose
+    premise no longer holds. Boot used to mark Switzerland loaded off its
+    critical-path fetches alone and skip it in the country restore loop, so
+    L1/L2 were never fetched and l2 reliably started "uncached". Boot now runs
+    the same country load for CH as for any country the user switches on,
+    which fetches all three tiers — so with a real service worker caching
+    them, l2 is legitimately cached before the popover is ever opened.
+
+    That is the behaviour worth asserting: enabling a country populates every
+    tier's offline data, not just the one tier being displayed. The live
+    toggle→green flip is still covered for countries by
+    ``test_country_row_shows_a_pending_state_before_it_greens`` and for a
+    boot-restored tier by ``test_boot_restore_greens_a_dot_without_a_toggle``.
     """
     _navigate_home_map_loaded(page, live_server.url)
 
     page.click("#basemap-toggle")
-    l2 = page.locator('[data-overlay-key="l2"]')
-    l2.wait_for(state="visible")
-    # At open, l2 has never been fetched, so its dot re-probes to uncached.
-    page.wait_for_function(
-        "() => document.querySelector('[data-overlay-key=\"l2\"] .sync-dot')"
-        ".getAttribute('data-sync-state') === 'uncached'"
-    )
+    page.locator('[data-overlay-key="l2"]').wait_for(state="visible")
 
-    # Toggle l2 on and wait for its GeoJSON load to resolve — that resolution
-    # is what fires markCached. Wrapping the click in expect_response mirrors
-    # test_overlay_basemap_persistence.py's proven toggle pattern.
-    with page.expect_response(lambda r: "sub-regions" in r.url and ".geojson" in r.url):
-        l2.click()
-    page.wait_for_function(
-        "() => document.querySelector('[data-overlay-key=\"l2\"] .sync-dot')"
-        ".getAttribute('data-sync-state') === 'cached'"
-    )
-    assert _dot_state(page, "l2") == "cached"
+    for key in ("l1", "l2", "l4"):
+        page.wait_for_function(
+            '(k) => document.querySelector(`[data-overlay-key="${k}"] .sync-dot`)'
+            ".getAttribute('data-sync-state') === 'cached'",
+            arg=key,
+        )
+        assert _dot_state(page, key) == "cached"
 
 
 def test_boot_restore_greens_a_dot_without_a_toggle(
@@ -221,3 +235,162 @@ def test_visibilitychange_reprobes_and_greens_a_dot_without_the_popover(
         "?.getAttribute('data-sync-state') === 'cached'"
     )
     assert _dot_state(page, "resorts") == "cached"
+
+
+# ---------------------------------------------------------------------------
+# SNOW-524: per-country dots, offline gating, and the pending state
+# ---------------------------------------------------------------------------
+#
+# The unit suite (tests/js/test_map_layer_sync_status.js) covers the probe
+# logic against a fake CacheStorage. What needs a real browser is the wiring:
+# that the country rows the template renders actually carry dots, that the
+# probe distinguishes one country's cached feeds from another's (the bug —
+# an ``ignoreSearch`` probe reported Austria cached off Switzerland's entry),
+# and that the offline gate really disables the row a user would otherwise
+# click into four failing fetches.
+
+_COUNTRY_FEEDS = (
+    "/api/major-regions.geojson",
+    "/api/sub-regions.geojson",
+    "/api/regions.geojson",
+    "/api/ratings/",
+)
+
+
+def _seed_country_feeds(page: Page, code: str) -> None:
+    """Seed every ``?country=<code>``-scoped feed into a throwaway cache.
+
+    Mirrors the seeding idiom above: the cache name sits outside the
+    ``snowdesk-basemap-`` prefix, and the module's probe uses the GLOBAL
+    ``caches.match()``, so an arbitrarily-named cache resolves the row.
+    """
+    page.evaluate(
+        """async ({ paths, code }) => {
+            const cache = await caches.open('snowdesk-e2e-country-throwaway');
+            for (const path of paths) {
+                await cache.put(
+                    new Request(`${path}?country=${code}`),
+                    new Response('{}', {
+                        headers: { 'Content-Type': 'application/json' },
+                    }),
+                );
+            }
+        }""",
+        {"paths": list(_COUNTRY_FEEDS), "code": code},
+    )
+
+
+def _set_offline(page: Page, offline: bool) -> None:
+    """Flip ``navigator.onLine`` and broadcast the app's connectivity event.
+
+    ``pwa_offline.js`` owns that event in production; driving it directly
+    keeps the test to the sync-status module's own contract rather than
+    depending on the offline banner's timing.
+    """
+    page.evaluate(
+        """(offline) => {
+            Object.defineProperty(navigator, 'onLine', {
+                value: !offline, configurable: true,
+            });
+            document.dispatchEvent(
+                new CustomEvent('snowdesk:connectivity-changed'),
+            );
+        }""",
+        offline,
+    )
+
+
+def test_country_dot_distinguishes_one_country_from_another(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A country's dot reflects ITS OWN feeds, not another country's.
+
+    The regression: the probe used ``ignoreSearch: true`` while the service
+    worker caches per full URL including ``?country=``, so a cached
+    Switzerland painted every other country cached too.
+    """
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    _seed_country_feeds(page, "ch")
+
+    page.click("#basemap-toggle")
+    page.locator('[data-overlay-key="country.ch"]').wait_for(state="visible")
+    page.evaluate("() => window.pwaLayerSyncStatus.refresh()")
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"country.ch\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'cached'"
+    )
+
+    assert _dot_state(page, "country.ch") == "cached"
+    # Italy shares three of the four feed PATHS with Switzerland and differs
+    # only by query string — exactly what the old probe could not tell apart.
+    assert _dot_state(page, "country.it") == "uncached"
+
+
+def test_offline_disables_an_uncached_country_row(
+    live_server: LiveServer, page: Page
+) -> None:
+    """Offline, an uncached country is red AND its row is disabled.
+
+    A cached country stays available and interactive, so going offline never
+    strands the user on a map they cannot use.
+    """
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    _seed_country_feeds(page, "ch")
+
+    page.click("#basemap-toggle")
+    page.locator('[data-overlay-key="country.it"]').wait_for(state="visible")
+    _set_offline(page, True)
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"country.it\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'unavailable-offline'"
+    )
+
+    italy = page.locator('[data-overlay-key="country.it"]')
+    assert italy.get_attribute("aria-disabled") == "true"
+
+    switzerland = page.locator('[data-overlay-key="country.ch"]')
+    assert _dot_state(page, "country.ch") == "cached"
+    assert switzerland.get_attribute("aria-disabled") is None
+
+    # Back online, the uncached row returns to the grey advisory state.
+    _set_offline(page, False)
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"country.it\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'uncached'"
+    )
+    assert italy.get_attribute("aria-disabled") is None
+
+
+def test_country_row_shows_a_pending_state_before_it_greens(
+    live_server: LiveServer, page: Page
+) -> None:
+    """``markSyncing`` paints the pulsing pending state; ``markCached`` greens
+    it once the data has landed.
+
+    Driven through the module's own API rather than a live country toggle:
+    the basemap CDN is unreachable in the harness, so a real toggle's fetches
+    are not a dependable clock. What matters here is that the state the map's
+    load lifecycle drives is rendered by a real browser against the real
+    stylesheet — including that the row is never disabled mid-fetch.
+    """
+    _navigate_home_with_sw_stripped(page, live_server.url)
+
+    page.click("#basemap-toggle")
+    page.locator('[data-overlay-key="country.fr"]').wait_for(state="visible")
+
+    page.evaluate("() => window.pwaLayerSyncStatus.markSyncing('country.fr')")
+    assert _dot_state(page, "country.fr") == "syncing"
+    assert (
+        page.locator('[data-overlay-key="country.fr"]').get_attribute("aria-disabled")
+        is None
+    )
+
+    page.evaluate("() => window.pwaLayerSyncStatus.markCached('country.fr')")
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"country.fr\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'cached'"
+    )

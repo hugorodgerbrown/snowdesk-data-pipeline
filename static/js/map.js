@@ -1764,9 +1764,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // feature's country property is in the enabled list, false otherwise.
     // When no countries are enabled use an always-false expression so every
     // layer empties cleanly rather than showing stale data.
+    //
+    // That always-false form must be a real EXPRESSION. It used to be
+    // ``['==', false, true]``, which MapLibre parses as the LEGACY ``==``
+    // filter — whose second element has to be a property name — so it
+    // rejected the whole style with "layers.regions-fill.filter[1]: string
+    // expected, boolean found" and the map rendered blank. Untick every
+    // country and the map never came back. ``['in', x, ['literal', []]]`` is
+    // unambiguously an expression and is always false.
     const countryFilter = enabled.length > 0
       ? ['match', ['get', 'country'], enabled, true, false]
-      : ['==', false, true];
+      : ['in', ['get', 'country'], ['literal', []]];
     const layerIds = [
       'regions-fill', 'regions-line', 'regions-label',
       'sub-regions-line', 'sub-regions-label',
@@ -1793,7 +1801,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (map.getLayer('bulletin-groupings-line')) {
       const arrayFilter = enabled.length > 0
         ? ['any', ...enabled.map(c => ['in', c, ['get', 'countries']])]
-        : ['==', false, true];
+        : ['in', ['get', 'country'], ['literal', []]];
       const base = BASE_LAYER_FILTERS['bulletin-groupings-line'];
       const composed = base ? ['all', base, arrayFilter] : arrayFilter;
       map.setFilter('bulletin-groupings-line', composed);
@@ -1836,7 +1844,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   //   - Season ratings are already fetched into ``SEASON_RATINGS_PROMISE``,
   //     which IS the cache this function otherwise merges into — so there is
   //     nothing to merge and no second fetch to make.
-  const ensureCountryLoaded = async (code, { isBootCountry = false } = {}) => {
+  const ensureCountryLoaded = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
     try {
@@ -2026,11 +2034,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     } catch (err) {
       console.warn('[map] Failed to load country', upper, err);
-      // SNOW-524: the load failed (offline with this country uncached is the
-      // common case), so revert the toggle rather than leaving it switched on
-      // over an empty map with no feedback. The layers menu now gates the row
-      // offline, so reaching here means either a genuine network error online
-      // or a stale cached shell without the gate.
+      // SNOW-524: revert the toggle rather than leaving it switched on over an
+      // empty map with no feedback — but ONLY for a user-initiated toggle.
+      //
+      // The boot restore path calls this too, and reverting there PERSISTS
+      // ``false`` for a country the user never touched: one offline boot, or
+      // any transient fetch failure, would permanently switch Switzerland off.
+      // Turn every country off and the map has nothing to draw, so a single
+      // failed boot load left the map blank on every subsequent visit. A boot
+      // failure means "not cached yet", not "the user doesn't want this
+      // country" — leave the preference alone and just re-probe the dots.
+      if (!userInitiated) {
+        window.pwaLayerSyncStatus?.refresh();
+        return;
+      }
       countryState[code] = false;
       COUNTRY_STATE[code] = false;
       writeStorage(COUNTRY_STORAGE_KEY(code), 'false');
@@ -2343,7 +2360,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     if (map) {
       if (next) {
-        ensureCountryLoaded(code).then(() => {
+        ensureCountryLoaded(code, { userInitiated: true }).then(() => {
           applyCountryFilters();
         }).catch(() => {});
       } else {
