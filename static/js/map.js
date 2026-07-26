@@ -4922,7 +4922,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // derived from a real BASEMAP_PINNED_CACHE probe every time the icon is
 // (re)shown, never a stored flag (the "layers menu is a live cache-state
 // dashboard" invariant — see docs/offline-map.md); disabled is the
-// server-flagged over_ceiling backstop.
+// server-flagged over_ceiling backstop. That probe needs the active
+// basemap's tile template, which isn't resolvable while the style is
+// still settling (the boot case) — so a probe that can't tell yet is
+// re-run on the next MapLibre 'idle' rather than left reading idle
+// (see _retryWhenStyleSettles).
 //
 // Click (idle only) — fetches the region's full blob (incl. z tile
 // ranges) from /api/region-basemap-tiles/, assembles the URL list
@@ -4977,13 +4981,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * True when `summary`'s centre tile is present in the pinned cache —
    * the done-probe proxy for "this region's download completed".
    *
+   * Returns `null` for "can't tell yet" — the active basemap's tile
+   * template isn't resolvable, so the probe has no URL to look up. That
+   * is deliberately distinct from `false` ("looked, not there"): see
+   * `_retryWhenStyleSettles`.
+   *
    * @param {Object} summary
-   * @returns {Promise<boolean>}
+   * @returns {Promise<boolean | null>}
    */
   async function _probeDone(summary) {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
-    if (!core || !template) return false;
+    if (!core || !template) return null;
     const url = core.centreTileURL(template, summary);
     if (!url) return false;
     const cache = await _openPinnedBasemapCache();
@@ -5025,6 +5034,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
     btn.title = text;
   }
 
+  // True while a MAP 'idle' retry is already queued — see
+  // _retryWhenStyleSettles. Coalesces repeated unresolved probes into one
+  // pending listener.
+  let styleSettleRetryPending = false;
+
+  /**
+   * Re-run renderMicro the next time MapLibre goes idle — i.e. once the
+   * style (and so `activeBasemapTileTemplate`) has settled.
+   *
+   * Needed because `activeBasemapTileTemplate` is gated on
+   * `map.isStyleLoaded()`, which is false for the whole of the boot
+   * sequence that first paints this icon: the region/overlay sources are
+   * added inside `map.on('load')` itself, leaving the style dirty when
+   * MAP_READY_PROMISE resolves. The first done-probe therefore couldn't
+   * see the pinned cache at all, and a reload of an already-downloaded
+   * region always painted 'idle' until the user reselected it.
+   *
+   * @returns {void}
+   */
+  function _retryWhenStyleSettles() {
+    if (styleSettleRetryPending) return;
+    if (!MAP || typeof MAP.once !== 'function') return;
+    styleSettleRetryPending = true;
+    MAP.once('idle', () => {
+      styleSettleRetryPending = false;
+      renderMicro();
+    });
+  }
+
   /**
    * Show/hide and (re)probe the icon against the current microData. A
    * stale async resolution (microData changed, or a run started, while
@@ -5047,6 +5085,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     const done = await _probeDone(data.summary);
     if (microData !== data || btn.dataset.downloadState === 'busy') return;
+    // "Can't tell yet" (null): paint the actionable idle state so the icon
+    // still carries this region's size, but come back once the style has
+    // settled — the region may well already be downloaded.
+    if (done === null) {
+      setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
+      _retryWhenStyleSettles();
+      return;
+    }
     // Offline-integrity: a region already downloaded (done) still reads as
     // the green offline circle; one that isn't can't be fetched now, so it
     // shows the offline-disabled state instead of an actionable idle.
@@ -5144,7 +5190,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
-    const tileUrls = core && template ? core.rangesToTileURLs(template, blob) : [];
+    // No tile template (style still settling) means no tiles to warm, and a
+    // feeds-only run must never paint 'done' — the region's basemap would
+    // not in fact be available offline. Revert to idle so the user can retry.
+    if (!core || !template) {
+      setState('idle', data.summary.mb);
+      return;
+    }
+    const tileUrls = core.rangesToTileURLs(template, blob);
     const urls = [..._assembleFeedURLs(), ...tileUrls];
 
     const onProgress = (done, total) => {

@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, Download basemap, offline layers-menu gating, micro-region L4 recovery
 status: current
-last-reviewed: 2026-07-25
+last-reviewed: 2026-07-26
 ---
 
 # PWA shell
@@ -461,6 +461,15 @@ basemap's tiles for the region aren't cached. The icon re-probes on
 `snowdesk:basemap-changed` (fired by the styledata reinstall once a new
 basemap's overlays are back) and on `snowdesk:connectivity-changed`.
 
+That template is only resolvable once MapLibre's style has settled
+(`map.isStyleLoaded()`), which is **not** true on the page load that
+first paints the icon — the region/overlay sources are added inside
+`map.on('load')` itself, so the style is still dirty when the boot-time
+probe runs. A probe that can't resolve the template therefore returns
+"don't know" rather than "not downloaded", and re-runs on the next
+MapLibre `idle`; without that retry a reload of an already-downloaded
+region painted `idle` until the user reselected the region.
+
 **Download**, on clicking an `idle` icon:
 
 1. `map.js` fetches the region's full blob from
@@ -756,9 +765,11 @@ underlying PNGs.
   final shape, `tox -e e2e`) — the micro download icon's full flow:
   idle→busy→done transitions with no toast (the icon carries the
   outcome); a reselected region reading `done` from real
-  `BASEMAP_PINNED_CACHE` state rather than in-page memory; the
-  `over_ceiling` disabled state; and the partial/failed/vacuous
-  `{ok, failed}` branches reverting to idle rather than done.
+  `BASEMAP_PINNED_CACHE` state rather than in-page memory; a probe that
+  couldn't resolve the active basemap's tile template re-running once
+  the style settles; the `over_ceiling` disabled state; and the
+  partial/failed/vacuous `{ok, failed}` branches reverting to idle
+  rather than done.
 - `tests/e2e/test_layers_menu_removed_items.py` (SNOW-521, `tox -e
   e2e`) — a real layers-menu open asserting the three items dropped
   alongside the download rework (`[data-overlay-key="l3"]`,
