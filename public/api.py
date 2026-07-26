@@ -60,6 +60,7 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_cache_control
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
@@ -68,6 +69,7 @@ from django_ratelimit.decorators import ratelimit
 from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
+from bulletins.services.settled import is_settled
 from core.freshness import apply_freshness_headers
 from favourites.models import Favourite
 from observations.models import FieldObservation
@@ -121,6 +123,17 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # hits. Pair the decorator with @vary_on_headers("Accept-Encoding") to stop
 # SessionMiddleware from appending Vary: Cookie and killing shared caching.
 _DYNAMIC_CACHE_MAX_AGE = 300
+
+# Cache lifetime for settled (past the fetcher's earliest-mutable-date
+# threshold) bulletin-groupings responses (SNOW-526). Settled geometry is
+# immutable on the normal ingest path, but a manual
+# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` can
+# still rewrite history, so this is bounded well below the year-long
+# max-age used for historic bulletin pages — see
+# docs/decisions/date-aware-cache-policy.md. Offline availability comes
+# from the service worker's Cache Storage entry, which ignores max-age
+# entirely, so nothing is lost by keeping this short.
+_SETTLED_CACHE_MAX_AGE = 604800  # 7 days
 
 # Client-side freshness window for the community-reports overlay (SNOW-419).
 # The endpoint itself is no-store (per-user flag-gated, SNOW-459), so this is
@@ -663,7 +676,6 @@ def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
     return JsonResponse(region.basemap_download)
 
 
-@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
 def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     """
@@ -707,7 +719,20 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
 
     Server-side ``cache.get_or_set`` keyed on ``(country, date)`` mirrors
     the ``ratings`` view so DB hits are bounded to one per cache window
-    (5 minutes, same as other dynamic endpoints).
+    (5 minutes, same as other dynamic endpoints) regardless of the
+    requested date's settled state.
+
+    ``Cache-Control`` is date-aware (SNOW-526), set via
+    ``patch_cache_control`` rather than the ``@cache_control`` decorator so
+    it can branch per response:
+
+    * a settled date (``bulletins.services.settled.is_settled`` — before
+      the earliest date any provider's next ingest run could still
+      change) gets ``public, max_age=604800, immutable`` — the ``sw.js``
+      service worker treats ``immutable`` as its signal to persist the
+      response for offline use;
+    * today and the still-mutable tail keep the existing
+      ``public, max_age=300`` and stay network-only.
 
     Errors:
         400 — missing ``?d=`` date.
@@ -755,7 +780,14 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
         lambda: _build_groupings_payload(parsed_date, country_param),
         timeout=_DYNAMIC_CACHE_MAX_AGE,
     )
-    return JsonResponse(payload)
+    response = JsonResponse(payload)
+    if is_settled(parsed_date):
+        patch_cache_control(
+            response, public=True, max_age=_SETTLED_CACHE_MAX_AGE, immutable=True
+        )
+    else:
+        patch_cache_control(response, public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+    return response
 
 
 def _build_groupings_payload(
