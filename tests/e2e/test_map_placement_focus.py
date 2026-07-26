@@ -24,10 +24,13 @@ the same flake the rest of the map e2e suite deliberately avoids.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from playwright.sync_api import Page
 
 from tests.e2e.conftest import FavouritesPage
+from tests.factories import FavouriteFactory
 
 # Every layer the app installs over the basemap on a default (CH-only,
 # resorts-off) cold load. The choropleth and its outlines are the layers a
@@ -172,50 +175,62 @@ def test_placement_keeps_an_overlay_that_was_already_off_off(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_placement_dismisses_an_open_region_popup(
-    favourites_page: FavouritesPage, _load_test_data: None
+def test_placement_dismisses_an_open_detail_popup(
+    favourites_page: FavouritesPage,
+    django_db_blocker: Any,
+    _load_test_data: None,
 ) -> None:
-    """A popup anchored to a region that is no longer drawn would be a
+    """A popup anchored to a pin that is no longer drawn would be a
     leftover, so map.js closes it when placement focus starts.
 
-    Selection is driven by stubbing ``queryRenderedFeatures`` for the
-    fill-layer query and firing a synthetic click — the deterministic
-    pattern ``tests/e2e/test_map_marker_exclusion.py`` established, since
-    headless Chromium doesn't reliably composite the fill layer for a
-    genuine pixel hit-test.
+    The popup is opened by tapping an existing favourite — the glyph
+    hit-test is made deterministic by stubbing ``queryRenderedFeatures``
+    for the marker-layer query and firing a synthetic click, the pattern
+    ``tests/e2e/test_map_marker_exclusion.py`` established (headless
+    Chromium doesn't reliably composite symbol layers for a genuine pixel
+    hit-test).
+
+    A *region* popup would once have served here too, but selecting a
+    region no longer opens one — the favourite popup is now the reachable
+    case of the same dismissal path.
     """
     page = favourites_page.page
-    _navigate_home(page, favourites_page.live_server_url)
+    with django_db_blocker.unblock():
+        FavouriteFactory.create(
+            user=favourites_page.account.user,
+            name="Leftover Peak",
+            latitude=46.10,
+            longitude=7.10,
+        )
 
-    page.wait_for_function(
-        "() => !!MAP.getSource('regions') && "
-        "(MAP.getSource('regions').serialize().data.features || [])"
-        ".some((f) => f.id != null)"
-    )
+    _navigate_home(page, favourites_page.live_server_url)
+    page.wait_for_function("() => !!MAP.getLayer('favourites-pin')")
+
     page.evaluate(
         """() => {
-            const data = MAP.getSource('regions').serialize().data;
-            const f = data.features.find((x) => x.id != null);
+            const data = MAP.getSource('favourites').serialize().data;
+            const f = (data.features || [])[0];
             const orig = MAP.queryRenderedFeatures.bind(MAP);
             MAP.queryRenderedFeatures = (geometry, options) => {
                 const opts = options || geometry || {};
                 const layers = opts.layers || [];
-                if (layers.indexOf('regions-fill') !== -1) {
-                    return [{ layer: { id: 'regions-fill' }, id: f.id }];
+                if (layers.indexOf('favourites-pin') !== -1) {
+                    return [{ layer: { id: 'favourites-pin' }, ...f }];
                 }
                 return orig(geometry, options);
             };
         }"""
     )
     point = page.evaluate(
-        "() => { const p = MAP.project(MAP.getCenter()); return { x: p.x, y: p.y }; }"
+        "() => { const p = MAP.project([7.10, 46.10]); return { x: p.x, y: p.y }; }"
     )
     page.evaluate(
-        "({ x, y }) => MAP.fire('click', { lngLat: MAP.getCenter(), point: { x, y } })",
+        "({ x, y }) => MAP.fire('click', {"
+        " lngLat: { lng: 7.10, lat: 46.10 }, point: { x, y } })",
         point,
     )
-    page.wait_for_selector(".region-popup")
+    page.wait_for_selector(".detail-popup")
 
     _start_placing_favourite(page)
 
-    assert page.locator(".region-popup").count() == 0
+    assert page.locator(".detail-popup").count() == 0
