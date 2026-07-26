@@ -1253,7 +1253,9 @@
     align-items: center;
     gap: 6px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
+    /* 13px, up from 11px: at monospace 11px the region name read as chrome
+       rather than as the label for what the map is currently showing. */
+    font-size: 13px;
     /* Frosted pill so the label stays legible over the map (it was getting
        lost against the choropleth). Matches the scrubber / utility-pill idiom. */
     padding: 4px 10px;
@@ -1466,8 +1468,10 @@
 /* Colour block leading the chip; the background is the EAWS danger colour for
    the scrubbed day, set inline by map.js (transparent when no_rating). */
 .region-readout-swatch {
-    width: 10px;
-    height: 10px;
+    /* Tracks the 13px chip text so the swatch keeps leading the label rather
+       than floating in it. */
+    width: 12px;
+    height: 12px;
     flex: 0 0 auto;
     border-radius: 2px;
     background: transparent;

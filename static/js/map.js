@@ -11,7 +11,7 @@
  *   2. Fetch regions GeoJSON, today's ratings, and resorts in parallel.
  *   3. Merge the three into per-feature rating state so the fill layer
  *      can colour each region via a MapLibre ``match`` expression.
- *   4. Wire up click and region-popup interactions.
+ *   4. Wire up click interactions (region select/deselect, markers, pins).
  */
 
 // Module-scope handles shared between this file's IIFEs (main init,
@@ -2634,11 +2634,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Interaction
     let selectedId = null;
 
-    // SNOW-318: Popup state — decoupled from the selection state.
+    // SNOW-318: Popup state — decoupled from the selection state. No gesture
+    // opens the region popup any more (selecting a region only moves the
+    // highlight/ribbon/readout/hash), so this state is dormant unless the
+    // popup is opened programmatically; the decoupling below still holds.
     //
-    // The key design change from pre-SNOW-314: closing the popup (via ×/Esc or
-    // the timelapse start) does NOT deselect the region. The highlight, pill,
-    // and #CH-xxxx hash all persist. Only an empty-canvas tap truly deselects.
+    // Closing the popup (via ×/Esc or the timelapse start) does NOT deselect
+    // the region. The highlight, pill, and #CH-xxxx hash all persist. Only an
+    // empty-canvas tap or a re-tap of the selected region deselects.
     //
     // activePopupRegion tracks { regionID, slug } of the currently-open popup
     // so refreshPopupForDate can build the updated bulletin href without having
@@ -2653,8 +2656,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // ---- URL fragment state (SNOW-39) ----
     //
     // The currently-selected region is mirrored in ``location.hash`` as
-    // ``#CH-xxxx`` so the back button dismisses the popup (instead of
-    // leaving the page) and so a deep link reopens the popup on load.
+    // ``#CH-xxxx`` so the back button drops the selection (instead of
+    // leaving the page) and so a deep link restores it on load.
     //
     // ``popupHistoryOpen`` tracks whether our hash is currently the top
     // history entry — drives push-vs-replace on the next open.
@@ -2760,6 +2763,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // MapLibre Popup anchored above the region's north edge. The summarySeq
     // guard discards stale responses when the user taps a different region
     // mid-flight. Returns true on success, false on network error or stale seq.
+    //
+    // NOTE: currently unreachable. Selecting a region used to open this popup;
+    // the trigger was removed because the popup covered the map the user had
+    // just tapped and the ribbon + readout already carry the same information.
+    // The implementation is kept deliberately (with its refresh/teardown
+    // plumbing) pending a decision on a different surface for region detail —
+    // don't delete it as dead code without checking that decision first.
     //
     // Design notes:
     //   - anchor:'bottom' + featureNorthAnchor keeps the popup above the polygon.
@@ -2992,15 +3002,33 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     };
 
+    // Deselect the currently-focused region: drop the highlight, clear the URL
+    // hash, and tell the ribbon/readout there is no region. Shared by the
+    // empty-canvas tap and the re-tap-to-deselect gesture so both produce
+    // exactly the same end state.
+    //
+    // Sequencing matters: closePopupOnly must run before clearTooltip, which
+    // resets activePopup/activePopupRegion — the 'close' teardown needs those
+    // references live. (No user gesture opens a region popup any more, but the
+    // call keeps a programmatically-opened one from being orphaned.)
+    const deselectRegion = () => {
+      closePopupOnly();
+      closeDetailPopup();
+      clearTooltip();
+      document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: null, region_name: null },
+      }));
+    };
+
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
     // a single definition.
     //
-    // SNOW-318 decoupling: popup open/closed state is now separate from the
-    // selection (highlight + pill + hash). A re-tap of the already-selected
-    // region no longer toggles the selection off — instead it reopens a closed
-    // popup. The toggle-closed path was removed entirely; empty-canvas tap is
-    // the only deselect gesture.
+    // Selecting a region no longer opens the region popup — it only moves the
+    // selection (highlight + ribbon + readout + hash). Re-tapping the selected
+    // region deselects it, but that toggle lives in the map click handler
+    // rather than here: popstate/hashchange/initial-load all call selectFeature
+    // with the id that may already be selected, and those must be no-ops.
     //
     // ``urlMode`` controls how the URL hash is reconciled after the popup opens:
     //   'push' (default, user-initiated) — writes the hash via push/replaceState.
@@ -3011,17 +3039,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       numericId,
       { urlMode = 'push' } = {},
     ) => {
-      // SNOW-318: Re-tapping the already-highlighted region reopens a closed
-      // popup without changing any selection state. Re-tapping while the popup
-      // is already open is a no-op (the user sees it, nothing to do).
-      if (numericId === selectedId) {
-        if (!activePopup) openRegionPopup(numericId);
-        return;
-      }
+      // Already the active region — nothing to change. The deselect toggle is
+      // the click handler's job (see deselectRegion), so that a repeated
+      // popstate/hashchange for the same hash can't drop the selection.
+      if (numericId === selectedId) return;
 
       // Switching to a different region: drop the old highlight first, then
-      // silently dismiss the old popup (summarySeq is NOT bumped here —
-      // openRegionPopup bumps it at the start of its own fetch).
+      // silently dismiss any popup left over from another surface.
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
       }
@@ -3057,11 +3081,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
           major_name: props.major_name || '',
         },
       }));
-
-      // Open the popup above the region's north edge. Fire-and-forget — a fetch
-      // failure leaves the selection (highlight/pill/hash) intact; the user can
-      // re-tap to retry.
-      openRegionPopup(numericId);
 
       if (AUTOZOOM) {
         const feature = FEATURE_BY_ID[numericId];
@@ -3282,20 +3301,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         : [];
 
       if (features.length === 0) {
-        // Genuine tap on empty map area (outside any region) — the only gesture
-        // that both closes the popup AND deselects the region (greys the ribbon,
-        // drops the readout to date-only, removes the highlight). Runs even
+        // Genuine tap on empty map area (outside any region) — deselects the
+        // region (greys the ribbon, drops the readout to date-only, removes the
+        // highlight) and closes any anchored resort/favourite popup. Runs even
         // during playback (unchanged from before).
-        // SNOW-318: close the popup before clearTooltip deselects the region.
-        // Sequencing matters: clearTooltip resets activePopup/activePopupRegion,
-        // so closePopupOnly must run first to fire the 'close' teardown while
-        // those references are still live.
-        closePopupOnly();
-        closeDetailPopup(); // SNOW-499: an anchored resort/favourite popup too.
-        clearTooltip();
-        document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-          detail: { region_id: null, region_name: null },
-        }));
+        deselectRegion();
         return;
       }
 
@@ -3315,8 +3325,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
       if (region) {
-        // SNOW-499: a region tap opens the region popup — close any anchored
-        // resort/favourite detail popup so the two don't co-exist.
+        // Tapping the region that is already selected deselects it — the same
+        // end state as an empty-canvas tap, without hunting for a gap in the
+        // choropleth to tap.
+        if (region.id === selectedId) {
+          deselectRegion();
+          return;
+        }
+        // SNOW-499: close any anchored resort/favourite detail popup so it
+        // doesn't linger over a region the user has moved on from.
         closeDetailPopup();
         selectFeature(region.id);
       }
@@ -3720,9 +3737,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!feature) return;
       inputEl.value = item.primary;
       collapseSearch();
-      // SNOW-318: selectFeature now opens the popup automatically. If the
-      // region is already selected, openRegionPopup is called directly via the
-      // re-tap branch inside selectFeature — the user gets a fresh popup open.
+      // Moves the selection (highlight + ribbon + readout + hash). Picking the
+      // region that is already selected is a no-op — the deselect toggle is a
+      // map gesture only, so a search pick never clears the selection.
       selectFeature(feature.id);
     };
 

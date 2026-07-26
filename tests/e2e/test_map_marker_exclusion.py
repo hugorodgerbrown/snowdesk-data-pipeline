@@ -145,8 +145,8 @@ def test_favourite_tap_does_not_select_region_underneath(
 
     # The favourite's own detail sheet opens (marker activated) ...
     page.wait_for_selector(f"#favourite-{fav_uuid}")
-    # ... and the tap neither opened a region tooltip (selectFeature ->
-    # openRegionPopup renders a .region-popup) ...
+    # ... and the tap opened no region popup (no gesture does any more —
+    # kept as a guard against a region-detail surface being re-wired here) ...
     assert page.locator(".region-popup").count() == 0
     # ... nor dispatched a region selection. Give a real region click a moment
     # to have fired the event, then assert it never did.

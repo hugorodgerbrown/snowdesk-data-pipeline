@@ -26,10 +26,18 @@ Alps, rendered with MapLibre GL JS. It is the primary way a visitor
 answers one question: **"what is the avalanche danger where I am going,
 and how is it changing?"**
 
-Tapping a region opens a detail surface (an anchored popup on desktop, a
-docked bottom sheet during placement flows on mobile) showing that
-region's danger rating for the selected day, its geographic breadcrumb,
-its resorts, and a link to the full bulletin.
+Tapping a region selects it: the region is outlined, and the season
+ribbon and its readout chip at the top of the map switch to that
+region — its name as a geographic breadcrumb, its danger swatch for the
+selected day, and the arrow roundel linking to the full bulletin. The
+selection is mirrored in the URL fragment (`#CH-4115`), so it is
+deep-linkable and the back button drops it. Nothing is overlaid on the
+map itself: tapping a region does not open a popup over the terrain the
+visitor just tapped.
+
+Tapping the selected region again deselects it, as does tapping empty
+map area outside any region; the ribbon greys out and the readout drops
+back to the date alone.
 
 **Coverage.** The map covers the four avalanche services Snowdesk
 ingests:
