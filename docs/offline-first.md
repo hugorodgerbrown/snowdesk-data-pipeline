@@ -42,7 +42,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
-| 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). |
+| 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). **Offline:** both network paths (`flush()` fetch and the critical-event `sendBeacon`) short-circuit while `navigator.onLine === false` — events stay enqueued and drain on the next `online` flush, so offline never fires a doomed request. |
 
 ## Version + freshness contract
 
@@ -191,6 +191,24 @@ every public page. Its responsibilities:
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
+- Broadcast a `snowdesk:connectivity-changed` `{ online }` CustomEvent on
+  every transition (and once at init), so consumers that need
+  **cache-aware** gating — not the blunt `data-network-required` all-or-
+  nothing disable — can react in lockstep with the banner without polling
+  `navigator.onLine` themselves.
+- (offline-integrity) **Layers-menu cache-aware gating.** The map's layers
+  popover (`static/js/map_layer_sync_status.js`) already probed per-row
+  cache state (green/grey dots, SNOW-505); offline it now *gates* it. While
+  `navigator.onLine === false`, a layer or basemap whose resource isn't
+  cached can't be loaded, so its row gets the red `unavailable-offline` dot
+  AND is disabled (`aria-disabled`, honoured by the picker's click handler
+  in `map.js`); l3 (network-only) and every uncached overlay/basemap follow
+  the same rule. Each basemap carries its own dot; the **active** basemap is
+  never disabled (the user can't be stranded on a map they can't leave).
+  Disabling a row never hides a layer already on the map — it only locks the
+  control ("keep shown, lock the toggle"). The `snowdesk:region-download`
+  icon is likewise disabled offline (no downloading of layers offline). See
+  [`offline-map.md`](offline-map.md#offline-gating-of-the-layers-menu).
 - (SNOW-483, refined SNOW-492) On the map page, when the third-party
   basemap style JSON can't be fetched offline (the SW treats it as
   network-only), `static/js/map.js` swaps in an inline fallback

@@ -175,6 +175,7 @@
      severity. */
   --color-sync-ok:  #16a34a;   /* green-600 — resource is cached, available offline */
   --color-sync-off: #9ca3af;   /* gray-400  — resource is not cached (absent, not an error) */
+  --color-sync-blocked: #dc2626; /* red-600 — offline AND not cached: genuinely unavailable */
 
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
@@ -369,6 +370,7 @@
   /* Sync-status dots — lighter variants for contrast on the dark card surface. */
   --color-sync-ok:  #4ade80;   /* green-400 */
   --color-sync-off: #6b7280;   /* gray-500 — muted "not cached" on dark card */
+  --color-sync-blocked: #f87171; /* red-400 — offline AND not cached, on dark card */
 
   /* Misc interactive */
   --color-card-hover:     #353330;

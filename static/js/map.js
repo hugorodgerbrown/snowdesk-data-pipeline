@@ -861,7 +861,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
   };
 
   const installRegionsLayers = (geojson) => {
-    if (map.getSource('regions')) return;
+    // Fully installed already — the choropleth fill layer is the sentinel,
+    // not the source. A setStyle can (in some MapLibre paths) drop our
+    // layers while leaving the 'regions' source behind; keying the guard on
+    // the source alone then wrongly skips re-adding the layers, stranding
+    // the micro-region overlay with no way back (the reported bug). Rebuild
+    // from a lingering source-without-layers rather than early-returning.
+    if (map.getLayer('regions-fill')) return;
+    if (map.getSource('regions')) {
+      for (const id of ['regions-fill', 'regions-line', 'regions-line-selected', 'regions-label']) {
+        if (map.getLayer(id)) map.removeLayer(id);
+      }
+      map.removeSource('regions');
+    }
     map.addSource('regions', { type: 'geojson', data: geojson });
 
     // Fill layer — the choropleth.
@@ -3587,7 +3599,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // ``?d=`` and the shared ratings cache.
     map.on('styledata', () => {
       if (!geojsonCache) return;          // initial load — handled above
-      if (map.getSource('regions')) return;  // still installed on this style
+      // Gate on the fill LAYER, not just the source: a setStyle that leaves
+      // the 'regions' source behind while dropping its layers (see
+      // installRegionsLayers) would otherwise satisfy a source-only guard
+      // and skip the whole reinstall, stranding the overlay.
+      if (map.getSource('regions') && map.getLayer('regions-fill')) return;
 
       // SNOW-473: overlayState is seeded once at boot and never updated by the
       // picker (which writes localStorage + the live layer only), so re-seeding
@@ -3672,6 +3688,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
         getSeasonRatings()
           .then((ratings) => repaintRegionsForDate(dateKey, ratings))
           .catch(() => { /* network fail → leave today's colours */ });
+      }
+
+      // A new basemap style has just loaded and its overlays are back.
+      // Notify per-basemap consumers (the region-download icon re-probes its
+      // done-state against the new basemap's tile template; anything else
+      // that cares about "which basemap am I on now") — the reinstall body
+      // only runs on a genuine style change, so this fires once per swap.
+      document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    });
+
+    // Recovery path for the micro-region (L4) overlay: if its layers are
+    // gone but the cached GeoJSON is still in memory, rebuild them on
+    // demand. The picker's L4 toggle dispatches this before making the
+    // layers visible, so toggling Micro regions back on ALWAYS restores
+    // them — even in the edge case where a style swap dropped the layers
+    // and the styledata reinstall didn't re-add them. Mirrors the tail of
+    // the styledata reinstall (selection + date repaint) for the regions
+    // source specifically.
+    document.addEventListener('snowdesk:regions-reinstall', () => {
+      if (!geojsonCache || map.getLayer('regions-fill')) return;
+      installRegionsLayers(geojsonCache);
+      applyCountryFilters();
+      if (selectedId !== null) {
+        map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
+      }
+      const dateKey = readUrlDateParam();
+      if (dateKey) {
+        getSeasonRatings()
+          .then((ratings) => repaintRegionsForDate(dateKey, ratings))
+          .catch(() => { /* offline → keep today's colours */ });
       }
     });
 
@@ -4497,6 +4543,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
+      // Offline-integrity: a row map_layer_sync_status.js has disabled
+      // (offline AND its resource/basemap isn't cached) is inert. Honour
+      // aria-disabled here — the source of truth is that module's probe, so
+      // there's no state to toggle and no basemap to swap to.
+      if (item.getAttribute('aria-disabled') === 'true') return;
+
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
@@ -4550,6 +4602,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
             // setLayoutProperty path. For the lazy tiers toggling off, the
             // layer may not exist yet (if the user enabled then immediately
             // disabled before the fetch resolved) — getLayer guards cover this.
+            //
+            // L4 recovery: unlike the lazy tiers, Micro regions has no
+            // fetch-and-install path here — if a prior style swap dropped its
+            // layers, a plain setLayoutProperty would silently no-op (the
+            // reported "toggling micro-regions does nothing" bug). Rebuild
+            // from the in-memory cache first (synchronous), then fall through
+            // to make the freshly-added layers visible.
+            if (next && overlayKey === 'l4' && !MAP.getLayer('regions-fill')) {
+              document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+            }
             for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
               if (MAP.getLayer(layerId)) {
                 MAP.setLayoutProperty(
@@ -4722,6 +4784,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
       busy: `Downloading this region's basemap — ${pct || 0}%`,
       done: `This region's basemap is downloaded — available offline`,
       disabled: `This region's basemap is too large to download`,
+      // Offline-integrity: no downloading of layers while offline.
+      offline: `Basemap download unavailable while offline`,
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
@@ -4749,6 +4813,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     const done = await _probeDone(data.summary);
     if (microData !== data || btn.dataset.downloadState === 'busy') return;
+    // Offline-integrity: a region already downloaded (done) still reads as
+    // the green offline circle; one that isn't can't be fetched now, so it
+    // shows the offline-disabled state instead of an actionable idle.
+    if (!navigator.onLine && !done) {
+      setState('offline', data.summary.mb);
+      return;
+    }
     setState(done ? 'done' : 'idle', data.summary.mb);
   }
 
@@ -4814,6 +4885,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   async function handleClick() {
     const data = microData;
     if (!data || btn.dataset.downloadState !== 'idle') return;
+    // Offline-integrity: never start a download offline, even if a race left
+    // the icon on 'idle' at the moment of the click.
+    if (!navigator.onLine) {
+      setState('offline', data.summary.mb);
+      return;
+    }
     setState('busy', data.summary.mb, 0);
 
     let blob;
@@ -4875,6 +4952,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('snowdesk:region-selected', (e) => {
     applyRegion((e.detail && e.detail.region_id) || null);
   });
+
+  // Per-basemap download state: the "done" probe (_probeDone) keys off the
+  // ACTIVE basemap's tile template, so switching basemap changes whether
+  // this region reads as downloaded. Re-render on every basemap swap (the
+  // main IIFE fires this once the new style's overlays are back) so the icon
+  // flips done↔idle to match the basemap you're now on — e.g. download on
+  // Standard, switch to Swisstopo, and the icon reverts to "download".
+  document.addEventListener('snowdesk:basemap-changed', () => renderMicro());
+
+  // Offline-integrity: re-render on every connectivity transition so the
+  // icon greys out (offline, not yet downloaded) or becomes actionable
+  // again (back online) without needing the region re-selected.
+  document.addEventListener('snowdesk:connectivity-changed', () => renderMicro());
 
   // Pick up the homepage's server-rendered default focus once its
   // geojson feature (and download data) has loaded. The initial CH

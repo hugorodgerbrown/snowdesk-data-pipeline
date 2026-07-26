@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, /api/sw-config, kill switch A/B, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, per-region "Download basemap" icons
+description: PWA shell — sw.js, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, Download basemap, offline layers-menu gating, micro-region L4 recovery
 status: current
 last-reviewed: 2026-07-25
 ---
@@ -446,13 +446,20 @@ overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling` (a
 **State** — `data-download-state` on the icon: `idle` (arrow, size in
 the tooltip), `busy` (bottom-up fill of the roundel, driven by a
 `--download-progress` CSS custom property — `static/css/map.css`),
-`done` (solid green circle + tick), `disabled`. `idle`/`done` are
+`done` (solid green circle + tick), `disabled` (over-ceiling), and
+`offline` (greyed, not-allowed — no downloading of layers while
+offline; see gating below). `idle`/`done` are
 derived from a real `BASEMAP_PINNED_CACHE` probe
 (`static/js/basemap_download_core.js`'s `centreTileURL` against the
 region's `centre_tile`) every time the icon is (re)shown — never a
 stored flag, so a reselected region reads its true cache state, and a
 region that was downloaded in an earlier session still reads `done`
-after a reload.
+after a reload. Because the probe keys off the **active** basemap's tile
+template, the state is **per-basemap**: download the region on Standard,
+switch to Swisstopo (online), and the icon reverts to `idle` — that
+basemap's tiles for the region aren't cached. The icon re-probes on
+`snowdesk:basemap-changed` (fired by the styledata reinstall once a new
+basemap's overlays are back) and on `snowdesk:connectivity-changed`.
 
 **Download**, on clicking an `idle` icon:
 
@@ -512,6 +519,45 @@ viewport move.
 its exact polygon; some tiles just outside the boundary are included
 (coarser tiers over-include more). Simple and compact; polygon-clipping
 at build time is a possible future refinement, not built.
+
+## Offline gating of the layers menu
+
+The layers popover (`#basemap-menu`) is a live cache-state dashboard:
+`static/js/map_layer_sync_status.js` paints a sync dot per overlay row and
+per **basemap** row (green = cached / available offline, grey = not cached
+yet, hollow = never cacheable — l3). It re-probes on every popover open and,
+now, on every `snowdesk:connectivity-changed` broadcast from
+`pwa_offline.js`.
+
+Offline, the dashboard stops being merely advisory and **gates** the menu —
+the offline-integrity rule: *nothing that can't be loaded offline is
+offered offline.* While `navigator.onLine === false`:
+
+- An overlay/basemap whose resource isn't cached gets the red
+  `unavailable-offline` dot and its row is disabled (`aria-disabled`, which
+  the picker's click handler in `map.js` honours and `map.css` dims). l3 and
+  every uncached row/basemap follow the same rule.
+- The **active** basemap is never disabled — you can't be stranded on a map
+  you can't leave. A non-active basemap is selectable offline only if its
+  style is cached (the "downloaded/browsed before" proxy; the residual
+  per-viewport tile gap is covered by the SNOW-483 fallback + overlay
+  reinstall). Locking the picker to what's actually cached is what removes
+  the trigger for the micro-region overlay-loss bug (switching to an
+  uncached basemap offline).
+- Disabling a row never hides a layer already on the map — it only locks the
+  control. A layer switched on before going offline stays rendered ("keep
+  shown, lock the toggle").
+- The per-region "Download basemap" icon is disabled (no downloading of
+  layers offline).
+
+**Micro-region (L4) recovery.** L4 is the one overlay tier with no lazy
+fetch-and-install toggle path, so if a style swap ever dropped the `regions`
+layers, toggling Micro regions back on used to silently no-op. `map.js` now
+(a) gates the styledata reinstall on the fill **layer**, not just the
+`regions` source (a diffed `setStyle` can leave the source behind while
+dropping its layers), and (b) makes the L4 toggle dispatch
+`snowdesk:regions-reinstall`, rebuilding the layers from the in-memory
+GeoJSON cache — so toggling Micro regions on always restores them.
 
 ## Cache version bump
 
