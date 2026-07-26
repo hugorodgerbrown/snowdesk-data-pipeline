@@ -38,6 +38,14 @@
  *     Trim ``cache`` down to at most ``max`` entries, oldest first
  *     (``Cache.keys()`` returns insertion order) — an LRU-by-insertion-order
  *     approximation with no per-entry timestamp bookkeeping.
+ *   shouldPersist(url, response, immutableOnlyPaths)
+ *     SNOW-526: false for a path in ``immutableOnlyPaths`` whose response
+ *     doesn't carry an ``immutable`` ``Cache-Control`` token, true otherwise.
+ *     Keeps the settled/unsettled date rule out of the worker entirely — the
+ *     server already says which it is (``public/api.py``'s
+ *     ``bulletin_groupings_geojson``), so the worker just reads the response
+ *     rather than re-deriving the date arithmetic (see
+ *     docs/decisions/date-aware-cache-policy.md).
  */
 
 (function () {
@@ -100,9 +108,38 @@
     await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
   }
 
+  /**
+   * SNOW-526: decide whether a same-origin response should be written to
+   * the shell cache for offline replay.
+   *
+   * Only ``immutableOnlyPaths`` entries are gated — every other path keeps
+   * persisting unconditionally, matching pre-SNOW-526 behaviour. For a
+   * gated path, the response must declare itself ``immutable`` via its
+   * ``Cache-Control`` header (case-insensitive token match, tolerant of
+   * the surrounding ``public, max-age=604800, immutable`` directive list);
+   * a settled-date response satisfies that, an unsettled one (still
+   * ``max-age=300``, no ``immutable``) does not, so it is never written and
+   * a later offline ``cache.match`` simply misses.
+   *
+   * @param {URL} url
+   * @param {Response} response
+   * @param {Set<string>} immutableOnlyPaths Same-origin paths that must
+   *   only be persisted when the response is marked ``immutable``.
+   * @returns {boolean}
+   */
+  function shouldPersist(url, response, immutableOnlyPaths) {
+    if (!immutableOnlyPaths.has(url.pathname)) return true;
+    const cacheControl = (response.headers.get('Cache-Control') || '').toLowerCase();
+    return cacheControl
+      .split(',')
+      .map((token) => token.trim())
+      .includes('immutable');
+  }
+
   self.pwaBasemapCacheCore = Object.freeze({
     classifySync: classifySync,
     isBasemapOrigin: isBasemapOrigin,
     trimCache: trimCache,
+    shouldPersist: shouldPersist,
   });
 })();
