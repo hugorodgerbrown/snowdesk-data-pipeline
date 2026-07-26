@@ -152,6 +152,16 @@ def test_earliest_mutable_date_agrees_with_fetch_bulletins_default_start_date() 
     (via the command's own helper) and assert the two agree — so a future
     change to the fetcher's default-start logic fails here rather than
     shipping a stale cache boundary.
+
+    Runs against the real (unpatched) ``get_sources()`` — on an empty DB
+    (a bare test run, no fixtures loaded) every source's ``latest_date_fn()``
+    returns ``None``, so both sides independently fall back to
+    ``min(settings.SEASON_START_DATE, today)`` and the assertion passes
+    trivially, without the two code paths' ``get_sources()``/
+    ``latest_date_fn()`` calls having actually been exercised against each
+    other. The check only has real bite once at least one registered source
+    has rows in the DB the test runs against (e.g. via seeded fixture data)
+    — don't over-trust a green result here in isolation from that.
     """
     starts = [
         Command._default_start_date(source)[0] for source in get_sources().values()
