@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), basemaps, season scrubber
 status: current
-last-reviewed: 2026-07-25
+last-reviewed: 2026-07-26
 ---
 
 # Map page — functional specification
@@ -274,6 +274,18 @@ is accent-insensitive, prefix matches rank above substring matches, and
 each result carries a "Region" or "Resort" badge to disambiguate places
 whose region and resort share a name (e.g. Davos). Selecting a result
 routes through the same selection path as a map tap.
+
+**Placing a pin clears the map.** Positioning a pin is a precision task, so
+while it is in progress the map shows nothing but the basemap and the pin
+being placed: the choropleth, every region outline, bulletin groupings,
+resort pins, other people's reports, existing favourites, and any open
+popup all disappear. The instant the pin is submitted or the flow is
+cancelled, every layer returns exactly as it was — an overlay the visitor
+had switched off stays off. This applies to all three placement flows:
+adding a favourite, filing a field observation (from the point at which
+you start setting the location by hand, or refine a GPS fix), and the
+staff Edit-resorts tool (from dropping the draft pin until Save or
+Cancel).
 
 **Marker tap priority.** Favourite, community-report, and cluster markers
 sit above the choropleth. A tap resolves to exactly one target in this

@@ -16,7 +16,9 @@
  * Exposes window.PlacePicker with three methods:
  *
  *   activate({ onChange, recenterTo })
- *     Reveals the pin and starts tracking the map centre. onChange(lat, lon)
+ *     Clears the map down to the basemap (window.PlacementFocus.enter() —
+ *     static/js/map_placement_focus.js), reveals the pin and starts
+ *     tracking the map centre. onChange(lat, lon)
  *     fires once immediately (the centre is always a valid coordinate — this
  *     is what lets callers unblock a "confirm" affordance right away, with
  *     no separate "tap to place" step) and again on every subsequent
@@ -25,8 +27,9 @@
  *     starts on the GPS fix rather than wherever the map already was.
  *
  *   deactivate()
- *     Hides the pin and stops tracking. Idempotent — safe to call whether
- *     or not activate() was ever called.
+ *     Hides the pin, stops tracking, and restores every layer the map was
+ *     showing before activate() cleared it. Idempotent — safe to call
+ *     whether or not activate() was ever called.
  *
  *   isActive()
  *     True between a call to activate() and the matching deactivate().
@@ -90,6 +93,11 @@
       // disarmPlacement-before-arm pattern the old marker code used).
       this.deactivate();
 
+      // Clear the map down to the basemap before anything moves, so the
+      // overlays are already gone by the time recenterTo pans — the user
+      // never sees the choropleth slide across the screen on its way out.
+      window.PlacementFocus?.enter();
+
       if (recenterTo) {
         map.setCenter(recenterTo);
       }
@@ -120,6 +128,9 @@
       moveEndHandler = null;
       active = false;
       hidePin();
+      // Bring back every overlay enter() hid. Idempotent on its own side,
+      // so the unconditional call is safe on the never-activated path.
+      window.PlacementFocus?.exit();
     },
 
     /**
