@@ -290,12 +290,20 @@ The SW classifies every fetch into one of four buckets:
   `STATIC_SHELL_EXTENSIONS` (CSS, JS, SVG, PNG/JPG/WEBP, ICO,
   WOFF/WOFF2, WEBMANIFEST) plus the paths in `STATIC_PATHS`
   (`/api/ratings/`, `/api/regions.geojson`, `/api/major-regions.geojson`,
-  `/api/sub-regions.geojson`, `/api/resorts.geojson`). Strategy:
+  `/api/sub-regions.geojson`, `/api/resorts.geojson`,
+  `/api/bulletin-groupings.geojson`). Strategy:
   **stale-while-revalidate**. The cache is served immediately if hit; a
   background fetch refreshes the entry for next time. `/api/ratings/` is
   safe to cache this way because its URL encodes the data window via
   `?d=YYYY-MM-DD` and `?country=` — each variant cache-keys separately, so
   a stale entry can never be returned for the wrong day.
+  `/api/bulletin-groupings.geojson` (SNOW-526) is the one entry that isn't
+  unconditionally persisted: it's also listed in `IMMUTABLE_ONLY_PATHS`, so
+  `_staleWhileRevalidate` only writes it to the cache when the response
+  carries `Cache-Control: immutable` — the server's signal that the
+  requested `?d=` is settled (see `docs/decisions/date-aware-cache-policy.md`
+  and the layers-menu section below). Every other `STATIC_PATHS` entry is
+  written unconditionally, as before.
 
 - **`navigate`** — HTML navigations (`request.mode === 'navigate'` or
   destination `document`). Strategy: **network-first** with a
@@ -534,9 +542,22 @@ at build time is a possible future refinement, not built.
 The layers popover (`#basemap-menu`) is a live cache-state dashboard:
 `static/js/map_layer_sync_status.js` paints a sync dot per overlay row and
 per **basemap** row (green = cached / available offline, grey = not cached
-yet, hollow = never cacheable — l3). It re-probes on every popover open and,
-now, on every `snowdesk:connectivity-changed` broadcast from
+yet, hollow = never cacheable right now). It re-probes on every popover open
+and, now, on every `snowdesk:connectivity-changed` broadcast from
 `pwa_offline.js`.
+
+**l3 (bulletin groupings, SNOW-526).** Unlike l1/l2/l4/resorts, l3 isn't
+uniformly cacheable — only a *settled* `?d=` date is (see
+`docs/decisions/date-aware-cache-policy.md`). `refresh()` reads the
+scrubber's date straight off `location.search`'s `?d=` param (`map.js` keeps
+it in sync via `history.replaceState`): no `?d=` (boot/today, which is never
+settled) paints the hollow "never cacheable right now" dot without a wasted
+probe; a `?d=` present runs the normal exact Cache-Storage probe against
+`/api/bulletin-groupings.geojson?d=<date>` and resolves to the same
+cached/uncached/offline-blocked states as any other row. `markCached('l3')`
+stays a no-op — a successful load doesn't prove the SW actually persisted a
+settled-date response, so the honest signal is the next `refresh()`'s own
+probe, not an optimistic paint.
 
 Offline, the dashboard stops being merely advisory and **gates** the menu —
 the offline-integrity rule: *nothing that can't be loaded offline is

@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version, freshness, idempotency, reset, install, telemetry, sync log
 status: current
-last-reviewed: 2026-07-22
+last-reviewed: 2026-07-26
 ---
 
 # Offline-first PWA compliance
@@ -202,8 +202,10 @@ every public page. Its responsibilities:
   `navigator.onLine === false`, a layer or basemap whose resource isn't
   cached can't be loaded, so its row gets the red `unavailable-offline` dot
   AND is disabled (`aria-disabled`, honoured by the picker's click handler
-  in `map.js`); l3 (network-only) and every uncached overlay/basemap follow
-  the same rule. Each basemap carries its own dot; the **active** basemap is
+  in `map.js`); l3 (SNOW-526: cacheable only for a settled `?d=` date — see
+  [`offline-map.md`](offline-map.md#offline-gating-of-the-layers-menu)) and
+  every uncached overlay/basemap follow the same rule. Each basemap carries
+  its own dot; the **active** basemap is
   never disabled (the user can't be stranded on a map they can't leave).
   Disabling a row never hides a layer already on the map — it only locks the
   control ("keep shown, lock the toggle"). The `snowdesk:region-download`
