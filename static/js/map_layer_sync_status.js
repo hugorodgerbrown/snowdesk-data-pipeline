@@ -35,13 +35,29 @@
  *
  * Row → resource map (the single source of truth driving every probe):
  *
+ *   country.<code>       — (SNOW-524) the four ``?country=<code>``-scoped
+ *                          feeds a country load fetches: L1, L2, L4 and
+ *                          ratings. Green only when ALL four are cached for
+ *                          that code, Switzerland included — the first page
+ *                          load is just "toggle CH on from blank", so there
+ *                          is no default-country special case. Basemap tiles
+ *                          are NOT part of this signal — they have their own
+ *                          rows and their own per-micro-region download flow
+ *                          (SNOW-521) — so the label says "region data
+ *                          available offline", not a bare "available
+ *                          offline".
  *   l1, l2, l4, resorts  — same-origin GeoJSON feeds cached by sw.js's
  *                          STATIC_PATHS shell cache. Probed via the
  *                          GLOBAL ``caches.match()`` (searches every
  *                          cache, so nothing here hardcodes the
- *                          versioned CACHE_VERSION shell-cache name) with
- *                          ``ignoreSearch: true`` (the app appends
- *                          ``?country=ch`` to these URLs).
+ *                          versioned CACHE_VERSION shell-cache name).
+ *                          l1/l2/l4 are ``?country=``-scoped, and the SW
+ *                          caches per full URL, so they are probed
+ *                          EXACTLY, once per enabled country, and go green
+ *                          only when cached for every country switched on
+ *                          — otherwise a tier dot could sit green above a
+ *                          red country row. resorts takes no country param
+ *                          and keeps the single ``ignoreSearch`` probe.
  *   l3                   — NOT in STATIC_PATHS (network-only per sw.js's
  *                          classification) — can never be cached for
  *                          offline use, so it resolves to the distinct
@@ -96,6 +112,15 @@
   const BASEMAP_CACHED_LABEL = 'Available offline';
   const BASEMAP_UNCACHED_LABEL = 'Not cached — view online first';
   const BASEMAP_OFFLINE_BLOCKED_LABEL = 'Unavailable offline — switch back online to load';
+  // SNOW-524: country rows claim only that the country's REGION DATA is
+  // cached — basemap tiles are a separate row with a separate download flow
+  // (SNOW-521), so the label deliberately doesn't say "available offline"
+  // unqualified.
+  const COUNTRY_CACHED_LABEL = 'Region data available offline';
+  const COUNTRY_UNCACHED_LABEL = 'Not cached — view online first';
+  const COUNTRY_OFFLINE_BLOCKED_LABEL = 'Unavailable offline — not cached';
+  // SNOW-524: mid-fetch — the data is on its way into the offline cache.
+  const SYNCING_LABEL = 'Caching for offline use…';
 
   // Marker set on any menu row this module disabled for the offline+uncached
   // case, so the reverse transition only re-enables what it disabled (never
@@ -104,19 +129,77 @@
   const DISABLED_MARKER = 'data-sync-disabled-offline';
 
   // The core row→resource constant. Keys are the overlay rows'
-  // ``data-overlay-key`` values; the basemap indicator is handled
-  // separately (single dot, no key). Countries and the Options rows
-  // (autozoom, cache-now) are deliberately absent — this module keys
-  // strictly off this map, so keyless/unlisted rows never get a dot.
+  // ``data-overlay-key`` values; the basemap indicator and (SNOW-524) the
+  // country rows are handled separately — the country rows' resource set is
+  // per-code, so it lives in COUNTRY_FEED_PATHS below rather than here. The
+  // Options rows (autozoom, cache-now) are deliberately absent from both, so
+  // they never get a dot.
   const OVERLAY_RESOURCES = Object.freeze({
-    l1: Object.freeze({ kind: 'geojson', path: '/api/major-regions.geojson' }),
-    l2: Object.freeze({ kind: 'geojson', path: '/api/sub-regions.geojson' }),
-    l4: Object.freeze({ kind: 'geojson', path: '/api/regions.geojson' }),
+    l1: Object.freeze({
+      kind: 'geojson',
+      path: '/api/major-regions.geojson',
+      countryScoped: true,
+    }),
+    l2: Object.freeze({
+      kind: 'geojson',
+      path: '/api/sub-regions.geojson',
+      countryScoped: true,
+    }),
+    l4: Object.freeze({
+      kind: 'geojson',
+      path: '/api/regions.geojson',
+      countryScoped: true,
+    }),
+    // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
+    // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
     l3: Object.freeze({ kind: 'uncacheable' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
   });
+
+  // SNOW-524: the four feeds a country load fetches (``ensureCountryLoaded`` in
+  // static/js/map.js). All four are ``?country=<code>``-scoped and all four are
+  // in sw.js's STATIC_PATHS, so all four are cached per country — a country is
+  // offline-ready only when every one of them is present.
+  //
+  // This holds for EVERY country including Switzerland: there is no
+  // default-country special case. The first page load is just "toggle CH on
+  // from blank", so boot runs the same country load and ends in the same
+  // four-feeds-cached state as any country the user switches on later.
+  const COUNTRY_FEED_PATHS = Object.freeze([
+    '/api/major-regions.geojson',
+    '/api/sub-regions.geojson',
+    '/api/regions.geojson',
+    '/api/ratings/',
+  ]);
+
+  const COUNTRY_KEY_PREFIX = 'country.';
+
+  // SNOW-524: the country-scoped tiers a country toggle also populates —
+  // ``ensureCountryLoaded`` fetches all three regardless of which are switched
+  // on, so all three go pending on a country click.
+  const COUNTRY_SCOPED_TIER_KEYS = Object.freeze(['l1', 'l2', 'l4']);
+
+  // Minimum time a row stays in the pulsing "syncing" state before it may go
+  // green, so the transition is perceptible even when the fetch resolves in
+  // milliseconds (a warm cache, or a local dev server).
+  const MIN_SYNCING_MS = 450;
+
+  // key → timestamp the row entered "syncing", for the MIN_SYNCING_MS dwell.
+  // The only mutable state in this module; entries are deleted as they're
+  // consumed, and a key that never reaches markCached (a failed load) is
+  // cleared by the next refresh() instead.
+  const _syncingSince = new Map();
+
+  /**
+   * Monotonic-ish clock for the dwell calculation.
+   *
+   * @returns {number} milliseconds.
+   */
+  function _now() {
+    return typeof performance === 'object' && performance ? performance.now() : Date.now();
+  }
 
   /**
    * The ``.sync-dot`` element for a given overlay row, or ``null`` when
@@ -154,6 +237,42 @@
     return Array.from(
       document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-url]'),
     );
+  }
+
+  /**
+   * Every country toggle row (``data-overlay-key="country.<code>"``) in the
+   * layers menu.
+   *
+   * @returns {HTMLElement[]}
+   */
+  function _countryItems() {
+    return Array.from(
+      document.querySelectorAll(`#basemap-menu [data-overlay-key^="${COUNTRY_KEY_PREFIX}"]`),
+    );
+  }
+
+  /**
+   * The country code carried by a country row, e.g. ``'fr'``.
+   *
+   * @param {HTMLElement} item
+   * @returns {string}
+   */
+  function _countryCodeOf(item) {
+    return (item.dataset.overlayKey || '').slice(COUNTRY_KEY_PREFIX.length);
+  }
+
+  /**
+   * The codes of the countries currently switched ON. Read from the rows'
+   * ``aria-checked`` rather than from map.js's ``countryState`` — that lives
+   * in another IIFE, and the DOM is already the picker's source of truth.
+   *
+   * @returns {string[]}
+   */
+  function _enabledCountryCodes() {
+    return _countryItems()
+      .filter((item) => item.getAttribute('aria-checked') === 'true')
+      .map(_countryCodeOf)
+      .filter(Boolean);
   }
 
   /**
@@ -287,6 +406,62 @@
   }
 
   /**
+   * SNOW-524: True when ``pathAndQuery`` is present in ANY Cache Storage
+   * cache, matching the query string EXACTLY (no ``ignoreSearch``).
+   *
+   * The SW's ``_staleWhileRevalidate`` caches per full URL — ``cache.put(request,
+   * …)`` in static/js/sw.js — so ``?country=ch`` and ``?country=at`` are
+   * separate entries. An ``ignoreSearch`` probe erases that distinction and
+   * reports a country cached because a *different* country was cached, which
+   * is what let an offline Austria toggle fire three failing fetches behind
+   * three green dots. Never throws.
+   *
+   * @param {string} pathAndQuery - e.g. ``/api/regions.geojson?country=at``.
+   * @returns {Promise<boolean>}
+   */
+  async function _probeExact(pathAndQuery) {
+    try {
+      const request = new Request(new URL(pathAndQuery, location.origin));
+      const response = await caches.match(request);
+      return !!response;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * True when ``path`` is cached for EVERY code in ``codes`` — the
+   * country-aware replacement for ``_probeGeoJson`` on the country-scoped
+   * tiers (l1/l2/l4). A tier is only honestly "available offline" if it's
+   * available for every country the user has switched on; otherwise the tier
+   * dot would sit green above a red country row.
+   *
+   * @param {string} path - a country-scoped feed path.
+   * @param {string[]} codes - enabled country codes.
+   * @returns {Promise<boolean>}
+   */
+  async function _probeEveryCountry(path, codes) {
+    const results = await Promise.all(
+      codes.map((code) => _probeExact(`${path}?country=${code}`)),
+    );
+    return results.every(Boolean);
+  }
+
+  /**
+   * True when every feed in ``COUNTRY_FEED_PATHS`` is cached for ``code`` —
+   * the country row's own availability signal.
+   *
+   * @param {string} code - a country code, e.g. ``'fr'``.
+   * @returns {Promise<boolean>}
+   */
+  async function _probeCountry(code) {
+    const results = await Promise.all(
+      COUNTRY_FEED_PATHS.map((path) => _probeExact(`${path}?country=${code}`)),
+    );
+    return results.every(Boolean);
+  }
+
+  /**
    * True when ``window.pwaDb``'s ``data:map_overlays`` store holds a row
    * for ``key`` carrying a truthy ``.geojson`` payload. Never throws — a
    * missing/broken ``window.pwaDb`` resolves to ``false``, matching the
@@ -349,7 +524,19 @@
   async function refresh() {
     if (!('caches' in window)) return;
 
+    // SNOW-524: a full re-probe supersedes any pending state — including a
+    // load that failed and so never reached markCached. Dropping the
+    // timestamps here stops a stale entry from imposing a dwell on some
+    // unrelated markCached call much later.
+    _syncingSince.clear();
+
     const tasks = [];
+
+    // SNOW-524: the country-scoped tiers are judged against the countries the
+    // user actually has switched on. With none enabled there is no country to
+    // judge against, so fall back to the country-blind probe rather than
+    // reporting "not cached" for a tier that has nothing to cache.
+    const enabledCountries = _enabledCountryCodes();
 
     for (const [key, resource] of Object.entries(OVERLAY_RESOURCES)) {
       const dot = _overlayDot(key);
@@ -363,10 +550,14 @@
         continue;
       }
 
-      const probe =
-        resource.kind === 'geojson'
-          ? _probeGeoJson(resource.path)
-          : _probeIdbRow(resource.key);
+      let probe;
+      if (resource.kind === 'idb') {
+        probe = _probeIdbRow(resource.key);
+      } else if (resource.countryScoped && enabledCountries.length > 0) {
+        probe = _probeEveryCountry(resource.path, enabledCountries);
+      } else {
+        probe = _probeGeoJson(resource.path);
+      }
       tasks.push(
         probe
           .then((cached) =>
@@ -374,6 +565,38 @@
           )
           .catch(() =>
             _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
+          ),
+      );
+    }
+
+    // SNOW-524: per-country availability. A country is offline-ready when all
+    // four of its feeds are cached; offline + uncached disables the row, so
+    // toggling a country whose data can't be fetched is simply not offered
+    // (previously it turned on, fired four failing requests, and did nothing).
+    for (const item of _countryItems()) {
+      const dot = item.querySelector('.sync-dot');
+      if (!dot) continue;
+      const code = _countryCodeOf(item);
+      if (!code) continue;
+      tasks.push(
+        _probeCountry(code)
+          .then((cached) =>
+            _applyState(
+              dot,
+              cached,
+              COUNTRY_CACHED_LABEL,
+              COUNTRY_UNCACHED_LABEL,
+              COUNTRY_OFFLINE_BLOCKED_LABEL,
+            ),
+          )
+          .catch(() =>
+            _applyState(
+              dot,
+              false,
+              COUNTRY_CACHED_LABEL,
+              COUNTRY_UNCACHED_LABEL,
+              COUNTRY_OFFLINE_BLOCKED_LABEL,
+            ),
           ),
       );
     }
@@ -428,7 +651,73 @@
    * @param {string} key - an ``OVERLAY_RESOURCES`` key.
    * @returns {void}
    */
+  /**
+   * SNOW-524: paint a row as mid-fetch — grey and pulsing — synchronously,
+   * with no probe. Called by map.js the instant a country toggle turns on,
+   * for the country row and every country-scoped tier, so the user watches
+   * their click populate the offline cache; ``markCached`` then greens each
+   * row as its data lands.
+   *
+   * Deliberately probe-free. An async ``refresh()`` here would race the very
+   * fetches it's meant to represent: on a fast connection the load wins and
+   * the pending state never paints, and on a slow one the probe can resolve
+   * AFTER ``markCached`` and repaint a freshly-green row grey. Driving the
+   * state off the load lifecycle instead makes the sequence deterministic.
+   *
+   * Never disables the row (unlike the offline+uncached state) — a fetch in
+   * flight isn't a reason to lock the control.
+   *
+   * @param {string} key - an ``OVERLAY_RESOURCES`` key or ``country.<code>``.
+   * @returns {void}
+   */
+  function markSyncing(key) {
+    const dot = _overlayDot(key);
+    if (!dot) return;
+    _paintDot(dot, 'syncing', SYNCING_LABEL);
+    _setRowDisabled(_rowOf(dot), false);
+    _syncingSince.set(key, _now());
+  }
+
   function markCached(key) {
+    // SNOW-524: hold a pulsing row at "syncing" for a minimum dwell before
+    // greening it. Without this a warm/local fetch resolves in tens of
+    // milliseconds and the transition the pending state exists to show is
+    // imperceptible — the dot appears to flip straight to green. Only applies
+    // to rows actually mid-sync; every other markCached call paints
+    // immediately, so this never delays an ordinary update.
+    const since = _syncingSince.get(key);
+    if (since !== undefined) {
+      const elapsed = _now() - since;
+      _syncingSince.delete(key);
+      if (elapsed < MIN_SYNCING_MS) {
+        setTimeout(() => markCached(key), MIN_SYNCING_MS - elapsed);
+        return;
+      }
+    }
+    _markCachedNow(key);
+  }
+
+  /**
+   * The immediate half of ``markCached`` — paints green with no dwell check.
+   *
+   * @param {string} key
+   * @returns {void}
+   */
+  function _markCachedNow(key) {
+    // SNOW-524: country rows are keyed ``country.<code>`` and aren't in
+    // OVERLAY_RESOURCES (their resource set is COUNTRY_FEED_PATHS, resolved
+    // per code at probe time). map.js calls this the moment a country's four
+    // feeds have loaded, which only happens online — so cached=true.
+    if (key.startsWith(COUNTRY_KEY_PREFIX)) {
+      _applyState(
+        _overlayDot(key),
+        true,
+        COUNTRY_CACHED_LABEL,
+        COUNTRY_UNCACHED_LABEL,
+        COUNTRY_OFFLINE_BLOCKED_LABEL,
+      );
+      return;
+    }
     const resource = OVERLAY_RESOURCES[key];
     // Only genuinely-cacheable rows flip green. l3 ('uncacheable') is
     // network-only in sw.js — a successful load doesn't make it available
@@ -453,7 +742,7 @@
   });
 
   Object.defineProperty(window, 'pwaLayerSyncStatus', {
-    value: Object.freeze({ refresh, markCached }),
+    value: Object.freeze({ refresh, markCached, markSyncing, COUNTRY_SCOPED_TIER_KEYS }),
     writable: false,
     configurable: false,
   });

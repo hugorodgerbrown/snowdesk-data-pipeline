@@ -261,6 +261,35 @@
     background: var(--color-sync-off);
 }
 
+/* SNOW-524: mid-fetch. Same grey fill as "not cached yet" — which is the
+   truth while the data is still in flight — but pulsing, so a country click
+   visibly shows its layers populating the offline cache (grey, pulsing →
+   green) rather than silently flipping green. Driven by the load lifecycle in
+   map.js, never by a probe, so it can't race the fetch it represents. */
+.sync-dot[data-sync-state="syncing"] {
+    background: var(--color-sync-off);
+    animation: sync-dot-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes sync-dot-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.35;
+        transform: scale(0.72);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sync-dot[data-sync-state="syncing"] {
+        animation: none;
+    }
+}
+
 /* Hollow, border-only — "never cacheable" reads as distinct from the grey
    "not cached yet" fill. */
 .sync-dot[data-sync-state="unavailable"] {

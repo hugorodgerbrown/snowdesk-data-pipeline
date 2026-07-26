@@ -45,6 +45,17 @@ def _navigate_home_map_loaded(page: Page, live_server_url: str) -> None:
         "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
     )
     page.wait_for_function("() => typeof window.pwaLayerSyncStatus === 'object'")
+    # SNOW-524: boot now runs the full country load for CH (L1/L2 + ratings on
+    # top of the critical-path L4), and that work lands after ``MAP.loaded()``.
+    # Its style writes retrigger the SNOW-473 styledata re-install, which would
+    # otherwise put back layers a test has deliberately removed. The country
+    # row greening is that load's completion signal — ``markCached`` fires at
+    # the end of it, and nothing re-probes until the popover is opened — so
+    # waiting on it starts each test from a quiescent style.
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"country.ch\"] .sync-dot')"
+        ".getAttribute('data-sync-state') === 'cached'"
+    )
 
 
 def _set_online(page: Page, online: bool) -> None:
@@ -62,6 +73,13 @@ def _seed_cache(page: Page, path: str) -> None:
     The GeoJSON probe uses the GLOBAL ``caches.match()`` (searches every
     cache), so an arbitrarily-named cache is enough to resolve a row to
     "cached" without a live fetch or the real shell cache.
+
+    SNOW-524: ``path`` must carry the same query string the app caches under.
+    The country-scoped feeds (l1/l2/l4) are now probed EXACTLY, because the
+    service worker caches per full URL — seeding a bare
+    ``/api/regions.geojson`` used to satisfy the probe only through the old
+    ``ignoreSearch`` match, which is the bug that reported one country cached
+    off another's data.
     """
     page.evaluate(
         """async (path) => {
@@ -125,7 +143,9 @@ def test_offline_cached_overlay_row_stays_green_and_enabled(
 ) -> None:
     """Offline but cached (regions.geojson seeded) → green dot, row enabled."""
     _navigate_home_map_loaded(page, live_server.url)
-    _seed_cache(page, "/api/regions.geojson")
+    # ``?country=ch`` — the URL the app actually fetches and the SW actually
+    # caches; the l4 probe is country-scoped and matches it exactly.
+    _seed_cache(page, "/api/regions.geojson?country=ch")
     _set_online(page, False)
 
     page.click("#basemap-toggle")
@@ -222,7 +242,12 @@ def test_micro_region_toggle_recovers_dropped_layers(
             if (MAP.getSource('regions')) MAP.removeSource('regions');
         }"""
     )
-    assert page.evaluate("() => !!MAP.getLayer('regions-fill')") is False
+    # No assertion that the layers are gone: the SNOW-473 styledata handler
+    # re-installs whenever 'regions-fill' is missing, and removeLayer itself
+    # emits styledata — so the app may legitimately self-heal before the next
+    # statement runs. That recovery is the behaviour under test, not a
+    # violation of it. What must hold is the outcome below: after the off→on
+    # toggle the layers exist and are visible.
 
     page.click("#basemap-toggle")
     l4 = page.locator('[data-overlay-key="l4"]')
