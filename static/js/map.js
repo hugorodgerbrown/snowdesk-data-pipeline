@@ -776,11 +776,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // ---------------------------------------------------------------------
   // SPIKE ONLY — throwaway. Drives the layer-architecture A/B via ?spike=.
-  // Tokens (comma-separated):
-  //   block   hide the micro-region stroke and raise fill opacity, so a
-  //           bulletin's regions merge into one flat block of colour
-  //   hair    keep the micro stroke but as a faint hairline instead
-  //   solid   redraw the dissolved bulletin boundary solid, not dashed
+  //
+  // Tokens (comma-separated). Two are standalone treatments, the rest modify
+  // whichever treatment is active:
+  //
+  //   block     TREATMENT. Keep painting the choropleth on micro-region
+  //             geometry (regions-fill) but hide the micro stroke
+  //             (regions-line) and raise the fill to 0.75. Tests whether
+  //             same-coloured neighbours merge into one block on their own.
+  //   dissolve  TREATMENT. Paint from one dissolved polygon per bulletin
+  //             instead: drops regions-fill to opacity 0 and adds
+  //             spike-bulletin-fill from /api/bulletin-groupings.geojson.
+  //
+  //   hair      Keep regions-line visible but restyled to a faint hairline.
+  //             Overrides the stroke-hiding in block/dissolve.
+  //   solid     dissolve only. Also add spike-bulletin-line — the dissolved
+  //             bulletin boundary, solid near-black rather than the dashed
+  //             l3 overlay.
+  //   opaque    Push whichever fill is active to opacity 1.0. Isolates
+  //             alpha compounding between abutting antialiased edges.
+  //   noaa      block/hair only. Disable fill-antialias on regions-fill, to
+  //             separate AA compounding from genuine gaps in the geometry.
+  //   claimed   dissolve only. Fetch the stored BulletinGrouping rows (the
+  //             regions a bulletin claims) instead of the default won
+  //             partition keyed on RegionDayRating.source_bulletin.
+  //
+  // regions-fill is only ever made transparent, never removed — it is the
+  // click/hover hit target for region selection, so selection keeps working
+  // in every variant.
+  //
   // Remove this block and its two call sites before any real work lands.
   // ---------------------------------------------------------------------
   const SPIKE = new Set(
@@ -833,7 +857,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!map.getLayer('spike-bulletin-fill') && !window.__spikeDissolvePending) {
         window.__spikeDissolvePending = true;
         const d = new URLSearchParams(window.location.search).get('d');
-        fetch(`/api/bulletin-groupings.geojson?d=${encodeURIComponent(d || '')}`)
+        // 'claimed' opts back into the stored BulletinGrouping rows (the
+        // regions a bulletin claims); the default is the won partition.
+        const won = SPIKE.has('claimed') ? '' : '&won=1';
+        fetch(`/api/bulletin-groupings.geojson?d=${encodeURIComponent(d || '')}${won}`)
           .then((r) => r.json())
           .then((fc) => {
             if (map.getSource('spike-bulletin')) return;

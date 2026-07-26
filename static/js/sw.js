@@ -263,7 +263,7 @@ try {
 // place_picker.js and map_edit_resorts.js; map.js closes any open popup on
 // entry. Shell JS/HTML bytes changed (place_picker.js, map_edit_resorts.js,
 // map.js, home.html) plus the new module.
-const CACHE_VERSION = 'snowdesk-shell-v46';
+const CACHE_VERSION = 'snowdesk-shell-v47';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

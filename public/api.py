@@ -750,12 +750,80 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
         f"bulletin_groupings:{country_param.lower() or 'all'}:{parsed_date.isoformat()}"
     )
 
+    # SPIKE ONLY — ``?won=1`` serves the partition the colour actually
+    # follows: regions grouped by ``RegionDayRating.source_bulletin`` for the
+    # day, dissolved at request time. The default path serves the stored
+    # ``BulletinGrouping`` rows, which dissolve the regions a bulletin
+    # *claims* — a set that can be much wider than the set it won. Uncached
+    # and dissolving per request; a real implementation would denormalise the
+    # won partition onto BulletinGrouping at ingest.
+    if request.GET.get("won"):
+        return JsonResponse(_build_won_groupings_payload(parsed_date, country_param))
+
     payload = cache.get_or_set(
         cache_key,
         lambda: _build_groupings_payload(parsed_date, country_param),
         timeout=_DYNAMIC_CACHE_MAX_AGE,
     )
     return JsonResponse(payload)
+
+
+def _build_won_groupings_payload(
+    target_date: date,
+    country_param: str,
+) -> dict[str, Any]:
+    """
+    SPIKE ONLY. Dissolve the day's regions grouped by their winning bulletin.
+
+    Each (region, date) pair resolves to exactly one bulletin — the
+    ``unique_together`` on RegionDayRating guarantees it — so grouping on
+    ``source_bulletin`` produces a true partition with no overlaps, unlike
+    the stored BulletinGrouping rows.
+
+    Args:
+        target_date: The forecast day to build the FeatureCollection for.
+        country_param: Uppercase ISO-2 country code, or "" for all.
+
+    Returns:
+        A GeoJSON FeatureCollection dict for the requested date.
+
+    """
+    from regions.fixture_utils import boundary_from_children
+
+    rows = (
+        RegionDayRating.objects.filter(date=target_date, source_bulletin__isnull=False)
+        .select_related("source_bulletin", "region", "region__subregion__major")
+        .exclude(region__boundary__isnull=True)
+    )
+
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if country_param and row.region.subregion.major.country != country_param:
+            continue
+        key = row.source_bulletin.bulletin_id
+        group = groups.setdefault(
+            key, {"regions": [], "rating": row.max_rating, "countries": set()}
+        )
+        group["regions"].append({"boundary": row.region.boundary})
+        group["countries"].add(row.region.subregion.major.country)
+
+    date_key = target_date.isoformat()
+    features: list[dict[str, Any]] = []
+    for bulletin_id, group in sorted(groups.items()):
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": boundary_from_children(group["regions"]),
+                "properties": {
+                    "bulletin_id": bulletin_id,
+                    "date": date_key,
+                    "countries": sorted(group["countries"]),
+                    "rating": group["rating"],
+                    "region_count": len(group["regions"]),
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}
 
 
 def _build_groupings_payload(
