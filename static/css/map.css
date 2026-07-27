@@ -69,7 +69,7 @@
 .map-utility-cluster {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 12px);
-    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    right: var(--map-edge-inset-right);
     z-index: 4;
     display: flex;
     align-items: flex-start;
@@ -84,7 +84,7 @@
    sits on the baseline, never leaving a gap above the corner. */
 .map-controls-br {
     position: absolute;
-    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    right: var(--map-edge-inset-right);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     z-index: 4;
     display: flex;
@@ -737,7 +737,7 @@
        horizontally level with the report roundel (bottom:60px). The scrubbed-
        date ribbon sits to the right of the (i) toggle on the same row; the
        legend card opens upward (above the row), so it clears both. */
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    left: var(--map-edge-inset-left);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     z-index: 3;
     display: flex;
@@ -1305,7 +1305,7 @@
        roundel, which had to be re-derived by hand every time a child's
        height changed. */
     top: calc(env(safe-area-inset-top, 0px) + 12px);
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    left: var(--map-edge-inset-left);
     /* Never let a long region name push the row under the search roundel.
        Reserves the roundel plus both 12px insets and a 12px gap; the readout
        truncates instead (see .region-readout-name). Long EAWS names
