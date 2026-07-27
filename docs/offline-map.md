@@ -543,33 +543,33 @@ The layers popover (`#basemap-menu`) is a live cache-state dashboard:
 `static/js/map_layer_sync_status.js` paints a sync dot per overlay row and
 per **basemap** row (green = cached / available offline, grey = not cached
 yet). It re-probes on every popover open and, now, on every
-`snowdesk:connectivity-changed` broadcast from `pwa_offline.js`. A third,
-hollow "never cacheable right now" dot state exists in the module
-(`_applyUnavailable`) but currently has no row to paint it onto — see the l3
-note below.
+`snowdesk:connectivity-changed` broadcast from `pwa_offline.js`.
 
-**l3 (bulletin groupings, SNOW-526) — dormant, not currently rendered.**
-SNOW-521 removed the `data-overlay-key="l3"` row from
-`#basemap-menu` (`public/templates/public/partials/_map_embed.html` has no
-l3 row today; the boundary now draws alongside L4, SNOW-506) —
-`tests/e2e/test_layers_menu_removed_items.py` asserts its absence. SNOW-526
-still updated `map_layer_sync_status.js`'s `OVERLAY_RESOURCES.l3` entry
-(`kind: 'dated-geojson'`) and `refresh()`'s date-scoped probe for it, but
-with no matching DOM element `_overlayDot('l3')` returns `null` and the
-whole branch is skipped (`if (!dot) continue;`) — the logic is dormant
-support that only activates if the row is reinstated, not live behaviour
-today. Documented here for whoever restores the row: unlike l1/l2/l4/resorts,
-l3 wouldn't be uniformly cacheable — only a *settled* `?d=` date is (see
-`docs/decisions/date-aware-cache-policy.md`). `refresh()` reads the
-scrubber's date straight off `location.search`'s `?d=` param (`map.js` keeps
-it in sync via `history.replaceState`): no `?d=` (boot/today, which is never
-settled) would paint the hollow "never cacheable right now" dot without a
-wasted probe; a `?d=` present would run the normal exact Cache-Storage probe
-against `/api/bulletin-groupings.geojson?d=<date>` and resolve to the same
-cached/uncached/offline-blocked states as any other row. `markCached('l3')`
-stays a no-op regardless — a successful load doesn't prove the SW actually
-persisted a settled-date response, so the honest signal would be the next
-`refresh()`'s own probe, not an optimistic paint.
+**l3 (bulletin groupings) is deliberately absent (SNOW-532).** The
+bulletin-boundary layer has no row in `#basemap-menu` — SNOW-521 removed
+`data-overlay-key="l3"` from
+`public/templates/public/partials/_map_embed.html`
+(`tests/e2e/test_layers_menu_removed_items.py` asserts its absence), and
+since PR #506 the boundary follows L4's visibility rather than carrying a
+toggle of its own. SNOW-526 nonetheless added an `OVERLAY_RESOURCES.l3`
+entry (`kind: 'dated-geojson'`) plus a date-scoped probe; with no matching
+DOM element `_overlayDot('l3')` returned `null` and the whole branch was
+guarded out, so SNOW-532 removed it along with the hollow
+"never cacheable" dot state it was the only user of.
+
+The boundary's offline state is therefore **not surfaced**, by choice: it is
+a companion outline with no control and no user action attached to its cache
+state, and when it is missing offline the layer simply doesn't draw while the
+L4 choropleth underneath is unaffected. SNOW-526's caching itself is
+untouched — a settled `?d=` date's response is still persisted by the SW (see
+`docs/decisions/date-aware-cache-policy.md`) and still draws offline.
+
+Two alternatives were rejected. Folding the groupings feed into the **L4
+row's** probe would AND an always-uncacheable resource (today is never
+settled) into a row whose own geometry *is* cached — turning the L4 dot grey
+on today's date and, offline, disabling a row that works. Restoring a
+**dedicated boundary row** would put a status readout in a menu whose every
+other row is a control, with no toggle for the offline gating to disable.
 
 Offline, the dashboard stops being merely advisory and **gates** the menu —
 the offline-integrity rule: *nothing that can't be loaded offline is
@@ -578,8 +578,7 @@ offered offline.* While `navigator.onLine === false`:
 - An overlay/basemap whose resource isn't cached gets the red
   `unavailable-offline` dot and its row is disabled (`aria-disabled`, which
   the picker's click handler in `map.js` honours and `map.css` dims). Every
-  uncached row/basemap follows the same rule (l3 would too, if its row were
-  reinstated — see above).
+  uncached row/basemap follows the same rule.
 - The **active** basemap is never disabled — you can't be stranded on a map
   you can't leave. A non-active basemap is selectable offline only if its
   style is cached (the "downloaded/browsed before" proxy; the residual

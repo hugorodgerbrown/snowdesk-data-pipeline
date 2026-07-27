@@ -233,19 +233,16 @@
 }
 
 /* SNOW-505: sync-status dot painted onto each overlay row and the basemap
-   caption below by static/js/map_layer_sync_status.js. Three resolved
-   states: a green fill (cached / available offline), a grey fill (not
-   cached yet — view online first), and a hollow border-only dot
-   (unavailable — l3 bulletin groupings, which are network-only in sw.js and
-   can never be cached, a deliberately distinct look from the grey fill).
+   caption below by static/js/map_layer_sync_status.js. Resolved states: a
+   green fill (cached / available offline), a grey fill (not cached yet —
+   view online first, pulsing while a fetch is in flight), and a red fill
+   (offline AND not cached — genuinely unavailable, row disabled).
    Server-rendered "unknown" (hidden) until the popover's first open resolves
    every probe. Colour comes from the --color-sync-* tokens (src/css/main.css
    @theme), never a literal here, so light/dark contrast is handled
-   centrally. box-sizing keeps the hollow ring the same 8px footprint as the
-   filled dots. Data-attribute selector is the design-system's sanctioned
+   centrally. Data-attribute selector is the design-system's sanctioned
    exception for state-driven styling (see CLAUDE.md "Design system"). */
 .sync-dot {
-    box-sizing: border-box;
     display: inline-block;
     flex: 0 0 auto;
     width: 8px;
@@ -288,13 +285,6 @@
     .sync-dot[data-sync-state="syncing"] {
         animation: none;
     }
-}
-
-/* Hollow, border-only — "never cacheable" reads as distinct from the grey
-   "not cached yet" fill. */
-.sync-dot[data-sync-state="unavailable"] {
-    background: transparent;
-    border: 1.5px solid var(--color-sync-off);
 }
 
 /* Offline AND not cached: a solid red fill. Distinct from the grey "not
