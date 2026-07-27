@@ -9,24 +9,27 @@ per-breadcrumb-tier set of icons (Major/Minor/Micro). Both were dropped —
 the docked bar required zooming in tight before the viewport was small
 enough to accept; the per-tier icons made download size non-monotonic with
 containment (an L1 region could read smaller than an L2 it contains),
-which read as a bug. The shipped shape is a single icon
-(``#region-download-micro`` in ``_season_ribbon.html``'s ``#region-readout``
-chip) for the focused MICRO region only, with no completion toast — the
-icon itself carries the outcome (a green "available offline" circle on
-success, reverting to idle otherwise). This file covers: the icon's
+which read as a bug. The shipped shape is a single control
+(``#map-download-control``, rendered by ``_map_download_control.html`` into
+the bottom-right stack ``#map-controls-br``) for the focused MICRO region
+only, with no completion toast — the control itself carries the outcome (a
+green "available offline" circle on success, reverting to idle otherwise).
+It is always present: with nothing focused it holds the inert ``no-region``
+state rather than hiding. This file covers: the
 idle→busy→done flow, a reselected region reading ``done`` from real cache
 state rather than in-page memory, a probe that couldn't resolve the
 active basemap's tile template re-running once the style settles, and
 the disabled/over_ceiling and partial/failed-run branches.
 
-Every test requests ``_load_test_data`` (``pytestmark`` below) — not for
-its ratings/bulletin rows, but because ``_season_ribbon.html``'s
-``{% if ribbon %}`` gate (and so the icon markup itself) only renders when
-``build_season_ribbon()`` resolves a real, DB-backed default region;
-against an unseeded DB the icon doesn't exist in the DOM at all.
-``pwa_page``'s own first navigation can race that seed (fixture
-instantiation order between two same-scope, non-dependent fixtures is
-unspecified), so every test's first action is ``_reload_home`` — a
+Every test requests ``_load_test_data`` (``pytestmark`` below) for its
+ratings/bulletin rows. It used to be needed for a second reason — the
+control lived inside ``_season_ribbon.html``'s ``{% if ribbon %}`` gate, so
+against an unseeded DB it did not exist in the DOM at all. That is no
+longer true now the control renders from ``_map_embed.html``, outside the
+gate; the fixture stays because ``_select_region`` still needs a page whose
+map has booted. ``pwa_page``'s own first navigation can race the seed
+(fixture instantiation order between two same-scope, non-dependent fixtures
+is unspecified), so every test's first action is ``_reload_home`` — a
 second ``page.goto('/')`` — mirroring ``test_pwa_lifecycle_offline.py``'s
 established pattern of navigating again inside the test body once
 seeding is guaranteed to have landed.
@@ -38,7 +41,7 @@ docstring; confirmed here too — the style fetch net::ERR_ABORTEDs when a
 real SW is controlling, since ``page.route()`` cannot intercept a
 request the SW's OWN fetch handler issues from inside its ``fetch()``
 call, the same finding ``_spike_results.py`` documents), and
-``regionDownloadInit`` doesn't need the map's style to have loaded at
+``mapDownloadControlInit`` doesn't need the map's style to have loaded at
 all — it only reads ``FEATURE_BY_REGION_ID[regionId].properties.
 download``, which the real boot sequence populates from a
 ``regions.geojson`` fetch gated behind ``map.on('load')``. ``_select_region``
@@ -46,7 +49,7 @@ sidesteps that whole chain by writing a synthetic entry into
 ``FEATURE_BY_REGION_ID`` directly and dispatching the real
 ``snowdesk:region-selected`` event — the same synthetic-injection idiom
 this suite's sibling files use for the blank-map regression — so every
-test here exercises ``regionDownloadInit``'s real listener/render/click
+test here exercises ``mapDownloadControlInit``'s real listener/render/click
 logic deterministically, independent of the CDN.
 
 The SW round trip and the tile-URL assembly need the same kind of full,
@@ -218,7 +221,7 @@ def _stub_active_basemap_template(page: Page, template: str = _STUB_TEMPLATE) ->
 def _stub_region_basemap_tiles(page: Page, blob: dict[str, Any] = _STUB_BLOB) -> None:
     """Route ``/api/region-basemap-tiles/`` to a fixed, deterministic blob.
 
-    A plain page-level ``fetch()`` (``regionDownloadInit``'s click
+    A plain page-level ``fetch()`` (``mapDownloadControlInit``'s click
     handler in ``map.js``), unlike the SW's own internal fetches — so
     ``page.route()`` sees and can intercept it.
     """
@@ -242,7 +245,7 @@ def _wait_for_map_ready(page: Page) -> None:
 def _wait_for_state(page: Page, state: str, timeout: int = 10000) -> None:
     page.wait_for_function(
         """(state) => {
-            const btn = document.getElementById('region-download-micro');
+            const btn = document.getElementById('map-download-control');
             return !!btn && btn.dataset.downloadState === state;
         }""",
         arg=state,
@@ -267,7 +270,7 @@ def test_micro_icon_visible_idle_with_size_for_default_region(
     _wait_for_map_ready(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     assert icon.get_attribute("data-download-state") == "idle"
     assert "MB" in (icon.get_attribute("aria-label") or "")
@@ -288,7 +291,7 @@ def test_micro_icon_download_flow_busy_then_done(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
 
@@ -312,7 +315,7 @@ def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
     Downloads CH-4115, then focuses a different region with no computed
     summary (clearing the in-page microData for CH-4115 and hiding its
     icon), then reselects CH-4115 — the icon must read ``done`` again
-    purely from ``regionDownloadInit``'s real ``BASEMAP_PINNED_CACHE``
+    purely from ``mapDownloadControlInit``'s real ``BASEMAP_PINNED_CACHE``
     probe, not a remembered JS flag (the "layers menu is a live
     cache-state dashboard" invariant).
     """
@@ -327,15 +330,18 @@ def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
     _wait_for_state(page, "done", timeout=10000)
 
-    # Focus a different region with no computed summary — the icon hides.
+    # Focus a different region with no computed summary. The control stays in
+    # the bottom-right stack and goes inert rather than hiding, so the stack's
+    # composition never shifts under the user.
     _select_region(page, "CH-1111", None)
-    icon.wait_for(state="hidden")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "no-region")
 
     # Reselect CH-4115 — done, without a second click.
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
@@ -352,7 +358,7 @@ def test_icon_disabled_when_over_ceiling(
     _wait_for_map_ready(page)
     _select_region(page, "CH-4115", {**_MICRO_SUMMARY, "over_ceiling": True})
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "disabled")
     assert "too large" in (icon.get_attribute("aria-label") or "")
@@ -373,7 +379,7 @@ def test_icon_reverts_to_idle_when_some_urls_fail(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
@@ -395,7 +401,7 @@ def test_icon_reverts_to_idle_when_ok_is_zero(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
@@ -417,7 +423,7 @@ def test_icon_never_claims_done_for_vacuous_run(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
@@ -454,7 +460,7 @@ def test_done_state_resolves_once_the_style_settles(
     _stub_region_basemap_tiles(page)
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
@@ -464,7 +470,7 @@ def test_done_state_resolves_once_the_style_settles(
     # tell — the icon reads idle (actionable, carrying the region's size).
     page.evaluate("() => { window.activeBasemapTileTemplate = () => null; }")
     _select_region(page, "CH-1111", None)
-    icon.wait_for(state="hidden")
+    _wait_for_state(page, "no-region")
     _select_region(page, "CH-4115", _MICRO_SUMMARY)
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")

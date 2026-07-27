@@ -8,8 +8,9 @@ top ``#region-readout`` chip and the bottom-right control cluster was unified:
 1. Date split — the scrubbed date lives in ``#map-date-ribbon`` (bottom-left,
    beside the (i) toggle), and no longer inside the top ``#region-readout``
    chip, which now carries only the region name + danger swatch.
-2. Stack foot — the help (?) roundel is the last child of ``#map-controls-br``
-   and sits on the same bottom baseline as the bottom-left (i) legend toggle.
+2. Stack foot — the last child of ``#map-controls-br`` sits on the same bottom
+   baseline as the bottom-left (i) legend toggle. That foot was the help (?)
+   roundel until SNOW-536 added the collapse toggle beneath it.
 3. Legend structure — the info card splits into an "EAWS Danger Scale" section
    (with a "No rating" row) and a "Map pins" section (Resorts / Favourites /
    Observations).
@@ -90,37 +91,42 @@ def test_date_lives_in_ribbon_not_region_chip(
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
-def test_help_roundel_is_stack_foot_aligned_with_legend_toggle(
+def test_collapse_toggle_is_stack_foot_aligned_with_legend_toggle(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """The (?) help roundel is the last stack child and sits level with the (i).
+    """The stack's foot sits level with the bottom-left (i) legend toggle.
 
-    #map-controls-br is one bottom-anchored column; the help pill is its foot,
-    on the same bottom baseline as the bottom-left #map-legend-toggle.
+    #map-controls-br is one bottom-anchored column, and whatever sits at its
+    foot shares the 60px baseline with #map-legend-toggle. SNOW-536 made the
+    collapse toggle that foot — the help (?) roundel moved up into the
+    collapsible group — so the baseline invariant now belongs to
+    #map-controls-toggle. The toggle is deliberately the last child: the stack
+    grows and shrinks upward out of it, so it never moves under the finger
+    pressing it.
     """
     _navigate_and_wait(page, live_server.url)
 
-    # Help pill is the final child of the bottom-right stack.
+    # The collapse toggle is the final child of the bottom-right stack.
     foot_class = page.evaluate(
         "() => document.querySelector('#map-controls-br').lastElementChild.className"
     )
-    assert "map-utility-pill--help" in foot_class, (
-        f"the help roundel must be the foot of #map-controls-br; got {foot_class!r}"
+    assert "map-controls-toggle" in foot_class, (
+        f"the collapse toggle must be the foot of #map-controls-br; got {foot_class!r}"
     )
 
     # Its bottom edge aligns with the bottom-left (i) legend toggle (shared 60px
     # baseline). A 2px tolerance absorbs sub-pixel rounding.
     delta = page.evaluate(
         """() => {
-            const help = document.getElementById('map-help-toggle').getBoundingClientRect();
+            const foot = document.getElementById('map-controls-toggle').getBoundingClientRect();
             const info = document.getElementById('map-legend-toggle').getBoundingClientRect();
-            return Math.abs(help.bottom - info.bottom);
+            return Math.abs(foot.bottom - info.bottom);
         }"""
     )
     assert delta <= 2, (
-        f"the (?) roundel should sit level with the (i) toggle; bottom delta {delta}px"
+        f"the stack foot should sit level with the (i) toggle; bottom delta {delta}px"
     )
 
 

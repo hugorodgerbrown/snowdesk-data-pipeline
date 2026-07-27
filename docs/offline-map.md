@@ -420,9 +420,13 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 `public/templates/public/partials/_map_embed.html`).
 
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
-SNOW-492) is a **single-region download** — one icon (`#region-download-micro`)
-for the focused MICRO (leaf) region in the `#region-readout` chip
-(`_season_ribbon.html`). This is the third and final shape of the SNOW-521
+SNOW-492) is a **single-region download** — one control
+(`#map-download-control`) for the focused MICRO (leaf) region, rendered by
+`public/partials/_map_download_control.html` into the bottom-right control
+stack (`#map-controls-br`), beside the layers pill. It sat in the
+`#region-readout` chip in `_season_ribbon.html` until it was moved next to
+the layers menu — that menu is the cache-state dashboard, and this is the
+other control that writes to the same cache. This is the third shape of the SNOW-521
 rework: the first pass was a viewport-anchored docked bar
 (`#cache-now-toggle` / `#basemap-download-bar`), which required zooming in
 tight before the viewport was small enough to accept; the second pass added
@@ -443,20 +447,27 @@ the stored blob shape, the `properties.download` summary inlined on
 `regions.geojson`, and the `/api/region-basemap-tiles/` endpoint that
 serves the full blob (incl. tile ranges) on demand.
 
-**Show/size** — `static/js/map.js`'s `regionDownloadInit` reads the
+**Show/size** — `static/js/map.js`'s `mapDownloadControlInit` reads the
 region's summary straight off `FEATURE_BY_REGION_ID[regionId].properties.
-download` (already loaded via `regions.geojson` — no extra fetch): the
-icon is visible whenever a region is focused, independent of which
-overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling` (a
-200 MB backstop against a pathologically large micro-region) shows a
-`disabled` icon rather than starting an unbounded run.
+download` (already loaded via `regions.geojson` — no extra fetch). The
+control is **always rendered**: with nothing focused it holds the inert
+`no-region` state rather than hiding, so the stack's composition never
+shifts under the user and a control they cannot see never reads as a
+missing feature. Focusing a region makes it actionable, independent of
+which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
+(a 200 MB backstop against a pathologically large micro-region) shows a
+`disabled` control rather than starting an unbounded run.
 
-**State** — `data-download-state` on the icon: `idle` (arrow, size in
-the tooltip), `busy` (bottom-up fill of the roundel, driven by a
-`--download-progress` CSS custom property — `static/css/map.css`),
-`done` (solid green circle + tick), `disabled` (over-ceiling), and
-`offline` (greyed, not-allowed — no downloading of layers while
-offline; see gating below). `idle`/`done` are
+**State** — `data-download-state` on the control: `no-region` (nothing
+focused), `idle` (arrow, size in the tooltip), `busy` (bottom-up fill of
+the roundel, driven by a `--download-progress` CSS custom property —
+`static/css/map.css`), `done` (solid green circle + tick), `disabled`
+(over-ceiling), and `offline` (no downloading of layers while offline; see
+gating below). The three non-runnable states (`no-region`, `disabled`,
+`offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
+a dimmed **glyph** — the glass shell stays at full strength, because the
+control now floats over open basemap where the old whole-roundel
+`opacity: 0.4` was close to invisible. `idle`/`done` are
 derived from a real `BASEMAP_PINNED_CACHE` probe
 (`static/js/basemap_download_core.js`'s `centreTileURL` against the
 region's `centre_tile`) every time the icon is (re)shown — never a

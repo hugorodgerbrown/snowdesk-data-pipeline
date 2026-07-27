@@ -108,7 +108,7 @@ function buildFallbackStyle() {
 // TileJSON-backed source only populates `tiles` once its tilejson fetch
 // resolves. Returns null for a style with no vector sources (the offline
 // fallback style, SNOW-483) or before the style has finished loading.
-// `regionDownloadInit` substitutes this template into a region's stored
+// `mapDownloadControlInit` substitutes this template into a region's stored
 // tile-index ranges (`pwaBasemapDownloadCore.rangesToTileURLs`) rather
 // than enumerating anything itself.
 function activeBasemapTileTemplate(map) {
@@ -197,19 +197,12 @@ const readBoolStorage = (key, dflt) => {
   return v === null ? dflt : v === 'true';
 };
 
-// "2026-04-25" → "APR 25 2026". Locale-friendly, unambiguous (avoids the
-// 04/05 day-vs-month confusion of all-numeric formats). Uppercase to
-// match the season-bookend labels and the server-rendered date pill.
-const SCRUBBER_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                         'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const formatDateLong = (dateKey) => {
-  const [y, m, d] = dateKey.split('-');
-  return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
-};
+// ``SCRUBBER_MONTHS`` / ``formatDateLong`` ("2026-04-25" → "APR 25 2026")
+// went with mapDatePillInit below — that pill was their only caller.
+// POPUP_MONTHS / formatDatePopup are unrelated and still live.
 
 // SNOW-318: "2026-04-08" → "8 Apr 2026" — day-first, title-case 3-letter month.
-// Deliberately distinct from formatDateLong (uppercase, month-first, for the
-// readout pill). This mirrors the popup card's server render, where
+// This mirrors the popup card's server render, where
 // _region_tooltip.html formats the date with ``date:"j M Y"``, so the bulletin
 // label reads identically whether the popup was just opened (server-rendered)
 // or relabelled in place on a scrubber date change.
@@ -4616,47 +4609,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// Date pill — floats above the scrubber thumb inside .season-scrubber-track.
-// Server-rendered for first-paint correctness; this IIFE keeps both the
-// horizontal position (via --thumb-pct) and the text content in sync as
-// the user scrubs or the timelapse advances.
-(function mapDatePillInit() {
-  const pill = document.getElementById('map-date-pill');
-  if (!pill) return;
-
-  // Read season bounds once — the same constants used by seasonScrubberInit
-  // and timelapseInit. The pill uses them to compute the thumb percentage
-  // for any incoming date key without needing a reference to the thumb DOM.
-  const scrubber = document.getElementById('season-scrubber');
-  const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
-  const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
-  const seasonSpanMs = seasonEndMs - seasonStartMs;
-  const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : 50;
-
-  const dateKeyToPct = (dateKey) => {
-    const ms = Date.parse(dateKey);
-    if (Number.isNaN(ms) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
-      return todayPct;
-    }
-    return Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
-  };
-
-  const setFrom = (e) => {
-    const dk = e.detail && e.detail.date;
-    if (!dk) return;
-    // Update text content so the pill always shows the correct date.
-    pill.textContent = formatDateLong(dk);
-    // Slide the pill horizontally to track the thumb.
-    const pct = dateKeyToPct(dk);
-    pill.style.setProperty('--thumb-pct', pct + '%');
-  };
-
-  // Both events carry the same shape; date-changed fires on commit
-  // (scrubber release, timelapse frame, popstate), date-preview fires
-  // continuously during a drag so the pill follows the thumb live.
-  document.addEventListener('snowdesk:date-changed', setFrom);
-  document.addEventListener('snowdesk:date-preview', setFrom);
-})();
+// ``mapDatePillInit`` was removed here. It drove a #map-date-pill element
+// that has not existed in _map_embed.html since SNOW-314 moved the scrubbed-
+// date readout to .map-date-ribbon in the bottom-left row, so the IIFE
+// returned at its first line on every load.
 
 // SNOW-58: basemap layer picker — opens a popover of basemap radio
 // buttons and swaps the MapLibre style on selection. Persistence and
@@ -4911,14 +4867,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// SNOW-521 final shape: a single "Download basemap" icon for the
-// focused MICRO region in the #region-readout chip
-// (#region-download-micro in _season_ribbon.html) — replaces the
-// viewport-anchored cacheNowInit (SNOW-492/493). An earlier iteration
-// of this rework also had major/minor crumb icons; they were dropped
-// because their own shallower detail floors made the sizes
-// non-monotonic with containment (an L1 region could read smaller than
-// an L2 it contains), which read as a bug.
+// SNOW-521 final shape: a single "Download basemap" control for the
+// focused MICRO region — replaces the viewport-anchored cacheNowInit
+// (SNOW-492/493). An earlier iteration of this rework also had
+// major/minor crumb icons; they were dropped because their own
+// shallower detail floors made the sizes non-monotonic with containment
+// (an L1 region could read smaller than an L2 it contains), which read
+// as a bug.
+//
+// The control has since moved out of the #region-readout chip into the
+// bottom-right stack (#map-download-control, rendered by
+// public/partials/_map_download_control.html into #map-controls-br),
+// beside the layers pill — the layers menu is the cache-state dashboard
+// and this is the other control that writes to that cache.
 //
 // Data source — no client-side tile enumeration. Region tile coverage
 // is precomputed server-side (regions/services/basemap_tiles.py) and
@@ -4927,11 +4888,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // itself needs), so showing the size is a pure in-memory lookup — no
 // extra fetch until the user actually clicks Download.
 //
-// Show/size — the icon is visible whenever a region is focused
-// (snowdesk:region-selected), independent of which overlay tiers
-// (L1/L2) are toggled on.
+// Show/size — the control is ALWAYS rendered; focusing a region
+// (snowdesk:region-selected) moves it from 'no-region' to an actionable
+// state, independent of which overlay tiers (L1/L2) are toggled on. It is
+// never hidden: in the bottom-right stack a vanishing control would read
+// as a missing feature, and the stack's composition would shift under the
+// user on every select/deselect.
 //
-// State (idle/busy/done/disabled, data-download-state) — idle/done are
+// State (no-region/idle/busy/done/disabled/offline, data-download-state)
+// — idle/done are
 // derived from a real BASEMAP_PINNED_CACHE probe every time the icon is
 // (re)shown, never a stored flag (the "layers menu is a live cache-state
 // dashboard" invariant — see docs/offline-map.md); disabled is the
@@ -4949,8 +4914,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // the roundel's live fill from onProgress. On completion the icon
 // itself carries the outcome (green offline circle on a clean success,
 // idle otherwise) — no toast.
-(function regionDownloadInit() {
-  const btn = document.getElementById('region-download-micro');
+(function mapDownloadControlInit() {
+  const btn = document.getElementById('map-download-control');
   if (!btn) return;
 
   const ribbonEl = document.getElementById('season-ribbon');
@@ -4967,7 +4932,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // when it has no computed data. `summary` is the small {count, mb,
   // over_ceiling, centre_tile} shape carried on regions.geojson's
   // properties.download.
-  let microData = null;
+  let regionData = null;
 
   let currentRegionId = (ribbonEl && ribbonEl.dataset.defaultRegionId) || null;
 
@@ -5021,13 +4986,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * Paint `state` onto the download icon: data-download-state, the busy
    * fill percentage, and an aria-label/title carrying the region's size.
    *
-   * @param {string} state - 'idle' | 'busy' | 'done' | 'disabled'.
+   * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
+   *   'disabled' | 'offline'.
    * @param {number} mb
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @returns {void}
    */
   function setState(state, mb, pct) {
     btn.dataset.downloadState = state;
+    // Non-runnable states are announced as disabled rather than removed, so
+    // the control keeps its place in the stack (see renderControl). 'idle' is
+    // the only actionable state — handleClick returns immediately for every
+    // other one, including 'busy' (a run is already going) and 'done' (an
+    // informational success state), so those are announced as disabled too.
+    btn.setAttribute('aria-disabled', state === 'idle' ? 'false' : 'true');
     // Busy progress renders as a bottom-up fill of the roundel (map.css),
     // driven by --download-progress rather than a numeric readout.
     if (state === 'busy') {
@@ -5036,6 +5008,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
       btn.style.removeProperty('--download-progress');
     }
     const text = {
+      // The control is permanently in the bottom-right stack rather than
+      // appearing beside the region name, so it can be read with nothing
+      // selected — and it no longer sits next to the name that told the user
+      // which region it meant. Every label therefore has to say so itself.
+      //
+      // 'no-region' covers two distinct causes that the old hidden-icon
+      // behaviour let us conflate: nothing is focused, or the focused region
+      // has no precomputed download summary (properties.download is null —
+      // compute_basemap_download hasn't run for it). Now that the control is
+      // always on screen a single label would be wrong in one of the two
+      // cases, so the copy branches on whether a region is actually focused.
+      'no-region': currentRegionId
+        ? `Basemap download isn't available for this region`
+        : `Select a region to download its basemap`,
       idle: `Download this region's basemap — up to ${mb} MB`,
       busy: `Downloading this region's basemap — ${pct || 0}%`,
       done: `This region's basemap is downloaded — available offline`,
@@ -5053,7 +5039,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let styleSettleRetryPending = false;
 
   /**
-   * Re-run renderMicro the next time MapLibre goes idle — i.e. once the
+   * Re-run renderControl the next time MapLibre goes idle — i.e. once the
    * style (and so `activeBasemapTileTemplate`) has settled.
    *
    * Needed because `activeBasemapTileTemplate` is gated on
@@ -5072,32 +5058,37 @@ const repaintRegionsForDate = (dateKey, cache) => {
     styleSettleRetryPending = true;
     MAP.once('idle', () => {
       styleSettleRetryPending = false;
-      renderMicro();
+      renderControl();
     });
   }
 
   /**
-   * Show/hide and (re)probe the icon against the current microData. A
-   * stale async resolution (microData changed, or a run started, while
-   * the probe was in flight) is discarded rather than clobbering a
-   * newer state.
+   * (Re)probe the control against the current regionData. A stale async
+   * resolution (regionData changed, or a run started, while the probe was
+   * in flight) is discarded rather than clobbering a newer state.
+   *
+   * With no region focused this used to set btn.hidden, which made the
+   * bottom-right stack grow and shrink under the user as regions were
+   * selected and deselected — and, once the control moved into that stack,
+   * would have read as the feature disappearing rather than being
+   * unavailable. It now paints the inert 'no-region' state instead and the
+   * control keeps its slot.
    *
    * @returns {Promise<void>}
    */
-  async function renderMicro() {
-    const data = microData;
+  async function renderControl() {
+    const data = regionData;
     if (!data) {
-      btn.hidden = true;
+      setState('no-region');
       return;
     }
-    btn.hidden = false;
     if (btn.dataset.downloadState === 'busy') return;
     if (data.summary.over_ceiling) {
       setState('disabled', data.summary.mb);
       return;
     }
     const done = await _probeDone(data.summary);
-    if (microData !== data || btn.dataset.downloadState === 'busy') return;
+    if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
@@ -5129,8 +5120,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
     currentRegionId = regionId;
     const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
     const summary = (feature && feature.properties && feature.properties.download) || null;
-    microData = summary ? { regionId: regionId, summary: summary } : null;
-    renderMicro();
+    regionData = summary ? { regionId: regionId, summary: summary } : null;
+    renderControl();
   }
 
   /**
@@ -5176,7 +5167,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * @returns {Promise<void>}
    */
   async function handleClick() {
-    const data = microData;
+    const data = regionData;
     if (!data || btn.dataset.downloadState !== 'idle') return;
     // Offline-integrity: never start a download offline, even if a race left
     // the icon on 'idle' at the moment of the click.
@@ -5259,12 +5250,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // main IIFE fires this once the new style's overlays are back) so the icon
   // flips done↔idle to match the basemap you're now on — e.g. download on
   // Standard, switch to Swisstopo, and the icon reverts to "download".
-  document.addEventListener('snowdesk:basemap-changed', () => renderMicro());
+  document.addEventListener('snowdesk:basemap-changed', () => renderControl());
 
   // Offline-integrity: re-render on every connectivity transition so the
   // icon greys out (offline, not yet downloaded) or becomes actionable
   // again (back online) without needing the region re-selected.
-  document.addEventListener('snowdesk:connectivity-changed', () => renderMicro());
+  document.addEventListener('snowdesk:connectivity-changed', () => renderControl());
 
   // Pick up the homepage's server-rendered default focus once its
   // geojson feature (and download data) has loaded. The initial CH

@@ -1,0 +1,84 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_download_control.html — the "Download basemap" control
+for the currently-focused region (SNOW-521, relocated since).
+
+A member of the bottom-right control stack (#map-controls-br in
+_map_embed.html), sitting beside the layers pill: the layers menu is the
+cache-state dashboard, and this is the other control that writes to that
+cache. It was previously a roundel in the region-readout row
+(_season_ribbon.html) named .region-readout-download; both the placement
+and the name moved together.
+
+Takes no context. An earlier iteration rendered one of these per breadcrumb
+tier and took a ``tier`` argument; only the micro (leaf) tier survived —
+Major/Minor were dropped because their per-tier detail floors made the
+sizes non-monotonic with containment, which read as a bug.
+
+Unlike its predecessor this is NOT hidden until a region is focused: it is
+always present and starts in the "no-region" state, so the stack's
+composition doesn't shift as the user selects and deselects regions.
+map.js's mapDownloadControlInit drives data-download-state
+(no-region/idle/busy/done/disabled/offline) and rewrites the title/aria-label
+to match — the done state is probed from real BASEMAP_PINNED_CACHE contents,
+never a stored flag. Styled in static/css/map.css.
+
+The server-rendered label below is the nothing-focused wording, which is the
+correct first-paint state: map.js only adopts a region once regions.geojson
+has loaded. It also relabels for the other "no-region" cause — a focused
+region whose properties.download is null.
+{% endcomment %}
+<button
+    type="button"
+    id="map-download-control"
+    class="map-download-control"
+    data-download-state="no-region"
+    aria-disabled="true"
+    aria-label="{% trans 'Select a region to download its basemap' %}"
+    title="{% trans 'Select a region to download its basemap' %}"
+>
+    <svg
+        class="map-download-control-icon map-download-control-icon--idle"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+    </svg>
+    <svg
+        class="map-download-control-icon map-download-control-icon--busy"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+    <svg
+        class="map-download-control-icon map-download-control-icon--done"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20 6 9 17l-5-5" />
+    </svg>
+    <span class="map-download-control-percent" aria-hidden="true"></span>
+</button>

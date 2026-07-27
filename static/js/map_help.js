@@ -258,6 +258,13 @@
   const open = (fromStart) => {
     if (fromStart) currentIndex = 0;
     lastFocused = document.activeElement;
+    // Several step targets live in the collapsible control group, which clips
+    // to height 0 when collapsed. They still match document.querySelector, so
+    // the absent-target filter does not drop them and the highlight ring would
+    // be positioned against a clipped box. Announce the tour so
+    // mapControlsCollapseInit can force the group open (and restore the user's
+    // preference on close).
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-open'));
     overlay.removeAttribute('hidden');
     overlay.setAttribute('aria-hidden', 'false');
     render();
@@ -272,6 +279,8 @@
   const close = (persist) => {
     overlay.setAttribute('hidden', '');
     overlay.setAttribute('aria-hidden', 'true');
+    // Hand the collapsible group back to the user's own preference.
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-close'));
     if (persist) persistDismissed();
     if (lastFocused && typeof lastFocused.focus === 'function') {
       lastFocused.focus();

@@ -316,6 +316,39 @@
 
 
 /* ———————————————————————————————————————————
+   1a. MAP-EDGE INSETS
+
+   Distance from the viewport edge to any surface
+   floating over the map — the control roundels
+   (static/css/map.css) and the favourite /
+   observation sheets (includes/_overlay_sheet.html).
+   Sharing one value is what makes a sheet's edges
+   line up with the roundels stacked above it.
+
+   Deliberately a plain :root block, not @theme:
+   Tailwind tree-shakes @theme variables that no
+   scanned template references by utility name, and
+   these are only ever reached through an arbitrary
+   value (left-[var(--map-edge-inset-left)]).
+
+   They exist as tokens rather than inline
+   calc(env(...) + 12px) arbitrary values because the
+   comma in env()'s fallback breaks Tailwind's
+   arbitrary-value parser — the class is emitted into
+   the HTML but no rule is ever generated for it, so
+   the surface silently falls back to static position
+   with no error anywhere.
+   ——————————————————————————————————————————— */
+
+:root {
+  --map-edge-gap:           12px;
+  --map-edge-inset-left:    calc(env(safe-area-inset-left, 0px) + var(--map-edge-gap));
+  --map-edge-inset-right:   calc(env(safe-area-inset-right, 0px) + var(--map-edge-gap));
+  --map-edge-inset-bottom:  calc(env(safe-area-inset-bottom, 0px) + var(--map-edge-gap));
+}
+
+
+/* ———————————————————————————————————————————
    1b. DARK MODE OVERRIDES
    Applied when .dark is present on <html>.
    Only tokens that change are listed — EAWS
