@@ -1,6 +1,6 @@
 # Code review cycles
 
-Most recent cycle: [2026-07-19](2026-07-19.md)
+Most recent cycle: [2026-07-26](2026-07-26.md)
 
 ## Purpose
 

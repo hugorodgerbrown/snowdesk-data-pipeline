@@ -283,7 +283,20 @@ try {
 // v59 — SNOW-533: the bulletin-boundary line drops its fixed dash for a
 // solid stroke whose width tracks regions-line's zoom curve. Shell JS bytes
 // changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v64';
+// v60 — SNOW-529: a stale TODO(SNOW-XXX) placeholder ticket reference
+// reworded to a plain non-ticket note. Comment-only, no behaviour change;
+// shell JS bytes changed (db.js).
+// v62 — SNOW-536: map control chrome reworked. Every round / pill-ended map
+// control moves onto a two-value size scale (--map-control-lg/-sm); the
+// basemap download control moves from the region-readout row into the
+// bottom-right stack and is renamed .map-download-control; that stack
+// becomes collapsible behind a new toggle (the new
+// static/js/map_controls_collapse.js module); the favourite / observation
+// sheets are inset from the viewport edge. Shell JS/HTML/CSS bytes changed
+// (map.js, map_help.js, map.css, main.css, _map_embed.html,
+// _season_ribbon.html, _overlay_sheet.html, home.html) plus the new module
+// and the new _map_download_control.html partial.
+const CACHE_VERSION = 'snowdesk-shell-v62';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

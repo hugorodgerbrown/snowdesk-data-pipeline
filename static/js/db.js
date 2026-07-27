@@ -155,8 +155,8 @@
    * awaited by ``open()`` callers, since it's diagnostic only and must
    * not add latency to every consumer of the DB.
    *
-   * TODO(SNOW-XXX): tighten the heuristic once real eviction cases
-   * surface. Today it is deliberately conservative to avoid false
+   * TODO: tighten the heuristic once real eviction cases surface (no
+   * ticket filed yet). Today it is deliberately conservative to avoid false
    * positives on ordinary first-ever visits (where zero usage and a
    * modest quota are both completely normal):
    *
