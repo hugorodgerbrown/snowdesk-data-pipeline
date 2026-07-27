@@ -138,6 +138,43 @@ describe('isBasemapOrigin', () => {
   });
 });
 
+describe('shouldPersist', () => {
+  const IMMUTABLE_ONLY_PATHS = new Set(['/api/bulletin-groupings.geojson']);
+
+  function res(cacheControl) {
+    return { headers: new Headers(cacheControl ? { 'Cache-Control': cacheControl } : {}) };
+  }
+
+  it('is true for a path outside immutableOnlyPaths regardless of Cache-Control', () => {
+    const url = new URL('/api/ratings/?d=2026-04-08', SELF_ORIGIN);
+    expect(core.shouldPersist(url, res('public, max-age=300'), IMMUTABLE_ONLY_PATHS)).toBe(true);
+  });
+
+  it('is false for a gated path whose response carries no immutable token', () => {
+    const url = new URL('/api/bulletin-groupings.geojson?d=2026-04-08', SELF_ORIGIN);
+    expect(core.shouldPersist(url, res('public, max-age=300'), IMMUTABLE_ONLY_PATHS)).toBe(false);
+  });
+
+  it('is false for a gated path with no Cache-Control header at all', () => {
+    const url = new URL('/api/bulletin-groupings.geojson?d=2026-04-08', SELF_ORIGIN);
+    expect(core.shouldPersist(url, res(null), IMMUTABLE_ONLY_PATHS)).toBe(false);
+  });
+
+  it('is true for a gated path whose response declares itself immutable', () => {
+    const url = new URL('/api/bulletin-groupings.geojson?d=2025-12-01', SELF_ORIGIN);
+    expect(
+      core.shouldPersist(url, res('public, max-age=604800, immutable'), IMMUTABLE_ONLY_PATHS),
+    ).toBe(true);
+  });
+
+  it('matches the immutable token case-insensitively', () => {
+    const url = new URL('/api/bulletin-groupings.geojson?d=2025-12-01', SELF_ORIGIN);
+    expect(
+      core.shouldPersist(url, res('Public, Max-Age=604800, IMMUTABLE'), IMMUTABLE_ONLY_PATHS),
+    ).toBe(true);
+  });
+});
+
 describe('trimCache', () => {
   /**
    * A minimal in-file fake implementing just the ``Cache`` surface
