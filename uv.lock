@@ -1515,7 +1515,7 @@ wheels = [
 
 [[package]]
 name = "posthog"
-version = "7.29.0"
+version = "7.30.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -1523,9 +1523,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/09/43ae0e27bafe031d307921cdeadcd3af8a7370c887177df7c43cfd903adf/posthog-7.29.0.tar.gz", hash = "sha256:673f201e2d204f0664bb0cec86f8adfca97ba3a94488fb7857bb11c4a35fb017", size = 360483, upload-time = "2026-07-23T15:26:28.225Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/e9/316d43e0ee0a0ca26f53253a71316243bad629d3dbc47f03219660fe79e3/posthog-7.30.1.tar.gz", hash = "sha256:27ffdcbf21d35ceb8a76d1c3fe2e2aa16a6ab0b809caa0d71be1ecb67095f9a1", size = 386552, upload-time = "2026-07-27T14:18:51.865Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/4a/01c3e9f44a2f167977b5fafc9ba5b4ed5a027881da4b2ee1f4987a621758/posthog-7.29.0-py3-none-any.whl", hash = "sha256:8269afec8439e0177fd9d660b88d0a580497b617ee6aa213850ae9244ad46111", size = 429592, upload-time = "2026-07-23T15:26:26.343Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/93/2b94298dccf2f773c56e0f82f58993bf4c1a1e65ea9641ab24bc1ddb6097/posthog-7.30.1-py3-none-any.whl", hash = "sha256:4ffbbf0bd81aec39c9a20818620ef27e49095d4a6427bffd06d0e2574e69a217", size = 459619, upload-time = "2026-07-27T14:18:50.251Z" },
 ]
 
 [[package]]
@@ -2444,7 +2444,7 @@ requires-dist = [
     { name = "geoip2", specifier = ">=5.2.0,<6" },
     { name = "gunicorn", specifier = ">=26.0.0,<27" },
     { name = "pdfplumber", specifier = ">=0.11.9,<0.12" },
-    { name = "posthog", specifier = ">=7.29.0,<8" },
+    { name = "posthog", specifier = ">=7.30.1,<8" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4,<4" },
     { name = "python-decouple", specifier = ">=3.8,<4" },
     { name = "pywebpush", specifier = ">=2.3.0,<3" },
