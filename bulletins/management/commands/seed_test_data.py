@@ -12,10 +12,17 @@ It is developer tooling for local/CI dev databases: it refuses to run when
 ``DEBUG`` is ``False`` so it cannot touch a production DB.
 
 Bulletin-layer coverage:
-  - one Bulletin + RegionBulletin + RegionDayRating per CH MicroRegion on the map
-    reference date (2026-04-08),
-  - CH-4115 (Martigny-Verbier) additionally gets a bulletin per day across April
-    2026 (2026-04-08 excluded, as the map layer already covers it),
+  - on the map reference date (2026-04-08), one Bulletin per *contiguous group*
+    of CH MicroRegions (SNOW-534) — 10 groups across the 149 CH regions, the
+    order of magnitude SLF issues for a real day. Every region still gets its
+    own RegionBulletin + RegionDayRating; only the bulletin count drops, so the
+    L3 bulletin-boundary layer has real groupings to dissolve rather than one
+    outline per region,
+  - a BulletinGrouping per bulletin, computed by the same service the ingest
+    path uses, so the boundary layer draws in a freshly-seeded DB,
+  - CH-4115 (Martigny-Verbier) additionally gets a single-region bulletin per
+    day across April 2026 (2026-04-08 excluded, as the map layer already
+    covers it),
   - a WeatherSnapshot per (region, date) pair,
   - render models built at ``RENDER_MODEL_VERSION`` and day ratings applied via the
     production services, so the seeded DB renders with no rebuild step.
@@ -72,8 +79,9 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Dataset shape — map-reference date, detail region, and the CAAML payload
-# template. These define the navigable test dataset (149 CH map-coverage
-# bulletins on MAP_DATE plus a full-April detail month for CH-4115).
+# template. These define the navigable test dataset (10 grouped CH map-coverage
+# bulletins spanning all 149 micro-regions on MAP_DATE, plus a full-April
+# single-region detail month for CH-4115).
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -82,6 +90,26 @@ _EAWS_CH_FIXTURE = _REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
 MAP_DATE = date(2026, 4, 8)
 APRIL_DATES = [date(2026, 4, d) for d in range(1, 31)]
 DETAIL_REGIONS = {"CH-4115": "Martigny-Verbier"}
+
+# Micro-regions per map-date bulletin. A real bulletin covers a set of adjacent
+# regions, and the L3 boundary layer exists to draw where one bulletin's regions
+# end — with one bulletin per region (the pre-SNOW-534 shape) every boundary
+# traced a single micro-region ring and the layer showed nothing the L4 tier
+# didn't already.
+#
+# 18 partitions the 149 CH micro-regions into exactly 10 groups, which is the
+# order of magnitude SLF actually issues for Switzerland on a given day. The
+# relationship isn't 149/18 — the greedy walk leaves small remainders where it
+# runs out of unassigned neighbours — so this constant is tuned to the group
+# COUNT it produces, not derived from it. Changing it changes
+# ``_EXPECTED_BULLETINS`` in the seeder tests.
+_GROUP_TARGET_SIZE = 18
+
+# One bulletin's slot in the coverage plan: the ``(region_id, region_name)``
+# pairs it covers, the date it targets, and its CAAML danger key. The regions
+# are a tuple, not a single pair, because a map-date bulletin covers a whole
+# contiguous group (see ``_contiguous_groups``).
+BulletinSpec = tuple[tuple[tuple[str, str], ...], date, str]
 
 # Danger ratings to cycle across April so the calendar shows a colour gradient.
 # Indices into APRIL_DATES are mapped to these levels (wrapping).
@@ -120,8 +148,7 @@ SUBSCRIBED_REGION_ID = "CH-4115"
 
 def _make_raw_data(
     bulletin_id: str,
-    region_id: str,
-    region_name: str,
+    regions: "list[tuple[str, str]]",
     valid_from_iso: str,
     valid_to_iso: str,
     issued_at_iso: str,
@@ -136,8 +163,11 @@ def _make_raw_data(
 
     Args:
         bulletin_id: The unique bulletin identifier (UUID-style string).
-        region_id: SLF region ID, e.g. ``"CH-4115"``.
-        region_name: Human-readable region name, e.g. ``"Martigny-Verbier"``.
+        regions: The ``(region_id, region_name)`` pairs this bulletin covers,
+            in the order they should appear in ``properties.regions``. A real
+            bulletin routinely covers several adjacent micro-regions, which is
+            what gives the L3 boundary layer something to dissolve — see
+            ``_contiguous_groups``.
         valid_from_iso: ISO 8601 string for validTime.startTime.
         valid_to_iso: ISO 8601 string for validTime.endTime.
         issued_at_iso: ISO 8601 string for publicationTime.
@@ -153,7 +183,10 @@ def _make_raw_data(
         "properties": {
             "lang": "en",
             "bulletinID": bulletin_id,
-            "regions": [{"name": region_name, "regionID": region_id}],
+            "regions": [
+                {"name": region_name, "regionID": region_id}
+                for region_id, region_name in regions
+            ],
             "validTime": {
                 "startTime": valid_from_iso,
                 "endTime": valid_to_iso,
@@ -229,6 +262,10 @@ def _bulletin_id_for(region_id: str, target_date: date) -> str:
     (region, date) always produces the same ID, making the seed
     fully reproducible on repeated runs.
 
+    For a multi-region bulletin the caller passes the group's FIRST region,
+    which ``_contiguous_groups`` fixes deterministically — so a group's ID is
+    as stable across runs as a single-region one.
+
     Args:
         region_id: SLF region ID string.
         target_date: The calendar date for the bulletin.
@@ -239,6 +276,103 @@ def _bulletin_id_for(region_id: str, target_date: date) -> str:
     """
     ns = uuid.UUID("a4020000-0000-0000-0000-000000000000")
     return str(uuid.uuid5(ns, f"{region_id}:{target_date.isoformat()}"))
+
+
+def _contiguous_groups(
+    region_ids: "list[str]",
+    adjacency: "dict[str, set[str]]",
+    target_size: int = _GROUP_TARGET_SIZE,
+) -> "list[list[str]]":
+    """
+    Partition ``region_ids`` into contiguous groups of up to ``target_size``.
+
+    Models how a real bulletin covers several *adjacent* micro-regions rather
+    than exactly one. Contiguity matters: ``compute_bulletin_grouping_boundary``
+    dissolves a bulletin's regions with ``unary_union``, so a group of
+    non-touching regions yields a MultiPolygon of separate outlines — which
+    looks identical to no grouping at all and defeats the point of the layer.
+
+    Walks ``region_ids`` in sorted order and grows each group breadth-first
+    from the unassigned neighbours of the regions already in it. Every step
+    iterates sorted candidates, so the partition is deterministic: re-seeding
+    reproduces the same bulletin set and therefore the same bulletin IDs.
+
+    A region whose neighbours are all already assigned forms a group of one.
+    That is not a defect to design out — single-region bulletins exist in the
+    real feed too, and the mix exercises both shapes.
+
+    Args:
+        region_ids: The region IDs to partition.
+        adjacency: ``region_id -> set of neighbouring region_ids``. Missing
+            keys are treated as "no neighbours" (an isolated region).
+        target_size: Maximum regions per group.
+
+    Returns:
+        A list of groups, each a list of region IDs with the group's
+        lowest-sorting member first.
+
+    """
+    remaining = sorted(region_ids)
+    unassigned = set(remaining)
+    groups: list[list[str]] = []
+
+    for seed_region in remaining:
+        if seed_region not in unassigned:
+            continue
+        group = [seed_region]
+        unassigned.discard(seed_region)
+        # Breadth-first over the group's own frontier, so every added region
+        # touches one already in the group and the union stays connected.
+        frontier = [seed_region]
+        while frontier and len(group) < target_size:
+            current = frontier.pop(0)
+            for neighbour in sorted(adjacency.get(current, ())):
+                if len(group) >= target_size:
+                    break
+                if neighbour not in unassigned:
+                    continue
+                group.append(neighbour)
+                unassigned.discard(neighbour)
+                frontier.append(neighbour)
+        groups.append(group)
+
+    return groups
+
+
+def _adjacency_from_fixture(
+    region_data: "list[dict[str, Any]]",
+) -> "dict[str, set[str]]":
+    """
+    Build the micro-region adjacency map from the eaws fixture's ``neighbours``.
+
+    Reads the fixture rather than the DB so the coverage plan stays computable
+    before any query runs (and so ``--dry-run`` needs no region rows). Fixture
+    neighbour entries are natural keys — one-element lists like
+    ``[["CH-1112"], ["CH-1113"]]`` — which are flattened to bare region IDs
+    here. The map is symmetrised: the fixture lists each edge from both sides
+    already, but relying on that would make the partition depend on fixture
+    hygiene rather than on the graph.
+
+    Args:
+        region_data: The parsed eaws fixture rows (all models).
+
+    Returns:
+        ``region_id -> set of neighbouring region_ids``.
+
+    """
+    adjacency: dict[str, set[str]] = {}
+    for row in region_data:
+        if row["model"] != "regions.microregion":
+            continue
+        region_id = row["fields"]["region_id"]
+        neighbours = {
+            entry[0] if isinstance(entry, list) else entry
+            for entry in row["fields"].get("neighbours", [])
+        }
+        adjacency.setdefault(region_id, set()).update(neighbours)
+        for neighbour in neighbours:
+            adjacency.setdefault(neighbour, set()).add(region_id)
+    return adjacency
 
 
 def _danger_for_day(target_date: date) -> str:
@@ -260,19 +394,19 @@ def _danger_for_day(target_date: date) -> str:
 
 
 def _make_bulletin_params(
-    region_id: str,
-    region_name: str,
+    regions: "list[tuple[str, str]]",
     target_date: date,
     danger_value: str,
 ) -> dict[str, Any]:
     """
-    Return kwargs for creating a Bulletin instance for one (region, date) pair.
+    Return kwargs for creating a Bulletin instance for one (regions, date) group.
 
     Morning issue: valid_from at 07:00 UTC on ``target_date``.
 
     Args:
-        region_id: SLF region ID.
-        region_name: Human-readable region name.
+        regions: The ``(region_id, region_name)`` pairs this bulletin covers.
+            The first entry keys the deterministic bulletin ID, so callers
+            must pass the group in a stable order.
         target_date: The calendar date that this bulletin covers.
         danger_value: Danger level key to embed in the CAAML payload.
 
@@ -289,11 +423,10 @@ def _make_bulletin_params(
     valid_to_dt = datetime(
         target_date.year, target_date.month, target_date.day, 16, 0, tzinfo=UTC
     )
-    bid = _bulletin_id_for(region_id, target_date)
+    bid = _bulletin_id_for(regions[0][0], target_date)
     raw = _make_raw_data(
         bulletin_id=bid,
-        region_id=region_id,
-        region_name=region_name,
+        regions=regions,
         valid_from_iso=valid_from_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         valid_to_iso=valid_to_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         issued_at_iso=issued_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -359,6 +492,7 @@ class SeedModel(enum.StrEnum):
     BULLETIN = "bulletin"
     REGIONBULLETIN = "regionbulletin"
     REGIONDAYRATING = "regiondayrating"
+    BULLETINGROUPING = "bulletingrouping"
     WEATHERSNAPSHOT = "weathersnapshot"
     FORECASTPOINT = "forecastpoint"
     FORECASTPOINTWEATHER = "forecastpointweather"
@@ -375,6 +509,10 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     # bulletin.regions.all() (the RegionBulletin M2M), so without those links it
     # silently produces zero ratings.
     SeedModel.REGIONDAYRATING: (SeedModel.BULLETIN, SeedModel.REGIONBULLETIN),
+    # Same reason as RegionDayRating: compute_bulletin_grouping_boundary
+    # dissolves the regions reached through the RegionBulletin M2M, so without
+    # those links every bulletin looks region-less and no grouping is written.
+    SeedModel.BULLETINGROUPING: (SeedModel.BULLETIN, SeedModel.REGIONBULLETIN),
     SeedModel.WEATHERSNAPSHOT: (),
     SeedModel.FORECASTPOINT: (),
     SeedModel.FORECASTPOINTWEATHER: (SeedModel.FORECASTPOINT,),
@@ -390,6 +528,7 @@ _BULLETIN_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.BULLETIN,
     SeedModel.REGIONBULLETIN,
     SeedModel.REGIONDAYRATING,
+    SeedModel.BULLETINGROUPING,
     SeedModel.WEATHERSNAPSHOT,
 )
 _POINT_FAMILY: tuple[SeedModel, ...] = (
@@ -618,7 +757,7 @@ class Command(BaseCommand):
 
     def _coverage(
         self,
-    ) -> "tuple[list[tuple[str, str, date, str]], list[tuple[str, date]]]":
+    ) -> "tuple[list[BulletinSpec], list[tuple[str, date]]]":
         """Build the bulletin and weather coverage plan.
 
         The region set and per-day danger logic are read from the same eaws_CH
@@ -626,8 +765,10 @@ class Command(BaseCommand):
 
         Returns:
             A ``(bulletin_specs, weather_pairs)`` tuple. ``bulletin_specs`` is a
-            list of ``(region_id, region_name, target_date, danger_value)``;
-            ``weather_pairs`` is a list of ``(region_id, target_date)``.
+            list of ``(regions, target_date, danger_value)``, where ``regions``
+            is a tuple of ``(region_id, region_name)`` pairs — one bulletin may
+            cover several adjacent micro-regions (SNOW-534). ``weather_pairs``
+            is a list of ``(region_id, target_date)``, still one per region.
 
         """
         region_data = json.loads(_EAWS_CH_FIXTURE.read_text())
@@ -637,24 +778,39 @@ class Command(BaseCommand):
             if d["model"] == "regions.microregion"
         }
 
-        specs: list[tuple[str, str, date, str]] = []
-        for region_id, region_name in region_name_map.items():
-            specs.append((region_id, region_name, MAP_DATE, "moderate"))
+        specs: list[BulletinSpec] = []
+        # Map date: one bulletin per contiguous group of micro-regions, so the
+        # L3 boundary layer has real groupings to dissolve (SNOW-534). Every
+        # region is still covered exactly once, so the per-region rating and
+        # snapshot counts are unchanged — only the bulletin count drops.
+        adjacency = _adjacency_from_fixture(region_data)
+        for group in _contiguous_groups(list(region_name_map), adjacency):
+            regions = tuple((rid, region_name_map[rid]) for rid in group)
+            specs.append((regions, MAP_DATE, "moderate"))
+        # Detail region: single-region bulletins, one per April day. Kept
+        # ungrouped both because the region detail pages read this region's own
+        # bulletin per day, and because the real feed mixes both shapes.
         for region_id, region_name in DETAIL_REGIONS.items():
             for target_date in APRIL_DATES:
                 if target_date == MAP_DATE:
                     continue
                 specs.append(
-                    (region_id, region_name, target_date, _danger_for_day(target_date))
+                    (
+                        ((region_id, region_name),),
+                        target_date,
+                        _danger_for_day(target_date),
+                    )
                 )
 
         weather_pairs = [
-            (region_id, target_date) for region_id, _, target_date, _ in specs
+            (region_id, target_date)
+            for regions, target_date, _ in specs
+            for region_id, _ in regions
         ]
         return specs, weather_pairs
 
     def _load_micro_regions(
-        self, specs: "list[tuple[str, str, date, str]]"
+        self, specs: "list[BulletinSpec]"
     ) -> "dict[str, MicroRegion]":
         """Load the MicroRegion rows referenced by the coverage plan.
 
@@ -669,7 +825,7 @@ class Command(BaseCommand):
         """
         from regions.models import MicroRegion
 
-        region_ids = {region_id for region_id, _, _, _ in specs}
+        region_ids = {region_id for regions, _, _ in specs for region_id, _ in regions}
         return MicroRegion.objects.filter(region_id__in=region_ids).in_bulk(
             field_name="region_id"
         )
@@ -681,7 +837,7 @@ class Command(BaseCommand):
     def _run_seeders(
         self,
         resolved: "set[SeedModel]",
-        specs: "list[tuple[str, str, date, str]]",
+        specs: "list[BulletinSpec]",
         weather_pairs: "list[tuple[str, date]]",
         micro_map: "dict[str, MicroRegion]",
         verbosity: int,
@@ -809,7 +965,7 @@ class Command(BaseCommand):
     def _seed_bulletin_family(
         self,
         resolved: "set[SeedModel]",
-        specs: "list[tuple[str, str, date, str]]",
+        specs: "list[BulletinSpec]",
         weather_pairs: "list[tuple[str, date]]",
         micro_map: "dict[str, MicroRegion]",
         verbosity: int,
@@ -841,6 +997,10 @@ class Command(BaseCommand):
                 )
             elif model is SeedModel.REGIONDAYRATING:
                 counts[model.value] = self._seed_day_ratings(bulletins, verbosity)
+            elif model is SeedModel.BULLETINGROUPING:
+                counts[model.value] = self._seed_bulletin_groupings(
+                    bulletins, verbosity
+                )
             elif model is SeedModel.WEATHERSNAPSHOT:
                 counts[model.value] = self._seed_weather_snapshots(
                     weather_pairs, micro_map, verbosity
@@ -887,7 +1047,7 @@ class Command(BaseCommand):
         return counts
 
     def _seed_bulletins(
-        self, specs: "list[tuple[str, str, date, str]]", verbosity: int
+        self, specs: "list[BulletinSpec]", verbosity: int
     ) -> "list[Bulletin]":
         """Create Bulletin rows with real CAAML payloads and built render models.
 
@@ -902,8 +1062,8 @@ class Command(BaseCommand):
         from tests.factories import BulletinFactory
 
         bulletins: list[Bulletin] = []
-        for region_id, region_name, target_date, danger in specs:
-            params = _make_bulletin_params(region_id, region_name, target_date, danger)
+        for regions, target_date, danger in specs:
+            params = _make_bulletin_params(list(regions), target_date, danger)
             bulletin = BulletinFactory.create(**params)
             self._build_render_model(bulletin)
             bulletins.append(bulletin)
@@ -1001,6 +1161,48 @@ class Command(BaseCommand):
         if verbosity >= 2:
             self.stdout.write(f"  Created {count} RegionDayRating rows")
         return count
+
+    def _seed_bulletin_groupings(
+        self, bulletins: "list[Bulletin]", verbosity: int
+    ) -> int:
+        """Dissolve each bulletin's regions into a BulletinGrouping row.
+
+        Calls the same ``compute_bulletin_grouping_boundary`` service the real
+        ingest path runs from ``upsert_bulletin``. The factory-based seeder
+        bypasses ``upsert_bulletin`` entirely, so without this step a seeded DB
+        has no groupings at all and ``/api/bulletin-groupings.geojson`` returns
+        an empty FeatureCollection for every date — the L3 boundary layer draws
+        nothing until someone runs ``backfill_bulletin_groupings`` by hand
+        (SNOW-534).
+
+        A bulletin whose regions carry no boundary geometry yields ``None`` and
+        is counted as skipped, matching the service's own contract.
+
+        Args:
+            bulletins: The seeded Bulletin instances.
+            verbosity: Verbosity level.
+
+        Returns:
+            The number of BulletinGrouping rows created.
+
+        """
+        from bulletins.services.grouping import compute_bulletin_grouping_boundary
+
+        created = 0
+        for bulletin in bulletins:
+            try:
+                if compute_bulletin_grouping_boundary(bulletin) is not None:
+                    created += 1
+            except Exception as exc:  # noqa: BLE001 — one bad dissolve never aborts the seed
+                logger.warning(
+                    "seed_test_data: grouping failed for %s: %s",
+                    bulletin.bulletin_id,
+                    exc,
+                )
+
+        if verbosity >= 2:
+            self.stdout.write(f"  Created {created} BulletinGrouping rows")
+        return created
 
     def _seed_weather_snapshots(
         self,

@@ -113,9 +113,10 @@ contains so it can be relied on and extended safely.
 | `regions.subregion` | 21 | `eaws_CH` fixture |
 | `regions.microregion` | 149 | `eaws_CH` fixture |
 | `regions.resort` | 148 | `resorts` fixture |
-| `bulletins.bulletin` | 178 | `seed_test_data` |
+| `bulletins.bulletin` | 39 | `seed_test_data` (10 grouped map-date + 29 CH-4115 detail) |
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
+| `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
 | `bulletins.weathersnapshot` | 178 | `seed_test_data` |
 | `bulletins.forecastpoint` | 5 | `seed_test_data` |
 | `bulletins.forecastpointweather` | 150 | `seed_test_data` |
@@ -131,10 +132,20 @@ contains so it can be relied on and extended safely.
 - **Date span:** 1 April – 30 April 2026 (30 days). All dates fall in the
   spring off-season for Alpine snowpack; no mid-winter elevated-danger days
   are present.
-- **Regions:** all 149 CH micro-regions have exactly one bulletin covering
-  a single date (2026-04-08, the "map reference date") — enough to render
-  the choropleth map.
-- **CH-4115 (Martigny-Verbier):** 30 bulletins, one per day of April 2026.
+- **Regions:** all 149 CH micro-regions are covered on a single date
+  (2026-04-08, the "map reference date") — enough to render the choropleth
+  map. Since SNOW-534 they are covered by **10 multi-region bulletins**, each
+  spanning a contiguous group of up to 18 adjacent micro-regions, rather than
+  one bulletin per region. That is the order of magnitude SLF issues for a
+  real day, and it is what gives the L3 bulletin-boundary layer visible
+  groupings to draw — with one bulletin per region every boundary traced a
+  single micro-region ring.
+- **Bulletin groupings:** one `BulletinGrouping` per bulletin, dissolved by the
+  same service the ingest path uses, so `/api/bulletin-groupings.geojson`
+  returns real geometry and the boundary layer draws without a manual
+  `backfill_bulletin_groupings` run.
+- **CH-4115 (Martigny-Verbier):** 30 bulletins, one per day of April 2026
+  (29 single-region detail bulletins plus the grouped map-date one).
   This is the canonical bulletin detail URL
   (`/ch-4115/martigny-verbier/2026-04-08/`) used in manual testing.
 - **Danger levels:** map-coverage bulletins are `moderate`; the CH-4115 detail
