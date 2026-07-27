@@ -1638,13 +1638,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
   //
-  // The layer uses a dashed line so it reads visually distinct from the
-  // L2 (sub-regions, solid thin blue) and L1 (major, solid heavier red)
-  // outlines.  Colour uses the same neutral near-black as the selection ring
-  // but at lower opacity and with a dash pattern so it reads as an informational
-  // overlay rather than a selection indicator.  Inserted above
-  // 'regions-line-selected' so it sits between the choropleth and the
-  // selection ring in the layer stack.
+  // SNOW-533: solid, not dashed. MapLibre dash units are multiples of the
+  // line width, so a fixed [4, 3] pattern renders at a different physical
+  // scale at every zoom and fragments on short or convoluted boundary
+  // segments. Distinctness now comes from weight and colour instead: the
+  // boundary tracks 'regions-line''s zoom curve (the L4 micro-region ring it
+  // groups) scaled so it is always the heavier of the two, and keeps its
+  // green against L4's neutral black — at z9+ the two differ by 0.4px, which
+  // weight alone can't carry. Inserted above 'regions-line-selected' so it
+  // sits between the choropleth and the selection ring in the layer stack.
   //
   // Visibility is seeded from overlayState.l4 — the boundary is a companion
   // to the micro-region tier and has no state of its own (see
@@ -1670,9 +1672,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
         },
         paint: {
           'line-color': '#1a6b3c',
-          'line-width': 2.0,
-          'line-dasharray': [4, 3],
-          'line-opacity': 0.85,
+          // Mirrors 'regions-line''s stops (1.2 → 0.6 → 0.6) at ~1.6x, so the
+          // boundary reads as a slightly heavier version of the L4 ring at
+          // every zoom rather than only at one. Third stop matches L4's in
+          // pinning the width past z9 against linear extrapolation.
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            5,  2.0,
+            9,  1.0,
+            22, 1.0,
+          ],
+          // Down from 0.85: a solid line lays ~75% more ink than the [4, 3]
+          // dash it replaces (4/7 duty), so the same alpha would read heavier
+          // than before rather than subtler.
+          'line-opacity': 0.7,
         },
       },
       // Insert above regions-line-selected so grouping boundaries sit

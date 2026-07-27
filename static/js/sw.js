@@ -280,7 +280,10 @@ try {
 // menu (OVERLAY_RESOURCES.l3, refresh()'s dated-geojson branch,
 // _applyUnavailable and the hollow "unavailable" dot state). Shell JS/CSS
 // bytes changed (map_layer_sync_status.js, map.css).
-const CACHE_VERSION = 'snowdesk-shell-v58';
+// v59 — SNOW-533: the bulletin-boundary line drops its fixed dash for a
+// solid stroke whose width tracks regions-line's zoom curve. Shell JS bytes
+// changed (map.js).
+const CACHE_VERSION = 'snowdesk-shell-v59';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
