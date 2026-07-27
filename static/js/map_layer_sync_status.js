@@ -58,12 +58,19 @@
  *                          — otherwise a tier dot could sit green above a
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
- *   l3                   — NOT in STATIC_PATHS (network-only per sw.js's
- *                          classification) — can never be cached for
- *                          offline use, so it resolves to the distinct
+ *   l3                   — (SNOW-526) same-origin, but only cacheable for a
+ *                          settled ``?d=`` date — the server is the only
+ *                          source of truth for which dates qualify (see
+ *                          sw.js's ``shouldPersist`` gate), so this module
+ *                          never re-derives that rule. No ``?d=`` in the URL
+ *                          (boot / today) means today, which is never
+ *                          settled, so it resolves straight to the hollow
  *                          "unavailable" state (a hollow, border-only dot,
  *                          visually separate from the grey "not cached yet"
- *                          fill), without a wasted probe.
+ *                          fill) without a wasted probe. With a ``?d=``
+ *                          present, an EXACT ``_probeExact`` for that date
+ *                          drives the normal cached / uncached /
+ *                          offline-blocked states, same as l1/l2/l4.
  *   favourites,
  *   community_reports    — IndexedDB ``data:map_overlays`` rows written
  *                          by map_overlay_offline_cache.js. A truthy row
@@ -89,10 +96,11 @@
  * favourites/community_reports IDB overlay row), so the resource is — to
  * all practical intents — now cached; the next ``refresh()`` re-verifies
  * against real cache state and self-corrects in the rare case a background
- * ``cache.put`` didn't land. ``markCached`` no-ops for ``l3`` (network-only
- * in sw.js — genuinely never cached, so its hollow "unavailable" dot stays
- * put even after a successful load) and for any key absent from
- * ``OVERLAY_RESOURCES``.
+ * ``cache.put`` didn't land. ``markCached`` no-ops for ``l3`` (its ``kind:
+ * 'dated-geojson'`` is outside the geojson/idb allowlist — a load
+ * succeeding doesn't prove the SW actually persisted a settled-date
+ * response, so the honest signal is the popover-open ``refresh()``'s own
+ * probe) and for any key absent from ``OVERLAY_RESOURCES``.
  */
 
 (function () {
@@ -153,7 +161,9 @@
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
-    l3: Object.freeze({ kind: 'uncacheable' }),
+    // SNOW-526: only cacheable for a settled date — see refresh()'s
+    // 'dated-geojson' branch, which reads the scrubber's ?d= off the URL.
+    l3: Object.freeze({ kind: 'dated-geojson', path: '/api/bulletin-groupings.geojson' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
   });
@@ -542,11 +552,28 @@
       const dot = _overlayDot(key);
       if (!dot) continue;
 
-      if (resource.kind === 'uncacheable') {
-        // l3 is network-only in sw.js — it can never be cached for offline
-        // use, a distinct state from "not cached yet": a hollow (border-
-        // only) dot rather than a grey fill. Never probed.
-        _applyUnavailable(dot);
+      if (resource.kind === 'dated-geojson') {
+        // SNOW-526: l3 is only cacheable for a settled date, and the
+        // server is the sole source of truth for which dates qualify (see
+        // basemap_cache_core.js's shouldPersist()). Read the scrubber's
+        // date straight off the URL — map.js keeps ?d= in sync via
+        // history.replaceState. No ?d= means boot/today, which is never
+        // settled, so paint the hollow "never cacheable right now" dot
+        // without a wasted probe.
+        const dateParam = new URLSearchParams(location.search).get('d');
+        if (!dateParam) {
+          _applyUnavailable(dot);
+          continue;
+        }
+        tasks.push(
+          _probeExact(`${resource.path}?d=${dateParam}`)
+            .then((cached) =>
+              _applyState(dot, cached, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
+            )
+            .catch(() =>
+              _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
+            ),
+        );
         continue;
       }
 
@@ -719,9 +746,10 @@
       return;
     }
     const resource = OVERLAY_RESOURCES[key];
-    // Only genuinely-cacheable rows flip green. l3 ('uncacheable') is
-    // network-only in sw.js — a successful load doesn't make it available
-    // offline — so its hollow dot stays put. Unknown keys are ignored.
+    // Only genuinely-cacheable rows flip green. l3 ('dated-geojson') is
+    // excluded — a successful load doesn't prove the SW actually persisted
+    // a settled-date response, so it keeps whatever refresh()'s own probe
+    // last painted. Unknown keys are ignored.
     if (!resource || (resource.kind !== 'geojson' && resource.kind !== 'idb')) return;
     // A successful load only happens online; ``_applyState`` with cached=true
     // paints green and clears any offline-disabled marker on the row.

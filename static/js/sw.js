@@ -273,7 +273,7 @@ try {
 // cache once the MapLibre style settles, so a reload of an
 // already-downloaded region no longer paints the idle download icon until
 // the region is reselected. Shell JS bytes changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v53';
+const CACHE_VERSION = 'snowdesk-shell-v55';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -369,7 +369,7 @@ const STATIC_SHELL_EXTENSIONS = new Set([
 ]);
 
 // Same-origin URL paths that are safe to serve stale-while-revalidate.
-// Two classes of entry:
+// Three classes of entry:
 //
 //   Geo feeds — versioned-by-deploy. Polygon and resort geometry
 //   changes only on deploy, so a stale polygon never misleads the user
@@ -382,6 +382,16 @@ const STATIC_SHELL_EXTENSIONS = new Set([
 //   the wrong day. The cache rule is the same as for geo feeds; the
 //   safety argument is URL-encoded date window rather than
 //   deploy-versioned geometry.
+//
+//   /api/bulletin-groupings.geojson (SNOW-526) — safe only for the subset
+//   of ``?d=`` values the server has declared settled (no future ingest
+//   run can still change that day's geometry). Unlike the two classes
+//   above, the URL alone doesn't establish that — today's date and the
+//   settled past share the same path/param shape. IMMUTABLE_ONLY_PATHS
+//   below gates this entry so only a response the server marked
+//   ``immutable`` is actually written to the cache; see
+//   ``_staleWhileRevalidate`` and ``shouldPersist`` in
+//   basemap_cache_core.js.
 //
 // Note on Vary: the ratings view emits ``Vary: Accept-Encoding`` and
 // the Cache API honours Vary on match. In practice every request from
@@ -397,7 +407,14 @@ const STATIC_PATHS = new Set([
   '/api/major-regions.geojson',
   '/api/sub-regions.geojson',
   '/api/resorts.geojson',
+  '/api/bulletin-groupings.geojson',
 ]);
+
+// SNOW-526: STATIC_PATHS entries that must only be persisted to the shell
+// cache when the response declares itself ``immutable`` via Cache-Control
+// — see the STATIC_PATHS comment above and shouldPersist() in
+// basemap_cache_core.js.
+const IMMUTABLE_ONLY_PATHS = new Set(['/api/bulletin-groupings.geojson']);
 
 // ---------------------------------------------------------------------------
 // Telemetry bridge (SNOW-384)
@@ -714,13 +731,31 @@ function _stampCacheHit(response) {
 async function _staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
+  const url = new URL(request.url);
   const fetchPromise = fetch(request)
     .then((response) => {
       // Only cache successful, basic (same-origin) responses. ``opaque``
       // responses from cross-origin no-cors requests are unreadable, and
       // 4xx/5xx would poison the cache.
       if (response && response.ok && response.type === 'basic') {
-        cache.put(request, response.clone()).catch(() => {});
+        // SNOW-526/SNOW-496: thin delegator — see basemap_cache_core.js's
+        // module header. Gates IMMUTABLE_ONLY_PATHS entries (currently just
+        // /api/bulletin-groupings.geojson) on the response's own
+        // Cache-Control: immutable declaration so an unsettled date is
+        // never written to the shell cache. The inline fallback mirrors
+        // shouldPersist()'s exact token-split/trim/includes match (not a
+        // bare substring test) so the two implementations can't disagree.
+        const persist = self.pwaBasemapCacheCore
+          ? self.pwaBasemapCacheCore.shouldPersist(url, response, IMMUTABLE_ONLY_PATHS)
+          : !IMMUTABLE_ONLY_PATHS.has(url.pathname) ||
+            (response.headers.get('Cache-Control') || '')
+              .toLowerCase()
+              .split(',')
+              .map((token) => token.trim())
+              .includes('immutable');
+        if (persist) {
+          cache.put(request, response.clone()).catch(() => {});
+        }
       }
       return response;
     })

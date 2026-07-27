@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
@@ -49,7 +50,9 @@ from django.utils import timezone
 from freezegun import freeze_time
 
 from bulletins.models import RegionDayRating
+from bulletins.services.slf_fetcher import BulletinSource
 from observations.models import FieldObservation
+from public import api as public_api
 from regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
 from tests.factories import (
     BulletinGroupingFactory,
@@ -2221,6 +2224,93 @@ def test_groupings_cache_control_header() -> None:
     assert "max-age=" in cc
 
 
+def _stub_get_sources(
+    latest: dt.date,
+) -> Callable[[], dict[str, BulletinSource]]:
+    """Build a ``get_sources``-shaped callable with one source's latest date fixed.
+
+    Used to control ``bulletins.services.settled.earliest_mutable_date()``'s
+    result deterministically (see the SNOW-526 plan's sparse-fixture-DB risk
+    note) without depending on real ``Bulletin`` rows or seed data.
+    """
+
+    def _get_sources() -> dict[str, BulletinSource]:
+        return {
+            "STUB": BulletinSource(
+                name="STUB",
+                pipeline_fn=lambda **kwargs: None,  # type: ignore[arg-type]
+                latest_date_fn=lambda: latest,
+                live_url_setting="SLF_API_BASE_URL",
+                mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
+                archive_path_setting="SLF_ARCHIVE_PATH",
+                stash_writer=lambda records, path: 0,
+            )
+        }
+
+    return _get_sources
+
+
+@pytest.mark.django_db
+def test_groupings_settled_date_gets_immutable_long_cache() -> None:
+    """A date before the earliest-mutable threshold is public/7d/immutable (SNOW-526)."""
+    with patch(
+        "bulletins.services.settled.get_sources",
+        _stub_get_sources(dt.date(2026, 1, 20)),
+    ):
+        response = Client().get(_groupings_url("2026-01-15"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "public" in cc
+    assert "max-age=604800" in cc
+    assert "immutable" in cc
+
+
+@pytest.mark.django_db
+def test_groupings_unsettled_date_keeps_short_cache_no_immutable() -> None:
+    """A date on/after the threshold keeps the existing public/300s, no immutable."""
+    with patch(
+        "bulletins.services.settled.get_sources",
+        _stub_get_sources(dt.date(2026, 1, 10)),
+    ):
+        response = Client().get(_groupings_url("2026-01-15"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "public" in cc
+    assert "max-age=300" in cc
+    assert "immutable" not in cc
+
+
+@pytest.mark.django_db
+@freeze_time("2026-01-15")
+def test_groupings_today_keeps_short_cache_no_immutable() -> None:
+    """Today's date is never settled — earliest_mutable_date() is capped at today."""
+    response = Client().get(_groupings_url("2026-01-15"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "public" in cc
+    assert "max-age=300" in cc
+    assert "immutable" not in cc
+
+
+@pytest.mark.django_db
+def test_groupings_boundary_date_is_unsettled() -> None:
+    """The date equal to earliest_mutable_date() itself is not yet settled.
+
+    The regression that matters: an off-by-one in ``is_settled``'s ``<``
+    comparison would make the boundary day cacheable-forever the moment a
+    provider's next ingest run could still rewrite it.
+    """
+    with patch(
+        "bulletins.services.settled.get_sources",
+        _stub_get_sources(dt.date(2026, 1, 15)),
+    ):
+        response = Client().get(_groupings_url("2026-01-15"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "max-age=300" in cc
+    assert "immutable" not in cc
+
+
 @pytest.mark.django_db
 def test_groupings_cache_hit_avoids_db_on_second_call() -> None:
     """After the first call the DB is not queried again for the same cache key."""
@@ -2240,17 +2330,29 @@ def test_groupings_cache_hit_avoids_db_on_second_call() -> None:
 
 @pytest.mark.django_db
 def test_groupings_query_count() -> None:
-    """Endpoint uses a bounded number of DB queries (one main query, no N+1)."""
+    """Endpoint uses a bounded number of DB queries (no N+1).
+
+    Two queries build the payload: the ``RegionDayRating`` filter and the
+    ``select_related`` grouping query. SNOW-526's settled-threshold check
+    (``bulletins.services.settled.earliest_mutable_date()``, one aggregate
+    per registered ``BulletinSource``) is memoised at the call site
+    (``public.api._cached_earliest_mutable_date``) for 60s, so it must NOT
+    show up here as extra queries on every request — only on a cold memo.
+    Warmed explicitly below (a direct call, not an HTTP round trip, so it
+    can't also warm the payload cache key this test measures).
+    """
     _make_groupings_fixture()
     url = _groupings_url("2026-01-15", country="ch")
 
-    # Warm the cache; then clear it so the next call actually queries.
+    # Clear everything, then warm ONLY the settled-threshold memo — real
+    # traffic keeps it warm too, since it's shared across every date and
+    # country for its 60s window.
     cache.clear()
+    public_api._cached_earliest_mutable_date()
 
     with CaptureQueriesContext(connection) as ctx:
         response = Client().get(url)
     assert response.status_code == 200
-    # One select_related query; any more indicates an N+1 regression.
     assert len(ctx.captured_queries) <= 3
 
 
