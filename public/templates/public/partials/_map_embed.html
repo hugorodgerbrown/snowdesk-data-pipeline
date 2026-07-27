@@ -745,6 +745,13 @@ Optional context:
         <li data-help-target="#report-btn" data-help-title='{% trans "Report conditions" %}'>
             {% trans "Share a quick field observation with other visitors." %}
         </li>
+        {# The tour explains its own trigger. It was the only control in the   #}
+        {# stack with no step, which read as an oversight once every           #}
+        {# neighbour had one — and this is where a user who has just been      #}
+        {# shown the tour learns how to get back to it.                        #}
+        <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
+            {% trans "Reopen this tour whenever you need it." %}
+        </li>
         {# The tour force-opens the collapsible group while it runs, so this   #}
         {# step lands on a toggle whose chevron is pointing "close".           #}
         <li data-help-target="#map-controls-toggle" data-help-title='{% trans "Hide the controls" %}'>

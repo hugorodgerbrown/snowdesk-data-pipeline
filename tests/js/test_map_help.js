@@ -27,7 +27,7 @@ const DISMISSED_VALUE = 'seen';
 const HOME_INTRO_KEY = 'snowdesk.home.intro';
 const HOME_INTRO_DISMISSED = 'dismissed';
 
-// Mirrors the template's 12 step definitions (public/templates/public/
+// Mirrors the template's 13 step definitions (public/templates/public/
 // partials/_map_embed.html), in template order.
 //
 // Every one of those targets is server-rendered unconditionally — none of
@@ -36,7 +36,7 @@ const HOME_INTRO_DISMISSED = 'dismissed';
 // production case where a step's target is genuinely missing. The absent-
 // target filter in map_help.js is still defensive code worth covering, so
 // the DOM fixture below deliberately omits two targets to exercise it —
-// 10 of the 12 steps stay active.
+// 11 of the 13 steps stay active.
 const STEP_DEFS = [
   { target: '#region-readout', title: 'Status ribbon', body: 'Names the region selected and its danger for the day.' },
   { target: '#region-readout-action', title: 'View bulletin', body: 'Click through to the bulletin detail page.' },
@@ -48,6 +48,7 @@ const STEP_DEFS = [
   { target: '#map-download-control', title: 'Download region', body: "Download the selected region's basemap for offline access." },
   { target: '#favourite-add-btn', title: 'Add a favourite', body: 'Pin a spot to your favourites for quick access later.' },
   { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation with other visitors.' },
+  { target: '#map-help-toggle', title: 'Map help', body: 'Reopen this tour whenever you need it.' },
   { target: '#map-controls-toggle', title: 'Hide the controls', body: 'Collapse the controls to clear the map; your choice is remembered.' },
   { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Run through the season day by day.' },
   { target: '#map-legend-toggle', title: 'Map information', body: 'View attribution and EAWS danger level key.' },
@@ -57,6 +58,15 @@ const STEP_DEFS = [
 const ABSENT_TARGETS = new Set(['#favourite-add-btn', '#report-btn']);
 const ACTIVE_STEP_COUNT = STEP_DEFS.filter((s) => !ABSENT_TARGETS.has(s.target)).length;
 
+// #map-help-toggle is a step target AND the tour's own trigger, which
+// buildFixture already renders as a <button> below. Generating a placeholder
+// <div> for it too would put a duplicate id in the document — getElementById
+// returns the first match, so every
+// `document.getElementById('map-help-toggle').click()` in these tests would
+// hit the inert div and the tour would never open. The step stays active;
+// only its placeholder is skipped.
+const SELF_RENDERED_TARGETS = new Set(['#map-help-toggle']);
+
 function stepsMarkup() {
   return STEP_DEFS.map(
     (s) => `<li data-help-target="${s.target}" data-help-title="${s.title}">${s.body}</li>`,
@@ -64,7 +74,9 @@ function stepsMarkup() {
 }
 
 function targetsMarkup() {
-  return STEP_DEFS.filter((s) => !ABSENT_TARGETS.has(s.target))
+  return STEP_DEFS.filter(
+    (s) => !ABSENT_TARGETS.has(s.target) && !SELF_RENDERED_TARGETS.has(s.target),
+  )
     .map((s) => `<div id="${s.target.slice(1)}"></div>`)
     .join('\n');
 }
