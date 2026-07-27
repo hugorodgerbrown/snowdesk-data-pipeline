@@ -25,6 +25,37 @@
     --on-ink: #ffffff;
     --serif: Georgia, "Times New Roman", serif;
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+
+    /* —— Map control size scale ————————————————————————————————
+       Exactly two sizes for every round / pill-ended control on the map
+       surface. The scale exists because five different heights had
+       accumulated (22/26/29/32/40), each picked freehand against whatever
+       happened to sit next to it at the time.
+
+       The split is by role, not by position:
+         lg — every tap target (search, layers, locate, favourite,
+              observations, help, basemap download, view-bulletin).
+         sm — the bottom-left informational row (the (i) legend toggle and
+              the scrubbed-date ribbon) plus the region-name readout, which
+              is a label rather than a control.
+
+       Both values are EVEN on purpose. With border-radius: 999px an odd
+       height resolves to a fractional corner radius (29px → 14.5px), which
+       Chrome's backdrop-filter clip does not honour — it leaves an
+       unclipped rectangular patch at the pill's trailing edge. Every glass
+       control here carries backdrop-filter, so keep new values even.
+
+       lg is also the accessibility floor: WCAG 2.2 SC 2.5.8 sets a 24px
+       minimum, and the old 22px download roundel cleared it only via the
+       spacing exception. Do not add a third size without recording why here.
+
+       These live in map.css rather than main.css @theme deliberately. They
+       are map-chrome-only, like the locals above; and Tailwind v4 tree-shakes
+       @theme variables that no scanned template references, so a token used
+       only from this stylesheet would never reach :root.
+       ———————————————————————————————————————————————————————— */
+    --map-control-lg: 40px;  /* tap targets                       */
+    --map-control-sm: 32px;  /* labels + the (i)/date readout row */
 }
 
 /* ——————————————————————————————————————————————————————————————
@@ -65,7 +96,7 @@
 .map-utility-pill {
     display: inline-flex;
     align-items: center;
-    height: 40px;
+    height: var(--map-control-lg);
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -90,7 +121,7 @@
    search pill expands and shifts the layout. */
 .map-utility-pill--basemap {
     position: relative;
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
 }
@@ -103,7 +134,7 @@
    40×40 flex-centred circle that anchors the #locate-toggle button. No
    popover needed; the pill is purely an icon button. */
 .map-utility-pill--locate {
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
 }
@@ -342,7 +373,7 @@
 /* Search pill — collapsed to a round 40×40 by default; on expansion
    grows to reveal the input beside the icon. */
 .map-utility-pill--search {
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     overflow: hidden;
     transition: width 180ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -358,8 +389,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: var(--map-control-lg);
+    height: var(--map-control-lg);
     flex: 0 0 auto;
     background: transparent;
     border: 0;
@@ -383,7 +414,7 @@
    to stand out as the report-a-hazard action; the SVG strokes inherit it via
    currentColor. */
 .map-report-control {
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
     color: var(--color-status-warning-text);
@@ -398,7 +429,7 @@
    independently positioned like .map-report-control, which predates the
    bottom-right stack prototype). The star SVG inherits currentColor. */
 .map-utility-pill--favourite {
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
 }
@@ -414,7 +445,7 @@
     flex: 1 1 auto;
     min-width: 0;
     width: 0;
-    height: 40px;
+    height: var(--map-control-lg);
     padding: 0;
     margin: 0;
     background: transparent;
@@ -626,46 +657,16 @@
     gap: 8px;
 }
 
-/* Date pill — floats above the scrubber thumb and slides horizontally
-   as the user drags or the timelapse advances. Anchored inside
-   .season-scrubber-track so the --thumb-pct percentage is track-relative.
-   Server-rendered for first-paint correctness; map.js updates both the
-   --thumb-pct custom property and the text content on every
-   snowdesk:date-changed / snowdesk:date-preview event. */
-.map-date-pill {
-    position: absolute;
-    bottom: 100%;
-    left: var(--thumb-pct, 50%);
-    transform: translateX(-50%);
-    /* Lift the pill above the entire scrubber container, not just the 3px
-       track. The scrubber pill is ~43px tall with the track at its
-       vertical centre (20px from the top), so a 22px margin-bottom pushes
-       the pill 2px clear of the scrubber's top edge. */
-    margin-bottom: 22px;
-    height: 28px;
-    padding: 0 10px;
-    display: inline-flex;
-    align-items: center;
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    box-shadow: var(--shadow-glass);
-    color: var(--color-text-1);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-    user-select: none;
-    pointer-events: none;
-    z-index: 1;
-}
+/* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
+   was removed along with its mapDatePillInit IIFE in static/js/map.js. The
+   scrubbed date has been reported by .map-date-ribbon in the bottom-left row
+   since SNOW-314; no #map-date-pill element has existed in _map_embed.html
+   since, so both the rule and its initialiser were dead. It was also a sixth
+   control height competing with the two-value scale above. */
 
 .map-legend-toggle {
-    width: 32px;
-    height: 32px;
+    width: var(--map-control-sm);
+    height: var(--map-control-sm);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -694,7 +695,7 @@
 .map-date-ribbon {
     display: inline-flex;
     align-items: center;
-    height: 32px;
+    height: var(--map-control-sm);
     padding: 0 12px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
@@ -1209,12 +1210,20 @@
    z-index 3 keeps it above the choropleth and level with the legend. */
 .season-ribbon {
     position: absolute;
-    /* PROTOTYPE (homepage rework): season header pulled to the top-left,
-       vertically centred against the 40px search roundel (top:12px) so the
-       location readout and the search sit on one line with the row between
-       them free. */
-    top: calc(env(safe-area-inset-top, 0px) + 18px);
+    /* Shares the search roundel's top inset (12px). The row centres itself
+       against that roundel via .ribbon-header's --map-control-lg min-height
+       below, rather than by nudging this container down — it previously sat
+       at 18px purely to optically centre a 29px readout against the 40px
+       roundel, which had to be re-derived by hand every time a child's
+       height changed. */
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
     left: calc(env(safe-area-inset-left, 0px) + 12px);
+    /* Never let a long region name push the row under the search roundel.
+       Reserves the roundel plus both 12px insets and a 12px gap; the readout
+       truncates instead (see .region-readout-name). Long EAWS names
+       ("Nördliche Rätikon und Silvretta") overran the roundel on a 375px
+       viewport before this cap existed. */
+    max-width: calc(100% - 24px - var(--map-control-lg) - 12px);
     z-index: 3;
     display: flex;
     flex-direction: column;
@@ -1225,8 +1234,14 @@
 .ribbon-header {
     display: flex;
     align-items: center;
+    /* Centres every child — the sm readout and the lg action roundels — on
+       the same line as the top-right search roundel, whatever their heights. */
+    min-height: var(--map-control-lg);
     gap: 8px;
     padding: 0 2px;
+    /* Let the readout shrink rather than overflow .season-ribbon's max-width. */
+    min-width: 0;
+    max-width: 100%;
 }
 
 
@@ -1247,8 +1262,15 @@
        rather than as the label for what the map is currently showing. */
     font-size: 13px;
     /* Frosted pill so the label stays legible over the map (it was getting
-       lost against the choropleth). Matches the scrubber / utility-pill idiom. */
-    padding: 4px 10px;
+       lost against the choropleth). Matches the scrubber / utility-pill idiom.
+
+       The explicit --map-control-sm height replaces a padding-derived one that
+       computed to 29px — odd, so border-radius: 999px resolved to a 14.5px
+       corner and Chrome's backdrop-filter clip left an unclipped white
+       rectangle at the pill's trailing edge. */
+    height: var(--map-control-sm);
+    box-sizing: border-box;
+    padding: 0 12px;
     background: rgba(255, 255, 255, 0.75);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -1258,11 +1280,20 @@
     /* PROTOTYPE (homepage rework): the pill is now an info display (a <div>);
        the bulletin link is the separate .region-readout-action roundel. */
     color: var(--ink);
+    /* Truncate rather than overflow the .season-ribbon cap above. */
+    min-width: 0;
+    overflow: hidden;
 }
 
 .region-readout-name {
     font-weight: 600;
     color: var(--ink);
+    /* Ellipsis the region name when .season-ribbon's max-width bites, so the
+       row can never reach the search roundel. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* PROTOTYPE (homepage rework): breadcrumb prefix (Major › Minor ›) — muted and
@@ -1286,8 +1317,8 @@
     display: none;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: var(--map-control-lg);
+    height: var(--map-control-lg);
     flex: 0 0 auto;
     border-radius: 999px;
     color: var(--ink);
@@ -1345,8 +1376,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: var(--map-control-lg);
+    height: var(--map-control-lg);
     flex: 0 0 auto;
     padding: 0;
     border-radius: 999px;
@@ -1628,7 +1659,7 @@
    ————————————————————————————————————————————————————————— */
 
 .map-utility-pill--help {
-    width: 40px;
+    width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
 }

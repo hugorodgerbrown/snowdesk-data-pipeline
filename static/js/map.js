@@ -197,19 +197,12 @@ const readBoolStorage = (key, dflt) => {
   return v === null ? dflt : v === 'true';
 };
 
-// "2026-04-25" → "APR 25 2026". Locale-friendly, unambiguous (avoids the
-// 04/05 day-vs-month confusion of all-numeric formats). Uppercase to
-// match the season-bookend labels and the server-rendered date pill.
-const SCRUBBER_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                         'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const formatDateLong = (dateKey) => {
-  const [y, m, d] = dateKey.split('-');
-  return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
-};
+// ``SCRUBBER_MONTHS`` / ``formatDateLong`` ("2026-04-25" → "APR 25 2026")
+// went with mapDatePillInit below — that pill was their only caller.
+// POPUP_MONTHS / formatDatePopup are unrelated and still live.
 
 // SNOW-318: "2026-04-08" → "8 Apr 2026" — day-first, title-case 3-letter month.
-// Deliberately distinct from formatDateLong (uppercase, month-first, for the
-// readout pill). This mirrors the popup card's server render, where
+// This mirrors the popup card's server render, where
 // _region_tooltip.html formats the date with ``date:"j M Y"``, so the bulletin
 // label reads identically whether the popup was just opened (server-rendered)
 // or relabelled in place on a scrubber date change.
@@ -4616,47 +4609,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 })();
 
-// Date pill — floats above the scrubber thumb inside .season-scrubber-track.
-// Server-rendered for first-paint correctness; this IIFE keeps both the
-// horizontal position (via --thumb-pct) and the text content in sync as
-// the user scrubs or the timelapse advances.
-(function mapDatePillInit() {
-  const pill = document.getElementById('map-date-pill');
-  if (!pill) return;
-
-  // Read season bounds once — the same constants used by seasonScrubberInit
-  // and timelapseInit. The pill uses them to compute the thumb percentage
-  // for any incoming date key without needing a reference to the thumb DOM.
-  const scrubber = document.getElementById('season-scrubber');
-  const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
-  const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
-  const seasonSpanMs = seasonEndMs - seasonStartMs;
-  const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : 50;
-
-  const dateKeyToPct = (dateKey) => {
-    const ms = Date.parse(dateKey);
-    if (Number.isNaN(ms) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
-      return todayPct;
-    }
-    return Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
-  };
-
-  const setFrom = (e) => {
-    const dk = e.detail && e.detail.date;
-    if (!dk) return;
-    // Update text content so the pill always shows the correct date.
-    pill.textContent = formatDateLong(dk);
-    // Slide the pill horizontally to track the thumb.
-    const pct = dateKeyToPct(dk);
-    pill.style.setProperty('--thumb-pct', pct + '%');
-  };
-
-  // Both events carry the same shape; date-changed fires on commit
-  // (scrubber release, timelapse frame, popstate), date-preview fires
-  // continuously during a drag so the pill follows the thumb live.
-  document.addEventListener('snowdesk:date-changed', setFrom);
-  document.addEventListener('snowdesk:date-preview', setFrom);
-})();
+// ``mapDatePillInit`` was removed here. It drove a #map-date-pill element
+// that has not existed in _map_embed.html since SNOW-314 moved the scrubbed-
+// date readout to .map-date-ribbon in the bottom-left row, so the IIFE
+// returned at its first line on every load.
 
 // SNOW-58: basemap layer picker — opens a popover of basemap radio
 // buttons and swaps the MapLibre style on selection. Persistence and
