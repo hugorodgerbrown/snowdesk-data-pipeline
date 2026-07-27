@@ -296,7 +296,13 @@ try {
 // (map.js, map_help.js, map.css, main.css, _map_embed.html,
 // _season_ribbon.html, _overlay_sheet.html, home.html) plus the new module
 // and the new _map_download_control.html partial.
-const CACHE_VERSION = 'snowdesk-shell-v62';
+// v63 — SNOW-538: the placement pin is lifted clear of the sheet driving the
+// placement (it sat behind the report form on a phone), with the lift
+// mirrored into MapLibre's padding so the coordinate always matches the pin;
+// the favourite create sheet no longer focuses its name input, which raised
+// the keyboard before the pin was placed. Shell JS/HTML/CSS bytes changed
+// (place_picker.js, favourites.js, report.js, map.css, _overlay_sheet.html).
+const CACHE_VERSION = 'snowdesk-shell-v63';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

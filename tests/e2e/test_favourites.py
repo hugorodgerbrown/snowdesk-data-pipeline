@@ -100,9 +100,12 @@ def test_signed_in_add_flow_creates_favourite(
     )
     assert float(lat) == pytest.approx(46.2, abs=0.01)
     assert float(lon) == pytest.approx(7.6, abs=0.01)
-    # The pin stays visually centred (its CSS keeps it fixed at 50%/50% of
-    # the viewport) across the pan — the coordinate above tracking the new
-    # centre while the pin itself never left is what proves it.
+    # The pin does not move across the pan — the coordinate above tracking
+    # the new centre while the pin itself never left is what proves it. It
+    # is centred here because this test runs at the default (desktop)
+    # viewport, where the sheet is a bottom-right card that never covers the
+    # middle of the map; on a phone SNOW-538 lifts the pin clear of the
+    # full-width sheet, which tests/e2e/test_place_pin_clearance.py covers.
     assert page.locator("#map-place-pin:not([hidden])").count() == 1
 
     page.fill("#favourite-name-input", "Test Peak")

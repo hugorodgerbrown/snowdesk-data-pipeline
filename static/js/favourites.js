@@ -237,8 +237,12 @@
     sheet.appendChild(createTemplate.content.cloneNode(true));
     writeCreateCoords(lat, lon);
     if (typeof htmx !== 'undefined') htmx.process(sheet); // eslint-disable-line no-undef
-    const nameInput = document.getElementById('favourite-name-input');
-    if (nameInput) nameInput.focus();
+    // SNOW-538: the name field is deliberately NOT focused. Focusing it
+    // raised the on-screen keyboard the instant the sheet opened, before
+    // the user had panned the map to place the pin — half the map gone,
+    // and the sheet shoved up over the pin, for an optional field most
+    // pins never use. openSheet() has already moved focus to the sheet
+    // itself, so the form is still reachable from the keyboard.
   }
 
   btn.addEventListener('click', function () {
@@ -283,7 +287,13 @@
     // pin appears and writeCreateCoords tracks every pan.
     const centre = map.getCenter();
     showCreateForm(centre.lat, centre.lng);
-    window.PlacePicker?.activate({ onChange: writeCreateCoords });
+    // occludedBy: the sheet is measured so the pin is lifted clear of it
+    // (SNOW-538) — activate() re-seeds the coords from the pin's real
+    // position, correcting the map-centre seed above.
+    window.PlacePicker?.activate({
+      onChange: writeCreateCoords,
+      occludedBy: sheet,
+    });
   });
 
   // ---------------------------------------------------------------------------
