@@ -390,8 +390,11 @@ def test_report_manual_path_uses_centre_pin_without_a_map_click(
     )
 
     # Pan the map — MAP.setCenter fires 'moveend', the same event a real
-    # pan would. The pin's CSS keeps it fixed at 50%/50% of the viewport
-    # throughout; only the coordinate captured below moves.
+    # pan would. The pin holds its screen position throughout; only the
+    # coordinate captured below moves. At this (desktop) viewport that
+    # position is the map's centre, since the sheet is a bottom-right card
+    # that doesn't reach it — see tests/e2e/test_place_pin_clearance.py for
+    # the phone case, where SNOW-538 lifts the pin above a full-width sheet.
     page.evaluate("() => MAP.setCenter([7.6, 46.2])")
     page.wait_for_function(
         "() => { "

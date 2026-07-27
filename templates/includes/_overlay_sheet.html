@@ -27,6 +27,13 @@ Optional context:
                in place of the real (JS-injected) content so the empty
                shell isn't invisible in the panel.
 
+``tabindex="-1"`` (SNOW-538) makes the container a programmatic focus
+target without putting it in the tab order: favourites.js and report.js
+both call ``sheet.focus()`` on open, which was silently a no-op on a
+non-focusable div. It matters now that the favourite create form no
+longer focuses its name input on open — focusing that input raised the
+on-screen keyboard before the user had placed the pin.
+
 On mobile the sheet is inset from the viewport edges rather than
 full-bleed, via the shared --map-edge-inset-* tokens (src/css/main.css) —
 the same distance the map control roundels use, so the sheet's edges line
@@ -37,6 +44,7 @@ pair it used while it was docked flush to the bottom.
 <div
     id="{{ id }}"
     {% if not static %}hidden{% endif %}
+    tabindex="-1"
     data-overlay
     class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)]{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-96"
     aria-label="{{ aria_label }}"

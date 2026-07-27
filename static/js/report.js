@@ -402,6 +402,7 @@
     // hidden inputs stay unchanged).
     window.PlacePicker?.activate({
       recenterTo: [lon, lat],
+      occludedBy: sheet,
       onChange: function (la, lo) {
         writeFormCoords(la, lo);
         writeFormLocationSource('GPS_REFINED');
@@ -510,6 +511,7 @@
       // no separate "tap to place" step, unlike the old marker flow.
       loadForm(null, null, null, 'MANUAL', null, null).then(function () {
         window.PlacePicker?.activate({
+          occludedBy: sheet,
           onChange: function (la, lo) {
             writeFormCoords(la, lo);
             writeFormLocationSource('MANUAL');

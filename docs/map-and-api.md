@@ -159,7 +159,7 @@ enumerate ids because they map *menu rows* to layers.
 
 Callers: `place_picker.js`'s `activate()`/`deactivate()` (which covers the
 favourite-create and field-observation flows, both of which position via
-the shared centre pin), and `map_edit_resorts.js`'s
+the shared placement pin), and `map_edit_resorts.js`'s
 `placeDraftMarker()`/`removeDraftMarker()` — the draft marker's lifetime is
 exactly the positioning phase, since Save and Cancel are enabled only while
 it exists. `enter()`/`exit()` dispatch `snowdesk:placement-focus
@@ -170,6 +170,31 @@ every overlay visible, so the module re-hides and re-snapshots on
 `snowdesk:basemap-changed`. Tests: `tests/js/test_map_placement_focus.js`
 (module bookkeeping against a fake map) and
 `tests/e2e/test_map_placement_focus.py` (the real wiring).
+
+**Placement pin lift (`static/js/place_picker.js`, SNOW-538)**: the pin the
+user pans the map under is *not* pinned to the map's centre. Both placement
+sheets dock to the bottom of the viewport and size themselves to their
+content, and on a phone the report form (a location line, five problem
+buttons, Cancel) is tall enough to reach past the map's vertical midpoint —
+a centred pin sat behind it, so the user could not see the point they were
+placing. Callers pass their sheet as `activate({occludedBy})`; the picker
+measures it against the map container and, when the sheet covers where the
+pin would otherwise sit, lifts the pin to the middle of the strip of map
+still visible above it (`--map-place-pin-lift`, consumed by
+`.map-place-pin`'s `top` in `static/css/map.css`).
+
+Two consequences follow. The chosen coordinate is **unprojected from the
+pin's own screen point**, never `MAP.getCenter()` — the two are the same
+only while the lift is zero, which is the wide-viewport case where the
+sheet is a bottom-right card that never reaches the middle of the map.
+And `recenterTo` moves its coordinate under the *pin* (`easeTo` with a
+matching `offset`), not under the centre, so report.js's GPS-refine flow
+doesn't shift the fix the moment it opens. A `ResizeObserver` on the sheet
+plus a window `resize` listener re-measure on layout changes, holding the
+already-chosen point under the pin across the move so a sheet growing
+under the user's finger never silently re-picks. Tests:
+`tests/js/test_place_picker.js` (the geometry, against a fake map) and
+`tests/e2e/test_place_pin_clearance.py` (the real thing, at 375x812).
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns

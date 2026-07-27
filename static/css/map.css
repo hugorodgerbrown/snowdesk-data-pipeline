@@ -691,20 +691,27 @@
     position: relative;
 }
 
-/* SNOW-475: fixed centre-pin for the touch-friendly place-picker
+/* SNOW-475: fixed pin for the touch-friendly place-picker
    (static/js/place_picker.js). Sits above the MapLibre canvas — which
    paints with the default z-index:auto and so always loses to any
    explicitly-stacked sibling here — but below every other numbered
    overlay (scrubber=2 and up; see the stacking note above .map-legend
    below), since the pin only needs to clear the map itself, not compete
    with chrome docked at the screen edges. translate(-50%,-100%) lands the
-   teardrop's point, not its centre, exactly on the viewport centre that
-   MAP.getCenter() reads. pointer-events: none so it never intercepts the
-   pan/zoom gestures used to move the map underneath it. */
+   teardrop's point, not its centre, on the anchor point the picker
+   unprojects to get the chosen coordinate. pointer-events: none so it
+   never intercepts the pan/zoom gestures used to move the map underneath.
+
+   SNOW-538: --map-place-pin-lift raises that anchor above the map's centre
+   so the pin clears the bottom-docked sheet driving the placement — the
+   report form is tall enough on a phone to swallow a centred pin. The
+   picker writes the value (0 whenever nothing covers the centre, e.g. on a
+   wide viewport) and unprojects the same offset, so pin and coordinate can
+   never disagree. */
 .map-place-pin {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: calc(50% - var(--map-place-pin-lift, 0px));
     transform: translate(-50%, -100%);
     z-index: 1;
     pointer-events: none;
