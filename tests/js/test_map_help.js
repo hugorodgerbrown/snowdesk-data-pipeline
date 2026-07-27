@@ -27,24 +27,30 @@ const DISMISSED_VALUE = 'seen';
 const HOME_INTRO_KEY = 'snowdesk.home.intro';
 const HOME_INTRO_DISMISSED = 'dismissed';
 
-// Mirrors the template's 9 step definitions (public/templates/public/
-// partials/_map_embed.html). #favourite-add-btn and #report-btn are
-// intentionally left OUT of the DOM fixture below (both waffle flags are
-// off by default in the real template's own test suite too), exercising
-// map_help.js's own "skip a step whose target is absent" filter — 7 of
-// the 9 steps are active.
+// Mirrors the template's 11 step definitions (public/templates/public/
+// partials/_map_embed.html), in template order.
+//
+// Every one of those targets is server-rendered unconditionally — none of
+// them is gated on a waffle flag or an auth check any more (#favourite-add-btn
+// since SNOW-414, #report-btn since SNOW-333), so there is no longer a
+// production case where a step's target is genuinely missing. The absent-
+// target filter in map_help.js is still defensive code worth covering, so
+// the DOM fixture below deliberately omits two targets to exercise it —
+// 9 of the 11 steps stay active.
 const STEP_DEFS = [
-  { target: '#region-readout', title: 'Status ribbon', body: 'Shows the date and region selected.' },
+  { target: '#region-readout', title: 'Status ribbon', body: 'Names the region selected and its danger for the day.' },
+  { target: '#region-download-micro', title: 'Download region', body: 'Download the region basemap for offline access.' },
   { target: '#region-readout-action', title: 'View bulletin', body: 'Click through to the bulletin detail page.' },
   { target: '#search-toggle', title: 'Find a region', body: 'Search by name to jump straight to a region.' },
-  { target: '#basemap-toggle', title: 'Basemap and layers', body: 'Switch base maps and toggle overlays.' },
+  { target: '#basemap-toggle', title: 'Basemap and layers', body: 'Switch base maps and toggle country outlines, region overlays and resorts.' },
   { target: '#locate-toggle', title: 'Locate me', body: 'Centre the map on your current position.' },
-  { target: '#favourite-add-btn', title: 'Add a favourite', body: 'Pin a spot to your favourites.' },
-  { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation.' },
+  { target: '#favourite-add-btn', title: 'Add a favourite', body: 'Pin a spot to your favourites for quick access later.' },
+  { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation with other visitors.' },
   { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Run through the season day by day.' },
-  { target: '#map-legend-toggle', title: 'Map information', body: 'View attribution and danger level key.' },
+  { target: '#map-legend-toggle', title: 'Map information', body: 'View attribution and EAWS danger level key.' },
+  { target: '#map-date-ribbon', title: 'Map display date', body: 'The date currently shown on the map.' },
 ];
-// Present in the DOM: everything except the two flag-gated controls.
+// Held out of the DOM fixture purely to exercise the absent-target filter.
 const ABSENT_TARGETS = new Set(['#favourite-add-btn', '#report-btn']);
 const ACTIVE_STEP_COUNT = STEP_DEFS.filter((s) => !ABSENT_TARGETS.has(s.target)).length;
 
@@ -140,8 +146,8 @@ describe('opening the tour', () => {
     expect(overlayHidden()).toBe(false);
     const [step] = currentStepAndTotal();
     expect(step).toBe(1);
-    // First active step in this fixture (all non-flag-gated targets
-    // present) is #region-readout — "Status ribbon".
+    // First active step in this fixture is #region-readout — "Status
+    // ribbon" — which is also first in the template's own order.
     expect(tooltipTitle()).toBe('Status ribbon');
   });
 });
@@ -216,7 +222,7 @@ describe('Escape', () => {
   });
 });
 
-describe('flag-gated steps', () => {
+describe('steps whose target is missing from the DOM', () => {
   it('skips targets absent from the DOM, walking exactly the present ones', async () => {
     buildFixture();
     await loadModules();
