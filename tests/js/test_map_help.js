@@ -27,7 +27,7 @@ const DISMISSED_VALUE = 'seen';
 const HOME_INTRO_KEY = 'snowdesk.home.intro';
 const HOME_INTRO_DISMISSED = 'dismissed';
 
-// Mirrors the template's 11 step definitions (public/templates/public/
+// Mirrors the template's 12 step definitions (public/templates/public/
 // partials/_map_embed.html), in template order.
 //
 // Every one of those targets is server-rendered unconditionally — none of
@@ -36,7 +36,7 @@ const HOME_INTRO_DISMISSED = 'dismissed';
 // production case where a step's target is genuinely missing. The absent-
 // target filter in map_help.js is still defensive code worth covering, so
 // the DOM fixture below deliberately omits two targets to exercise it —
-// 9 of the 11 steps stay active.
+// 10 of the 12 steps stay active.
 const STEP_DEFS = [
   { target: '#region-readout', title: 'Status ribbon', body: 'Names the region selected and its danger for the day.' },
   { target: '#region-readout-action', title: 'View bulletin', body: 'Click through to the bulletin detail page.' },
@@ -48,6 +48,7 @@ const STEP_DEFS = [
   { target: '#map-download-control', title: 'Download region', body: "Download the selected region's basemap for offline access." },
   { target: '#favourite-add-btn', title: 'Add a favourite', body: 'Pin a spot to your favourites for quick access later.' },
   { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation with other visitors.' },
+  { target: '#map-controls-toggle', title: 'Hide the controls', body: 'Collapse the controls to clear the map; your choice is remembered.' },
   { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Run through the season day by day.' },
   { target: '#map-legend-toggle', title: 'Map information', body: 'View attribution and EAWS danger level key.' },
   { target: '#map-date-ribbon', title: 'Map display date', body: 'The date currently shown on the map.' },

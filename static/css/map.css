@@ -93,6 +93,94 @@
     gap: 8px;
 }
 
+/* —— Collapsible control group ————————————————————————————————
+   Six roundels in one column read as clutter over the map. Layers, locate
+   and the toggle stay out; the other four (download, favourite,
+   observations, help) collapse into the toggle.
+
+   The toggle is the LAST child, so the bottom-anchored stack grows and
+   shrinks upward out of it: the toggle never moves under the finger that
+   is pressing it, and the revealed controls appear directly beneath layers
+   and locate in their existing stack order.
+
+   Height is COMPUTED, not measured. The two-size control scale above
+   guarantees every child is exactly --map-control-lg tall with an 8px gap,
+   so n children occupy n*lg + (n-1)*8. --map-controls-count is set from the
+   live child count by mapControlsCollapseInit, which keeps this correct if
+   a control ever becomes conditional again. Measuring instead would mean
+   reading offsetHeight off an already-clipped box (it returns 0) or
+   un-clipping to measure and forcing a reflow on every toggle.
+
+   The wrapper animates height and is what clips; the inner holds the flex
+   column, because transitioning height needs a fixed-height box wrapping an
+   auto-height one. margin-bottom cancels the parent's 8px gap while
+   collapsed, so a collapsed group leaves no phantom slot in the stack. */
+#map-controls-collapsible {
+    overflow: hidden;
+    flex: 0 0 auto;
+    height: 0;
+    opacity: 0;
+    margin-bottom: -8px;
+    transition:
+        height 300ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 200ms ease-out,
+        margin-bottom 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.map-controls-br[data-expanded="true"] #map-controls-collapsible {
+    height: calc(
+        var(--map-controls-count, 4) * var(--map-control-lg) +
+            (var(--map-controls-count, 4) - 1) * 8px
+    );
+    opacity: 1;
+    margin-bottom: 0;
+}
+
+/* The lift makes the group rise into place rather than materialise; it is on
+   the inner so it composites independently of the wrapper's height. */
+.map-controls-collapsible-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    transform: translateY(10px);
+    transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.map-controls-br[data-expanded="true"] .map-controls-collapsible-inner {
+    transform: translateY(0);
+}
+
+.map-controls-toggle {
+    width: var(--map-control-lg);
+    flex: 0 0 auto;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.map-controls-toggle:hover {
+    filter: brightness(1.04);
+}
+
+/* Chevron points up when collapsed ("open upward") and flips to point down
+   when expanded ("close downward"), so it always indicates what the next tap
+   will do rather than the current state. */
+.map-controls-toggle svg {
+    transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.map-controls-br[data-expanded="true"] .map-controls-toggle svg {
+    transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #map-controls-collapsible,
+    .map-controls-collapsible-inner,
+    .map-controls-toggle svg {
+        transition: none;
+    }
+}
+
 .map-utility-pill {
     display: inline-flex;
     align-items: center;

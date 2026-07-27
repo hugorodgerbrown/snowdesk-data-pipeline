@@ -283,7 +283,7 @@ try {
 // v59 — SNOW-533: the bulletin-boundary line drops its fixed dash for a
 // solid stroke whose width tracks regions-line's zoom curve. Shell JS bytes
 // changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v61';
+const CACHE_VERSION = 'snowdesk-shell-v62';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
