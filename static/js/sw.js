@@ -273,7 +273,10 @@ try {
 // cache once the MapLibre style settles, so a reload of an
 // already-downloaded region no longer paints the idle download icon until
 // the region is reselected. Shell JS bytes changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v55';
+// v57 — two steps added to the map help tour: the region-download roundel
+// (#region-download-micro) and the map display date (#map-date-ribbon).
+// Shell HTML bytes changed (_map_embed.html).
+const CACHE_VERSION = 'snowdesk-shell-v57';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
