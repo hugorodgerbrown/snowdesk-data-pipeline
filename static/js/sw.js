@@ -274,7 +274,7 @@ try {
 // already-downloaded region no longer paints the idle download icon until
 // the region is reselected. Shell JS bytes changed (map.js).
 // v57 — two steps added to the map help tour: the region-download roundel
-// (#region-download-micro) and the map display date (#map-date-ribbon).
+// (#map-download-control) and the map display date (#map-date-ribbon).
 // Shell HTML bytes changed (_map_embed.html).
 // v58 — SNOW-532: the dormant l3 sync-dot plumbing is gone from the layers
 // menu (OVERLAY_RESOURCES.l3, refresh()'s dated-geojson branch,
@@ -283,7 +283,7 @@ try {
 // v59 — SNOW-533: the bulletin-boundary line drops its fixed dash for a
 // solid stroke whose width tracks regions-line's zoom curve. Shell JS bytes
 // changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v60';
+const CACHE_VERSION = 'snowdesk-shell-v61';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

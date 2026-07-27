@@ -39,11 +39,13 @@ const HOME_INTRO_DISMISSED = 'dismissed';
 // 9 of the 11 steps stay active.
 const STEP_DEFS = [
   { target: '#region-readout', title: 'Status ribbon', body: 'Names the region selected and its danger for the day.' },
-  { target: '#region-download-micro', title: 'Download region', body: 'Download the region basemap for offline access.' },
   { target: '#region-readout-action', title: 'View bulletin', body: 'Click through to the bulletin detail page.' },
   { target: '#search-toggle', title: 'Find a region', body: 'Search by name to jump straight to a region.' },
   { target: '#basemap-toggle', title: 'Basemap and layers', body: 'Switch base maps and toggle country outlines, region overlays and resorts.' },
   { target: '#locate-toggle', title: 'Locate me', body: 'Centre the map on your current position.' },
+  // The download step follows its control into the bottom-right stack; the
+  // tour walks the map in spatial order.
+  { target: '#map-download-control', title: 'Download region', body: "Download the selected region's basemap for offline access." },
   { target: '#favourite-add-btn', title: 'Add a favourite', body: 'Pin a spot to your favourites for quick access later.' },
   { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation with other visitors.' },
   { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Run through the season day by day.' },

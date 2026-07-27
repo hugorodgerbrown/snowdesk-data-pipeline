@@ -452,7 +452,7 @@ def test_cache_now_button_leaves_busy_state(
     """Clicking the micro "Download basemap" icon leaves the busy state.
 
     Smoke test for the real per-region download wiring
-    (``regionDownloadInit``'s click handler -> the real
+    (``mapDownloadControlInit``'s click handler -> the real
     ``/api/region-basemap-tiles/`` fetch -> ``pwaWarmCache``) — does not
     assert on how many basemap tiles were actually cached, since
     tile-URL assembly depends on the active basemap's CDN being
@@ -469,9 +469,10 @@ def test_cache_now_button_leaves_busy_state(
     'busy' state is left (done vs. idle — see ``test_cache_this_area.py``
     for coverage of each branch with stubbed {ok, failed} counts). That
     file replaces the earlier per-crumb icon set (Major/Minor/Micro) this
-    test used to drive — the shipped shape is a single icon
-    (``#region-download-micro``) for the focused MICRO region only. That
-    icon only appears once ``FEATURE_BY_REGION_ID`` is populated —
+    test used to drive — the shipped shape is a single control
+    (``#map-download-control``, in the bottom-right stack) for the focused
+    MICRO region only. That control only becomes actionable once
+    ``FEATURE_BY_REGION_ID`` is populated —
     normally from a ``regions.geojson`` fetch gated behind
     ``map.on('load')``, which in turn needs the active basemap's style to
     load; a real third-party basemap CDN is documented elsewhere as
@@ -518,13 +519,13 @@ def test_cache_now_button_leaves_busy_state(
         }"""
     )
 
-    icon = page.locator("#region-download-micro")
+    icon = page.locator("#map-download-control")
     icon.wait_for(state="visible")
     icon.click()
 
     # The icon reverts to idle unless the run was a clean, non-vacuous
     # success — either way it must leave the transient 'busy' state.
     page.wait_for_function(
-        "() => document.getElementById('region-download-micro').dataset.downloadState !== 'busy'",
+        "() => document.getElementById('map-download-control').dataset.downloadState !== 'busy'",
         timeout=15000,
     )

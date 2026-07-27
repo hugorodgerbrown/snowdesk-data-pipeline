@@ -387,6 +387,13 @@ Optional context:
                 </svg>
             </button>
         </div>
+        {# "Download basemap" for the focused region, moved here from the      #}
+        {# region-readout row: the layers menu directly above is the           #}
+        {# cache-state dashboard and this is the other control that writes to  #}
+        {# that cache, so the two offline concerns sit together. Always        #}
+        {# rendered (starts in the "no-region" state) rather than revealed on  #}
+        {# focus, so the stack's composition never shifts under the user.      #}
+        {% include "public/partials/_map_download_control.html" %}
         {# SNOW-414: "Add favourite" control — rendered regardless of           #}
         {# authentication state, so anonymous visitors see the affordance and  #}
         {# get a sign-in CTA on tap (favourites.js branches on                 #}
@@ -673,20 +680,25 @@ Optional context:
         <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
             {% trans "Names the region selected and its danger for the day." %}
         </li>
-        <li data-help-target="#region-download-micro" data-help-title='{% trans "Download region" %}'>
-            {% trans "Download the region basemap for offline access." %}
-        </li>
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
             {% trans "Click through to the bulletin detail page." %}
         </li>
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
             {% trans "Search by name to jump straight to a region." %}
         </li>
+        {# The bottom-right stack, walked top to bottom in DOM order. The      #}
+        {# download step in particular has to sit here rather than earlier:    #}
+        {# the control moved out of the region-readout row, and leaving its    #}
+        {# step in the old second slot sent the highlight top-left →           #}
+        {# bottom-right → top-left again.                                      #}
         <li data-help-target="#basemap-toggle" data-help-title='{% trans "Basemap and layers" %}'>
             {% trans "Switch base maps and toggle country outlines, region overlays and resorts." %}
         </li>
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
             {% trans "Centre the map on your current position." %}
+        </li>
+        <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
+            {% trans "Download the selected region's basemap for offline access." %}
         </li>
         <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
             {% trans "Pin a spot to your favourites for quick access later." %}

@@ -1356,21 +1356,25 @@
     }
 }
 
-/* SNOW-521: per-tier "Download basemap" icons — one small roundel per
-   breadcrumb tier (Major/Minor/Micro), the same frosted-glass shape as
-   .region-readout-action above but sized down (22px vs 26px) so three
-   can sit in a row beside the chip without crowding it. Hidden by
-   default (the `hidden` attribute in the template); map.js's
-   regionDownloadInit reveals each independently — micro whenever a
-   region is focused, major/minor mirroring the same crumb-visibility
-   rule .region-readout-crumbs already follows. */
-.region-readout-downloads {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
+/* SNOW-521: the "Download basemap" control. An earlier iteration rendered one
+   small roundel per breadcrumb tier (Major/Minor/Micro); only micro survived —
+   Major/Minor were dropped because their per-tier detail floors made the sizes
+   non-monotonic with containment (an L1 region could read smaller than the L2
+   it contains).
 
-.region-readout-download {
+   The control has since moved out of the region-readout row and into the
+   bottom-right stack (#map-controls-br), joining the layers pill it shares a
+   concern with — the layers menu is the cache-state dashboard, and this is the
+   other control that writes to that cache. Renamed .region-readout-download →
+   .map-download-control to match: it no longer sits in, or next to, the region
+   readout. With the move it stopped being hidden-until-focused and became
+   permanently present, carrying a "no-region" state instead, so the stack's
+   composition no longer shifts as the user selects and deselects regions.
+
+   The now-removed .region-readout-downloads flex wrapper existed only to sit
+   three tier roundels in a row inside .ribbon-header. */
+
+.map-download-control {
     position: relative;
     overflow: hidden;
     display: inline-flex;
@@ -1391,27 +1395,52 @@
     transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-.region-readout-download[hidden] {
+.map-download-control[hidden] {
     display: none;
 }
 
-.region-readout-download:hover,
-.region-readout-download:focus-visible {
+.map-download-control:hover,
+.map-download-control:focus-visible {
     background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
 }
 
-/* over_ceiling — flagged server-side, never runnable. "offline" — the
-   device is offline, so a download can't be started (no downloading of
-   layers while offline); both read as greyed + not-allowed. */
-.region-readout-download[data-download-state="disabled"],
-.region-readout-download[data-download-state="offline"] {
-    opacity: 0.4;
+/* Three distinct reasons the control can't run, one shared treatment:
+     no-region  — nothing selected, so there is no basemap to fetch.
+     disabled   — over_ceiling, flagged server-side; never runnable.
+     offline    — the device is offline (no downloading of layers while offline).
+
+   These used to dim the whole roundel (opacity: 0.4). That worked when it sat
+   against the opaque region-readout pill, but in the bottom-right stack it
+   floats over open basemap, where a 40%-opacity glass circle is close to
+   invisible — a control the user cannot see reads as a missing feature, not a
+   disabled one. The shell now stays at full strength and only the glyph dims,
+   so the affordance is legible and its unavailability is still obvious. */
+.map-download-control[data-download-state="no-region"],
+.map-download-control[data-download-state="disabled"],
+.map-download-control[data-download-state="offline"] {
+    color: var(--muted);
     cursor: not-allowed;
 }
 
+.map-download-control[data-download-state="no-region"] .map-download-control-icon,
+.map-download-control[data-download-state="disabled"] .map-download-control-icon,
+.map-download-control[data-download-state="offline"] .map-download-control-icon {
+    opacity: 0.45;
+}
+
+/* 'idle' is the only clickable state — handleClick returns for every other
+   one. 'busy' (already running) and 'done' (an informational success state)
+   are not failures, so they keep their normal colour and take the neutral
+   default cursor rather than the not-allowed above; without this the pointer
+   contradicted the aria-disabled="true" map.js sets for them. */
+.map-download-control[data-download-state="busy"],
+.map-download-control[data-download-state="done"] {
+    cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .region-readout-download {
+    .map-download-control {
         transition: none;
     }
 }
@@ -1419,17 +1448,18 @@
 /* Only the active state's icon renders; it sits above the busy fill. The
    busy state keeps the download glyph (static) and shows progress as a
    bottom-up fill of the roundel (below), not a numeric percentage. */
-.region-readout-download-icon {
+.map-download-control-icon {
     display: none;
     position: relative;
     z-index: 1;
 }
 
-.region-readout-download[data-download-state="idle"] .region-readout-download-icon--idle,
-.region-readout-download[data-download-state="disabled"] .region-readout-download-icon--idle,
-.region-readout-download[data-download-state="offline"] .region-readout-download-icon--idle,
-.region-readout-download[data-download-state="busy"] .region-readout-download-icon--idle,
-.region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
+.map-download-control[data-download-state="idle"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="no-region"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="offline"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="done"] .map-download-control-icon--done {
     display: block;
 }
 
@@ -1440,8 +1470,8 @@
    warm-cache tick), replacing the numeric percentage; a completed download
    is a full green circle (below) with the check glyph on top, mirroring the
    green dot. Clipped to the circle by the host's overflow:hidden. */
-.region-readout-download[data-download-state="busy"]::before,
-.region-readout-download[data-download-state="done"]::before {
+.map-download-control[data-download-state="busy"]::before,
+.map-download-control[data-download-state="done"]::before {
     content: "";
     position: absolute;
     left: 0;
@@ -1454,37 +1484,30 @@
 }
 
 /* Done: the fill is pinned full — a solid green circle matching the dot. */
-.region-readout-download[data-download-state="done"]::before {
+.map-download-control[data-download-state="done"]::before {
     height: 100%;
 }
 
 /* White tick on the green fill (the glyph strokes currentColor). */
-.region-readout-download[data-download-state="done"] .region-readout-download-icon--done {
+.map-download-control[data-download-state="done"] .map-download-control-icon--done {
     color: #fff;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .region-readout-download[data-download-state="busy"]::before,
-    .region-readout-download[data-download-state="done"]::before {
+    .map-download-control[data-download-state="busy"]::before,
+    .map-download-control[data-download-state="done"]::before {
         transition: none;
     }
 }
 
 /* The numeric percentage is replaced by the fill above; kept out of view. */
-.region-readout-download-percent {
+.map-download-control-percent {
     display: none;
 }
 
-/* Mobile: the text breadcrumb prefix hides below 640px (the block
-   above) — the major/minor icons lose their labelled context at the
-   same breakpoint, so they hide too; the micro icon (the leaf, always
-   labelled by the region name itself) stays. */
-@media (max-width: 640px) {
-    .region-readout-download[data-tier="major"],
-    .region-readout-download[data-tier="minor"] {
-        display: none !important;
-    }
-}
+/* The max-width:640px rule that hid the major/minor download icons went with
+   them. Only the micro control exists, it now lives in the bottom-right stack
+   rather than beside the breadcrumb, and that stack is not breakpoint-dependent. */
 
 /* Colour block leading the chip; the background is the EAWS danger colour for
    the scrubbed day, set inline by map.js (transparent when no_rating). */
