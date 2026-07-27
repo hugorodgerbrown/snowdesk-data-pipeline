@@ -273,7 +273,17 @@ try {
 // cache once the MapLibre style settles, so a reload of an
 // already-downloaded region no longer paints the idle download icon until
 // the region is reselected. Shell JS bytes changed (map.js).
-const CACHE_VERSION = 'snowdesk-shell-v55';
+// v57 — two steps added to the map help tour: the region-download roundel
+// (#region-download-micro) and the map display date (#map-date-ribbon).
+// Shell HTML bytes changed (_map_embed.html).
+// v58 — SNOW-532: the dormant l3 sync-dot plumbing is gone from the layers
+// menu (OVERLAY_RESOURCES.l3, refresh()'s dated-geojson branch,
+// _applyUnavailable and the hollow "unavailable" dot state). Shell JS/CSS
+// bytes changed (map_layer_sync_status.js, map.css).
+// v59 — SNOW-533: the bulletin-boundary line drops its fixed dash for a
+// solid stroke whose width tracks regions-line's zoom curve. Shell JS bytes
+// changed (map.js).
+const CACHE_VERSION = 'snowdesk-shell-v59';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

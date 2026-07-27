@@ -673,6 +673,9 @@ Optional context:
         <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
             {% trans "Names the region selected and its danger for the day." %}
         </li>
+        <li data-help-target="#region-download-micro" data-help-title='{% trans "Download region" %}'>
+            {% trans "Download the region basemap for offline access." %}
+        </li>
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
             {% trans "Click through to the bulletin detail page." %}
         </li>
@@ -696,6 +699,9 @@ Optional context:
         </li>
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}
+        </li>
+        <li data-help-target="#map-date-ribbon" data-help-title='{% trans "Map display date" %}'>
+            {% trans "The date currently shown on the map." %}
         </li>
     </ul>
     {# SNOW-457 (review): aria-describedby points at the step title + body so #}

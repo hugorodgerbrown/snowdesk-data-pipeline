@@ -202,10 +202,11 @@ every public page. Its responsibilities:
   `navigator.onLine === false`, a layer or basemap whose resource isn't
   cached can't be loaded, so its row gets the red `unavailable-offline` dot
   AND is disabled (`aria-disabled`, honoured by the picker's click handler
-  in `map.js`); every uncached overlay/basemap follows the same rule. (l3's
-  `dated-geojson` support — SNOW-526: cacheable only for a settled `?d=`
-  date — is dormant: SNOW-521 removed its `#basemap-menu` row, so the logic
-  exists but paints nothing today. See
+  in `map.js`); every uncached overlay/basemap follows the same rule. (The
+  bulletin boundary has no row and no dot: SNOW-521 removed it and SNOW-532
+  dropped the matching `dated-geojson` probe, so its offline state is
+  deliberately not surfaced — SNOW-526's caching of settled `?d=` dates is
+  unaffected. See
   [`offline-map.md`](offline-map.md#offline-gating-of-the-layers-menu).)
   Each basemap carries its own dot; the **active** basemap is
   never disabled (the user can't be stranded on a map they can't leave).
