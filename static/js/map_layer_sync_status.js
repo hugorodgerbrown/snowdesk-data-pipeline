@@ -3,7 +3,7 @@
  * layers popover (SNOW-505).
  *
  * The layers popover (#basemap-menu in _map_embed.html) lists everything
- * the PWA can cache for offline use — the region overlays (L1/L2/L3/L4),
+ * the PWA can cache for offline use — the region overlays (L1/L2/L4),
  * resorts, favourites, community reports, and the active basemap — but
  * previously gave no signal of which of those are actually available
  * offline. This module is the read side of the existing "Cache this area
@@ -22,8 +22,8 @@
  * Offline gating (offline-integrity)
  * ----------------------------------
  * The dots don't just advise — while ``navigator.onLine === false`` they
- * GATE interaction. A cacheable resource that isn't cached, and l3 (never
- * cacheable), can't be loaded offline, so its row gets the red
+ * GATE interaction. A resource that isn't cached can't be loaded offline,
+ * so its row gets the red
  * ``unavailable-offline`` dot AND is disabled (``aria-disabled``, honoured
  * by the picker's click handler and dimmed by map.css). Basemaps are gated
  * too: each basemap row carries its own dot, and a basemap whose style
@@ -58,19 +58,6 @@
  *                          — otherwise a tier dot could sit green above a
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
- *   l3                   — (SNOW-526) same-origin, but only cacheable for a
- *                          settled ``?d=`` date — the server is the only
- *                          source of truth for which dates qualify (see
- *                          sw.js's ``shouldPersist`` gate), so this module
- *                          never re-derives that rule. No ``?d=`` in the URL
- *                          (boot / today) means today, which is never
- *                          settled, so it resolves straight to the hollow
- *                          "unavailable" state (a hollow, border-only dot,
- *                          visually separate from the grey "not cached yet"
- *                          fill) without a wasted probe. With a ``?d=``
- *                          present, an EXACT ``_probeExact`` for that date
- *                          drives the normal cached / uncached /
- *                          offline-blocked states, same as l1/l2/l4.
  *   favourites,
  *   community_reports    — IndexedDB ``data:map_overlays`` rows written
  *                          by map_overlay_offline_cache.js. A truthy row
@@ -96,11 +83,16 @@
  * favourites/community_reports IDB overlay row), so the resource is — to
  * all practical intents — now cached; the next ``refresh()`` re-verifies
  * against real cache state and self-corrects in the rare case a background
- * ``cache.put`` didn't land. ``markCached`` no-ops for ``l3`` (its ``kind:
- * 'dated-geojson'`` is outside the geojson/idb allowlist — a load
- * succeeding doesn't prove the SW actually persisted a settled-date
- * response, so the honest signal is the popover-open ``refresh()``'s own
- * probe) and for any key absent from ``OVERLAY_RESOURCES``.
+ * ``cache.put`` didn't land. ``markCached`` no-ops for any key absent from
+ * ``OVERLAY_RESOURCES``.
+ *
+ * Not listed: the bulletin-boundary layer (internal key ``l3``). It has no
+ * layers-menu row — SNOW-521 removed it, and since PR #506 the boundary
+ * simply follows L4's visibility rather than carrying a toggle of its own —
+ * so there is nothing here to paint. Its responses are still cached for
+ * settled dates by sw.js (SNOW-526); that state is deliberately not
+ * surfaced in the menu (SNOW-532), because the boundary is a companion
+ * outline with no control and no user action attached to its cache state.
  */
 
 (function () {
@@ -110,9 +102,6 @@
 
   const CACHED_LABEL = 'Available offline';
   const UNCACHED_LABEL = 'Not cached — view online first';
-  // l3 is a distinct third state (a hollow dot): not "not cached yet" but
-  // "can never be cached", so a different message from UNCACHED_LABEL.
-  const UNAVAILABLE_LABEL = 'Not available offline';
   // Offline + uncached: genuinely unavailable *right now* (red dot, disabled
   // row) — distinct from the grey advisory "view online first" (which only
   // applies while online, when viewing online is actually an option).
@@ -161,9 +150,6 @@
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
-    // SNOW-526: only cacheable for a settled date — see refresh()'s
-    // 'dated-geojson' branch, which reads the scrubber's ?d= off the URL.
-    l3: Object.freeze({ kind: 'dated-geojson', path: '/api/bulletin-groupings.geojson' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
   });
@@ -355,29 +341,7 @@
   }
 
   /**
-   * Paint l3's distinct state and gate its row. l3 (bulletin groupings) is
-   * network-only in sw.js — it can never be cached:
-   *
-   *   - online  → hollow "never cacheable" dot, row enabled (it still
-   *               fetches live).
-   *   - offline → red "unavailable offline", row DISABLED (genuinely
-   *               un-loadable now).
-   *
-   * @param {Element | null} dot
-   * @returns {void}
-   */
-  function _applyUnavailable(dot) {
-    if (_offline()) {
-      _paintDot(dot, 'unavailable-offline', OFFLINE_BLOCKED_LABEL);
-      _setRowDisabled(_rowOf(dot), true);
-    } else {
-      _paintDot(dot, 'unavailable', UNAVAILABLE_LABEL);
-      _setRowDisabled(_rowOf(dot), false);
-    }
-  }
-
-  /**
-   * Low-level dot painter shared by ``_applyState`` / ``_applyUnavailable``:
+   * Low-level dot painter behind ``_applyState``:
    * set ``data-sync-state`` plus an accessible name (``role="img"`` +
    * ``aria-label``) and a ``title`` tooltip, and reveal the dot (dots start
    * ``aria-hidden="true"`` in the server-rendered ``unknown`` state).
@@ -552,31 +516,6 @@
       const dot = _overlayDot(key);
       if (!dot) continue;
 
-      if (resource.kind === 'dated-geojson') {
-        // SNOW-526: l3 is only cacheable for a settled date, and the
-        // server is the sole source of truth for which dates qualify (see
-        // basemap_cache_core.js's shouldPersist()). Read the scrubber's
-        // date straight off the URL — map.js keeps ?d= in sync via
-        // history.replaceState. No ?d= means boot/today, which is never
-        // settled, so paint the hollow "never cacheable right now" dot
-        // without a wasted probe.
-        const dateParam = new URLSearchParams(location.search).get('d');
-        if (!dateParam) {
-          _applyUnavailable(dot);
-          continue;
-        }
-        tasks.push(
-          _probeExact(`${resource.path}?d=${dateParam}`)
-            .then((cached) =>
-              _applyState(dot, cached, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
-            )
-            .catch(() =>
-              _applyState(dot, false, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL),
-            ),
-        );
-        continue;
-      }
-
       let probe;
       if (resource.kind === 'idb') {
         probe = _probeIdbRow(resource.key);
@@ -665,20 +604,6 @@
   }
 
   /**
-   * Optimistically flip a single overlay row's dot to "cached" without a
-   * probe — the real-time counterpart to ``refresh()``. Called by
-   * static/js/map.js when a lazy tier's toggle-on load has just succeeded
-   * (``overlayLoaded[key]`` true), so the resource has now flowed through
-   * the SW cache / overlay IDB store and is available offline. No-ops for
-   * ``l3`` (``kind: 'uncacheable'`` — network-only, never cached, so its
-   * hollow "unavailable" dot stays put) and for any key not in
-   * ``OVERLAY_RESOURCES``. The next ``refresh()`` (popover re-open)
-   * re-verifies against real cache state.
-   *
-   * @param {string} key - an ``OVERLAY_RESOURCES`` key.
-   * @returns {void}
-   */
-  /**
    * SNOW-524: paint a row as mid-fetch — grey and pulsing — synchronously,
    * with no probe. Called by map.js the instant a country toggle turns on,
    * for the country row and every country-scoped tier, so the user watches
@@ -705,6 +630,18 @@
     _syncingSince.set(key, _now());
   }
 
+  /**
+   * Optimistically flip a single overlay row's dot to "cached" without a
+   * probe — the real-time counterpart to ``refresh()``. Called by
+   * static/js/map.js when a lazy tier's toggle-on load has just succeeded
+   * (``overlayLoaded[key]`` true), so the resource has now flowed through
+   * the SW cache / overlay IDB store and is available offline. No-ops for
+   * any key not in ``OVERLAY_RESOURCES``. The next ``refresh()`` (popover
+   * re-open) re-verifies against real cache state.
+   *
+   * @param {string} key - an ``OVERLAY_RESOURCES`` key or ``country.<code>``.
+   * @returns {void}
+   */
   function markCached(key) {
     // SNOW-524: hold a pulsing row at "syncing" for a minimum dwell before
     // greening it. Without this a warm/local fetch resolves in tens of
@@ -745,12 +682,10 @@
       );
       return;
     }
-    const resource = OVERLAY_RESOURCES[key];
-    // Only genuinely-cacheable rows flip green. l3 ('dated-geojson') is
-    // excluded — a successful load doesn't prove the SW actually persisted
-    // a settled-date response, so it keeps whatever refresh()'s own probe
-    // last painted. Unknown keys are ignored.
-    if (!resource || (resource.kind !== 'geojson' && resource.kind !== 'idb')) return;
+    // Unknown keys are ignored — every remaining OVERLAY_RESOURCES entry is
+    // a 'geojson' or 'idb' resource whose successful load does put it in the
+    // offline cache, so membership alone is the allowlist.
+    if (!OVERLAY_RESOURCES[key]) return;
     // A successful load only happens online; ``_applyState`` with cached=true
     // paints green and clears any offline-disabled marker on the row.
     _applyState(_overlayDot(key), true, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL);

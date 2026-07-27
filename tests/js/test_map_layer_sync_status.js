@@ -79,7 +79,6 @@ function buildFixture({
       ${overlayRow('l1')}
       ${overlayRow('l2')}
       ${overlayRow('l4')}
-      ${overlayRow('l3')}
       ${overlayRow('resorts')}
       ${includeFavourites ? overlayRow('favourites') : ''}
       ${includeCommunityReports ? overlayRow('community_reports') : ''}
@@ -181,6 +180,22 @@ describe('GeoJSON overlay rows (l1/l2/l4/resorts) — online', () => {
     for (const call of caches.match.mock.calls) {
       expect(call[1]).toEqual({ ignoreSearch: true });
     }
+  });
+
+  it('never probes the bulletin-boundary feed — it has no row (SNOW-532)', async () => {
+    // The boundary is a companion to L4 with no menu row of its own, so the
+    // dashboard makes no claim about it either way. Its responses are still
+    // cached for settled dates by sw.js (SNOW-526); that is simply not
+    // surfaced here, and this module must not resurrect a probe for it.
+    window.history.pushState({}, '', '/map/?d=2025-12-01');
+    const caches = fakeCaches();
+    vi.stubGlobal('caches', caches);
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    const probed = caches.match.mock.calls.map((call) => new URL(call[0].url).pathname);
+    expect(probed).not.toContain('/api/bulletin-groupings.geojson');
+    window.history.pushState({}, '', '/');
   });
 });
 
@@ -384,76 +399,6 @@ describe('country rows (SNOW-524)', () => {
   });
 });
 
-describe('l3 (bulletin groupings, SNOW-526)', () => {
-  const GROUPINGS_PATH = '/api/bulletin-groupings.geojson';
-
-  afterEach(() => {
-    // Reset the scrubber date back to boot/today between tests.
-    window.history.pushState({}, '', '/');
-  });
-
-  it('no ?d= (boot/today, never settled): hollow "unavailable" state, row enabled', async () => {
-    vi.stubGlobal('caches', fakeCaches());
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('l3')).toBe('unavailable');
-    expect(rowDisabled('l3')).toBe(false);
-  });
-
-  it('no ?d=, offline: red "unavailable-offline" state, row disabled', async () => {
-    setOnline(false);
-    vi.stubGlobal('caches', fakeCaches());
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('l3')).toBe('unavailable-offline');
-    expect(rowDisabled('l3')).toBe(true);
-  });
-
-  it('?d= for a cached (settled) date: green "cached" state', async () => {
-    window.history.pushState({}, '', '/map/?d=2025-12-01');
-    vi.stubGlobal('caches', fakeCaches({ hitQueries: [`${GROUPINGS_PATH}?d=2025-12-01`] }));
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('l3')).toBe('cached');
-    expect(rowDisabled('l3')).toBe(false);
-  });
-
-  it('?d= for an uncached date: grey "uncached" state, row enabled while online', async () => {
-    window.history.pushState({}, '', '/map/?d=2026-04-16');
-    vi.stubGlobal('caches', fakeCaches());
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('l3')).toBe('uncached');
-    expect(rowDisabled('l3')).toBe(false);
-  });
-
-  it('?d= for an uncached date, offline: red "unavailable-offline", row disabled', async () => {
-    window.history.pushState({}, '', '/map/?d=2026-04-16');
-    setOnline(false);
-    vi.stubGlobal('caches', fakeCaches());
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('l3')).toBe('unavailable-offline');
-    expect(rowDisabled('l3')).toBe(true);
-  });
-
-  it('probes the exact ?d= query, without ignoreSearch', async () => {
-    window.history.pushState({}, '', '/map/?d=2025-12-01');
-    const caches = fakeCaches({ hitQueries: [`${GROUPINGS_PATH}?d=2025-12-01`] });
-    vi.stubGlobal('caches', caches);
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    const call = caches.match.mock.calls.find((c) => new URL(c[0].url).pathname === GROUPINGS_PATH);
-    expect(call[1]).toBeUndefined();
-  });
-});
-
 describe('IndexedDB overlay rows (favourites/community_reports)', () => {
   it('resolves cached when window.pwaDb holds a row with .geojson, uncached when absent', async () => {
     vi.stubGlobal('caches', fakeCaches());
@@ -604,7 +549,7 @@ describe('Cache Storage unsupported', () => {
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
-    for (const key of ['l1', 'l2', 'l4', 'l3', 'resorts', 'favourites', 'community_reports']) {
+    for (const key of ['l1', 'l2', 'l4', 'resorts', 'favourites', 'community_reports']) {
       expect(dotState(key)).toBe('unknown');
     }
     expect(basemapDotState('standard')).toBe('unknown');
@@ -634,11 +579,6 @@ describe('markCached (optimistic live update)', () => {
 
     expect(dotState('l1')).toBe('cached');
     expect(rowDisabled('l1')).toBe(false);
-  });
-
-  it('no-ops for l3 (dated-geojson, outside the geojson/idb allowlist) so its dot stays unknown', () => {
-    window.pwaLayerSyncStatus.markCached('l3');
-    expect(dotState('l3')).toBe('unknown');
   });
 
   it('no-ops for a key absent from OVERLAY_RESOURCES', () => {
