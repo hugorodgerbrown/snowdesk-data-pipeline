@@ -549,15 +549,23 @@ class Resort(BaseModel):
     """
     A ski resort linked to an SLF avalanche warning region.
 
-    Static reference data loaded from a fixture; not populated by the
-    data pipeline. Allows users to look up bulletins by well-known resort
-    names (e.g. "Crans-Montana") rather than official region identifiers.
+    Curated reference data; not populated by the data pipeline. Allows
+    users to look up bulletins by well-known resort names (e.g.
+    "Crans-Montana") rather than official region identifiers.
 
-    Geocoding fields (latitude/longitude/etc.) are populated by the
-    edit-resorts mode on the public map (``?edit=resorts`` in DEBUG only).
-    The fixture in ``regions/fixtures/resorts.json`` is the source of truth
-    in git; run ``manage.py dump_resorts_fixture --commit`` after a session
-    of edits to persist them.
+    Unlike the EAWS region models, these rows are **editable data owned by
+    each environment's database** — no deploy reloads them (see
+    ``docs/decisions/resorts-are-editable-data.md``). Three write paths:
+
+    * the admin, for one-off corrections;
+    * the edit-resorts mode on the public map (``?edit=resorts``, DEBUG
+      only), which is what populates the geocoding fields;
+    * ``manage.py import_resorts --commit``, which reconciles the table
+      against the curated sheet at ``regions/data/resorts.tsv``.
+
+    ``regions/fixtures/resorts.json`` seeds fresh local/CI databases only;
+    run ``manage.py dump_resorts_fixture --commit`` to refresh it after a
+    session of edits, or those edits reach no other worktree.
 
     ``forecast_point`` (SNOW-503) is the shared ``bulletins.ForecastPoint``
     a geocoded resort's coordinates resolve to, set by

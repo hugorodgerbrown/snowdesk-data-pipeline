@@ -10,6 +10,10 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Trailing tabs are significant in a TSV: stripping them drops the
+        # empty trailing columns and reshapes the row. Leave data exports
+        # byte-identical to what the spreadsheet produced.
+        exclude: \.tsv$
       - id: end-of-file-fixer
       - id: check-merge-conflict
       - id: debug-statements
