@@ -51,7 +51,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
-| `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
+| `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/save/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button

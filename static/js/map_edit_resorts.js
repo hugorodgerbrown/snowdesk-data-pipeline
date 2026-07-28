@@ -11,6 +11,19 @@
  * scripts share scope across <script> tags in the same document, so no
  * window export is needed).
  *
+ * Placement
+ * ---------
+ * Click the map to drop a draggable ``maplibregl.Marker``, then drag to
+ * refine. This deliberately does NOT use the shared centre pin
+ * (window.PlacePicker) the favourite-create and field-observation flows
+ * position with, where the pin is fixed on screen and the map pans
+ * underneath it. That surface exists because a dragged pin is occluded by
+ * the finger placing it — a touch problem. This is a staff tool driven with
+ * a mouse on a desktop, where the trade runs the other way: a marker is
+ * anchored to its coordinate, so zooming in to check the placement keeps
+ * the pin locked to the spot it marks, instead of leaving the pin on screen
+ * while the ground moves under it.
+ *
  * Coordinate-ordering reminder:
  *   - DB columns:        latitude, longitude
  *   - JSON wire format:  {"latitude": ..., "longitude": ...}
@@ -37,9 +50,22 @@
   const saveBtn                   = document.getElementById('edit-resorts-save');
   const cancelBtn                 = document.getElementById('edit-resorts-cancel');
   const errorEl                   = document.getElementById('edit-resorts-error');
+  const statusEl                  = document.getElementById('edit-resorts-status');
   const searchInput               = document.getElementById('edit-resorts-search');
   const hideSetInput              = document.getElementById('edit-resorts-hide-set');
   const pasteInput                = document.getElementById('edit-resorts-paste');
+  const detailsEl                 = document.getElementById('edit-resorts-details');
+
+  // Every hand-curated metadata input in the panel, keyed by the Resort
+  // field name it edits. The template is the source of the field list
+  // (``data-resort-field``) so adding one there needs no change here —
+  // it only has to be in regions.forms.RESORT_DETAIL_FIELDS server-side.
+  const detailInputs = new Map(
+    Array.from(
+      panel.querySelectorAll('[data-resort-field]'),
+      (input) => [input.dataset.resortField, input],
+    ),
+  );
 
   // ``hide-set`` toggle preference is persisted across reloads — the
   // operator commonly works through unset/review rows over multiple
@@ -60,19 +86,64 @@
   let currentTarget      = null; // The selected resort entry, or null.
   let draftMarker        = null; // MapLibre Marker, draggable.
   let selectedRegionFid  = null; // Numeric feature id of the highlighted region.
+  let saveInFlight       = false; // True between POST and its response.
+  let statusTimer        = null;  // Handle clearing the save confirmation.
 
   // Format a coord pair to 5 decimal places (≈1m precision in Switzerland).
   const fmtCoord = (lat, lng) =>
     `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
+  // The error line is hidden with Tailwind's ``hidden`` utility, so the
+  // ``hidden`` *attribute* alone would not reveal it (display:none from
+  // the class wins) — toggle the class.
   const showError = (msg) => {
     errorEl.textContent = msg;
-    errorEl.hidden = false;
+    errorEl.classList.remove('hidden');
   };
 
   const clearError = () => {
     errorEl.textContent = '';
-    errorEl.hidden = true;
+    errorEl.classList.add('hidden');
+  };
+
+  // Save feedback ------------------------------------------------------------
+  //
+  // A save is a network round trip whose only other visible effect is the
+  // readout's "Current" row catching up with "Draft" — easy to miss,
+  // and indistinguishable from nothing having happened. So the button says
+  // what it is doing while it does it, and a confirmation line (aria-live,
+  // for the same reason) reports the outcome afterwards.
+
+  // The button's resting label, read from the template so the i18n string
+  // stays server-side.
+  const SAVE_LABEL = saveBtn.textContent.trim();
+
+  const clearStatus = () => {
+    if (statusTimer !== null) {
+      window.clearTimeout(statusTimer);
+      statusTimer = null;
+    }
+    statusEl.textContent = '';
+    statusEl.classList.add('hidden');
+  };
+
+  // Show a confirmation that fades out on its own — it reports a completed
+  // action, so it should not linger over the next one.
+  const showStatus = (msg) => {
+    clearStatus();
+    statusEl.textContent = msg;
+    statusEl.classList.remove('hidden');
+    statusTimer = window.setTimeout(clearStatus, 4000);
+  };
+
+  // Mark the save as in flight. The disabled state is re-derived by
+  // renderTarget() (which a mid-request pan can trigger), so ``saveInFlight``
+  // is the flag both paths read rather than a one-off ``disabled = true``
+  // that the next 'moveend' would undo.
+  const setSaving = (saving) => {
+    saveInFlight = saving;
+    saveBtn.textContent = saving ? 'Saving…' : SAVE_LABEL;
+    renderTarget();
   };
 
   // Header counter — "{set count} / {total} set". Replaces the
@@ -222,8 +293,69 @@
         <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoords)}</dd>
       </dl>
     `;
-    saveBtn.disabled = !draftMarker;
-    cancelBtn.disabled = !draftMarker;
+    saveBtn.disabled = saveInFlight || !draftMarker;
+    cancelBtn.disabled = saveInFlight || !draftMarker;
+  };
+
+  // Details form -------------------------------------------------------------
+  //
+  // The panel's metadata inputs are populated from the catalogue entry's
+  // ``details`` object (served by the queue endpoint) and read back as the
+  // ``details`` object the save endpoint validates. Values travel as
+  // strings; the server coerces and validates them, so nothing here needs
+  // to know which fields are numeric.
+
+  // Marks an input the server rejected. The inputs are not inside a
+  // <form>, so there is no native validation bubble to lean on —
+  // setCustomValidity() would set state nothing ever renders.
+  const ERROR_CLASS = 'border-form-error';
+
+  const clearFieldErrors = () => {
+    for (const [, input] of detailInputs) input.classList.remove(ERROR_CLASS);
+  };
+
+  const writeDetailsForm = (details) => {
+    let anyFilled = false;
+    for (const [field, input] of detailInputs) {
+      const value = details && details[field] != null ? details[field] : '';
+      input.value = String(value);
+      input.classList.remove(ERROR_CLASS);
+      if (input.value !== '') anyFilled = true;
+    }
+    // Auto-open the section when there is already something to see —
+    // otherwise a resort with a filled-in record looks empty until the
+    // operator thinks to expand it.
+    if (detailsEl) detailsEl.open = anyFilled;
+  };
+
+  const readDetailsForm = () => {
+    const details = {};
+    for (const [field, input] of detailInputs) {
+      details[field] = input.value.trim();
+    }
+    return details;
+  };
+
+  const clearDetailsForm = () => {
+    writeDetailsForm(null);
+    if (detailsEl) detailsEl.open = false;
+  };
+
+  // Surface the server's per-field validation errors (the ``fields`` object
+  // in a 400 invalid_details body) on the inputs that produced them, so the
+  // operator can see which of ten fields is at fault without decoding one
+  // summary line.
+  const showFieldErrors = (fields) => {
+    clearFieldErrors();
+    const messages = [];
+    for (const [field, errors] of Object.entries(fields || {})) {
+      const text = Array.isArray(errors) ? errors.join(' ') : String(errors);
+      const input = detailInputs.get(field);
+      if (input) input.classList.add(ERROR_CLASS);
+      messages.push(`${field}: ${text}`);
+    }
+    if (detailsEl && messages.length > 0) detailsEl.open = true;
+    return messages.join(' · ');
   };
 
   const escapeHtml = (s) =>
@@ -332,12 +464,14 @@
 
     currentTarget = entry;
     clearError();
+    clearStatus();
     removeDraftMarker();
     // Highlight the parent region in both the placed-pin and unplaced
     // cases — gives the operator a visual confirmation of which region
     // their resort lives in. Idempotent on same-region (the
     // setFeatureState writes the same value back).
     setSelectedRegion(entry.region_id);
+    writeDetailsForm(entry.details);
     // If the resort already has coords, pre-populate a draft marker so the
     // operator can drag-to-refine without first clicking-to-place.
     if (entry.latitude != null && entry.longitude != null) {
@@ -450,11 +584,13 @@
   // Save / cancel / skip ----------------------------------------------------
 
   const save = async () => {
-    if (!currentTarget || !draftMarker) return;
+    if (!currentTarget || !draftMarker || saveInFlight) return;
     const ll = draftMarker.getLngLat();
     const url = SAVE_URL_TEMPLATE.replace('__ID__', String(currentTarget.id));
-    saveBtn.disabled = true;
+    setSaving(true);
     clearError();
+    clearStatus();
+    clearFieldErrors();
     try {
       const resp = await fetch(url, {
         method: 'POST',
@@ -464,16 +600,26 @@
         },
         // GeoJSON uses [lon, lat]; MapLibre returns {lng, lat}; the wire
         // format here is keyed by name — no ordering ambiguity.
-        body: JSON.stringify({ latitude: ll.lat, longitude: ll.lng }),
+        body: JSON.stringify({
+          latitude: ll.lat,
+          longitude: ll.lng,
+          details: readDetailsForm(),
+        }),
       });
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
         try {
           const errBody = await resp.json();
           detail = errBody.detail || errBody.error || detail;
+          // A rejected detail field names itself; mark the offending
+          // inputs and put the per-field reasons in the error line.
+          if (errBody.fields) {
+            const fieldDetail = showFieldErrors(errBody.fields);
+            if (fieldDetail) detail = fieldDetail;
+          }
         } catch (_) { /* response body wasn't JSON */ }
+        setSaving(false);
         showError(`Save failed: ${detail}`);
-        saveBtn.disabled = false;
         return;
       }
       const data = await resp.json();
@@ -492,32 +638,40 @@
           longitude:   data.longitude,
           has_coords:  true,
           needs_review: data.needs_review,
+          details:     data.details,
         };
       }
       // Keep the just-saved resort selected so the operator gets
       // visual confirmation (panel readout still shows the resort,
       // pill flips to Set on the list row). Patch ``currentTarget``
       // to the post-save shape so re-clicking it doesn't read stale
-      // pre-save lat/lon. The auto-advance to the "next in queue"
+      // pre-save values. The auto-advance to the "next in queue"
       // that SNOW-74 had is gone — the operator picks the next row
       // themselves.
       removeDraftMarker();
       if (currentTarget && currentTarget.id === data.id) {
         currentTarget = catIdx !== -1 ? allResorts[catIdx] : currentTarget;
+        writeDetailsForm(data.details);
       }
+      setSaving(false);
+      showStatus(`Saved ${data.name} at ${fmtCoord(data.latitude, data.longitude)}.`);
       renderResortsList();
       renderRemaining();
-      renderTarget();
       refreshResortsLayer();
     } catch (err) {
+      setSaving(false);
       showError(`Save failed: ${err.message || err}`);
-      saveBtn.disabled = false;
     }
   };
 
+  // Cancel discards the draft pin, leaving the resort selected — the
+  // operator is usually rejecting a mis-click, not the whole row.
+  // Removing the marker also restores every overlay PlacementFocus hid,
+  // which brings tap-a-pin-to-select back.
   const cancel = () => {
     removeDraftMarker();
     clearError();
+    clearStatus();
     renderTarget();
   };
 

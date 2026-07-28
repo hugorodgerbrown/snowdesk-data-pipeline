@@ -302,7 +302,15 @@ try {
 // the favourite create sheet no longer focuses its name input, which raised
 // the keyboard before the pin was placed. Shell JS/HTML/CSS bytes changed
 // (place_picker.js, favourites.js, report.js, map.css, _overlay_sheet.html).
-const CACHE_VERSION = 'snowdesk-shell-v63';
+// v67 — SNOW-540: the staff edit-resorts panel gains the hand-curated
+// Resort detail fields, and its Save button reports the in-flight and
+// saved states instead of going silent. Placement stays on the draggable
+// marker — it briefly moved to the shared centre pin during this branch
+// and was reverted: a geo-anchored marker holds its coordinate while you
+// zoom, which is what a mouse-driven desktop tool wants. Shell JS bytes
+// changed (map_edit_resorts.js); the panel template itself is not part of
+// the cached shell.
+const CACHE_VERSION = 'snowdesk-shell-v67';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
