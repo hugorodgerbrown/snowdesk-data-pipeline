@@ -9,6 +9,9 @@ Covers:
   coordinates by one Save and lands on the row.
 * **Save says what it is doing.** The button reports the in-flight state
   and a confirmation line reports the outcome.
+* **Adding a resort derives its region from the pin.** The create half of
+  the panel ("New resort") is the same placement flow with no row behind
+  it; the parent region is not picked, it is read off the placed point.
 * **Placement stays on the draggable marker.** This mode deliberately does
   *not* use the shared centre pin (``window.PlacePicker``) the favourite
   and observation flows position with — it is a mouse-driven desktop tool,
@@ -320,3 +323,97 @@ def test_save_reports_that_it_is_saving_and_that_it_saved(
     expect(save).to_have_text("Save")
     expect(save).to_be_disabled()
     expect(page.locator(".maplibregl-marker")).to_have_count(0)
+
+
+@pytest.mark.usefixtures("_load_test_data")
+def test_new_resort_is_created_with_the_region_derived_from_the_pin(
+    page: Page,
+    live_server: LiveServer,
+    django_db_blocker: Any,
+) -> None:
+    """New resort adds a row whose parent region comes from the pin.
+
+    The create half of the panel is the edit flow with no row behind it:
+    the same placement surface and the same details form, plus the two
+    columns nothing can derive (name, canton). What it must *not* have is
+    a region picker — the whole point is that the pin decides, so this
+    asserts the created row landed in the region containing the point
+    rather than in whatever was selected before.
+    """
+    _superuser_page(page, live_server, django_db_blocker)
+    # Borrow a placed resort's coordinates: they are known to sit inside
+    # their own region's polygon, so the derived region is predictable
+    # without hard-coding a point against the EAWS fixture's geometry.
+    with django_db_blocker.unblock():
+        seed = Resort.objects.geocoded().order_by("name").first()
+        assert seed is not None
+        lat, lon = seed.latitude, seed.longitude
+        expected_region_id = seed.region.region_id
+
+    _open_edit_mode(page, live_server.url)
+
+    page.locator("#edit-resorts-new").click()
+    expect(page.locator("#edit-resorts-new-fields")).to_be_visible()
+    # Nothing is placed yet, so there is nothing to save — and the panel
+    # says which parts are missing rather than leaving a greyed-out button
+    # to be interpreted.
+    expect(page.locator("#edit-resorts-save")).to_be_disabled()
+    expect(page.locator("#edit-resorts-target")).to_contain_text(
+        "Needs a name and a pin."
+    )
+
+    page.locator("#edit-resorts-new-name").fill("E2E Testberg")
+    expect(page.locator("#edit-resorts-target")).to_contain_text("Needs a pin.")
+    page.locator("#edit-resorts-new-canton").fill("vs")
+    # Paste rather than click the map: the coordinate has to be a specific
+    # one for the derived region to be assertable, and the paste box is the
+    # panel's own path for that.
+    page.locator("#edit-resorts-paste").fill(f"{lat}, {lon}")
+    expect(page.locator(".maplibregl-marker")).to_have_count(1)
+
+    save = page.locator("#edit-resorts-save")
+    expect(save).to_be_enabled()
+    save.click()
+
+    status = page.locator("#edit-resorts-status")
+    expect(status).to_contain_text("Created")
+
+    with django_db_blocker.unblock():
+        created = Resort.objects.get(name="E2E Testberg")
+        assert created.region.region_id == expected_region_id
+    # Canton is normalised server-side, and the new row joins the list the
+    # operator works from.
+    assert created.canton == "VS"
+    assert created.geocode_source == "manual"
+    assert created.latitude == pytest.approx(lat, abs=1e-5)
+    assert created.longitude == pytest.approx(lon, abs=1e-5)
+    expect(
+        page.locator(f'#edit-resorts-queue li[data-resort-id="{created.pk}"]')
+    ).to_have_count(1)
+
+
+@pytest.mark.usefixtures("_load_test_data")
+def test_cancelling_a_new_resort_returns_to_the_edit_flow(
+    page: Page,
+    live_server: LiveServer,
+    django_db_blocker: Any,
+) -> None:
+    """Cancel leaves create mode rather than stranding an empty form.
+
+    In create mode there is no underlying row for Cancel to fall back to,
+    so it has to exit the mode — otherwise the only way out would be a
+    page reload.
+    """
+    _superuser_page(page, live_server, django_db_blocker)
+    _open_edit_mode(page, live_server.url)
+
+    page.locator("#edit-resorts-new").click()
+    fields = page.locator("#edit-resorts-new-fields")
+    expect(fields).to_be_visible()
+
+    page.locator("#edit-resorts-cancel").click()
+    expect(fields).to_be_hidden()
+    expect(page.locator("#edit-resorts-new")).to_have_attribute("aria-pressed", "false")
+    # And an ordinary row still selects into the edit flow afterwards.
+    page.locator("#edit-resorts-queue li[data-resort-id]").first.click()
+    expect(page.locator(".maplibregl-marker")).to_have_count(1)

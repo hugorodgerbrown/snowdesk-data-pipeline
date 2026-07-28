@@ -8,6 +8,9 @@ Covers the three endpoints introduced for the ``?edit=resorts`` mode:
   queue + catalogue payload.
 * ``api:edit_resort_save``          — flag-gated (``edit_map``);
   persists the placed lat/lon and the hand-curated detail fields.
+* ``api:edit_resort_create``        — flag-gated (``edit_map``);
+  creates a resort from a placed pin, deriving its parent region from
+  that pin.
 
 The flag gate is asserted with ``@override_flag("edit_map", active=False)``
 for both edit-mode endpoints. The ``resorts_geojson`` endpoint is not
@@ -28,6 +31,7 @@ from django.urls import reverse
 from waffle.testutils import override_flag
 
 from regions.forms import RESORT_DETAIL_FIELDS
+from regions.models import Resort
 from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
 
 # ---------------------------------------------------------------------------
@@ -705,6 +709,322 @@ class TestEditResortSaveFlagGate:
         resort.refresh_from_db()
         assert resort.latitude is None
         assert resort.longitude is None
+
+
+# ---------------------------------------------------------------------------
+# edit_resort_create (flag-gated)
+# ---------------------------------------------------------------------------
+
+
+def _post_create(client: Client, **body: Any) -> Any:  # mock-typing-impractical
+    """Helper — POST JSON to the create endpoint."""
+    return client.post(
+        reverse("api:edit_resort_create"),
+        data=json.dumps(body),
+        content_type="application/json",
+    )
+
+
+def _region_with_square_boundary(region_id: str = "CH-4115") -> Any:
+    """Create a region whose polygon covers (46.0–46.5 N, 7.0–7.5 E).
+
+    Every create test needs a region for the pin to land in — the parent
+    region is derived from the point, so a resort cannot be created
+    without one.
+    """
+    return MicroRegionFactory.create(
+        region_id=region_id,
+        boundary={
+            "type": "Polygon",
+            "coordinates": [
+                [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]],
+            ],
+        },
+    )
+
+
+@pytest.mark.django_db
+class TestEditResortCreate:
+    """Tests for ``POST /api/edit/resorts/create/`` (flag-gated)."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
+        """Force ``edit_map=on`` for every test in this class."""
+        with override_flag("edit_map", active=True):
+            yield
+
+    def test_happy_path_creates_row_with_region_from_the_pin(self) -> None:
+        """A valid POST inserts a resort bound to the region containing the pin."""
+        region = _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client,
+            name="Nouvelle Station",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 201, resp.content
+
+        resort = Resort.objects.get(name="Nouvelle Station")
+        assert resort.region_id == region.pk
+        assert resort.canton == "VS"
+        assert resort.latitude == 46.25
+        assert resort.longitude == 7.25
+        # Stamped exactly as a save stamps an edited row — the operator
+        # placed the pin, so the position is manually confirmed.
+        assert resort.geocode_source == "manual"
+        assert resort.geocode_confidence == 1.0
+        assert resort.geocoded_at is not None
+        assert resort.needs_review is False
+
+    def test_response_carries_a_catalogue_entry(self) -> None:
+        """The body holds every field the panel's catalogue rows need."""
+        region = _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client,
+            name="Nouvelle Station",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        body = resp.json()
+        assert body["id"] == Resort.objects.get(name="Nouvelle Station").pk
+        assert body["name"] == "Nouvelle Station"
+        assert body["region_id"] == region.region_id
+        assert body["region_name"] == region.name
+        assert body["canton"] == "VS"
+        assert body["has_coords"] is True
+        assert body["needs_review"] is False
+        assert set(body["details"]) == set(RESORT_DETAIL_FIELDS)
+
+    def test_canton_is_upper_cased(self) -> None:
+        """A lower-case canton is normalised so "vs" and "VS" are one value."""
+        _region_with_square_boundary()
+        client = Client()
+        _post_create(client, name="A", canton="vs", latitude=46.25, longitude=7.25)
+        assert Resort.objects.get(name="A").canton == "VS"
+
+    def test_details_are_persisted_in_the_same_insert(self) -> None:
+        """The detail fields land on the created row without a second call."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client,
+            name="Nouvelle Station",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+            details={
+                "operator_name": "Remontées SA",
+                "num_lifts": 8,
+                "base_elevation_m": 1200,
+                "top_elevation_m": 2400,
+            },
+        )
+        assert resp.status_code == 201, resp.content
+        resort = Resort.objects.get(name="Nouvelle Station")
+        assert resort.operator_name == "Remontées SA"
+        assert resort.num_lifts == 8
+        assert resort.base_elevation_m == 1200
+        assert resort.top_elevation_m == 2400
+
+    def test_invalid_detail_field_creates_nothing(self) -> None:
+        """A rejected detail field aborts the whole create, leaving no row."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client,
+            name="Nouvelle Station",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+            # Top below base — rejected by ResortDetailsForm.clean().
+            details={"base_elevation_m": 2400, "top_elevation_m": 1200},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["error"] == "invalid_details"
+        assert "top_elevation_m" in body["fields"]
+        assert not Resort.objects.filter(name="Nouvelle Station").exists()
+
+    def test_missing_name_returns_400(self) -> None:
+        """A blank name is rejected — nothing else can supply it."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client, name="   ", canton="VS", latitude=46.25, longitude=7.25
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_identity"
+
+    def test_omitted_canton_is_inherited_from_the_region(self) -> None:
+        """A blank canton takes the one the region's resorts already use.
+
+        Canton is very nearly a function of the region, so the operator is
+        not asked to re-type what the sibling rows already agree on.
+        """
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Sibling", region=region, canton="GR")
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "GR"
+        assert resp.json()["canton"] == "GR"
+
+    def test_sent_canton_beats_the_inherited_one(self) -> None:
+        """An explicit canton wins — border cases need the operator's answer."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Sibling", region=region, canton="GR")
+        client = Client()
+        resp = _post_create(
+            client, name="A", canton="BE/VS", latitude=46.25, longitude=7.25
+        )
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "BE/VS"
+
+    def test_inherited_canton_is_the_majority_of_the_siblings(self) -> None:
+        """A region whose rows disagree contributes its most common value."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="S1", region=region, canton="VS")
+        ResortFactory.create(name="S2", region=region, canton="VS")
+        ResortFactory.create(name="S3", region=region, canton="BE")
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "VS"
+
+    def test_blank_sibling_cantons_do_not_count(self) -> None:
+        """An empty canton on a sibling is not a value worth inheriting."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Blank", region=region, canton="")
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_identity"
+        assert not Resort.objects.filter(name="A").exists()
+
+    def test_omitted_canton_in_an_empty_region_returns_400(self) -> None:
+        """With no sibling to read from, the endpoint has to ask."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["error"] == "invalid_identity"
+        # The message has to name the region, or the operator cannot tell
+        # which of the two identity failures they hit.
+        assert "CH-4115" in body["detail"]
+
+    def test_missing_name_is_rejected_before_the_region_lookup(self) -> None:
+        """Name is the one value nothing else can supply."""
+        client = Client()
+        resp = _post_create(client, canton="VS", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "name is required"
+
+    def test_over_long_name_returns_400(self) -> None:
+        """A name past the column width is rejected, not truncated."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client,
+            name="x" * 256,
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_identity"
+
+    def test_out_of_bbox_returns_400(self) -> None:
+        """Coordinates outside Switzerland are rejected before any lookup."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(
+            client, name="A", canton="VS", latitude=50.0, longitude=7.25
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "out_of_bounds"
+
+    def test_invalid_json_returns_400(self) -> None:
+        """A non-JSON body returns 400 invalid_json."""
+        resp = Client().post(
+            reverse("api:edit_resort_create"),
+            data="not json",
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_json"
+
+    def test_pin_outside_every_region_returns_400_no_region(self) -> None:
+        """``Resort.region`` is not nullable, so a no-coverage pin is refused."""
+        _region_with_square_boundary()
+        client = Client()
+        # Inside the Swiss bbox but outside the one region's polygon.
+        resp = _post_create(client, name="A", canton="VS", latitude=47.0, longitude=9.0)
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "no_region"
+        assert not Resort.objects.filter(name="A").exists()
+
+    def test_duplicate_name_in_same_region_returns_409(self) -> None:
+        """A second resort of the same name in one region is refused."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Verbier", region=region)
+        client = Client()
+        resp = _post_create(
+            client,
+            # Case-insensitive — a double-click that re-types the name
+            # slightly differently is still the same duplicate.
+            name="verbier",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error"] == "duplicate_name"
+        assert Resort.objects.filter(name__iexact="verbier").count() == 1
+
+    def test_same_name_in_a_different_region_is_allowed(self) -> None:
+        """The duplicate guard is scoped to the derived region, not global."""
+        _region_with_square_boundary(region_id="CH-4115")
+        other = MicroRegionFactory.create(region_id="CH-2222", boundary=None)
+        ResortFactory.create(name="Fiesch", region=other)
+        client = Client()
+        resp = _post_create(
+            client,
+            name="Fiesch",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.filter(name="Fiesch").count() == 2
+
+    def test_get_is_rejected(self) -> None:
+        """The endpoint is POST-only."""
+        resp = Client().get(reverse("api:edit_resort_create"))
+        assert resp.status_code == 405
+
+
+@pytest.mark.django_db
+class TestEditResortCreateFlagGate:
+    """The create endpoint must 404 when ``edit_map`` is off."""
+
+    @override_flag("edit_map", active=False)
+    def test_returns_404_when_flag_inactive(self) -> None:
+        """No row is created when ``edit_map`` is inactive."""
+        _region_with_square_boundary()
+        resp = _post_create(
+            Client(),
+            name="A",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 404
+        assert not Resort.objects.filter(name="A").exists()
 
 
 # ---------------------------------------------------------------------------

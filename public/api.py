@@ -31,12 +31,15 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
 Flag-gated endpoints powering the in-map resort editor (SNOW-74,
-``?edit=resorts`` on /map/). Both views check the ``edit_map`` waffle
-flag (SNOW-86) and 404 when it is inactive for the request user:
+``?edit=resorts`` on /map/). Every one of these views checks the
+``edit_map`` waffle flag (SNOW-86) and 404s when it is inactive for the
+request user:
 
 * ``GET  /api/edit/resorts/queue/``               — queue + catalogue payload.
 * ``POST /api/edit/resorts/<int:resort_id>/save/`` — persist the placed
   coordinates and the hand-curated detail fields.
+* ``POST /api/edit/resorts/create/``              — create a resort from a
+  placed pin, deriving its parent region from that pin.
 
 Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its
 three data endpoints in parallel at load time; the per-region summary
@@ -49,6 +52,7 @@ import json
 import logging
 import re
 import secrets
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -1584,6 +1588,95 @@ def _bind_resort_details(
     return None, list(RESORT_DETAIL_FIELDS)
 
 
+def _parse_edit_body(
+    request: HttpRequest,
+) -> tuple[JsonResponse | None, dict[str, Any]]:
+    """Decode a JSON request body into a dict, or return the 400 to send.
+
+    Shared by the two edit-resorts write endpoints, which take the same
+    body shape modulo the create-only ``name``/``canton`` keys.
+
+    Returns:
+        ``(error_response, {})`` when the body is not a JSON object,
+        otherwise ``(None, payload)``.
+
+    """
+    try:
+        payload = json.loads(request.body or b"")
+    except ValueError, json.JSONDecodeError:
+        return JsonResponse({"error": "invalid_json"}, status=400), {}
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "invalid_json"}, status=400), {}
+    return None, payload
+
+
+def _parse_edit_coords(payload: dict[str, Any]) -> JsonResponse | tuple[float, float]:
+    """Validate the ``latitude``/``longitude`` pair of an edit-resorts POST.
+
+    Both edit endpoints require a point inside the Swiss bounding box —
+    the placed pin *is* the coordinate being saved, and for the create
+    endpoint it is also what the parent region is derived from.
+
+    Returns either the 400 response to send (missing, non-numeric, or
+    out-of-bbox pair) or the parsed ``(lat, lon)``; the caller
+    discriminates with ``isinstance``.
+    """
+    raw_lat = payload.get("latitude")
+    raw_lon = payload.get("longitude")
+    if raw_lat is None or raw_lon is None:
+        return JsonResponse(
+            {
+                "error": "invalid_coords",
+                "detail": "latitude and longitude are required",
+            },
+            status=400,
+        )
+    try:
+        lat = float(raw_lat)
+        lon = float(raw_lon)
+    except TypeError, ValueError:
+        return JsonResponse(
+            {
+                "error": "invalid_coords",
+                "detail": "latitude and longitude must be numbers",
+            },
+            status=400,
+        )
+
+    bbox_error = _validate_swiss_coords(lat, lon)
+    if bbox_error:
+        return JsonResponse(
+            {"error": "out_of_bounds", "detail": bbox_error}, status=400
+        )
+    return lat, lon
+
+
+def _resort_save_payload(resort: Resort) -> dict[str, Any]:
+    """Return the JSON body both write endpoints answer with.
+
+    One shape for both legs so the panel can patch an edited row and
+    build a catalogue entry for a created one from the same keys — the
+    field set is a superset of a ``edit_resorts_queue`` catalogue entry
+    (``has_coords`` included) plus the geocode provenance columns the
+    endpoint stamped.
+    """
+    return {
+        "id": resort.pk,
+        "name": resort.name,
+        "region_id": resort.region.region_id,
+        "region_name": resort.region.name,
+        "canton": resort.canton,
+        "latitude": resort.latitude,
+        "longitude": resort.longitude,
+        "has_coords": resort.latitude is not None and resort.longitude is not None,
+        "geocode_source": resort.geocode_source,
+        "geocode_confidence": resort.geocode_confidence,
+        "geocoded_at": resort.geocoded_at.isoformat() if resort.geocoded_at else None,
+        "needs_review": resort.needs_review,
+        "details": _resort_details_payload(resort),
+    }
+
+
 @require_POST
 def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     """Persist the placed coordinates and detail fields of a resort (flag-gated).
@@ -1620,42 +1713,14 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     """
     _require_edit_map_flag(request)
 
-    try:
-        payload = json.loads(request.body or b"")
-    except ValueError, json.JSONDecodeError:
-        return JsonResponse({"error": "invalid_json"}, status=400)
+    body_error, payload = _parse_edit_body(request)
+    if body_error is not None:
+        return body_error
 
-    if not isinstance(payload, dict):
-        return JsonResponse({"error": "invalid_json"}, status=400)
-
-    raw_lat = payload.get("latitude")
-    raw_lon = payload.get("longitude")
-    if raw_lat is None or raw_lon is None:
-        return JsonResponse(
-            {
-                "error": "invalid_coords",
-                "detail": "latitude and longitude are required",
-            },
-            status=400,
-        )
-    try:
-        lat = float(raw_lat)
-        lon = float(raw_lon)
-    except TypeError, ValueError:
-        return JsonResponse(
-            {
-                "error": "invalid_coords",
-                "detail": "latitude and longitude must be numbers",
-            },
-            status=400,
-        )
-
-    bbox_error = _validate_swiss_coords(lat, lon)
-    if bbox_error:
-        return JsonResponse(
-            {"error": "out_of_bounds", "detail": bbox_error},
-            status=400,
-        )
+    coords = _parse_edit_coords(payload)
+    if isinstance(coords, JsonResponse):
+        return coords
+    lat, lon = coords
 
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
@@ -1708,23 +1773,235 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
 
     resort.save(update_fields=update_fields)
 
-    return JsonResponse(
+    return JsonResponse(_resort_save_payload(resort))
+
+
+def _parse_new_resort_identity(
+    payload: dict[str, Any],
+) -> JsonResponse | tuple[str, str]:
+    """Validate the ``name``/``canton`` inputs of a create request.
+
+    ``name`` is the one value the endpoint cannot get from anywhere else.
+    ``canton`` is optional here and may come back empty — the caller
+    fills it from the derived region via :func:`_canton_for_region`, and
+    only fails if that comes up empty too.
+
+    Returns either the 400 response to send or the cleaned
+    ``(name, canton)``; ``canton`` is upper-cased so "vs" and "VS" are
+    one value.
+    """
+    name = str(payload.get("name") or "").strip()
+    canton = str(payload.get("canton") or "").strip().upper()
+    if not name:
+        return JsonResponse(
+            {"error": "invalid_identity", "detail": "name is required"},
+            status=400,
+        )
+    # Mirror the model's column widths — a too-long value would otherwise
+    # be silently truncated by SQLite or blow up on PostgreSQL.
+    if len(name) > 255 or len(canton) > 5:
+        return JsonResponse(
+            {
+                "error": "invalid_identity",
+                "detail": "name must be ≤255 chars and canton ≤5",
+            },
+            status=400,
+        )
+    return name, canton
+
+
+def _canton_for_region(region: MicroRegion) -> str:
+    """Return the canton the resorts already in ``region`` agree on.
+
+    Canton is very nearly a function of the parent region — across the
+    curated set, 65 of the 66 regions holding resorts have one canton
+    between them, and the exception is a border resort recorded as a
+    compound ("BE/VS") rather than a genuine disagreement. So a resort
+    being created into a populated region can inherit the answer instead
+    of asking the operator to re-type it.
+
+    Nothing derives this from geometry: the polygons are EAWS warning
+    regions, not cantonal boundaries. This is the sibling rows voting,
+    which is why the panel keeps an override — a border case, or a
+    region whose existing rows are mis-tagged, needs the operator's
+    answer to win.
+
+    Args:
+        region: The region the pin landed in.
+
+    Returns:
+        The most common non-blank canton among the region's resorts,
+        ties broken alphabetically so the result is stable. ``""`` when
+        the region has no resorts to read from — the caller turns that
+        into a 400 asking for the canton explicitly.
+
+    """
+    cantons = [
+        canton
+        for canton in region.resorts.values_list("canton", flat=True)
+        if canton.strip()
+    ]
+    if not cantons:
+        return ""
+    # ``most_common`` keeps insertion order on ties; sorting first makes
+    # the tie-break alphabetical and therefore reproducible.
+    return Counter(sorted(cantons)).most_common(1)[0][0]
+
+
+def _resolve_canton(region: MicroRegion, canton: str) -> JsonResponse | str:
+    """Return the canton to store, or the 400 to send if there isn't one.
+
+    An operator-supplied ``canton`` always wins; a blank one falls back to
+    :func:`_canton_for_region`. Only a region with nothing to inherit from
+    has to ask the operator for it.
+    """
+    resolved = canton or _canton_for_region(region)
+    if not resolved:
+        return JsonResponse(
+            {
+                "error": "invalid_identity",
+                "detail": (
+                    f"{region.region_id} has no resorts to take a canton from; "
+                    "enter one."
+                ),
+            },
+            status=400,
+        )
+    return resolved
+
+
+@require_POST
+def edit_resort_create(request: HttpRequest) -> JsonResponse:
+    """Create a resort from a placed pin (flag-gated).
+
+    The create half of the edit-resorts panel: identical to
+    :func:`edit_resort_save` — same coordinate rules, same ``details``
+    validation, same response shape — except that there is no row yet,
+    so the panel also sends ``name``, and the parent region is
+    **derived from the pin** rather than rebound against an existing FK.
+
+    Request body (JSON)::
+
         {
-            "id": resort.pk,
-            "name": resort.name,
-            "region_id": resort.region.region_id,
-            "region_name": resort.region.name,
-            "latitude": resort.latitude,
-            "longitude": resort.longitude,
-            "geocode_source": resort.geocode_source,
-            "geocode_confidence": resort.geocode_confidence,
-            "geocoded_at": resort.geocoded_at.isoformat()
-            if resort.geocoded_at
-            else None,
-            "needs_review": resort.needs_review,
-            "details": _resort_details_payload(resort),
+          "name": "Verbier",
+          "canton": "VS",            # optional — see below
+          "latitude": <float>,
+          "longitude": <float>,
+          "details": {"num_lifts": 12, "website": "https://…", …}
         }
+
+    ``name`` is the only value the endpoint cannot source from anywhere
+    else. ``canton`` is optional: omitted, it is inherited from the
+    resorts already in the derived region (:func:`_canton_for_region`),
+    which is the right answer for all but border cases; sent, it wins,
+    so the operator can correct one. A region with no resorts to inherit
+    from is the one case that has to ask.
+
+    The new row is stamped exactly as a save stamps an edited one
+    (``geocode_source="manual"``, ``geocode_confidence=1.0``,
+    ``geocoded_at=now()``, ``needs_review=False``) — the operator placed
+    the pin, so the position is manually confirmed by construction.
+
+    A created resort lives only in this environment's database (see
+    ``docs/decisions/resorts-are-editable-data.md``); run
+    ``manage.py dump_resorts_fixture --commit`` to carry it to other
+    worktrees and CI, and add it to ``regions/data/resorts.tsv`` so the
+    next ``import_resorts`` reconciliation does not delete it.
+
+    Errors:
+        404 — ``edit_map`` waffle flag inactive.
+        400 — invalid JSON; missing/blank ``name``, or an omitted
+              ``canton`` the derived region cannot supply
+              (``invalid_identity``); missing or non-float lat/lon;
+              coordinates outside the Swiss bounding box; a pin that
+              falls outside every region polygon (``no_region``, since
+              ``Resort.region`` is not nullable); a detail field that
+              fails model validation (``invalid_details``).
+        409 — a resort of that name already exists in the derived region
+              (``duplicate_name``), which is nearly always a double-click
+              or a re-created row rather than a genuine second resort.
+    """
+    _require_edit_map_flag(request)
+
+    body_error, payload = _parse_edit_body(request)
+    if body_error is not None:
+        return body_error
+
+    identity = _parse_new_resort_identity(payload)
+    if isinstance(identity, JsonResponse):
+        return identity
+    name, canton = identity
+
+    coords = _parse_edit_coords(payload)
+    if isinstance(coords, JsonResponse):
+        return coords
+    lat, lon = coords
+
+    # The parent region is the whole point of "click the map to add a
+    # resort" — no region picker, the pin says which region it is in.
+    # ``Resort.region`` is a non-nullable FK, so a pin in a no-coverage
+    # gap is a hard failure rather than a row with a dangling parent.
+    region = _region_for_point(lat, lon)
+    if region is None:
+        return JsonResponse(
+            {
+                "error": "no_region",
+                "detail": (
+                    f"No avalanche region contains ({lat:.5f}, {lon:.5f}); "
+                    "move the pin inside a region boundary."
+                ),
+            },
+            status=400,
+        )
+
+    if Resort.objects.filter(region=region, name__iexact=name).exists():
+        return JsonResponse(
+            {
+                "error": "duplicate_name",
+                "detail": f"{name} already exists in {region.region_id}.",
+            },
+            status=409,
+        )
+
+    # Canton is a curatorial column, not a derived one — but it is very
+    # nearly a function of the region, so an omitted value is inherited
+    # from the region's existing resorts rather than demanded of the
+    # operator.
+    resolved_canton = _resolve_canton(region, canton)
+    if isinstance(resolved_canton, JsonResponse):
+        return resolved_canton
+
+    resort = Resort(
+        name=name,
+        canton=resolved_canton,
+        region=region,
+        latitude=lat,
+        longitude=lon,
+        geocode_source="manual",
+        geocode_confidence=1.0,
+        geocoded_at=timezone.now(),
+        needs_review=False,
     )
+
+    details_error, _changed_details = _bind_resort_details(
+        resort,
+        payload.get("details"),
+    )
+    if details_error is not None:
+        return details_error
+
+    # One INSERT with the details already bound — a rejected detail field
+    # cannot leave a half-populated new row behind.
+    resort.save()
+    logger.info(
+        "edit_resort_create: created %s in %s at (%s, %s)",
+        resort.name,
+        region.region_id,
+        lat,
+        lon,
+    )
+
+    return JsonResponse(_resort_save_payload(resort), status=201)
 
 
 # SNOW-79 retired the ``offline_manifest_map`` endpoint. The PWA shell
