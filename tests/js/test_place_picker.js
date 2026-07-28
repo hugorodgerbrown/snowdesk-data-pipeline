@@ -95,7 +95,39 @@ function makeMap(container) {
       (map.listeners[event] || []).slice().forEach((handler) => handler());
     },
   };
+  map.scrollZoom = makeZoomHandler({ ignoresOptionsWhenEnabled: true });
+  map.touchZoomRotate = makeZoomHandler({ ignoresOptionsWhenEnabled: false });
+  map.doubleClickZoom = makeZoomHandler({ ignoresOptionsWhenEnabled: false });
   return map;
+}
+
+/**
+ * A stand-in for one of MapLibre's zoom handlers, tracking whether it is
+ * enabled and whether it was armed to zoom about the map's centre.
+ *
+ * ``ignoresOptionsWhenEnabled`` models ScrollZoomHandler's quirk — its
+ * ``enable()`` returns early when the handler is already enabled, so an
+ * ``enable({around: 'center'})`` that isn't preceded by ``disable()``
+ * silently does nothing. Modelling it is what makes these tests able to
+ * catch that mistake.
+ *
+ * @param {{ignoresOptionsWhenEnabled: boolean}} behaviour
+ */
+function makeZoomHandler(behaviour) {
+  const handler = {
+    enabled: true,
+    aroundCentre: false,
+    isEnabled: () => handler.enabled,
+    disable: () => {
+      handler.enabled = false;
+    },
+    enable: (options) => {
+      if (behaviour.ignoresOptionsWhenEnabled && handler.enabled) return;
+      handler.enabled = true;
+      handler.aroundCentre = !!options && options.around === 'center';
+    },
+  };
+  return handler;
 }
 
 /** Re-run the module's IIFE against fresh state and return the fresh API. */
@@ -315,5 +347,53 @@ describe('deactivate()', () => {
   it('is safe to call having never activated', () => {
     expect(() => picker.deactivate()).not.toThrow();
     expect(picker.isActive()).toBe(false);
+  });
+});
+
+describe('zoom anchoring', () => {
+  it('anchors wheel and pinch zoom on the map centre while armed', () => {
+    picker.activate({ onChange: () => {} });
+
+    // The centre is where the pin is drawn (padding included), so a zoom
+    // anchored there cannot move the coordinate under it.
+    expect(map.scrollZoom.aroundCentre).toBe(true);
+    expect(map.touchZoomRotate.aroundCentre).toBe(true);
+  });
+
+  it('turns off double-click zoom, which cannot be anchored', () => {
+    picker.activate({ onChange: () => {} });
+
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+  });
+
+  it('restores every zoom handler on deactivate', () => {
+    picker.activate({ onChange: () => {} });
+
+    picker.deactivate();
+
+    expect(map.scrollZoom.isEnabled()).toBe(true);
+    expect(map.scrollZoom.aroundCentre).toBe(false);
+    expect(map.touchZoomRotate.isEnabled()).toBe(true);
+    expect(map.touchZoomRotate.aroundCentre).toBe(false);
+    expect(map.doubleClickZoom.isEnabled()).toBe(true);
+  });
+
+  it('leaves a handler the app had already disabled alone', () => {
+    map.scrollZoom.disable();
+
+    picker.activate({ onChange: () => {} });
+    expect(map.scrollZoom.isEnabled()).toBe(false);
+
+    picker.deactivate();
+    expect(map.scrollZoom.isEnabled()).toBe(false);
+  });
+
+  it('tolerates a map with no zoom handlers at all', () => {
+    delete map.scrollZoom;
+    delete map.touchZoomRotate;
+    delete map.doubleClickZoom;
+
+    expect(() => picker.activate({ onChange: () => {} })).not.toThrow();
+    expect(() => picker.deactivate()).not.toThrow();
   });
 });
