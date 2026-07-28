@@ -317,9 +317,10 @@ Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 
 ### Persisting edits — `dump_resorts_fixture`
 
-Edits land in the local SQLite, not the source-of-truth fixture in git.
-Run the dump command after a session of placements to regenerate
-`regions/fixtures/resorts.json`:
+Edits land in the local SQLite only. Run the dump command after a session
+of placements to regenerate the seed fixture at
+`regions/fixtures/resorts.json`, which is what carries them to other
+worktrees and CI:
 
 ```bash
 uv run python manage.py dump_resorts_fixture          # dry-run, prints diff
@@ -333,3 +334,7 @@ orders by pk — the same shape as the existing fixture. Without the
 dump step, edits live only on the operator's laptop and silently
 disappear on `loaddata` re-runs. Mirrors `refresh_eaws_fixtures`'s
 safe-by-default convention (read-only without `--commit`).
+
+No deploy loads `resorts.json` — production coordinates are edited in that
+environment, not shipped from git
+([`resorts-are-editable-data`](decisions/resorts-are-editable-data.md)).

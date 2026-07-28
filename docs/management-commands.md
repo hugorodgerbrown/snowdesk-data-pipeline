@@ -120,22 +120,72 @@ automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
 from the factories.
 
-### Region & resort fixtures (auto-loaded on deploy)
+### Region fixtures (auto-loaded on deploy)
 
 `build.sh` and `build_headless.sh` run `loaddata` against all four
-`regions/fixtures/eaws_*.json` files and `regions/fixtures/resorts.json`
-on every deploy. The operator workflow for a fixture change is therefore:
+`regions/fixtures/eaws_*.json` files (and `region_aliases.json` on the web
+service) on every deploy. The operator workflow for a fixture change is
+therefore:
 
-1. Edit the source data (vendored EAWS files, CSV, resort coordinates).
+1. Edit the source data (vendored EAWS files, CSV).
 2. Rebuild the on-disk fixture (`build_switzerland_fixture --commit`,
-   `build_austria_fixture --commit`, `build_italy_fixture --commit`,
-   `build_france_fixture --commit`, or `dump_resorts_fixture --commit`).
+   `build_austria_fixture --commit`, `build_italy_fixture --commit`, or
+   `build_france_fixture --commit`).
 3. Commit and push. The next deploy reloads the fixture into production.
 
 `loaddata` is idempotent (upsert by primary key, no orphan deletion),
 so re-running on every deploy is safe. Manual `loaddata` against the
 production DB is no longer required — but it remains the right call
 for a same-day hotfix, before the next deploy lands.
+
+**`resorts.json` is deliberately not in that list.** `Resort` rows are
+editable data owned by each environment's database (admin + map editor);
+reloading the fixture on every deploy would silently revert every edit.
+The fixture seeds fresh local/CI databases only, and bulk editorial changes
+are applied by hand with `import_resorts` (below). Rationale:
+[`resorts-are-editable-data`](decisions/resorts-are-editable-data.md).
+
+### `import_resorts` — reconcile Resort against the curated sheet
+
+`Resort`'s editorial columns (operator, website, elevations, lift/run
+counts, piste length, season dates, curator notes) are curated in a
+spreadsheet, exported to `regions/data/resorts.tsv`. `import_resorts`
+reconciles the database against it in three modes, all on by default:
+
+| Mode | Effect |
+|------|--------|
+| `add` | Create a resort for a sheet row whose `uuid` the DB lacks. |
+| `update` | Overwrite the editorial fields of rows that do match. |
+| `delete` | Remove resorts the sheet does not list. |
+
+The sheet's *live* set is every row whose `note` does **not** start with
+`NOT_A_SKI_RESORT` — the marker retires an entry that was never a
+lift-served area. `delete` therefore removes both the marked rows and any
+resort absent from the export; `add`/`update` skip marked rows. A resort
+created in the admin must be re-exported to the sheet or it is deleted by
+the next full run — use `--mode add update` to reconcile without that risk.
+
+`region` and `canton` are read only when creating, never overwritten, and
+the editorial export does not yet carry them — so a row that would need
+creating is reported as an error rather than guessed at. Geocoding fields
+are never touched.
+
+Read-only by default; the dry-run at `--verbosity 2` prints a field-level
+diff. Validation failures (a bad season date, a non-numeric elevation, an
+unknown region) abort the whole run — nothing is half-applied.
+
+```bash
+uv run python manage.py import_resorts                     # preview everything
+uv run python manage.py import_resorts -v2                 # field-level diff
+uv run python manage.py import_resorts --commit            # apply
+uv run python manage.py import_resorts --mode update --commit   # fields only
+uv run python manage.py import_resorts --file /path/to.tsv      # other export
+```
+
+After applying it locally, refresh the seed fixture with
+`dump_resorts_fixture --commit` so fresh worktrees and CI start from the
+same data. Against staging/production, run it by hand — it is not part of
+any deploy.
 
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 

@@ -22,7 +22,8 @@ core/            Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware and the monitor_query_counts command
 regions/         Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
-                 (dump_resorts_fixture, refresh_eaws_fixtures)
+                 (dump_resorts_fixture, refresh_eaws_fixtures) and the
+                 curated resort sheet + its import_resorts command
 bulletins/       Everything that originates from provider APIs — the models
                  (Bulletin, RegionBulletin, PipelineRun, RegionDayRating,
                  WeatherSnapshot, …), the per-provider fetchers/translators

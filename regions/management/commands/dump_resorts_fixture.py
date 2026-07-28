@@ -1,10 +1,14 @@
 """dump_resorts_fixture — export the Resort table to its fixture file.
 
 After a session of placing resort coordinates via the in-map editor
-(``/map/?edit=resorts`` in DEBUG mode — SNOW-74), edits live only in
-the local SQLite. This command re-emits ``regions/fixtures/resorts.json``
-from the current DB rows so the operator can ``git diff`` and commit the
-change. Without it, edits silently disappear on the next ``loaddata`` run.
+(``/map/?edit=resorts`` in DEBUG mode — SNOW-74), or a local
+``import_resorts --commit`` run, edits live only in the local SQLite. This
+command re-emits ``regions/fixtures/resorts.json`` from the current DB rows
+so the operator can ``git diff`` and commit the change.
+
+That fixture is the seed for fresh local and CI databases only — no deploy
+loads it (see ``docs/decisions/resorts-are-editable-data.md``), so it is
+how an edit reaches other worktrees and CI, not how it reaches production.
 
 Safe-by-default: read-only unless ``--commit`` is passed. A bare
 invocation prints a one-line diff summary and exits 0 without writing

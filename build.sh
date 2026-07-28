@@ -27,17 +27,23 @@ uv run --no-sync python manage.py collectstatic --no-input
 uv run --no-sync python manage.py migrate
 
 # Sync the committed fixtures into the database. ``loaddata`` upserts by
-# primary key (``region_id`` on MicroRegion, ``prefix`` on Major/SubRegion,
-# numeric PK on Resort) and never deletes rows, so re-running on every
-# deploy is idempotent. Without this step, fixture edits (e.g. corrected
-# region names) only reach production if an operator remembers to run
-# ``loaddata`` out of band — see ``docs/management-commands.md``.
+# primary key (``region_id`` on MicroRegion, ``prefix`` on Major/SubRegion)
+# and never deletes rows, so re-running on every deploy is idempotent.
+# Without this step, fixture edits (e.g. corrected region names) only reach
+# production if an operator remembers to run ``loaddata`` out of band —
+# see ``docs/management-commands.md``.
+#
+# resorts.json is deliberately NOT in this list. Resort rows are editable
+# data owned by this database (admin + map editor), not reference data;
+# re-loading the fixture on every deploy would silently revert every edit.
+# The fixture seeds fresh local/CI databases only, and the curated sheet is
+# applied by hand with ``manage.py import_resorts --commit``. See
+# docs/decisions/resorts-are-editable-data.md.
 uv run --no-sync python manage.py loaddata \
     regions/fixtures/eaws_CH.json \
     regions/fixtures/eaws_FR.json \
     regions/fixtures/eaws_AT.json \
     regions/fixtures/eaws_IT.json \
-    regions/fixtures/resorts.json \
     regions/fixtures/region_aliases.json
 
 # Precompute per-region offline-basemap tile coverage (SNOW-521) on every
