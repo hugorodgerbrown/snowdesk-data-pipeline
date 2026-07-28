@@ -797,7 +797,7 @@ def home(request: HttpRequest) -> HttpResponse:
         # The save URL contains an :resort_id placeholder — same trick as
         # the region_summary URL in static/js/map.js: reverse with a
         # dummy id, then string-replace at runtime in the JS.
-        save_url_template = reverse("api:edit_resort_save_coords", args=[0]).replace(
+        save_url_template = reverse("api:edit_resort_save", args=[0]).replace(
             "/0/", "/__ID__/"
         )
         edit_context.update(
