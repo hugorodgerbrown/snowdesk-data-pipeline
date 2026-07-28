@@ -11,6 +11,29 @@
  * scripts share scope across <script> tags in the same document, so no
  * window export is needed).
  *
+ * Placement
+ * ---------
+ * Positioning uses the same shared centre pin as the favourite-create and
+ * field-observation flows (window.PlacePicker, static/js/place_picker.js):
+ * the pin is fixed on screen and the operator pans the map underneath it,
+ * with the coordinate read off the map centre on every 'moveend'. It
+ * replaces the draggable ``maplibregl.Marker`` this file used to drop on
+ * click — a dragged pin is occluded by the cursor/finger placing it, and
+ * two placement mechanics in one app is one too many.
+ *
+ * A click on the map still "places" in the sense the operator expects: it
+ * pans the clicked point under the pin rather than moving a marker to it.
+ *
+ * Panel-side consequences worth knowing:
+ *   - Placement is armed for as long as a resort is selected, so Save is
+ *     live from the moment of selection (the point under the pin is always
+ *     a valid coordinate). Cancel — and Escape — clears the selection.
+ *   - While armed, PlacePicker clears the map down to the basemap
+ *     (window.PlacementFocus), which hides the edit-resorts points layer
+ *     along with everything else. Tapping a pin on the map to jump to that
+ *     resort therefore works only with nothing selected; otherwise pick the
+ *     row from the panel list.
+ *
  * Coordinate-ordering reminder:
  *   - DB columns:        latitude, longitude
  *   - JSON wire format:  {"latitude": ..., "longitude": ...}
@@ -40,6 +63,18 @@
   const searchInput               = document.getElementById('edit-resorts-search');
   const hideSetInput              = document.getElementById('edit-resorts-hide-set');
   const pasteInput                = document.getElementById('edit-resorts-paste');
+  const detailsEl                 = document.getElementById('edit-resorts-details');
+
+  // Every hand-curated metadata input in the panel, keyed by the Resort
+  // field name it edits. The template is the source of the field list
+  // (``data-resort-field``) so adding one there needs no change here —
+  // it only has to be in regions.forms.RESORT_DETAIL_FIELDS server-side.
+  const detailInputs = new Map(
+    Array.from(
+      panel.querySelectorAll('[data-resort-field]'),
+      (input) => [input.dataset.resortField, input],
+    ),
+  );
 
   // ``hide-set`` toggle preference is persisted across reloads — the
   // operator commonly works through unset/review rows over multiple
@@ -58,21 +93,24 @@
   let allResorts         = [];   // Full catalogue, sorted by region+name.
   let subRegionLabels    = {};   // {prefix: name} for L2 section headers.
   let currentTarget      = null; // The selected resort entry, or null.
-  let draftMarker        = null; // MapLibre Marker, draggable.
+  let draftCoord         = null; // {lat, lng} under the centre pin, or null.
   let selectedRegionFid  = null; // Numeric feature id of the highlighted region.
 
   // Format a coord pair to 5 decimal places (≈1m precision in Switzerland).
   const fmtCoord = (lat, lng) =>
     `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
+  // The error line is hidden with Tailwind's ``hidden`` utility, so the
+  // ``hidden`` *attribute* alone would not reveal it (display:none from
+  // the class wins) — toggle the class.
   const showError = (msg) => {
     errorEl.textContent = msg;
-    errorEl.hidden = false;
+    errorEl.classList.remove('hidden');
   };
 
   const clearError = () => {
     errorEl.textContent = '';
-    errorEl.hidden = true;
+    errorEl.classList.add('hidden');
   };
 
   // Header counter — "{set count} / {total} set". Replaces the
@@ -207,23 +245,82 @@
     const currentCoords = (t.latitude != null && t.longitude != null)
       ? fmtCoord(t.latitude, t.longitude)
       : '(none)';
-    let draftCoords = '—';
-    if (draftMarker) {
-      const ll = draftMarker.getLngLat();
-      draftCoords = fmtCoord(ll.lat, ll.lng);
-    }
+    const draftCoords = draftCoord
+      ? fmtCoord(draftCoord.lat, draftCoord.lng)
+      : '—';
     targetEl.innerHTML = `
       <p class="font-semibold text-slate-900">${escapeHtml(t.name)}</p>
       <p class="text-xs text-slate-500">${escapeHtml(t.region_name)} (${escapeHtml(t.region_id)}) · ${escapeHtml(t.canton)}</p>
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
         <dt class="text-slate-500">Current</dt>
         <dd class="font-mono text-slate-700">${escapeHtml(currentCoords)}</dd>
-        <dt class="text-slate-500">Draft</dt>
-        <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoords)}</dd>
+        <dt class="text-slate-500">Under pin</dt>
+        <dd class="font-mono ${draftCoord ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoords)}</dd>
       </dl>
     `;
-    saveBtn.disabled = !draftMarker;
-    cancelBtn.disabled = !draftMarker;
+    saveBtn.disabled = !draftCoord;
+    cancelBtn.disabled = !currentTarget;
+  };
+
+  // Details form -------------------------------------------------------------
+  //
+  // The panel's metadata inputs are populated from the catalogue entry's
+  // ``details`` object (served by the queue endpoint) and read back as the
+  // ``details`` object the save endpoint validates. Values travel as
+  // strings; the server coerces and validates them, so nothing here needs
+  // to know which fields are numeric.
+
+  // Marks an input the server rejected. The inputs are not inside a
+  // <form>, so there is no native validation bubble to lean on —
+  // setCustomValidity() would set state nothing ever renders.
+  const ERROR_CLASS = 'border-form-error';
+
+  const clearFieldErrors = () => {
+    for (const [, input] of detailInputs) input.classList.remove(ERROR_CLASS);
+  };
+
+  const writeDetailsForm = (details) => {
+    let anyFilled = false;
+    for (const [field, input] of detailInputs) {
+      const value = details && details[field] != null ? details[field] : '';
+      input.value = String(value);
+      input.classList.remove(ERROR_CLASS);
+      if (input.value !== '') anyFilled = true;
+    }
+    // Auto-open the section when there is already something to see —
+    // otherwise a resort with a filled-in record looks empty until the
+    // operator thinks to expand it.
+    if (detailsEl) detailsEl.open = anyFilled;
+  };
+
+  const readDetailsForm = () => {
+    const details = {};
+    for (const [field, input] of detailInputs) {
+      details[field] = input.value.trim();
+    }
+    return details;
+  };
+
+  const clearDetailsForm = () => {
+    writeDetailsForm(null);
+    if (detailsEl) detailsEl.open = false;
+  };
+
+  // Surface the server's per-field validation errors (the ``fields`` object
+  // in a 400 invalid_details body) on the inputs that produced them, so the
+  // operator can see which of ten fields is at fault without decoding one
+  // summary line.
+  const showFieldErrors = (fields) => {
+    clearFieldErrors();
+    const messages = [];
+    for (const [field, errors] of Object.entries(fields || {})) {
+      const text = Array.isArray(errors) ? errors.join(' ') : String(errors);
+      const input = detailInputs.get(field);
+      if (input) input.classList.add(ERROR_CLASS);
+      messages.push(`${field}: ${text}`);
+    }
+    if (detailsEl && messages.length > 0) detailsEl.open = true;
+    return messages.join(' · ');
   };
 
   const escapeHtml = (s) =>
@@ -282,8 +379,16 @@
     if (!feature || !feature.geometry) return;
     // Modest padding and a maxZoom cap — small regions otherwise zoom
     // past the city-detail level we want for placing a pin.
+    //
+    // The padding is uniform even though the panel covers the right 360px:
+    // MapLibre keeps a fitBounds padding as the map's padding, and an
+    // asymmetric one moves the map centre away from the placement pin's
+    // screen position (see armPlacement). Symmetric padding puts the
+    // region's centre under the pin, which is what the operator is about
+    // to aim with, at the cost of the region's right edge sitting behind
+    // the panel until they pan.
     MAP.fitBounds(featureBBoxOf(feature), {
-      padding: { top: 60, right: 380, bottom: 60, left: 60 }, // panel is 360px wide
+      padding: 60,
       maxZoom: 11,
       duration: 400,
     });
@@ -332,38 +437,39 @@
 
     currentTarget = entry;
     clearError();
-    removeDraftMarker();
     // Highlight the parent region in both the placed-pin and unplaced
-    // cases — gives the operator a visual confirmation of which region
-    // their resort lives in. Idempotent on same-region (the
-    // setFeatureState writes the same value back).
+    // cases. The highlight is only actually on screen before placement
+    // arms (PlacePicker clears every overlay), but it survives in
+    // feature-state and comes back when the selection is cleared.
     setSelectedRegion(entry.region_id);
-    // If the resort already has coords, pre-populate a draft marker so the
-    // operator can drag-to-refine without first clicking-to-place.
+    writeDetailsForm(entry.details);
+
     if (entry.latitude != null && entry.longitude != null) {
-      placeDraftMarker(entry.longitude, entry.latitude);
-      if (typeof MAP !== 'undefined' && MAP) {
-        if (isRegionChange) {
-          // Crossed regions — frame on the new pin at zoom 12. flyTo
-          // animates both pan and zoom.
-          MAP.flyTo({ center: [entry.longitude, entry.latitude], zoom: 12 });
-        } else {
-          // Same region — preserve the current zoom level, just pan
-          // so the new pin sits roughly centred. panTo animates pan
-          // only, leaving zoom untouched.
-          MAP.panTo([entry.longitude, entry.latitude]);
-        }
+      // Already placed — frame the saved point, then arm the picker on it
+      // so the coordinate under the pin starts out as the stored one and
+      // any pan from here is a deliberate correction.
+      if (typeof MAP !== 'undefined' && MAP && isRegionChange) {
+        // Crossed regions — frame on the resort at zoom 12. flyTo
+        // animates both pan and zoom; arming afterwards re-centres
+        // instantly on the same point, so the animation is not fought.
+        MAP.flyTo({ center: [entry.longitude, entry.latitude], zoom: 12 });
       }
-    } else if (isRegionChange) {
-      // Unplaced resort in a new region — fit the map to that region's
-      // polygon so the operator can see the area before clicking to
-      // drop a pin. Without this, picking an unplaced resort leaves
-      // the view at the previous frame (typically the whole-Switzerland
-      // framing the map booted with).
-      fitMapToRegion(entry.region_id);
+      // Same region — preserve the operator's manual zoom; armPlacement's
+      // recentre pans to the new resort on its own.
+      armPlacement([entry.longitude, entry.latitude]);
+    } else {
+      if (isRegionChange) {
+        // Unplaced resort in a new region — fit the map to that region's
+        // polygon so the pin starts somewhere sensible. Without this,
+        // picking an unplaced resort leaves the view at the previous
+        // frame (typically the whole-Switzerland framing the map booted
+        // with).
+        fitMapToRegion(entry.region_id);
+      }
+      // Nothing to recentre on: the pin holds wherever the map now is,
+      // and the operator pans the village under it.
+      armPlacement(null);
     }
-    // Same-region unplaced selection: the operator's view is already
-    // good (they were just placing a pin in this region); do nothing.
     renderResortsList();
     renderTarget();
   };
@@ -376,38 +482,47 @@
     if (entry) selectTarget(entry);
   };
 
-  // Draft marker ------------------------------------------------------------
+  // Placement ---------------------------------------------------------------
   //
-  // The draft marker's lifetime *is* the pin-positioning phase — Save and
-  // Cancel are enabled only while it exists — so it is also the window in
-  // which the map is cleared down to the basemap
-  // (window.PlacementFocus, static/js/map_placement_focus.js). Choosing
-  // where to click keeps full region context; refining the dropped pin
-  // does not. One consequence worth knowing: with the resort-points layer
-  // hidden, ``onMapClick``'s "did this tap hit an existing resort?" query
-  // finds nothing, so while a draft is live every map click repositions
-  // the draft rather than jumping to another resort — pick the other
-  // resort from the panel list instead.
+  // Positioning is delegated to the shared centre pin
+  // (window.PlacePicker, static/js/place_picker.js) — the same surface
+  // the favourite-create and field-observation flows use. It is armed for
+  // as long as a resort is selected and reports the coordinate under the
+  // pin on every 'moveend'; ``draftCoord`` is that reading and is what
+  // Save posts.
+  //
+  // Arming also clears the map down to the basemap
+  // (window.PlacementFocus, via the picker), which hides the
+  // edit-resorts points layer along with every other overlay. Selecting
+  // another resort by tapping its pin therefore works only with nothing
+  // currently selected — otherwise use the panel list.
+  //
+  // No ``occludedBy`` is passed: the panel is a full-height side rail, not
+  // a bottom sheet, so it never covers the middle of the map and the pin
+  // stays plainly centred.
 
-  const placeDraftMarker = (lng, lat) => {
-    removeDraftMarker();
+  const armPlacement = (recenterTo) => {
     if (typeof MAP === 'undefined' || !MAP) return;
-    draftMarker = new maplibregl.Marker({ draggable: true, color: '#f59e0b' })
-      .setLngLat([lng, lat])
-      .addTo(MAP);
-    draftMarker.on('dragend', () => {
-      renderTarget();
+    // The pin is drawn at the map container's geometric centre, and the
+    // picker reads the coordinate from MAP.getCenter() — which is the
+    // *padded* centre. Any leftover framing padding (fitMapToRegion's,
+    // say) would put those two points in different places and the readout
+    // would quietly describe somewhere the pin is not. Zero it first; the
+    // picker snapshots this as its base and restores it on deactivate.
+    MAP.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
+    window.PlacePicker?.activate({
+      recenterTo: recenterTo || undefined,
+      onChange: (lat, lng) => {
+        draftCoord = { lat: lat, lng: lng };
+        renderTarget();
+      },
     });
-    window.PlacementFocus?.enter();
   };
 
-  const removeDraftMarker = () => {
-    if (draftMarker) {
-      draftMarker.remove();
-      draftMarker = null;
-    }
+  const disarmPlacement = () => {
+    window.PlacePicker?.deactivate();
+    draftCoord = null;
     if (pasteInput) pasteInput.value = '';
-    window.PlacementFocus?.exit();
   };
 
   // Parse a "lat, lon" string of the kind Google Maps shows above its
@@ -427,34 +542,27 @@
     return { lat, lon };
   };
 
+  // A pasted pair moves the map so the point lands under the pin — the
+  // picker's 'moveend' read then updates ``draftCoord`` for free, so
+  // there is nothing to write here beyond the camera move.
   const onPasteInput = () => {
     if (!currentTarget) return;
     const parsed = parseLatLonString(pasteInput.value);
-    if (!parsed) {
-      // Empty / unparseable — clear any prior marker so the panel state
-      // doesn't lie. (User may have pasted, then deleted the value.)
-      if (pasteInput.value.trim() === '') {
-        removeDraftMarker();
-        renderTarget();
-      }
-      return;
-    }
-    placeDraftMarker(parsed.lon, parsed.lat);
+    if (!parsed) return;
     if (typeof MAP !== 'undefined' && MAP) {
       MAP.flyTo({ center: [parsed.lon, parsed.lat], zoom: 13 });
     }
     clearError();
-    renderTarget();
   };
 
   // Save / cancel / skip ----------------------------------------------------
 
   const save = async () => {
-    if (!currentTarget || !draftMarker) return;
-    const ll = draftMarker.getLngLat();
+    if (!currentTarget || !draftCoord) return;
     const url = SAVE_URL_TEMPLATE.replace('__ID__', String(currentTarget.id));
     saveBtn.disabled = true;
     clearError();
+    clearFieldErrors();
     try {
       const resp = await fetch(url, {
         method: 'POST',
@@ -464,13 +572,23 @@
         },
         // GeoJSON uses [lon, lat]; MapLibre returns {lng, lat}; the wire
         // format here is keyed by name — no ordering ambiguity.
-        body: JSON.stringify({ latitude: ll.lat, longitude: ll.lng }),
+        body: JSON.stringify({
+          latitude: draftCoord.lat,
+          longitude: draftCoord.lng,
+          details: readDetailsForm(),
+        }),
       });
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
         try {
           const errBody = await resp.json();
           detail = errBody.detail || errBody.error || detail;
+          // A rejected detail field names itself; mark the offending
+          // inputs and put the per-field reasons in the error line.
+          if (errBody.fields) {
+            const fieldDetail = showFieldErrors(errBody.fields);
+            if (fieldDetail) detail = fieldDetail;
+          }
         } catch (_) { /* response body wasn't JSON */ }
         showError(`Save failed: ${detail}`);
         saveBtn.disabled = false;
@@ -492,18 +610,20 @@
           longitude:   data.longitude,
           has_coords:  true,
           needs_review: data.needs_review,
+          details:     data.details,
         };
       }
-      // Keep the just-saved resort selected so the operator gets
-      // visual confirmation (panel readout still shows the resort,
-      // pill flips to Set on the list row). Patch ``currentTarget``
-      // to the post-save shape so re-clicking it doesn't read stale
-      // pre-save lat/lon. The auto-advance to the "next in queue"
-      // that SNOW-74 had is gone — the operator picks the next row
-      // themselves.
-      removeDraftMarker();
+      // Keep the just-saved resort selected — and placement armed — so
+      // the operator gets visual confirmation (the readout's "Current"
+      // row catches up with "Under pin") and can nudge and re-save
+      // without re-selecting. Patch ``currentTarget`` to the post-save
+      // shape so re-clicking it doesn't read stale pre-save values. The
+      // auto-advance to the "next in queue" that SNOW-74 had is gone —
+      // the operator picks the next row themselves.
+      if (pasteInput) pasteInput.value = '';
       if (currentTarget && currentTarget.id === data.id) {
         currentTarget = catIdx !== -1 ? allResorts[catIdx] : currentTarget;
+        writeDetailsForm(data.details);
       }
       renderResortsList();
       renderRemaining();
@@ -515,9 +635,17 @@
     }
   };
 
+  // Cancel drops the whole selection rather than just the pin position:
+  // with the picker armed there is no "no draft yet" state to fall back
+  // to, and clearing the target is what brings the overlays — and with
+  // them tap-a-pin-to-select — back.
   const cancel = () => {
-    removeDraftMarker();
+    disarmPlacement();
+    clearSelectedRegion();
+    currentTarget = null;
     clearError();
+    clearDetailsForm();
+    renderResortsList();
     renderTarget();
   };
 
@@ -636,25 +764,30 @@
 
   // Map click handler -------------------------------------------------------
 
+  // A click no longer drops anything — the pin does not move. It pans the
+  // clicked point under the pin instead, which keeps the mouse-driven
+  // "click roughly there, then fine-tune" habit working on desktop while
+  // the coordinate still comes from exactly one place: the map centre.
   const onMapClick = (e) => {
     if (!currentTarget) return;
     if (typeof MAP === 'undefined' || !MAP) return;
     // If the click hit a resort point, the layer-specific handler runs and
-    // we don't want to also drop a pin. queryRenderedFeatures filters by
-    // layer; if any feature is returned, bail.
+    // we don't want to also move the map. queryRenderedFeatures filters by
+    // layer; if any feature is returned, bail. (While placement is armed
+    // the layer is hidden, so this only fires with nothing selected —
+    // which the guard above has already returned on.)
     const hits = MAP.queryRenderedFeatures(e.point, { layers: [LAYER_ID] });
     if (hits && hits.length > 0) return;
-    placeDraftMarker(e.lngLat.lng, e.lngLat.lat);
-    renderTarget();
+    MAP.panTo(e.lngLat);
   };
 
   // Keyboard ----------------------------------------------------------------
 
   const onKeyDown = (e) => {
-    if (e.key === 'Escape' && draftMarker) {
+    if (e.key === 'Escape' && currentTarget) {
       cancel();
       e.preventDefault();
-    } else if (e.key === 'Enter' && draftMarker && !saveBtn.disabled) {
+    } else if (e.key === 'Enter' && draftCoord && !saveBtn.disabled) {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       save();

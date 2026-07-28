@@ -302,7 +302,12 @@ try {
 // the favourite create sheet no longer focuses its name input, which raised
 // the keyboard before the pin was placed. Shell JS/HTML/CSS bytes changed
 // (place_picker.js, favourites.js, report.js, map.css, _overlay_sheet.html).
-const CACHE_VERSION = 'snowdesk-shell-v63';
+// v65 — the staff edit-resorts mode positions with the shared centre pin
+// (window.PlacePicker) instead of its own draggable marker, and its panel
+// gains the hand-curated Resort detail fields. Shell JS bytes changed
+// (map_edit_resorts.js); the panel template itself is not part of the
+// cached shell.
+const CACHE_VERSION = 'snowdesk-shell-v65';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

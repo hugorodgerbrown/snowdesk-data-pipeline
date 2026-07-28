@@ -104,7 +104,7 @@ the pin-detail rename/delete markup is reconstructed client-side from the
 `favourite_rename_url_template` / `favourite_delete_url_template` context
 vars — the same reverse-with-a-dummy-id-then-string-replace trick
 `public/views.py::home()` uses for `edit_save_url_template`
-(`api:edit_resort_save_coords`).
+(`api:edit_resort_save`).
 
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre
@@ -249,22 +249,48 @@ documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.
 
 ## Edit-resorts mode (SNOW-74) — gated on the `edit_map` waffle flag
 
-`/?edit=resorts` enters resort-coordinate-edit mode when the
+`/?edit=resorts` enters resort-edit mode when the
 `edit_map` waffle flag is active for the request user (SNOW-86; see
 [`feature-flags.md`](feature-flags.md)). The page renders a right-hand panel with a
 queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`
 — missing coords or `needs_review=True`) plus a search box across all
-resorts. Clicking the map drops a draggable orange pin; drag to refine,
-then **Save**. Behind the scenes the panel POSTs `{latitude, longitude}`
-to the save endpoint, which sets `geocode_source="manual"`,
-`geocode_confidence=1.0`, `geocoded_at=now()`, clears `needs_review`,
-and returns the next queue entry so the panel auto-advances. Click an
-existing resort point to re-position it.
+resorts.
+
+**Placement.** Selecting a resort arms the shared centre pin
+(`window.PlacePicker`, `static/js/place_picker.js`) — the same surface the
+favourite-create and field-observation flows use. The pin holds still on
+screen and the map pans underneath it; the coordinate is read off
+`MAP.getCenter()` on every `moveend`, so what the panel shows under
+"Under pin" is always the point the pin is drawn over. A click on the map
+pans that point under the pin rather than moving a marker to it (the
+draggable orange marker this mode used before SNOW-538's sibling change is
+gone). Arming also clears the map down to the basemap
+(`window.PlacementFocus`), which hides the resort-points layer — so
+tapping a pin to jump to that resort works only with nothing selected;
+otherwise pick the row from the panel list. **Cancel** (or Escape) drops
+the selection and brings the overlays back.
+
+**Details.** The panel's collapsible "Resort details" section edits the
+hand-curated metadata fields (SNOW-500 — alternative name, operator,
+website, lifts, runs, piste km, base/top elevation, typical season
+open/close). Each input carries `data-resort-field="<model field>"`; the
+server-side list they are validated against is
+`regions.forms.RESORT_DETAIL_FIELDS` (a `ResortDetailsForm` ModelForm, so
+every constraint stays on the model). Adding a field means adding it in
+both places and nowhere else.
+
+One **Save** POSTs `{latitude, longitude, details}`, which sets
+`geocode_source="manual"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
+clears `needs_review`, and writes the detail fields — a save is a manual
+confirmation of the position under the pin as well as of the details. The
+selection and the pin survive the save so the operator can nudge and
+re-save. Run `manage.py dump_resorts_fixture --commit` afterwards to
+persist a session of edits to git.
 
 | URL | Name | Method | Notes |
 |-----|------|--------|-------|
-| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Flag-gated. Returns `{queue, all_resorts}` — queue ordered `region_id ASC, name ASC` so the panel can group rows by L1 area (e.g. `CH-4`). `needs_review` rows still surface a ⚠ in the panel; they are no longer a sort key. |
-| `/api/edit/resorts/<int:resort_id>/coords/` | `api:edit_resort_save_coords` | POST | Flag-gated. JSON body `{latitude, longitude}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. |
+| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Flag-gated. Returns `{all_resorts, sub_regions}`, ordered `region_id ASC, name ASC` so the panel can group rows by L2 area (e.g. `CH-41`). Each entry carries a `details` object holding every `RESORT_DETAIL_FIELDS` value, so selecting a row needs no second fetch. |
+| `/api/edit/resorts/<int:resort_id>/save/` | `api:edit_resort_save` | POST | Flag-gated. JSON body `{latitude, longitude, details?}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. `details` is optional and may be partial — an omitted key keeps its stored value. An invalid field returns `400 {"error": "invalid_details", "fields": {…}}` and writes nothing at all, coordinates included. |
 
 Both endpoints 404 when the `edit_map` flag is inactive
 (`_require_edit_map_flag()` in `public/api.py` raises `Http404`). The

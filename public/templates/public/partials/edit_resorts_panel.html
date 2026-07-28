@@ -14,6 +14,15 @@
     Several DOM IDs (edit-resorts-queue, edit-resorts-remaining) keep
     their SNOW-74 names for minimal-diff reasons even though they no
     longer correspond to a queue concept — the JS comments explain.
+
+    The "Resort details" section edits the hand-curated metadata fields
+    added by SNOW-500 (lifts, runs, piste length, elevations, season
+    dates, operator, website). Every input carries
+    ``data-resort-field="<model field name>"``; the JS reads and writes
+    the whole set generically off that attribute, so adding a field here
+    needs no JS change — only a matching entry in
+    ``regions.forms.RESORT_DETAIL_FIELDS``, which is what the API
+    validates and persists.
 {% endcomment %}
 <aside
     id="edit-resorts-panel"
@@ -34,7 +43,7 @@
         </div>
         <p class="mt-1 text-xs text-text-3">
             {% blocktrans trimmed %}
-                Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. Run
+                Pick a resort, pan the map so the pin sits on it (or paste lat/lon), fill in any details, then Save. Run
                 <code>manage.py dump_resorts_fixture --commit</code> to persist to git.
             {% endblocktrans %}
         </p>
@@ -44,7 +53,7 @@
         <input
             id="edit-resorts-search"
             type="search"
-            class="w-full rounded border border-border px-2 py-1 text-sm focus:border-text-2 focus:outline-none"
+            class="w-full rounded-sm border border-border px-2 py-1 text-sm focus:border-text-2 focus:outline-none"
             placeholder='{% trans "Filter resorts…" %}'
             autocomplete="off"
             spellcheck="false"
@@ -59,48 +68,174 @@
         </label>
     </div>
 
-    <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
-            {% trans "Current target" %}
-        </h3>
-        <div id="edit-resorts-target" class="text-sm text-text-1">
-            <p class="italic text-text-3">{% trans "No resort selected." %}</p>
+    {# Capped at half the panel so an open details section scrolls inside #}
+    {# this block rather than squeezing the resorts list out of view.     #}
+    <div class="flex max-h-[50%] min-h-0 shrink flex-col border-b border-border">
+        <div class="overflow-y-auto px-4 py-3">
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
+                {% trans "Current target" %}
+            </h3>
+            <div id="edit-resorts-target" class="text-sm text-text-1">
+                <p class="italic text-text-3">{% trans "No resort selected." %}</p>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+                <label for="edit-resorts-paste" class="shrink-0 text-xs text-text-3">{% trans "Paste:" %}</label>
+                <input
+                    id="edit-resorts-paste"
+                    type="text"
+                    class="w-full rounded-sm border border-border px-2 py-1 font-mono text-xs focus:border-text-2 focus:outline-none"
+                    placeholder="46.431918, 6.978587"
+                    spellcheck="false"
+                    autocomplete="off"
+                >
+            </div>
+
+            {# Hand-curated metadata (SNOW-500). Collapsed by default so the #}
+            {# resorts list keeps its height for operators who are only      #}
+            {# placing pins; the JS opens it automatically for a resort that #}
+            {# already has any of these fields filled in.                    #}
+            <details id="edit-resorts-details" class="mt-3">
+                <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-3">
+                    {% trans "Resort details" %}
+                </summary>
+                <div class="mt-2 grid grid-cols-2 gap-x-2 gap-y-2">
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Alternative name" %}
+                        <input
+                            type="text"
+                            data-resort-field="name_alt"
+                            maxlength="255"
+                            autocomplete="off"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Operator" %}
+                        <input
+                            type="text"
+                            data-resort-field="operator_name"
+                            maxlength="255"
+                            autocomplete="off"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Website" %}
+                        <input
+                            type="url"
+                            data-resort-field="website"
+                            placeholder="https://"
+                            autocomplete="off"
+                            spellcheck="false"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Lifts" %}
+                        <input
+                            type="number"
+                            data-resort-field="num_lifts"
+                            min="0"
+                            step="1"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Runs" %}
+                        <input
+                            type="number"
+                            data-resort-field="num_runs"
+                            min="0"
+                            step="1"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Total piste (km)" %}
+                        <input
+                            type="number"
+                            data-resort-field="total_piste_km"
+                            min="0"
+                            step="0.1"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Base (m)" %}
+                        <input
+                            type="number"
+                            data-resort-field="base_elevation_m"
+                            min="0"
+                            step="1"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Top (m)" %}
+                        <input
+                            type="number"
+                            data-resort-field="top_elevation_m"
+                            min="0"
+                            step="1"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Season opens" %}
+                        <input
+                            type="text"
+                            data-resort-field="typical_season_open"
+                            placeholder="12-01"
+                            maxlength="5"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 font-mono text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                    <label class="block text-xs text-text-3">
+                        {% trans "Season closes" %}
+                        <input
+                            type="text"
+                            data-resort-field="typical_season_close"
+                            placeholder="04-30"
+                            maxlength="5"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 font-mono text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                    </label>
+                </div>
+            </details>
         </div>
-        <div class="mt-2 flex items-center gap-2">
-            <label for="edit-resorts-paste" class="shrink-0 text-xs text-text-3">{% trans "Paste:" %}</label>
-            <input
-                id="edit-resorts-paste"
-                type="text"
-                class="w-full rounded border border-border px-2 py-1 font-mono text-xs focus:border-text-2 focus:outline-none"
-                placeholder="46.431918, 6.978587"
-                spellcheck="false"
-                autocomplete="off"
+
+        {# Outside the scroll area above so Save stays reachable however #}
+        {# tall the details section grows.                               #}
+        <div class="px-4 pb-3">
+            <div class="flex gap-2">
+                <button
+                    type="button"
+                    id="edit-resorts-save"
+                    class="flex-1 rounded-sm bg-text-1 px-3 py-1.5 text-sm font-medium text-card hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled
+                >
+                    {% trans "Save" %}
+                </button>
+                <button
+                    type="button"
+                    id="edit-resorts-cancel"
+                    class="rounded-sm border border-border px-3 py-1.5 text-sm text-text-2 hover:bg-card-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled
+                >
+                    {% trans "Cancel" %}
+                </button>
+            </div>
+            <p
+                id="edit-resorts-error"
+                class="mt-2 hidden text-xs text-form-error"
+                role="alert"
             >
+            </p>
         </div>
-        <div class="mt-3 flex gap-2">
-            <button
-                type="button"
-                id="edit-resorts-save"
-                class="flex-1 rounded bg-text-1 px-3 py-1.5 text-sm font-medium text-card hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
-            >
-                {% trans "Save" %}
-            </button>
-            <button
-                type="button"
-                id="edit-resorts-cancel"
-                class="rounded border border-border px-3 py-1.5 text-sm text-text-2 hover:bg-card-subtle disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
-            >
-                {% trans "Cancel" %}
-            </button>
-        </div>
-        <p
-            id="edit-resorts-error"
-            class="mt-2 hidden text-xs text-form-error"
-            role="alert"
-        >
-        </p>
     </div>
 
     <div class="flex-1 overflow-y-auto px-4 py-3">

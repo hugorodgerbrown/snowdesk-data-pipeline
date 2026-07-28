@@ -34,8 +34,9 @@ Flag-gated endpoints powering the in-map resort editor (SNOW-74,
 ``?edit=resorts`` on /map/). Both views check the ``edit_map`` waffle
 flag (SNOW-86) and 404 when it is inactive for the request user:
 
-* ``GET  /api/edit/resorts/queue/``                — queue + catalogue payload.
-* ``POST /api/edit/resorts/<int:resort_id>/coords/`` — persist clicked lat/lon.
+* ``GET  /api/edit/resorts/queue/``               — queue + catalogue payload.
+* ``POST /api/edit/resorts/<int:resort_id>/save/`` — persist the placed
+  coordinates and the hand-curated detail fields.
 
 Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its
 three data endpoints in parallel at load time; the per-region summary
@@ -73,6 +74,7 @@ from bulletins.services.settled import earliest_mutable_date
 from core.freshness import apply_freshness_headers
 from favourites.models import Favourite
 from observations.models import FieldObservation
+from regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -1440,7 +1442,10 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     Each catalogue entry carries the fields the side panel needs to
     render a row and (on click) a full target readout: ``id``,
     ``name``, ``region_id``, ``region_name``, ``canton``, ``latitude``,
-    ``longitude``, ``has_coords``, ``needs_review``.
+    ``longitude``, ``has_coords``, ``needs_review``, plus a ``details``
+    object holding every hand-curated metadata field
+    (``regions.forms.RESORT_DETAIL_FIELDS``) so the panel can populate
+    its edit form on selection without a per-resort round trip.
 
     ``sub_regions`` maps L2 prefixes (e.g. ``"CH-41"``) to a display
     label — ``name_en`` when SLF publishes one, otherwise ``name_native``.
@@ -1460,23 +1465,23 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     _require_edit_map_flag(request)
     all_resorts = [
         {
-            "id": pk,
-            "name": name,
-            "region_id": region_id,
-            "region_name": region_name,
-            "canton": canton,
-            "latitude": lat,
-            "longitude": lon,
-            "has_coords": lat is not None and lon is not None,
-            "needs_review": needs_review,
+            "id": row["pk"],
+            "name": row["name"],
+            "region_id": row["region__region_id"],
+            "region_name": row["region__name"],
+            "canton": row["canton"],
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "has_coords": row["latitude"] is not None and row["longitude"] is not None,
+            "needs_review": row["needs_review"],
+            "details": {field: row[field] for field in RESORT_DETAIL_FIELDS},
         }
-        for pk, name, region_id, region_name, canton, lat, lon, needs_review in (
-            Resort.objects.select_related("region")
+        for row in (
+            Resort.objects
             # L2 (e.g. "CH-41") is a prefix of L4 (e.g. "CH-4115"), so
             # sorting on region_id alone groups rows by L2 in the right
             # order. ``name`` breaks ties within a region.
-            .order_by("region__region_id", "name")
-            .values_list(
+            .order_by("region__region_id", "name").values(
                 "pk",
                 "name",
                 "region__region_id",
@@ -1485,6 +1490,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
                 "latitude",
                 "longitude",
                 "needs_review",
+                *RESORT_DETAIL_FIELDS,
             )
         )
     ]
@@ -1507,26 +1513,110 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     )
 
 
+def _resort_details_payload(resort: Resort) -> dict[str, Any]:
+    """Return the hand-curated metadata fields of ``resort`` as a dict.
+
+    The single shape the panel reads on both legs of the round trip — the
+    catalogue's ``details`` object and the save response's — so a saved
+    row can be patched into the in-memory catalogue verbatim.
+    """
+    return {field: getattr(resort, field) for field in RESORT_DETAIL_FIELDS}
+
+
+def _bind_resort_details(
+    resort: Resort,
+    raw_details: Any,
+) -> tuple[JsonResponse | None, list[str]]:
+    """Validate and apply the incoming detail fields to ``resort`` in memory.
+
+    An absent key means "leave this field alone": the incoming values are
+    merged over the instance's current ones before binding, so the panel
+    can send a partial object and a field it never renders can never be
+    blanked by omission.
+
+    Nothing is written to the database — the caller saves once, with the
+    coordinate columns, so a rejected detail field cannot leave a
+    half-applied row behind.
+
+    Args:
+        resort: The instance to apply the values to (mutated in place on
+            success).
+        raw_details: The request body's ``details`` value, unvalidated.
+
+    Returns:
+        ``(error_response, [])`` when the payload is malformed or fails
+        validation, otherwise ``(None, changed_field_names)`` — the names
+        to add to the caller's ``update_fields``.
+
+    """
+    if raw_details is None:
+        return None, []
+    if not isinstance(raw_details, dict):
+        return (
+            JsonResponse(
+                {"error": "invalid_details", "detail": "details must be an object"},
+                status=400,
+            ),
+            [],
+        )
+
+    data = {
+        field: raw_details.get(field, getattr(resort, field))
+        for field in RESORT_DETAIL_FIELDS
+    }
+    form = ResortDetailsForm(data, instance=resort)
+    if not form.is_valid():
+        return (
+            JsonResponse(
+                {
+                    "error": "invalid_details",
+                    "detail": "one or more detail fields are invalid",
+                    "fields": form.errors,
+                },
+                status=400,
+            ),
+            [],
+        )
+    # commit=False applies the cleaned values to the instance without
+    # touching the database; the caller's single save() persists them
+    # alongside the coordinates.
+    form.save(commit=False)
+    return None, list(RESORT_DETAIL_FIELDS)
+
+
 @require_POST
-def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonResponse:
-    """Persist clicked latitude/longitude for a resort (flag-gated).
+def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
+    """Persist the placed coordinates and detail fields of a resort (flag-gated).
 
     Request body (JSON)::
 
-        {"latitude": <float>, "longitude": <float>}
+        {
+          "latitude": <float>,
+          "longitude": <float>,
+          "details": {"num_lifts": 12, "website": "https://…", …}
+        }
+
+    ``details`` is optional and may be partial — every key it omits keeps
+    its stored value (see ``_bind_resort_details``); its permitted keys
+    are ``regions.forms.RESORT_DETAIL_FIELDS``.
 
     On success, sets ``geocode_source="manual"``,
     ``geocode_confidence=1.0``, ``geocoded_at=now()``, and clears
-    ``needs_review``. Auto-rebinds ``resort.region`` if the saved
-    point lands inside a different region's polygon (SNOW-85). Returns
-    the updated resort fields including the (possibly re-bound)
-    ``region_id`` and ``region_name`` so the panel can patch its
-    in-memory catalogue without a follow-up GET.
+    ``needs_review`` — the operator has the pin under the placement
+    marker whenever they save, so every save is a manual confirmation of
+    the position, not just of the detail fields. Auto-rebinds
+    ``resort.region`` if the saved point lands inside a different
+    region's polygon (SNOW-85). Returns the updated resort fields
+    including the (possibly re-bound) ``region_id`` and ``region_name``
+    and the saved ``details`` so the panel can patch its in-memory
+    catalogue without a follow-up GET.
 
     Errors:
         404 — ``edit_map`` waffle flag inactive, or unknown ``resort_id``.
         400 — invalid JSON; missing or non-float lat/lon; coordinates
-              outside the Swiss bounding box.
+              outside the Swiss bounding box; a detail field that fails
+              model validation (``{"error": "invalid_details", "fields":
+              {…}}``, keyed by field name).
     """
     _require_edit_map_flag(request)
 
@@ -1572,6 +1662,13 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
         pk=resort_id,
     )
 
+    details_error, changed_details = _bind_resort_details(
+        resort,
+        payload.get("details"),
+    )
+    if details_error is not None:
+        return details_error
+
     resort.latitude = lat
     resort.longitude = lon
     resort.geocode_source = "manual"
@@ -1586,6 +1683,7 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
         "geocoded_at",
         "needs_review",
         "updated_at",
+        *changed_details,
     ]
 
     # Auto-rebind the parent region from the clicked location. Some
@@ -1600,7 +1698,7 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
     containing = _region_for_point(lat, lon)
     if containing is not None and containing.pk != resort.region_id:
         logger.info(
-            "edit_resort_save_coords: rebinding %s from %s to %s",
+            "edit_resort_save: rebinding %s from %s to %s",
             resort.name,
             resort.region.region_id,
             containing.region_id,
@@ -1624,6 +1722,7 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
             if resort.geocoded_at
             else None,
             "needs_review": resort.needs_review,
+            "details": _resort_details_payload(resort),
         }
     )
 

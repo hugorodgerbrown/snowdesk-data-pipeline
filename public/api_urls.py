@@ -101,9 +101,9 @@ urlpatterns = [
         name="edit_resorts_queue",
     ),
     path(
-        "edit/resorts/<int:resort_id>/coords/",
-        api.edit_resort_save_coords,
-        name="edit_resort_save_coords",
+        "edit/resorts/<int:resort_id>/save/",
+        api.edit_resort_save,
+        name="edit_resort_save",
     ),
     # SNOW-391: hosted MCP (Model Context Protocol) JSON-RPC endpoint.
     # Final URLs: POST /api/mcp/ (canonical, reverses as api:mcp:endpoint)

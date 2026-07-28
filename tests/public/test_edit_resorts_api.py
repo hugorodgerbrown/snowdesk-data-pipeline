@@ -6,8 +6,8 @@ Covers the three endpoints introduced for the ``?edit=resorts`` mode:
 * ``api:resorts_geojson``           — always available; only geocoded rows.
 * ``api:edit_resorts_queue``        — flag-gated (``edit_map``);
   queue + catalogue payload.
-* ``api:edit_resort_save_coords``   — flag-gated (``edit_map``);
-  persists clicked lat/lon.
+* ``api:edit_resort_save``          — flag-gated (``edit_map``);
+  persists the placed lat/lon and the hand-curated detail fields.
 
 The flag gate is asserted with ``@override_flag("edit_map", active=False)``
 for both edit-mode endpoints. The ``resorts_geojson`` endpoint is not
@@ -27,6 +27,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from waffle.testutils import override_flag
 
+from regions.forms import RESORT_DETAIL_FIELDS
 from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
 
 # ---------------------------------------------------------------------------
@@ -206,6 +207,50 @@ class TestEditResortsQueue:
         assert entry["has_coords"] is True
         assert entry["needs_review"] is False
 
+    def test_all_resorts_carries_detail_fields(self) -> None:
+        """
+        Every catalogue entry carries a ``details`` object holding the
+        hand-curated metadata (SNOW-500), so the panel can populate its
+        edit form the moment a row is selected — no per-resort fetch.
+        """
+        resort = ResortFactory.create(
+            name="Verbier",
+            operator_name="Téléverbier SA",
+            website="https://www.verbier.ch/",
+            num_lifts=32,
+            num_runs=97,
+            total_piste_km=410.5,
+            base_elevation_m=1500,
+            top_elevation_m=3330,
+            typical_season_open="11-15",
+            typical_season_close="04-30",
+        )
+        client = Client()
+        resp = client.get(reverse("api:edit_resorts_queue"))
+        entry = next(e for e in resp.json()["all_resorts"] if e["id"] == resort.pk)
+        assert set(entry["details"]) == set(RESORT_DETAIL_FIELDS)
+        assert entry["details"] == {
+            "name_alt": resort.name_alt,
+            "operator_name": "Téléverbier SA",
+            "website": "https://www.verbier.ch/",
+            "num_lifts": 32,
+            "num_runs": 97,
+            "total_piste_km": 410.5,
+            "base_elevation_m": 1500,
+            "top_elevation_m": 3330,
+            "typical_season_open": "11-15",
+            "typical_season_close": "04-30",
+        }
+
+    def test_detail_fields_are_null_when_unset(self) -> None:
+        """Unset numeric detail fields serialise as null, not omitted."""
+        resort = ResortFactory.create(name="Sparse")
+        client = Client()
+        resp = client.get(reverse("api:edit_resorts_queue"))
+        entry = next(e for e in resp.json()["all_resorts"] if e["id"] == resort.pk)
+        assert entry["details"]["num_lifts"] is None
+        assert entry["details"]["total_piste_km"] is None
+
 
 @pytest.mark.django_db
 class TestEditResortsQueueFlagGate:
@@ -220,24 +265,24 @@ class TestEditResortsQueueFlagGate:
 
 
 # ---------------------------------------------------------------------------
-# edit_resort_save_coords (DEBUG-only)
+# edit_resort_save (flag-gated)
 # ---------------------------------------------------------------------------
 
 
-def _post_coords(
+def _post_save(
     client: Client, resort_id: int, **body: Any
 ) -> Any:  # mock-typing-impractical
     """Helper — POST JSON to the save endpoint."""
     return client.post(
-        reverse("api:edit_resort_save_coords", args=[resort_id]),
+        reverse("api:edit_resort_save", args=[resort_id]),
         data=json.dumps(body),
         content_type="application/json",
     )
 
 
 @pytest.mark.django_db
-class TestEditResortSaveCoords:
-    """Tests for ``POST /api/edit/resorts/<id>/coords/`` (flag-gated)."""
+class TestEditResortSave:
+    """Tests for ``POST /api/edit/resorts/<id>/save/`` (flag-gated)."""
 
     @pytest.fixture(autouse=True)
     def _enable_edit_map_flag(self) -> Generator[None, None, None]:
@@ -253,7 +298,7 @@ class TestEditResortSaveCoords:
         """A valid POST sets coords + provenance + clears needs_review."""
         resort = ResortFactory.create(name="A", needs_review=True)
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=46.0961, longitude=7.2275)
+        resp = _post_save(client, resort.pk, latitude=46.0961, longitude=7.2275)
         assert resp.status_code == 200, resp.content
 
         resort.refresh_from_db()
@@ -268,14 +313,14 @@ class TestEditResortSaveCoords:
         """SNOW-85 dropped auto-advance; ``next_in_queue`` is gone."""
         resort = ResortFactory.create(name="A")
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         assert "next_in_queue" not in resp.json()
 
     def test_unknown_resort_returns_404(self) -> None:
         """Posting against a non-existent resort id returns 404."""
         client = Client()
-        resp = _post_coords(client, 99999, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, 99999, latitude=46.0, longitude=7.0)
         assert resp.status_code == 404
 
     def test_invalid_json_returns_400(self) -> None:
@@ -283,7 +328,7 @@ class TestEditResortSaveCoords:
         resort = ResortFactory.create(name="A")
         client = Client()
         resp = client.post(
-            reverse("api:edit_resort_save_coords", args=[resort.pk]),
+            reverse("api:edit_resort_save", args=[resort.pk]),
             data="not json",
             content_type="application/json",
         )
@@ -294,7 +339,7 @@ class TestEditResortSaveCoords:
         """Missing fields return 400 invalid_coords."""
         resort = ResortFactory.create(name="A")
         client = Client()
-        resp = _post_coords(client, resort.pk, longitude=7.0)
+        resp = _post_save(client, resort.pk, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_coords"
 
@@ -302,7 +347,7 @@ class TestEditResortSaveCoords:
         """Coordinates north of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=50.0, longitude=7.0)
+        resp = _post_save(client, resort.pk, latitude=50.0, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
 
@@ -310,7 +355,7 @@ class TestEditResortSaveCoords:
         """Coordinates east of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=46.0, longitude=12.0)
+        resp = _post_save(client, resort.pk, latitude=46.0, longitude=12.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
 
@@ -319,14 +364,14 @@ class TestEditResortSaveCoords:
         resort = ResortFactory.create(name="A")
         client = Client()
         # _SWISS_BBOX = (5.9, 45.8, 10.5, 47.8).
-        resp = _post_coords(client, resort.pk, latitude=45.8, longitude=7.0)
+        resp = _post_save(client, resort.pk, latitude=45.8, longitude=7.0)
         assert resp.status_code == 200
 
     def test_save_clears_needs_review(self) -> None:
         """Saving a resort flagged for review clears the flag."""
         resort = ResortFactory.create(name="A", needs_review=True)
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         resort.refresh_from_db()
         assert resort.needs_review is False
@@ -363,7 +408,7 @@ class TestEditResortSaveCoords:
         resort = ResortFactory.create(name="Villars-sur-Ollon", region=wrong_region)
         client = Client()
         # Pin at lon=7.75, lat=46.25 — inside correct_region's polygon.
-        resp = _post_coords(client, resort.pk, latitude=46.25, longitude=7.75)
+        resp = _post_save(client, resort.pk, latitude=46.25, longitude=7.75)
         assert resp.status_code == 200
         body = resp.json()
         # Response carries the rebound region in both id and name.
@@ -390,7 +435,7 @@ class TestEditResortSaveCoords:
         )
         resort = ResortFactory.create(name="Aigle", region=region)
         client = Client()
-        resp = _post_coords(client, resort.pk, latitude=46.318, longitude=6.969)
+        resp = _post_save(client, resort.pk, latitude=46.318, longitude=6.969)
         assert resp.status_code == 200
         assert resp.json()["region_id"] == "CH-1111"
         resort.refresh_from_db()
@@ -421,7 +466,7 @@ class TestEditResortSaveCoords:
         resort = ResortFactory.create(name="Edge", region=original_region)
         client = Client()
         # Pin in the middle of Switzerland, well outside far_region.
-        resp = _post_coords(client, resort.pk, latitude=46.5, longitude=7.5)
+        resp = _post_save(client, resort.pk, latitude=46.5, longitude=7.5)
         assert resp.status_code == 200
         assert resp.json()["region_id"] == "CH-1100"
         resort.refresh_from_db()
@@ -430,7 +475,219 @@ class TestEditResortSaveCoords:
 
 
 @pytest.mark.django_db
-class TestEditResortSaveCoordsFlagGate:
+class TestEditResortSaveDetails:
+    """The hand-curated detail fields carried alongside the coordinates."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
+        """Force ``edit_map=on`` for every test in this class."""
+        with override_flag("edit_map", active=True):
+            yield
+
+    def test_details_are_persisted_and_echoed(self) -> None:
+        """A valid ``details`` object is written and returned in the response."""
+        resort = ResortFactory.create(name="Verbier")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0961,
+            longitude=7.2275,
+            details={
+                "name_alt": "Val de Bagnes",
+                "operator_name": "Téléverbier SA",
+                "website": "https://www.verbier.ch/",
+                "num_lifts": 32,
+                "num_runs": 97,
+                "total_piste_km": 410.5,
+                "base_elevation_m": 1500,
+                "top_elevation_m": 3330,
+                "typical_season_open": "11-15",
+                "typical_season_close": "04-30",
+            },
+        )
+        assert resp.status_code == 200, resp.content
+
+        resort.refresh_from_db()
+        assert resort.name_alt == "Val de Bagnes"
+        assert resort.operator_name == "Téléverbier SA"
+        assert resort.website == "https://www.verbier.ch/"
+        assert resort.num_lifts == 32
+        assert resort.num_runs == 97
+        assert resort.total_piste_km == 410.5
+        assert resort.base_elevation_m == 1500
+        assert resort.top_elevation_m == 3330
+        assert resort.typical_season_open == "11-15"
+        assert resort.typical_season_close == "04-30"
+
+        body = resp.json()
+        assert body["details"]["num_lifts"] == 32
+        assert set(body["details"]) == set(RESORT_DETAIL_FIELDS)
+
+    def test_details_are_optional(self) -> None:
+        """Omitting ``details`` entirely leaves every stored value alone."""
+        resort = ResortFactory.create(name="A", num_lifts=7)
+        client = Client()
+        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.num_lifts == 7
+
+    def test_omitted_keys_keep_their_stored_value(self) -> None:
+        """A partial ``details`` object never blanks the keys it omits."""
+        resort = ResortFactory.create(
+            name="A",
+            num_lifts=7,
+            operator_name="Original Ops",
+        )
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={"num_lifts": 9},
+        )
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.num_lifts == 9
+        assert resort.operator_name == "Original Ops"
+
+    def test_blank_string_clears_a_numeric_field(self) -> None:
+        """An explicitly-blanked field is cleared, not ignored.
+
+        The panel's inputs post their raw string values, so "the operator
+        emptied this box" arrives as ``""``.
+        """
+        resort = ResortFactory.create(name="A", num_lifts=7, operator_name="Ops")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={"num_lifts": "", "operator_name": ""},
+        )
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.num_lifts is None
+        assert resort.operator_name == ""
+
+    def test_string_numerics_are_coerced(self) -> None:
+        """Numbers arriving as strings (what the inputs post) are coerced."""
+        resort = ResortFactory.create(name="A")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={"num_lifts": "12", "total_piste_km": "88.5"},
+        )
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.num_lifts == 12
+        assert resort.total_piste_km == 88.5
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("num_lifts", "not a number"),
+            ("num_lifts", -3),
+            ("website", "not a url"),
+            ("typical_season_open", "13-01"),
+            ("typical_season_close", "April"),
+            ("total_piste_km", -5),
+            ("name_alt", "x" * 256),
+        ],
+    )
+    def test_invalid_detail_returns_400_naming_the_field(
+        self,
+        field: str,
+        value: Any,
+    ) -> None:
+        """Each rejected field is named in the ``fields`` error map."""
+        resort = ResortFactory.create(name="A")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={field: value},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["error"] == "invalid_details"
+        assert field in body["fields"]
+
+    def test_top_below_base_elevation_is_rejected(self) -> None:
+        """A top elevation under the base elevation is a data-entry slip."""
+        resort = ResortFactory.create(name="A")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={"base_elevation_m": 2000, "top_elevation_m": 1500},
+        )
+        assert resp.status_code == 400
+        assert "top_elevation_m" in resp.json()["fields"]
+
+    def test_non_object_details_returns_400(self) -> None:
+        """``details`` must be a JSON object."""
+        resort = ResortFactory.create(name="A")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details=["num_lifts"],
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_details"
+
+    def test_rejected_details_leave_coordinates_unwritten(self) -> None:
+        """A 400 on a detail field must not half-save the row."""
+        resort = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.5,
+            longitude=7.5,
+            details={"num_lifts": "nope"},
+        )
+        assert resp.status_code == 400
+        resort.refresh_from_db()
+        assert resort.latitude == 46.0
+        assert resort.longitude == 7.0
+
+    def test_unknown_detail_keys_are_ignored(self) -> None:
+        """Keys outside RESORT_DETAIL_FIELDS can't reach the model.
+
+        Notably the geocode-provenance columns, which the endpoint owns.
+        """
+        resort = ResortFactory.create(name="A")
+        client = Client()
+        resp = _post_save(
+            client,
+            resort.pk,
+            latitude=46.0,
+            longitude=7.0,
+            details={"needs_review": True, "canton": "ZZ", "num_lifts": 3},
+        )
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.num_lifts == 3
+        assert resort.needs_review is False
+        assert resort.canton != "ZZ"
+
+
+@pytest.mark.django_db
+class TestEditResortSaveFlagGate:
     """The save endpoint must 404 when ``edit_map`` is off."""
 
     @override_flag("edit_map", active=False)
@@ -439,7 +696,7 @@ class TestEditResortSaveCoordsFlagGate:
         resort = ResortFactory.create(name="A")
         client = Client()
         resp = client.post(
-            reverse("api:edit_resort_save_coords", args=[resort.pk]),
+            reverse("api:edit_resort_save", args=[resort.pk]),
             data=json.dumps({"latitude": 46.0, "longitude": 7.0}),
             content_type="application/json",
         )
@@ -657,7 +914,7 @@ class TestBboxOfPolygon:
 @pytest.mark.django_db
 class TestRegionForPoint:
     """
-    Tests for the region lookup that ``edit_resort_save_coords`` uses
+    Tests for the region lookup that ``edit_resort_save`` uses
     to auto-rebind a resort's parent region from its saved location.
     """
 
