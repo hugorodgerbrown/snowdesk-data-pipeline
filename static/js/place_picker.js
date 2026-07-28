@@ -37,17 +37,6 @@
  * point rather than changing it, which is also what makes a mid-flow lift
  * change safe: the map slides, the chosen coordinate does not.
  *
- * Zoom anchoring
- * --------------
- * MapLibre zooms about the gesture by default — the wheel about the cursor,
- * a pinch about the fingers' midpoint — which moves the map's centre and so
- * moves the coordinate under a pin that has not itself moved. Zooming in to
- * place a pin accurately was therefore re-picking a different point on the
- * way in. While the picker is armed, both continuous zoom handlers are
- * re-armed with ``{around: 'center'}`` and double-click/double-tap zoom
- * (which has no such option) is turned off, so no zoom interaction can
- * change the chosen coordinate. See ``anchorZoomOnPin``.
- *
  * Exposes window.PlacePicker with three methods:
  *
  *   activate({ onChange, recenterTo, occludedBy })
@@ -114,12 +103,6 @@
    * viewport changes shape. @type {ResizeObserver|null}
    */
   let sheetObserver = null;
-
-  /** Undoes the zoom-anchor changes activate() made, restoring MapLibre's
-   * default handler configuration. Null whenever the picker is disarmed.
-   * @type {(() => void)|null}
-   */
-  let restoreZoomHandlers = null;
 
   /** Return the global MAP object if available, else null. Guards against
    * the case where map.js has not yet initialised.
@@ -209,59 +192,6 @@
     }
   }
 
-  /**
-   * Make every zoom gesture keep the point under the pin fixed, and return
-   * the undo.
-   *
-   * By default MapLibre zooms about the gesture: the scroll wheel about the
-   * cursor, a pinch about the two fingers' midpoint, a double-tap about the
-   * tap. Any of those moves the map's centre — and therefore the coordinate
-   * under a pin that has not itself moved — so a user who zoomed in to
-   * place a pin precisely was silently re-picking a different point on the
-   * way in. Both continuous handlers take ``{around: 'center'}``, which
-   * anchors them on the transform's centre; that centre is the padded one,
-   * which is exactly where the pin is drawn (see applyPinLift).
-   *
-   * Double-click / double-tap zoom has no equivalent option, so it is
-   * turned off for the duration rather than left as the one gesture that
-   * can still move the chosen point.
-   *
-   * Each handler is only touched if it was enabled to begin with, and the
-   * undo puts it back the way MapLibre had it.
-   *
-   * @param {maplibregl.Map} map
-   * @returns {() => void} The restore function.
-   */
-  function anchorZoomOnPin(map) {
-    const restores = [];
-
-    // ScrollZoomHandler.enable() ignores its options when the handler is
-    // already enabled, so the re-arm has to go through disable() first.
-    // TwoFingersTouchZoomRotateHandler applies them either way; the same
-    // shape is used for both so there is one thing to remember.
-    for (const handler of [map.scrollZoom, map.touchZoomRotate]) {
-      if (!handler || !handler.isEnabled || !handler.isEnabled()) continue;
-      handler.disable();
-      handler.enable({ around: 'center' });
-      restores.push(function restore() {
-        handler.disable();
-        handler.enable();
-      });
-    }
-
-    const doubleClick = map.doubleClickZoom;
-    if (doubleClick && doubleClick.isEnabled && doubleClick.isEnabled()) {
-      doubleClick.disable();
-      restores.push(function restore() {
-        doubleClick.enable();
-      });
-    }
-
-    return function restoreAll() {
-      for (const restore of restores) restore();
-    };
-  }
-
   /** Report the coordinate under the pin to activate()'s onChange — which,
    * thanks to the padding above, is simply the map's centre.
    */
@@ -348,7 +278,6 @@
         ? map.getPadding()
         : { top: 0, right: 0, bottom: 0, left: 0 };
       applyPinLift(measurePinLift());
-      restoreZoomHandlers = anchorZoomOnPin(map);
 
       if (recenterTo) {
         map.setCenter(recenterTo);
@@ -371,10 +300,6 @@
       }
       moveEndHandler = null;
       unobserveLayout();
-      if (restoreZoomHandlers) {
-        restoreZoomHandlers();
-        restoreZoomHandlers = null;
-      }
       active = false;
       changeHandler = null;
       occluder = null;

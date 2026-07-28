@@ -2,17 +2,20 @@
 tests/e2e/test_edit_resorts_panel.py — Playwright tests for the staff
 in-map resort editor at ``/?edit=resorts``.
 
-Two behaviours, both new:
+Covers:
 
-* **Placement uses the shared centre pin.** Selecting a resort arms
-  ``window.PlacePicker`` — the same surface the favourite-create and
-  field-observation flows use — so the pin holds still on screen and the
-  map moves underneath it. The old draggable ``maplibregl.Marker`` is
-  gone, and the panel's "Under pin" readout must track ``MAP.getCenter()``
-  across a pan.
 * **The hand-curated detail fields (SNOW-500) are editable in the panel.**
   A value typed into the panel's details section is posted with the
   coordinates by one Save and lands on the row.
+* **Save says what it is doing.** The button reports the in-flight state
+  and a confirmation line reports the outcome.
+* **Placement stays on the draggable marker.** This mode deliberately does
+  *not* use the shared centre pin (``window.PlacePicker``) the favourite
+  and observation flows position with — it is a mouse-driven desktop tool,
+  where a geo-anchored marker beats a screen-anchored one because it stays
+  locked to its coordinate while you zoom in to check it. There is a test
+  here pinning that down, so a future "unify the placement surfaces" pass
+  has to argue with it rather than silently regress the tool.
 
 Setup notes:
 
@@ -65,14 +68,32 @@ _STUB_STYLE = json.dumps(
     }
 )
 
-# The coordinate the panel says is under the pin, parsed back out of the
-# readout's "Under pin" row. Asserting on the rendered text (rather than
-# on internal state) is what ties the visible readout to the map.
-_READOUT_UNDER_PIN = """
+# The coordinate the panel shows for the draft pin, read out of the
+# readout's "Draft" row. Asserting on the rendered text (rather than on
+# internal state) is what ties the visible readout to the marker.
+_READOUT_DRAFT = """
     () => {
         const dds = document.querySelectorAll('#edit-resorts-target dd');
         return dds.length > 1 ? dds[1].textContent.trim() : '';
     }
+"""
+
+
+# Holds the save POST open for a beat so its in-flight state is observable
+# at all. Installed as an init script (before any page script runs), not a
+# page.route handler — see the test that uses it.
+_DELAY_SAVE_SCRIPT = """
+    (() => {
+        const realFetch = window.fetch;
+        window.fetch = (url, opts) => {
+            const isSave = String(url).includes('/save/')
+                && opts && opts.method === 'POST';
+            if (!isSave) return realFetch(url, opts);
+            return new Promise((resolve) => {
+                setTimeout(() => resolve(realFetch(url, opts)), 1200);
+            });
+        };
+    })();
 """
 
 
@@ -132,71 +153,57 @@ def _superuser_page(
 
 
 @pytest.mark.usefixtures("_load_test_data")
-def test_selecting_a_resort_arms_the_centre_pin(
+def test_placement_uses_a_draggable_marker_not_the_shared_centre_pin(
     page: Page,
     live_server: LiveServer,
     django_db_blocker: Any,
 ) -> None:
-    """Selecting a row reveals the shared pin and reads the map centre.
+    """Selecting a placed resort drops a marker; the centre pin stays away.
 
-    The pin is hidden until something is being placed; selecting a resort
-    is what arms the picker, and the coordinate it reports is the map's
-    centre — the point the pin is drawn over.
+    Edit-resorts is a mouse-driven desktop tool and positions with a
+    geo-anchored ``maplibregl.Marker``, not the screen-anchored centre pin
+    (``#map-place-pin``) the favourite and observation flows use. Asserting
+    the centre pin is absent is what stops a later "unify the placement
+    surfaces" change from quietly swapping the mechanic here.
     """
     _superuser_page(page, live_server, django_db_blocker)
     _open_edit_mode(page, live_server.url)
 
-    pin = page.locator("#map-place-pin")
-    expect(pin).to_be_hidden()
-
     page.locator("#edit-resorts-queue li[data-resort-id]").first.click()
-    expect(pin).to_be_visible()
 
-    centre = page.evaluate(
-        "() => { const c = MAP.getCenter(); return [c.lat, c.lng]; }"
-    )
-    expected = f"{centre[0]:.5f}, {centre[1]:.5f}"
-    assert page.evaluate(_READOUT_UNDER_PIN) == expected
+    expect(page.locator(".maplibregl-marker")).to_have_count(1)
+    expect(page.locator("#map-place-pin")).to_be_hidden()
 
 
 @pytest.mark.usefixtures("_load_test_data")
-def test_panning_the_map_moves_the_coordinate_under_the_pin(
+def test_the_draft_pin_holds_its_coordinate_across_a_zoom(
     page: Page,
     live_server: LiveServer,
     django_db_blocker: Any,
 ) -> None:
-    """The map moves under a stationary pin, and the readout follows.
+    """Zooming leaves the placed coordinate exactly where it was.
 
-    This is the whole point of the change: no marker is dragged, so the
-    pin's screen position is unchanged by the pan while the coordinate it
-    reports is not.
+    This is the property a marker buys over a screen-fixed pin: it is
+    anchored to the ground, so zooming in to check a placement inspects
+    that placement rather than silently re-picking a different point.
     """
     _superuser_page(page, live_server, django_db_blocker)
     _open_edit_mode(page, live_server.url)
     page.locator("#edit-resorts-queue li[data-resort-id]").first.click()
+    expect(page.locator(".maplibregl-marker")).to_have_count(1)
 
-    pin = page.locator("#map-place-pin")
-    expect(pin).to_be_visible()
-    before_box = pin.bounding_box()
-    before_readout = page.evaluate(_READOUT_UNDER_PIN)
+    before = page.evaluate(_READOUT_DRAFT)
+    assert before not in ("", "—")
 
-    page.evaluate("() => MAP.panBy([120, 90], {duration: 0})")
-    page.wait_for_function(
-        "(previous) => {"
-        "  const dds = document.querySelectorAll('#edit-resorts-target dd');"
-        "  return dds.length > 1 && dds[1].textContent.trim() !== previous;"
-        "}",
-        arg=before_readout,
+    # Zoom about a point well off to one side — the case that used to drag
+    # the chosen coordinate along with it.
+    page.evaluate(
+        "() => MAP.zoomTo(MAP.getZoom() + 2, {around: MAP.unproject([40, 40]),"
+        " duration: 0})"
     )
+    page.wait_for_function("() => !MAP.isMoving()")
 
-    after_box = pin.bounding_box()
-    assert before_box is not None and after_box is not None
-    assert (after_box["x"], after_box["y"]) == (before_box["x"], before_box["y"])
-
-    centre = page.evaluate(
-        "() => { const c = MAP.getCenter(); return [c.lat, c.lng]; }"
-    )
-    assert page.evaluate(_READOUT_UNDER_PIN) == f"{centre[0]:.5f}, {centre[1]:.5f}"
+    assert page.evaluate(_READOUT_DRAFT) == before
 
 
 @pytest.mark.usefixtures("_load_test_data")
@@ -218,28 +225,34 @@ def test_saving_writes_the_detail_fields_with_the_coordinates(
     page.locator('[data-resort-field="operator_name"]').fill("Test Lifts AG")
     page.locator('[data-resort-field="website"]').fill("https://example.com/")
 
-    centre = page.evaluate(
-        "() => { const c = MAP.getCenter(); return [c.lat, c.lng]; }"
-    )
+    # What gets saved is the marker's coordinate, which the panel already
+    # renders — reading it from there avoids racing the flyTo the selection
+    # kicked off, which is still animating the map centre. Assert the marker
+    # first so a missing draft fails here, naming the cause, rather than as
+    # a bare timeout on the post-save wait below.
+    expect(page.locator(".maplibregl-marker")).to_have_count(1)
+    draft = page.evaluate(_READOUT_DRAFT)
+    assert draft not in ("", "—")
     page.locator("#edit-resorts-save").click()
 
-    # The readout's "Current" row catching up with the placed point is the
-    # panel's own confirmation that the round trip completed.
+    # The readout's "Current" row catching up with the draft is the panel's
+    # own confirmation that the round trip completed.
     page.wait_for_function(
         "(expected) => {"
         "  const dds = document.querySelectorAll('#edit-resorts-target dd');"
         "  return dds.length > 0 && dds[0].textContent.trim() === expected;"
         "}",
-        arg=f"{centre[0]:.5f}, {centre[1]:.5f}",
+        arg=draft,
     )
 
+    lat, lon = (float(part) for part in draft.split(","))
     with django_db_blocker.unblock():
         resort = Resort.objects.get(pk=resort_id)
     assert resort.num_lifts == 14
     assert resort.operator_name == "Test Lifts AG"
     assert resort.website == "https://example.com/"
-    assert resort.latitude == pytest.approx(centre[0], abs=1e-5)
-    assert resort.longitude == pytest.approx(centre[1], abs=1e-5)
+    assert resort.latitude == pytest.approx(lat, abs=1e-5)
+    assert resort.longitude == pytest.approx(lon, abs=1e-5)
 
 
 @pytest.mark.usefixtures("_load_test_data")
@@ -269,3 +282,41 @@ def test_existing_details_populate_the_panel(
     expect(page.locator('[data-resort-field="operator_name"]')).to_have_value(
         "Seeded Ops"
     )
+
+
+@pytest.mark.usefixtures("_load_test_data")
+def test_save_reports_that_it_is_saving_and_that_it_saved(
+    page: Page,
+    live_server: LiveServer,
+    django_db_blocker: Any,
+) -> None:
+    """The Save button says what it is doing, and confirms when it is done.
+
+    Without this the only visible effect of a save is the readout's
+    "Current" row quietly catching up, which is indistinguishable from a
+    click that did nothing. The save is held open for a beat so the
+    in-flight state is observable at all.
+    """
+    _superuser_page(page, live_server, django_db_blocker)
+    # Hold the save open browser-side rather than in a page.route handler:
+    # a sync route handler blocks the same thread expect() polls on, so the
+    # in-flight state would come and go while the assertions were frozen.
+    page.add_init_script(_DELAY_SAVE_SCRIPT)
+    _open_edit_mode(page, live_server.url)
+
+    page.locator("#edit-resorts-queue li[data-resort-id]").first.click()
+    save = page.locator("#edit-resorts-save")
+    save.click()
+
+    expect(save).to_have_text("Saving…")
+    expect(save).to_be_disabled()
+
+    status = page.locator("#edit-resorts-status")
+    expect(status).to_be_visible()
+    expect(status).to_contain_text("Saved")
+    # The label reverts, but the button stays disabled: a completed save
+    # consumes the draft marker, so there is nothing left to save until a
+    # new pin is placed.
+    expect(save).to_have_text("Save")
+    expect(save).to_be_disabled()
+    expect(page.locator(".maplibregl-marker")).to_have_count(0)

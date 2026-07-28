@@ -43,7 +43,7 @@
         </div>
         <p class="mt-1 text-xs text-text-3">
             {% blocktrans trimmed %}
-                Pick a resort, pan the map so the pin sits on it (or paste lat/lon), fill in any details, then Save. Run
+                Pick a resort, click the map to drop a pin (or paste lat/lon), fill in any details, then Save. Run
                 <code>manage.py dump_resorts_fixture --commit</code> to persist to git.
             {% endblocktrans %}
         </p>
@@ -233,6 +233,16 @@
                 id="edit-resorts-error"
                 class="mt-2 hidden text-xs text-form-error"
                 role="alert"
+            >
+            </p>
+            {# Save confirmation. Separate from the error line above so the two #}
+            {# can never fight over one slot, and aria-live so the outcome is   #}
+            {# announced — the button label alone reverts silently.             #}
+            <p
+                id="edit-resorts-status"
+                class="mt-2 hidden text-xs text-status-low-text"
+                role="status"
+                aria-live="polite"
             >
             </p>
         </div>

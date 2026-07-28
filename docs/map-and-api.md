@@ -256,19 +256,26 @@ queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`
 — missing coords or `needs_review=True`) plus a search box across all
 resorts.
 
-**Placement.** Selecting a resort arms the shared centre pin
-(`window.PlacePicker`, `static/js/place_picker.js`) — the same surface the
-favourite-create and field-observation flows use. The pin holds still on
-screen and the map pans underneath it; the coordinate is read off
-`MAP.getCenter()` on every `moveend`, so what the panel shows under
-"Under pin" is always the point the pin is drawn over. A click on the map
-pans that point under the pin rather than moving a marker to it (the
-draggable orange marker this mode used before SNOW-538's sibling change is
-gone). Arming also clears the map down to the basemap
+**Placement.** Click the map to drop a draggable orange
+`maplibregl.Marker`, then drag to refine; selecting a resort that already
+has coordinates pre-places the marker so it can be dragged without a first
+click. This deliberately does **not** use the shared centre pin
+(`window.PlacePicker`, `static/js/place_picker.js`) that the
+favourite-create and field-observation flows position with. That surface
+exists because a dragged pin is occluded by the finger placing it — a
+touch problem. Edit-resorts is a staff tool driven with a mouse on a
+desktop, where the trade runs the other way: a marker is anchored to its
+coordinate, so zooming in to check a placement keeps the pin locked to the
+spot it marks instead of leaving it on screen while the ground moves
+underneath. `tests/e2e/test_edit_resorts_panel.py` pins this down, so a
+later "unify the placement surfaces" pass has to argue with it rather than
+silently regress the tool.
+
+While a draft marker exists the map is cleared to the basemap
 (`window.PlacementFocus`), which hides the resort-points layer — so
-tapping a pin to jump to that resort works only with nothing selected;
-otherwise pick the row from the panel list. **Cancel** (or Escape) drops
-the selection and brings the overlays back.
+tapping a pin to jump to that resort only works before a draft is placed;
+otherwise pick the row from the panel list. **Cancel** (or Escape)
+discards the draft and brings the overlays back.
 
 **Details.** The panel's collapsible "Resort details" section edits the
 hand-curated metadata fields (SNOW-500 — alternative name, operator,
@@ -282,10 +289,13 @@ both places and nowhere else.
 One **Save** POSTs `{latitude, longitude, details}`, which sets
 `geocode_source="manual"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
 clears `needs_review`, and writes the detail fields — a save is a manual
-confirmation of the position under the pin as well as of the details. The
-selection and the pin survive the save so the operator can nudge and
-re-save. Run `manage.py dump_resorts_fixture --commit` afterwards to
-persist a session of edits to git.
+confirmation of the marker's position as well as of the details. The
+button reads "Saving…" and is disabled for the round trip, and a
+confirmation line (`#edit-resorts-status`, `aria-live`) reports the
+outcome before clearing itself; the readout's "Current" row catching up
+with "Draft" is otherwise too quiet to notice. Run
+`manage.py dump_resorts_fixture --commit` afterwards to persist a session
+of edits to git.
 
 | URL | Name | Method | Notes |
 |-----|------|--------|-------|
