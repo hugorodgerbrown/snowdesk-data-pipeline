@@ -748,6 +748,7 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_mode``           — True when resort-edit mode is active.
       ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
       ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
+      ``edit_create_url``     — URL for the resort-create API (only when edit_mode).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
@@ -804,6 +805,7 @@ def home(request: HttpRequest) -> HttpResponse:
             {
                 "edit_queue_url": reverse("api:edit_resorts_queue"),
                 "edit_save_url_template": save_url_template,
+                "edit_create_url": reverse("api:edit_resort_create"),
                 "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
             }
         )

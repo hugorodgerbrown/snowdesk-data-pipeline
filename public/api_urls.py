@@ -100,6 +100,13 @@ urlpatterns = [
         api.edit_resorts_queue,
         name="edit_resorts_queue",
     ),
+    # Literal segment, declared before the ``<int:resort_id>`` pattern so
+    # the two can never be confused by a future non-numeric converter.
+    path(
+        "edit/resorts/create/",
+        api.edit_resort_create,
+        name="edit_resort_create",
+    ),
     path(
         "edit/resorts/<int:resort_id>/save/",
         api.edit_resort_save,

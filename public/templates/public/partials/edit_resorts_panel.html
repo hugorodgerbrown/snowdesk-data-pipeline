@@ -15,6 +15,14 @@
     their SNOW-74 names for minimal-diff reasons even though they no
     longer correspond to a queue concept — the JS comments explain.
 
+    "New resort" (``edit-resorts-new``) switches the same target block
+    into create mode: the Name/Canton inputs appear, the pin is placed
+    exactly as for an edit, and Save posts to ``api:edit_resort_create``
+    instead — which derives the parent region from the pin, so there is
+    no region picker here by design. Canton is asked for because no
+    cantonal geometry exists to derive it from (the region polygons are
+    EAWS warning regions, not cantons).
+
     The "Resort details" section edits the hand-curated metadata fields
     added by SNOW-500 (lifts, runs, piste length, elevations, season
     dates, operator, website). Every input carries
@@ -30,6 +38,7 @@
     aria-label='{% trans "Edit resorts panel" %}'
     data-queue-url="{{ edit_queue_url }}"
     data-save-url-template="{{ edit_save_url_template }}"
+    data-create-url="{{ edit_create_url }}"
     data-resorts-geojson-url="{{ edit_resorts_geojson_url }}"
 >
     {% csrf_token %}
@@ -43,7 +52,8 @@
         </div>
         <p class="mt-1 text-xs text-text-3">
             {% blocktrans trimmed %}
-                Pick a resort, click the map to drop a pin (or paste lat/lon), fill in any details, then Save. Run
+                Pick a resort — or "New resort" to add one — click the map to drop a pin (or paste lat/lon), fill in
+                any details, then Save. A new resort takes its region from the pin. Run
                 <code>manage.py dump_resorts_fixture --commit</code> to persist to git.
             {% endblocktrans %}
         </p>
@@ -72,12 +82,53 @@
     {# this block rather than squeezing the resorts list out of view.     #}
     <div class="flex max-h-[50%] min-h-0 shrink flex-col border-b border-border">
         <div class="overflow-y-auto px-4 py-3">
-            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
-                {% trans "Current target" %}
-            </h3>
+            <div class="mb-1 flex items-baseline justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-text-3">
+                    {% trans "Current target" %}
+                </h3>
+                {# Enters create mode; the JS flips aria-pressed so the #}
+                {# button reads as a toggle, not a one-shot action.     #}
+                <button
+                    type="button"
+                    id="edit-resorts-new"
+                    aria-pressed="false"
+                    class="shrink-0 rounded-sm border border-border px-2 py-0.5 text-xs text-text-2 hover:bg-card-subtle aria-pressed:border-text-1 aria-pressed:bg-text-1 aria-pressed:text-card"
+                >
+                    {% trans "New resort" %}
+                </button>
+            </div>
             <div id="edit-resorts-target" class="text-sm text-text-1">
                 <p class="italic text-text-3">{% trans "No resort selected." %}</p>
             </div>
+
+            {# Create-mode-only identity fields. Hidden until "New resort" #}
+            {# is pressed; the region is derived server-side from the pin, #}
+            {# so there is deliberately no region input here.              #}
+            <div id="edit-resorts-new-fields" class="mt-2 hidden grid-cols-[1fr_5rem] gap-2">
+                <label class="block text-xs text-text-3">
+                    {% trans "Name" %}
+                    <input
+                        id="edit-resorts-new-name"
+                        type="text"
+                        maxlength="255"
+                        autocomplete="off"
+                        class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                    >
+                </label>
+                <label class="block text-xs text-text-3">
+                    {% trans "Canton" %}
+                    <input
+                        id="edit-resorts-new-canton"
+                        type="text"
+                        maxlength="5"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="VS"
+                        class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm uppercase text-text-1 focus:border-text-2 focus:outline-none"
+                    >
+                </label>
+            </div>
+
             <div class="mt-2 flex items-center gap-2">
                 <label for="edit-resorts-paste" class="shrink-0 text-xs text-text-3">{% trans "Paste:" %}</label>
                 <input

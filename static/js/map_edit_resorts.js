@@ -11,6 +11,12 @@
  * scripts share scope across <script> tags in the same document, so no
  * window export is needed).
  *
+ * Two modes share one panel: editing a catalogue row (pick a resort, place
+ * its pin, Save) and creating one ("New resort" — the same placement flow
+ * plus Name/Canton inputs, POSTing to the create endpoint, which derives
+ * the parent region from the pin). ``createMode`` is the switch; the two
+ * are mutually exclusive.
+ *
  * Placement
  * ---------
  * Click the map to drop a draggable ``maplibregl.Marker``, then drag to
@@ -39,6 +45,7 @@
 
   const QUEUE_URL                 = panel.dataset.queueUrl;
   const SAVE_URL_TEMPLATE         = panel.dataset.saveUrlTemplate;
+  const CREATE_URL                = panel.dataset.createUrl;
   const RESORTS_GEOJSON_URL       = panel.dataset.resortsGeojsonUrl;
 
   const csrfTokenInput            = panel.querySelector('input[name="csrfmiddlewaretoken"]');
@@ -55,6 +62,10 @@
   const hideSetInput              = document.getElementById('edit-resorts-hide-set');
   const pasteInput                = document.getElementById('edit-resorts-paste');
   const detailsEl                 = document.getElementById('edit-resorts-details');
+  const newBtn                    = document.getElementById('edit-resorts-new');
+  const newFieldsEl               = document.getElementById('edit-resorts-new-fields');
+  const newNameInput              = document.getElementById('edit-resorts-new-name');
+  const newCantonInput            = document.getElementById('edit-resorts-new-canton');
 
   // Every hand-curated metadata input in the panel, keyed by the Resort
   // field name it edits. The template is the source of the field list
@@ -84,6 +95,11 @@
   let allResorts         = [];   // Full catalogue, sorted by region+name.
   let subRegionLabels    = {};   // {prefix: name} for L2 section headers.
   let currentTarget      = null; // The selected resort entry, or null.
+  // Create mode (``New resort``) is the same placement flow with no row
+  // behind it: no ``currentTarget``, the Name/Canton inputs visible, and
+  // Save POSTing to the create endpoint. The two are mutually exclusive —
+  // picking a catalogue row leaves create mode, and vice versa.
+  let createMode         = false;
   let draftMarker        = null; // MapLibre Marker, draggable.
   let selectedRegionFid  = null; // Numeric feature id of the highlighted region.
   let saveInFlight       = false; // True between POST and its response.
@@ -267,7 +283,41 @@
     }
   };
 
+  // The draft pin's coordinate as the readout renders it, or a dash.
+  const draftCoordsText = () => {
+    if (!draftMarker) return '—';
+    const ll = draftMarker.getLngLat();
+    return fmtCoord(ll.lat, ll.lng);
+  };
+
+  // Create mode's readout. There is no "Current" row to show (nothing is
+  // stored yet) and no region either — the server derives it from the pin
+  // on save, so the row says where it will come from rather than guessing
+  // client-side and risking a different answer to the authoritative one.
+  const renderCreateTarget = () => {
+    const typedName = newNameInput ? newNameInput.value.trim() : '';
+    const typedCanton = newCantonInput ? newCantonInput.value.trim() : '';
+    targetEl.innerHTML = `
+      <p class="font-semibold text-slate-900">${escapeHtml(typedName || 'New resort')}</p>
+      <p class="text-xs text-slate-500">Region derived from the pin${typedCanton ? ` · ${escapeHtml(typedCanton.toUpperCase())}` : ''}</p>
+      <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        <dt class="text-slate-500">Draft</dt>
+        <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoordsText())}</dd>
+      </dl>
+    `;
+    // Name and canton are the two columns the create endpoint cannot
+    // derive, so Save waits for both — plus a pin to derive the rest from.
+    saveBtn.disabled = saveInFlight || !draftMarker || !typedName || !typedCanton;
+    // Cancel leaves create mode, which is worth offering even before a
+    // pin exists — it is the way back out of the mode.
+    cancelBtn.disabled = saveInFlight;
+  };
+
   const renderTarget = () => {
+    if (createMode) {
+      renderCreateTarget();
+      return;
+    }
     if (!currentTarget) {
       targetEl.innerHTML = '<p class="italic text-slate-400">No resort selected.</p>';
       saveBtn.disabled = true;
@@ -278,11 +328,7 @@
     const currentCoords = (t.latitude != null && t.longitude != null)
       ? fmtCoord(t.latitude, t.longitude)
       : '(none)';
-    let draftCoords = '—';
-    if (draftMarker) {
-      const ll = draftMarker.getLngLat();
-      draftCoords = fmtCoord(ll.lat, ll.lng);
-    }
+    const draftCoords = draftCoordsText();
     targetEl.innerHTML = `
       <p class="font-semibold text-slate-900">${escapeHtml(t.name)}</p>
       <p class="text-xs text-slate-500">${escapeHtml(t.region_name)} (${escapeHtml(t.region_id)}) · ${escapeHtml(t.canton)}</p>
@@ -450,9 +496,58 @@
     } catch (_) { /* source not ready — silently skip */ }
   };
 
+  // Create mode -------------------------------------------------------------
+  //
+  // "New resort" is the edit flow with the row missing: same map click /
+  // paste placement, same details form, same Save button. Only two things
+  // differ — the panel asks for the Name and Canton it has nothing to read
+  // them from, and Save posts to the create endpoint, which derives the
+  // parent region from the pin.
+
+  const setCreateFieldsVisible = (visible) => {
+    if (!newFieldsEl) return;
+    // The container is ``grid`` when shown; ``hidden`` when not (Tailwind's
+    // ``hidden`` sets display:none, which would win over the grid class).
+    newFieldsEl.classList.toggle('hidden', !visible);
+    newFieldsEl.classList.toggle('grid', visible);
+    if (newBtn) newBtn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+  };
+
+  const enterCreateMode = () => {
+    if (createMode) return;
+    createMode = true;
+    // Leave any selected row behind — a create has no row, and leaving the
+    // old one highlighted would make Save look like it edits that resort.
+    currentTarget = null;
+    clearSelectedRegion();
+    removeDraftMarker();
+    clearError();
+    clearStatus();
+    clearDetailsForm();
+    if (newNameInput) newNameInput.value = '';
+    if (newCantonInput) newCantonInput.value = '';
+    setCreateFieldsVisible(true);
+    if (newNameInput) newNameInput.focus();
+    renderResortsList();
+    renderTarget();
+  };
+
+  const exitCreateMode = () => {
+    if (!createMode) return;
+    createMode = false;
+    setCreateFieldsVisible(false);
+    if (newNameInput) newNameInput.value = '';
+    if (newCantonInput) newCantonInput.value = '';
+    removeDraftMarker();
+    clearDetailsForm();
+  };
+
   // Selection ---------------------------------------------------------------
 
   const selectTarget = (entry) => {
+    // Picking a catalogue row is the way out of create mode — the two
+    // states are mutually exclusive (see ``createMode``).
+    exitCreateMode();
     // Track the region we were on *before* this selection so we can
     // tell whether we're crossing region boundaries. Same-region
     // navigation must preserve the operator's manual zoom — they
@@ -562,7 +657,7 @@
   };
 
   const onPasteInput = () => {
-    if (!currentTarget) return;
+    if (!currentTarget && !createMode) return;
     const parsed = parseLatLonString(pasteInput.value);
     if (!parsed) {
       // Empty / unparseable — clear any prior marker so the panel state
@@ -583,7 +678,107 @@
 
   // Save / cancel / skip ----------------------------------------------------
 
+  // Decode a failed response into the message to show, marking any
+  // per-field details the server named. Shared by save and create, which
+  // return the same error bodies.
+  const errorDetailFrom = async (resp) => {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const errBody = await resp.json();
+      detail = errBody.detail || errBody.error || detail;
+      // A rejected detail field names itself; mark the offending
+      // inputs and put the per-field reasons in the error line.
+      if (errBody.fields) {
+        const fieldDetail = showFieldErrors(errBody.fields);
+        if (fieldDetail) detail = fieldDetail;
+      }
+    } catch (_) { /* response body wasn't JSON */ }
+    return detail;
+  };
+
+  // The catalogue's sort order, mirroring the queue endpoint's
+  // ``order_by("region__region_id", "name")`` so a created row lands where
+  // a reload would put it.
+  const catalogueOrder = (a, b) =>
+    a.region_id.localeCompare(b.region_id) || a.name.localeCompare(b.name);
+
+  // Project a create/save response onto a catalogue entry. The endpoints
+  // answer with a superset of the entry shape (``_resort_save_payload``),
+  // so this is a pick rather than a translation.
+  const catalogueEntryFrom = (data) => ({
+    id:           data.id,
+    name:         data.name,
+    region_id:    data.region_id,
+    region_name:  data.region_name,
+    canton:       data.canton,
+    latitude:     data.latitude,
+    longitude:    data.longitude,
+    has_coords:   data.has_coords,
+    needs_review: data.needs_review,
+    details:      data.details,
+  });
+
+  // Create — the same round trip as ``save`` against a row that does not
+  // exist yet. On success the new entry is spliced into the catalogue and
+  // selected, so the operator lands in the ordinary edit flow on the
+  // resort they just added.
+  const createResort = async () => {
+    if (!draftMarker || saveInFlight) return;
+    const name = newNameInput ? newNameInput.value.trim() : '';
+    const canton = newCantonInput ? newCantonInput.value.trim().toUpperCase() : '';
+    if (!name || !canton) return;
+    const ll = draftMarker.getLngLat();
+    setSaving(true);
+    clearError();
+    clearStatus();
+    clearFieldErrors();
+    try {
+      const resp = await fetch(CREATE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CSRF_TOKEN,
+        },
+        body: JSON.stringify({
+          name: name,
+          canton: canton,
+          latitude: ll.lat,
+          longitude: ll.lng,
+          details: readDetailsForm(),
+        }),
+      });
+      if (!resp.ok) {
+        const detail = await errorDetailFrom(resp);
+        setSaving(false);
+        showError(`Create failed: ${detail}`);
+        return;
+      }
+      const data = await resp.json();
+      const entry = catalogueEntryFrom(data);
+      allResorts.push(entry);
+      allResorts.sort(catalogueOrder);
+      setSaving(false);
+      // selectTarget() leaves create mode, drops a marker on the saved
+      // point and repopulates the details form from the response — the
+      // operator continues editing the resort they just created.
+      selectTarget(entry);
+      showStatus(
+        `Created ${data.name} in ${data.region_id} at ` +
+        `${fmtCoord(data.latitude, data.longitude)}.`
+      );
+      renderRemaining();
+      refreshResortsLayer();
+    } catch (err) {
+      setSaving(false);
+      showError(`Create failed: ${err.message || err}`);
+    }
+  };
+
   const save = async () => {
+    if (createMode) {
+      await createResort();
+      return;
+    }
     if (!currentTarget || !draftMarker || saveInFlight) return;
     const ll = draftMarker.getLngLat();
     const url = SAVE_URL_TEMPLATE.replace('__ID__', String(currentTarget.id));
@@ -607,17 +802,7 @@
         }),
       });
       if (!resp.ok) {
-        let detail = `HTTP ${resp.status}`;
-        try {
-          const errBody = await resp.json();
-          detail = errBody.detail || errBody.error || detail;
-          // A rejected detail field names itself; mark the offending
-          // inputs and put the per-field reasons in the error line.
-          if (errBody.fields) {
-            const fieldDetail = showFieldErrors(errBody.fields);
-            if (fieldDetail) detail = fieldDetail;
-          }
-        } catch (_) { /* response body wasn't JSON */ }
+        const detail = await errorDetailFrom(resp);
         setSaving(false);
         showError(`Save failed: ${detail}`);
         return;
@@ -668,10 +853,15 @@
   // operator is usually rejecting a mis-click, not the whole row.
   // Removing the marker also restores every overlay PlacementFocus hid,
   // which brings tap-a-pin-to-select back.
+  // In create mode there is no row to fall back to, so Cancel leaves the
+  // mode altogether rather than stranding the operator in an empty form.
   const cancel = () => {
+    const wasCreating = createMode;
+    exitCreateMode();
     removeDraftMarker();
     clearError();
     clearStatus();
+    if (wasCreating) renderResortsList();
     renderTarget();
   };
 
@@ -791,7 +981,7 @@
   // Map click handler -------------------------------------------------------
 
   const onMapClick = (e) => {
-    if (!currentTarget) return;
+    if (!currentTarget && !createMode) return;
     if (typeof MAP === 'undefined' || !MAP) return;
     // If the click hit a resort point, the layer-specific handler runs and
     // we don't want to also drop a pin. queryRenderedFeatures filters by
@@ -805,7 +995,9 @@
   // Keyboard ----------------------------------------------------------------
 
   const onKeyDown = (e) => {
-    if (e.key === 'Escape' && draftMarker) {
+    // Escape also backs out of create mode before a pin is placed —
+    // otherwise the only way out of the mode is the Cancel button.
+    if (e.key === 'Escape' && (draftMarker || createMode)) {
       cancel();
       e.preventDefault();
     } else if (e.key === 'Enter' && draftMarker && !saveBtn.disabled) {
@@ -845,6 +1037,22 @@
   saveBtn.addEventListener('click', save);
   cancelBtn.addEventListener('click', cancel);
   searchInput.addEventListener('input', onSearch);
+  // "New resort" toggles: pressing it while already creating backs out,
+  // matching the aria-pressed state the button advertises.
+  if (newBtn) {
+    newBtn.addEventListener('click', () => {
+      if (createMode) {
+        cancel();
+      } else {
+        enterCreateMode();
+      }
+    });
+  }
+  // Name/canton gate the Save button, so the readout re-derives on every
+  // keystroke (it also echoes the typed name back).
+  for (const input of [newNameInput, newCantonInput]) {
+    if (input) input.addEventListener('input', renderTarget);
+  }
   pasteInput.addEventListener('input', onPasteInput);
   document.addEventListener('keydown', onKeyDown);
 
