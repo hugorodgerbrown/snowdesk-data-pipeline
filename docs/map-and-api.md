@@ -300,11 +300,28 @@ of edits to git.
 **Adding a resort.** The **New resort** button switches the same target
 block into create mode: the placement surface, the paste box, the details
 section and Save all behave as they do for an edit, but there is no row
-behind it, so the panel also asks for the two columns nothing can derive —
-`name` and `canton`. There is deliberately **no region picker**: the
-parent region is derived server-side from the placed pin
+behind it, so the panel also asks for `name` — the one value nothing else
+can supply — and offers `canton`. There is deliberately **no region
+picker**: the parent region is derived server-side from the placed pin
 (`_region_for_point`), the same lookup that auto-rebinds an edited
-resort's region. A pin in a no-coverage gap is refused with
+resort's region.
+
+**Canton is inherited, not required.** Left blank, it is taken from the
+resorts already in the derived region (`_canton_for_region` — the most
+common non-blank value, ties broken alphabetically). This is right for
+all but border cases: across the curated set, 65 of the 66 regions
+holding resorts have one canton between them, and the exception is a
+resort recorded as `BE/VS` rather than a genuine disagreement. Sending a
+canton overrides the inherited one, which is how a border case or a
+mis-tagged region gets corrected. The one case that must ask is a region
+with no resorts to read from — `400 invalid_identity`, naming the region.
+Nothing derives canton from geometry: the polygons are EAWS warning
+regions, not cantonal boundaries.
+
+**What is mandatory is marked.** Name carries an asterisk and
+`aria-required`; the canton placeholder reads `auto`; and a hint line
+under the readout names whatever is still outstanding ("Needs a name and
+a pin.") rather than leaving a disabled Save button to be interpreted. A pin in a no-coverage gap is refused with
 `400 no_region` rather than creating a row with a guessed parent
 (`Resort.region` is not nullable), and a name that already exists in the
 derived region is refused with `409 duplicate_name` — nearly always a
@@ -324,7 +341,7 @@ CI, and add it to `regions/data/resorts.tsv` so the next
 |-----|------|--------|-------|
 | `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Flag-gated. Returns `{all_resorts, sub_regions}`, ordered `region_id ASC, name ASC` so the panel can group rows by L2 area (e.g. `CH-41`). Each entry carries a `details` object holding every `RESORT_DETAIL_FIELDS` value, so selecting a row needs no second fetch. |
 | `/api/edit/resorts/<int:resort_id>/save/` | `api:edit_resort_save` | POST | Flag-gated. JSON body `{latitude, longitude, details?}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. `details` is optional and may be partial — an omitted key keeps its stored value. An invalid field returns `400 {"error": "invalid_details", "fields": {…}}` and writes nothing at all, coordinates included. |
-| `/api/edit/resorts/create/` | `api:edit_resort_create` | POST | Flag-gated. JSON body `{name, canton, latitude, longitude, details?}`; same coordinate and `details` rules as `save`. The parent region comes from the pin. Returns `201` with the same body shape `save` answers with (a catalogue entry plus geocode provenance). Errors: `400 invalid_identity` (blank/over-long name or canton), `400 no_region`, `409 duplicate_name`. |
+| `/api/edit/resorts/create/` | `api:edit_resort_create` | POST | Flag-gated. JSON body `{name, canton?, latitude, longitude, details?}`; same coordinate and `details` rules as `save`. The parent region comes from the pin; an omitted `canton` is inherited from that region's existing resorts. Returns `201` with the same body shape `save` answers with (a catalogue entry plus geocode provenance). Errors: `400 invalid_identity` (blank/over-long name, or a canton the region cannot supply), `400 no_region`, `409 duplicate_name`. |
 
 All three endpoints 404 when the `edit_map` flag is inactive
 (`_require_edit_map_flag()` in `public/api.py` raises `Http404`). The

@@ -52,6 +52,7 @@ import json
 import logging
 import re
 import secrets
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -1778,14 +1779,12 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
 def _parse_new_resort_identity(
     payload: dict[str, Any],
 ) -> JsonResponse | tuple[str, str]:
-    """Validate the ``name``/``canton`` pair a created resort needs.
+    """Validate the ``name``/``canton`` inputs of a create request.
 
-    These are the two columns the create endpoint cannot derive: the
-    name is the operator's own input, and ``canton`` has no geometry in
-    the database to look it up from (the EAWS region polygons are not
-    cantonal — see ``regions/models.py``), so the panel asks for it.
-    Every other column is either derived from the pin (``region``),
-    stamped by the endpoint (geocode provenance), or optional detail.
+    ``name`` is the one value the endpoint cannot get from anywhere else.
+    ``canton`` is optional here and may come back empty — the caller
+    fills it from the derived region via :func:`_canton_for_region`, and
+    only fails if that comes up empty too.
 
     Returns either the 400 response to send or the cleaned
     ``(name, canton)``; ``canton`` is upper-cased so "vs" and "VS" are
@@ -1793,12 +1792,9 @@ def _parse_new_resort_identity(
     """
     name = str(payload.get("name") or "").strip()
     canton = str(payload.get("canton") or "").strip().upper()
-    if not name or not canton:
+    if not name:
         return JsonResponse(
-            {
-                "error": "invalid_identity",
-                "detail": "name and canton are required",
-            },
+            {"error": "invalid_identity", "detail": "name is required"},
             status=400,
         )
     # Mirror the model's column widths — a too-long value would otherwise
@@ -1814,6 +1810,66 @@ def _parse_new_resort_identity(
     return name, canton
 
 
+def _canton_for_region(region: MicroRegion) -> str:
+    """Return the canton the resorts already in ``region`` agree on.
+
+    Canton is very nearly a function of the parent region — across the
+    curated set, 65 of the 66 regions holding resorts have one canton
+    between them, and the exception is a border resort recorded as a
+    compound ("BE/VS") rather than a genuine disagreement. So a resort
+    being created into a populated region can inherit the answer instead
+    of asking the operator to re-type it.
+
+    Nothing derives this from geometry: the polygons are EAWS warning
+    regions, not cantonal boundaries. This is the sibling rows voting,
+    which is why the panel keeps an override — a border case, or a
+    region whose existing rows are mis-tagged, needs the operator's
+    answer to win.
+
+    Args:
+        region: The region the pin landed in.
+
+    Returns:
+        The most common non-blank canton among the region's resorts,
+        ties broken alphabetically so the result is stable. ``""`` when
+        the region has no resorts to read from — the caller turns that
+        into a 400 asking for the canton explicitly.
+
+    """
+    cantons = [
+        canton
+        for canton in region.resorts.values_list("canton", flat=True)
+        if canton.strip()
+    ]
+    if not cantons:
+        return ""
+    # ``most_common`` keeps insertion order on ties; sorting first makes
+    # the tie-break alphabetical and therefore reproducible.
+    return Counter(sorted(cantons)).most_common(1)[0][0]
+
+
+def _resolve_canton(region: MicroRegion, canton: str) -> JsonResponse | str:
+    """Return the canton to store, or the 400 to send if there isn't one.
+
+    An operator-supplied ``canton`` always wins; a blank one falls back to
+    :func:`_canton_for_region`. Only a region with nothing to inherit from
+    has to ask the operator for it.
+    """
+    resolved = canton or _canton_for_region(region)
+    if not resolved:
+        return JsonResponse(
+            {
+                "error": "invalid_identity",
+                "detail": (
+                    f"{region.region_id} has no resorts to take a canton from; "
+                    "enter one."
+                ),
+            },
+            status=400,
+        )
+    return resolved
+
+
 @require_POST
 def edit_resort_create(request: HttpRequest) -> JsonResponse:
     """Create a resort from a placed pin (flag-gated).
@@ -1821,19 +1877,25 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
     The create half of the edit-resorts panel: identical to
     :func:`edit_resort_save` — same coordinate rules, same ``details``
     validation, same response shape — except that there is no row yet,
-    so the panel also sends ``name`` and ``canton``, and the parent
-    region is **derived from the pin** rather than rebound against an
-    existing FK.
+    so the panel also sends ``name``, and the parent region is
+    **derived from the pin** rather than rebound against an existing FK.
 
     Request body (JSON)::
 
         {
           "name": "Verbier",
-          "canton": "VS",
+          "canton": "VS",            # optional — see below
           "latitude": <float>,
           "longitude": <float>,
           "details": {"num_lifts": 12, "website": "https://…", …}
         }
+
+    ``name`` is the only value the endpoint cannot source from anywhere
+    else. ``canton`` is optional: omitted, it is inherited from the
+    resorts already in the derived region (:func:`_canton_for_region`),
+    which is the right answer for all but border cases; sent, it wins,
+    so the operator can correct one. A region with no resorts to inherit
+    from is the one case that has to ask.
 
     The new row is stamped exactly as a save stamps an edited one
     (``geocode_source="manual"``, ``geocode_confidence=1.0``,
@@ -1848,7 +1910,8 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
 
     Errors:
         404 — ``edit_map`` waffle flag inactive.
-        400 — invalid JSON; missing/blank ``name`` or ``canton``
+        400 — invalid JSON; missing/blank ``name``, or an omitted
+              ``canton`` the derived region cannot supply
               (``invalid_identity``); missing or non-float lat/lon;
               coordinates outside the Swiss bounding box; a pin that
               falls outside every region polygon (``no_region``, since
@@ -1900,9 +1963,17 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
             status=409,
         )
 
+    # Canton is a curatorial column, not a derived one — but it is very
+    # nearly a function of the region, so an omitted value is inherited
+    # from the region's existing resorts rather than demanded of the
+    # operator.
+    resolved_canton = _resolve_canton(region, canton)
+    if isinstance(resolved_canton, JsonResponse):
+        return resolved_canton
+
     resort = Resort(
         name=name,
-        canton=canton,
+        canton=resolved_canton,
         region=region,
         latitude=lat,
         longitude=lon,

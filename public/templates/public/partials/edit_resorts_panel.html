@@ -19,9 +19,10 @@
     into create mode: the Name/Canton inputs appear, the pin is placed
     exactly as for an edit, and Save posts to ``api:edit_resort_create``
     instead — which derives the parent region from the pin, so there is
-    no region picker here by design. Canton is asked for because no
-    cantonal geometry exists to derive it from (the region polygons are
-    EAWS warning regions, not cantons).
+    no region picker here by design. Name is the only required input;
+    a blank canton is inherited from the derived region's existing
+    resorts server-side (``public.api._canton_for_region``), and the
+    input is there to override that for a border case.
 
     The "Resort details" section edits the hand-curated metadata fields
     added by SNOW-500 (lifts, runs, piste length, elevations, season
@@ -104,14 +105,24 @@
             {# Create-mode-only identity fields. Hidden until "New resort" #}
             {# is pressed; the region is derived server-side from the pin, #}
             {# so there is deliberately no region input here.              #}
+            {#                                                             #}
+            {# Name is the only required input — canton is inherited from  #}
+            {# the derived region's existing resorts when left blank, and  #}
+            {# the placeholder says so. Required-ness is marked three      #}
+            {# ways because a disabled Save button on its own never says   #}
+            {# what is missing: the label carries a marked asterisk, the   #}
+            {# input carries aria-required, and the hint line under the    #}
+            {# buttons names whatever is still outstanding.                #}
             <div id="edit-resorts-new-fields" class="mt-2 hidden grid-cols-[1fr_5rem] gap-2">
                 <label class="block text-xs text-text-3">
                     {% trans "Name" %}
+                    <abbr title='{% trans "Required" %}' class="text-form-error no-underline">*</abbr>
                     <input
                         id="edit-resorts-new-name"
                         type="text"
                         maxlength="255"
                         autocomplete="off"
+                        aria-required="true"
                         class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
                     >
                 </label>
@@ -123,8 +134,11 @@
                         maxlength="5"
                         autocomplete="off"
                         spellcheck="false"
-                        placeholder="VS"
-                        class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm uppercase text-text-1 focus:border-text-2 focus:outline-none"
+                        placeholder='{% trans "auto" %}'
+                        title='{% trans "Left blank, the canton is taken from the other resorts in the region the pin lands in." %}'
+                        {# uppercase is for the typed value; normal-case keeps the #}
+                        {# placeholder from shouting "AUTO" as if it were one.      #}
+                        class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm uppercase text-text-1 placeholder:normal-case focus:border-text-2 focus:outline-none"
                     >
                 </label>
             </div>

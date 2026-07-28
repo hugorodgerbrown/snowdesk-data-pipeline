@@ -859,13 +859,70 @@ class TestEditResortCreate:
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_identity"
 
-    def test_missing_canton_returns_400(self) -> None:
-        """Canton has no geometry to derive it from, so it is required."""
-        _region_with_square_boundary()
+    def test_omitted_canton_is_inherited_from_the_region(self) -> None:
+        """A blank canton takes the one the region's resorts already use.
+
+        Canton is very nearly a function of the region, so the operator is
+        not asked to re-type what the sibling rows already agree on.
+        """
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Sibling", region=region, canton="GR")
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "GR"
+        assert resp.json()["canton"] == "GR"
+
+    def test_sent_canton_beats_the_inherited_one(self) -> None:
+        """An explicit canton wins — border cases need the operator's answer."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Sibling", region=region, canton="GR")
+        client = Client()
+        resp = _post_create(
+            client, name="A", canton="BE/VS", latitude=46.25, longitude=7.25
+        )
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "BE/VS"
+
+    def test_inherited_canton_is_the_majority_of_the_siblings(self) -> None:
+        """A region whose rows disagree contributes its most common value."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="S1", region=region, canton="VS")
+        ResortFactory.create(name="S2", region=region, canton="VS")
+        ResortFactory.create(name="S3", region=region, canton="BE")
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.get(name="A").canton == "VS"
+
+    def test_blank_sibling_cantons_do_not_count(self) -> None:
+        """An empty canton on a sibling is not a value worth inheriting."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Blank", region=region, canton="")
         client = Client()
         resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_identity"
+        assert not Resort.objects.filter(name="A").exists()
+
+    def test_omitted_canton_in_an_empty_region_returns_400(self) -> None:
+        """With no sibling to read from, the endpoint has to ask."""
+        _region_with_square_boundary()
+        client = Client()
+        resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["error"] == "invalid_identity"
+        # The message has to name the region, or the operator cannot tell
+        # which of the two identity failures they hit.
+        assert "CH-4115" in body["detail"]
+
+    def test_missing_name_is_rejected_before_the_region_lookup(self) -> None:
+        """Name is the one value nothing else can supply."""
+        client = Client()
+        resp = _post_create(client, canton="VS", latitude=46.25, longitude=7.25)
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "name is required"
 
     def test_over_long_name_returns_400(self) -> None:
         """A name past the column width is rejected, not truncated."""

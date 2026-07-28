@@ -294,20 +294,32 @@
   // stored yet) and no region either — the server derives it from the pin
   // on save, so the row says where it will come from rather than guessing
   // client-side and risking a different answer to the authoritative one.
+  //
+  // A disabled Save says nothing about why, so the requirements are named
+  // in a hint line under the readout and struck through as they are met.
   const renderCreateTarget = () => {
     const typedName = newNameInput ? newNameInput.value.trim() : '';
     const typedCanton = newCantonInput ? newCantonInput.value.trim() : '';
+    // Canton is deliberately absent from this list: blank means "inherit
+    // from the region the pin lands in", which is a valid way to save.
+    const missing = [];
+    if (!typedName)   missing.push('a name');
+    if (!draftMarker) missing.push('a pin');
+    const hint = missing.length > 0
+      ? `Needs ${missing.join(' and ')}.`
+      : 'Ready to save.';
     targetEl.innerHTML = `
       <p class="font-semibold text-slate-900">${escapeHtml(typedName || 'New resort')}</p>
-      <p class="text-xs text-slate-500">Region derived from the pin${typedCanton ? ` · ${escapeHtml(typedCanton.toUpperCase())}` : ''}</p>
+      <p class="text-xs text-slate-500">Region from the pin${typedCanton ? ` · ${escapeHtml(typedCanton.toUpperCase())}` : ' · canton from the region'}</p>
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
         <dt class="text-slate-500">Draft</dt>
         <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoordsText())}</dd>
       </dl>
+      <p class="mt-1 text-xs ${missing.length > 0 ? 'text-slate-500' : 'text-emerald-700'}">${escapeHtml(hint)}</p>
     `;
-    // Name and canton are the two columns the create endpoint cannot
-    // derive, so Save waits for both — plus a pin to derive the rest from.
-    saveBtn.disabled = saveInFlight || !draftMarker || !typedName || !typedCanton;
+    // Name is the only input the endpoint cannot source elsewhere, so it
+    // and the pin are what Save waits for.
+    saveBtn.disabled = saveInFlight || !draftMarker || !typedName;
     // Cancel leaves create mode, which is worth offering even before a
     // pin exists — it is the way back out of the mode.
     cancelBtn.disabled = saveInFlight;
@@ -725,8 +737,10 @@
   const createResort = async () => {
     if (!draftMarker || saveInFlight) return;
     const name = newNameInput ? newNameInput.value.trim() : '';
+    // Blank canton is sent as-is: the endpoint reads it off the region
+    // the pin lands in, which the panel cannot know until it answers.
     const canton = newCantonInput ? newCantonInput.value.trim().toUpperCase() : '';
-    if (!name || !canton) return;
+    if (!name) return;
     const ll = draftMarker.getLngLat();
     setSaving(true);
     clearError();

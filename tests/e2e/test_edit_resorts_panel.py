@@ -354,10 +354,16 @@ def test_new_resort_is_created_with_the_region_derived_from_the_pin(
 
     page.locator("#edit-resorts-new").click()
     expect(page.locator("#edit-resorts-new-fields")).to_be_visible()
-    # Nothing is placed yet, so there is nothing to save.
+    # Nothing is placed yet, so there is nothing to save — and the panel
+    # says which parts are missing rather than leaving a greyed-out button
+    # to be interpreted.
     expect(page.locator("#edit-resorts-save")).to_be_disabled()
+    expect(page.locator("#edit-resorts-target")).to_contain_text(
+        "Needs a name and a pin."
+    )
 
     page.locator("#edit-resorts-new-name").fill("E2E Testberg")
+    expect(page.locator("#edit-resorts-target")).to_contain_text("Needs a pin.")
     page.locator("#edit-resorts-new-canton").fill("vs")
     # Paste rather than click the map: the coordinate has to be a specific
     # one for the derived region to be assertable, and the paste box is the
