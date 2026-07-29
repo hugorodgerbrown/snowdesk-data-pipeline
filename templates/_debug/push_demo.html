@@ -1,7 +1,11 @@
 {% extends "public/base.html" %}
 {% load static %}
 
-{% block title %}Push notifications — spike{% endblock %}
+{# SNOW-553: sharing=False. Staff-only debug page, mounted only when     #}
+{# DEBUG is on. It has no public URL to share.                          #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Push notifications — spike" description="Staff-only Web Push debug page." sharing=False %}
+{% endblock page_meta %}
 
 {% block extra_head %}
     <meta name="vapid-public-key" content="{{ vapid_public_key }}">

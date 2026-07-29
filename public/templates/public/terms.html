@@ -15,11 +15,11 @@ publishable but the gap is obvious to anyone reviewing it.
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Terms" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "Snowdesk terms of use, data-licence acknowledgement, and liability disclaimer." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Terms" as page_name %}
+    {% trans "Snowdesk terms of use, data-licence acknowledgement, and liability disclaimer." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">

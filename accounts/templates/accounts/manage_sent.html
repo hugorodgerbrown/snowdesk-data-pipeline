@@ -7,9 +7,15 @@ whether the email was known or unknown to prevent account enumeration.
 {% endcomment %}
 {% load i18n %}
 
-{% block status_title %}{% trans "Check your inbox — Snowdesk" %}{% endblock %}
-
-{% block status_meta %}{% trans "We've sent you an account link. Check your inbox to manage your Snowdesk subscriptions." %}{% endblock %}
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Check your inbox — Snowdesk" as page_title %}
+    {% trans "We've sent you an account link. Check your inbox to manage your Snowdesk subscriptions." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
 

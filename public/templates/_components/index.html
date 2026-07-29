@@ -15,7 +15,12 @@ Context:
              with a ``label`` heading and an ordered ``categories`` tuple.
     active : the FoundationCategory rendered into #cl-main on first load.
 {% endcomment %}
-{% block title %}Components · Snowdesk{% endblock %}
+{# SNOW-553: sharing=False. Staff-only design-system reference behind an #}
+{# underscore-prefixed URL; a share card would advertise an internal    #}
+{# tool to anyone the link reached.                                     #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Components · Snowdesk" description="Snowdesk design-system component library — tokens, partials, and their variants." sharing=False %}
+{% endblock page_meta %}
 {% block body_class %}bg-bg text-text-1 font-sans min-h-screen{% endblock %}
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>

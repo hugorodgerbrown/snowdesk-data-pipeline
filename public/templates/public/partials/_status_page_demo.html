@@ -17,7 +17,11 @@ Context (from STATUS_PAGE_VARIANTS fixtures):
     cta_href  : str | None — button href; when falsy, no CTA is shown.
 {% endcomment %}
 
-{% block status_title %}Status page demo — Snowdesk{% endblock %}
+{# SNOW-553: sharing=False. A component-library fixture rendered inside  #}
+{# the staff-only /_components/ panel, not a page with a public URL.     #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Status page demo — Snowdesk" description="Component-library preview of the shared status-page layout." sharing=False %}
+{% endblock page_meta %}
 
 {% block status_heading %}{{ heading }}{% endblock %}
 

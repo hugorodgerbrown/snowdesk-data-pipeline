@@ -22,9 +22,17 @@ account, shown for any authenticated account.
 {% endcomment %}
 {% load i18n static components %}
 
-{% block title %}{% trans "My account — Snowdesk" %}{% endblock %}
-
-{% block meta_description %}{% trans "Update your Snowdesk avalanche bulletin region subscriptions." %}{% endblock %}
+{# SNOW-553: sharing=False. Every /account/ URL is disallowed in       #}
+{# robots.txt, so a crawler fetching this page to build an unfurl card  #}
+{# should not be here in the first place; several of these routes also  #}
+{# carry a single-use token in the path. The tab title and description  #}
+{# still render — it is only the og:/twitter: card identity that is     #}
+{# withheld.                                                            #}
+{% block page_meta %}
+    {% trans "My account — Snowdesk" as page_title %}
+    {% trans "Update your Snowdesk avalanche bulletin region subscriptions." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>

@@ -8,11 +8,11 @@ in this template; no runtime context is required.
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Privacy Policy" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "How Snowdesk collects, uses, and protects your personal data. UK GDPR privacy policy." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Privacy Policy" as page_name %}
+    {% trans "How Snowdesk collects, uses, and protects your personal data. UK GDPR privacy policy." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">

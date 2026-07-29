@@ -19,11 +19,11 @@ Context expected (built by public.views.observations_list):
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Observations" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "Recent field observations reported by Snowdesk users." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Observations" as page_name %}
+    {% trans "Recent field observations reported by Snowdesk users." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1">

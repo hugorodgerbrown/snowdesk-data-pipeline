@@ -56,13 +56,17 @@ Context expected (built by ``public.views.resort_detail``):
 {% endcomment %}
 {% load i18n snowdesk_time %}
 
-{% block title %}{{ resort.name }} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% blocktrans with name=resort.name region=region.name trimmed %}
+{# SNOW-553: this page is the sharpest case the sharing-metadata rule    #}
+{# exists for — SNOW-504 built /resorts/<id>/<slug>/ specifically as an  #}
+{# indexable, shareable URL cross-linked from the map's resort popup,    #}
+{# and until now it unfurled with no title, description or og:url.      #}
+{% block page_meta %}
+    {% blocktrans with name=resort.name trimmed asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
+    {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
         {{ name }} ski resort — avalanche danger and bulletin for {{ region }}.
     {% endblocktrans %}
-{% endblock %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main
