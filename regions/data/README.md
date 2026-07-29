@@ -31,11 +31,28 @@ resort created in the admin and not yet re-exported here is deleted by the
 next full run. Re-export the sheet after adding one, or reconcile with
 `--mode add update`.
 
-The export is deliberately partial. It carries no geocoding columns —
-coordinates are placed on the map and owned by the database. `region` and
-`canton` are absent too, and both are required to create a resort, so
-`add` currently reports any row that would need creating instead of
-guessing. Add those two columns to the export to enable it.
+`kind` is a separate axis from that marker, and the two do not interact
+(SNOW-544). `NOT_A_SKI_RESORT` means *delete this row*; `kind` says what a
+**live** row is — `RESORT` (the default, and what a blank cell means) or
+`TOURING_TERRAIN` for real avalanche terrain with no lifts: passes, side
+valleys and glacier basins the sheet accumulated back when it was one row
+per micro-region. Touring rows stay in the database and out of every
+surface that presents its rows as resorts — the map's resort layer,
+`/api/resorts-by-region/`, the bulletin page's resort list, and the MCP
+`list_resorts_in_region` tool. An unrecognised `kind` is an error rather
+than a fallback to `RESORT`, because a typo silently becoming a resort is
+the failure the column exists to prevent.
+
+The export carries `region` (a `MicroRegion.region_id`) and `canton`,
+which are both required to create a resort — so `--mode add` works
+(SNOW-544). They are creation-time values only: `import_resorts` never
+overwrites them on a row that already exists, because a resort moved in
+the map editor owns its own region afterwards.
+
+It still carries **no geocoding columns**. Coordinates are placed on the
+map and owned by the database, so a row added by `--mode add` arrives
+without them and needs a pin placing in the edit-resorts panel before it
+appears on the map.
 
 Each environment's database is the source of truth for `Resort` once the
 import has run — later edits happen in the admin or the map editor, not

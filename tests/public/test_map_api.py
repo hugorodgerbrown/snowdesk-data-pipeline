@@ -53,6 +53,7 @@ from bulletins.models import RegionDayRating
 from bulletins.services.slf_fetcher import BulletinSource
 from observations.models import FieldObservation
 from public import api as public_api
+from regions.models import Resort
 from regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
 from tests.factories import (
     BulletinGroupingFactory,
@@ -2640,3 +2641,54 @@ class TestCommunityReportsGeojson:
             response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
         assert "no-store" in response.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# kind=RESORT filtering (SNOW-544)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resorts_by_region_excludes_touring_terrain() -> None:
+    """Lift-less touring terrain is not a resort, so it is not listed."""
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    ResortFactory.create(region=region, name="Verbier")
+    ResortFactory.create(
+        region=region, name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN
+    )
+
+    data = Client().get(reverse("api:resorts_by_region")).json()
+    assert data == {"CH-4115": ["Verbier"]}
+
+
+@pytest.mark.django_db
+def test_resorts_by_region_omits_a_region_left_with_no_resorts() -> None:
+    """A region holding only touring terrain drops out entirely.
+
+    The endpoint already omits regions with no resorts; filtering must
+    not leave one behind with an empty list.
+    """
+    region = MicroRegionFactory.create(region_id="CH-1247", slug="ch-1247")
+    ResortFactory.create(
+        region=region, name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN
+    )
+
+    assert Client().get(reverse("api:resorts_by_region")).json() == {}
+
+
+@pytest.mark.django_db
+def test_resorts_geojson_excludes_touring_terrain() -> None:
+    """Drawing touring terrain as a resort pin would claim lifts that don't exist."""
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    ResortFactory.create(region=region, name="Verbier", latitude=46.1, longitude=7.2)
+    ResortFactory.create(
+        region=region,
+        name="Grimsel",
+        latitude=46.57,
+        longitude=8.33,
+        kind=Resort.Kind.TOURING_TERRAIN,
+    )
+
+    data = Client().get(reverse("api:resorts_geojson")).json()
+    names = [f["properties"]["name"] for f in data["features"]]
+    assert names == ["Verbier"]

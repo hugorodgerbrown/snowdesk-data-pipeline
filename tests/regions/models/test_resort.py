@@ -201,3 +201,41 @@ class TestResortFixture:
 
         call_command("loaddata", "resorts", verbosity=0)
         assert Resort.objects.count() == len(data)
+
+
+@pytest.mark.django_db
+class TestResortKind:
+    """The RESORT / TOURING_TERRAIN discriminator (SNOW-544).
+
+    ``regions/data/resorts.tsv`` grew as one row per SLF micro-region
+    with a representative place name typed into ``name``, so it
+    accumulated entries that are real avalanche terrain but not resorts
+    — high passes, side valleys and glacier basins with no lifts at all.
+
+    Before this field the sheet's only verdict was ``NOT_A_SKI_RESORT``,
+    which means delete. There was no way to say "keep this, just not as
+    a resort", so 22 rows worth keeping were queued for deletion.
+    """
+
+    def test_kind_defaults_to_resort(self) -> None:
+        """An unspecified kind is RESORT — the overwhelming majority of rows."""
+        resort = ResortFactory.create()
+        assert resort.kind == Resort.Kind.RESORT
+
+    def test_queryset_filters_partition_the_table(self) -> None:
+        """resorts() and touring() are complementary and exhaustive."""
+        ResortFactory.create(name="Verbier")
+        ResortFactory.create(name="Zermatt")
+        ResortFactory.create(name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN)
+
+        assert Resort.objects.resorts().count() == 2
+        assert Resort.objects.touring().count() == 1
+        assert (
+            Resort.objects.resorts().count() + Resort.objects.touring().count()
+            == Resort.objects.count()
+        )
+
+    def test_touring_terrain_is_excluded_from_resorts(self) -> None:
+        """The filter selects by kind, not by ordering luck."""
+        ResortFactory.create(name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN)
+        assert not Resort.objects.resorts().filter(name="Grimsel").exists()

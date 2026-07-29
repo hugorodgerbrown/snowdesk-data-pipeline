@@ -544,6 +544,19 @@ class ResortQuerySet(models.QuerySet):
             | models.Q(needs_review=True)
         )
 
+    def resorts(self) -> "ResortQuerySet":
+        """Return only rows that are actually ski resorts (SNOW-544).
+
+        Every surface that renders "a resort" — the map's resort layer,
+        the region's resort list, the resort detail page — wants this,
+        not the unfiltered table.
+        """
+        return self.filter(kind=Resort.Kind.RESORT)
+
+    def touring(self) -> "ResortQuerySet":
+        """Return only lift-less touring terrain (SNOW-544)."""
+        return self.filter(kind=Resort.Kind.TOURING_TERRAIN)
+
 
 class Resort(BaseModel):
     """
@@ -582,7 +595,35 @@ class Resort(BaseModel):
         ("import", "Import"),
     ]
 
+    class Kind(models.TextChoices):
+        """What a row actually is (SNOW-544).
+
+        The sheet grew as one row per SLF micro-region with a
+        representative place name typed into ``name``, so it accumulated
+        entries that are real avalanche terrain but not resorts — high
+        passes, side valleys, glacier basins with no lifts at all
+        (Grimsel, Klausenpass, Zervreila, Val S-charl).
+
+        They matter to a bulletin product and should not be deleted, but
+        rendering them as resort pins is a lie. Before this field the
+        sheet's only verdict was ``NOT_A_SKI_RESORT``, which means
+        delete — there was no way to say "keep, but not as a resort".
+        """
+
+        RESORT = "RESORT", "Ski resort"
+        TOURING_TERRAIN = "TOURING_TERRAIN", "Touring terrain"
+
     name = models.CharField(max_length=255)
+    kind = models.CharField(
+        max_length=20,
+        choices=Kind.choices,
+        default=Kind.RESORT,
+        help_text=(
+            "RESORT for a lift-served ski area; TOURING_TERRAIN for "
+            "avalanche terrain with no lifts, which is kept for its "
+            "bulletin relevance but excluded from every resort surface."
+        ),
+    )
     name_alt = models.CharField(
         max_length=255,
         blank=True,
