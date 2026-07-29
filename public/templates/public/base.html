@@ -19,7 +19,7 @@ page_meta       : page identity — <title>, meta description, og:url, and
                   is the whole point, so that a page cannot half-set its
                   metadata or omit it by accident (SNOW-553).
 og_tags         : OpenGraph / Twitter card constants that do not vary by
-                  page — og:site_name, og:type, og:locale, og:image and
+                  page — og:site_name, og:locale, og:image and
                   its dimensions and alt text, twitter:card,
                   twitter:image, twitter:image:alt. Pages should not need
                   to override this; per-page identity belongs in
@@ -74,7 +74,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# for a production URL.                                              #}
         {% block og_tags %}
             <meta property="og:site_name" content="{{ SITE_NAME_DISPLAY }}">
-            <meta property="og:type" content="website">
+            {# og:type moved into the page_meta emitter (SNOW-555) — it is  #}
+            {# the one "constant" that isn't one, since bulletin pages are  #}
+            {# articles, and a child template cannot un-emit an inherited   #}
+            {# tag.                                                          #}
             <meta property="og:locale" content="{{ LANGUAGE_CODE|og_locale }}">
             <meta property="og:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
             <meta property="og:image:width" content="1200">

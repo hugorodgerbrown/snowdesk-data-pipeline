@@ -27,6 +27,19 @@ description  (required) One or two sentences. Goes in the description
 sharing      (optional, default True) Set False to emit the title and
              description but no og:*/twitter:* page identity. Only for
              pages that should never produce a share card — see below.
+og_type      (optional, default "website") The og:type value. Pass
+             "article" for dated, revisable content — a bulletin — which
+             also unlocks the two properties below. og:type lives here
+             rather than in base.html's og_tags block precisely so a page
+             can vary it: a child template cannot un-emit a tag it
+             inherits (SNOW-555).
+published_time / modified_time
+             (optional) ISO-8601 timestamps, emitted as
+             article:published_time / article:modified_time and only when
+             og_type is "article". Pass the values the view derived via
+             _build_article_times, never times recomputed in the template
+             — the point is that the share card and the JSON-LD cannot
+             disagree about when a bulletin was issued.
 url          (optional) Absolute URL for og:url. Defaults to
              SITE_BASE_URL + the current request path. Pass an explicit
              value when the page has a canonical URL that differs from
@@ -58,6 +71,14 @@ don't vary per page, so they don't belong in a per-page emitter.
 <title>{{ title|squish }}{{ PWA_TITLE_SUFFIX }}</title>
 <meta name="description" content="{{ description|squish }}">
 <meta property="og:url" content="{% if url %}{{ url }}{% else %}{{ SITE_BASE_URL }}{{ request.path }}{% endif %}">
+<meta property="og:type" content="{% firstof og_type 'website' %}">
+{% if og_type == "article" %}
+    {# Emitted only for og:type=article, so no other page carries orphaned #}
+    {# article properties. Both values come from the view, sharing one     #}
+    {# derivation with the JSON-LD datePublished / dateModified.           #}
+    {% if published_time %}<meta property="article:published_time" content="{{ published_time }}">{% endif %}
+    {% if modified_time %}<meta property="article:modified_time" content="{{ modified_time }}">{% endif %}
+{% endif %}
 {# `is not False` rather than |default — an omitted `sharing` resolves to #}
 {# the empty string, which |default would treat the same as an explicit   #}
 {# sharing=False and silently strip the card from every page.             #}
