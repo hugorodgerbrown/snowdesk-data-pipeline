@@ -8,8 +8,11 @@
  * Behaviour:
  *   - On page load, if localStorage key 'snowdesk.home.intro' is 'dismissed'
  *     the overlay is hidden immediately (no transition to avoid flash).
- *   - Clicking the dismiss button or pressing Escape hides the overlay and
- *     persists the dismissed state to localStorage.
+ *   - Clicking the "×" (#home-intro-close) or pressing Escape hides the
+ *     overlay and persists the dismissed state to localStorage.
+ *   - Clicking "Explore the map" (#home-intro-dismiss) does the same, and
+ *     additionally opens the map-help coachmark tour — see the "Explore the
+ *     map" section below.
  *   - If the URL hash is '#about' on load (or when hashchange fires), the
  *     overlay is forced open regardless of the persisted state.
  *   - prefers-reduced-motion: transitions are skipped by removing the
@@ -92,13 +95,14 @@
     }
   }
 
-  // ---- Dismiss button ----
-  // SNOW-486: #home-intro-dismiss carries data-action="dismiss" inside the
-  // [data-overlay] #home-intro, so the click itself — the hide (attribute
-  // idiom, unchanged) and the localStorage persist (data-overlay-persist=
-  // "snowdesk.home.intro=dismissed") — is handled by
-  // static/js/overlays.js's shared delegated handler. This only runs the
-  // teardown that handler doesn't know about.
+  // ---- Dismiss controls ("×" and "Explore the map") ----
+  // SNOW-486: both #home-intro-close and #home-intro-dismiss carry
+  // data-action="dismiss" inside the [data-overlay] #home-intro, so the
+  // click itself — the hide (attribute idiom, unchanged) and the
+  // localStorage persist (data-overlay-persist="snowdesk.home.intro=
+  // dismissed") — is handled by static/js/overlays.js's shared delegated
+  // handler for both buttons. This only runs the teardown that handler
+  // doesn't know about.
 
   document.addEventListener('overlay:dismissed', (event) => {
     const dismissed = event.detail && event.detail.overlay;
@@ -110,6 +114,19 @@
       history.replaceState(null, '', location.pathname + location.search);
     }
   });
+
+  // ---- "Explore the map" also opens the map-help tour ----
+  // SNOW-535: unlike the "×", this CTA is an invitation to be shown around,
+  // not just a dismissal — so, in addition to the shared dismiss handling
+  // above, it dispatches a request event that static/js/map_help.js listens
+  // for and answers by calling its own open() entry point. The tour-opening
+  // logic itself stays in map_help.js; this module only asks for it.
+  const exploreBtn = document.getElementById('home-intro-dismiss');
+  if (exploreBtn) {
+    exploreBtn.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('snowdesk:map-help-requested'));
+    });
+  }
 
   // ---- Keyboard dismiss (Escape) ----
 

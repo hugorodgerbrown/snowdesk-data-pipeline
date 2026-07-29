@@ -18,14 +18,22 @@
  * here, matching production order. Both are dynamically re-imported per
  * test (`vi.resetModules()` + `await import(...)`) so each test gets a
  * fresh IIFE run against its own fixture/localStorage state.
+ *
+ * SNOW-535 replaced the "does auto-start read #home-intro's visibility"
+ * mechanism with a data-driven opt-out (`data-map-help-no-autostart` on
+ * `#map-help-overlay`, set by home.html) and added a
+ * `snowdesk:map-help-requested` CustomEvent — dispatched by
+ * `#home-intro`'s "Explore the map" CTA (home_intro.js) — as a second way
+ * to open the tour alongside the "?" roundel. `buildFixture`'s
+ * `homeIntroShowing` option and the home-intro fixture markup were dropped
+ * accordingly; `noAutostart` replaces them wherever a case needs auto-start
+ * suppressed to isolate a different open path.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const STORAGE_KEY = 'snowdesk.map.help';
 const DISMISSED_VALUE = 'seen';
-const HOME_INTRO_KEY = 'snowdesk.home.intro';
-const HOME_INTRO_DISMISSED = 'dismissed';
 
 // Mirrors the template's 13 step definitions (public/templates/public/
 // partials/_map_embed.html), in template order.
@@ -84,20 +92,15 @@ function targetsMarkup() {
 /**
  * Build the #map-help-overlay fixture (mirroring
  * public/templates/public/partials/_map_embed.html) plus its step targets,
- * optionally alongside a #home-intro fixture whose visibility gates
- * map_help.js's auto-start.
+ * optionally carrying the data-map-help-no-autostart opt-out home.html
+ * sets (SNOW-535) to gate map_help.js's auto-start.
  */
-function buildFixture({ homeIntroShowing = null } = {}) {
-  const homeIntroHtml =
-    homeIntroShowing === null
-      ? ''
-      : `<div id="home-intro" ${homeIntroShowing ? '' : 'hidden'}></div>`;
+function buildFixture({ noAutostart = false } = {}) {
   document.body.innerHTML = `
-    ${homeIntroHtml}
     ${targetsMarkup()}
     <ul id="map-help-steps" hidden>${stepsMarkup()}</ul>
     <button id="map-help-toggle" type="button">?</button>
-    <div id="map-help-overlay" hidden role="dialog" data-overlay data-overlay-persist="snowdesk.map.help=seen">
+    <div id="map-help-overlay" hidden role="dialog" data-overlay data-overlay-persist="snowdesk.map.help=seen" ${noAutostart ? 'data-map-help-no-autostart' : ''}>
       <div id="map-help-ring" aria-hidden="true"></div>
       <div id="map-help-tooltip" class="map-help-tooltip" tabindex="-1">
         <button type="button" id="map-help-close" data-action="dismiss" aria-label="Close">×</button>
@@ -148,10 +151,9 @@ beforeEach(() => {
 
 describe('opening the tour', () => {
   it('opens on step 1 with the correct title via the "?" roundel', async () => {
-    // #home-intro showing suppresses auto-start (mirrors a fresh visit,
-    // matching test_autostart_skipped_while_home_intro_is_showing below) so
-    // this only asserts the toggle-driven open path, not auto-start.
-    buildFixture({ homeIntroShowing: true });
+    // noAutostart suppresses the first-load auto-start so this only asserts
+    // the toggle-driven open path, matching the homepage's own opt-out.
+    buildFixture({ noAutostart: true });
     await loadModules();
 
     expect(overlayHidden()).toBe(true);
@@ -200,7 +202,7 @@ describe('close', () => {
 describe('reload after dismissal', () => {
   it('does not auto-start when the dismissed flag is already set', async () => {
     localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    buildFixture({ homeIntroShowing: false });
+    buildFixture();
     await loadModules();
 
     expect(overlayHidden()).toBe(true);
@@ -260,19 +262,39 @@ describe('steps whose target is missing from the DOM', () => {
   });
 });
 
-describe('auto-start vs #home-intro', () => {
-  it('auto-starts on load when #home-intro is already dismissed', async () => {
-    localStorage.setItem(HOME_INTRO_KEY, HOME_INTRO_DISMISSED);
-    buildFixture({ homeIntroShowing: false });
+describe('auto-start', () => {
+  it('auto-starts on load when no opt-out attribute is set', async () => {
+    buildFixture();
     await loadModules();
 
     expect(overlayHidden()).toBe(false);
   });
 
-  it('does not auto-start while #home-intro is still showing', async () => {
-    buildFixture({ homeIntroShowing: true });
+  it('does not auto-start when the embedding page opts out via data-map-help-no-autostart', async () => {
+    // SNOW-535: home.html sets this — the tour there only opens via the "?"
+    // roundel or #home-intro's "Explore the map" CTA.
+    buildFixture({ noAutostart: true });
     await loadModules();
 
     expect(overlayHidden()).toBe(true);
+  });
+});
+
+describe('snowdesk:map-help-requested', () => {
+  it('opens the tour from step 1, same as the "?" roundel', async () => {
+    // SNOW-535: this is the event home_intro.js dispatches when its
+    // "Explore the map" CTA is clicked, alongside the shared dismiss
+    // handling — noAutostart isolates this from the auto-start path so the
+    // assertion is only about the event-driven open.
+    buildFixture({ noAutostart: true });
+    await loadModules();
+
+    expect(overlayHidden()).toBe(true);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-requested'));
+
+    expect(overlayHidden()).toBe(false);
+    const [step] = currentStepAndTotal();
+    expect(step).toBe(1);
   });
 });
