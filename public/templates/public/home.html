@@ -17,7 +17,8 @@ and loads home_intro.js in addition to the shared map assets.
 
 {% block title %}{% trans "Snowdesk — Avalanche bulletins across the Alps" %}{% endblock %}
 
-{% block meta_description %}{% trans "Interactive map of avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino. Search a place, read the full bulletin, compare dates, and replay the season with the timelapse scrubber." %}{% endblock %}
+{# SNOW-535: kept under ~155 characters so search results show it whole. #}
+{% block meta_description %}{% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino. Search a place, read the full bulletin, compare dates, replay the season." %}{% endblock %}
 
 {# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
 {# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
