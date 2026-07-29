@@ -3008,14 +3008,20 @@ class TestOGMetaTags:
         content = response.content.decode()
         assert 'property="og:site_name" content="Snowdesk"' in content
 
-    def test_og_type_website(
+    def test_og_type_is_article_not_website(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """og:type is always 'website'."""
+        """og:type is 'article' on a bulletin page (SNOW-555).
+
+        This assertion previously read ``content="website"`` — og:type was
+        a site-wide constant in base.html's og_tags block. A dated
+        bulletin is dated, revisable content, so it is an article; see
+        ``TestArticleOpenGraph`` for the timestamps that unlocks.
+        """
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'property="og:type" content="website"' in content
+        assert 'property="og:type" content="article"' in content
 
     def test_twitter_card_summary_large_image(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -5819,3 +5825,76 @@ class TestTendencyOutlook:
         content = self._make_bulletin(albina_region, rm)
         # The tendency panel (collapsible) must not appear.
         assert 'data-testid="tendency-panel"' not in content
+
+
+@pytest.mark.django_db
+class TestArticleOpenGraph:
+    """og:type=article and the two article timestamps (SNOW-555).
+
+    A dated avalanche bulletin is dated, revisable content, so ``article``
+    is the correct type — and it unlocks ``article:published_time`` and
+    ``article:modified_time``, which X and LinkedIn surface on the card.
+    That matters more here than usual: a bulletin's value is almost
+    entirely a function of how recent it is, so a card carrying no date is
+    indistinguishable from one for a bulletin three weeks old.
+    """
+
+    def test_dated_bulletin_page_is_an_article(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:type is article, not the site-wide website default."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'property="og:type" content="article"' in content
+
+    def test_both_article_timestamps_are_emitted(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """article:published_time and article:modified_time are both present."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'property="article:published_time"' in content
+        assert 'property="article:modified_time"' in content
+
+    def test_article_times_match_the_json_ld(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """The card and the structured data agree — one derivation feeds both.
+
+        This is the assertion the shared ``_build_article_times`` helper
+        exists for. Deriving the two independently is exactly how they
+        would drift.
+        """
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        data = _extract_jsonld(content)
+        assert data is not None
+        report = data["mainEntity"]
+
+        published = re.search(
+            r'<meta property="article:published_time" content="([^"]*)"', content
+        )
+        modified = re.search(
+            r'<meta property="article:modified_time" content="([^"]*)"', content
+        )
+        assert published is not None and modified is not None
+        assert published.group(1) == report["datePublished"]
+        assert modified.group(1) == report["dateModified"]
+
+    def test_article_times_are_timezone_aware(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """Both timestamps carry an offset, as OG and schema.org expect."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        for prop in ("article:published_time", "article:modified_time"):
+            match = re.search(rf'<meta property="{prop}" content="([^"]*)"', content)
+            assert match is not None, f"{prop} missing"
+            # datetime.fromisoformat raises on a malformed value, and a naive
+            # one has no tzinfo — both are failures.
+            assert datetime.fromisoformat(match.group(1)).tzinfo is not None
+
+    def test_empty_state_page_is_a_website_with_no_article_properties(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A date with no bulletin has no timestamps, so it stays a website."""
+        content = client.get(_url("ch-4115", "valais", "2020-01-01")).content.decode()
+        assert 'property="og:type" content="website"' in content
+        assert "article:published_time" not in content
+        assert "article:modified_time" not in content

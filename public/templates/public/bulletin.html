@@ -67,7 +67,19 @@ reachable via the SNOW-81 deep-link in the masthead.
             {{ name }}.{% endblocktrans %}
     {% endif %}
     {% firstof og_description generic_description as page_description %}
-    {% include "includes/_page_meta.html" with title=page_title description=page_description url=canonical_url %}
+    {# SNOW-555: a dated avalanche bulletin is dated, revisable content, so #}
+    {# og:type=article — which unlocks the two timestamps X and LinkedIn    #}
+    {# surface on the card. That matters more here than usual: a bulletin's #}
+    {# value is almost entirely a function of how recent it is, and a card  #}
+    {# carrying no date is indistinguishable from one for a bulletin three  #}
+    {# weeks old. An empty-state page has no bulletin row and therefore no  #}
+    {# timestamps, so it stays a plain website.                             #}
+    {% if bulletin %}
+        {% firstof "article" as page_og_type %}
+    {% else %}
+        {% firstof "website" as page_og_type %}
+    {% endif %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description url=canonical_url og_type=page_og_type published_time=article_published_time modified_time=article_modified_time %}
 {% endblock page_meta %}
 
 {% block extra_head %}
