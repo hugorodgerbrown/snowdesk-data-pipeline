@@ -1,9 +1,12 @@
 """
-tests/core/test_http.py — Tests for core.http.client_ip.
+tests/core/test_http.py — Tests for core.http.
 
-Covers the leftmost-XFF path, multi-hop XFF chains, whitespace trimming,
-missing/empty header fallback to REMOTE_ADDR, and the empty-string fallback
-when neither header is present.
+``client_ip``: the leftmost-XFF path, multi-hop XFF chains, whitespace
+trimming, missing/empty header fallback to REMOTE_ADDR, and the
+empty-string fallback when neither header is present.
+
+``is_speculative`` (SNOW-551): which requests a browser made on its own
+initiative rather than because somebody chose to visit.
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from __future__ import annotations
 import pytest
 from django.test import RequestFactory
 
-from core.http import client_ip
+from core.http import client_ip, is_speculative
 
 
 class TestClientIp:
@@ -72,3 +75,40 @@ class TestClientIp:
             REMOTE_ADDR="203.0.113.9",
         )
         assert client_ip(request) == "203.0.113.9"
+
+
+class TestIsSpeculative:
+    """Tests for is_speculative(request) — SNOW-551."""
+
+    @pytest.fixture()
+    def rf(self) -> RequestFactory:
+        """Return a Django RequestFactory for building synthetic requests."""
+        return RequestFactory()
+
+    def test_plain_get_is_a_real_visit(self, rf: RequestFactory) -> None:
+        """A GET with no Sec-Purpose is somebody actually visiting."""
+        assert is_speculative(rf.get("/")) is False
+
+    @pytest.mark.parametrize("purpose", ["prefetch", "prerender"])
+    def test_speculative_purposes(self, rf: RequestFactory, purpose: str) -> None:
+        """prefetch and prerender are both the browser's own initiative."""
+        assert is_speculative(rf.get("/", HTTP_SEC_PURPOSE=purpose)) is True
+
+    def test_structured_header_value(self, rf: RequestFactory) -> None:
+        """Sec-Purpose is structured — match on the token, not the whole value."""
+        request = rf.get("/", HTTP_SEC_PURPOSE="prefetch;anonymous-client-ip")
+        assert is_speculative(request) is True
+
+    def test_case_insensitive(self, rf: RequestFactory) -> None:
+        """Header values are matched case-insensitively."""
+        assert is_speculative(rf.get("/", HTTP_SEC_PURPOSE="Prefetch")) is True
+
+    def test_head_is_speculative_whatever_the_header_says(
+        self, rf: RequestFactory
+    ) -> None:
+        """A HEAD fetches no content for a human to read."""
+        assert is_speculative(rf.head("/")) is True
+
+    def test_other_purposes_are_real_visits(self, rf: RequestFactory) -> None:
+        """An unrecognised Sec-Purpose does not suppress logging."""
+        assert is_speculative(rf.get("/", HTTP_SEC_PURPOSE="navigate")) is False

@@ -70,7 +70,12 @@ from django.utils.translation import (
     gettext_lazy as _,
 )
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import condition, require_POST
+from django.views.decorators.http import (
+    condition,
+    require_http_methods,
+    require_POST,
+)
+from django_ratelimit.decorators import ratelimit
 
 import analytics
 from accounts.identity import request_identity
@@ -103,6 +108,7 @@ from bulletins.services.weather_fetcher import (
     fetch_weather_for_region,
 )
 from core.decorators import require_htmx
+from core.http import client_ip, is_speculative
 from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
 from favourites.models import Favourite
@@ -3821,6 +3827,74 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 # ---------------------------------------------------------------------------
 
 
+def _record_share_click(request: HttpRequest, share: BulletinShare) -> None:
+    """Record one real share-link click: RequestLog, click row, PostHog event.
+
+    Split out of ``share_redirect`` (SNOW-551) so the speculative-request
+    branch can skip every write in one place while still redirecting.
+
+    Args:
+        request: The incoming HTTP request.
+        share: The ``BulletinShare`` being followed.
+
+    """
+    # Capture request context into a RequestLog row.  This also resolves geo
+    # fields from the client IP via the GeoLite2-City database.
+    req_log = capture_request_log(request)
+
+    # visitor_hash: pseudonymous de-dup key computed from IP + UA.
+    ip = req_log.ip_address or ""
+    ua = req_log.user_agent
+    visitor_hash = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
+
+    BulletinShareClick.objects.create(
+        share=share,
+        request=req_log,
+        visitor_hash=visitor_hash,
+    )
+
+    # Emit share_link_clicked alongside the BulletinShareClick DB record.
+    distinct_id = (
+        request_identity(request)
+        if request.user.is_authenticated
+        else (request.session.session_key or f"anon-{uuid.uuid4()}")
+    )
+    share_props: dict[str, object] = {"region_id": share.region.region_id}
+    if req_log.country_code:
+        share_props["country_code"] = req_log.country_code
+    analytics.track("share_link_clicked", distinct_id, share_props)
+
+
+# Ceiling on share-link follows per (token, IP) per hour (SNOW-551).
+# Deliberately generous: a real visitor re-opening their own link, or a
+# household behind one address, must never hit it — the cap exists to stop a
+# scanner growing RequestLog and BulletinShareClick without bound.
+SHARE_CLICK_RATE: str = "30/h"
+
+
+def _share_rate_limit_key(group: str, request: HttpRequest) -> str:
+    """Return the rate-limit bucket for a share-link follow: (token, IP).
+
+    Keying on the pair rather than the IP alone means one visitor
+    re-following their own link is unaffected, while a scanner hammering a
+    single link is bounded. A flat per-IP cap would make one NATed office
+    network share a single budget across unrelated share links.
+
+    Args:
+        group: The django-ratelimit group name (unused — one group here).
+        request: The current HTTP request.
+
+    Returns:
+        An opaque bucket key.
+
+    """
+    match = request.resolver_match
+    token = match.kwargs.get("token", "") if match is not None else ""
+    return f"{token}|{client_ip(request)}"
+
+
+@require_http_methods(["GET", "HEAD"])
+@ratelimit(key=_share_rate_limit_key, rate=SHARE_CLICK_RATE, block=False)
 def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     """Follow a share link: log the click and 302 to the canonical bulletin URL.
 
@@ -3838,43 +3912,35 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     No 301 anywhere — 301s are aggressively cached and would defeat click
     tracking on re-visits.
 
+    Abuse bounds (SNOW-551). This endpoint writes three things on arrival —
+    a ``RequestLog``, a ``BulletinShareClick``, and a PostHog event — for
+    anyone who knows a public share URL:
+
+    * Only GET and HEAD are accepted; no legitimate POST/PUT/DELETE caller
+      exists. ``require_GET`` would reject HEAD outright, but a HEAD should
+      still get its redirect — it just must not be counted.
+    * Speculative requests (HEAD, ``Sec-Purpose: prefetch`` / ``prerender``)
+      skip all three writes and still redirect. A browser prefetching a link
+      the user never clicks is not a click.
+    * The remainder is rate-limited to 30/hour per (token, IP) — generous
+      enough that no real visitor notices, tight enough that a scanner
+      cannot grow two tables without bound.
+
     Args:
-        request: The incoming HTTP request (GET).
+        request: The incoming HTTP request (GET or HEAD).
         token: URL-safe token from the short URL.
 
     Returns:
-        An HttpResponse — 302, 404, or 410 as described above.
+        An HttpResponse — 302, 404, 410, or 429 as described above.
 
     """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
     share = get_object_or_404(BulletinShare, token=token)
 
-    # Capture request context into a RequestLog row.  This also resolves geo
-    # fields from the client IP via the GeoLite2-City database.
-    req_log = capture_request_log(request)
-
-    # visitor_hash: pseudonymous de-dup key computed from IP + UA.
-    ip = req_log.ip_address or ""
-    ua = req_log.user_agent
-    visitor_hash = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
-
-    BulletinShareClick.objects.create(
-        share=share,
-        request=req_log,
-        visitor_hash=visitor_hash,
-    )
-
-    country_code = req_log.country_code
-
-    # Emit share_link_clicked alongside the BulletinShareClick DB record.
-    _distinct_id = (
-        request_identity(request)
-        if request.user.is_authenticated
-        else (request.session.session_key or f"anon-{uuid.uuid4()}")
-    )
-    _share_props: dict[str, object] = {"region_id": share.region.region_id}
-    if country_code:
-        _share_props["country_code"] = country_code
-    analytics.track("share_link_clicked", _distinct_id, _share_props)
+    if not is_speculative(request):
+        _record_share_click(request, share)
 
     if share.bulletin is None:
         gone = HttpResponseGone(
