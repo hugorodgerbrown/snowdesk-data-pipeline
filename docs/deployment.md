@@ -91,7 +91,7 @@ visitor doesn't have: `og:image` / `twitter:image` on every page, the
 `start_url` / `scope` fields in the PWA manifest. None of it shows up in logs
 or in a browser.
 
-`core.checks.check_site_base_url` (SNOW-554) raises an `Error` when `DEBUG` is
+`apps.core.checks.check_site_base_url` (SNOW-554) raises an `Error` when `DEBUG` is
 off and the value still resolves to `localhost` / `127.0.0.1` / `::1`, or isn't
 an absolute URL at all. `build.sh` runs `migrate`, which runs system checks
 first, so a service missing the variable fails its deploy instead of shipping
@@ -101,6 +101,26 @@ The check is host-shape-only — it never asks whether the origin is the *right*
 domain, because staging and production legitimately differ.
 `config/settings/perf.py` is the one environment that runs `DEBUG=False`
 against localhost on purpose (Lighthouse), and silences the check by id.
+
+## Renaming or moving an authentication backend logs everyone out
+
+Django stores the **dotted path** of the backend that authenticated a session
+in the session itself, under `_auth_user_backend`. On every subsequent request
+`django.contrib.auth.get_user()` checks that stored path against
+`settings.AUTHENTICATION_BACKENDS` and returns `AnonymousUser` when it is not
+found — so moving or renaming a backend module silently invalidates **every
+live session** on deploy, even though nothing about the user rows changed.
+
+This bit the `apps/` restructure (SNOW-557), which changed
+`accounts.backends.TokenBackend` to `apps.accounts.backends.TokenBackend`.
+Sessions are DB-backed (`SESSION_ENGINE = django.contrib.sessions.backends.db`),
+so the stale rows sit in `django_session` until they expire.
+
+There is nothing to fix — signed-in users simply request a new magic link, and
+passkey holders re-authenticate in one tap. But treat any deploy that moves
+`AUTHENTICATION_BACKENDS` entries as a **forced re-login event**: announce it if
+the timing matters, and don't ship it alongside a change whose rollout you want
+to measure by session continuity.
 
 ## Cutting a release
 

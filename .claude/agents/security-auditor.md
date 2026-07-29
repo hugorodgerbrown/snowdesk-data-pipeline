@@ -235,13 +235,13 @@ priority than runtime deps (Django, requests, bleach, etc.).
 ### Phase 6 — HTMX-specific review
 
 Snowdesk uses HTMX heavily — partials live under
-`pipeline/templates/partials/` and `apps/accounts/templates/partials/`,
-guarded by `require_htmx`. Audit:
+`apps/bulletins/templates/partials/` and
+`apps/accounts/templates/partials/`, guarded by `require_htmx`. Audit:
 
 ```bash
 grep -rEn --include='*.html' '(hx-post|hx-put|hx-delete|hx-patch|hx-vals|hx-headers|hx-include|hx-swap-oob|hx-trigger)' . 2>/dev/null | head -100
-grep -rEn --include='*.py' '(HttpResponse|render)\(' pipeline/ apps/accounts/ apps/public/ | grep -iE '(htmx|partial|fragment)' | head -50
-grep -rEn --include='*.py' 'csrf_exempt|mark_safe|\|safe' pipeline/ apps/accounts/ apps/public/ | head -50
+grep -rEn --include='*.py' '(HttpResponse|render)\(' apps/bulletins/ apps/accounts/ apps/public/ | grep -iE '(htmx|partial|fragment)' | head -50
+grep -rEn --include='*.py' 'csrf_exempt|mark_safe|\|safe' apps/bulletins/ apps/accounts/ apps/public/ | head -50
 ```
 
 Check:
@@ -266,7 +266,7 @@ Check:
 Targeted review of high-value paths:
 
 - **SLF ingest pipeline** —
-  [`pipeline/services/slf_fetcher.py:43`](pipeline/services/slf_fetcher.py:43)
+  [`apps/bulletins/services/slf_fetcher.py`](apps/bulletins/services/slf_fetcher.py)
   is `fetch_bulletin_page()`. Check: URL is env-driven via
   `settings.SLF_API_BASE_URL`, `requests.get` uses the implicit
   `verify=True`, 30 s timeout is set, JSON parsing has size guard or
@@ -276,7 +276,7 @@ Targeted review of high-value paths:
 - **Resend / email delivery** — header injection in
   `to`/`subject`/`reply_to` fields (Django's mail backend escapes
   these but check any custom assembly), unsubscribe token unguessable
-  (`accounts/tokens.py` — confirm `signing.Signer` or
+  (`apps/accounts/services/token.py` — confirm `signing.Signer` or
   `TimestampSigner` with a per-purpose salt), `EMAIL_USE_TLS = True`
   in `production.py`, SMTP creds via env only.
 
