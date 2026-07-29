@@ -15,6 +15,12 @@
  * module is imported. Both modules are dynamically imported per test (via
  * `vi.resetModules()` + `await import(...)`) so each test gets a fresh
  * IIFE run against its own fixture/location/localStorage state.
+ *
+ * SNOW-535 added a second dismiss control (#home-intro-close, the "×") and
+ * wired the existing "Explore the map" CTA (#home-intro-dismiss) to also
+ * dispatch 'snowdesk:map-help-requested' — the event static/js/map_help.js
+ * listens for to open the coachmark tour. Both are covered below; the
+ * fixture carries both buttons.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +32,9 @@ function buildFixture() {
   document.body.innerHTML = `
     <div id="home-intro" data-overlay data-overlay-persist="snowdesk.home.intro=dismissed">
       <div class="home-intro-card">
+        <button id="home-intro-close" type="button" data-action="dismiss" aria-label="Dismiss">
+          ×
+        </button>
         <button id="home-intro-dismiss" type="button" data-action="dismiss">
           Explore the map
         </button>
@@ -48,10 +57,12 @@ beforeEach(() => {
     // Ignore.
   }
   window.location.hash = '';
+  history.replaceState(null, '', '/');
 });
 
 afterEach(() => {
   window.location.hash = '';
+  history.replaceState(null, '', '/');
 });
 
 describe('dismiss', () => {
@@ -66,6 +77,50 @@ describe('dismiss', () => {
 
     expect(overlay.hasAttribute('hidden')).toBe(true);
     expect(localStorage.getItem(STORAGE_KEY)).toBe(DISMISSED_VALUE);
+  });
+
+  it('the "×" also hides the overlay and persists the dismissed flag', async () => {
+    // SNOW-535: #home-intro-close carries the same data-action="dismiss"
+    // idiom as the CTA, so it goes through the identical shared handler.
+    buildFixture();
+    await loadModules();
+    const overlay = document.getElementById('home-intro');
+
+    document.getElementById('home-intro-close').click();
+
+    expect(overlay.hasAttribute('hidden')).toBe(true);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(DISMISSED_VALUE);
+  });
+
+  it('the "×" does NOT request the map-help tour', async () => {
+    // SNOW-535: only the "Explore the map" CTA below opens the tour — a
+    // plain close must not have that side effect.
+    buildFixture();
+    await loadModules();
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:map-help-requested', requested);
+
+    document.getElementById('home-intro-close').click();
+
+    expect(requested).not.toHaveBeenCalled();
+  });
+});
+
+describe('"Explore the map" also requests the map-help tour', () => {
+  it('dispatches snowdesk:map-help-requested alongside the shared dismiss', async () => {
+    // SNOW-535: home_intro.js binds its own listener on the CTA, in
+    // addition to the shared data-action="dismiss" handling, so map_help.js
+    // can open the tour without home_intro.js reaching into its internals.
+    buildFixture();
+    await loadModules();
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:map-help-requested', requested);
+    const overlay = document.getElementById('home-intro');
+
+    document.getElementById('home-intro-dismiss').click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(overlay.hasAttribute('hidden')).toBe(true);
   });
 });
 
@@ -99,6 +154,59 @@ describe('/#about hash restore', () => {
     window.dispatchEvent(new Event('hashchange'));
 
     expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+});
+
+describe('?intro=1 force-open parameter', () => {
+  it('reopens the overlay on load regardless of the persisted dismissed state', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=1');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+
+  it('accepts ?intro=true, case-insensitively', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=TRUE');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+
+  it('ignores other values, so ?intro=0 leaves a dismissed overlay hidden', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=0');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
+  });
+
+  it('is stripped on dismissal so a reload does not force the panel back open', async () => {
+    history.replaceState(null, '', '/?intro=1');
+    buildFixture();
+    await loadModules();
+
+    document.getElementById('home-intro-close').click();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
+    expect(new URLSearchParams(location.search).has('intro')).toBe(false);
+  });
+
+  it('preserves other query parameters when stripping', async () => {
+    history.replaceState(null, '', '/?d=2026-01-15&intro=1&country=ch');
+    buildFixture();
+    await loadModules();
+
+    document.getElementById('home-intro-close').click();
+
+    const params = new URLSearchParams(location.search);
+    expect(params.has('intro')).toBe(false);
+    expect(params.get('d')).toBe('2026-01-15');
+    expect(params.get('country')).toBe('ch');
   });
 });
 

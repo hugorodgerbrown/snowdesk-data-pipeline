@@ -15,9 +15,10 @@ This template owns the page metadata (title, meta_description, og_tags)
 and loads home_intro.js in addition to the shared map assets.
 {% endcomment %}
 
-{% block title %}{% trans "Snowdesk — Swiss avalanche bulletins" %}{% endblock %}
+{% block title %}{% trans "Snowdesk — Avalanche bulletins across the Alps" %}{% endblock %}
 
-{% block meta_description %}{% trans "Interactive map of Swiss avalanche regions with daily danger ratings, avalanche problems, and a full-season timelapse. Sourced from SLF." %}{% endblock %}
+{# SNOW-535: kept under ~155 characters so search results show it whole. #}
+{% block meta_description %}{% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino. Search a place, read the full bulletin, compare dates, replay the season." %}{% endblock %}
 
 {# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
 {# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
@@ -26,10 +27,10 @@ and loads home_intro.js in addition to the shared map assets.
 
 {% block og_tags %}
     {{ block.super }}
-    <meta property="og:title" content="{% trans 'Snowdesk — Swiss avalanche bulletins' %}">
+    <meta property="og:title" content="{% trans 'Snowdesk — Avalanche bulletins across the Alps' %}">
     <meta
         property="og:description"
-        content="{% trans 'Interactive map of Swiss avalanche regions with daily danger ratings and a full-season timelapse.' %}"
+        content="{% trans 'Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino — search a place, read the bulletin, replay the season.' %}"
     >
     <meta property="og:url" content="{{ SITE_BASE_URL }}{% url 'public:home' %}">
 {% endblock og_tags %}
@@ -79,7 +80,10 @@ and loads home_intro.js in addition to the shared map assets.
     {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
-    {% include "public/partials/_map_embed.html" with show_intro=True %}
+    {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
+    {# here via #home-intro's "Explore the map" CTA or the "?" roundel,  #}
+    {# never automatically straight after the intro is dismissed.        #}
+    {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
     {# htmx.min.js is shared by both sheet surfaces below (field-report   #}

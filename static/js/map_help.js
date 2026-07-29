@@ -9,14 +9,19 @@
  *
  * Behaviour:
  *   - On first load (localStorage key 'snowdesk.map.help' absent) the tour
- *     auto-starts once, unless #home-intro is still showing — the identity
- *     card takes priority so the two overlays never stack on first paint;
- *     the tour remains reachable via the "?" roundel once it is dismissed.
+ *     auto-starts once — unless #map-help-overlay carries
+ *     data-map-help-no-autostart, an opt-out the embedding page sets when
+ *     it has its own, better way to offer the tour. home.html sets it
+ *     (SNOW-535): on the homepage the tour only opens via the "?" roundel
+ *     or #home-intro's "Explore the map" CTA, never automatically straight
+ *     after a visitor dismisses that card.
  *   - Steps whose target selector resolves to nothing in the DOM (the
  *     flag-gated #favourite-add-btn / #report-btn controls) are skipped
  *     automatically when the active step list is built.
  *   - The "?" roundel (#map-help-toggle) re-opens the tour from step 1 at
- *     any time, regardless of stored state.
+ *     any time, regardless of stored state — as does a
+ *     'snowdesk:map-help-requested' CustomEvent, which home_intro.js
+ *     dispatches when its "Explore the map" CTA is clicked.
  *   - Back / Next control the sequence; Next becomes "Done" on the final
  *     step. The "×" close button, Escape and Done all persist the dismissed
  *     state.
@@ -317,6 +322,12 @@
     toggleBtn.addEventListener('click', () => open(true));
   }
 
+  // SNOW-535: the homepage's #home-intro "Explore the map" CTA asks for the
+  // tour via this event (home_intro.js) rather than reaching into this
+  // module's internals directly — keeps the tour-opening logic in one
+  // place while decoupling the two scripts.
+  document.addEventListener('snowdesk:map-help-requested', () => open(true));
+
   window.addEventListener('resize', reposition);
   window.addEventListener('scroll', reposition, true);
 
@@ -363,11 +374,9 @@
   });
 
   // ---- First-run auto-start ----
-  // Skips auto-start when #home-intro is present and still showing, so the
-  // two overlays never stack on first paint — the identity card is
-  // dismissed first, then the tour is reachable via the "?" roundel. This
-  // also covers "#home-intro absent" (show_intro=False) and "#home-intro
-  // already dismissed on a prior visit", both of which auto-start the tour.
+  // Skips auto-start when the embedding page opts out via
+  // data-map-help-no-autostart on #map-help-overlay (home.html does this —
+  // see the module docstring). Every other embedder keeps auto-starting.
 
   let persisted = null;
   try {
@@ -376,11 +385,10 @@
     // Private mode — treat as not yet seen.
   }
 
-  if (persisted !== DISMISSED_VALUE) {
-    const homeIntro = document.getElementById('home-intro');
-    const homeIntroShowing = !!homeIntro && !homeIntro.hasAttribute('hidden');
-    if (!homeIntroShowing) {
-      open(true);
-    }
+  if (
+    persisted !== DISMISSED_VALUE &&
+    !overlay.hasAttribute('data-map-help-no-autostart')
+  ) {
+    open(true);
   }
 })();

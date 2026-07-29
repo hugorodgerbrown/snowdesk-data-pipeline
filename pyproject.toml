@@ -144,6 +144,11 @@ addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=a
 # (DEBUG=True under config.settings.development) so those routes stay
 # registered and their test client GETs resolve.
 django_debug_mode = "keep"
+markers = [
+    # e2e: opt out of conftest's autouse #home-intro suppression, for the
+    # handful of tests whose subject *is* the first-run intro panel.
+    "shows_home_intro: leave the #home-intro overlay showing on / (e2e only)",
+]
 
 [tool.coverage.run]
 source = ["core", "bulletins", "regions", "public", "accounts", "analytics", "mcp_server", "observations", "favourites"]

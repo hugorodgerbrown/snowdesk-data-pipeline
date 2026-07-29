@@ -8,10 +8,17 @@
  * Behaviour:
  *   - On page load, if localStorage key 'snowdesk.home.intro' is 'dismissed'
  *     the overlay is hidden immediately (no transition to avoid flash).
- *   - Clicking the dismiss button or pressing Escape hides the overlay and
- *     persists the dismissed state to localStorage.
+ *   - Clicking the "×" (#home-intro-close) or pressing Escape hides the
+ *     overlay and persists the dismissed state to localStorage.
+ *   - Clicking "Explore the map" (#home-intro-dismiss) does the same, and
+ *     additionally opens the map-help coachmark tour — see the "Explore the
+ *     map" section below.
  *   - If the URL hash is '#about' on load (or when hashchange fires), the
  *     overlay is forced open regardless of the persisted state.
+ *   - '?intro=1' (or '?intro=true') does the same on load, and is stripped
+ *     from the address bar on dismissal so the panel stays dismissed across
+ *     a reload. Unlike '#about' it survives a server round-trip, which makes
+ *     it the handle to reach for in QA, screenshots and bug reports.
  *   - prefers-reduced-motion: transitions are skipped by removing the
  *     animation class before any state change.
  *
@@ -27,6 +34,7 @@
 
   const STORAGE_KEY = 'snowdesk.home.intro';
   const DISMISSED_VALUE = 'dismissed';
+  const FORCE_PARAM = 'intro';
 
   // Respect prefers-reduced-motion: when set, remove the CSS transition
   // class so state changes are instant rather than animated.
@@ -73,10 +81,52 @@
    */
   const hashIsAbout = () => location.hash.toLowerCase() === '#about';
 
+  /**
+   * Check whether the query string asks for the overlay to be forced open.
+   *
+   * SNOW-535: '?intro=1' (or '?intro=true', case-insensitive) re-opens the
+   * panel regardless of the persisted dismissed state. Unlike '#about' a
+   * query parameter survives a server round-trip and copy-paste into a bug
+   * report, which makes it the practical handle for QA, screenshots and
+   * demos once the panel has been dismissed.
+   *
+   * @returns {boolean}
+   */
+  const forceOpenRequested = () => {
+    let value = null;
+    try {
+      value = new URLSearchParams(location.search).get(FORCE_PARAM);
+    } catch (_) {
+      // No URLSearchParams (very old browser) — fall back to not forcing.
+      return false;
+    }
+    if (value === null) return false;
+    const normalised = value.toLowerCase();
+    return normalised === '1' || normalised === 'true';
+  };
+
+  /**
+   * Strip the force-open parameter from the address bar, preserving any
+   * other query parameters, so a dismissal is not undone by a reload or a
+   * back/forward step.
+   */
+  const stripForceParam = () => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has(FORCE_PARAM)) return;
+    params.delete(FORCE_PARAM);
+    const query = params.toString();
+    history.replaceState(
+      null,
+      '',
+      location.pathname + (query ? `?${query}` : '') + location.hash,
+    );
+  };
+
   // ---- Initial state ----
 
-  if (hashIsAbout()) {
-    // /#about forces the overlay open regardless of persisted state.
+  if (hashIsAbout() || forceOpenRequested()) {
+    // /#about and ?intro=1 both force the overlay open regardless of the
+    // persisted state.
     show();
   } else {
     let persisted = null;
@@ -92,13 +142,14 @@
     }
   }
 
-  // ---- Dismiss button ----
-  // SNOW-486: #home-intro-dismiss carries data-action="dismiss" inside the
-  // [data-overlay] #home-intro, so the click itself — the hide (attribute
-  // idiom, unchanged) and the localStorage persist (data-overlay-persist=
-  // "snowdesk.home.intro=dismissed") — is handled by
-  // static/js/overlays.js's shared delegated handler. This only runs the
-  // teardown that handler doesn't know about.
+  // ---- Dismiss controls ("×" and "Explore the map") ----
+  // SNOW-486: both #home-intro-close and #home-intro-dismiss carry
+  // data-action="dismiss" inside the [data-overlay] #home-intro, so the
+  // click itself — the hide (attribute idiom, unchanged) and the
+  // localStorage persist (data-overlay-persist="snowdesk.home.intro=
+  // dismissed") — is handled by static/js/overlays.js's shared delegated
+  // handler for both buttons. This only runs the teardown that handler
+  // doesn't know about.
 
   document.addEventListener('overlay:dismissed', (event) => {
     const dismissed = event.detail && event.detail.overlay;
@@ -109,7 +160,23 @@
     if (hashIsAbout()) {
       history.replaceState(null, '', location.pathname + location.search);
     }
+    // Likewise drop ?intro=1, so dismissing sticks across a reload rather
+    // than the parameter forcing the panel straight back open.
+    stripForceParam();
   });
+
+  // ---- "Explore the map" also opens the map-help tour ----
+  // SNOW-535: unlike the "×", this CTA is an invitation to be shown around,
+  // not just a dismissal — so, in addition to the shared dismiss handling
+  // above, it dispatches a request event that static/js/map_help.js listens
+  // for and answers by calling its own open() entry point. The tour-opening
+  // logic itself stays in map_help.js; this module only asks for it.
+  const exploreBtn = document.getElementById('home-intro-dismiss');
+  if (exploreBtn) {
+    exploreBtn.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('snowdesk:map-help-requested'));
+    });
+  }
 
   // ---- Keyboard dismiss (Escape) ----
 

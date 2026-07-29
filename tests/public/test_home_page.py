@@ -14,11 +14,23 @@ Covers:
   - The offmap-banner (#offmap-banner) is present on / (moved from map.html).
   - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
   - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel (SNOW-344).
+  - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
+  - The meta description names all five territories and stays inside the
+    ~155-character budget search results render (SNOW-535).
+  - The intro card renders both tagline paragraphs — sources/colour and
+    controls (SNOW-535).
+  - The intro card links onward to a sample bulletin and the reading
+    guide (SNOW-535).
+  - The intro card carries a "×" close control wired to the shared
+    overlays.js dismiss idiom (SNOW-535).
+  - #map-help-overlay opts out of the coachmark tour's first-load
+    auto-start on the homepage (SNOW-535).
 """
 
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.contrib.auth.base_user import AbstractBaseUser
@@ -68,6 +80,86 @@ class TestHomePageBasic:
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert 'id="home-intro"' in content
+
+    def test_title_and_og_title_are_alps_wide(self) -> None:
+        """SNOW-535: title/og:title name the Alps, not just Switzerland."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "Snowdesk — Avalanche bulletins across the Alps" in content
+        assert "Swiss avalanche bulletins" not in content
+
+    def test_meta_description_names_non_swiss_territories(self) -> None:
+        """SNOW-535: meta description names France, Austria, South Tyrol and Trentino.
+
+        Asserted against the description tag's own content, not the whole page:
+        "France" and "Austria" also appear in the per-country RSS <link> titles,
+        which predate SNOW-535, so a page-wide substring check would pass against
+        the old Swiss-only description too.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        match = re.search(
+            r'<meta name="description" content="([^"]*)"', content, re.IGNORECASE
+        )
+        assert match is not None, "no meta description tag rendered"
+        description = match.group(1)
+        for territory in (
+            "Switzerland",
+            "France",
+            "Austria",
+            "South Tyrol",
+            "Trentino",
+        ):
+            assert territory in description
+        # Google truncates around 155 characters; keep the tag readable whole.
+        assert len(description) <= 160
+
+    def test_intro_renders_both_tagline_paragraphs(self) -> None:
+        """SNOW-535: the intro card carries both the sources/colour paragraph
+        and the controls paragraph.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "Météo-France and avalanche.report combine into one map" in content
+        assert "Drag the timeline or press play to replay the season" in content
+
+    def test_intro_renders_onward_sample_links(self) -> None:
+        """SNOW-535: the intro card links to a sample bulletin and the guide."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert reverse("public:examples_random") in content
+        assert reverse("public:how_to_read_bulletin") in content
+
+    def test_intro_renders_close_button(self) -> None:
+        """SNOW-535: the intro card carries a "×" wired to the shared dismiss idiom.
+
+        Distinct from #home-intro-dismiss ("Explore the map"), which also
+        opens the map-help tour — the "×" only closes the card.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="home-intro-close"' in content
+        assert content.count('data-action="dismiss"') >= 2, (
+            "both #home-intro-close and #home-intro-dismiss should opt into "
+            "the shared overlays.js dismiss handler"
+        )
+
+    def test_map_help_overlay_opts_out_of_autostart_on_homepage(self) -> None:
+        """SNOW-535: #map-help-overlay carries the no-autostart opt-out on /.
+
+        The tour must only open there via the "?" roundel or #home-intro's
+        "Explore the map" CTA — never automatically straight after a
+        visitor dismisses the intro card.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "data-map-help-no-autostart" in content
 
     def test_home_renders_offmap_banner(self) -> None:
         """The #offmap-banner element is present on / (moved from map.html in SNOW-344).

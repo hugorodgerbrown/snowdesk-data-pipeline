@@ -30,6 +30,8 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
+from tests.e2e.conftest import _dismiss_home_intro
+
 
 def _navigate_home_mobile(page: Page, live_server_url: str) -> None:
     """Load / at a mobile viewport with the SW stripped, wait for the map.
@@ -88,6 +90,10 @@ def test_layers_menu_does_not_clip_under_header(
     ``#map`` (i.e. behind the nav + off-season banner).
     """
     _navigate_home_mobile(page, live_server.url)
+    # SNOW-535: at 375px the intro card is single-column and tall enough to
+    # cover the utility cluster, so #basemap-toggle is unclickable until it
+    # is dismissed — which is what a real visitor does first.
+    _dismiss_home_intro(page)
 
     page.click("#basemap-toggle")
     page.wait_for_selector("#basemap-menu:not([hidden])")
