@@ -17,8 +17,10 @@ from django.core.management import call_command
 from bulletins.models import Bulletin, PipelineRun
 from bulletins.services.meteofrance_archive_loader import (
     LoadResult,
+    _slug_to_region_id,
     load_meteofrance_archive,
 )
+from regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,6 +216,46 @@ class TestUnknownSlug:
         load_meteofrance_archive([_ARAVIS_LINE, _UNKNOWN_LINE], commit=True)
         run = PipelineRun.objects.get()
         assert run.records_failed >= 1
+
+
+# ---------------------------------------------------------------------------
+# Unresolvable regions (SNOW-547)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUnresolvableRegions:
+    """A row whose regions don't resolve fails that row, not the file.
+
+    SNOW-547 made ``upsert_bulletin`` raise on total resolution failure.
+    This loader's documented contract is that per-row failures increment
+    counters and continue, so the new exception must be caught here —
+    otherwise one bad row aborts an entire NDJSON archive load.
+    """
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    def _drop_aravis_region(self) -> None:
+        """Delete the MicroRegion the ARAVIS line resolves to."""
+        MicroRegion.objects.filter(region_id=_slug_to_region_id("ARAVIS")).delete()
+
+    def test_unresolvable_row_does_not_abort_the_file(self) -> None:
+        """The following valid row is still ingested."""
+        self._drop_aravis_region()
+
+        result = load_meteofrance_archive([_ARAVIS_LINE, _CHABLAIS_LINE], commit=True)
+
+        assert result.created == 1
+        assert Bulletin.objects.count() == 1
+
+    def test_unresolvable_row_increments_records_failed(self) -> None:
+        """The failure reaches run.records_failed and LoadResult.failed."""
+        self._drop_aravis_region()
+
+        result = load_meteofrance_archive([_ARAVIS_LINE, _CHABLAIS_LINE], commit=True)
+
+        assert result.failed == 1
+        assert PipelineRun.objects.get().records_failed == 1
 
 
 # ---------------------------------------------------------------------------
