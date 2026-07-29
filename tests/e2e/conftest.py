@@ -558,3 +558,27 @@ def favourites_page(
         account = AccountFactory.create()
     _session_login(page.context, live_server.url, account.user)
     return FavouritesPage(page=page, live_server_url=live_server.url, account=account)
+
+
+def _dismiss_home_intro(page: Page) -> None:
+    """Dismiss the ``#home-intro`` overlay via its "×", if it is showing.
+
+    SNOW-535 grew ``#home-intro``'s copy to two paragraphs plus two onward
+    links, tall enough at common desktop viewport sizes to cover other map
+    controls (e.g. the bottom-left (i) legend toggle — the regression this
+    guards against). Any test that navigates to ``/`` and then clicks a map
+    control should call this first, mirroring what a real visitor does
+    before using the map.
+
+    Uses the "×" (``#home-intro-close``) rather than the "Explore the map"
+    CTA (``#home-intro-dismiss``) deliberately: the CTA also opens the
+    map-help coachmark tour (SNOW-535), a side effect most callers of this
+    helper don't want.
+
+    A no-op if ``#home-intro`` is absent or already hidden (e.g.
+    ``show_intro=False``, or a prior dismissal in the same test persisted
+    via localStorage) — most callers don't need to know or care which.
+    """
+    intro = page.locator("#home-intro")
+    if intro.count() and intro.is_visible():
+        page.locator("#home-intro-close").click()

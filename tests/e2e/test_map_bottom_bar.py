@@ -29,6 +29,8 @@ import json
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
 
+from tests.e2e.conftest import _dismiss_home_intro
+
 # Season-ratings stub: two dates so sortedDates is non-empty and the scrubber
 # can reach 'ready' state (mirrors test_timelapse_popup.py).
 _SEASON_RATINGS: str = json.dumps(
@@ -141,6 +143,9 @@ def test_legend_splits_danger_scale_and_map_pins(
     Resorts, Favourites and Observations.
     """
     _navigate_and_wait(page, live_server.url)
+    # SNOW-535: #home-intro now grows tall enough to cover the (i) toggle at
+    # this viewport size — dismiss it first, as a real visitor would.
+    _dismiss_home_intro(page)
 
     page.locator("#map-legend-toggle").click()
     page.wait_for_selector("#map-legend[data-state='expanded']", timeout=5_000)
