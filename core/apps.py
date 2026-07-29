@@ -4,7 +4,8 @@ core/apps.py — AppConfig for the core application.
 Holds shared abstractions used across other apps (notably ``BaseModel``).
 Ships no concrete tables — registered as an installed app so Django
 discovers it cleanly and so future shared queryset / manager utilities
-have an obvious home.
+have an obvious home. Its ``ready()`` hook registers the project-wide
+system checks in ``core/checks.py``.
 
 Also defines ``BootstrapTolerantCSPTrackerConfig`` — a thin subclass of
 the upstream ``csp.apps.CSPTrackerConfig`` that swallows database errors
@@ -29,10 +30,26 @@ logger = logging.getLogger(__name__)
 
 
 class CoreConfig(AppConfig):
-    """Django application configuration for the core app."""
+    """Django application configuration for the core app.
 
+    ``default = True`` is load-bearing, not decoration. Resolving the
+    bare ``"core"`` entry in ``INSTALLED_APPS``, Django scans this module
+    for ``AppConfig`` subclasses — and ``inspect.getmembers`` sees
+    *imported* names too, so ``csp.apps.CSPTrackerConfig`` counts as a
+    candidate alongside the two classes defined here. Faced with more
+    than one and no default, Django silently falls back to a plain
+    ``AppConfig``, and ``ready()`` below never runs. That was the state
+    of things until SNOW-554, when the system check it registers turned
+    out to be dead on arrival.
+    """
+
+    default = True
     default_auto_field = "django.db.models.BigAutoField"
     name = "core"
+
+    def ready(self) -> None:
+        """Register system checks declared in ``core/checks.py``."""
+        from . import checks  # noqa: F401 — import side-effect: registers checks
 
 
 class BootstrapTolerantCSPTrackerConfig(CSPTrackerConfig):
@@ -44,7 +61,15 @@ class BootstrapTolerantCSPTrackerConfig(CSPTrackerConfig):
     level instead of propagating. This unblocks the very first
     ``migrate`` against an empty database when the project uses the
     ``DatabaseCache`` backend.
+
+    ``default = False`` keeps this class out of the candidate pool when
+    Django resolves the bare ``"core"`` entry in ``INSTALLED_APPS`` — it
+    configures ``csp``, not ``core``, and is only ever referenced by its
+    explicit dotted path. See ``CoreConfig.default`` for why that
+    resolution needs the help.
     """
+
+    default = False
 
     def reset(self) -> None:
         """Clear the CSP cache, tolerating a missing ``django_cache`` table."""
