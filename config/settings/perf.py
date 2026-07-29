@@ -24,6 +24,14 @@ DEBUG = False
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
+# This module is the one place DEBUG is off while the site legitimately
+# serves localhost, so ``core.checks.check_site_base_url`` — which aborts a
+# deploy whose SITE_BASE_URL was never pointed at a real origin (SNOW-554) —
+# would fire on every ``collectstatic`` / ``runserver`` in an ``npm run lh``
+# run. Silenced here rather than weakened there: the check is worth nothing
+# if it has to guess which localhost is deliberate.
+SILENCED_SYSTEM_CHECKS = ["core.site_base_url.E001"]
+
 MIDDLEWARE.insert(  # noqa: F405 — MIDDLEWARE imported via wildcard from base
     MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,  # noqa: F405
     "whitenoise.middleware.WhiteNoiseMiddleware",

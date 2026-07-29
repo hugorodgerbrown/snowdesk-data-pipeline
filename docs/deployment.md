@@ -80,6 +80,28 @@ inherits production's hardening but overrides the task backend to
 Under production's `DatabaseBackend`, staging would enqueue email that no
 worker ever sends — persisted silently, with no error in the logs.
 
+## `SITE_BASE_URL` is checked at deploy time
+
+Every service must set `SITE_BASE_URL` to its own public origin. It has a
+`http://localhost:8000` default in [`base.py`](../config/settings/base.py) so
+local development needs no `.env` entry, and that default is silently wrong
+everywhere else — absolute URLs still render, they just point at a machine the
+visitor doesn't have: `og:image` / `twitter:image` on every page, the
+`Sitemap:` line in `robots.txt`, the links in `llms.txt`, and the `id` /
+`start_url` / `scope` fields in the PWA manifest. None of it shows up in logs
+or in a browser.
+
+`core.checks.check_site_base_url` (SNOW-554) raises an `Error` when `DEBUG` is
+off and the value still resolves to `localhost` / `127.0.0.1` / `::1`, or isn't
+an absolute URL at all. `build.sh` runs `migrate`, which runs system checks
+first, so a service missing the variable fails its deploy instead of shipping
+the broken configuration.
+
+The check is host-shape-only — it never asks whether the origin is the *right*
+domain, because staging and production legitimately differ.
+`config/settings/perf.py` is the one environment that runs `DEBUG=False`
+against localhost on purpose (Lighthouse), and silences the check by id.
+
 ## Cutting a release
 
 1. Confirm `main` is green and what is on `main` has been verified on
