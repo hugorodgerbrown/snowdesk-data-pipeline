@@ -31,6 +31,7 @@ the same worker.
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
@@ -75,6 +76,7 @@ def _navigate_home_with_sw_stripped(
     page.wait_for_load_state("domcontentloaded")
 
 
+@pytest.mark.shows_home_intro
 def test_close_button_dismisses_and_persists_across_reload(
     live_server: LiveServer,
     page: Page,
@@ -104,6 +106,7 @@ def test_close_button_dismisses_and_persists_across_reload(
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
+@pytest.mark.shows_home_intro
 def test_explore_cta_dismisses_and_opens_the_tour(
     live_server: LiveServer,
     page: Page,
@@ -133,6 +136,7 @@ def test_explore_cta_dismisses_and_opens_the_tour(
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
+@pytest.mark.shows_home_intro
 def test_intro_query_param_forces_a_dismissed_panel_back_open(
     live_server: LiveServer,
     page: Page,
@@ -175,6 +179,7 @@ def test_intro_query_param_forces_a_dismissed_panel_back_open(
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
+@pytest.mark.shows_home_intro
 def test_tour_does_not_autostart_but_still_opens_from_the_roundel(
     live_server: LiveServer,
     page: Page,

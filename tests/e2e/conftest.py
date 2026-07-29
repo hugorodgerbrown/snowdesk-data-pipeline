@@ -118,6 +118,41 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _suppress_home_intro(request: pytest.FixtureRequest) -> None:
+    """Start every e2e test with ``#home-intro`` already dismissed.
+
+    SNOW-535 grew the first-run intro card to two paragraphs plus a CTA and
+    two onward links. It is absolutely positioned top-left over ``#map`` and
+    grows downward with no bottom bound, so at common viewport sizes it now
+    covers map controls — the bottom-left (i) legend toggle, and at 375px
+    the whole utility cluster (``#basemap-toggle``, ``#report-btn``,
+    ``#favourite-add-btn``). Playwright then fails the click with "subtree
+    intercepts pointer events".
+
+    Nearly every e2e test on ``/`` is about the map, not the intro, and a
+    returning visitor has long since dismissed the panel — so seeding the
+    dismissed flag is both the realistic default and the one that keeps
+    these tests testing what they claim to. Doing it here rather than
+    per-test avoids sprinkling a dismissal through ~30 files and re-fixing
+    the next one that trips over the panel.
+
+    Tests whose subject *is* the intro opt out with
+    ``@pytest.mark.shows_home_intro`` (see tests/e2e/test_home_intro_tour.py).
+    Tests that want to exercise the dismissal interaction itself should still
+    call ``_dismiss_home_intro``, which is a no-op once already hidden.
+
+    The write is wrapped because init scripts also run on ``about:blank``,
+    where the origin is opaque and ``localStorage`` access throws.
+    """
+    if "shows_home_intro" in request.keywords:
+        return
+    page = request.getfixturevalue("page")
+    page.add_init_script(
+        "try { localStorage.setItem('snowdesk.home.intro', 'dismissed'); } catch (_) {}"
+    )
+
+
 @pytest.fixture()
 def _load_test_data(django_db_blocker: Any) -> None:
     """Seed the navigable test dataset before each e2e test.
