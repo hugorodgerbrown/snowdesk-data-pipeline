@@ -73,6 +73,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
 import analytics
+from accounts.identity import request_identity
 from accounts.models import Subscription, user_is_verified
 from bulletins.models import (
     Bulletin,
@@ -3103,8 +3104,10 @@ def _track_bulletin_viewed(
     ``/examples/`` guard lives here so the caller in
     ``_bulletin_detail_response`` requires no additional branch.
 
-    The ``distinct_id`` is ``str(request.user.pk)`` for authenticated
-    visitors.  For anonymous visitors it is the existing Django session key
+    The ``distinct_id`` is the account uuid (``accounts.identity``) for
+    authenticated visitors — never the sequential ``auth.User`` primary key,
+    which leaks user count and growth rate (SNOW-549).  For anonymous
+    visitors it is the existing Django session key
     when one is already in the cookie (no DB query), or a request-scoped
     ``anon-<uuid4>`` string when no session exists yet.  The UUID approach
     avoids forcing a session-row INSERT on every anonymous pageview, which
@@ -3121,9 +3124,9 @@ def _track_bulletin_viewed(
     if request.path.startswith("/examples/"):
         return
 
-    # Determine the distinct_id.
+    # Determine the distinct_id (SNOW-549: Account.uuid, not the user PK).
     if request.user.is_authenticated:
-        distinct_id = str(request.user.pk)
+        distinct_id = request_identity(request)
     else:
         # For anonymous users, use the existing session key if one is already
         # present in the cookie (the session was created by a prior request,
@@ -3864,7 +3867,7 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
 
     # Emit share_link_clicked alongside the BulletinShareClick DB record.
     _distinct_id = (
-        str(request.user.pk)
+        request_identity(request)
         if request.user.is_authenticated
         else (request.session.session_key or f"anon-{uuid.uuid4()}")
     )

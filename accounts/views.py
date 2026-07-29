@@ -93,6 +93,7 @@ from .forms import (
     SnowdeskSetPasswordForm,
     SubscribeForm,
 )
+from .identity import user_identity
 from .logging_utils import mask_email
 from .models import Account, Subscription
 from .services.email import (
@@ -273,7 +274,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     sign_in_props: dict[str, object] = {}
     if req_log.country_code:
         sign_in_props["country_code"] = req_log.country_code
-    analytics.track("sign_in_requested", str(account.user_id), sign_in_props)
+    analytics.track("sign_in_requested", str(account.uuid), sign_in_props)
 
     return render(request, "accounts/manage_sent.html", {})
 
@@ -1070,7 +1071,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(account.user_id),
+            str(account.uuid),
             region_added_props,
         )
         return render(
@@ -1138,7 +1139,7 @@ def _delete_subscription_with_cascade(
     region_count_after = account.subscriptions.count()
     analytics.track(
         "region_removed",
-        str(account.user_id),
+        str(account.uuid),
         {
             "region_id": region.region_id,
             "region_count_after": region_count_after,
@@ -1216,7 +1217,7 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(account.user_id),
+            str(account.uuid),
             region_added_props,
         )
     return render(
@@ -1365,22 +1366,25 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     logger.info("Account pk=%s verified via account-access link", account.pk)
 
     if created or not was_verified:
-        # Emit subscription_confirmed and join the anonymous session identity to
-        # the now-authenticated User PK — only on the transition into verified,
-        # matching today's "only when transitioning out of PENDING" idempotency.
+        # Emit subscription_confirmed and join the anonymous session identity
+        # to the now-authenticated account identity — only on the transition
+        # into verified, matching today's "only when transitioning out of
+        # PENDING" idempotency. SNOW-549: the identity is Account.uuid, never
+        # the sequential auth.User PK.
         hours_since: float = round(
             (timezone.now() - account.created_at).total_seconds() / 3600,
             2,
         )
+        distinct_id = str(account.uuid)
         analytics.track(
             "subscription_confirmed",
-            str(account.user_id),
+            distinct_id,
             {"hours_since_started": hours_since},
         )
         anon_id: str | None = request.session.get("analytics_anon_id")
         if anon_id:
             analytics.alias(
-                distinct_id=str(account.user_id),
+                distinct_id=distinct_id,
                 alias_id=anon_id,
             )
     login(request, user, backend=_TOKEN_BACKEND)
@@ -1543,11 +1547,12 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     account = _get_account(request)
     user = request.user
     email = user.email
-    # Capture account_age_days and distinct_id BEFORE deleting the row.
+    # Capture account_age_days and distinct_id BEFORE deleting the row —
+    # SNOW-549's identity lives on the Account, which the CASCADE removes.
     account_age_days = (
         (timezone.now() - account.created_at).days if account is not None else 0
     )
-    distinct_id = str(user.pk)
+    distinct_id = user_identity(user)
     user.delete()  # CASCADE deletes the Account and any Subscription rows.
     logout(request)
     logger.info("Account %s hard-deleted via delete_account", mask_email(email))
@@ -1675,7 +1680,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         return response
 
     # Capture distinct_id and account_age_days BEFORE deleting the row.
-    distinct_id = str(account.user_id)
+    distinct_id = str(account.uuid)
     account_age_days = (timezone.now() - account.created_at).days
 
     # Delete the specific subscription. The User and Account survive — this

@@ -56,6 +56,40 @@ The eight-field envelope per spec §16.1:
 | `connection` | no | string | e.g. `wifi`, `cellular`, `offline`. Lifted into `properties`. |
 | `properties` | no | object | Free-form; **must not** contain `email` / `ip` / `token` / `credential_id` (existing PII guard rejects at the boundary). |
 
+## User identity — `Account.uuid` (cutover 2026-07-29)
+
+The public-facing identifier for a signed-in user is `Account.uuid`,
+resolved through [`accounts/identity.py`](../accounts/identity.py)
+(`user_identity` / `request_identity`). It is what every PostHog
+`distinct_id` carries, and what `base.html` renders into the
+`pwa-user-id` meta tag that the PWA mutation queue reads as its
+principal.
+
+It replaced `str(request.user.pk)` — Django's sequential `auth.User`
+primary key — in SNOW-549. A small incrementing integer leaks the size
+and growth rate of the user base, is trivially enumerable, and made
+spoofing a client-supplied `user_id` a one-guess exercise. `Account`
+inherits `BaseModel`, which already carries a `unique`,
+`editable=False` `uuid`, so this needed no new field, migration, or
+backfill. A stored identifier was chosen over a derived
+`HMAC-SHA256(pk, SECRET_KEY)` because it stays reversible in the admin
+(support can map a `distinct_id` back to a user) and survives a
+`SECRET_KEY` rotation.
+
+**Two consequences of the cutover, both deliberate:**
+
+* **PostHog history does not join across it.** Events emitted before
+  2026-07-29 key on the integer PK; events after it key on the uuid.
+  There is no alias migration — pre-launch volume made the
+  discontinuity cheap. Read any funnel or retention query spanning that
+  date with the break in mind.
+* **Queued PWA mutations were flushed once.** Every existing user's
+  principal changed on their first load after deploy, so
+  `mutation_queue.js`'s principal-mismatch check discarded whatever they
+  had queued. That is the fail-safe direction (discard rather than
+  misattribute) and matches SNOW-462's intent, but any observation
+  queued offline across the deploy boundary was lost.
+
 Response codes:
 
 - `204 No Content` on success, on empty ratelimit-dropped requests, and
