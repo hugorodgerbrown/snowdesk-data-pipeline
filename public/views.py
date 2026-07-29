@@ -25,10 +25,10 @@ previous day) and a morning update (valid from ~07:00 on the day itself).
   time is shown automatically.
 
 The CAAML raw data does not contain the AI-generated summary fields
-described in site-structure.md (overallVerdict, activity ratings, structured
-weather, etc.). Where possible, equivalent values are derived from the raw
-CAAML data; sections with no available data are omitted from the template
-context so the template hides them gracefully.
+described in docs/site-structure.md (overallVerdict, activity ratings,
+structured weather, etc.). Where possible, equivalent values are derived
+from the raw CAAML data; sections with no available data are omitted from
+the template context so the template hides them gracefully.
 """
 
 from __future__ import annotations

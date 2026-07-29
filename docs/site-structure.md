@@ -1,3 +1,10 @@
+---
+name: site-structure
+description: Snowdesk site architecture — home and bulletin-viewer routes, AI-generated summary fields (overallVerdict, activity ratings, weather)
+status: current
+last-reviewed: 2026-07-29
+---
+
 # Snowdesk Site Structure
 
 ## Site Architecture

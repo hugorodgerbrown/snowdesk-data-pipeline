@@ -16,7 +16,7 @@ judgement for the user's approved direction.
 - An approved scope (in the Linear ticket's comments) and an approved plan (in
   the orchestrator's context)
 - The project coding standards in
-  [CODING_STANDARDS.md](../../CODING_STANDARDS.md)
+  [docs/coding-standards.md](../../docs/coding-standards.md)
 
 ## Your output
 

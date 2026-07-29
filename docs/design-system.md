@@ -1,3 +1,10 @@
+---
+name: design-system
+description: Bulletin page design handover — editorial principles, WhiteRisk replicate-then-subtract plan, design tokens, field guidance
+status: current
+last-reviewed: 2026-07-29
+---
+
 # SnowDesk — Design Handover
 
 This document captures the state of the SnowDesk bulletin page design as of April 2026, including the editorial principles, the current implementation, the prioritised task list, the field guidance content drafts, and the open design questions.
@@ -10,7 +17,7 @@ It exists so that a new design-focused conversation can pick up where the previo
 
 ## Design tokens
 
-The canonical source of truth for all tokens is [`src/css/main.css`](src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
+The canonical source of truth for all tokens is [`src/css/main.css`](../src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
 
 ### Typography
 
@@ -355,6 +362,6 @@ The previous task list (April 2026, pre-replication-decision) is retired. Most o
 
 ## How to use this document
 
-This is intended as the input to a new design-focused chat. When starting that chat, reference this document directly: "I'm continuing the SnowDesk design work. See `DESIGN.md` for current state, the replicate-then-subtract plan, field guidance drafts, and open questions."
+This is intended as the input to a new design-focused chat. When starting that chat, reference this document directly: "I'm continuing the SnowDesk design work. See `docs/design-system.md` for current state, the replicate-then-subtract plan, field guidance drafts, and open questions."
 
 The strategy conversation that produced the original framing remains in its own chat and shouldn't need to be re-derived. If a strategic question comes up in the design work that's already been resolved in the strategy chat, refer back to it rather than re-litigating it here.

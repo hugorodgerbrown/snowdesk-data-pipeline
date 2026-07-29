@@ -1,10 +1,17 @@
+---
+name: coding-standards
+description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
+status: current
+last-reviewed: 2026-07-29
+---
+
 # Coding Standards — Snowdesk Data Pipeline
 
 This document captures the conventions actually in force in this
 repository. It is reverse-engineered from the existing source tree and
 enforced by `ruff`, `mypy`, `pytest`, and the `pre-commit` hooks wired
-up in [.pre-commit-config.yaml](.pre-commit-config.yaml),
-[pyproject.toml](pyproject.toml), and [tox.ini](tox.ini).
+up in [.pre-commit-config.yaml](../.pre-commit-config.yaml),
+[pyproject.toml](../pyproject.toml), and [tox.ini](../tox.ini).
 
 If a rule below conflicts with something you see in the code, the code
 is probably wrong — fix it rather than relaxing the rule.
@@ -86,8 +93,8 @@ Follow the Zen of Python (h/t Tim Peters):
 Every module starts with a docstring block whose first line names the
 file and gives a one-line purpose, followed by a short description of
 what the module contains and why. See
-[bulletins/models.py](bulletins/models.py) or
-[bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
+[bulletins/models.py](../bulletins/models.py) or
+[bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
 for the canonical shape:
 
 ```python
@@ -108,7 +115,7 @@ Contains pure-ish functions that:
 - **Every** class and function has a docstring. This is enforced by
   ruff's `D` rules and only waived in `__init__.py`, migrations, and
   test modules (see the `per-file-ignores` in
-  [pyproject.toml](pyproject.toml)).
+  [pyproject.toml](../pyproject.toml)).
 - One-line docstrings end with a period.
 - Multi-line docstrings use a short imperative summary line, a blank
   line, then details. `Args:` / `Returns:` / `Raises:` sections use
@@ -128,10 +135,10 @@ Contains pure-ish functions that:
   `**kwargs` are exempt but should still be typed where feasible
   (`*args: Any, **kwargs: Any`).
 - Use `from __future__ import annotations` in modules that reference
-  forward types (see [bulletins/models.py](bulletins/models.py),
-  [regions/models.py](regions/models.py),
-  [bulletins/schema.py](bulletins/schema.py),
-  [public/views.py](public/views.py)).
+  forward types (see [bulletins/models.py](../bulletins/models.py),
+  [regions/models.py](../regions/models.py),
+  [bulletins/schema.py](../bulletins/schema.py),
+  [public/views.py](../public/views.py)).
 - Use `collections.abc` for `Callable`, `Iterable`, etc. — not `typing`.
 - `mypy` runs with `strict_optional`, `warn_return_any`,
   `warn_unused_ignores`, `warn_unreachable`, `disallow_untyped_defs`,
@@ -143,7 +150,7 @@ Contains pure-ish functions that:
 - FactoryBoy defeats mypy's type inference through its metaclass. Call
   sites that pass a factory instance to a typed function must
   `cast(Model, ModelFactory())`. See
-  [tests/factories.py](tests/factories.py) for the explanation.
+  [tests/factories.py](../tests/factories.py) for the explanation.
 
 ### 2.4 Imports
 
@@ -161,7 +168,7 @@ Contains pure-ish functions that:
 - Use `logger.exception(...)` inside `except` blocks to capture
   tracebacks; `logger.error("...", exc_info=True)` is also acceptable.
 - The `core`, `regions`, `bulletins`, and `accounts` loggers are
-  configured in [config/settings/base.py](config/settings/base.py) to
+  configured in [config/settings/base.py](../config/settings/base.py) to
   write to `logs/pipeline.log` with rotation (the filename is legacy and
   intentionally preserved), and errors additionally to `logs/errors.log`.
   Don't reconfigure handlers inside app code.
@@ -175,14 +182,14 @@ Contains pure-ish functions that:
 - Max cyclomatic complexity is 8 (`max-complexity = 8`). If you hit
   `C901`, **refactor** — don't `# noqa` it. The extracted-helper pattern
   in `_process_bulletin` / `run_pipeline` in
-  [bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
+  [bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
   is the reference example.
 - Only suppress lint warnings with `# noqa: <code>` when there is a good
   reason, and always leave an inline comment explaining why. See the
   `mark_safe` calls in
-  [public/templatetags/snowdesk_html.py](public/templatetags/snowdesk_html.py)
+  [public/templatetags/snowdesk_html.py](../public/templatetags/snowdesk_html.py)
   and
-  [public/templatetags/card_tags.py](public/templatetags/card_tags.py)
+  [public/templatetags/card_tags.py](../public/templatetags/card_tags.py)
   for acceptable usage.
 
 ### 2.7 Datetimes
@@ -191,10 +198,10 @@ Contains pure-ish functions that:
   settings; naive datetimes will raise warnings in tests.
 - Use `datetime.UTC` (Python 3.11+), not `timezone.utc` or `pytz`.
 - CAAML timestamps are parsed through `_parse_dt` in
-  [bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
+  [bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
   which always returns a UTC-aware datetime.
 - In factories, use `tzinfo=UTC` — see
-  [tests/factories.py](tests/factories.py).
+  [tests/factories.py](../tests/factories.py).
 
 ---
 
@@ -205,7 +212,7 @@ Contains pure-ish functions that:
 Every concrete model must:
 
 1. **Inherit from `BaseModel`**
-   ([core/models.py](core/models.py)), which provides `id`
+   ([core/models.py](../core/models.py)), which provides `id`
    (BigAutoField), `uuid`, `created_at`, `updated_at`.
 2. **Define a `Meta`** that inherits from `BaseModel.Meta` and sets an
    explicit `ordering` (default is `-created_at` via BaseModel).
@@ -214,18 +221,18 @@ Every concrete model must:
    via `objects = XxxQuerySet.as_manager()`. Domain query methods live
    on the queryset — not on the model.
 5. **Have an AdminModel** registered in the owning app's `admin.py`
-   ([bulletins/admin.py](bulletins/admin.py),
-   [regions/admin.py](regions/admin.py),
-   [accounts/admin.py](accounts/admin.py)) with at minimum
+   ([bulletins/admin.py](../bulletins/admin.py),
+   [regions/admin.py](../regions/admin.py),
+   [accounts/admin.py](../accounts/admin.py)) with at minimum
    `list_display`, `search_fields` where useful, and `readonly_fields`
    for timestamp columns.
-6. **Have a Factory** in [tests/factories.py](tests/factories.py).
+6. **Have a Factory** in [tests/factories.py](../tests/factories.py).
 7. **Have test coverage** under `tests/<app>/` mirroring the source
    path (e.g. `tests/regions/models/test_models.py`,
    `tests/bulletins/test_weather_snapshot_model.py`).
 
 Keep business logic **out** of models. Put it in the owning app's
-`services/` subdirectory (e.g. [bulletins/services/](bulletins/services/)).
+`services/` subdirectory (e.g. [bulletins/services/](../bulletins/services/)).
 Models may expose thin accessors (e.g. `Bulletin.get_danger_ratings()`
 which builds dataclass views over `raw_data`) but must not perform I/O,
 fetch, or mutate other records.
@@ -234,7 +241,7 @@ fetch, or mutate other records.
 
 - Defined inside the owning model as a nested class when the choice is
   specific to that model (e.g. `PipelineRun.Status`).
-- Defined in [bulletins/schema.py](bulletins/schema.py) when the choice
+- Defined in [bulletins/schema.py](../bulletins/schema.py) when the choice
   comes from an external schema (CAAML) and is shared.
 - Each member is `NAME = "value", "Human label"`.
 
@@ -251,10 +258,10 @@ fetch, or mutate other records.
 - Full-page views return a complete HTML response.
 - HTMX fragment views return only the inner HTML snippet. They are
   routed under a `partials/` prefix in the owning app's `urls.py`
-  (e.g. [public/urls.py](public/urls.py),
-  [accounts/urls.py](accounts/urls.py)) and guarded with the
+  (e.g. [public/urls.py](../public/urls.py),
+  [accounts/urls.py](../accounts/urls.py)) and guarded with the
   `require_htmx` decorator from
-  [core/decorators.py](core/decorators.py).
+  [core/decorators.py](../core/decorators.py).
 - Views are thin: parse query params, enforce permissions, call the ORM or
   service layer, render a template. No business logic.
 - Use `@require_GET` / `@require_POST` from
@@ -268,7 +275,7 @@ fetch, or mutate other records.
 ### 3.6 Services
 
 - Located in each app's `services/` subdirectory (e.g.
-  [bulletins/services/](bulletins/services/)). The bulletin ingestion
+  [bulletins/services/](../bulletins/services/)). The bulletin ingestion
   (SLF, ALBINA, Météo-France), render-model, day-rating, weather-fetching,
   weather-display, and archive services all live under `bulletins/services/`.
 - Prefer plain functions over classes — composition over inheritance.
@@ -297,9 +304,9 @@ Every command under an app's `management/commands/` subdirectory
 - Raise `CommandError` on fatal failure.
 
 See
-[bulletins/management/commands/fetch_bulletins.py](bulletins/management/commands/fetch_bulletins.py)
+[bulletins/management/commands/fetch_bulletins.py](../bulletins/management/commands/fetch_bulletins.py)
 for the reference shape, and
-[docs/management-commands.md](docs/management-commands.md) for the full
+[docs/management-commands.md](management-commands.md) for the full
 catalogue and flag reference.
 
 ### 3.8 Settings
@@ -372,14 +379,14 @@ catalogue and flag reference.
 - Decorate DB-touching classes with `@pytest.mark.django_db`.
 - Include a short method docstring describing the invariant under test.
   See
-  [tests/regions/models/test_models.py](tests/regions/models/test_models.py)
+  [tests/regions/models/test_models.py](../tests/regions/models/test_models.py)
   and
-  [tests/bulletins/services/test_slf_fetcher.py](tests/bulletins/services/test_slf_fetcher.py)
+  [tests/bulletins/services/test_slf_fetcher.py](../tests/bulletins/services/test_slf_fetcher.py)
   for the reference style.
 
 ### 5.3 FactoryBoy
 
-- One factory per model in [tests/factories.py](tests/factories.py).
+- One factory per model in [tests/factories.py](../tests/factories.py).
 - Each factory has a nested `Meta` class with a docstring: `"""Factory
   metadata."""`.
 - Use `factory.Sequence`, `factory.LazyAttribute`,
@@ -404,7 +411,7 @@ catalogue and flag reference.
   coverage across the project apps.
 - `pytest --cov=core --cov=bulletins --cov=regions --cov=public
   --cov=accounts` runs by default via `addopts` in
-  [pyproject.toml](pyproject.toml).
+  [pyproject.toml](../pyproject.toml).
 - `config/`, `*/migrations/*`, and `__init__.py` are excluded from
   coverage reporting.
 
@@ -422,11 +429,11 @@ catalogue and flag reference.
   identically from the CLI and from GUI git clients (SublimeMerge,
   Tower, Fork) which launch git with a minimal environment.
 - Never change the venv location (e.g. via `UV_PROJECT_ENVIRONMENT`)
-  without also updating [.pre-commit-config.yaml](.pre-commit-config.yaml).
+  without also updating [.pre-commit-config.yaml](../.pre-commit-config.yaml).
 
 ### 6.2 Pre-commit
 
-[.pre-commit-config.yaml](.pre-commit-config.yaml) runs:
+[.pre-commit-config.yaml](../.pre-commit-config.yaml) runs:
 
 - `ruff-check --fix`
 - `ruff-format`
@@ -445,7 +452,7 @@ Install with `uv run pre-commit install`. Do not bypass hooks with
 
 ### 6.3 tox
 
-[tox.ini](tox.ini) defines the default envlist — `fmt`, `lint`, `mypy`,
+[tox.ini](../tox.ini) defines the default envlist — `fmt`, `lint`, `mypy`,
 `django-checks`, `ds-lint`, `docs-lint`, `test` — which runs in CI on every
 push. `djangofmt`, `audit`, `sast`, `e2e`, and `js` are wired up as tox envs
 but kept out of the default list (they mutate the tree, hit the network, or
@@ -467,16 +474,16 @@ Run the default suite locally with `tox` before pushing.
 ### 6.4 Configuration files
 
 - All ruff, mypy, pytest, coverage, django-stubs, and uv config lives in
-  [pyproject.toml](pyproject.toml). There is no `mypy.ini`,
+  [pyproject.toml](../pyproject.toml). There is no `mypy.ini`,
   `.ruff.toml`, or `pytest.ini` — don't create one.
 
 ### 6.5 Tool-version pinning across surfaces
 
-Every tox env installs from [uv.lock](uv.lock) via the `tox-uv` plugin's
+Every tox env installs from [uv.lock](../uv.lock) via the `tox-uv` plugin's
 `uv-venv-lock-runner` — see
-[`docs/decisions/tox-envs-install-from-uv-lock.md`](docs/decisions/tox-envs-install-from-uv-lock.md).
+[`docs/decisions/tox-envs-install-from-uv-lock.md`](decisions/tox-envs-install-from-uv-lock.md).
 Each env declares `dependency_groups = <group>` (`test`, `type`, `lint`,
-`sast`, `e2e` — see [pyproject.toml](pyproject.toml)'s
+`sast`, `e2e` — see [pyproject.toml](../pyproject.toml)'s
 `[dependency-groups]`) and syncs `--frozen`, so the pin lives in **one
 place**: whatever version `uv.lock` already resolved for local dev,
 pre-commit's `.venv/bin/*`, and production is exactly what CI installs.
@@ -487,8 +494,8 @@ collapsed tox's resolution into the lock.
 
 `ruff` is the one tool still pinned to an **exact** version (`==`, not a
 range) — in the `lint` dependency group in
-[pyproject.toml](pyproject.toml) — because it is *also* consumed by
-[.pre-commit-config.yaml](.pre-commit-config.yaml)'s `ruff-pre-commit`
+[pyproject.toml](../pyproject.toml) — because it is *also* consumed by
+[.pre-commit-config.yaml](../.pre-commit-config.yaml)'s `ruff-pre-commit`
 `rev:`, a separate pin outside `uv.lock`'s reach. Those two must stay
 eyeball-equal; bump both together and re-run `tox` to confirm.
 
@@ -523,14 +530,14 @@ storage, so `Bulletin.raw_data` always looks like:
 Read it via `Bulletin._properties` (or the `get_danger_ratings()` /
 `get_avalanche_problems()` helpers) — do **not** access
 `raw_data["properties"]` directly from callers. See
-[bulletins/models.py](bulletins/models.py) and
-[bulletins/schema.py](bulletins/schema.py).
+[bulletins/models.py](../bulletins/models.py) and
+[bulletins/schema.py](../bulletins/schema.py).
 
 ### 7.2 Dataclass views over JSON
 
 Structured slices of `raw_data` are exposed via frozen dataclasses
 (`Elevation`, `DangerRating`, `AvalancheProblem`) defined in
-[bulletins/schema.py](bulletins/schema.py). They map CAAML's camelCase
+[bulletins/schema.py](../bulletins/schema.py). They map CAAML's camelCase
 keys to snake_case attributes via `from_dict` classmethods. They are
 **read-only views** — they do not validate input, and absent fields
 become `None` or empty tuples.
@@ -538,7 +545,7 @@ become `None` or empty tuples.
 ### 7.3 Upserts
 
 Bulletin writes go through `upsert_bulletin` in
-[bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py),
+[bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py),
 which uses `Bulletin.objects.update_or_create` keyed on `bulletin_id`.
 Re-runs must be idempotent.
 

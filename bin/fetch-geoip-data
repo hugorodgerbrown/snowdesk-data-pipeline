@@ -2,8 +2,8 @@
 # bin/fetch-geoip-data — Download GeoLite2-City.mmdb from MaxMind.
 #
 # Downloads the MaxMind GeoLite2-City binary database and installs it at
-# data/geoip/GeoLite2-City.mmdb.  Idempotent — re-running replaces the file
-# with the latest build.
+# reference_data/geoip/GeoLite2-City.mmdb.  Idempotent — re-running replaces
+# the file with the latest build.
 #
 # GeoIP is a best-effort enrichment: ``bulletins.services.geoip.geo_lookup``
 # returns ``None`` for every caller when the database is absent, so the app
@@ -40,7 +40,7 @@
 
 set -euo pipefail
 
-DEST_DIR="$(cd "$(dirname "$0")/../data/geoip" && pwd)"
+DEST_DIR="$(cd "$(dirname "$0")/../reference_data/geoip" && pwd)"
 DEST_FILE="${DEST_DIR}/GeoLite2-City.mmdb"
 DOWNLOAD_URL="https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz"
 

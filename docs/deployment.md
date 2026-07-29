@@ -63,7 +63,7 @@ dashboard-managed (no `databases:` block; env vars grouped via
 ## Separate databases (important)
 
 Staging and production use **separate Postgres databases**. This is not
-optional: [`build.sh`](../build.sh) runs `migrate` + `loaddata` on every
+optional: [`build.sh`](../bin/build.sh) runs `migrate` + `loaddata` on every
 deploy, so a staging deploy applies migrations to whatever database the
 staging service is wired to. If staging pointed at the production database,
 every merge to `main` would mutate the production schema. Staging therefore

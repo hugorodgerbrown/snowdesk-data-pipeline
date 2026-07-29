@@ -88,7 +88,7 @@ uv run tox -e test               # run tests with coverage (mirrors CI)
 uv run tox                       # full CI (fmt, lint, mypy, django-checks, test)
 ```
 
-See [CODING_STANDARDS.md](CODING_STANDARDS.md) for conventions and
+See [docs/coding-standards.md](docs/coding-standards.md) for conventions and
 [CLAUDE.md](CLAUDE.md) for detailed development guidance.
 
 ---

@@ -523,15 +523,15 @@ METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
 # ``bulletins.services.geoip.geo_lookup`` to resolve a client IP to country,
 # subdivision, city, and coordinates at each request inflection point.
 # Downloaded by ``bin/fetch-geoip-data`` on deploy and locally (see
-# data/geoip/README.md). Set to None to disable GeoIP lookups (geo_lookup
-# will return None for every IP).
+# reference_data/geoip/README.md). Set to None to disable GeoIP lookups
+# (geo_lookup will return None for every IP).
 #
 # Credentials for downloading the GeoLite2-City database from MaxMind.
 # Obtain a free account at https://www.maxmind.com/en/geolite2/signup.
 # Leave empty to skip the download (local dev without a MaxMind account
 # will still boot — geo fields will simply be empty).
 
-GEOIP_PATH = BASE_DIR / "data" / "geoip" / "GeoLite2-City.mmdb"
+GEOIP_PATH = BASE_DIR / "reference_data" / "geoip" / "GeoLite2-City.mmdb"
 
 MAXMIND_ACCOUNT_ID = config("MAXMIND_ACCOUNT_ID", default="")
 MAXMIND_LICENSE_KEY = config("MAXMIND_LICENSE_KEY", default="")

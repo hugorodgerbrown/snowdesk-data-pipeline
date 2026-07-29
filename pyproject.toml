@@ -69,7 +69,7 @@ lint = [
     # Pinned EXACT (not a range) so `uv lock --upgrade` can't silently float
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
-    # CODING_STANDARDS.md §6.5.
+    # docs/coding-standards.md §6.5.
     "ruff==0.16.0",
     "djangofmt>=0.2.6,<0.3",
 ]
@@ -131,6 +131,18 @@ ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings.development"
+
+[tool.pyright]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+extraPaths = ["."]
+reportMissingModuleSource = false
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+djangoSettingsModule = "config.settings.development"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.development"
