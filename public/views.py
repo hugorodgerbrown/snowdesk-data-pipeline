@@ -2946,6 +2946,47 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     return truncated.rstrip(".,;:")
 
 
+def _build_article_times(
+    bulletin: Bulletin,
+    panel: dict[str, Any],
+) -> tuple[str, str]:
+    """
+    Return the ``(published, modified)`` ISO-8601 timestamps for a bulletin.
+
+    One derivation, two consumers: the JSON-LD ``Report``'s
+    ``datePublished`` / ``dateModified`` and the ``article:published_time``
+    / ``article:modified_time`` OG properties on the bulletin page
+    (SNOW-555). Deriving them separately would let the structured data and
+    the share card disagree about when a bulletin was issued, which is the
+    one fact a reader most needs to trust — a bulletin's value is almost
+    entirely a function of how recent it is.
+
+    Published time comes from the render model's ``publication_time``,
+    falling back to ``bulletin.valid_from`` so the field is always
+    present. Modified time is the row's own ``updated_at``, so a re-issued
+    bulletin reads as fresher than an untouched one.
+
+    Both source values are timezone-aware (project invariant), so
+    ``isoformat()`` already yields the offset-bearing form OG and
+    schema.org expect.
+
+    Args:
+        bulletin: The ``Bulletin`` being rendered.
+        panel: The panel context dict built by :func:`_build_panel_context`.
+
+    Returns:
+        A ``(date_published, date_modified)`` pair of ISO-8601 strings.
+
+    """
+    render_model_meta: dict[str, Any] = (panel.get("render_model") or {}).get(
+        "metadata"
+    ) or {}
+    date_published: str = (
+        render_model_meta.get("publication_time") or bulletin.valid_from.isoformat()
+    )
+    return date_published, bulletin.updated_at.isoformat()
+
+
 def _build_structured_data(
     region: MicroRegion,
     bulletin: Bulletin,
@@ -2996,14 +3037,9 @@ def _build_structured_data(
     danger_label = str(danger_meta["label"])
     danger_number = str(danger_meta["number"])
 
-    # Publication timestamp from the render model; fall through to bulletin
-    # ``valid_from`` as a safe default so the field is always present.
-    render_model_meta: dict[str, Any] = (panel.get("render_model") or {}).get(
-        "metadata"
-    ) or {}
-    date_published: str = (
-        render_model_meta.get("publication_time") or bulletin.valid_from.isoformat()
-    )
+    # Shared with the article:* OG properties on the page — see
+    # _build_article_times for why the derivation is not repeated here.
+    date_published, date_modified = _build_article_times(bulletin, panel)
 
     # ISO-8601 interval for temporalCoverage.
     temporal_coverage = (
@@ -3041,7 +3077,7 @@ def _build_structured_data(
         # SNOW-394: dateModified reflects the last upsert of the row so
         # LLMs and freshness-aware crawlers can tell a re-issued
         # bulletin from a fresh one.
-        "dateModified": bulletin.updated_at.isoformat(),
+        "dateModified": date_modified,
         "temporalCoverage": temporal_coverage,
         "inLanguage": get_language() or "en-gb",
         "sourceOrganization": {
@@ -3541,6 +3577,12 @@ def _bulletin_detail_response(
         rm_family,
     )
 
+    # SNOW-555: one derivation feeding both the JSON-LD Report below and the
+    # article:* OG properties on the page.
+    article_published_time, article_modified_time = _build_article_times(
+        selected, panel
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -3604,6 +3646,11 @@ def _bulletin_detail_response(
         "structured_data_json": _build_structured_data(
             region, selected, panel, canonical_url
         ),
+        # SNOW-555: article:published_time / article:modified_time, from the
+        # same helper the JSON-LD above uses, so the share card and the
+        # structured data can never disagree about when this was issued.
+        "article_published_time": article_published_time,
+        "article_modified_time": article_modified_time,
         # Bulletin headline — data-driven variant copy (SNOW-249).
         "headline": headline,
         # SNOW-324: per-type field-observation counts for the current-day

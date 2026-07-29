@@ -258,3 +258,41 @@ class TestBulletinEmptyState:
         canonical = re.search(r'<link rel="canonical" href="([^"]*)"', html)
         assert canonical is not None, "no canonical link"
         assert og_url == canonical.group(1)
+
+
+class TestOgType:
+    """og:type is a page-level choice, not a site-wide constant (SNOW-555)."""
+
+    def test_non_bulletin_pages_are_website(
+        self, client: Client, sharing_pages: dict[str, str]
+    ) -> None:
+        """Every page except the bulletin keeps og:type=website."""
+        for label, url in sharing_pages.items():
+            if label == "bulletin":
+                continue
+            html = client.get(url).content.decode()
+            assert _meta_content(html, "og:type") == "website", (
+                f"{label}: wrong og:type"
+            )
+
+    def test_non_bulletin_pages_carry_no_article_properties(
+        self, client: Client, sharing_pages: dict[str, str]
+    ) -> None:
+        """No page picks up orphaned article:* properties."""
+        for label, url in sharing_pages.items():
+            if label == "bulletin":
+                continue
+            html = client.get(url).content.decode()
+            assert "article:published_time" not in html, (
+                f"{label}: leaked published_time"
+            )
+            assert "article:modified_time" not in html, f"{label}: leaked modified_time"
+
+    def test_og_type_is_emitted_exactly_once(
+        self, client: Client, sharing_pages: dict[str, str]
+    ) -> None:
+        """Moving og:type out of base.html must not leave a duplicate behind."""
+        for label, url in sharing_pages.items():
+            html = client.get(url).content.decode()
+            head = html.split("</head>")[0]
+            assert head.count('property="og:type"') == 1, f"{label}: duplicate og:type"
