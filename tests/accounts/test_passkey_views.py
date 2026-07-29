@@ -285,6 +285,30 @@ class TestPasskeyRegisterResponse:
 
         assert resp.status_code == 400
 
+    def test_verification_failure_does_not_echo_exception_text(self) -> None:
+        """SNOW-558: the 400 body carries a fixed token, not the exception detail.
+
+        CodeQL py/stack-trace-exposure. The sibling auth view already returns a
+        fixed ``verification_failed`` token; this endpoint now matches it.
+        """
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
+        _set_reg_challenge(client, "dGVzdA")
+
+        with patch(
+            "accounts.views_passkey.verify_and_save_registration",
+            side_effect=PasskeyError("internal detail that must not escape"),
+        ):
+            resp = client.post(
+                reverse("accounts:passkey_register_response"),
+                data=json.dumps({"id": "dGVzdA"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert json.loads(resp.content)["error"] == "registration_failed"
+        assert b"internal detail that must not escape" not in resp.content
+
     def test_empty_body_returns_400(self) -> None:
         account = AccountFactory.create()
         client = _make_session_client(account.user)

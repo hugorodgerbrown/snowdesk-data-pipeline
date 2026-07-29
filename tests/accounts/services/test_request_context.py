@@ -6,10 +6,14 @@ Covers ``geo_match_snapshot`` across all four classify_match outcomes:
   - in_neighbour: coords inside a neighbouring region's boundary.
   - elsewhere: coords outside target and all neighbours.
   - unknown: req_log has no lat/lon.
+
+Plus a SNOW-558 regression guard that the debug log line never emits the
+subscriber's coordinates in clear text.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -109,3 +113,55 @@ class TestGeoMatchSnapshot:
         result = geo_match_snapshot(req_log, target)
 
         assert set(result.keys()) == {"geo_match_kind", "geo_matched_region"}
+
+
+@pytest.mark.django_db
+class TestGeoMatchSnapshotLogging:
+    """SNOW-558: the debug log line must never carry the raw coordinates.
+
+    An IP-derived lat/lon is personal data, and CodeQL flags it under
+    ``py/clear-text-logging-sensitive-data``. The line still has to say enough
+    to debug a mis-classification, so it keeps the region ids and the outcome
+    and reports only whether coordinates were present.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _propagate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Let caplog see records from the accounts logger hierarchy."""
+        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+
+    def test_coordinates_absent_from_log_output(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """No log record contains either coordinate value."""
+        region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
+        req_log = RequestLogFactory.create(longitude=5.25, latitude=6.75)
+
+        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+            geo_match_snapshot(req_log, region)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages, "expected at least one debug record"
+        for message in messages:
+            assert "5.25" not in message, f"longitude leaked into log: {message!r}"
+            assert "6.75" not in message, f"latitude leaked into log: {message!r}"
+
+    def test_log_reports_coords_present(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The line still records that coordinates were available."""
+        region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
+        req_log = RequestLogFactory.create(longitude=5.25, latitude=6.75)
+
+        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+            geo_match_snapshot(req_log, region)
+
+        assert any("coords=present" in r.getMessage() for r in caplog.records)
+
+    def test_log_reports_coords_absent(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A request log with no coordinates is reported as absent."""
+        region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
+        req_log = RequestLogFactory.create(longitude=None, latitude=None)
+
+        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+            geo_match_snapshot(req_log, region)
+
+        assert any("coords=absent" in r.getMessage() for r in caplog.records)
