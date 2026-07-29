@@ -48,13 +48,34 @@ The eight-field envelope per spec §16.1:
 | `event` | yes | string | Must appear in `analytics.schema.ALLOWED_EVENTS`. |
 | `timestamp` | yes | string | ISO-8601. Preserved verbatim as `client_timestamp` on the PostHog event. |
 | `client_version` | yes | string | Non-empty. Lifted into `properties`. |
-| `session_id` | no | string / null | Preferred as PostHog `distinct_id` when `user_id` is absent. |
-| `user_id` | no | string / null | Wins over `session_id`. |
+| `session_id` | no | string / null | Used as PostHog `distinct_id` for anonymous requests. |
+| `user_id` | no | string / null | **Ignored** (SNOW-550) — see below. Accepted by the schema for backwards compatibility with clients still sending it. |
 | `platform` | no | string | e.g. `web`, `ios`, `android`. Lifted into `properties`. |
 | `install_state` | no | string | e.g. `installed`, `browser`. Lifted into `properties`. |
 | `sw_state` | no | string | e.g. `activated`, `redundant`. Lifted into `properties`. |
 | `connection` | no | string | e.g. `wifi`, `cellular`, `offline`. Lifted into `properties`. |
 | `properties` | no | object | Free-form; **must not** contain `email` / `ip` / `token` / `credential_id` (existing PII guard rejects at the boundary). |
+
+### `distinct_id` is derived server-side, never taken from the envelope
+
+`/api/telemetry` is deliberately CSRF-exempt and requires no
+authentication — a broken client must still be able to phone home. That
+made `event["user_id"]` an open door: any POST with an allowed event
+name and a guessed identifier attributed events to that user, corrupting
+their history and funnels. The 60/minute rate limit bounds request rate,
+not identity.
+
+`_resolve_distinct_id` (SNOW-550) therefore resolves in this order,
+ignoring `user_id` entirely:
+
+1. the requester's own identity from `request.user`, when authenticated
+   (`accounts.identity.request_identity` — the `Account.uuid` below);
+2. the envelope's `session_id`, for anonymous requests;
+3. the `_anon` sentinel when the session id is stripped too.
+
+This supersedes spec §16.6's "`user_id` wins over `session_id`"
+preference — the server can derive the same value trustworthily, so
+there is no reason to accept the client's claim.
 
 ## User identity — `Account.uuid` (cutover 2026-07-29)
 

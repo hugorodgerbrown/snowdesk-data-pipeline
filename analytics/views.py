@@ -29,6 +29,7 @@ from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
 import analytics
+from accounts.identity import request_identity
 from analytics.exceptions import AnalyticsPIIError
 from analytics.schema import (
     MAX_PAYLOAD_BYTES,
@@ -130,7 +131,11 @@ def _parse_events(
 # ``navigator.sendBeacon`` — the client-side critical-event fast path —
 # cannot attach a CSRF token. The abuse surface is limited to inflating
 # the PostHog event count and is mitigated by the per-IP rate limit
-# below. Rationale + threat model: docs/telemetry-pipeline.md.
+# below. It no longer extends to *whose* event count: since SNOW-550 the
+# distinct_id is derived from ``request.user``, so an unauthenticated
+# caller cannot attribute events to somebody else's identity — see
+# ``_resolve_distinct_id``. Rationale + threat model:
+# docs/telemetry-pipeline.md.
 # nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
 @csrf_exempt
 @require_POST
@@ -211,7 +216,7 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
 
     forwarded = 0
     for event in events:
-        distinct_id = _resolve_distinct_id(event)
+        distinct_id = _resolve_distinct_id(request, event)
         properties = _build_properties(event)
         try:
             analytics.track(str(event["event"]), distinct_id, properties)
@@ -227,29 +232,47 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     return HttpResponse(status=204)
 
 
-def _resolve_distinct_id(event: dict[str, object]) -> str:
+def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
     """Return the PostHog distinct_id for one event.
 
-    Preference order matches spec §16.6:
+    Resolution order:
 
-    1. ``user_id`` if present and non-empty.
-    2. ``session_id`` if present and non-empty.
-    3. Synthetic ``_anon`` sentinel when both are stripped (opt-out
-       critical events).
+    1. The **server-derived** identity of the requester, when
+       authenticated — ``Account.uuid`` via ``accounts.identity``
+       (SNOW-549), following the same read-it-off-``request.user``
+       pattern as ``core.idempotency._principal``.
+    2. ``session_id`` from the envelope, if present and non-empty.
+    3. Synthetic ``_anon`` sentinel when the session id is stripped too
+       (opt-out critical events).
+
+    The envelope's own ``user_id`` is **never** used (SNOW-550). This
+    endpoint is deliberately CSRF-exempt and unauthenticated — see the
+    rationale on ``telemetry_receive`` — so taking the client's word for
+    who it is meant any POST with ``{"user_id": "…"}`` and an allowed
+    event name could attribute events to somebody else's PostHog
+    identity, corrupting their history and funnels. The 60/minute rate
+    limit bounds request rate, not identity. Spec §16.6 describes
+    ``user_id`` winning over ``session_id``; that preference is
+    superseded here because the server can derive the same value
+    trustworthily.
+
+    An anonymous request never resolves to a client-asserted identity,
+    even when the envelope carries a ``user_id``.
 
     A stable string is required — PostHog rejects captures with an
     empty ``distinct_id``.
 
     Args:
+        request: The incoming request, for the server-derived identity.
         event: A validated event dict.
 
     Returns:
         The distinct_id string.
 
     """
-    user_id = event.get("user_id")
-    if isinstance(user_id, str) and user_id:
-        return user_id
+    identity = request_identity(request)
+    if identity:
+        return identity
     session_id = event.get("session_id")
     if isinstance(session_id, str) and session_id:
         return session_id
