@@ -377,7 +377,7 @@ class TestNormaliseBulletinResponse:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("bulletins"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.bulletins"), "propagate", True)
 
         with caplog.at_level(
             logging.WARNING, logger="apps.bulletins.services.fetcher_common"

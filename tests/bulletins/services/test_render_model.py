@@ -411,7 +411,7 @@ class TestBuildRenderModelNoAggregation:
         # config/settings/base.py sets propagate=False on the bulletins logger
         # so that pytest's root caplog doesn't see records by default. Flip it
         # for the duration of this test so caplog can verify the error.
-        monkeypatch.setattr(logging.getLogger("bulletins"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.bulletins"), "propagate", True)
 
         props = _load_sample("sample_no_aggregation_day.json")
 

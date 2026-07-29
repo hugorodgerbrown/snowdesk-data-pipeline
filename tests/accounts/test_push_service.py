@@ -191,7 +191,7 @@ class TestDispatchPushLogging:
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         account = AccountFactory.create(user__email="push-caplog@example.com")
         sub = PushSubscriptionFactory.create(account=account)
         exc = WebPushException(
@@ -266,7 +266,7 @@ class TestWorkerDispatchPush:
         exercises the DoesNotExist path with a non-existent PK. The log message
         must reference the pk= only — no email should be emitted.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         account = AccountFactory.create(user__email="worker-caplog@example.com")
         nonexistent_pk = account.pk + 999999
         payload = {"title": "Hi", "body": "Test", "url": "/"}

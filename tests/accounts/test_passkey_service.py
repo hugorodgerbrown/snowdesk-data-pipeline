@@ -421,7 +421,7 @@ class TestPasskeyServiceLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         user = UserFactory.create(
             email="reg-service@example.com",
@@ -458,7 +458,7 @@ class TestPasskeyServiceLogging:
         """verify_authentication_response logs user pk=, not the email address."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         user = UserFactory.create(
             email="auth-service@example.com",

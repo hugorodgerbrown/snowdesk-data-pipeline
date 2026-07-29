@@ -2610,7 +2610,7 @@ class TestSubscribePartialLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "caplog-new@example.com"
         region = MicroRegionFactory.create()
@@ -2651,7 +2651,7 @@ class TestAccountViewLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "unknown-caplog@example.com"
         token = _valid_account_token(email)
@@ -2692,7 +2692,7 @@ class TestSignInViewLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "signin-caplog@example.com"
 
@@ -2731,7 +2731,7 @@ class TestDeleteAccountLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "delete-caplog@example.com"
         account = AccountFactory.create(user__email=email)
@@ -2772,7 +2772,7 @@ class TestUnsubscribeViewLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "unsub-caplog@example.com"
         account = AccountFactory.create(user__email=email)
@@ -2807,7 +2807,7 @@ class TestUnsubscribeViewLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "gone-caplog@example.com"
         account = AccountFactory.create(user__email=email)

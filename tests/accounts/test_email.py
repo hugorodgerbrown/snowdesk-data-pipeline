@@ -248,7 +248,7 @@ class TestEmailServiceLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "caplog-access@example.com"
 
@@ -274,7 +274,7 @@ class TestEmailServiceLogging:
         """send_subscription_confirmation_email logs the masked address, not the plaintext email."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         email = "caplog-confirm@example.com"
         region = MicroRegionFactory.create(name="Test Region")

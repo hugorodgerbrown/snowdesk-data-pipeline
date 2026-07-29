@@ -133,7 +133,7 @@ class TestGeoMatchSnapshotLogging:
     @pytest.fixture(autouse=True)
     def _propagate(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Let caplog see records from the accounts logger hierarchy."""
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
     def test_coordinates_absent_from_log_output(
         self, caplog: pytest.LogCaptureFixture
@@ -142,7 +142,9 @@ class TestGeoMatchSnapshotLogging:
         region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
         req_log = RequestLogFactory.create(longitude=5.25, latitude=6.75)
 
-        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+        with caplog.at_level(
+            logging.DEBUG, logger="apps.accounts.services.request_context"
+        ):
             geo_match_snapshot(req_log, region)
 
         messages = [record.getMessage() for record in caplog.records]
@@ -156,7 +158,9 @@ class TestGeoMatchSnapshotLogging:
         region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
         req_log = RequestLogFactory.create(longitude=5.25, latitude=6.75)
 
-        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+        with caplog.at_level(
+            logging.DEBUG, logger="apps.accounts.services.request_context"
+        ):
             geo_match_snapshot(req_log, region)
 
         assert any("coords=present" in r.getMessage() for r in caplog.records)
@@ -166,7 +170,9 @@ class TestGeoMatchSnapshotLogging:
         region = MicroRegionFactory.create(boundary=_square_polygon(0, 0, 10, 10))
         req_log = RequestLogFactory.create(longitude=None, latitude=None)
 
-        with caplog.at_level(logging.DEBUG, logger="accounts.services.request_context"):
+        with caplog.at_level(
+            logging.DEBUG, logger="apps.accounts.services.request_context"
+        ):
             geo_match_snapshot(req_log, region)
 
         assert any("coords=absent" in r.getMessage() for r in caplog.records)

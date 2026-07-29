@@ -296,7 +296,7 @@ class TestPasskeyRegisterResponse:
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             side_effect=PasskeyError("internal detail that must not escape"),
         ):
             resp = client.post(
@@ -471,7 +471,7 @@ class TestPasskeyViewsLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         user = UserFactory.create(
             email="passkey-auth@example.com",
@@ -512,7 +512,7 @@ class TestPasskeyViewsLogging:
         """passkey_register_response failure logs user pk=, not the email address."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         account = AccountFactory.create(user__email="passkey-reg-fail@example.com")
         client = _make_session_client(account.user)
@@ -550,7 +550,7 @@ class TestPasskeyViewsLogging:
         """passkey_delete logs user pk=, not the email address."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         account = AccountFactory.create(user__email="passkey-del@example.com")
         passkey = PasskeyCredentialFactory.create(user=account.user)

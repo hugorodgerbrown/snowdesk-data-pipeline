@@ -415,7 +415,7 @@ class TestPushRegisterLogging:
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         staff = UserFactory.create()
         client = Client()
         client.force_login(staff)

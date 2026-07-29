@@ -190,7 +190,7 @@ class TestVerifyUnsubscribeTokenLogging:
         """
         from apps.accounts.services.token import SALT_UNSUBSCRIBE, generate_token
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         # Sign a value with no '|' so the split check fails.
         no_sep_token = generate_token("noseparatorvalue", salt=SALT_UNSUBSCRIBE)

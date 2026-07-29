@@ -769,7 +769,7 @@ class TestIconChModelSelection:
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
 
         assert mock.call_args[1]["params"]["models"] == ICON_CH_MODEL
@@ -788,7 +788,7 @@ class TestIconChModelSelection:
         ):
             point = ForecastPointFactory.create(latitude=lat, longitude=lon)
             mock = _mock_get(_make_full_point_response())
-            with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
                 fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
             assert mock.call_args[1]["params"].get("models") == ICON_CH_MODEL, label
 
@@ -797,7 +797,7 @@ class TestIconChModelSelection:
         point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
 
         assert mock.call_count == 1
@@ -816,7 +816,7 @@ class TestIconChModelSelection:
         mock_response_good.json.return_value = _make_full_point_response()
         mock = MagicMock(side_effect=[mock_response_degraded, mock_response_good])
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             results = fetch_weather_for_point(
                 point, datetime.date(2026, 5, 1), commit=True
             )
@@ -845,7 +845,7 @@ class TestIconChModelSelection:
         second.json.return_value = _make_full_point_response()
         mock = MagicMock(side_effect=[first, second])
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
 
         assert mock.call_count == 2
@@ -864,7 +864,7 @@ class TestIconChModelSelection:
         good.json.return_value = _make_full_point_response()
         mock = MagicMock(side_effect=[rejected, good])
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             results = fetch_weather_for_point(
                 point, datetime.date(2026, 5, 1), commit=True
             )
@@ -888,7 +888,7 @@ class TestIconChModelSelection:
         mock = MagicMock(return_value=broken)
 
         with (
-            patch("bulletins.services.weather_fetcher.requests.get", mock),
+            patch("apps.bulletins.services.weather_fetcher.requests.get", mock),
             pytest.raises(requests.HTTPError),
         ):
             fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
@@ -909,7 +909,7 @@ class TestIconChModelSelection:
         mock = _mock_get(degraded)
 
         with (
-            patch("bulletins.services.weather_fetcher.requests.get", mock),
+            patch("apps.bulletins.services.weather_fetcher.requests.get", mock),
             pytest.raises((TypeError, IntegrityError)),
         ):
             fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
