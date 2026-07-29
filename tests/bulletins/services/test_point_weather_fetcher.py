@@ -5,9 +5,11 @@ weather_fetcher functions (fetch_weather_for_point / fetch_all_points).
 Covers:
   - elevation pass-through — the outgoing request params include `elevation`
     equal to the point's elevation, and `daily` contains the extended
-    variables; `hourly` contains the ski-relevant hourly set; `models` is
-    never present (SNOW-417 locked decision: default Open-Meteo model
-    chain).
+    variables; `hourly` contains the ski-relevant hourly set.
+  - ICON-CH model selection (SNOW-443) — points inside ICON_CH_BOUNDS send
+    `models=meteoswiss_icon_ch2`; points outside send no `models=` at all;
+    a 400 or a null day-0 field falls back once to the default chain, and
+    any other HTTP status still surfaces as a failure.
   - 7-day window — a single API call returns POINT_FORECAST_DAYS days of
     daily data; one ForecastPointWeather row is persisted per day.
   - extended fields round-trip — a mocked full daily payload persists
@@ -45,8 +47,11 @@ from django.db import IntegrityError
 
 from bulletins.models import ForecastPointWeather
 from bulletins.services.weather_fetcher import (
+    ICON_CH_BOUNDS,
+    ICON_CH_MODEL,
     POINT_FORECAST_DAYS,
     POINT_HOURLY_DAYS,
+    _is_alpine_point,
     fetch_all_points,
     fetch_weather_for_point,
 )
@@ -234,9 +239,16 @@ class TestFetchWeatherForPoint:
         assert "wind_gusts_10m" in hourly_fields
         assert "freezing_level_height" in hourly_fields
 
-    def test_no_models_param(self) -> None:
-        """No `models=` param is sent — SNOW-417 ships on the default model chain."""
-        point = ForecastPointFactory.create()
+    def test_no_models_param_outside_the_icon_ch_domain(self) -> None:
+        """An out-of-domain point sends no `models=` — the default chain stands.
+
+        This assertion previously covered every point (SNOW-417 shipped on
+        the default chain unconditionally). SNOW-443 narrowed it: the
+        factory's default coordinates are in Valais, which is inside the
+        ICON-CH box, so the "no models" case now needs a point that
+        genuinely is not.
+        """
+        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -737,3 +749,194 @@ class TestFetchWeatherForPointProviderDates:
             fetch_weather_for_point(point, target, commit=True)
 
         assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
+
+
+@pytest.mark.django_db
+class TestIconChModelSelection:
+    """MeteoSwiss ICON-CH2 selection and its fallback (SNOW-443).
+
+    Points inside ``ICON_CH_BOUNDS`` ask for the 2 km MeteoSwiss run
+    rather than Open-Meteo's default blended chain. The fallback is not
+    defensive padding: ``ForecastPointWeather.weather_code`` is a
+    ``PositiveSmallIntegerField`` with no ``null=True``, so a partial
+    ICON-CH payload would raise at ``update_or_create`` rather than
+    skipping the row.
+    """
+
+    def test_in_domain_point_requests_icon_ch2(self) -> None:
+        """A Valais point sends models=meteoswiss_icon_ch2."""
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        mock = _mock_get(_make_full_point_response())
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_args[1]["params"]["models"] == ICON_CH_MODEL
+
+    def test_wider_alpine_arc_is_in_domain(self) -> None:
+        """Chamonix and the Dolomites are inside the box, not just Switzerland.
+
+        The box is deliberately wider than the Swiss border — Snowdesk
+        serves the wider arc via ALBINA and Météo-France, and ICON-CH
+        covers it.
+        """
+        for label, lat, lon in (
+            ("Chamonix", 45.92, 6.87),
+            ("Cortina", 46.54, 12.14 - 1.0),
+            ("Innsbruck", 47.27, 11.39),
+        ):
+            point = ForecastPointFactory.create(latitude=lat, longitude=lon)
+            mock = _mock_get(_make_full_point_response())
+            with patch("bulletins.services.weather_fetcher.requests.get", mock):
+                fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+            assert mock.call_args[1]["params"].get("models") == ICON_CH_MODEL, label
+
+    def test_out_of_domain_point_makes_exactly_one_request(self) -> None:
+        """No speculative ICON-CH call is made for a point outside the box."""
+        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        mock = _mock_get(_make_full_point_response())
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_count == 1
+
+    def test_null_day_zero_falls_back_to_the_default_chain(self) -> None:
+        """A dead day 0 triggers one retry with models= dropped."""
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        degraded = _make_full_point_response()
+        degraded["daily"]["weather_code"][0] = None
+
+        mock_response_degraded = MagicMock()
+        mock_response_degraded.raise_for_status = MagicMock()
+        mock_response_degraded.json.return_value = degraded
+        mock_response_good = MagicMock()
+        mock_response_good.raise_for_status = MagicMock()
+        mock_response_good.json.return_value = _make_full_point_response()
+        mock = MagicMock(side_effect=[mock_response_degraded, mock_response_good])
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            results = fetch_weather_for_point(
+                point, datetime.date(2026, 5, 1), commit=True
+            )
+
+        assert mock.call_count == 2
+        assert "models" in mock.call_args_list[0][1]["params"]
+        assert "models" not in mock.call_args_list[1][1]["params"]
+        # The persisted rows come from the fallback payload, so no null
+        # weather_code reaches the non-nullable column.
+        assert len(results) == POINT_FORECAST_DAYS
+        assert (
+            ForecastPointWeather.objects.filter(weather_code__isnull=True).count() == 0
+        )
+
+    def test_missing_sunrise_also_triggers_the_fallback(self) -> None:
+        """sunrise and sunset are required by _build_point_defaults too."""
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        degraded = _make_full_point_response()
+        degraded["daily"]["sunrise"][0] = None
+
+        first = MagicMock()
+        first.raise_for_status = MagicMock()
+        first.json.return_value = degraded
+        second = MagicMock()
+        second.raise_for_status = MagicMock()
+        second.json.return_value = _make_full_point_response()
+        mock = MagicMock(side_effect=[first, second])
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+
+        assert mock.call_count == 2
+
+    def test_http_400_falls_back_to_the_default_chain(self) -> None:
+        """A 400 means the box was optimistic for this point — retry, don't fail."""
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+
+        rejected = MagicMock()
+        rejected.status_code = 400
+        error = requests.HTTPError(response=rejected)
+        rejected.raise_for_status = MagicMock(side_effect=error)
+
+        good = MagicMock()
+        good.raise_for_status = MagicMock()
+        good.json.return_value = _make_full_point_response()
+        mock = MagicMock(side_effect=[rejected, good])
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            results = fetch_weather_for_point(
+                point, datetime.date(2026, 5, 1), commit=True
+            )
+
+        assert mock.call_count == 2
+        assert "models" not in mock.call_args_list[1][1]["params"]
+        assert len(results) == POINT_FORECAST_DAYS
+
+    def test_http_500_is_not_swallowed_by_the_fallback(self) -> None:
+        """A real outage must still surface — only a 400 means out-of-domain.
+
+        Retrying every failure would turn a rate limit or an outage into
+        two requests and hide it from fetch_all_points' failed counter.
+        """
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+
+        broken = MagicMock()
+        broken.status_code = 500
+        error = requests.HTTPError(response=broken)
+        broken.raise_for_status = MagicMock(side_effect=error)
+        mock = MagicMock(return_value=broken)
+
+        with (
+            patch("bulletins.services.weather_fetcher.requests.get", mock),
+            pytest.raises(requests.HTTPError),
+        ):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+
+        assert mock.call_count == 1
+
+    def test_out_of_domain_degraded_payload_is_not_retried(self) -> None:
+        """The fallback belongs to ICON-CH; the default chain gets no second go.
+
+        A null day-0 weather_code from the default chain stays fatal, as it
+        was before SNOW-443 — the point surfaces in fetch_all_points'
+        failed counter rather than being silently retried against the
+        same model that just produced it.
+        """
+        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        degraded = _make_full_point_response()
+        degraded["daily"]["weather_code"][0] = None
+        mock = _mock_get(degraded)
+
+        with (
+            patch("bulletins.services.weather_fetcher.requests.get", mock),
+            pytest.raises((TypeError, IntegrityError)),
+        ):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+
+        assert mock.call_count == 1
+
+
+class TestIsAlpinePoint:
+    """Unit cases for the bounding-box predicate (no database needed)."""
+
+    def test_inside_the_box(self) -> None:
+        """A point well inside the box is in-domain."""
+        assert _is_alpine_point(46.1, 7.4) is True
+
+    def test_corners_are_inclusive(self) -> None:
+        """The bounds themselves count as in-domain."""
+        min_lat, max_lat, min_lon, max_lon = ICON_CH_BOUNDS
+        assert _is_alpine_point(min_lat, min_lon) is True
+        assert _is_alpine_point(max_lat, max_lon) is True
+
+    def test_outside_on_each_axis(self) -> None:
+        """A miss on either axis alone is enough to fall out of domain."""
+        min_lat, max_lat, min_lon, max_lon = ICON_CH_BOUNDS
+        assert _is_alpine_point(min_lat - 0.1, 7.4) is False
+        assert _is_alpine_point(max_lat + 0.1, 7.4) is False
+        assert _is_alpine_point(46.1, min_lon - 0.1) is False
+        assert _is_alpine_point(46.1, max_lon + 0.1) is False
+
+    def test_southern_hemisphere_is_out_of_domain(self) -> None:
+        """Coordinates are (lat, lon) — a swapped pair must not read as Alpine."""
+        assert _is_alpine_point(-41.3, 174.8) is False

@@ -134,6 +134,32 @@ POINT_HOURLY_VARIABLES = (
     "wind_speed_10m,wind_gusts_10m,freezing_level_height"
 )
 
+# SNOW-443: MeteoSwiss ICON-CH model selection for Alpine points.
+#
+# Open-Meteo's default chain is a blend picked for global coverage; over the
+# Alps its cells are coarse enough to smear exactly the detail a point
+# forecast exists to provide — precipitation, snowfall and wind at a specific
+# pin. MeteoSwiss's ICON-CH runs at 1–2 km over the same ground.
+#
+# The exact identifier matters: the `icon_ch1` / `icon_ch2` names read
+# naturally but return a 400 ("Cannot initialize MultiDomains"). The working
+# values carry the `meteoswiss_` prefix. ch2 (~5-day range at 2 km) is chosen
+# over ch1 (~33-45h, 1 km) because daily and hourly share one HTTP call:
+# ch1 would cover the 2-day hourly block better but leave most of the 7-day
+# daily window empty, and splitting into two model-specific calls per point
+# doubles the request count for a marginal gain.
+ICON_CH_MODEL = "meteoswiss_icon_ch2"
+
+# Bounding box for the ICON-CH domain, as (min_lat, max_lat, min_lon, max_lon).
+# Deliberately an over-generous superset rather than a precise polygon — the
+# domain is noticeably wider than the Swiss border, and Snowdesk serves the
+# wider Alpine arc via ALBINA (AT-07, IT-32-BZ/TN) and Météo-France too. A
+# point that is inside the box but outside the real domain costs one wasted
+# request and falls back; a box drawn tight to Switzerland would silently
+# deny Chamonix and the Dolomites the better model.
+# See docs/decisions/icon-ch-domain-bounding-box.md.
+ICON_CH_BOUNDS = (44.5, 48.5, 5.0, 11.5)
+
 # The hourly variables persisted onto each hourly_series row, in the order
 # they appear on each dict.
 _HOURLY_SERIES_FIELDS = (
@@ -578,6 +604,136 @@ def _point_daily_dates(daily: dict[str, Any], point_pk: int) -> list[date]:
     return dates
 
 
+def _is_alpine_point(latitude: float, longitude: float) -> bool:
+    """
+    Return True when a point falls inside the ICON-CH bounding box.
+
+    The gate has to be applied *before* the request, because ICON-CH
+    returns a 400 for a location outside its domain rather than quietly
+    degrading to something usable. It is a bounding box, not a polygon:
+    combined with the day-0 fallback below, a wrong-side miss costs one
+    wasted request and never a bad write.
+
+    Args:
+        latitude: Point latitude in decimal degrees.
+        longitude: Point longitude in decimal degrees.
+
+    Returns:
+        True when the point is inside ``ICON_CH_BOUNDS``.
+
+    """
+    min_lat, max_lat, min_lon, max_lon = ICON_CH_BOUNDS
+    return min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
+
+
+def _day_zero_is_degraded(data: dict[str, Any]) -> bool:
+    """
+    Return True when day 0 of a forecast payload is missing required fields.
+
+    ``_build_point_defaults`` treats ``weather_code``, ``sunrise`` and
+    ``sunset`` as required — it indexes them directly rather than using
+    ``.get()``. ``ForecastPointWeather.weather_code`` is a
+    ``PositiveSmallIntegerField`` with no ``null=True``, so a ``None``
+    from a partial ICON-CH payload raises at ``update_or_create`` rather
+    than skipping the row. This check is what keeps that from happening:
+    a dead day 0 means fall back to the default chain and persist that
+    instead.
+
+    Only day 0 is examined. Later days going ``None`` beyond the model's
+    horizon (ICON-CH2 runs ~5 days into a 7-day window) is expected and
+    already handled by the degrade-to-``None`` pattern in
+    ``_build_point_defaults``; falling back for that would throw away four
+    good high-resolution days to rescue two the default chain barely
+    resolves either.
+
+    Args:
+        data: The parsed Open-Meteo JSON response.
+
+    Returns:
+        True when any required day-0 field is absent or null.
+
+    """
+    daily = data.get("daily") or {}
+    for key in ("weather_code", "sunrise", "sunset"):
+        values = daily.get(key)
+        if not values or values[0] is None:
+            return True
+    return False
+
+
+def _get_point_forecast(url: str, params: dict[str, str]) -> dict[str, Any]:
+    """Issue one Open-Meteo forecast request and return the parsed payload."""
+    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    payload: dict[str, Any] = response.json()
+    return payload
+
+
+def _fetch_point_payload(
+    url: str,
+    params: dict[str, str],
+    point: ForecastPoint,
+) -> dict[str, Any]:
+    """
+    Fetch one point's forecast, preferring ICON-CH where it has skill.
+
+    Points inside ``ICON_CH_BOUNDS`` request ``ICON_CH_MODEL``; points
+    outside send no ``models=`` at all and take Open-Meteo's default
+    blended chain. An in-domain request that comes back as a 400, or with
+    a dead day 0, falls back to the default chain exactly once
+    (SNOW-443).
+
+    The fallback lives here rather than in ``fetch_all_points`` so that a
+    single point is never counted as failed purely because ICON-CH had no
+    near-term skill for it. Only a 400 qualifies: any other status is a
+    real failure — an outage, a rate limit — and propagates, so the batch
+    counter still sees it.
+
+    Args:
+        url: The forecast endpoint.
+        params: The request parameters, without ``models=``.
+        point: The point being fetched; used for the domain gate and for
+            log context.
+
+    Returns:
+        The parsed Open-Meteo JSON payload.
+
+    Raises:
+        requests.HTTPError: On any non-2xx status other than an
+            in-domain 400.
+
+    """
+    use_icon_ch = _is_alpine_point(point.latitude, point.longitude)
+    if not use_icon_ch:
+        return _get_point_forecast(url, params)
+
+    try:
+        data = _get_point_forecast(url, {**params, "models": ICON_CH_MODEL})
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if status != 400:
+            raise
+        logger.warning(
+            "ICON-CH rejected point=%s (lat=%s lon=%s) with 400 — "
+            "retrying on the default model chain",
+            point.pk,
+            point.latitude,
+            point.longitude,
+        )
+    else:
+        if not _day_zero_is_degraded(data):
+            return data
+        logger.warning(
+            "ICON-CH returned no usable day-0 data for point=%s "
+            "(lat=%s lon=%s) — retrying on the default model chain",
+            point.pk,
+            point.latitude,
+            point.longitude,
+        )
+
+    return _get_point_forecast(url, params)
+
+
 def fetch_weather_for_point(
     point: ForecastPoint,
     target_date: date,
@@ -604,9 +760,18 @@ def fetch_weather_for_point(
     hourly rows only for the first ``POINT_HOURLY_DAYS`` days; beyond that it
     is ``None``, keeping the JSON payload bounded.
 
-    Ships on Open-Meteo's default blended model chain — no ``models=``
-    parameter (MeteoSwiss ICON-CH selection is deferred to a follow-up
-    ticket under the SNOW-411 point-forecast epic).
+    Points inside ``ICON_CH_BOUNDS`` request MeteoSwiss's ICON-CH2 run
+    (``models=meteoswiss_icon_ch2``) instead of Open-Meteo's default
+    blended chain — 2 km cells over the Alps rather than the blend's
+    coarser ones, which is the whole accuracy argument for a per-point
+    forecast. Points outside the box omit ``models=`` and keep the
+    default chain (SNOW-443).
+
+    The ICON-CH request falls back to the default chain, once, when the
+    response is a 400 or when day 0 carries no usable data — see
+    ``_day_zero_is_degraded``. The retry happens here rather than in
+    ``fetch_all_points`` so a single point is never counted as failed
+    purely because ICON-CH had no skill for it.
 
     Points are forecast-only — there is no archive/backfill equivalent of
     this function.
@@ -662,9 +827,8 @@ def fetch_weather_for_point(
         "start_date": target_date.isoformat(),
         "end_date": end_date.isoformat(),
     }
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-    data: dict[str, Any] = response.json()
+
+    data = _fetch_point_payload(url, params, point)
 
     daily = data["daily"]
     hourly: dict[str, Any] | None = data.get("hourly")
