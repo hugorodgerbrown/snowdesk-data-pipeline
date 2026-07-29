@@ -425,6 +425,38 @@ def _plan_update(plan: _Plan, resort: Resort, row: dict[str, str], uuid: str) ->
         plan.updates.append((resort, changes))
 
 
+def _kind_from_row(row: dict[str, str]) -> str:
+    """
+    Read the sheet's ``kind`` cell, defaulting to ``RESORT`` (SNOW-544).
+
+    A blank or absent cell means ``RESORT`` — the overwhelming majority of
+    rows, and the shape every row had before the column existed, so the
+    sheet does not have to be filled in exhaustively to stay importable.
+
+    An unrecognised value is an error rather than a silent fallback. A typo
+    quietly resolving to ``RESORT`` would put lift-less terrain back on the
+    map as a resort pin, which is the exact failure this column was added
+    to prevent.
+
+    Args:
+        row: One sheet row.
+
+    Returns:
+        A valid ``Resort.Kind`` value.
+
+    Raises:
+        ValueError: If the cell holds something that is not a Kind.
+
+    """
+    raw = (row.get("kind") or "").strip().upper()
+    if not raw:
+        return Resort.Kind.RESORT
+    if raw not in Resort.Kind.values:
+        valid = ", ".join(Resort.Kind.values)
+        raise ValueError(f"unknown kind {raw!r} (expected one of: {valid})")
+    return raw
+
+
 def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]]:
     """Assign the sheet's editorial values onto ``resort`` in memory.
 
@@ -446,6 +478,7 @@ def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]
     """
     values: dict[str, Any] = {field: row[field].strip() for field in TEXT_FIELDS}
     values["notes"] = row["note"].strip()
+    values["kind"] = _kind_from_row(row)
     for field in INT_FIELDS:
         raw = row[field].strip()
         values[field] = int(raw) if raw else None

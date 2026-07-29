@@ -607,7 +607,14 @@ def list_resorts_in_region(region_id: str) -> dict[str, Any]:
     if region is None:
         raise ToolError(f"Unknown region_id: {region_id!r}.")
 
-    resorts = Resort.objects.geocoded().filter(region=region).select_related("region")
+    resorts = (
+        # SNOW-544: kind=RESORT only — this tool answers "which resorts",
+        # so touring terrain would be a wrong answer, not a fuller one.
+        Resort.objects.resorts()
+        .geocoded()
+        .filter(region=region)
+        .select_related("region")
+    )
     resort_list = [
         {
             "name": resort.name,
@@ -1536,7 +1543,14 @@ def region_info(region_id: str) -> dict[str, Any]:
     provider_value = resolvers._PROVIDER_BY_COUNTRY.get(country)
     provider_name = Bulletin.Source(provider_value).name if provider_value else None
 
-    resorts = Resort.objects.geocoded().filter(region=region).select_related("region")
+    resorts = (
+        # SNOW-544: kind=RESORT only — this tool answers "which resorts",
+        # so touring terrain would be a wrong answer, not a fuller one.
+        Resort.objects.resorts()
+        .geocoded()
+        .filter(region=region)
+        .select_related("region")
+    )
     resort_list = [
         {
             "name": resort.name,

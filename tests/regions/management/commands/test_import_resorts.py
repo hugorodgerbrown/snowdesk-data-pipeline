@@ -37,6 +37,7 @@ COLUMNS = [
     "typical_season_open",
     "typical_season_close",
     "note",
+    "kind",
 ]
 
 
@@ -494,3 +495,99 @@ class TestImportResortsAgainstCommittedSheet:
         # The fixture is dumped from a database the sheet has been applied
         # to, so a full reconciliation finds nothing to do.
         assert "No changes" in out.getvalue()
+
+
+@pytest.mark.django_db
+class TestImportResortsKind:
+    """The ``kind`` column and what it changes about deletion (SNOW-544)."""
+
+    def test_kind_round_trips_from_the_sheet(self, tmp_path: Path) -> None:
+        """A TOURING_TERRAIN cell reaches the model."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        resort = ResortFactory.create(name="Grimsel", region=region)
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Grimsel", "kind": "TOURING_TERRAIN"}],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.kind == Resort.Kind.TOURING_TERRAIN
+
+    def test_blank_kind_means_resort(self, tmp_path: Path) -> None:
+        """The column is optional — a sheet that omits it still imports."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        resort = ResortFactory.create(
+            name="Verbier", region=region, kind=Resort.Kind.TOURING_TERRAIN
+        )
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.kind == Resort.Kind.RESORT
+
+    def test_unknown_kind_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
+        """A typo must not silently resolve to RESORT.
+
+        Falling back would put lift-less terrain back on the map as a
+        resort pin — the exact failure the column exists to prevent.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        resort = ResortFactory.create(name="Grimsel", region=region)
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Grimsel", "kind": "TOURING"}],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.kind == Resort.Kind.RESORT
+
+    def test_touring_terrain_survives_a_delete_run(self, tmp_path: Path) -> None:
+        """The core regression this ticket introduces.
+
+        A TOURING_TERRAIN row is a live row: it is listed in the sheet and
+        carries no NOT_A_SKI_RESORT marker, so ``--mode delete`` must
+        leave it alone. Before ``kind`` existed, the only way to express
+        "not a resort" was the marker, which deletes.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        touring = ResortFactory.create(
+            name="Grimsel", region=region, kind=Resort.Kind.TOURING_TERRAIN
+        )
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(touring.uuid), "name": "Grimsel", "kind": "TOURING_TERRAIN"}],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
+
+        assert Resort.objects.filter(pk=touring.pk).exists()
+
+    def test_marked_row_is_still_deleted_whatever_its_kind(
+        self, tmp_path: Path
+    ) -> None:
+        """``kind`` does not weaken the marker — the two are independent."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        marked = ResortFactory.create(name="Aigle", region=region)
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(marked.uuid),
+                    "name": "Aigle",
+                    "kind": "TOURING_TERRAIN",
+                    "note": "NOT_A_SKI_RESORT - valley town",
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
+
+        assert not Resort.objects.filter(pk=marked.pk).exists()

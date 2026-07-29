@@ -3365,7 +3365,8 @@ def _bulletin_detail_response(
     # Resorts in this region (SNOW-504) — reverse FK, alphabetical per
     # Resort.Meta.ordering. Cross-links the bulletin page to each resort's
     # own page; empty for regions with no fixture-seeded resorts.
-    resorts_in_region = list(region.resorts.all())
+    # SNOW-544: kind=RESORT only — see regions.ResortQuerySet.resorts().
+    resorts_in_region = list(region.resorts.resorts())
     favourites_in_region = _get_favourites_in_region(request, region)
 
     _capture_utm_to_session(request)

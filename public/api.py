@@ -60,6 +60,7 @@ import waffle
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError
+from django.db.models import Prefetch
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -375,7 +376,11 @@ def resorts_by_region(request: HttpRequest) -> JsonResponse:
     # prefetch_related; the ``resorts`` relation is ordered alphabetically
     # by Resort.Meta.ordering so the output order is stable.
     result: dict[str, list[str]] = {}
-    regions = MicroRegion.objects.prefetch_related("resorts").all()
+    # SNOW-544: the prefetch is filtered to kind=RESORT so lift-less touring
+    # terrain never reaches a surface that presents its rows as resorts.
+    regions = MicroRegion.objects.prefetch_related(
+        Prefetch("resorts", queryset=Resort.objects.resorts())
+    ).all()
     for region in regions:
         names = [r.name for r in region.resorts.all()]
         if names:
@@ -404,8 +409,15 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     features: list[dict[str, Any]] = []
+    # SNOW-544: kind=RESORT only — touring terrain is real avalanche terrain
+    # kept for its bulletin relevance, but drawing it as a resort pin would
+    # tell the user a lift-served area exists where none does.
     for resort in (
-        Resort.objects.geocoded().select_related("region").order_by("name").iterator()
+        Resort.objects.resorts()
+        .geocoded()
+        .select_related("region")
+        .order_by("name")
+        .iterator()
     ):
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(

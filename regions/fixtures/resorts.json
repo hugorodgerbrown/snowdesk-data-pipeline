@@ -28,7 +28,8 @@
       "top_elevation_m": 3330,
       "typical_season_open": "12-01",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -60,7 +61,8 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -92,7 +94,8 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -124,7 +127,8 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -156,7 +160,8 @@
       "top_elevation_m": 2194,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -188,7 +193,8 @@
       "top_elevation_m": 2172,
       "typical_season_open": "12-20",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -220,7 +226,8 @@
       "top_elevation_m": 3899,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -252,7 +259,8 @@
       "top_elevation_m": 3573,
       "typical_season_open": "07-15",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -284,7 +292,8 @@
       "top_elevation_m": 3200,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -316,7 +325,8 @@
       "top_elevation_m": 2347,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -348,7 +358,8 @@
       "top_elevation_m": 2927,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -380,7 +391,8 @@
       "top_elevation_m": 2610,
       "typical_season_open": "12-05",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -412,7 +424,8 @@
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -444,7 +457,8 @@
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -476,7 +490,8 @@
       "top_elevation_m": 2374,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -508,7 +523,8 @@
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -540,7 +556,8 @@
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -572,7 +589,8 @@
       "top_elevation_m": 2877,
       "typical_season_open": "12-12",
       "typical_season_close": "04-18",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -604,7 +622,8 @@
       "top_elevation_m": 1447,
       "typical_season_open": "12-13",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -636,7 +655,8 @@
       "top_elevation_m": 2632,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -668,7 +688,8 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -700,7 +721,8 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -732,7 +754,8 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -764,7 +787,8 @@
       "top_elevation_m": 1445,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -796,7 +820,8 @@
       "top_elevation_m": 1645,
       "typical_season_open": "12-13",
       "typical_season_close": "03-22",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -828,7 +853,8 @@
       "top_elevation_m": 1404,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -860,7 +886,8 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -892,7 +919,8 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -924,39 +952,8 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null
-    }
-  },
-  {
-    "model": "regions.resort",
-    "pk": 42,
-    "fields": {
-      "uuid": "d939a001-6e76-414b-8487-ed1de9ab8ca5",
-      "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
-      "name": "Goms",
-      "name_alt": "Münster-Goms",
-      "region": [
-        "CH-4242"
-      ],
-      "canton": "VS",
-      "notes": "Goms is primarily cross-country (~100 km loipe); figures are its one small alpine area. Duplicates the Münster row",
-      "latitude": 46.409420371616164,
-      "longitude": 8.156848878870107,
-      "geocode_source": "manual",
-      "geocode_confidence": 1.0,
-      "geocoded_at": "2026-04-30T16:46:18.311Z",
-      "needs_review": false,
-      "operator_name": "Skilift Münster-Geschinen AG",
-      "website": "https://www.skilift-muenster-geschinen.ch",
-      "num_lifts": 2,
-      "num_runs": null,
-      "total_piste_km": 3.0,
-      "base_elevation_m": 1363,
-      "top_elevation_m": 1645,
-      "typical_season_open": "12-20",
-      "typical_season_close": "03-23",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -988,7 +985,8 @@
       "top_elevation_m": 2267,
       "typical_season_open": "12-15",
       "typical_season_close": "03-25",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1020,7 +1018,8 @@
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1052,7 +1051,8 @@
       "top_elevation_m": 3006,
       "typical_season_open": "10-17",
       "typical_season_close": "05-02",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1084,7 +1084,8 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1116,7 +1117,8 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1148,7 +1150,8 @@
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1180,7 +1183,8 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1212,7 +1216,8 @@
       "top_elevation_m": 2978,
       "typical_season_open": "10-17",
       "typical_season_close": "05-02",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1244,7 +1249,8 @@
       "top_elevation_m": 2465,
       "typical_season_open": "12-19",
       "typical_season_close": "03-14",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1276,7 +1282,8 @@
       "top_elevation_m": 1787,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1308,7 +1315,8 @@
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1340,7 +1348,8 @@
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1372,39 +1381,8 @@
       "top_elevation_m": 2872,
       "typical_season_open": "11-26",
       "typical_season_close": "05-02",
-      "forecast_point": null
-    }
-  },
-  {
-    "model": "regions.resort",
-    "pk": 60,
-    "fields": {
-      "uuid": "51a404d8-4ff6-45a3-8144-0c80a20d8979",
-      "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
-      "name": "Ischgl (CH side)",
-      "name_alt": "Samnaun",
-      "region": [
-        "CH-7121"
-      ],
-      "canton": "GR",
-      "notes": "DUPLICATE of Samnaun - same domain from the Austrian side. Ischgl (1377 m) is in Tyrol, AT. Do not sum with Samnaun",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
-      "needs_review": false,
-      "operator_name": "Silvrettaseilbahn AG",
-      "website": "https://www.ischgl.com",
-      "num_lifts": 45,
-      "num_runs": 78,
-      "total_piste_km": 239.0,
-      "base_elevation_m": 1377,
-      "top_elevation_m": 2872,
-      "typical_season_open": "11-26",
-      "typical_season_close": "05-02",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1436,7 +1414,8 @@
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1468,7 +1447,8 @@
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1500,7 +1480,8 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1532,7 +1513,8 @@
       "top_elevation_m": 1601,
       "typical_season_open": "12-26",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1564,7 +1546,8 @@
       "top_elevation_m": 2100,
       "typical_season_open": "12-19",
       "typical_season_close": "03-07",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1596,7 +1579,8 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1628,7 +1612,8 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1660,7 +1645,8 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1692,7 +1678,8 @@
       "top_elevation_m": 2653,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1724,7 +1711,8 @@
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1756,7 +1744,8 @@
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1788,7 +1777,8 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1820,7 +1810,8 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1852,7 +1843,8 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1884,7 +1876,8 @@
       "top_elevation_m": 2833,
       "typical_season_open": "11-28",
       "typical_season_close": "04-06",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1916,7 +1909,8 @@
       "top_elevation_m": 2310,
       "typical_season_open": "12-06",
       "typical_season_close": "04-06",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1948,7 +1942,8 @@
       "top_elevation_m": 1791,
       "typical_season_open": "12-20",
       "typical_season_close": "03-08",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -1980,7 +1975,8 @@
       "top_elevation_m": 2851,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2012,7 +2008,8 @@
       "top_elevation_m": 2215,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2044,7 +2041,8 @@
       "top_elevation_m": 2560,
       "typical_season_open": "12-19",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2076,7 +2074,8 @@
       "top_elevation_m": 2539,
       "typical_season_open": "12-20",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2108,7 +2107,8 @@
       "top_elevation_m": 2713,
       "typical_season_open": "12-06",
       "typical_season_close": "04-06",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2140,39 +2140,8 @@
       "top_elevation_m": 2550,
       "typical_season_open": "12-20",
       "typical_season_close": "03-15",
-      "forecast_point": null
-    }
-  },
-  {
-    "model": "regions.resort",
-    "pk": 98,
-    "fields": {
-      "uuid": "aed8467e-cae9-4c42-8cd8-80510b9eb10f",
-      "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.400Z",
-      "name": "Arosa east",
-      "name_alt": "Plessur",
-      "region": [
-        "CH-5121"
-      ],
-      "canton": "GR",
-      "notes": "Arosa east / Plessur' is a district label, not a distinct resort. DUPLICATE of the Arosa row",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
-      "needs_review": false,
-      "operator_name": "Arosa Bergbahnen AG",
-      "website": "https://arosalenzerheide.swiss",
-      "num_lifts": 16,
-      "num_runs": 17,
-      "total_piste_km": 70.0,
-      "base_elevation_m": 1775,
-      "top_elevation_m": 2653,
-      "typical_season_open": "11-29",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2204,7 +2173,8 @@
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
       "typical_season_close": "04-26",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2236,7 +2206,8 @@
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
       "typical_season_close": "04-26",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2268,7 +2239,8 @@
       "top_elevation_m": 2970,
       "typical_season_open": "11-22",
       "typical_season_close": "05-03",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2300,7 +2272,8 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2332,7 +2305,8 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2364,7 +2338,8 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2396,7 +2371,8 @@
       "top_elevation_m": 2011,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2428,7 +2404,8 @@
       "top_elevation_m": 2001,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2460,7 +2437,8 @@
       "top_elevation_m": 2200,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2492,7 +2470,8 @@
       "top_elevation_m": 1730,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2524,7 +2503,8 @@
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2556,7 +2536,8 @@
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2588,7 +2569,8 @@
       "top_elevation_m": 1833,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2620,7 +2602,8 @@
       "top_elevation_m": 2289,
       "typical_season_open": "11-15",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2652,7 +2635,8 @@
       "top_elevation_m": 1945,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2684,7 +2668,8 @@
       "top_elevation_m": 3100,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2716,7 +2701,8 @@
       "top_elevation_m": 2198,
       "typical_season_open": "11-25",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2748,7 +2734,8 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2780,7 +2767,8 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2812,7 +2800,8 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-12",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2844,7 +2833,8 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-08",
       "typical_season_close": "04-30",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2876,7 +2866,8 @@
       "top_elevation_m": 1978,
       "typical_season_open": "12-15",
       "typical_season_close": "02-28",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2908,7 +2899,8 @@
       "top_elevation_m": 1626,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2940,7 +2932,8 @@
       "top_elevation_m": 1571,
       "typical_season_open": "12-15",
       "typical_season_close": "03-22",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -2972,7 +2965,8 @@
       "top_elevation_m": 2012,
       "typical_season_open": "12-13",
       "typical_season_close": "03-29",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3004,7 +2998,8 @@
       "top_elevation_m": 2961,
       "typical_season_open": "11-15",
       "typical_season_close": "04-18",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3036,7 +3031,8 @@
       "top_elevation_m": 1660,
       "typical_season_open": "12-15",
       "typical_season_close": "03-28",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3068,7 +3064,8 @@
       "top_elevation_m": 3020,
       "typical_season_open": "10-11",
       "typical_season_close": "05-03",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3100,7 +3097,8 @@
       "top_elevation_m": 2255,
       "typical_season_open": "12-13",
       "typical_season_close": "04-06",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3132,39 +3130,8 @@
       "top_elevation_m": 2105,
       "typical_season_open": "12-12",
       "typical_season_close": "03-28",
-      "forecast_point": null
-    }
-  },
-  {
-    "model": "regions.resort",
-    "pk": 137,
-    "fields": {
-      "uuid": "a5f4c802-10c3-4006-96d2-17f0fcefbe18",
-      "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.403Z",
-      "name": "Braunwald",
-      "name_alt": "Glarnerland",
-      "region": [
-        "CH-3112"
-      ],
-      "canton": "GL",
-      "notes": "ALPINE SKI OPERATIONS DISCONTINUED from winter 2026/27 (announced 22 Jun 2026). Piste/lift/season fields blanked - pre-closure figures (~26 km, 10 lifts) no longer valid",
-      "latitude": 46.940770177142866,
-      "longitude": 8.999098795612099,
-      "geocode_source": "manual",
-      "geocode_confidence": 1.0,
-      "geocoded_at": "2026-04-28T17:53:46.756Z",
-      "needs_review": false,
-      "operator_name": "Sportbahnen Braunwald AG",
-      "website": "https://www.braunwald.ch",
-      "num_lifts": null,
-      "num_runs": null,
-      "total_piste_km": null,
-      "base_elevation_m": 1256,
-      "top_elevation_m": 1901,
-      "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3196,7 +3163,8 @@
       "top_elevation_m": 2076,
       "typical_season_open": "12-12",
       "typical_season_close": "03-28",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3228,7 +3196,8 @@
       "top_elevation_m": 2262,
       "typical_season_open": "11-28",
       "typical_season_close": "04-06",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3260,7 +3229,8 @@
       "top_elevation_m": 2222,
       "typical_season_open": "11-16",
       "typical_season_close": "03-29",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3292,7 +3262,8 @@
       "top_elevation_m": 2250,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3324,7 +3295,8 @@
       "top_elevation_m": 2250,
       "typical_season_open": "12-23",
       "typical_season_close": "03-28",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3356,7 +3328,8 @@
       "top_elevation_m": 1610,
       "typical_season_open": "12-26",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3388,7 +3361,8 @@
       "top_elevation_m": 2331,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3420,7 +3394,8 @@
       "top_elevation_m": 1578,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
     }
   },
   {
@@ -3452,7 +3427,734 @@
       "top_elevation_m": 2525,
       "typical_season_open": "12-06",
       "typical_season_close": "03-28",
-      "forecast_point": null
+      "forecast_point": null,
+      "kind": "RESORT"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 149,
+    "fields": {
+      "uuid": "29e257f8-af9a-4778-b88e-2a7f57d50b0e",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Bernina Pass",
+      "name_alt": "",
+      "region": [
+        "CH-7112"
+      ],
+      "canton": "GR",
+      "notes": "road/rail pass (2328 m); the lift areas nearby are Diavolezza and Lagalb",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 150,
+    "fields": {
+      "uuid": "b145ab2a-3baf-44f0-b29e-11f4d9fe1fdf",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:45:29.067Z",
+      "name": "Binntal",
+      "name_alt": "",
+      "region": [
+        "CH-4242"
+      ],
+      "canton": "VS",
+      "notes": "nature park valley; only a ~300 m village drag lift at Binn",
+      "latitude": 46.364278261170426,
+      "longitude": 8.162188589612128,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:45:29.062Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 151,
+    "fields": {
+      "uuid": "f6aed16f-e5f4-4a61-b7f3-9edf304399ed",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-05-14T13:33:15.433Z",
+      "name": "Blatten",
+      "name_alt": "Lötschental",
+      "region": [
+        "CH-4211"
+      ],
+      "canton": "VS",
+      "notes": "no lifts of its own (valley skiing is via Lauchernalp from Wiler); village largely destroyed by the May 2025 rockslide",
+      "latitude": 46.421918699735784,
+      "longitude": 7.822014445975327,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-28T17:44:22.323Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 152,
+    "fields": {
+      "uuid": "1e36f1f3-3181-44ab-bff0-c60b00a899b6",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Conters",
+      "name_alt": "südl. Prättigau",
+      "region": [
+        "CH-5112"
+      ],
+      "canton": "GR",
+      "notes": "small village, no lifts; nearest are Pany-Luzein and Grüsch Danusa",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 153,
+    "fields": {
+      "uuid": "2d459c55-d49a-4002-8bc5-b2a7534d85f9",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-05-14T13:33:15.438Z",
+      "name": "Grimsel",
+      "name_alt": "Haslital high",
+      "region": [
+        "CH-1247"
+      ],
+      "canton": "BE",
+      "notes": "mountain pass road under winter closure; no lifts",
+      "latitude": 46.572296615553995,
+      "longitude": 8.332778558449206,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-28T17:46:29.856Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 154,
+    "fields": {
+      "uuid": "bb1be8b8-66a6-42b7-99da-1fd35c1e2a81",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:43:56.340Z",
+      "name": "Génépy",
+      "name_alt": "",
+      "region": [
+        "CH-4112"
+      ],
+      "canton": "VS",
+      "notes": "no lift-served area under this name; high alpine terrain",
+      "latitude": 46.026031124649506,
+      "longitude": 7.0439576284728105,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:43:56.338Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 155,
+    "fields": {
+      "uuid": "4d08f6a9-62e6-4e88-9a99-eb335c824256",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Haut Val de Bagnes",
+      "name_alt": "Mauvoisin",
+      "region": [
+        "CH-4116"
+      ],
+      "canton": "VS",
+      "notes": "hiking valley with dam (Mauvoisin), no lifts",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 156,
+    "fields": {
+      "uuid": "2e85c106-25d5-4587-a91b-5b2d6867d59e",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-28T17:56:38.155Z",
+      "name": "Klausenpass",
+      "name_alt": "",
+      "region": [
+        "CH-3112"
+      ],
+      "canton": "GL",
+      "notes": "road pass (1948 m) closed from late Oct/early Nov to late May/June; no lifts",
+      "latitude": 46.86837123493936,
+      "longitude": 8.855579243760104,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-28T17:56:38.155Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 157,
+    "fields": {
+      "uuid": "cdc7103d-85c9-45c4-8914-1821ab1f5b00",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Mattmark",
+      "name_alt": "Saas high",
+      "region": [
+        "CH-4225"
+      ],
+      "canton": "VS",
+      "notes": "reservoir and dam above Saas-Almagell, road closed in winter",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 158,
+    "fields": {
+      "uuid": "3d54498b-b60d-4908-bd1c-860491ab0669",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Monte Rosa",
+      "name_alt": "Zermatt high",
+      "region": [
+        "CH-4224"
+      ],
+      "canton": "VS",
+      "notes": "glacier/massif above Zermatt, touring terrain; lift access via Zermatt Bergbahnen",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 159,
+    "fields": {
+      "uuid": "633a764c-08e0-4fcf-b69b-da70de27c3e0",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Mountet",
+      "name_alt": "Zinal hut",
+      "region": [
+        "CH-4125"
+      ],
+      "canton": "VS",
+      "notes": "Cabane du Grand Mountet, SAC mountaineering hut at 2886 m",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 160,
+    "fields": {
+      "uuid": "101c4069-309e-4a02-aeb4-e6eb1a07bb17",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Schams",
+      "name_alt": "Viamala",
+      "region": [
+        "CH-5222"
+      ],
+      "canton": "GR",
+      "notes": "no operating lift area (Zillis-Schamserberg defunct); sledging and winter hiking only",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 161,
+    "fields": {
+      "uuid": "056411c3-f66e-4bc6-853d-f7d670541a56",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-05-14T13:33:15.447Z",
+      "name": "Sustenpass",
+      "name_alt": "",
+      "region": [
+        "CH-1246"
+      ],
+      "canton": "BE",
+      "notes": "mountain pass road under winter closure; no lifts",
+      "latitude": 46.72965178458139,
+      "longitude": 8.447271790247783,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-28T17:47:28.428Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 162,
+    "fields": {
+      "uuid": "ef6b7fb9-2000-4069-ad5b-cdff0cf340c8",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:20:35.399Z",
+      "name": "Turtmann",
+      "name_alt": "Turtmanntal",
+      "region": [
+        "CH-4212"
+      ],
+      "canton": "VS",
+      "notes": "side valley; the Turtmann-Unterems-Oberems cableway is public transport, no pistes",
+      "latitude": 46.30139633874643,
+      "longitude": 7.703048877697142,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:20:35.396Z",
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 163,
+    "fields": {
+      "uuid": "0e5df28c-c20d-45f0-986a-300855effe0b",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Val Chamuera",
+      "name_alt": "Samedan area",
+      "region": [
+        "CH-7115"
+      ],
+      "canton": "GR",
+      "notes": "side valley above La Punt/Madulain, ski touring only",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 164,
+    "fields": {
+      "uuid": "ee7e9261-4f1e-44bc-9442-d189770dbff8",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Val S-charl",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7126"
+      ],
+      "canton": "GR",
+      "notes": "quiet side valley south of Scuol, touring and snowshoeing only",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 165,
+    "fields": {
+      "uuid": "29beaae9-f665-4c5c-94da-b0f43f92d40f",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Val Suot",
+      "name_alt": "Scuol area",
+      "region": [
+        "CH-7124"
+      ],
+      "canton": "GR",
+      "notes": "side valley in the Scuol/Zernez area, touring terrain only",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 166,
+    "fields": {
+      "uuid": "614ebf8f-92ee-4a82-ae97-e8b0642dff44",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Val dal Spöl",
+      "name_alt": "Swiss Nat. Park",
+      "region": [
+        "CH-7125"
+      ],
+      "canton": "GR",
+      "notes": "inside Swiss National Park; skiing and off-path travel prohibited",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 167,
+    "fields": {
+      "uuid": "73e0a5b2-5330-4039-a932-4b1b1d17a564",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "Zervreila",
+      "name_alt": "",
+      "region": [
+        "CH-5216"
+      ],
+      "canton": "GR",
+      "notes": "reservoir and hamlet at the head of the Valsertal; nearest lifts are Vals-Dachberg",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 168,
+    "fields": {
+      "uuid": "2257396d-83be-4b42-a2f6-171445f817cc",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "oberes Puschlav",
+      "name_alt": "Livigno area",
+      "region": [
+        "CH-7221"
+      ],
+      "canton": "GR",
+      "notes": "upper Val Poschiavo/Bernina area; touring and cross-country only, Livigno's lifts are in Italy",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 169,
+    "fields": {
+      "uuid": "186c3955-ab02-4dd7-b67d-c45a9bbada2b",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "westl. Silvretta",
+      "name_alt": "Prättigau",
+      "region": [
+        "CH-5113"
+      ],
+      "canton": "GR",
+      "notes": "regional ski-touring / avalanche-bulletin label, not a resort",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
+    }
+  },
+  {
+    "model": "regions.resort",
+    "pk": 170,
+    "fields": {
+      "uuid": "e5acc8aa-e371-4db2-992e-b169e91277dc",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z",
+      "name": "östliche Silvretta",
+      "name_alt": "",
+      "region": [
+        "CH-7122"
+      ],
+      "canton": "GR",
+      "notes": "regional touring/avalanche-bulletin label, not a lift-served area",
+      "latitude": null,
+      "longitude": null,
+      "geocode_source": "",
+      "geocode_confidence": null,
+      "geocoded_at": null,
+      "needs_review": false,
+      "operator_name": "",
+      "website": "",
+      "num_lifts": null,
+      "num_runs": null,
+      "total_piste_km": null,
+      "base_elevation_m": null,
+      "top_elevation_m": null,
+      "typical_season_open": "",
+      "typical_season_close": "",
+      "forecast_point": null,
+      "kind": "TOURING_TERRAIN"
     }
   }
 ]
