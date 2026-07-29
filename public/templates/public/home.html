@@ -11,29 +11,24 @@ SNOW-344: /map/ now permanently redirects here, so this template handles all
 map-page traffic. The offmap-banner, edit-resorts panel, and edit-resorts JS
 (previously in map.html) are now included here.
 
-This template owns the page metadata (title, meta_description, og_tags)
-and loads home_intro.js in addition to the shared map assets.
+This template owns the page metadata (page_meta) and loads home_intro.js
+in addition to the shared map assets.
 {% endcomment %}
 
-{% block title %}{% trans "Snowdesk — Avalanche bulletins across the Alps" %}{% endblock %}
-
-{# SNOW-535: kept under ~155 characters so search results show it whole. #}
-{% block meta_description %}{% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino. Search a place, read the full bulletin, compare dates, replay the season." %}{% endblock %}
+{# SNOW-553: title and description now feed the share card as well as the #}
+{# tab and the SERP snippet. The separate, shorter og:description this    #}
+{# page used to carry is gone — one string, so the two can't drift.       #}
+{# SNOW-535: kept under ~155 characters so search results show it whole.  #}
+{% block page_meta %}
+    {% trans "Snowdesk — Avalanche bulletins across the Alps" as page_title %}
+    {% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino. Search a place, read the full bulletin, compare dates, replay the season." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
 
 {# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
 {# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
 {# and the site footer stay within the visible viewport on mobile.          #}
 {% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
-
-{% block og_tags %}
-    {{ block.super }}
-    <meta property="og:title" content="{% trans 'Snowdesk — Avalanche bulletins across the Alps' %}">
-    <meta
-        property="og:description"
-        content="{% trans 'Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino — search a place, read the bulletin, replay the season.' %}"
-    >
-    <meta property="og:url" content="{{ SITE_BASE_URL }}{% url 'public:home' %}">
-{% endblock og_tags %}
 
 {% block extra_head %}
     <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">

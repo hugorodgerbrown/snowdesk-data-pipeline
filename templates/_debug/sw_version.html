@@ -1,7 +1,11 @@
 {% extends "public/base.html" %}
 {% load static %}
 
-{% block title %}SW shell version — debug{% endblock %}
+{# SNOW-553: sharing=False. Staff-only debug page, mounted only when     #}
+{# DEBUG is on. It has no public URL to share.                          #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="SW shell version — debug" description="Staff-only service-worker shell version debug page." sharing=False %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="max-w-3xl mx-auto px-4 py-8 space-y-6">

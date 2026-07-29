@@ -13,10 +13,16 @@ Extended by: accounts/templates/accounts/
                 manage_sent.html, manage_saved.html,
                 link_expired.html, unsubscribe.html, unsubscribe_done.html
 
+Page metadata is NOT proxied through this template. SNOW-553 replaced the
+old status_title / status_meta blocks with a direct ``{% block page_meta %}``
+override in each child, because Django cannot capture a block's rendered
+output into a variable to hand to the shared _page_meta.html emitter — and
+routing it through a second pair of blocks would have put the metadata
+back behind an indirection the "no page omits this silently" rule exists
+to remove. Every child overrides page_meta itself, with sharing=False and
+a comment saying why.
+
 Blocks exposed to child templates:
-    status_title   : inner content for ``{% block title %}``.  The base
-                     template wraps this in the full ``<title>`` tag.
-    status_meta    : inner content for ``{% block meta_description %}``.
     status_heading : ``<h1>`` text inside the card (required).
     status_body    : body paragraph(s) inside the card (required).
     status_cta     : optional call-to-action slot below the body.  Wrapped
@@ -26,9 +32,6 @@ Blocks exposed to child templates:
                      on the block wrapper, so spacing remains correct when
                      the block contains non-CTA markup (e.g. a cancel link).
 {% endcomment %}
-
-{% block title %}{% block status_title %}{% endblock %}{% endblock %}
-{% block meta_description %}{% block status_meta %}{% endblock %}{% endblock %}
 
 {% block content %}
     <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">

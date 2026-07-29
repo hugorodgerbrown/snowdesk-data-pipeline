@@ -9,11 +9,11 @@ Content is authored directly in this template; no runtime context required.
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Terms of Service" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "Snowdesk Terms of Service — what the service is, how to use it safely, and the legal terms that apply." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Terms of Service" as page_name %}
+    {% trans "Snowdesk Terms of Service — what the service is, how to use it safely, and the legal terms that apply." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
