@@ -155,11 +155,11 @@ def _detect_elevation_band_split(
     return ranked[0], ranked[-1]
 
 
-def _target_day(bulletin: "Bulletin") -> datetime.date:
+def target_day_for_valid_from(valid_from: datetime.datetime) -> datetime.date:
     """
-    Return the calendar day that a bulletin is forecasting.
+    Return the calendar day forecast by a bulletin with this ``valid_from``.
 
-    SLF publishes two issues per day:
+    Providers publish two issues per day:
 
     * **Morning** issue (~07:00 UTC): forecasts **today**.
       ``valid_from.hour < 12`` → target_day = ``valid_from.date()``.
@@ -168,12 +168,37 @@ def _target_day(bulletin: "Bulletin") -> datetime.date:
 
     The 12:00 UTC boundary is chosen so that noon (the earliest plausible
     "afternoon" publication) falls on the evening side, which is the
-    conservative choice: if ever SLF shifts an evening issue to exactly
-    noon, we still attribute it to the *next* day.
+    conservative choice: if ever a provider shifts an evening issue to
+    exactly noon, we still attribute it to the *next* day.
 
     This mirrors the morning-wins / prior-evening-fallback convention
     implemented by ``_select_default_issue`` in ``apps/public/views.py``
     (which uses 10:00 UTC as the pivot to prefer the morning update).
+
+    Takes the timestamp rather than a ``Bulletin`` so the rule can also be
+    applied to a raw CAAML payload before any row exists — the golden-week
+    seeder (``bulletins/services/golden_week.py``) selects records by target
+    day straight from the on-disk archives, and must agree with the day a
+    persisted bulletin will later be rated against.
+
+    Args:
+        valid_from: The bulletin's timezone-aware ``validTime.startTime``.
+
+    Returns:
+        The calendar date that this bulletin is forecasting.
+
+    """
+    if valid_from.hour < 12:
+        return valid_from.date()
+    return (valid_from + timedelta(days=1)).date()
+
+
+def _target_day(bulletin: "Bulletin") -> datetime.date:
+    """
+    Return the calendar day that a bulletin is forecasting.
+
+    Thin wrapper over ``target_day_for_valid_from`` — see there for the rule
+    and the reasoning behind the noon boundary.
 
     Args:
         bulletin: A Bulletin instance with a timezone-aware ``valid_from``.
@@ -182,10 +207,7 @@ def _target_day(bulletin: "Bulletin") -> datetime.date:
         The calendar date that this bulletin is forecasting.
 
     """
-    vf: datetime.datetime = bulletin.valid_from
-    if vf.hour < 12:
-        return vf.date()
-    return (vf + timedelta(days=1)).date()
+    return target_day_for_valid_from(bulletin.valid_from)
 
 
 def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:

@@ -120,6 +120,55 @@ automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
 from the factories.
 
+### `seed_test_week` — load the "golden week" of real bulletins
+
+`seed_test_data` builds a *navigable* dataset from factories, but it is CH-only,
+uses one date for the map, and rates every map-coverage region `moderate`. That
+makes anything about behaviour **across** days untestable — whether the region
+partition shifts between issues, whether a morning bulletin supersedes the
+previous evening's, whether a past date is genuinely immutable.
+
+`seed_test_week` loads the **golden week** instead: seven consecutive real days
+(Mon 2026-02-09 → Sun 2026-02-15), all three providers, full regional coverage,
+selected from the committed archives under `apps/bulletins/local_mirrors/` (SNOW-528).
+
+```bash
+uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+uv run python manage.py seed_test_week --commit
+```
+
+Nothing is fetched — the full 2025/26 season is already committed and
+git-tracked, so the command needs no network access and no running dev server
+(unlike `fetch_bulletins --local-mirror`, which replays the same archives over
+HTTP and always ends its window at today). Every record goes through the
+production `upsert_bulletin`, so the corpus gets its `RegionBulletin` links,
+`RegionDayRating` rows and `BulletinGrouping` boundaries from the same services
+the live ingest path uses.
+
+Loads roughly 356 bulletins: SLF 144 (morning **and** evening issues on all
+seven days), ALBINA 51 (AT + IT), Météo-France 161. The week was picked for
+structural interest — all five danger levels, and a real mid-week swing
+(considerable → high → very_high on the Thursday and Friday → back down).
+
+It is a **separate command**, not a `seed_test_data --include golden-week`
+layer: `SeedModel` names *models*, whereas the golden week seeds the same models
+from a different *source*, so folding it in would have made
+`--include golden-week bulletin` a contradiction and left `--all` carrying a
+special-case exclusion to protect the [SNOW-13 query-count
+baseline](query-counts.md). Keeping the commands apart makes that baseline safe
+structurally.
+
+Read-only by default (a dry run writes nothing at all, not even a
+`PipelineRun`); `--commit` persists. It refuses to run when `DEBUG=False`, fails
+early with a copy-pasteable `loaddata` line when the region reference data is
+missing, and exits non-zero if any record fails to ingest. Re-running is
+idempotent — `upsert_bulletin` keys on `bulletinID`.
+
+Week selection and per-provider target-day resolution live in
+[`apps/bulletins/services/golden_week.py`](../bulletins/services/golden_week.py); see
+[`decisions/golden-week-derived-not-committed.md`](decisions/golden-week-derived-not-committed.md)
+for why the corpus is derived at seed time rather than committed as a fixture.
+
 ### Region fixtures (auto-loaded on deploy)
 
 `build.sh` and `build_headless.sh` run `loaddata` against all four
