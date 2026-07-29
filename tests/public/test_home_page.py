@@ -69,6 +69,42 @@ class TestHomePageBasic:
         content = response.content.decode()
         assert 'id="home-intro"' in content
 
+    def test_title_and_og_title_are_alps_wide(self) -> None:
+        """SNOW-535: title/og:title name the Alps, not just Switzerland."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "Snowdesk — Avalanche bulletins across the Alps" in content
+        assert "Swiss avalanche bulletins" not in content
+
+    def test_meta_description_names_non_swiss_territories(self) -> None:
+        """SNOW-535: meta description names France, Austria, South Tyrol and Trentino."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "France" in content
+        assert "Austria" in content
+        assert "South Tyrol" in content
+        assert "Trentino" in content
+
+    def test_intro_renders_both_tagline_paragraphs(self) -> None:
+        """SNOW-535: the intro card carries both the sources/colour paragraph
+        and the controls paragraph.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "Météo-France and avalanche.report combine into one map" in content
+        assert "Drag the timeline or press play to replay the season" in content
+
+    def test_intro_renders_onward_sample_links(self) -> None:
+        """SNOW-535: the intro card links to a sample bulletin and the guide."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert reverse("public:examples_random") in content
+        assert reverse("public:how_to_read_bulletin") in content
+
     def test_home_renders_offmap_banner(self) -> None:
         """The #offmap-banner element is present on / (moved from map.html in SNOW-344).
 
