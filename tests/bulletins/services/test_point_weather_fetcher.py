@@ -25,6 +25,9 @@ Covers:
   - per-point failure — one point raising increments failed without
     aborting the batch.
   - dry-run (commit=False) writes no rows but still calls the API.
+  - atomic window (SNOW-546) — a malformed timestamp or a failed write
+    part-way through the 7-day loop leaves zero rows, not a partial
+    window that reports as a failed point.
 
 All outbound HTTP calls are mocked via unittest.mock.patch so no network
 traffic is required, mirroring test_weather_fetcher.py's pattern.
@@ -38,6 +41,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.db import IntegrityError
 
 from bulletins.models import ForecastPointWeather
 from bulletins.services.weather_fetcher import (
@@ -419,6 +423,60 @@ class TestFetchWeatherForPoint:
         ):
             with pytest.raises(requests.HTTPError):
                 fetch_weather_for_point(point, target, commit=True)
+
+    def test_malformed_mid_window_sunrise_writes_nothing(self) -> None:
+        """A bad timestamp on day 4 of 7 leaves zero rows, not a partial window.
+
+        SNOW-546: the per-day ``update_or_create`` loop had no
+        transaction, and ``_build_point_defaults`` parses sunrise/sunset
+        inside it. Days 0-3 committed, day 4 raised, days 4-6 never
+        wrote — and ``fetch_all_points`` counted the point as failed,
+        masking that a partial window had actually been persisted.
+        """
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_full_point_response()
+        api_data["daily"]["sunrise"][3] = "not-a-timestamp"
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            ),
+            pytest.raises(ValueError),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
+
+    def test_write_failure_rolls_back_the_whole_window(self) -> None:
+        """A mid-loop DB failure rolls back the days already written."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        real_uoc = ForecastPointWeather.objects.update_or_create
+        call_count = {"n": 0}
+
+        def _fail_on_third(*args: Any, **kwargs: Any) -> Any:
+            """Let the first two writes succeed, fail the third."""
+            call_count["n"] += 1
+            if call_count["n"] == 3:
+                raise IntegrityError("simulated point weather write failure")
+            return real_uoc(*args, **kwargs)
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get",
+                _mock_get(_make_full_point_response()),
+            ),
+            patch.object(
+                ForecastPointWeather.objects,
+                "update_or_create",
+                side_effect=_fail_on_third,
+            ),
+            pytest.raises(IntegrityError),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
 
     def test_upsert_updates_existing_rows(self) -> None:
         """A second call updates the existing ForecastPointWeather rows, not duplicates."""
