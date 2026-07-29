@@ -9,11 +9,11 @@ at authoring time, not derived at runtime from installed packages.
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Colophon" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "Technology credits and attribution for Snowdesk — frameworks, data sources, icons, fonts, and hosting." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Colophon" as page_name %}
+    {% trans "Technology credits and attribution for Snowdesk — frameworks, data sources, icons, fonts, and hosting." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">

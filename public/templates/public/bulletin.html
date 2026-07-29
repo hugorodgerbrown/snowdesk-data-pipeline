@@ -31,44 +31,44 @@ reachable via the SNOW-81 deep-link in the masthead.
     {% endif %}
 {% endblock %}
 
-{% block meta_description %}
-    {% blocktrans with name=region_name %}Avalanche bulletin for
-        {{ name }}{% endblocktrans %}{% if page_date %},
-        {{ page_date|date:"j F Y" }}{% endif %}.
-{% endblock %}
-
-{% block title %}
-    {{ region_name }} &middot;
-    {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot; Snowdesk
-{% endblock %}
-
-{% block og_tags %}
-    {# Site-wide defaults (og:site_name, og:type, og:locale, og:image, #}
-    {# twitter:image, dimensions, twitter:card) come from base.html.    #}
-    {{ block.super }}
-    {# Bulletin-specific overrides (SNOW-218). #}
-    {% if panel.danger_key %}
-        <meta
-            property="og:title"
-            content="{{ region_name }} · {% if is_today %}{% trans 'Today' %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
-        >
-        {% if og_description %}
-            <meta property="og:description" content="{{ og_description }}">
-            <meta name="twitter:description" content="{{ og_description }}">
-        {% endif %}
-        {% if canonical_url %}
-            <meta property="og:url" content="{{ canonical_url }}">
-        {% endif %}
-        <meta
-            property="og:image:alt"
-            content="{% blocktrans with name=region_name %}Snowdesk avalanche bulletin for {{ name }}{% endblocktrans %}"
-        >
-        <meta
-            name="twitter:title"
-            content="{{ region_name }} · {% if is_today %}{% trans 'Today' %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
-        >
+{# SNOW-553. Two fixes over the previous og_tags override:                  #}
+{#                                                                          #}
+{# 1. Nothing here is guarded on panel.danger_key any more. That guard used #}
+{#    to wrap og:url along with the title, so a bulletin page for a date    #}
+{#    with no data lost its canonical share URL entirely — the one tag an   #}
+{#    empty-state page most needs, since it is what lets a platform dedupe  #}
+{#    the link against the populated version of the same page.              #}
+{#                                                                          #}
+{# 2. og:description and the description meta were two different strings.   #}
+{#    firstof collapses them: the danger-derived one-liner when there is a  #}
+{#    bulletin, the generic "Avalanche bulletin for X, date." when there is #}
+{#    not (_build_og_description returns "" for empty-state pages).         #}
+{#                                                                          #}
+{# The region-specific og:image:alt is gone with the override. The image is #}
+{# the generic site card, so naming a region in its alt text described      #}
+{# something the reader wasn't looking at; base.html's site-wide alt is     #}
+{# accurate. SNOW-556 (per-bulletin OG images) is where a per-region alt    #}
+{# becomes correct again.                                                   #}
+{% block page_meta %}
+    {% firstof page_date|date:"j F Y" as page_day %}
+    {% if is_today %}
+        {% blocktrans with name=region_name trimmed asvar page_title %}{{ name }} · Today ·
+            Snowdesk{% endblocktrans %}
+    {% else %}
+        {% blocktrans with name=region_name day=page_day trimmed asvar page_title %}{{ name }} · {{ day }} ·
+            Snowdesk{% endblocktrans %}
     {% endif %}
-{% endblock og_tags %}
+    {% if page_day %}
+        {% blocktrans with name=region_name day=page_day trimmed asvar generic_description %}Avalanche bulletin for
+            {{ name }},
+            {{ day }}.{% endblocktrans %}
+    {% else %}
+        {% blocktrans with name=region_name trimmed asvar generic_description %}Avalanche bulletin for
+            {{ name }}.{% endblocktrans %}
+    {% endif %}
+    {% firstof og_description generic_description as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description url=canonical_url %}
+{% endblock page_meta %}
 
 {% block extra_head %}
     {# Canonical form-3 URL (SNOW-99). Set on every render path, including #}

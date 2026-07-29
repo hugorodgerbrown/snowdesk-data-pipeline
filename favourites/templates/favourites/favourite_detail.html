@@ -32,18 +32,22 @@ Context expected (built by ``favourites.views._favourite_card_context``):
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% if favourite.name %}{{ favourite.name }}{% else %}{% trans "Saved location" %}{% endif %} &middot;
-    Snowdesk{% endblock %}
-
-{% block meta_description %}
+{# SNOW-553: sharing=False. This page belongs to one signed-in user, and #}
+{# the name they gave the pin is their own text about their own place — #}
+{# unfurling it into a card would republish that wherever the link was  #}
+{# pasted. The owner sees the title and description as normal.          #}
+{% block page_meta %}
     {% if favourite.name %}
-        {% blocktrans with name=favourite.name trimmed %}
+        {% blocktrans with name=favourite.name asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
+        {% blocktrans with name=favourite.name trimmed asvar page_description %}
             {{ name }} — your saved favourite pin, its point forecast, and the local avalanche bulletin.
         {% endblocktrans %}
     {% else %}
-        {% trans "Your saved favourite pin, its point forecast, and the local avalanche bulletin." %}
+        {% trans "Saved location · Snowdesk" as page_title %}
+        {% trans "Your saved favourite pin, its point forecast, and the local avalanche bulletin." as page_description %}
     {% endif %}
-{% endblock %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block content %}
     <main

@@ -16,11 +16,11 @@ Each sub-section follows the pattern:
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "How to read a bulletin" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem types, elevation and aspect, and how the day evolves." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "How to read a bulletin" as page_name %}
+    {% trans "A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem types, elevation and aspect, and how the day evolves." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">

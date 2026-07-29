@@ -9,9 +9,15 @@ scanners and GET-only account access). SNOW-439.
 {% endcomment %}
 {% load i18n %}
 
-{% block status_title %}{% trans "Access your account — Snowdesk" %}{% endblock %}
-
-{% block status_meta %}{% trans "Confirm to sign in to your Snowdesk account and manage your avalanche bulletin subscriptions." %}{% endblock %}
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Access your account — Snowdesk" as page_title %}
+    {% trans "Confirm to sign in to your Snowdesk account and manage your avalanche bulletin subscriptions." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block status_heading %}{% trans "Access your account" %}{% endblock %}
 

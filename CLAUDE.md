@@ -226,6 +226,15 @@ Full contract plus the command catalogue and flag reference:
 - Build with the watch command under "Running locally"; production builds add
   `--minify` instead of `--watch`.
 
+**Page metadata.** Every template extending `public/base.html` must override
+`{% block page_meta %}` with one
+`{% include "includes/_page_meta.html" with title=… description=… %}`. A page
+that should never produce a link-unfurl card passes `sharing=False` **and** a
+comment saying why. There is no third state, and no separate `title` /
+`meta_description` block — `tests/public/test_page_meta.py` walks every public
+URL and fails a page that is in neither state
+([why](docs/decisions/page-metadata-is-explicit-or-opted-out.md)).
+
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
 - Partial/fragment views return only the inner HTML snippet; they are routed under

@@ -16,11 +16,11 @@ documentation for a feature they cannot use.
 {% endcomment %}
 {% load i18n %}
 
-{% block title %}{% trans "Help" %} &middot; Snowdesk{% endblock %}
-
-{% block meta_description %}
-    {% trans "Plain-language guide to how Snowdesk works: the map, bulletins, weather, favourites, and more." %}
-{% endblock %}
+{% block page_meta %}
+    {% trans "Help" as page_name %}
+    {% trans "Plain-language guide to how Snowdesk works: the map, bulletins, weather, favourites, and more." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
 
 {% block content %}
     <main class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1">

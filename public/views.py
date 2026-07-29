@@ -2808,22 +2808,33 @@ def _build_day_windows(
 
 
 def _build_canonical_url(
-    request: HttpRequest,
     region: MicroRegion,
     target_date: datetime.date | None,
 ) -> str:
     """
     Build the absolute canonical URL for a region (and optional date).
 
-    Used by ``_bulletin_detail_response`` to populate the
-    ``<link rel="canonical">`` tag. ``target_date`` selects between the
-    two canonical families (SNOW-99): pass ``None`` for the form-2
-    "today" / evergreen URL ``/<region_id>/<slug>/``, or a ``date`` for
-    the form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers
-    to ``MicroRegion.get_absolute_url`` so the path components stay
+    Used by ``_bulletin_detail_response`` to populate both the
+    ``<link rel="canonical">`` tag and ``og:url``. ``target_date``
+    selects between the two canonical families (SNOW-99): pass ``None``
+    for the form-2 "today" / evergreen URL ``/<region_id>/<slug>/``, or a
+    ``date`` for the form-3 dated URL
+    ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers to
+    ``MicroRegion.get_absolute_url`` so the path components stay
     consistent with every other internal URL builder.
+
+    Built from ``settings.SITE_BASE_URL`` rather than
+    ``request.build_absolute_uri`` (SNOW-553). The latter self-canonicalises
+    to whatever ``Host`` header the requester arrived on — so a crawler
+    reaching the site by its ``*.onrender.com`` alias was told that alias
+    was the canonical URL, and ``og:url`` disagreed with ``og:image``,
+    which has always been origin-keyed. This matches the convention
+    ``serve_manifest``, ``serve_robots`` and ``serve_llms_txt`` already
+    use.
+
     """
-    return request.build_absolute_uri(region.get_absolute_url(target_date))
+    base = settings.SITE_BASE_URL.rstrip("/")
+    return f"{base}{region.get_absolute_url(target_date)}"
 
 
 def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
@@ -3339,7 +3350,6 @@ def _bulletin_detail_response(
     # for live / evergreen views, and the dated form (form 3) for
     # historical views. See SNOW-99.
     canonical_url = _build_canonical_url(
-        request,
         region,
         None if canonical_is_today else target_date,
     )
@@ -3951,7 +3961,7 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         gone["Cache-Control"] = "no-store"
         return gone
 
-    redirect_url = _build_canonical_url(request, share.region, share.target_date)
+    redirect_url = _build_canonical_url(share.region, share.target_date)
     redir = HttpResponseRedirect(redirect_url)
     redir["Cache-Control"] = "no-store"
     return redir

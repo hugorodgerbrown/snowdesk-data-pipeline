@@ -9,15 +9,21 @@ directly.
 
 Blocks
 ------
-title           : <title> contents. Default is SITE_NAME_DISPLAY (SNOW-399)
-                  — "Snowdesk" on production, "Snowdesk (Staging)" on
-                  the staging deploy.
-meta_description: <meta name="description"> content. Empty by default.
-og_tags         : OpenGraph / Twitter card meta tags. Default provides
-                  site-wide og:site_name, og:type, og:locale, og:image,
-                  twitter:image, og:image:width, og:image:height, and
-                  twitter:card.  Bulletin pages override with {{ block.super }}
-                  then add page-specific og:title, og:description, og:url.
+page_meta       : page identity — <title>, meta description, og:url, and
+                  the og:/twitter: title+description pair. Every page
+                  overrides this with a single
+                  {% include "includes/_page_meta.html" with title=… description=… %}.
+                  Pass sharing=False (with a comment saying why) for a
+                  page that should never produce a share card. There is
+                  no separate title / meta_description block: one emitter
+                  is the whole point, so that a page cannot half-set its
+                  metadata or omit it by accident (SNOW-553).
+og_tags         : OpenGraph / Twitter card constants that do not vary by
+                  page — og:site_name, og:type, og:locale, og:image and
+                  its dimensions and alt text, twitter:card,
+                  twitter:image, twitter:image:alt. Pages should not need
+                  to override this; per-page identity belongs in
+                  page_meta.
 favicon         : the <link rel="icon"> tag. Default points at the plain
                   favicon.svg; bulletin.html overrides with a level-tinted
                   variant matching the page's danger rating.
@@ -53,13 +59,16 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block favicon %}
             <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
         {% endblock %}
-        <meta name="description" content="{% block meta_description %}{% endblock %}">
-        {# SNOW-399: PWA_TITLE_SUFFIX rides outside the title block so       #}
-        {# child templates that override {% block title %} with page-       #}
-        {# specific copy still get "— Staging" appended in the browser tab. #}
-        <title>{% block title %}{{ SITE_NAME_DISPLAY }}{% endblock %}{{ PWA_TITLE_SUFFIX }}</title>
-        {# SNOW-218: OpenGraph / Twitter card defaults. Bulletin pages extend  #}
-        {# this block with {{ block.super }} then add page-specific tags.      #}
+        {# SNOW-553: page identity — <title>, description, og:url, and the    #}
+        {# og:/twitter: title+description pair — comes from one emitter, so  #}
+        {# a page can only omit it deliberately. Every child template        #}
+        {# overrides this block with a single include; the default below is  #}
+        {# a last-resort fallback, not something a real page should hit.     #}
+        {% block page_meta %}
+            {% include "includes/_page_meta.html" with title=SITE_NAME_DISPLAY description="" %}
+        {% endblock page_meta %}
+        {# SNOW-218: OpenGraph / Twitter card constants that don't vary by    #}
+        {# page. Per-page identity lives in the page_meta block above.        #}
         {# SNOW-399: og:site_name reflects SITE_NAME_DISPLAY so a shared       #}
         {# staging link previews as "Snowdesk (Staging)" and isn't mistaken    #}
         {# for a production URL.                                              #}
@@ -70,8 +79,16 @@ extra_js        : scripts loaded at end of <body>. Used by
             <meta property="og:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
             <meta property="og:image:width" content="1200">
             <meta property="og:image:height" content="630">
+            <meta
+                property="og:image:alt"
+                content="{% trans 'Snowdesk — avalanche bulletins across the Alps' %}"
+            >
             <meta name="twitter:card" content="summary_large_image">
             <meta name="twitter:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
+            <meta
+                name="twitter:image:alt"
+                content="{% trans 'Snowdesk — avalanche bulletins across the Alps' %}"
+            >
         {% endblock og_tags %}
         {# SNOW-79: PWA manifest + theme colour are linked site-wide so the   #}
         {# browser's install affordance is available from any public page,    #}

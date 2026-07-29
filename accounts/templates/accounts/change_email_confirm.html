@@ -8,9 +8,15 @@ no change: only the POST from this form swaps the account's email address
 {% endcomment %}
 {% load i18n %}
 
-{% block status_title %}{% trans "Confirm your new email — Snowdesk" %}{% endblock %}
-
-{% block status_meta %}{% trans "Confirm the new email address for your Snowdesk account." %}{% endblock %}
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Confirm your new email — Snowdesk" as page_title %}
+    {% trans "Confirm the new email address for your Snowdesk account." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block status_heading %}{% trans "Confirm your new email" %}{% endblock %}
 

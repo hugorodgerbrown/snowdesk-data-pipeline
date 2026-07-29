@@ -1,0 +1,69 @@
+{% load og_tags %}
+{% comment %}
+templates/includes/_page_meta.html — the one emitter for page-identifying
+head metadata (SNOW-553).
+
+Every page that extends public/base.html overrides {% block page_meta %}
+with a single {% include %} of this partial. Nothing else in the codebase
+emits <title>, meta description, og:title, og:description, og:url,
+twitter:title or twitter:description — so a page cannot omit them by
+accident, only on purpose and in writing.
+
+Before this existed, only the home and bulletin pages set the three tags
+that identify a page. The other nine unfurled in Slack, WhatsApp, X and
+LinkedIn as a generic, un-deduped card — the resort page worst of all,
+since SNOW-504 built it specifically to be shared.
+
+Parameters
+----------
+title        (required) Page title. Goes in <title> (with the staging
+             suffix appended) and, when sharing is on, og:title /
+             twitter:title (without it — the suffix is browser-tab
+             disambiguation, not part of the page's name).
+description  (required) One or two sentences. Goes in the description
+             meta and, when sharing is on, og:description /
+             twitter:description. Keep under ~155 characters so a search
+             result shows it whole.
+sharing      (optional, default True) Set False to emit the title and
+             description but no og:*/twitter:* page identity. Only for
+             pages that should never produce a share card — see below.
+url          (optional) Absolute URL for og:url. Defaults to
+             SITE_BASE_URL + the current request path. Pass an explicit
+             value when the page has a canonical URL that differs from
+             the URL being requested (bulletin.html passes canonical_url,
+             so today's bulletin shares as its evergreen URL rather than
+             its dated one).
+
+Both title and description are passed through |squish, so a multi-line
+block body reflowed by djangofmt cannot leak newlines and indentation
+into a content="…" attribute. Fixing it here means no future page can
+reintroduce that defect.
+
+Opting out
+----------
+sharing=False is the deliberate no-card path. Use it for pages that are
+private to one user, token-bearing, or staff-only — a share card for
+them is either meaningless or a small information leak. An opt-out MUST
+carry a comment saying why: silent omission is indistinguishable from an
+oversight, which is exactly how nine pages ended up with generic cards.
+
+og:url is emitted for opted-out pages too. It is the page's own identity,
+not a sharing affordance, and a page that declines a card still benefits
+from crawlers agreeing on which URL it is.
+
+Site-wide constants (og:site_name, og:type, og:locale, og:image and its
+dimensions, twitter:card) stay in base.html's {% block og_tags %} — they
+don't vary per page, so they don't belong in a per-page emitter.
+{% endcomment %}
+<title>{{ title|squish }}{{ PWA_TITLE_SUFFIX }}</title>
+<meta name="description" content="{{ description|squish }}">
+<meta property="og:url" content="{% if url %}{{ url }}{% else %}{{ SITE_BASE_URL }}{{ request.path }}{% endif %}">
+{# `is not False` rather than |default — an omitted `sharing` resolves to #}
+{# the empty string, which |default would treat the same as an explicit   #}
+{# sharing=False and silently strip the card from every page.             #}
+{% if sharing is not False %}
+    <meta property="og:title" content="{{ title|squish }}">
+    <meta property="og:description" content="{{ description|squish }}">
+    <meta name="twitter:title" content="{{ title|squish }}">
+    <meta name="twitter:description" content="{{ description|squish }}">
+{% endif %}

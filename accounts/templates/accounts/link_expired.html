@@ -8,9 +8,15 @@ visitor can request a fresh access link.
 {% endcomment %}
 {% load i18n components %}
 
-{% block status_title %}{% trans "Link expired — Snowdesk" %}{% endblock %}
-
-{% block status_meta %}{% trans "This account link has expired or is invalid. Request a new one to manage your Snowdesk subscriptions." %}{% endblock %}
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Link expired — Snowdesk" as page_title %}
+    {% trans "This account link has expired or is invalid. Request a new one to manage your Snowdesk subscriptions." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
 
 {% block status_heading %}{% trans "This link has expired" %}{% endblock %}
 
