@@ -57,10 +57,12 @@ beforeEach(() => {
     // Ignore.
   }
   window.location.hash = '';
+  history.replaceState(null, '', '/');
 });
 
 afterEach(() => {
   window.location.hash = '';
+  history.replaceState(null, '', '/');
 });
 
 describe('dismiss', () => {
@@ -152,6 +154,59 @@ describe('/#about hash restore', () => {
     window.dispatchEvent(new Event('hashchange'));
 
     expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+});
+
+describe('?intro=1 force-open parameter', () => {
+  it('reopens the overlay on load regardless of the persisted dismissed state', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=1');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+
+  it('accepts ?intro=true, case-insensitively', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=TRUE');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
+  });
+
+  it('ignores other values, so ?intro=0 leaves a dismissed overlay hidden', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    history.replaceState(null, '', '/?intro=0');
+    buildFixture();
+    await loadModules();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
+  });
+
+  it('is stripped on dismissal so a reload does not force the panel back open', async () => {
+    history.replaceState(null, '', '/?intro=1');
+    buildFixture();
+    await loadModules();
+
+    document.getElementById('home-intro-close').click();
+
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
+    expect(new URLSearchParams(location.search).has('intro')).toBe(false);
+  });
+
+  it('preserves other query parameters when stripping', async () => {
+    history.replaceState(null, '', '/?d=2026-01-15&intro=1&country=ch');
+    buildFixture();
+    await loadModules();
+
+    document.getElementById('home-intro-close').click();
+
+    const params = new URLSearchParams(location.search);
+    expect(params.has('intro')).toBe(false);
+    expect(params.get('d')).toBe('2026-01-15');
+    expect(params.get('country')).toBe('ch');
   });
 });
 
