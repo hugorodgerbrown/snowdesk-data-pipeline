@@ -13,6 +13,15 @@ Design notes
 * Middleware, not decorator — attaching to every state-changing endpoint
   by opt-in decoration is a footgun for new views. Middleware makes the
   guarantee global.
+* Reserve, then execute (SNOW-545). The key is claimed with an atomic
+  INSERT (or an atomic takeover of an expired row) *before*
+  ``get_response`` is called, and the reservation is promoted to a
+  cached response afterwards. Writing the row only after the view ran
+  left a read-then-write gap: two concurrent requests with the same key
+  both missed the lookup, both ran the mutation, and the loser's
+  ``IntegrityError`` was swallowed after its side effect had committed.
+  A request that fails to claim the key never reaches the view — it
+  either replays the cached response or gets a ``409``.
 * Only 1xx/2xx/3xx/4xx responses are cached. 5xx responses are treated
   as transient and left uncached so a retry re-executes the view.
 * Streaming responses are never cached — the body cannot be captured
@@ -43,10 +52,13 @@ import hashlib
 import logging
 from collections.abc import Callable
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
-from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
 from django.urls import Resolver404, resolve
+
+if TYPE_CHECKING:
+    from core.models import IdempotencyRecord as IdempotencyRecordType
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +95,7 @@ class IdempotencyMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        """Short-circuit on cache hit; otherwise run the view and store."""
+        """Reserve the key, then run the view; replay on a lost claim."""
         if request.method not in STATE_CHANGING_METHODS:
             return self.get_response(request)
 
@@ -115,83 +127,121 @@ class IdempotencyMiddleware:
 
         principal = _principal(request)
         body_hash = _body_hash(request)
+        ttl = timedelta(seconds=IDEMPOTENCY_RECORD_TTL_SECONDS)
 
-        cached = IdempotencyRecord.objects.get_live(key)
-        if cached is not None:
-            if not cached.matches_fingerprint(
-                method=request.method or "",
-                path=request.path,
+        reservation, claimed = IdempotencyRecord.objects.reserve(
+            key=key,
+            method=request.method or "",
+            path=request.path,
+            principal=principal,
+            body_hash=body_hash,
+            ttl=ttl,
+        )
+
+        if not claimed or reservation is None:
+            return self._resolve_lost_claim(
+                request,
+                key=key,
+                reservation=reservation,
                 principal=principal,
                 body_hash=body_hash,
-            ):
-                logger.warning(
-                    "pwa.idempotency.fingerprint_mismatch method=%s view=%s key=%s",
-                    request.method,
-                    _view_name(request),
-                    _redact_key(key),
-                )
-                return HttpResponse(status=409)
-
-            logger.info(
-                "pwa.idempotency.hit method=%s view=%s key=%s status=%d",
-                request.method,
-                _view_name(request),
-                _redact_key(key),
-                cached.response_status,
             )
-            # SNOW-381 (spec §16.2): observability dashboards need a
-            # PostHog-visible counter for cache-served replays so we can
-            # measure how often the queue drain retries the same key.
-            # Deferred import — analytics.signals pulls in the analytics
-            # app which shouldn't load at middleware-import time.
-            from analytics.signals import emit_server_signal  # noqa: PLC0415
-
-            emit_server_signal(
-                "pwa.idempotency.replay",
-                {
-                    "view": _view_name(request),
-                    "status": cached.response_status,
-                    # SNOW-384: client_version threaded from the
-                    # X-Client-Version request header, same convention as
-                    # every other server-side signal. Client sends this
-                    # header via static/js/pwa_client_version.js (SNOW-388).
-                    "client_version": request.headers.get("X-Client-Version", ""),
-                },
-            )
-            return cached.build_response()
-
-        response = self.get_response(request)
-
-        if not _is_cacheable(response):
-            return response
 
         try:
-            # A savepoint isolates the INSERT so a unique-key collision
-            # (concurrent duplicate request) doesn't poison the outer
-            # request-level transaction. Without this, a raced IntegrityError
-            # would leave the transaction in an aborted state and every
-            # subsequent query in this request would fail.
-            with transaction.atomic():
-                IdempotencyRecord.objects.record(
-                    key=key,
-                    method=request.method or "",
-                    path=request.path,
-                    principal=principal,
-                    body_hash=body_hash,
-                    response=response,
-                    ttl=timedelta(seconds=IDEMPOTENCY_RECORD_TTL_SECONDS),
-                )
-        except IntegrityError:
-            # A concurrent request stored the same key first; the cached
-            # response is authoritative — we don't need to overwrite it.
-            logger.info(
-                "pwa.idempotency.race method=%s view=%s key=%s",
+            response = self.get_response(request)
+        except Exception:
+            # The view blew up, so there is no response worth caching and
+            # the mutation may not have committed. Drop the reservation
+            # rather than holding the key hostage for the full window.
+            reservation.release()
+            raise
+
+        if not _is_cacheable(response):
+            reservation.release()
+            return response
+
+        reservation.complete(response=response, ttl=ttl)
+        return response
+
+    def _resolve_lost_claim(
+        self,
+        request: HttpRequest,
+        *,
+        key: str,
+        reservation: IdempotencyRecordType | None,
+        principal: str,
+        body_hash: str,
+    ) -> HttpResponse:
+        """Return the response for a request that failed to claim ``key``.
+
+        Called when another request already owns the key. A ``COMPLETED``
+        row replays verbatim (after the SNOW-463 fingerprint check); a
+        ``RESERVED`` row means the original request is still in the view,
+        so there is nothing to replay yet and the caller gets a ``409``
+        to retry with. Either way this request never reaches the view —
+        that is the whole point of reserving first.
+        """
+        if reservation is None:
+            # reserve() exhausted its attempts. Failing closed risks a
+            # spurious 409; running the view risks a duplicate mutation.
+            logger.warning(
+                "pwa.idempotency.unclaimable method=%s view=%s key=%s",
                 request.method,
                 _view_name(request),
                 _redact_key(key),
             )
+            return HttpResponse(status=409)
 
-        return response
+        if not reservation.matches_fingerprint(
+            method=request.method or "",
+            path=request.path,
+            principal=principal,
+            body_hash=body_hash,
+        ):
+            logger.warning(
+                "pwa.idempotency.fingerprint_mismatch method=%s view=%s key=%s",
+                request.method,
+                _view_name(request),
+                _redact_key(key),
+            )
+            return HttpResponse(status=409)
+
+        if not reservation.is_completed():
+            logger.info(
+                "pwa.idempotency.in_flight method=%s view=%s key=%s",
+                request.method,
+                _view_name(request),
+                _redact_key(key),
+            )
+            return HttpResponse(status=409)
+
+        logger.info(
+            "pwa.idempotency.hit method=%s view=%s key=%s status=%d",
+            request.method,
+            _view_name(request),
+            _redact_key(key),
+            reservation.response_status,
+        )
+        # SNOW-381 (spec §16.2): observability dashboards need a
+        # PostHog-visible counter for cache-served replays so we can
+        # measure how often the queue drain retries the same key.
+        # Deferred import — analytics.signals pulls in the analytics
+        # app which shouldn't load at middleware-import time.
+        from analytics.signals import emit_server_signal  # noqa: PLC0415
+
+        emit_server_signal(
+            "pwa.idempotency.replay",
+            {
+                "view": _view_name(request),
+                "status": reservation.response_status,
+                # SNOW-384: client_version threaded from the
+                # X-Client-Version request header, same convention as
+                # every other server-side signal. Client sends this
+                # header via static/js/pwa_client_version.js (SNOW-388).
+                "client_version": request.headers.get("X-Client-Version", ""),
+            },
+        )
+        return reservation.build_response()
 
 
 def _is_well_formed_key(key: str) -> bool:

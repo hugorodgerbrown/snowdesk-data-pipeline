@@ -703,29 +703,35 @@ def fetch_weather_for_point(
         return []
 
     results: list[tuple[ForecastPointWeather, bool]] = []
-    for idx in range(num_days):
-        day = dates[idx]
-        defaults = _build_point_defaults(daily, idx)
-        defaults["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
-        defaults["hourly_series"] = (
-            _hourly_rows_for_day(hourly, day)
-            if hourly and idx < POINT_HOURLY_DAYS
-            else None
-        )
-        weather, created = ForecastPointWeather.objects.update_or_create(
-            forecast_point=point,
-            valid_for_date=day,
-            defaults=defaults,
-        )
-        action = "Created" if created else "Updated"
-        logger.debug(
-            "%s ForecastPointWeather: point=%s date=%s code=%d",
-            action,
-            point.pk,
-            day,
-            defaults["weather_code"],
-        )
-        results.append((weather, created))
+    # One transaction for the whole window so a mid-loop failure can't commit
+    # a partial date range (SNOW-546, same idiom as the archive path above).
+    # _build_point_defaults parses sunrise/sunset inside this loop, so a single
+    # malformed timestamp on day 4 of 7 would otherwise leave days 0-3 written
+    # and days 4-6 missing, while fetch_all_points counted the point as failed.
+    with transaction.atomic():
+        for idx in range(num_days):
+            day = dates[idx]
+            defaults = _build_point_defaults(daily, idx)
+            defaults["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
+            defaults["hourly_series"] = (
+                _hourly_rows_for_day(hourly, day)
+                if hourly and idx < POINT_HOURLY_DAYS
+                else None
+            )
+            weather, created = ForecastPointWeather.objects.update_or_create(
+                forecast_point=point,
+                valid_for_date=day,
+                defaults=defaults,
+            )
+            action = "Created" if created else "Updated"
+            logger.debug(
+                "%s ForecastPointWeather: point=%s date=%s code=%d",
+                action,
+                point.pk,
+                day,
+                defaults["weather_code"],
+            )
+            results.append((weather, created))
 
     return results
 

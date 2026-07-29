@@ -70,11 +70,12 @@ class IdempotencyRecordAdmin(admin.ModelAdmin):
         "id",
         "method",
         "path",
+        "status",
         "response_status",
         "expires_at",
         "created_at",
     ]
-    list_filter = ["method", "response_status"]
+    list_filter = ["status", "method", "response_status"]
     search_fields = ["key", "path"]
     ordering = ["-created_at"]
     readonly_fields = [
@@ -82,6 +83,7 @@ class IdempotencyRecordAdmin(admin.ModelAdmin):
         "key",
         "method",
         "path",
+        "status",
         "response_status",
         "response_content_type",
         "response_body",

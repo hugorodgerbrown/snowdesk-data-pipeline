@@ -310,7 +310,7 @@ try {
 // zoom, which is what a mouse-driven desktop tool wants. Shell JS bytes
 // changed (map_edit_resorts.js); the panel template itself is not part of
 // the cached shell.
-const CACHE_VERSION = 'snowdesk-shell-v72';
+const CACHE_VERSION = 'snowdesk-shell-v73';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

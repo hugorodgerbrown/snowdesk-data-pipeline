@@ -9,12 +9,16 @@ major-region scoping for ``get_regional_snapshot``, SNOW-408).
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.core.cache import cache
+from django.db.models import Max
+from django.utils import timezone
 
 from mcp_server import resolvers
+from regions.models import RegionAlias, Resort
 from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
@@ -456,3 +460,74 @@ def test_regions_for_scope_prefetches_major_region(
         result = resolvers.regions_for_scope("CH", None)
         for region in result:
             assert region.subregion.major.country == "CH"
+
+
+# ---------------------------------------------------------------------------
+# Candidate-pool invalidation on delete (SNOW-552)
+# ---------------------------------------------------------------------------
+
+
+# Backdating below uses a queryset ``update()`` rather than ``save()`` so
+# ``auto_now`` doesn't immediately undo it — the row becomes genuinely older
+# than its siblings rather than merely appearing so.
+_YESTERDAY = timedelta(days=1)
+
+
+@pytest.mark.django_db
+def test_deleting_a_non_newest_alias_invalidates_the_pool(
+    alpine_fixture: dict,
+) -> None:
+    """SNOW-552: a delete that doesn't move max(updated_at) still busts the key.
+
+    The fingerprint used to be ``Max("updated_at")`` alone, so deleting a
+    row that was not the newest left the aggregate — and the cache key —
+    identical, and the stale pre-deletion pool kept being served for up to
+    ``_POOL_TTL`` (one hour). The row count closes that gap.
+    """
+    region = alpine_fixture["bas_valais"]
+    stale = RegionAliasFactory.create(region=region, alias_text="Sitten")
+    RegionAlias.objects.filter(pk=stale.pk).update(
+        updated_at=timezone.now() - _YESTERDAY
+    )
+    RegionAliasFactory.create(region=region, alias_text="Coire")
+
+    key_before = resolvers._pool_cache_key()
+    newest_before = RegionAlias.objects.aggregate(latest=Max("updated_at"))["latest"]
+    assert resolvers.search_places("Sitten"), "precondition: the alias is findable"
+
+    stale.delete()
+
+    # The bug this covers only exists because the timestamp doesn't move.
+    newest_after = RegionAlias.objects.aggregate(latest=Max("updated_at"))["latest"]
+    assert newest_after == newest_before, "test no longer targets the reported bug"
+
+    assert resolvers._pool_cache_key() != key_before
+    assert resolvers.search_places("Sitten") == []
+
+
+@pytest.mark.django_db
+def test_deleting_a_non_newest_resort_invalidates_the_pool(
+    alpine_fixture: dict,
+) -> None:
+    """The same guarantee for the Resort table."""
+    region = alpine_fixture["bas_valais"]
+    stale = ResortFactory.create(name="Sinnladen", region=region)
+    Resort.objects.filter(pk=stale.pk).update(updated_at=timezone.now() - _YESTERDAY)
+    ResortFactory.create(name="Zweitladen", region=region)
+
+    key_before = resolvers._pool_cache_key()
+    assert resolvers.search_places("Sinnladen"), "precondition: the resort is findable"
+
+    stale.delete()
+
+    assert resolvers._pool_cache_key() != key_before
+    assert resolvers.search_places("Sinnladen") == []
+
+
+@pytest.mark.django_db
+def test_pool_cache_key_is_stable_when_nothing_changes(
+    alpine_fixture: dict,
+) -> None:
+    """The key must only move on real change — otherwise the cache is useless."""
+    RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
+    assert resolvers._pool_cache_key() == resolvers._pool_cache_key()

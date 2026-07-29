@@ -99,6 +99,8 @@ def test_offline_favourites_cache_never_leaks_across_account_switch(
         account_a = AccountFactory.create()
         FavouriteFactory.create(user=account_a.user, name="A's Peak")
         account_b = AccountFactory.create()
+        # SNOW-549: the principal is Account.uuid, not the auth.User PK.
+        principal_a = str(account_a.uuid)
 
     _session_login(page.context, live_server.url, account_a.user)
     _navigate_home_with_sw_stripped(page, live_server.url)
@@ -107,7 +109,7 @@ def test_offline_favourites_cache_never_leaks_across_account_switch(
         page,
         "async () => window.pwaDb.get('data:map_overlays', 'favourites')",
     )
-    assert row["principal"] == str(account_a.user.pk), row
+    assert row["principal"] == principal_a, row
 
     # User B signs in on the same browser context and their own favourites
     # fetch is forced to fail, driving ensureOverlayLoaded into the

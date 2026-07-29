@@ -2336,7 +2336,7 @@ class TestAnalyticsSubscriptionConfirmed:
             if c.args[0] == "subscription_confirmed"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(account.user_id)
+        assert calls[0].args[1] == str(account.uuid)
         props = calls[0].args[2]
         assert "hours_since_started" in props
 
@@ -2377,7 +2377,7 @@ class TestAnalyticsSubscriptionConfirmed:
         with patch("accounts.views.analytics.alias") as mock_alias:
             client.post(reverse("accounts:account", kwargs={"token": token}))
         mock_alias.assert_called_once_with(
-            distinct_id=str(account.user_id),
+            distinct_id=str(account.uuid),
             alias_id="anon-uuid-111",
         )
 
@@ -2501,13 +2501,13 @@ class TestAnalyticsUnsubscribed:
 
     def test_fires_in_delete_account(self) -> None:
         account = AccountFactory.create()
-        pk = str(account.user_id)
+        distinct_id = str(account.uuid)
         client = _make_session_client(account)
         with patch("accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:delete_account"), **_HTMX_HEADERS)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
         assert len(calls) == 1
-        assert calls[0].args[1] == pk
+        assert calls[0].args[1] == distinct_id
         props = calls[0].args[2]
         assert props["reason"] == "account_deleted"
         assert "account_age_days" in props
@@ -2516,14 +2516,14 @@ class TestAnalyticsUnsubscribed:
         account = AccountFactory.create()
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(account=account, region=region)
-        pk = str(account.user_id)
+        distinct_id = str(account.uuid)
         token = generate_unsubscribe_token(account.user.email, region.region_id)
         client = Client()
         with patch("accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
         calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
         assert len(calls) == 1
-        assert calls[0].args[1] == pk
+        assert calls[0].args[1] == distinct_id
         props = calls[0].args[2]
         assert props["reason"] == "unsubscribe_link"
         assert "account_age_days" in props
@@ -2551,7 +2551,7 @@ class TestAnalyticsSignInRequested:
             c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(account.user_id)
+        assert calls[0].args[1] == str(account.uuid)
 
     def test_fires_for_unknown_email_after_account_created(self) -> None:
         """POST with a fresh email creates an Account and fires sign_in_requested with the new PK."""
@@ -2566,7 +2566,7 @@ class TestAnalyticsSignInRequested:
             c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(new_account.user_id)
+        assert calls[0].args[1] == str(new_account.uuid)
 
     def test_does_not_fire_on_invalid_email(self) -> None:
         """POST with an invalid email re-renders the form and does not fire the event."""

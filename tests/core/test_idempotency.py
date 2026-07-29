@@ -19,6 +19,16 @@ And the SNOW-463 fingerprint contract:
 * Same key, different path/body/principal → ``409``, view not re-run,
   cached row untouched.
 * Same key, identical method/path/principal/body → cache hit as before.
+
+And the SNOW-545 reservation contract:
+
+* A duplicate arriving while the first request is still inside the view
+  never reaches the view; it gets a ``409`` and replays once the winner
+  completes.
+* A view that raises releases the key instead of holding it for the
+  whole retention window.
+* An expired row is *reclaimed* — renewed and overwritten — rather than
+  colliding forever with a blind insert.
 """
 
 from __future__ import annotations
@@ -119,21 +129,44 @@ def test_different_keys_execute_separately() -> None:
 
 
 @pytest.mark.django_db
-def test_expired_record_re_executes_view() -> None:
-    """Once the retention window elapses, a replay re-invokes the view."""
-    view = _CountingView()
+def test_expired_record_is_reclaimed_not_starved() -> None:
+    """A post-TTL replay takes the expired row over rather than colliding.
+
+    SNOW-545: ``record()`` used to ``create()`` blindly, so the INSERT
+    collided with the still-present expired row and the IntegrityError
+    was swallowed. The expired row was never replaced, so *every*
+    subsequent replay re-executed the view indefinitely. The reservation
+    path must instead reclaim the row — renewing ``expires_at`` and
+    replacing the cached response — so the window closes again.
+    """
+    view = _CountingView(status=201, body=b"created")
     middleware = IdempotencyMiddleware(view)
 
     middleware(_post(key="expiring"))
     assert view.calls == 1
+    original = IdempotencyRecord.objects.get(key="expiring")
 
     # Fast-forward the row into the past.
     IdempotencyRecord.objects.filter(key="expiring").update(
         expires_at=timezone.now() - timedelta(minutes=1),
     )
 
+    view.body = b"recreated"
     middleware(_post(key="expiring"))
     assert view.calls == 2
+
+    reclaimed = IdempotencyRecord.objects.get(key="expiring")
+    assert IdempotencyRecord.objects.filter(key="expiring").count() == 1
+    assert reclaimed.pk == original.pk
+    assert reclaimed.status == IdempotencyRecord.STATUS.COMPLETED
+    assert reclaimed.expires_at > timezone.now()
+    assert bytes(reclaimed.response_body) == b"recreated"
+
+    # A third replay inside the *renewed* window hits the cache. Before
+    # SNOW-545 this re-ran the view for the rest of time.
+    third = middleware(_post(key="expiring"))
+    assert view.calls == 2
+    assert third.content == b"recreated"
 
 
 @pytest.mark.django_db
@@ -228,38 +261,153 @@ def test_ttl_matches_setting() -> None:
     assert expected_min <= record.expires_at <= expected_max
 
 
+# ---------------------------------------------------------------------------
+# Reservation tests (SNOW-545) — the key is claimed before the view runs, so a
+# duplicate request arriving mid-flight cannot reach the mutation at all.
+# ---------------------------------------------------------------------------
+
+
+class _ReentrantView:
+    """View that replays its own request through the middleware mid-flight.
+
+    This is the deterministic stand-in for two concurrent requests: the
+    inner call happens *while* the outer one is inside the view, which is
+    precisely the window the pre-SNOW-545 read-then-write gap left open.
+    Threads would exercise the same code path non-deterministically and
+    against SQLite's connection-per-thread semantics.
+    """
+
+    def __init__(self, key: str) -> None:
+        """Record the key to re-request; initialise counters and capture."""
+        self.key = key
+        self.calls = 0
+        self.middleware: IdempotencyMiddleware | None = None
+        self.inner_response: HttpResponse | None = None
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Count the call, fire a duplicate on the first pass, respond 201."""
+        self.calls += 1
+        if self.calls == 1 and self.middleware is not None:
+            self.inner_response = self.middleware(_post(key=self.key))
+        return HttpResponse(content=b"created", status=201, content_type="text/plain")
+
+
 @pytest.mark.django_db
-def test_concurrent_race_swallows_integrity_error() -> None:
-    """A concurrent duplicate insert is logged and does not propagate."""
+def test_duplicate_request_mid_flight_never_reaches_the_view() -> None:
+    """A second request with the same key cannot run the mutation.
+
+    The pre-SNOW-545 middleware read the cache, ran the view, then wrote;
+    two requests in that gap both invoked the view and both created a
+    side effect, with the loser's IntegrityError swallowed *after* its
+    write had committed. Reserving first means the loser is turned away
+    before ``get_response`` is ever called.
+
+    The in-flight loser gets a ``409`` rather than the response — there
+    is nothing cached to serve yet — and a retry after the winner
+    finishes replays the winner's response verbatim.
+    """
+    view = _ReentrantView(key="racy")
+    middleware = IdempotencyMiddleware(view)
+    view.middleware = middleware
+
+    outer = middleware(_post(key="racy"))
+
+    assert view.calls == 1, "the duplicate request reached the view"
+    assert outer.status_code == 201
+    assert view.inner_response is not None
+    assert view.inner_response.status_code == 409
+    assert IdempotencyRecord.objects.filter(key="racy").count() == 1
+
+    # Once the winner has completed, a retry replays its response.
+    retry = middleware(_post(key="racy"))
+    assert view.calls == 1
+    assert retry.status_code == outer.status_code == 201
+    assert retry.content == outer.content == b"created"
+
+
+@pytest.mark.django_db
+def test_view_exception_releases_the_reservation() -> None:
+    """A view that raises must not hold the key for the whole window."""
+
+    def _boom(request: HttpRequest) -> HttpResponse:
+        raise RuntimeError("view exploded")
+
+    middleware = IdempotencyMiddleware(_boom)
+
+    with pytest.raises(RuntimeError):
+        middleware(_post(key="explodes"))
+
+    assert IdempotencyRecord.objects.filter(key="explodes").count() == 0
+
+    # The key is immediately reusable.
+    view = _CountingView()
+    assert IdempotencyMiddleware(view)(_post(key="explodes")).status_code == 200
+    assert view.calls == 1
+
+
+def _reserve(key: str) -> tuple[IdempotencyRecord | None, bool]:
+    """Claim ``key`` with a fixed fingerprint, as the middleware would."""
+    return IdempotencyRecord.objects.reserve(
+        key=key,
+        method="POST",
+        path="/account/",
+        principal="",
+        body_hash="abc",
+        ttl=timedelta(hours=24),
+    )
+
+
+@pytest.mark.django_db
+def test_reserve_claims_once_for_a_fresh_key() -> None:
+    """Only the first ``reserve()`` for a live key wins the claim."""
+    first, first_claimed = _reserve("claim-once")
+    second, second_claimed = _reserve("claim-once")
+
+    assert first_claimed is True
+    assert second_claimed is False
+    assert first is not None
+    assert second is not None
+    assert second.pk == first.pk
+    assert second.status == IdempotencyRecord.STATUS.RESERVED
+    assert IdempotencyRecord.objects.filter(key="claim-once").count() == 1
+
+
+@pytest.mark.django_db
+def test_reserve_of_an_expired_row_is_exclusive() -> None:
+    """Two claimants of the same expired row: exactly one takes it over."""
+    record, _ = _reserve("expired-claim")
+    assert record is not None
+    IdempotencyRecord.objects.filter(pk=record.pk).update(
+        expires_at=timezone.now() - timedelta(minutes=1),
+    )
+
+    _, first_claimed = _reserve("expired-claim")
+    _, second_claimed = _reserve("expired-claim")
+
+    assert first_claimed is True
+    assert second_claimed is False
+
+
+@pytest.mark.django_db
+def test_unclaimable_key_returns_409_without_running_the_view() -> None:
+    """Reserve exhaustion fails closed rather than risking a duplicate.
+
+    ``reserve()`` returns ``(None, False)`` only if a competitor keeps
+    releasing the row between the collision and the read-back. Whatever
+    is going on, running the view would risk the exact double-execution
+    the reservation exists to prevent.
+    """
     view = _CountingView()
     middleware = IdempotencyMiddleware(view)
 
-    # Seed a live row so the record() call inside the middleware collides.
-    # principal/body_hash are left at their "" defaults — get_live is patched
-    # to return None below, so the fingerprint comparison is never reached and
-    # the seeded values are irrelevant to what this test exercises.
-    IdempotencyRecord.objects.create(
-        key="racy",
-        method="POST",
-        path="/",
-        response_status=200,
-        response_body=b"first",
-        response_content_type="text/plain",
-        expires_at=timezone.now() + timedelta(hours=24),
-    )
-
-    # Force get_live() to return None so the middleware attempts to record
-    # a second row, colliding on the unique key.
     with patch(
-        "core.models.IdempotencyRecordManager.get_live",
-        return_value=None,
+        "core.models.IdempotencyRecordManager.reserve",
+        return_value=(None, False),
     ):
-        response = middleware(_post(key="racy"))
+        response = middleware(_post(key="unclaimable"))
 
-    # View runs, response is returned, but no second row is written.
-    assert view.calls == 1
-    assert response.status_code == 200
-    assert IdempotencyRecord.objects.filter(key="racy").count() == 1
+    assert view.calls == 0
+    assert response.status_code == 409
 
 
 # ---------------------------------------------------------------------------

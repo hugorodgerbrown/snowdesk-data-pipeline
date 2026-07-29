@@ -32,3 +32,36 @@ def client_ip(request: HttpRequest) -> str:
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return str(request.META.get("REMOTE_ADDR", "") or "")
+
+
+# Sec-Purpose values that mark a request the browser made speculatively, on
+# the user's behalf but without their intent. The header is structured
+# ("prefetch;anonymous-client-ip"), so match on substring rather than
+# equality.
+_SPECULATIVE_PURPOSES: tuple[str, ...] = ("prefetch", "prerender")
+
+
+def is_speculative(request: HttpRequest) -> bool:
+    """Return True when the request is a prefetch, prerender, or HEAD.
+
+    None of these represent a person choosing to visit: a browser, crawler,
+    or link scanner made them ahead of (or instead of) a real navigation.
+    Endpoints that record analytics on arrival use this to skip the write
+    while still answering normally — counting a prefetch as a click inflates
+    the metric and lets a scanner grow the table without bound.
+
+    ``RequestLog.objects.capture()`` stores the raw ``Sec-Purpose`` header
+    for the requests it does log; this reads the same header to decide
+    whether to log at all.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        True when the request should not be recorded as a real visit.
+
+    """
+    if (request.method or "").upper() == "HEAD":
+        return True
+    purpose = request.headers.get("Sec-Purpose", "").lower()
+    return any(token in purpose for token in _SPECULATIVE_PURPOSES)

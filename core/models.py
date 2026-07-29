@@ -16,7 +16,8 @@ Also provides:
   ``core.idempotency.IdempotencyMiddleware`` (SNOW-371). One row per
   ``Idempotency-Key`` seen on a state-changing request, storing the
   original response so a replay within the 24h retention window
-  returns the same result without re-invoking the view.
+  returns the same result without re-invoking the view. The row is
+  written *before* the view runs (SNOW-545) — see ``reserve()``.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import uuid
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -34,6 +35,13 @@ if TYPE_CHECKING:
     from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
+
+# How many times ``IdempotencyRecordManager.reserve()`` retries when the
+# row it collided with is deleted before it can be read back. Each retry
+# needs a competing request to release its reservation in the same
+# microsecond window, so anything above a couple of attempts is a
+# runaway guard rather than a realistic path.
+_RESERVE_ATTEMPTS: int = 3
 
 
 class BaseModel(models.Model):
@@ -325,9 +333,17 @@ class IdempotencyRecordQuerySet(models.QuerySet["IdempotencyRecord"]):
         """Return only records whose retention window has not expired."""
         return self.filter(expires_at__gt=timezone.now())
 
+    def completed(self) -> "IdempotencyRecordQuerySet":
+        """Return only records holding a captured response."""
+        return self.filter(status=IdempotencyRecord.STATUS.COMPLETED)
+
+    def reserved(self) -> "IdempotencyRecordQuerySet":
+        """Return only in-flight reservations with no response yet."""
+        return self.filter(status=IdempotencyRecord.STATUS.RESERVED)
+
 
 class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
-    """Manager for IdempotencyRecord with the ``record()`` factory."""
+    """Manager for IdempotencyRecord with the ``reserve()`` primitive."""
 
     def get_queryset(self) -> IdempotencyRecordQuerySet:
         """Return the custom queryset."""
@@ -341,15 +357,16 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
         """Return the unexpired record for ``key`` or None if missing.
 
         A single indexed lookup — ``key`` is unique so ``get()`` is safe.
-        Callers use the return value to short-circuit and replay the
-        original response.
+        The row may be either ``RESERVED`` (a concurrent request is
+        running the view right now) or ``COMPLETED`` (a response is
+        cached and replayable); callers must check ``status``.
         """
         try:
             return self.live().get(key=key)
         except self.model.DoesNotExist:
             return None
 
-    def record(
+    def reserve(
         self,
         *,
         key: str,
@@ -357,56 +374,123 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
         path: str,
         principal: str,
         body_hash: str,
-        response: HttpResponse,
         ttl: timedelta,
-    ) -> "IdempotencyRecord":
-        """Persist a fresh record capturing the completed response.
+    ) -> tuple["IdempotencyRecord | None", bool]:
+        """Claim ``key`` for execution, or report who already holds it.
+
+        The at-most-once guarantee depends on this claim happening
+        *before* the view runs (SNOW-545). Three cases are handled as one
+        atomic operation so there is no read-then-write gap:
+
+        * **Fresh key** — an ``INSERT`` succeeds and the caller owns the
+          reservation.
+        * **Expired key** — a conditional ``UPDATE ... WHERE expires_at
+          <= now`` takes the row over, resetting the fingerprint,
+          clearing the stale response, and renewing ``expires_at``. Only
+          one of several concurrent claimants can win: the losers
+          re-evaluate the predicate against the already-renewed row and
+          match zero rows.
+        * **Live key** — somebody else owns it. The existing row is
+          returned unchanged.
 
         Args:
             key: The Idempotency-Key header value from the request.
             method: HTTP method (POST/PATCH/PUT/DELETE).
             path: Request path — used both diagnostically and as part of
                 the replay fingerprint (see ``matches_fingerprint``).
-            principal: ``str(request.user.pk)`` for an authenticated
-                requester, or ``""`` for anonymous.
+            principal: server-derived identity of the requester, or
+                ``""`` for anonymous.
             body_hash: sha256 hex digest of the raw request body.
-            response: The completed response to cache. Non-streaming
-                only; the middleware filters streaming responses out
-                upstream.
-            ttl: Retention window. The row is queryable via ``live()``
-                until ``created_at + ttl`` passes.
+            ttl: Retention window applied to the reservation.
 
         Returns:
-            The newly created row.
+            ``(record, claimed)``. When ``claimed`` is True the caller
+            owns the reservation and must finish it with ``complete()``
+            or drop it with ``release()``. When False, ``record`` is the
+            row held by whoever got there first — or ``None`` in the
+            pathological case where a competing request kept releasing
+            the row out from under every attempt, which the caller must
+            treat as a failed claim rather than permission to run.
 
         """
-        body: bytes = bytes(response.content)
-        content_type: str = str(response.get("Content-Type", ""))
-        return self.create(
-            key=key,
-            method=method,
-            path=path[:2048],
-            principal=principal,
-            body_hash=body_hash,
-            response_status=response.status_code,
-            response_body=body,
-            response_content_type=content_type[:255],
-            expires_at=timezone.now() + ttl,
+        defaults = {
+            "method": method,
+            "path": path[:2048],
+            "principal": principal,
+            "body_hash": body_hash,
+        }
+
+        for _ in range(_RESERVE_ATTEMPTS):
+            now = timezone.now()
+
+            # A savepoint isolates the INSERT so a unique-key collision
+            # with a concurrent duplicate request doesn't poison the outer
+            # request-level transaction.
+            try:
+                with transaction.atomic(using=self._db):
+                    return (
+                        self.create(
+                            key=key,
+                            status=self.model.STATUS.RESERVED,
+                            response_status=None,
+                            response_body=b"",
+                            response_content_type="",
+                            expires_at=now + ttl,
+                            **defaults,
+                        ),
+                        True,
+                    )
+            except IntegrityError:
+                pass
+
+            claimed = self.filter(key=key, expires_at__lte=now).update(
+                status=self.model.STATUS.RESERVED,
+                response_status=None,
+                response_body=b"",
+                response_content_type="",
+                expires_at=now + ttl,
+                updated_at=now,
+                **defaults,
+            )
+
+            try:
+                return self.get(key=key), bool(claimed)
+            except self.model.DoesNotExist:
+                # The holder released its reservation (5xx, streaming, or
+                # an exception) between our INSERT collision and this
+                # read. The key is free again — retry the INSERT.
+                continue
+
+        logger.warning(
+            "pwa.idempotency.reserve_exhausted attempts=%d", _RESERVE_ATTEMPTS
         )
+        return None, False
 
 
 class IdempotencyRecord(BaseModel):
     """One cached response per ``Idempotency-Key`` value.
 
-    Populated by ``core.idempotency.IdempotencyMiddleware`` when a
-    state-changing request completes with a non-5xx response. A replay
-    of the same key within the retention window is served verbatim from
-    this row without re-invoking the view — so the PWA mutation queue
-    can retry after a connectivity blip without duplicating side effects.
+    Written by ``core.idempotency.IdempotencyMiddleware`` in two steps
+    (SNOW-545): a ``RESERVED`` row is claimed *before* the view runs, and
+    is promoted to ``COMPLETED`` once a cacheable response comes back. A
+    replay of the same key within the retention window is served verbatim
+    from a ``COMPLETED`` row without re-invoking the view — so the PWA
+    mutation queue can retry after a connectivity blip without
+    duplicating side effects.
+
+    Reserving first is what makes the at-most-once guarantee hold under
+    concurrency: a second request arriving while the first is still in
+    the view cannot claim the key, so it never reaches the mutation.
 
     Rows are queryable via ``objects.live()``; expired rows are
     intentionally left in place for now — a purge job is a follow-up.
     """
+
+    class STATUS(models.TextChoices):
+        """Lifecycle of a reservation."""
+
+        RESERVED = "RESERVED", "Reserved"
+        COMPLETED = "COMPLETED", "Completed"
 
     key = models.CharField(
         max_length=128,
@@ -449,8 +533,25 @@ class IdempotencyRecord(BaseModel):
             "the replay fingerprint."
         ),
     )
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS.choices,
+        default=STATUS.RESERVED,
+        db_index=True,
+        help_text=(
+            "RESERVED while the view is executing, COMPLETED once a "
+            "cacheable response has been captured. Only COMPLETED rows "
+            "are replayable."
+        ),
+    )
     response_status = models.PositiveSmallIntegerField(
-        help_text="HTTP status code of the cached response.",
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "HTTP status code of the cached response, or NULL while the "
+            "row is still a RESERVED placeholder."
+        ),
     )
     response_body = models.BinaryField(
         default=b"",
@@ -493,6 +594,54 @@ class IdempotencyRecord(BaseModel):
         """Return True when the record has not yet expired."""
         return self.expires_at > timezone.now()
 
+    def is_completed(self) -> bool:
+        """Return True when a response has been captured and is replayable."""
+        return self.status == self.STATUS.COMPLETED
+
+    def complete(self, *, response: HttpResponse, ttl: timedelta) -> None:
+        """Promote this reservation to a replayable cached response.
+
+        Called by the middleware once the view it reserved for has
+        returned something cacheable. The retention window is measured
+        from completion — the same semantics the pre-SNOW-545 single-step
+        write had, where the row was only created after the view ran.
+
+        Args:
+            response: The completed response to cache. Non-streaming
+                only; the middleware filters streaming responses out
+                upstream.
+            ttl: Retention window applied from now.
+
+        """
+        content_type: str = str(response.get("Content-Type", ""))
+        self.status = self.STATUS.COMPLETED
+        self.response_status = response.status_code
+        self.response_body = bytes(response.content)
+        self.response_content_type = content_type[:255]
+        self.expires_at = timezone.now() + ttl
+        self.save(
+            update_fields=[
+                "status",
+                "response_status",
+                "response_body",
+                "response_content_type",
+                "expires_at",
+                "updated_at",
+            ]
+        )
+
+    def release(self) -> None:
+        """Drop this reservation so the key is immediately reclaimable.
+
+        Used when the reserved view produced nothing worth caching — a
+        5xx, a streaming response, or an unhandled exception. Deleting
+        rather than expiring keeps the "uncacheable responses leave no
+        trace" property the 5xx exemption has always had. Guarded on
+        ``status`` so a row that somehow reached COMPLETED is never
+        removed by a late release.
+        """
+        type(self).objects.filter(pk=self.pk, status=self.STATUS.RESERVED).delete()
+
     def matches_fingerprint(
         self,
         *,
@@ -527,7 +676,18 @@ class IdempotencyRecord(BaseModel):
         the user in the first time will not re-log them in on a replay.
         The client's mutation queue reconciles state via a subsequent
         GET, so this is the safer default.
+
+        Raises:
+            ValueError: If called on a row with no captured response — a
+                RESERVED row has nothing to replay, and the middleware
+                must answer 409 rather than invent a status code.
+
         """
+        if self.response_status is None:
+            raise ValueError(
+                f"Cannot build a response from a {self.status} record — "
+                "no response has been captured for this key yet."
+            )
         body: bytes = bytes(self.response_body)
         response = HttpResponse(
             content=body,

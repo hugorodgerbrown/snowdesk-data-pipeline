@@ -21,10 +21,13 @@ Entry points consumed by ``mcp_server.tools``:
 The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``,
 ``MajorRegion``, and ``RegionAlias``) is cheap to hold in full and is
 cached in the Django default cache, keyed on a fingerprint of the newest
-``updated_at`` across all four tables — the same pattern as
-``bulletins.services.coverage.covered_region_ids``. Any edit to a region,
-resort, or alias changes the fingerprint, which changes the cache key,
-which is a guaranteed miss — no explicit invalidation needed.
+``updated_at`` **and the row count** across all four tables — the same
+pattern as ``bulletins.services.coverage.covered_region_ids``, plus the
+counts SNOW-552 added. Any create, edit, or delete of a region, resort,
+or alias changes the fingerprint, which changes the cache key, which is
+a guaranteed miss — no explicit invalidation needed. (The count is what
+covers deletes: removing a row that is not the newest leaves the max
+timestamp untouched.)
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ import math
 from typing import Any
 
 from django.core.cache import cache
-from django.db.models import Max, QuerySet
+from django.db.models import Count, Max, QuerySet
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
@@ -301,27 +304,40 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
 def _pool_cache_key() -> str:
     """Return a cache key that changes whenever the candidate data changes.
 
-    Fingerprints the pool on the newest ``updated_at`` across
-    ``MicroRegion``, ``MajorRegion``, ``Resort``, and ``RegionAlias`` — any
-    create, edit, or delete touches one of those timestamps, which changes
-    the fingerprint, which guarantees the next call is a cache miss. No
-    explicit invalidation call site is needed anywhere else in the
-    codebase.
+    Fingerprints the pool on two things per source table — ``MicroRegion``,
+    ``MajorRegion``, ``Resort``, and ``RegionAlias``:
+
+    * the newest ``updated_at``, which a create or an edit moves forward;
+    * the row count, which a **delete** changes and a timestamp does not
+      (SNOW-552). Deleting a row whose ``updated_at`` was not the maximum
+      left the aggregate — and so the cache key — identical, and the stale
+      pre-deletion pool kept being served for up to ``_POOL_TTL``: an
+      obsolete alias went on appearing in search results for an hour after
+      an administrator removed it.
+
+    Folding delete-sensitivity into the fingerprint keeps the "no explicit
+    invalidation call site" property. The alternative — bumping a cache
+    version from create/update/delete signals — would need a call site in
+    ``import_resorts`` and in every admin delete path, and conflicts with
+    ``docs/decisions/no-signals-for-side-effects.md``.
 
     Returns:
         A cache key string unique to the current state of the four
         source tables.
 
     """
-    stamps = [
-        MicroRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
-        MajorRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
-        Resort.objects.aggregate(latest=Max("updated_at"))["latest"],
-        RegionAlias.objects.aggregate(latest=Max("updated_at"))["latest"],
-    ]
-    known = [s for s in stamps if s is not None]
-    fingerprint = max(known).isoformat() if known else "empty"
-    return f"mcp:candidates:{fingerprint}"
+    querysets = (
+        MicroRegion.objects,
+        MajorRegion.objects,
+        Resort.objects,
+        RegionAlias.objects,
+    )
+    parts: list[str] = []
+    for manager in querysets:
+        summary = manager.aggregate(latest=Max("updated_at"), rows=Count("id"))
+        latest = summary["latest"]
+        parts.append(f"{latest.isoformat() if latest else 'empty'}:{summary['rows']}")
+    return f"mcp:candidates:{'|'.join(parts)}"
 
 
 def _candidate_pool() -> list[dict[str, Any]]:
