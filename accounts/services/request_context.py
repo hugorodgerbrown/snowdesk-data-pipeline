@@ -54,11 +54,15 @@ def geo_match_snapshot(
 
     kind, matched = classify_match(lon, lat, target_region)
 
+    # Never log the coordinates themselves — an IP-derived lat/lon is personal
+    # data, and the classification result is what makes this line useful for
+    # debugging (SNOW-558, CodeQL py/clear-text-logging-sensitive-data). This
+    # mirrors the SNOW-311 rule that account logs carry identifiers, not
+    # plaintext personal data.
     logger.debug(
-        "geo_match_snapshot: region=%s lon=%s lat=%s → %s (matched=%s)",
+        "geo_match_snapshot: region=%s coords=%s → %s (matched=%s)",
         target_region.region_id,
-        lon,
-        lat,
+        "present" if lon is not None and lat is not None else "absent",
         kind,
         matched.region_id if matched else None,
     )

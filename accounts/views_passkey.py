@@ -187,10 +187,14 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
             credential_json, request.session, request.user
         )
     except PasskeyError as exc:
+        # The exception detail stays server-side: return a fixed token, as the
+        # sibling auth view does (SNOW-558, CodeQL py/stack-trace-exposure).
+        # Both callers of this endpoint render their own translated string and
+        # ignore this value, so there is no user-facing loss.
         logger.info(
             "Passkey registration failed for user pk=%s: %s", request.user.pk, exc
         )
-        return JsonResponse({"error": str(exc)}, status=400)
+        return JsonResponse({"error": "registration_failed"}, status=400)
 
     return JsonResponse(
         {
