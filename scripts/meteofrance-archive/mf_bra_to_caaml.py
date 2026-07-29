@@ -62,7 +62,7 @@ from _pdf_extract import (
 )
 from _sat_mapping import sat_to_problem_type
 
-from bulletins.services.meteofrance_translator import format_comment_as_html
+from apps.bulletins.services.meteofrance_translator import format_comment_as_html
 
 logger = logging.getLogger(__name__)
 

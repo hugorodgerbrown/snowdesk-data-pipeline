@@ -22,8 +22,8 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
-from bulletins.models import Bulletin
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -114,7 +114,7 @@ class TestErrorStateCard:
         view uses the stored render_model directly rather than rebuilding it.
         The stored render_model has version==0 which triggers the error card.
         """
-        from bulletins.services.render_model import RENDER_MODEL_VERSION
+        from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 
         return _make_am_bulletin(
             region,
@@ -318,7 +318,7 @@ class TestEnrichRenderModelProblemDangerLevelCss:
 
         Returns the enriched dict so tests can inspect danger_level_css.
         """
-        from public.views import _enrich_render_model_problem
+        from apps.public.views import _enrich_render_model_problem
 
         rm_problem = {
             "problem_type": "new_snow",
@@ -373,7 +373,7 @@ class TestSlfSubdivisionPlusCanary:
         self,
     ) -> None:
         """morning_subdivision and afternoon_subdivision are '+' for 3+ rating."""
-        from public.views import _build_panel_context
+        from apps.public.views import _build_panel_context
 
         fixture = json.loads(
             (_FIXTURE_DIR / "sample_subdivision_3plus_day.json").read_text()
@@ -408,7 +408,7 @@ class TestAlbinaPanelContextCanary:
         self,
     ) -> None:
         """ALBINA panel context populates problem_cards and day_character."""
-        from public.views import _build_panel_context
+        from apps.public.views import _build_panel_context
 
         props = json.loads((_FIXTURE_DIR / "albina_sample_bulletin.json").read_text())
         bulletin = BulletinFactory.create(
@@ -472,7 +472,7 @@ class TestProblemCardEawsFields:
 
     def test_albina_eaws_fields_reach_card(self) -> None:
         """All three EAWS axes are surfaced on the card with translated labels."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [
@@ -492,7 +492,7 @@ class TestProblemCardEawsFields:
 
     def test_frequency_none_treated_as_not_reported(self) -> None:
         """``frequency='none'`` collapses to label=None so the chip is suppressed."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._trait(avalanche_size=2, frequency="none")]
@@ -503,7 +503,7 @@ class TestProblemCardEawsFields:
 
     def test_slf_card_has_no_eaws_fields(self) -> None:
         """SLF traits carry no EAWS inputs — all three card fields stay None."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits([self._trait()])
         card = cards[0]
@@ -513,7 +513,7 @@ class TestProblemCardEawsFields:
 
     def test_unknown_stability_value_collapses_to_none(self) -> None:
         """A stability value outside the canonical EAWS set produces no chip."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._trait(snowpack_stability="catastrophic")]
@@ -529,7 +529,7 @@ class TestSortAspectsClockwise:
 
     def _sort(self, aspects: list[str]) -> list[str]:
         """Call _sort_aspects_clockwise directly."""
-        from public.views import _sort_aspects_clockwise
+        from apps.public.views import _sort_aspects_clockwise
 
         return _sort_aspects_clockwise(aspects)
 
@@ -564,7 +564,7 @@ class TestEnrichRenderModelProblemAspectOrder:
 
     def _enrich(self, aspects: list[str]) -> dict[str, Any]:
         """Call _enrich_render_model_problem with a minimal problem dict."""
-        from public.views import _enrich_render_model_problem
+        from apps.public.views import _enrich_render_model_problem
 
         rm_problem = {
             "problem_type": "new_snow",

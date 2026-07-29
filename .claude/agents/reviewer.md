@@ -73,10 +73,10 @@ with thin or hand-wavy reasons.
       don't trust that CI ran it)
 - [ ] Any new visual surface either reuses an existing partial from the
       `/_components/` library OR extracts a new partial *and registers it*
-      in `public/design_tokens.py` with variant fixtures. Inline duplication
+      in `apps/public/design_tokens.py` with variant fixtures. Inline duplication
       of an existing shape under a different file/class is a blocker.
 - [ ] New CSS tokens land in `src/css/main.css` `@theme` AND in the
-      `FoundationCategory` registry — `public/checks.py`' sync check
+      `FoundationCategory` registry — `apps/public/checks.py`' sync check
       should pass cleanly. Drift between the two is a blocker.
 - [ ] Any `{# ds-lint-allow: <reason> #}` introduced in the diff carries
       a *specific* reason a reviewer can judge cold — "constraint X means

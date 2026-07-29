@@ -22,15 +22,18 @@ import requests
 from django.db import IntegrityError
 from django.test import override_settings
 
-from bulletins.models import (
+from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
 )
-from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
-from bulletins.services.slf_fetcher import (
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+)
+from apps.bulletins.services.slf_fetcher import (
     NoResolvableRegionsError,
     UnknownRegionError,
     _get_region,
@@ -42,7 +45,7 @@ from bulletins.services.slf_fetcher import (
     run_slf_pipeline,
     upsert_bulletin,
 )
-from regions.models import MicroRegion
+from apps.regions.models import MicroRegion
 from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
@@ -507,7 +510,7 @@ class TestUpsertBulletin:
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         with patch(
-            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
             return_value=2,
         ):
             upsert_bulletin(raw, run)
@@ -525,7 +528,7 @@ class TestUpsertBulletin:
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         with patch(
-            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
             side_effect=RuntimeError("boom"),
         ):
             created = upsert_bulletin(raw, run)
@@ -601,7 +604,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.slf_fetcher.build_render_model",
+            "apps.bulletins.services.slf_fetcher.build_render_model",
             side_effect=RenderModelBuildError("boom"),
         ):
             upsert_bulletin(raw, run)
@@ -618,7 +621,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.slf_fetcher.build_render_model",
+            "apps.bulletins.services.slf_fetcher.build_render_model",
             side_effect=RenderModelBuildError("boom"),
         ):
             upsert_bulletin(raw, run)
@@ -632,7 +635,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.slf_fetcher.build_render_model",
+            "apps.bulletins.services.slf_fetcher.build_render_model",
             side_effect=ValueError("unexpected error"),
         ):
             with pytest.raises(ValueError, match="unexpected error"):
@@ -667,7 +670,7 @@ class TestUpsertBulletin:
 class TestFetchBulletinPage:
     """Tests for fetch_bulletin_page."""
 
-    @patch("bulletins.services.slf_fetcher.requests.get")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
     def test_returns_normalised_bulletins(self, mock_get: MagicMock) -> None:
         """Fetches a page from the API and normalises the response."""
         mock_response = MagicMock()
@@ -685,7 +688,7 @@ class TestFetchBulletinPage:
             timeout=30,
         )
 
-    @patch("bulletins.services.slf_fetcher.requests.get")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
     def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
         """Raises HTTPError when the API returns a non-2xx status."""
         mock_response = MagicMock()
@@ -695,7 +698,7 @@ class TestFetchBulletinPage:
         with pytest.raises(requests.HTTPError):
             fetch_bulletin_page("en", 50, 0)
 
-    @patch("bulletins.services.slf_fetcher.requests.get")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
     def test_passes_lang_in_url(self, mock_get: MagicMock) -> None:
         """The language code is included in the URL path."""
         mock_response = MagicMock()
@@ -708,7 +711,7 @@ class TestFetchBulletinPage:
         url = mock_get.call_args[0][0]
         assert "/de/json" in url
 
-    @patch("bulletins.services.slf_fetcher.requests.get")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
     def test_base_url_override_replaces_default(self, mock_get: MagicMock) -> None:
         """``base_url=`` swaps out the API base for that single call."""
         mock_response = MagicMock()
@@ -731,7 +734,7 @@ class TestFetchBulletinPage:
     @override_settings(
         SLF_API_BASE_URL="https://override.example/api/bulletin-list/caaml"
     )
-    @patch("bulletins.services.slf_fetcher.requests.get")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
     def test_default_base_url_falls_back_to_settings(self, mock_get: MagicMock) -> None:
         """Without ``base_url=``, the call reads ``settings.SLF_API_BASE_URL``."""
         mock_response = MagicMock()
@@ -756,7 +759,7 @@ class TestRunPipeline:
 
     pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_creates_bulletins_in_date_range(self, mock_fetch: MagicMock) -> None:
         """Bulletins within the date range are stored."""
         mock_fetch.return_value = [
@@ -774,7 +777,7 @@ class TestRunPipeline:
         assert run.records_created == 2
         assert Bulletin.objects.count() == 2
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_all_unknown_regions_increments_records_failed(
         self, mock_fetch: MagicMock
     ) -> None:
@@ -802,7 +805,7 @@ class TestRunPipeline:
         assert not Bulletin.objects.filter(bulletin_id="no-regions").exists()
         assert Bulletin.objects.filter(bulletin_id="fine").exists()
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock) -> None:
         """Bulletins newer than the end date are skipped."""
         mock_fetch.return_value = [
@@ -820,7 +823,7 @@ class TestRunPipeline:
         assert Bulletin.objects.filter(bulletin_id="in-range").exists()
         assert not Bulletin.objects.filter(bulletin_id="future").exists()
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_stops_at_start_date_boundary(self, mock_fetch: MagicMock) -> None:
         """Pagination stops when a bulletin older than start date is hit."""
         mock_fetch.return_value = [
@@ -837,7 +840,7 @@ class TestRunPipeline:
         assert run.records_created == 1
         assert not Bulletin.objects.filter(bulletin_id="too-old").exists()
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_dry_run_does_not_write(self, mock_fetch: MagicMock) -> None:
         """Dry run fetches data but does not persist bulletins."""
         mock_fetch.return_value = [
@@ -855,7 +858,7 @@ class TestRunPipeline:
         assert run.records_created == 0
         assert Bulletin.objects.count() == 0
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_existing_without_force(self, mock_fetch: MagicMock) -> None:
         """Without --force, existing bulletins are skipped."""
         # Pre-create the bulletin
@@ -879,7 +882,7 @@ class TestRunPipeline:
         assert run.records_created == 0
         assert run.records_updated == 0
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock) -> None:
         """With --force, existing bulletins are upserted."""
         pre_run = PipelineRunFactory.create()
@@ -902,7 +905,7 @@ class TestRunPipeline:
         assert run.records_updated == 1
         assert Bulletin.objects.count() == 1
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_marks_run_failed_on_exception(self, mock_fetch: MagicMock) -> None:
         """Run is marked FAILED if fetch raises an exception."""
         mock_fetch.side_effect = requests.ConnectionError("timeout")
@@ -916,8 +919,8 @@ class TestRunPipeline:
         assert run.status == PipelineRun.Status.FAILED
         assert "timeout" in run.error_message
 
-    @patch("bulletins.services.slf_fetcher.PAGE_SIZE", 1)
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.PAGE_SIZE", 1)
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_paginates_until_empty_page(self, mock_fetch: MagicMock) -> None:
         """Pages until the API returns an empty list."""
         # With PAGE_SIZE=1, a page with 1 result does NOT trigger the
@@ -937,7 +940,7 @@ class TestRunPipeline:
         assert run.records_created == 1
         assert mock_fetch.call_count == 2
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_run_records_triggered_by(self, mock_fetch: MagicMock) -> None:
         """The triggered_by label is stored on the PipelineRun."""
         mock_fetch.return_value = []
@@ -950,7 +953,7 @@ class TestRunPipeline:
 
         assert run.triggered_by == "fetch_bulletins command"
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_base_url_threads_through_to_fetch(self, mock_fetch: MagicMock) -> None:
         """``base_url=`` is forwarded verbatim to ``fetch_bulletin_page``."""
         mock_fetch.return_value = []
@@ -966,7 +969,7 @@ class TestRunPipeline:
             "http://mirror.test/api/bulletin-list/caaml"
         )
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_on_fetched_called_for_every_record(self, mock_fetch: MagicMock) -> None:
         """``on_fetched`` fires once per raw record in the page."""
         mock_fetch.return_value = [
@@ -984,7 +987,7 @@ class TestRunPipeline:
 
         assert seen == ["a", "b"]
 
-    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_on_fetched_fires_for_out_of_range_records(
         self, mock_fetch: MagicMock
     ) -> None:
@@ -1137,7 +1140,7 @@ class TestUpsertBulletinGroupingHook:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
+            "apps.bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
             side_effect=RuntimeError("geometry exploded"),
         ):
             upsert_bulletin(raw, run)

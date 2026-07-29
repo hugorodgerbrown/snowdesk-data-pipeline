@@ -1,5 +1,5 @@
 """
-tests/core/services/test_waffle_sync.py — Tests for core.services.waffle_sync.
+tests/core/services/test_waffle_sync.py — Tests for apps.core.services.waffle_sync.
 
 Covers:
   - ``compute_flag_diff``: create-only, delete-only, mixed, and no-op cases.
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from core.services.waffle_sync import FlagSpec, compute_flag_diff, load_manifest
+from apps.core.services.waffle_sync import FlagSpec, compute_flag_diff, load_manifest
 
 # ---------------------------------------------------------------------------
 # compute_flag_diff

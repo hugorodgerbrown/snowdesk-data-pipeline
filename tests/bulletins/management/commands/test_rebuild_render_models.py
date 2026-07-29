@@ -19,8 +19,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from bulletins.models import Bulletin, RegionDayRating
-from bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
@@ -204,12 +204,12 @@ class TestRebuildRenderModelsErrorHandling:
         """A RenderModelBuildError on one bulletin does not abort the whole run."""
         from unittest.mock import patch
 
-        from bulletins.services.render_model import RenderModelBuildError
+        from apps.bulletins.services.render_model import RenderModelBuildError
 
         _make_bulletin(render_model_version=0, bulletin_id="error-001")
 
         with patch(
-            "bulletins.management.commands.rebuild_render_models.build_render_model",
+            "apps.bulletins.management.commands.rebuild_render_models.build_render_model",
             side_effect=RenderModelBuildError("simulated failure"),
         ):
             # Should not raise — error is caught and stored.
@@ -254,13 +254,13 @@ class TestRebuildRenderModelsDayRatings:
         """When failures occur, command prints summary and exits non-zero."""
         from unittest.mock import patch
 
-        from bulletins.services.render_model import RenderModelBuildError
+        from apps.bulletins.services.render_model import RenderModelBuildError
 
         _make_bulletin(render_model_version=0, bulletin_id="fail-sum-001")
         _make_bulletin(render_model_version=0, bulletin_id="fail-sum-002")
 
         with patch(
-            "bulletins.management.commands.rebuild_render_models.build_render_model",
+            "apps.bulletins.management.commands.rebuild_render_models.build_render_model",
             side_effect=RenderModelBuildError("simulated failure"),
         ):
             with pytest.raises(CommandError):

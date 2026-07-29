@@ -50,8 +50,8 @@ from freezegun import freeze_time
 from pytest_django.fixtures import SettingsWrapper
 from waffle.testutils import override_flag
 
-from accounts.models import Account, Subscription
-from accounts.services.token import (
+from apps.accounts.models import Account, Subscription
+from apps.accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
     generate_token,
     generate_unsubscribe_token,
@@ -70,7 +70,7 @@ from tests.factories import (
 _HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 
-_TOKEN_BACKEND = "accounts.backends.TokenBackend"
+_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
 
 def _make_session_client(account: Account) -> Client:
@@ -160,8 +160,8 @@ class TestSubscribePartial:
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr added by middleware
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr added by middleware
 
-        import accounts.views  # noqa: F401
-        from accounts.views import subscribe_partial
+        import apps.accounts.views  # noqa: F401
+        from apps.accounts.views import subscribe_partial
 
         response = subscribe_partial(request)
         assert response.status_code == 429
@@ -392,7 +392,7 @@ class TestSubscribePartialRequestLog:
         """New account (Case A) has acquisition_request populated."""
         from unittest.mock import patch
 
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         fake_geo = GeoLookup(
             country="CH",
@@ -403,7 +403,7 @@ class TestSubscribePartialRequestLog:
             accuracy_radius_km=50,
         )
         region = MicroRegionFactory.create()
-        with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=fake_geo):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "newuser@example.com", "region_id": region.region_id},
@@ -418,7 +418,7 @@ class TestSubscribePartialRequestLog:
         """New subscription (Case A) has subscribed_via populated."""
         from unittest.mock import patch
 
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         fake_geo = GeoLookup(
             country="DE",
@@ -429,7 +429,7 @@ class TestSubscribePartialRequestLog:
             accuracy_radius_km=100,
         )
         region = MicroRegionFactory.create()
-        with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=fake_geo):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "newuser2@example.com", "region_id": region.region_id},
@@ -445,7 +445,7 @@ class TestSubscribePartialRequestLog:
         """Re-submitting does not overwrite acquisition_request on Account."""
         from unittest.mock import patch
 
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         region = MicroRegionFactory.create()
         email = "returning@example.com"
@@ -459,7 +459,7 @@ class TestSubscribePartialRequestLog:
             longitude=None,
             accuracy_radius_km=None,
         )
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_first):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo_first):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": email, "region_id": region.region_id},
@@ -479,7 +479,7 @@ class TestSubscribePartialRequestLog:
             longitude=None,
             accuracy_radius_km=None,
         )
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_second):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo_second):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": email, "region_id": region.region_id},
@@ -494,7 +494,7 @@ class TestSubscribePartialRequestLog:
         """subscription_started props include country_code when non-empty (Case A)."""
         from unittest.mock import patch
 
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         fake_geo = GeoLookup(
             country="AT",
@@ -506,8 +506,8 @@ class TestSubscribePartialRequestLog:
         )
         region = MicroRegionFactory.create()
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=fake_geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -526,8 +526,8 @@ class TestSubscribePartialRequestLog:
 
         region = MicroRegionFactory.create()
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=None),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=None),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -549,8 +549,8 @@ class TestSubscribePartialRequestLog:
 class TestSubscribePartialGeoMatch:
     """Tests for geo_match_kind / geo_matched_region written by subscribe_partial.
 
-    The geo_lookup call is patched at ``bulletins.services.geoip.geo_lookup``
-    (the import site in ``core.models.RequestLogManager.from_request``).
+    The geo_lookup call is patched at ``apps.bulletins.services.geoip.geo_lookup``
+    (the import site in ``apps.core.models.RequestLogManager.from_request``).
     """
 
     @pytest.fixture(autouse=True)
@@ -575,7 +575,7 @@ class TestSubscribePartialGeoMatch:
 
     def _make_geo_lookup(self, lon: float | None, lat: float | None) -> object:
         """Return a GeoLookup stub with the given coordinates."""
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         return GeoLookup(
             country="CH",
@@ -591,7 +591,7 @@ class TestSubscribePartialGeoMatch:
         region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
         geo = self._make_geo_lookup(lon=5.0, lat=5.0)
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "geo-in@example.com", "region_id": region.region_id},
@@ -612,7 +612,7 @@ class TestSubscribePartialGeoMatch:
         target.neighbours.add(neighbour)
         geo = self._make_geo_lookup(lon=12.0, lat=2.0)
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "geo-nb@example.com", "region_id": target.region_id},
@@ -629,7 +629,7 @@ class TestSubscribePartialGeoMatch:
         region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
         geo = self._make_geo_lookup(lon=50.0, lat=50.0)
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "geo-el@example.com", "region_id": region.region_id},
@@ -645,7 +645,7 @@ class TestSubscribePartialGeoMatch:
         """subscribe_partial sets geo_match_kind=unknown when geo_lookup returns None."""
         region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": "geo-unk@example.com", "region_id": region.region_id},
@@ -668,7 +668,7 @@ class TestSubscribePartialGeoMatch:
 
         # First call — inside the region.
         geo_inside = self._make_geo_lookup(lon=5.0, lat=5.0)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_inside):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo_inside):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": email, "region_id": region.region_id},
@@ -682,7 +682,9 @@ class TestSubscribePartialGeoMatch:
 
         # Second call — outside the region (different geo).
         geo_outside = self._make_geo_lookup(lon=50.0, lat=50.0)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_outside):
+        with patch(
+            "apps.bulletins.services.geoip.geo_lookup", return_value=geo_outside
+        ):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": email, "region_id": region.region_id},
@@ -699,8 +701,8 @@ class TestSubscribePartialGeoMatch:
         geo = self._make_geo_lookup(lon=5.0, lat=5.0)
 
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -719,8 +721,8 @@ class TestSubscribePartialGeoMatch:
         geo = self._make_geo_lookup(lon=5.0, lat=5.0)
 
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -747,8 +749,8 @@ class TestSubscribePartialGeoMatch:
         geo = self._make_geo_lookup(lon=12.0, lat=2.0)
 
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -771,8 +773,8 @@ class TestSubscribePartialGeoMatch:
         geo = self._make_geo_lookup(lon=50.0, lat=50.0)
 
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -793,8 +795,8 @@ class TestSubscribePartialGeoMatch:
         geo = self._make_geo_lookup(lon=5.0, lat=5.0)
 
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:subscribe"),
@@ -826,7 +828,7 @@ class TestSignInViewRequestLog:
         """sign_in_requested event includes country_code when non-empty."""
         from unittest.mock import patch
 
-        from bulletins.services.geoip import GeoLookup
+        from apps.bulletins.services.geoip import GeoLookup
 
         AccountFactory.create(user__email="signin@example.com")
         fake_geo = GeoLookup(
@@ -838,8 +840,8 @@ class TestSignInViewRequestLog:
             accuracy_radius_km=None,
         )
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=fake_geo),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:sign_in"),
@@ -857,8 +859,8 @@ class TestSignInViewRequestLog:
 
         AccountFactory.create(user__email="signin2@example.com")
         with (
-            patch("bulletins.services.geoip.geo_lookup", return_value=None),
-            patch("accounts.views.analytics.track") as mock_track,
+            patch("apps.bulletins.services.geoip.geo_lookup", return_value=None),
+            patch("apps.accounts.views.analytics.track") as mock_track,
         ):
             Client().post(
                 reverse("accounts:sign_in"),
@@ -1147,7 +1149,7 @@ class TestSignInView:
         """Exceeding rate limit on sign-in POST returns 429."""
         from django.contrib.auth.models import AnonymousUser
 
-        from accounts.views import sign_in_view
+        from apps.accounts.views import sign_in_view
 
         rf = RequestFactory()
         request = rf.post(
@@ -1157,7 +1159,7 @@ class TestSignInView:
         request.user = AnonymousUser()  # noqa: B010 — set on test request object
 
         with patch(
-            "accounts.views.get_usage",
+            "apps.accounts.views.get_usage",
             return_value={"should_limit": True},
         ):
             response = sign_in_view(request)
@@ -1553,7 +1555,7 @@ class TestRemoveRegion:
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
-        from accounts.views import remove_region
+        from apps.accounts.views import remove_region
 
         response = remove_region(request, region_id="ch-0001")
         assert response.status_code == 429
@@ -1669,7 +1671,7 @@ class TestDeleteAccount:
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
-        from accounts.views import delete_account
+        from apps.accounts.views import delete_account
 
         response = delete_account(request)
         assert response.status_code == 429
@@ -1820,7 +1822,7 @@ class TestUnsubscribeView:
         request = rf.get(reverse("accounts:unsubscribe", kwargs={"token": token}))
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
-        from accounts.views import unsubscribe_view
+        from apps.accounts.views import unsubscribe_view
 
         response = unsubscribe_view(request, token=token)
         assert response.status_code == 429
@@ -1896,7 +1898,7 @@ class TestEmailNormalisation:
         """sign_in_view POST for a mixed-case address finds the lowercase account."""
         account = AccountFactory.create(user__email="bob@example.com", is_verified=True)
         client = Client()
-        with patch("accounts.views.send_account_access_email") as mock_send:
+        with patch("apps.accounts.views.send_account_access_email") as mock_send:
             client.post(
                 reverse("accounts:sign_in"),
                 data={"email": "BOB@EXAMPLE.COM"},
@@ -1948,7 +1950,7 @@ class TestEmailFormNormalisation:
 
     def test_subscribe_form_lowercases_email(self) -> None:
         """SubscribeForm.clean_email returns a lowercased address."""
-        from accounts.forms import SubscribeForm
+        from apps.accounts.forms import SubscribeForm
 
         form = SubscribeForm(data={"email": "TEST@EXAMPLE.COM", "region_id": "CH-0001"})
         assert form.is_valid(), form.errors
@@ -1956,7 +1958,7 @@ class TestEmailFormNormalisation:
 
     def test_subscribe_form_strips_whitespace(self) -> None:
         """SubscribeForm.clean_email strips leading and trailing whitespace."""
-        from accounts.forms import SubscribeForm
+        from apps.accounts.forms import SubscribeForm
 
         form = SubscribeForm(
             data={"email": "  user@example.com  ", "region_id": "CH-0001"}
@@ -1966,7 +1968,7 @@ class TestEmailFormNormalisation:
 
     def test_email_form_lowercases_email(self) -> None:
         """EmailForm.clean_email returns a lowercased address."""
-        from accounts.forms import EmailForm
+        from apps.accounts.forms import EmailForm
 
         form = EmailForm(data={"email": "TEST@EXAMPLE.COM"})
         assert form.is_valid(), form.errors
@@ -1974,7 +1976,7 @@ class TestEmailFormNormalisation:
 
     def test_email_form_strips_whitespace(self) -> None:
         """EmailForm.clean_email strips leading and trailing whitespace."""
-        from accounts.forms import EmailForm
+        from apps.accounts.forms import EmailForm
 
         form = EmailForm(data={"email": "  user@example.com  "})
         assert form.is_valid(), form.errors
@@ -2070,7 +2072,7 @@ class TestAddRegion:
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
-        from accounts.views import add_region
+        from apps.accounts.views import add_region
 
         response = add_region(request, region_id="ch-0001")
         assert response.status_code == 429
@@ -2177,7 +2179,7 @@ class TestRemoveRegionFromBulletin:
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
-        from accounts.views import remove_region_from_bulletin
+        from apps.accounts.views import remove_region_from_bulletin
 
         response = remove_region_from_bulletin(request, region_id="ch-0001")
         assert response.status_code == 429
@@ -2247,7 +2249,7 @@ class TestAnalyticsSubscriptionStarted:
     def test_case_a_fires_subscription_started(self) -> None:
         region = MicroRegionFactory.create()
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:subscribe"),
                 data={"email": "new@example.com", "region_id": region.region_id},
@@ -2263,7 +2265,7 @@ class TestAnalyticsSubscriptionStarted:
 
         region = MicroRegionFactory.create()
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:subscribe"),
                 data={"email": "new2@example.com", "region_id": region.region_id},
@@ -2283,7 +2285,7 @@ class TestAnalyticsSubscriptionStarted:
         region = MicroRegionFactory.create()
         AccountFactory.create(user__email="pending@example.com", is_verified=False)
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:subscribe"),
                 data={"email": "pending@example.com", "region_id": region.region_id},
@@ -2304,7 +2306,7 @@ class TestAnalyticsSubscriptionStarted:
             "utm_campaign": "winter-2026",
         }
         session.save()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:subscribe"),
                 data={"email": "utm@example.com", "region_id": region.region_id},
@@ -2328,7 +2330,7 @@ class TestAnalyticsSubscriptionConfirmed:
         account = AccountFactory.create(is_verified=False)
         token = _valid_account_token(account.user.email)
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:account", kwargs={"token": token}))
         calls = [
             c
@@ -2345,7 +2347,7 @@ class TestAnalyticsSubscriptionConfirmed:
         account = AccountFactory.create(is_verified=False)
         token = _valid_account_token(account.user.email)
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.get(reverse("accounts:account", kwargs={"token": token}))
         calls = [
             c
@@ -2358,7 +2360,7 @@ class TestAnalyticsSubscriptionConfirmed:
         account = AccountFactory.create(is_verified=True)
         token = _valid_account_token(account.user.email)
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:account", kwargs={"token": token}))
         calls = [
             c
@@ -2374,7 +2376,7 @@ class TestAnalyticsSubscriptionConfirmed:
         session = client.session
         session["analytics_anon_id"] = "anon-uuid-111"
         session.save()
-        with patch("accounts.views.analytics.alias") as mock_alias:
+        with patch("apps.accounts.views.analytics.alias") as mock_alias:
             client.post(reverse("accounts:account", kwargs={"token": token}))
         mock_alias.assert_called_once_with(
             distinct_id=str(account.uuid),
@@ -2385,7 +2387,7 @@ class TestAnalyticsSubscriptionConfirmed:
         account = AccountFactory.create(is_verified=False)
         token = _valid_account_token(account.user.email)
         client = Client()
-        with patch("accounts.views.analytics.alias") as mock_alias:
+        with patch("apps.accounts.views.analytics.alias") as mock_alias:
             client.post(reverse("accounts:account", kwargs={"token": token}))
         mock_alias.assert_not_called()
 
@@ -2403,7 +2405,7 @@ class TestAnalyticsRegionAdded:
         account = AccountFactory.create(is_verified=True)
         region = MicroRegionFactory.create()
         client = _make_session_client(account)
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse(
                     "accounts:add_region",
@@ -2423,7 +2425,7 @@ class TestAnalyticsRegionAdded:
         )
         region = MicroRegionFactory.create()
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:subscribe"),
                 data={"email": account.user.email, "region_id": region.region_id},
@@ -2439,7 +2441,7 @@ class TestAnalyticsRegionAdded:
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse(
                     "accounts:add_region",
@@ -2462,7 +2464,7 @@ class TestAnalyticsRegionRemoved:
         SubscriptionFactory.create(account=account, region=region_a)
         SubscriptionFactory.create(account=account, region=region_b)
         client = _make_session_client(account)
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse(
                     "accounts:remove_region",
@@ -2481,7 +2483,7 @@ class TestAnalyticsRegionRemoved:
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse(
                     "accounts:remove_region",
@@ -2503,7 +2505,7 @@ class TestAnalyticsUnsubscribed:
         account = AccountFactory.create()
         distinct_id = str(account.uuid)
         client = _make_session_client(account)
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:delete_account"), **_HTMX_HEADERS)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
         assert len(calls) == 1
@@ -2519,7 +2521,7 @@ class TestAnalyticsUnsubscribed:
         distinct_id = str(account.uuid)
         token = generate_unsubscribe_token(account.user.email, region.region_id)
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
         calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
         assert len(calls) == 1
@@ -2542,7 +2544,7 @@ class TestAnalyticsSignInRequested:
         """POST with a known email fires sign_in_requested with the existing PK."""
         account = AccountFactory.create(user__email="known@example.com")
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:sign_in"),
                 data={"email": "known@example.com"},
@@ -2556,7 +2558,7 @@ class TestAnalyticsSignInRequested:
     def test_fires_for_unknown_email_after_account_created(self) -> None:
         """POST with a fresh email creates an Account and fires sign_in_requested with the new PK."""
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:sign_in"),
                 data={"email": "brandnew@example.com"},
@@ -2571,7 +2573,7 @@ class TestAnalyticsSignInRequested:
     def test_does_not_fire_on_invalid_email(self) -> None:
         """POST with an invalid email re-renders the form and does not fire the event."""
         client = Client()
-        with patch("accounts.views.analytics.track") as mock_track:
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             client.post(
                 reverse("accounts:sign_in"),
                 data={"email": "not-valid"},
@@ -2613,7 +2615,7 @@ class TestSubscribePartialLogging:
         email = "caplog-new@example.com"
         region = MicroRegionFactory.create()
 
-        with caplog.at_level(logging.INFO, logger="accounts.views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
             Client().post(
                 reverse("accounts:subscribe"),
                 data={"email": email, "region_id": region.region_id},
@@ -2654,7 +2656,7 @@ class TestAccountViewLogging:
         email = "unknown-caplog@example.com"
         token = _valid_account_token(email)
 
-        with caplog.at_level(logging.WARNING, logger="accounts.views"):
+        with caplog.at_level(logging.WARNING, logger="apps.accounts.views"):
             Client().get(f"/account/access/{token}/")
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -2694,7 +2696,7 @@ class TestSignInViewLogging:
 
         email = "signin-caplog@example.com"
 
-        with caplog.at_level(logging.INFO, logger="accounts.views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
             Client().post(
                 reverse("accounts:sign_in"),
                 data={"email": email},
@@ -2735,7 +2737,7 @@ class TestDeleteAccountLogging:
         account = AccountFactory.create(user__email=email)
         client = _make_session_client(account)
 
-        with caplog.at_level(logging.INFO, logger="accounts.views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
             client.post(reverse("accounts:delete_account"), **_HTMX_HEADERS)
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -2778,7 +2780,7 @@ class TestUnsubscribeViewLogging:
         SubscriptionFactory.create(account=account, region=region)
         token = generate_unsubscribe_token(email, region.region_id)
 
-        with caplog.at_level(logging.INFO, logger="accounts.views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
             Client().post(reverse("accounts:unsubscribe", kwargs={"token": token}))
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -2814,7 +2816,7 @@ class TestUnsubscribeViewLogging:
         token = generate_unsubscribe_token(email, region.region_id)
         account.delete()
 
-        with caplog.at_level(logging.INFO, logger="accounts.views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
             Client().post(reverse("accounts:unsubscribe", kwargs={"token": token}))
 
         all_messages = [r.getMessage() for r in caplog.records]

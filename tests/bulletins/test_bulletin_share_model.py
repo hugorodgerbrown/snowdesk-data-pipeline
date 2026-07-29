@@ -11,7 +11,7 @@ import datetime
 
 import pytest
 
-from bulletins.models import Bulletin, BulletinShare
+from apps.bulletins.models import Bulletin, BulletinShare
 from tests.factories import (
     BulletinFactory,
     BulletinShareFactory,

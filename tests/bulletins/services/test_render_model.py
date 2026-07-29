@@ -24,9 +24,9 @@ from typing import Any
 
 import pytest
 
-from bulletins.models import Bulletin
-from bulletins.services.meteofrance_translator import parse_dpbra_xml
-from bulletins.services.render_model import (
+from apps.bulletins.models import Bulletin
+from apps.bulletins.services.meteofrance_translator import parse_dpbra_xml
+from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     _build_metadata,
@@ -415,7 +415,9 @@ class TestBuildRenderModelNoAggregation:
 
         props = _load_sample("sample_no_aggregation_day.json")
 
-        with caplog.at_level(logging.ERROR, logger="bulletins.services.render_model"):
+        with caplog.at_level(
+            logging.ERROR, logger="apps.bulletins.services.render_model"
+        ):
             build_render_model(props)
 
         assert any("cannot build traits" in rec.getMessage() for rec in caplog.records)
@@ -848,7 +850,7 @@ class TestBuildRenderModel3PlusTraits:
                 }
             },
         }
-        with patch("bulletins.services.render_model.logger") as mock_logger:
+        with patch("apps.bulletins.services.render_model.logger") as mock_logger:
             rm = build_render_model(props)
 
         assert len(rm["traits"]) == 3
@@ -2283,7 +2285,7 @@ class TestResolveProblemMeteoFrance:
 
     def test_mf_problem_comment_is_empty(self) -> None:
         """METEOFRANCE per-problem comment is always empty (activity lives at bulletin level)."""
-        from bulletins.services.render_model import _resolve_problem_comment
+        from apps.bulletins.services.render_model import _resolve_problem_comment
 
         problem: dict[str, Any] = {"comment": "Some prose."}
         result = _resolve_problem_comment(problem, Bulletin.Source.METEOFRANCE)
@@ -2297,7 +2299,7 @@ class TestResolveProblemMeteoFrance:
 
     def test_mf_problem_avalanche_type_is_none(self) -> None:
         """METEOFRANCE avalanche_type is always None (no ALBINA customData)."""
-        from bulletins.services.render_model import _resolve_problem_avalanche_type
+        from apps.bulletins.services.render_model import _resolve_problem_avalanche_type
 
         problem: dict[str, Any] = {}
         result = _resolve_problem_avalanche_type(problem, Bulletin.Source.METEOFRANCE)
@@ -2478,7 +2480,7 @@ class TestSlfAdapter:
     """Unit tests for the SlfAdapter class."""
 
     def _adapter(self) -> Any:
-        from bulletins.services.render_model import SlfAdapter
+        from apps.bulletins.services.render_model import SlfAdapter
 
         return SlfAdapter()
 
@@ -2591,7 +2593,7 @@ class TestAlbinaAdapter:
     """Unit tests for the AlbinaAdapter class."""
 
     def _adapter(self) -> Any:
-        from bulletins.services.render_model import AlbinaAdapter
+        from apps.bulletins.services.render_model import AlbinaAdapter
 
         return AlbinaAdapter()
 
@@ -2768,7 +2770,7 @@ class TestMeteoFranceAdapter:
     """Unit tests for the MeteoFranceAdapter class."""
 
     def _adapter(self) -> Any:
-        from bulletins.services.render_model import MeteoFranceAdapter
+        from apps.bulletins.services.render_model import MeteoFranceAdapter
 
         return MeteoFranceAdapter()
 

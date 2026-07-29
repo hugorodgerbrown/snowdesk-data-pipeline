@@ -1,5 +1,5 @@
 """
-tests/regions/test_fixture_utils.py — Unit tests for regions/fixture_utils.py.
+tests/regions/test_fixture_utils.py — Unit tests for apps/regions/fixture_utils.py.
 
 Covers the helper functions shared across the fixture-build commands
 (build_switzerland_fixture, build_france_fixture, build_austria_fixture,
@@ -45,7 +45,7 @@ class TestBuildEntriesFromEawsDir:
 
     def test_assembles_l1_l2_l4_in_order_with_l4_sorted(self, tmp_path: Path) -> None:
         """Output is L1 entries, then L2 entries, then L4 entries sorted by region_id."""
-        from regions.fixture_utils import build_entries_from_eaws_dir
+        from apps.regions.fixture_utils import build_entries_from_eaws_dir
 
         _write_eaws_file(tmp_path, "AT-02", [{"id": "AT-02-01"}])
 
@@ -92,8 +92,8 @@ class TestBuildEntriesFromEawsDir:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A code with no matching file logs a warning and is skipped, not raised."""
-        from regions import fixture_utils
-        from regions.fixture_utils import build_entries_from_eaws_dir
+        from apps.regions import fixture_utils
+        from apps.regions.fixture_utils import build_entries_from_eaws_dir
 
         _write_eaws_file(tmp_path, "AT-02", [])
 
@@ -132,7 +132,7 @@ class TestBuildEntriesFromEawsDir:
 
     def test_empty_region_codes_returns_empty_list(self, tmp_path: Path) -> None:
         """No region codes means no entries — and no callable invocations."""
-        from regions.fixture_utils import build_entries_from_eaws_dir
+        from apps.regions.fixture_utils import build_entries_from_eaws_dir
 
         invocations: list[str] = []
 
@@ -161,7 +161,7 @@ class TestIterCoordsFromGeometry:
 
     def test_polygon_yields_all_ring_coords(self) -> None:
         """All vertices from every ring in a Polygon are returned."""
-        from regions.fixture_utils import _iter_coords_from_geometry
+        from apps.regions.fixture_utils import _iter_coords_from_geometry
 
         geometry = {
             "type": "Polygon",
@@ -176,7 +176,7 @@ class TestIterCoordsFromGeometry:
 
     def test_polygon_with_hole_yields_all_rings(self) -> None:
         """Outer ring and hole ring vertices are both included."""
-        from regions.fixture_utils import _iter_coords_from_geometry
+        from apps.regions.fixture_utils import _iter_coords_from_geometry
 
         geometry = {
             "type": "Polygon",
@@ -191,7 +191,7 @@ class TestIterCoordsFromGeometry:
 
     def test_multipolygon_yields_all_member_coords(self) -> None:
         """Vertices from every member polygon are returned."""
-        from regions.fixture_utils import _iter_coords_from_geometry
+        from apps.regions.fixture_utils import _iter_coords_from_geometry
 
         geometry = {
             "type": "MultiPolygon",
@@ -207,7 +207,7 @@ class TestIterCoordsFromGeometry:
 
     def test_strips_altitude_from_3d_coords(self) -> None:
         """3D positions are reduced to (lon, lat) — altitude is dropped."""
-        from regions.fixture_utils import _iter_coords_from_geometry
+        from apps.regions.fixture_utils import _iter_coords_from_geometry
 
         geometry = {
             "type": "Polygon",
@@ -221,7 +221,7 @@ class TestIterCoordsFromGeometry:
 
     def test_unsupported_type_raises_value_error(self) -> None:
         """An unsupported geometry type raises ValueError."""
-        from regions.fixture_utils import _iter_coords_from_geometry
+        from apps.regions.fixture_utils import _iter_coords_from_geometry
 
         with pytest.raises(ValueError, match="Unsupported geometry type"):
             _iter_coords_from_geometry({"type": "Point", "coordinates": [6.0, 46.0]})
@@ -237,7 +237,7 @@ class TestBboxFromChildren:
 
     def test_single_child_returns_child_bbox(self) -> None:
         """A list with one child returns that child's bbox."""
-        from regions.fixture_utils import bbox_from_children
+        from apps.regions.fixture_utils import bbox_from_children
 
         child = {
             "boundary": {
@@ -252,7 +252,7 @@ class TestBboxFromChildren:
 
     def test_multiple_children_returns_enclosing_bbox(self) -> None:
         """Multiple children produce a bbox that spans all of them."""
-        from regions.fixture_utils import bbox_from_children
+        from apps.regions.fixture_utils import bbox_from_children
 
         child_a = {
             "boundary": {
@@ -275,7 +275,7 @@ class TestBboxFromChildren:
 
     def test_children_without_boundary_are_skipped(self) -> None:
         """Children with no boundary key do not contribute to the bbox."""
-        from regions.fixture_utils import bbox_from_children
+        from apps.regions.fixture_utils import bbox_from_children
 
         child_with = {
             "boundary": {
@@ -300,7 +300,7 @@ class TestCentreFromChildren:
 
     def test_single_child_returns_that_centre(self) -> None:
         """A single child with a centre returns that centre unchanged."""
-        from regions.fixture_utils import centre_from_children
+        from apps.regions.fixture_utils import centre_from_children
 
         child = {"centre": {"lon": 6.5, "lat": 46.5}}
         result = centre_from_children([child])
@@ -308,7 +308,7 @@ class TestCentreFromChildren:
 
     def test_multiple_children_returns_arithmetic_mean(self) -> None:
         """The result is the arithmetic mean of all children's centres."""
-        from regions.fixture_utils import centre_from_children
+        from apps.regions.fixture_utils import centre_from_children
 
         children = [
             {"centre": {"lon": 6.0, "lat": 46.0}},
@@ -320,7 +320,7 @@ class TestCentreFromChildren:
 
     def test_children_without_centre_are_skipped(self) -> None:
         """Children without a centre key are excluded from the average."""
-        from regions.fixture_utils import centre_from_children
+        from apps.regions.fixture_utils import centre_from_children
 
         children: list[dict[str, Any]] = [
             {"centre": {"lon": 6.0, "lat": 46.0}},
@@ -333,14 +333,14 @@ class TestCentreFromChildren:
 
     def test_empty_list_raises_value_error(self) -> None:
         """An empty children list raises ValueError rather than ZeroDivisionError."""
-        from regions.fixture_utils import centre_from_children
+        from apps.regions.fixture_utils import centre_from_children
 
         with pytest.raises(ValueError, match="empty children list"):
             centre_from_children([])
 
     def test_all_children_lack_centre_raises_value_error(self) -> None:
         """A list where no child has a centre raises ValueError."""
-        from regions.fixture_utils import centre_from_children
+        from apps.regions.fixture_utils import centre_from_children
 
         with pytest.raises(ValueError, match="empty children list"):
             centre_from_children([{"boundary": {}}, {"boundary": {}}])
@@ -356,7 +356,7 @@ class TestCentreFromBbox:
 
     def test_returns_midpoint_of_polygon(self) -> None:
         """Returns the bbox midpoint of a simple square Polygon."""
-        from regions.fixture_utils import centre_from_bbox
+        from apps.regions.fixture_utils import centre_from_bbox
 
         geometry = {
             "type": "Polygon",
@@ -370,7 +370,7 @@ class TestCentreFromBbox:
 
     def test_returns_midpoint_of_multipolygon(self) -> None:
         """Returns the bbox midpoint spanning all members of a MultiPolygon."""
-        from regions.fixture_utils import centre_from_bbox
+        from apps.regions.fixture_utils import centre_from_bbox
 
         geometry = {
             "type": "MultiPolygon",
@@ -395,7 +395,7 @@ class TestBoundaryFromChildren:
 
     def test_returns_multipolygon_covering_children(self) -> None:
         """The union of child boundaries is returned as a GeoJSON geometry."""
-        from regions.fixture_utils import boundary_from_children
+        from apps.regions.fixture_utils import boundary_from_children
 
         children = [
             {
@@ -443,14 +443,14 @@ class TestLoadFixture:
 
     def test_missing_file_returns_empty_list_by_default(self, tmp_path: Path) -> None:
         """missing_ok=True (the default) returns [] when the file is absent."""
-        from regions.fixture_utils import load_fixture
+        from apps.regions.fixture_utils import load_fixture
 
         missing = tmp_path / "does_not_exist.json"
         assert load_fixture(missing) == []
 
     def test_missing_file_raises_when_missing_ok_false(self, tmp_path: Path) -> None:
         """missing_ok=False lets a missing file raise FileNotFoundError."""
-        from regions.fixture_utils import load_fixture
+        from apps.regions.fixture_utils import load_fixture
 
         missing = tmp_path / "does_not_exist.json"
         with pytest.raises(FileNotFoundError):
@@ -458,7 +458,7 @@ class TestLoadFixture:
 
     def test_round_trips_written_fixture(self, tmp_path: Path) -> None:
         """load_fixture reads back exactly what write_fixture wrote."""
-        from regions.fixture_utils import load_fixture, write_fixture
+        from apps.regions.fixture_utils import load_fixture, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         data = [
@@ -470,7 +470,7 @@ class TestLoadFixture:
 
     def test_present_file_ignores_missing_ok(self, tmp_path: Path) -> None:
         """An existing file is read regardless of the missing_ok value."""
-        from regions.fixture_utils import load_fixture, write_fixture
+        from apps.regions.fixture_utils import load_fixture, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
@@ -488,7 +488,7 @@ class TestWriteFixture:
 
     def test_uses_indent_2(self, tmp_path: Path) -> None:
         """Nested fields are indented two spaces per level."""
-        from regions.fixture_utils import write_fixture
+        from apps.regions.fixture_utils import write_fixture
 
         path = tmp_path / "eaws_XX.json"
         write_fixture(path, [{"model": "regions.majorregion", "fields": {"a": 1}}])
@@ -497,7 +497,7 @@ class TestWriteFixture:
 
     def test_ends_with_trailing_newline(self, tmp_path: Path) -> None:
         """The written file ends in exactly one trailing newline."""
-        from regions.fixture_utils import write_fixture
+        from apps.regions.fixture_utils import write_fixture
 
         path = tmp_path / "eaws_XX.json"
         write_fixture(path, [{"model": "regions.majorregion", "fields": {"a": 1}}])
@@ -507,7 +507,7 @@ class TestWriteFixture:
 
     def test_preserves_non_ascii_characters_literally(self, tmp_path: Path) -> None:
         r"""ensure_ascii=False — non-ASCII text is written literally, not \u-escaped."""
-        from regions.fixture_utils import write_fixture
+        from apps.regions.fixture_utils import write_fixture
 
         path = tmp_path / "eaws_XX.json"
         write_fixture(
@@ -525,7 +525,7 @@ class TestWriteFixture:
 
     def test_matches_exact_expected_bytes(self, tmp_path: Path) -> None:
         """The full on-disk text matches json.dumps(..., indent=2) + a newline."""
-        from regions.fixture_utils import write_fixture
+        from apps.regions.fixture_utils import write_fixture
 
         path = tmp_path / "eaws_XX.json"
         data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
@@ -546,7 +546,7 @@ class TestDiffAgainstExisting:
         self, tmp_path: Path
     ) -> None:
         """A missing on-disk fixture is treated as empty (load_fixture default)."""
-        from regions.fixture_utils import diff_against_existing
+        from apps.regions.fixture_utils import diff_against_existing
 
         missing = tmp_path / "does_not_exist.json"
         new_data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
@@ -554,7 +554,7 @@ class TestDiffAgainstExisting:
 
     def test_identical_data_returns_zero(self, tmp_path: Path) -> None:
         """No differences between the on-disk and new data returns 0."""
-        from regions.fixture_utils import diff_against_existing, write_fixture
+        from apps.regions.fixture_utils import diff_against_existing, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         data = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
@@ -563,7 +563,7 @@ class TestDiffAgainstExisting:
 
     def test_added_entry_counted(self, tmp_path: Path) -> None:
         """A new entry with no counterpart on disk counts as one change."""
-        from regions.fixture_utils import diff_against_existing, write_fixture
+        from apps.regions.fixture_utils import diff_against_existing, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         existing = [{"model": "regions.majorregion", "fields": {"prefix": "XX-1"}}]
@@ -575,7 +575,7 @@ class TestDiffAgainstExisting:
 
     def test_removed_entry_counted(self, tmp_path: Path) -> None:
         """An on-disk entry absent from the new data counts as one change."""
-        from regions.fixture_utils import diff_against_existing, write_fixture
+        from apps.regions.fixture_utils import diff_against_existing, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         existing = [
@@ -588,7 +588,7 @@ class TestDiffAgainstExisting:
 
     def test_changed_entry_counted_once(self, tmp_path: Path) -> None:
         """An entry whose fields changed (same natural key) counts as one change."""
-        from regions.fixture_utils import diff_against_existing, write_fixture
+        from apps.regions.fixture_utils import diff_against_existing, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         existing = [
@@ -610,7 +610,7 @@ class TestDiffAgainstExisting:
         self, tmp_path: Path
     ) -> None:
         """Several identical entries, in any order, produce no diff."""
-        from regions.fixture_utils import diff_against_existing, write_fixture
+        from apps.regions.fixture_utils import diff_against_existing, write_fixture
 
         path = tmp_path / "eaws_XX.json"
         data = [
@@ -632,28 +632,28 @@ class TestEntryKey:
 
     def test_majorregion_keys_on_prefix(self) -> None:
         """A MajorRegion entry keys on its prefix field."""
-        from regions.fixture_utils import entry_key
+        from apps.regions.fixture_utils import entry_key
 
         entry = {"model": "regions.majorregion", "fields": {"prefix": "CH-1"}}
         assert entry_key(entry) == "regions.majorregion:CH-1"
 
     def test_subregion_keys_on_prefix(self) -> None:
         """A SubRegion entry keys on its prefix field."""
-        from regions.fixture_utils import entry_key
+        from apps.regions.fixture_utils import entry_key
 
         entry = {"model": "regions.subregion", "fields": {"prefix": "CH-11"}}
         assert entry_key(entry) == "regions.subregion:CH-11"
 
     def test_microregion_keys_on_region_id(self) -> None:
         """A MicroRegion entry keys on its region_id field."""
-        from regions.fixture_utils import entry_key
+        from apps.regions.fixture_utils import entry_key
 
         entry = {"model": "regions.microregion", "fields": {"region_id": "CH-1101"}}
         assert entry_key(entry) == "regions.microregion:CH-1101"
 
     def test_unknown_model_falls_back_to_sorted_fields_json(self) -> None:
         """An unrecognised model falls back to a sorted-keys JSON dump of fields."""
-        from regions.fixture_utils import entry_key
+        from apps.regions.fixture_utils import entry_key
 
         entry = {"model": "regions.other", "fields": {"b": 2, "a": 1}}
         assert entry_key(entry) == 'regions.other:{"a": 1, "b": 2}'

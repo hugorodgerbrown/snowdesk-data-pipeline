@@ -29,11 +29,11 @@ uv run python manage.py migrate
 
 echo "==> Loading region and resort fixtures …"
 uv run python manage.py loaddata \
-    regions/fixtures/eaws_CH.json \
-    regions/fixtures/eaws_FR.json \
-    regions/fixtures/eaws_AT.json \
-    regions/fixtures/eaws_IT.json \
-    regions/fixtures/resorts.json
+    apps/regions/fixtures/eaws_CH.json \
+    apps/regions/fixtures/eaws_FR.json \
+    apps/regions/fixtures/eaws_AT.json \
+    apps/regions/fixtures/eaws_IT.json \
+    apps/regions/fixtures/resorts.json
 
 echo "==> Fetching bulletins from all providers (local mirror) …"
 uv run python manage.py fetch_bulletins \

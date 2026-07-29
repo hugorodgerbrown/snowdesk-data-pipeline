@@ -1,7 +1,7 @@
 """
 tests/public/test_resort_detail.py — Tests for the resort detail page (SNOW-504).
 
-Covers ``public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
+Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
   - 200 + content: resort name, canton, parent region name, today's danger
     chip, and a "View bulletin" link to the region's evergreen bulletin.
   - Slug mismatch 301s to the canonical URL (mirrors the region
@@ -28,8 +28,8 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from bulletins.models import RegionDayRating
-from observations.models import FieldObservation
+from apps.bulletins.models import RegionDayRating
+from apps.observations.models import FieldObservation
 from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
@@ -170,7 +170,7 @@ class TestResortDetailEdgeCases:
 
 @pytest.mark.django_db
 class TestResortDetailFavouriteState:
-    """Favourite-star state mirrors public.api.resort_popup's contract."""
+    """Favourite-star state mirrors apps.public.api.resort_popup's contract."""
 
     def test_anonymous_shows_signin_cta(self) -> None:
         """An anonymous visitor sees the sign-in CTA, not the toggle button."""

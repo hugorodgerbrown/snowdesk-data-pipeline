@@ -7,8 +7,8 @@ authenticated-subscriber page — since ``static/js/sync_log.js`` reads
 ``window.pwaDb.getSyncLog()``, which needs the real IndexedDB database
 ``static/js/db.js`` opens on page load.
 
-Behind the ``sync_log`` waffle flag, matching ``accounts.views.manage_view``
-and ``accounts/templates/accounts/manage.html``.
+Behind the ``sync_log`` waffle flag, matching ``apps.accounts.views.manage_view``
+and ``apps/accounts/templates/accounts/manage.html``.
 
 Every test clears ``log:sync`` after the first navigation and before
 asserting on it: ``signed_in_page`` (via ``pwa_page``) navigates to ``/``

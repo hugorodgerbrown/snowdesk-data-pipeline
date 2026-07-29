@@ -45,8 +45,8 @@ import pytest
 import requests
 from django.db import IntegrityError
 
-from bulletins.models import ForecastPointWeather
-from bulletins.services.weather_fetcher import (
+from apps.bulletins.models import ForecastPointWeather
+from apps.bulletins.services.weather_fetcher import (
     ICON_CH_BOUNDS,
     ICON_CH_MODEL,
     POINT_FORECAST_DAYS,
@@ -198,7 +198,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         params = mock.call_args[1]["params"]
@@ -210,7 +210,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         daily_fields = mock.call_args[1]["params"]["daily"].split(",")
@@ -228,7 +228,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         hourly_fields = mock.call_args[1]["params"]["hourly"].split(",")
@@ -252,7 +252,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         assert "models" not in mock.call_args[1]["params"]
@@ -263,7 +263,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         params = mock.call_args[1]["params"]
@@ -276,7 +276,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
         params = mock.call_args[1]["params"]
@@ -290,7 +290,7 @@ class TestFetchWeatherForPoint:
         api_data = _make_full_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -315,7 +315,7 @@ class TestFetchWeatherForPoint:
         api_data = _make_full_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -344,7 +344,7 @@ class TestFetchWeatherForPoint:
         api_data = _make_full_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -363,7 +363,7 @@ class TestFetchWeatherForPoint:
         api_data = _make_full_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -392,7 +392,7 @@ class TestFetchWeatherForPoint:
         api_data = _make_partial_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -413,7 +413,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             results = fetch_weather_for_point(point, target, commit=False)
 
         assert results == []
@@ -430,7 +430,7 @@ class TestFetchWeatherForPoint:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             return_value=mock_response,
         ):
             with pytest.raises(requests.HTTPError):
@@ -452,7 +452,8 @@ class TestFetchWeatherForPoint:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             pytest.raises(ValueError),
         ):
@@ -476,7 +477,7 @@ class TestFetchWeatherForPoint:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get",
+                "apps.bulletins.services.weather_fetcher.requests.get",
                 _mock_get(_make_full_point_response()),
             ),
             patch.object(
@@ -500,7 +501,7 @@ class TestFetchWeatherForPoint:
 
         api_data = _make_full_point_response(weather_codes=[5] * POINT_FORECAST_DAYS)
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             results = fetch_weather_for_point(point, target, commit=True)
@@ -519,7 +520,7 @@ class TestFetchWeatherForPoint:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(
                 point,
                 target,
@@ -538,7 +539,7 @@ class TestFetchWeatherForPoint:
         captured: list[dict[str, Any]] = []
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             fetch_weather_for_point(
                 point,
@@ -574,7 +575,7 @@ class TestFetchAllPoints:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             counts = fetch_all_points(target, commit=True)
 
         assert mock.call_count == 1
@@ -591,7 +592,7 @@ class TestFetchAllPoints:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             counts = fetch_all_points(target, commit=True)
 
         mock.assert_not_called()
@@ -604,7 +605,7 @@ class TestFetchAllPoints:
         api_data = _make_full_point_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             first = fetch_all_points(target, commit=True)
             second = fetch_all_points(target, commit=True)
@@ -651,7 +652,7 @@ class TestFetchAllPoints:
             raise AssertionError("unexpected point in fake_get")
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", side_effect=fake_get
+            "apps.bulletins.services.weather_fetcher.requests.get", side_effect=fake_get
         ):
             counts = fetch_all_points(target, commit=True)
 
@@ -664,7 +665,7 @@ class TestFetchAllPoints:
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             counts = fetch_all_points(target, commit=False)
 
         mock.assert_called_once()
@@ -685,7 +686,7 @@ class TestFetchWeatherForPointProviderDates:
         api_data = _make_full_point_response(start_date="2026-05-02")
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             fetch_weather_for_point(point, target, commit=True)
@@ -719,7 +720,7 @@ class TestFetchWeatherForPointProviderDates:
         api_data["daily"]["time"] = gapped
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             fetch_weather_for_point(point, target, commit=True)
@@ -741,7 +742,7 @@ class TestFetchWeatherForPointProviderDates:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get",
+                "apps.bulletins.services.weather_fetcher.requests.get",
                 _mock_get(api_data),
             ),
             pytest.raises(ValueError, match="misaligned"),

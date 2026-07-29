@@ -26,8 +26,8 @@ from django.test import Client
 from django.urls import reverse
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Account
-from accounts.services.token import (
+from apps.accounts.models import Account
+from apps.accounts.services.token import (
     generate_password_reset_token,
     verify_password_reset_token,
 )
@@ -147,11 +147,13 @@ class TestResetRequestView:
         from django.contrib.auth.models import AnonymousUser
         from django.test import RequestFactory
 
-        from accounts.views import reset_password_request_view
+        from apps.accounts.views import reset_password_request_view
 
         request = RequestFactory().post(self.URL, {"email": "rl@example.com"})
         request.user = AnonymousUser()
-        with patch("accounts.views.get_usage", return_value={"should_limit": True}):
+        with patch(
+            "apps.accounts.views.get_usage", return_value={"should_limit": True}
+        ):
             assert reset_password_request_view(request).status_code == 429
 
 

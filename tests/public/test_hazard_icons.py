@@ -8,7 +8,7 @@ that unknown types return an empty string.
 import pytest
 from django.template import Context, Template
 
-from public.templatetags.hazard_icons import hazard_icon
+from apps.public.templatetags.hazard_icons import hazard_icon
 
 
 class TestHazardIconFilter:

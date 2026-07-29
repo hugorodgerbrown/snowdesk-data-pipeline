@@ -122,7 +122,7 @@ ten seconds.
   or offline (PWA cached state).
 - Don't introduce a route that would shadow the generic
   `<str:region_id>/` pattern without registering it before
-  `public.urls` is included.
+  `apps.public.urls` is included.
 
 ### J2 — Subscribe (anonymous → subscriber)
 
@@ -240,7 +240,7 @@ in the email is the entire authentication mechanism.
 - New email types must include the per-region unsubscribe partial.
   Skipping it is a CAN-SPAM-class regression even if technically the
   user can manage subscriptions elsewhere.
-- Any new token surface goes through `accounts/services/token.py`
+- Any new token surface goes through `apps/accounts/services/token.py`
   and uses a fresh salt — never overload `SALT_UNSUBSCRIBE`.
 
 ### J5 — Read historically or learn (either persona)

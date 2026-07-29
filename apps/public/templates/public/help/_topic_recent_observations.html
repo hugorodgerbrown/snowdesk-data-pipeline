@@ -1,0 +1,22 @@
+{% comment %}
+apps/public/templates/public/help/_topic_recent_observations.html — "Recent observations" panel body.
+
+Content partial for the help page (SNOW-476); included via the
+body_template parameter of includes/_collapsible_panel.html.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The Observations page lists field reports from the last 48 hours, newest first — a quick way to see what
+            other users have spotted recently without opening the map.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Sign in to view it. Your own reports always appear, marked "You". Other users' reports appear only when you
+            have the community-reports overlay enabled, and their times are rounded to the nearest 15 minutes to keep
+            individual reports from being pinpointed.
+        {% endblocktrans %}
+    </p>
+</div>

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from public.templatetags.card_tags import elevation_icon
+from apps.public.templatetags.card_tags import elevation_icon
 
 
 class TestElevationIconFalsyGuards:

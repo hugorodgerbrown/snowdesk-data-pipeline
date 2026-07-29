@@ -1,7 +1,7 @@
 """
 tests/bulletins/services/prose/test_en.py — Tests for the English prose parser.
 
-Covers every regex pattern in ``bulletins/services/prose/en.py`` with a
+Covers every regex pattern in ``apps/bulletins/services/prose/en.py`` with a
 representative prose snippet and at least one no-match counter-example.  Also
 includes a removability test that asserts that removing the parser leaves the
 ``parse_for`` interface in the same empty-state the registry is in when no
@@ -20,8 +20,8 @@ Test structure
 
 from __future__ import annotations
 
-from bulletins.services.prose import _PARSERS, parse_for
-from bulletins.services.prose.en import _parse
+from apps.bulletins.services.prose import _PARSERS, parse_for
+from apps.bulletins.services.prose.en import _parse
 
 # ---------------------------------------------------------------------------
 # Aspect patterns

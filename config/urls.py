@@ -7,22 +7,22 @@ django-csp-plus report endpoint under /csp/, and the public-facing bulletin
 site at the root.
 
 The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``
-and ``/favicon.ico`` routes are registered before ``public.urls`` so the
-generic ``<str:region_id>/`` pattern in public.urls does not swallow them.
+and ``/favicon.ico`` routes are registered before ``apps.public.urls`` so the
+generic ``<str:region_id>/`` pattern in apps.public.urls does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 
-- ``/dev/slf-mirror/`` — SLF CAAML bulletin-list mirror (``bulletins.dev_urls``,
+- ``/dev/slf-mirror/`` — SLF CAAML bulletin-list mirror (``apps.bulletins.dev_urls``,
   namespace ``dev``), so ``fetch_bulletins --source local-mirror`` can replay
   the on-disk archive end-to-end.
 - ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror
-  (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so
+  (``apps.bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so
   ``fetch_weather --local-mirror`` can replay
-  ``bulletins/local_mirrors/openmeteo_archive.ndjson``.
+  ``apps/bulletins/local_mirrors/openmeteo_archive.ndjson``.
 - ``/dev/albina-mirror/`` — ALBINA bulletin mirror
-  (``bulletins.dev_urls_albina``, namespace ``dev_albina``), so
+  (``apps.bulletins.dev_urls_albina``, namespace ``dev_albina``), so
   ``fetch_bulletins --source albina --local-mirror`` can replay
-  ``bulletins/local_mirrors/albina_archive.ndjson``.
+  ``apps/bulletins/local_mirrors/albina_archive.ndjson``.
 
 The three mirrors live in separate URL modules so Django's namespace-uniqueness
 check (``urls.W005``) is satisfied. Production never imports any mirror module.
@@ -34,8 +34,8 @@ from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
-from public.sitemaps import BulletinSitemap
-from public.views import (
+from apps.public.sitemaps import BulletinSitemap
+from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
     serve_llms_txt,
@@ -47,7 +47,7 @@ from public.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("account/", include("accounts.urls")),
+    path("account/", include("apps.accounts.urls")),
     # SNOW-430: the accounts app moved from /subscribe/ to /account/. Redirect
     # the legacy prefix permanently so in-flight account-access and unsubscribe
     # email links keep working. The account-access token route was also renamed
@@ -65,10 +65,10 @@ urlpatterns = [
     ),
     # /api/telemetry must be listed BEFORE the public api_urls include so
     # Django resolves it against the analytics namespace rather than
-    # falling through to public.api_urls (which does not define it).
+    # falling through to apps.public.api_urls (which does not define it).
     # SNOW-381: first-party telemetry receiver (spec §16).
-    path("api/telemetry", include("analytics.urls")),
-    path("api/", include("public.api_urls")),
+    path("api/telemetry", include("apps.analytics.urls")),
+    path("api/", include("apps.public.api_urls")),
     path("csp/", include("csp.urls")),
     path("sw.js", serve_sw, name="service_worker"),
     # Kill-switch SW (SNOW-373, spec §6.3 Mechanism B). Always present so
@@ -83,15 +83,15 @@ urlpatterns = [
     path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
 ]
 
-# Dev-only routes must register BEFORE ``public.urls`` because that
+# Dev-only routes must register BEFORE ``apps.public.urls`` because that
 # include's generic ``<str:region_id>/`` pattern would otherwise swallow
 # the prefix. Production never imports these modules.
 if settings.DEBUG:
     urlpatterns.extend(
         [
-            path("dev/slf-mirror/", include("bulletins.dev_urls")),
-            path("dev/openmeteo-mirror/", include("bulletins.dev_urls_openmeteo")),
-            path("dev/albina-mirror/", include("bulletins.dev_urls_albina")),
+            path("dev/slf-mirror/", include("apps.bulletins.dev_urls")),
+            path("dev/openmeteo-mirror/", include("apps.bulletins.dev_urls_openmeteo")),
+            path("dev/albina-mirror/", include("apps.bulletins.dev_urls_albina")),
         ]
     )
 
@@ -103,12 +103,12 @@ urlpatterns.append(
         name="sitemap",
     )
 )
-# observations/ partials must be registered BEFORE ``public.urls`` because
-# the generic ``<str:region_id>/`` catch-all in public.urls would otherwise
+# observations/ partials must be registered BEFORE ``apps.public.urls`` because
+# the generic ``<str:region_id>/`` catch-all in apps.public.urls would otherwise
 # swallow ``partials/report/…`` and resolve "partials" as a region_id.
-urlpatterns.append(path("", include("observations.urls")))
-# favourites/ must likewise be registered BEFORE ``public.urls`` — the
+urlpatterns.append(path("", include("apps.observations.urls")))
+# favourites/ must likewise be registered BEFORE ``apps.public.urls`` — the
 # generic ``<str:region_id>/`` catch-all would otherwise swallow the
 # "favourites" prefix and resolve it as a region_id.
-urlpatterns.append(path("favourites/", include("favourites.urls")))
-urlpatterns.append(path("", include("public.urls")))
+urlpatterns.append(path("favourites/", include("apps.favourites.urls")))
+urlpatterns.append(path("", include("apps.public.urls")))

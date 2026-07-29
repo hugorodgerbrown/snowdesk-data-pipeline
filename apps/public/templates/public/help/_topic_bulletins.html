@@ -1,0 +1,25 @@
+{% comment %}
+apps/public/templates/public/help/_topic_bulletins.html — "Reading a bulletin" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html. Deliberately
+brief — the full domain explanation lives on the how-to-read-a-bulletin
+guide, linked below rather than duplicated.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Every bulletin page shows a danger rating on a five-level scale (Low to Very High), and one or more
+            "avalanche problems" &mdash; the specific hazards driving that rating, such as fresh wind slab or a
+            persistent weak layer &mdash; each with the aspects and elevations where it applies.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            For a full walkthrough of the danger scale, subdivisions, and how to read the avalanche-problem cards, see
+            the dedicated guide:
+        {% endblocktrans %}
+        <a class="underline" href="{% url 'public:how_to_read_bulletin' %}">{% trans "How to read a bulletin" %}</a>.
+    </p>
+</div>

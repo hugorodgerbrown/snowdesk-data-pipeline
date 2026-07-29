@@ -5,7 +5,7 @@
 # reference_data/geoip/GeoLite2-City.mmdb.  Idempotent — re-running replaces
 # the file with the latest build.
 #
-# GeoIP is a best-effort enrichment: ``bulletins.services.geoip.geo_lookup``
+# GeoIP is a best-effort enrichment: ``apps.bulletins.services.geoip.geo_lookup``
 # returns ``None`` for every caller when the database is absent, so the app
 # boots and serves fine without it (only RequestLog geo fields go empty).
 # The download must therefore NEVER block a deploy — a transient MaxMind

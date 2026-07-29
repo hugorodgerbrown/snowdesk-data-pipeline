@@ -26,8 +26,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Account, PasskeyCredential
-from accounts.services.passkey import (
+from apps.accounts.models import Account, PasskeyCredential
+from apps.accounts.services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
     generate_authentication_options,
@@ -163,7 +163,7 @@ class TestVerifyAndSaveRegistration:
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             passkey = verify_and_save_registration("{}", session, user)
@@ -175,7 +175,7 @@ class TestVerifyAndSaveRegistration:
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             verify_and_save_registration("{}", session, user)
@@ -191,7 +191,7 @@ class TestVerifyAndSaveRegistration:
         user = UserFactory.create()
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             side_effect=ValueError("bad signature"),
         ):
             with pytest.raises(PasskeyError):
@@ -201,7 +201,7 @@ class TestVerifyAndSaveRegistration:
         user = UserFactory.create()
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             side_effect=ValueError("bad"),
         ):
             try:
@@ -220,7 +220,7 @@ class TestVerifyAndSaveRegistration:
         mock_result = _mock_verified_registration(credential_id=cred_bytes)
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             with pytest.raises(PasskeyError, match="already registered"):
@@ -233,7 +233,7 @@ class TestVerifyAndSaveRegistration:
         )
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             passkey = verify_and_save_registration("{}", session, user)
@@ -245,7 +245,7 @@ class TestVerifyAndSaveRegistration:
         mock_result = _mock_verified_registration(aaguid=real_aaguid)
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             passkey = verify_and_save_registration("{}", session, user)
@@ -310,7 +310,7 @@ class TestVerifyAuthenticationResponse:
         mock_result = _mock_verified_authentication(new_sign_count=1)
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
             result = verify_authentication_response(credential_json, session)
@@ -325,7 +325,7 @@ class TestVerifyAuthenticationResponse:
         mock_result = _mock_verified_authentication(new_sign_count=5)
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
             verify_authentication_response(credential_json, session)
@@ -339,7 +339,7 @@ class TestVerifyAuthenticationResponse:
         mock_result = _mock_verified_authentication()
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
             verify_authentication_response(credential_json, session)
@@ -353,7 +353,7 @@ class TestVerifyAuthenticationResponse:
         mock_result = _mock_verified_authentication()
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
             verify_authentication_response(credential_json, session)
@@ -378,7 +378,7 @@ class TestVerifyAuthenticationResponse:
         credential_json = json.dumps({"id": "dGVzdA"})
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             side_effect=ValueError("bad signature"),
         ):
             with pytest.raises(PasskeyError):
@@ -390,7 +390,7 @@ class TestVerifyAuthenticationResponse:
         credential_json = json.dumps({"id": "dGVzdA"})
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             side_effect=ValueError("bad"),
         ):
             try:
@@ -431,10 +431,10 @@ class TestPasskeyServiceLogging:
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
 
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
-            with caplog.at_level(logging.INFO, logger="accounts.services.passkey"):
+            with caplog.at_level(logging.INFO, logger="apps.accounts.services.passkey"):
                 verify_and_save_registration("{}", session, user)
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -470,10 +470,10 @@ class TestPasskeyServiceLogging:
         session = _session_with_auth_challenge("dGVzdA")
 
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
-            with caplog.at_level(logging.INFO, logger="accounts.services.passkey"):
+            with caplog.at_level(logging.INFO, logger="apps.accounts.services.passkey"):
                 verify_authentication_response(credential_json, session)
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -513,7 +513,7 @@ class TestStaffUserWithoutAccount:
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_registration_response",
+            "apps.accounts.services.passkey.webauthn.verify_registration_response",
             return_value=mock_result,
         ):
             passkey = verify_and_save_registration("{}", session, user)
@@ -528,7 +528,7 @@ class TestStaffUserWithoutAccount:
         mock_result = _mock_verified_authentication(new_sign_count=1)
         session = _session_with_auth_challenge("dGVzdA")
         with patch(
-            "accounts.services.passkey.webauthn.verify_authentication_response",
+            "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             return_value=mock_result,
         ):
             result = verify_authentication_response(credential_json, session)

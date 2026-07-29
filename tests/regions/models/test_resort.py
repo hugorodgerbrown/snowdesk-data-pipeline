@@ -10,7 +10,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 
-from regions.models import MicroRegion, Resort
+from apps.regions.models import MicroRegion, Resort
 from tests.factories import MicroRegionFactory, ResortFactory
 
 
@@ -191,7 +191,7 @@ class TestResortFixture:
         import json
         from pathlib import Path
 
-        fixture_path = Path("regions/fixtures/resorts.json")
+        fixture_path = Path("apps/regions/fixtures/resorts.json")
         data = json.loads(fixture_path.read_text())
         for entry in data:
             region_ids.add(entry["fields"]["region"][0])

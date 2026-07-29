@@ -3,7 +3,7 @@ tests/e2e/test_offline_favourite_submit.py — Playwright test for SNOW-479:
 offline favourite creation through the client mutation queue.
 
 Covers the full offline → reconnect journey wiring
-``favourites.views.favourite_create`` through ``window.pwaMutationQueue``
+``apps.favourites.views.favourite_create`` through ``window.pwaMutationQueue``
 (``static/js/favourites.js`` / ``static/js/mutation_queue.js``, SNOW-376):
 
 1. A "Save" tap while offline enqueues exactly one ``queue:mutations`` row
@@ -19,7 +19,7 @@ Covers the full offline → reconnect journey wiring
    pin replaces the optimistic one.
 3. Replaying the same operation a second time — same Idempotency-Key, same
    body — does not create a duplicate row:
-   ``core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
+   ``apps.core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
 
 SNOW-496: the cap-path case (queued create replays to a 409 at
 ``FAVOURITES_MAX_PER_USER``, which the queue treats as an immediate
@@ -54,7 +54,7 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from favourites.models import Favourite
+from apps.favourites.models import Favourite
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory
 

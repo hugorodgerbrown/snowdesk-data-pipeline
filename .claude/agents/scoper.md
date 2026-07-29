@@ -49,7 +49,7 @@ Anything that needs the user's input before this is implementable. If there are 
 ## What good looks like
 
 - Specific over general. "Add a column to the Resort model" not "improve resort data."
-- Grounded in the codebase. "Extend `bulletins/models.py` `Bulletin.parse()`" not "update the bulletin parser somewhere."
+- Grounded in the codebase. "Extend `apps/bulletins/models.py` `Bulletin.parse()`" not "update the bulletin parser somewhere."
 - Honest about ambiguity. If the ticket is genuinely unclear, the open questions section is long. Don't paper over uncertainty with confident-sounding prose.
 - Short. A typical Snowdesk feature scope is 200–500 words. If you're heading past 800 words, the ticket should probably be split.
 

@@ -148,11 +148,11 @@ djangoSettingsModule = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=accounts --cov=analytics --cov=mcp_server --cov=observations --cov=favourites --ignore=tests/e2e"
+addopts = "-n auto --cov=apps.core --cov=apps.bulletins --cov=apps.regions --cov=apps.public --cov=apps.accounts --cov=apps.analytics --cov=apps.mcp_server --cov=apps.observations --cov=apps.favourites --ignore=tests/e2e"
 # pytest-django defaults to DEBUG=False at test time, which silently
 # drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
 # SLF mirror in config/urls.py, the scrubber-perf debug page in
-# public/urls.py). ``keep`` honours the value from the settings module
+# apps/public/urls.py). ``keep`` honours the value from the settings module
 # (DEBUG=True under config.settings.development) so those routes stay
 # registered and their test client GETs resolve.
 django_debug_mode = "keep"
@@ -163,8 +163,8 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["core", "bulletins", "regions", "public", "accounts", "analytics", "mcp_server", "observations", "favourites"]
-omit = ["bulletins/migrations/*", "regions/migrations/*", "public/migrations/*", "accounts/migrations/*", "observations/migrations/*", "favourites/migrations/*", "config/*", "__init__.py"]
+source = ["apps.core", "apps.bulletins", "apps.regions", "apps.public", "apps.accounts", "apps.analytics", "apps.mcp_server", "apps.observations", "apps.favourites"]
+omit = ["apps/bulletins/migrations/*", "apps/regions/migrations/*", "apps/public/migrations/*", "apps/accounts/migrations/*", "apps/observations/migrations/*", "apps/favourites/migrations/*", "config/*", "__init__.py"]
 
 [tool.coverage.report]
 fail_under = 0

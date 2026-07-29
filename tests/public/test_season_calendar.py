@@ -36,8 +36,12 @@ import datetime
 import pytest
 from django.test import override_settings
 
-from bulletins.models import RegionDayRating
-from public.season_calendar import build_season_grid, build_season_ribbon, season_header
+from apps.bulletins.models import RegionDayRating
+from apps.public.season_calendar import (
+    build_season_grid,
+    build_season_ribbon,
+    season_header,
+)
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,

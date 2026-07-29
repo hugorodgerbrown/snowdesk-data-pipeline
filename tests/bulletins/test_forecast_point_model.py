@@ -7,7 +7,7 @@ Covers:
   - to_string() / __str__() format.
   - unique_together constraint on (lat_cell, lon_cell, elevation_band).
   - Quantisation edge cases: cell boundaries and negative-coordinate floors,
-    exercised via bulletins.services.forecast_points.quantise_*.
+    exercised via apps.bulletins.services.forecast_points.quantise_*.
   - ForecastPointQuerySet.active() — points with at least one favourite or
     resort (SNOW-503).
 """
@@ -15,8 +15,8 @@ Covers:
 import pytest
 from django.db import IntegrityError
 
-from bulletins.models import ForecastPoint
-from bulletins.services.forecast_points import (
+from apps.bulletins.models import ForecastPoint
+from apps.bulletins.services.forecast_points import (
     ELEVATION_BAND_SIZE,
     LAT_CELL_SIZE,
     LON_CELL_SIZE,

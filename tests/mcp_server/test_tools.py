@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_tools.py — Tests for mcp_server.tools.
+tests/mcp_server/test_tools.py — Tests for apps.mcp_server.tools.
 
 One test class per tool: ``search_regions``, ``get_current_conditions``,
 ``get_avalanche_problems``, ``get_danger_history``, ``list_resorts_in_region``.
@@ -17,9 +17,9 @@ from typing import Any
 import pytest
 from django.core.cache import cache
 
-from bulletins.models import Bulletin, RegionDayRating
-from mcp_server import tools
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.mcp_server import tools
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -904,7 +904,7 @@ class TestHandleBulkCurrentConditionsArgs:
 
     def _protocol_error(self) -> type[Exception]:
         """Return the ProtocolError class without a module-level cycle."""
-        from mcp_server.protocol import ProtocolError
+        from apps.mcp_server.protocol import ProtocolError
 
         return ProtocolError
 
@@ -1070,7 +1070,7 @@ class TestHandleFindRegionsNearArgs:
 
     def _protocol_error(self) -> type[Exception]:
         """Return the ProtocolError class without a module-level cycle."""
-        from mcp_server.protocol import ProtocolError
+        from apps.mcp_server.protocol import ProtocolError
 
         return ProtocolError
 

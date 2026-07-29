@@ -1,5 +1,5 @@
 """
-Tests for ``core.idempotency.IdempotencyMiddleware`` (SNOW-371, fingerprint
+Tests for ``apps.core.idempotency.IdempotencyMiddleware`` (SNOW-371, fingerprint
 hardening SNOW-463).
 
 Covers the spec §5.5 / §12.3 contract:
@@ -43,11 +43,11 @@ from django.http import HttpRequest, HttpResponse
 from django.test import Client
 from django.utils import timezone
 
-from core.idempotency import (
+from apps.core.idempotency import (
     IDEMPOTENCY_RECORD_TTL_SECONDS,
     IdempotencyMiddleware,
 )
-from core.models import IdempotencyRecord
+from apps.core.models import IdempotencyRecord
 from tests.factories import UserFactory
 
 # ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ def test_missing_header_falls_through_and_logs(
     view = _CountingView()
     middleware = IdempotencyMiddleware(view)
 
-    with caplog.at_level(logging.INFO, logger="core.idempotency"):
+    with caplog.at_level(logging.INFO, logger="apps.core.idempotency"):
         middleware(_post())
 
     assert view.calls == 1
@@ -236,7 +236,7 @@ def test_malformed_key_is_not_cached(caplog: pytest.LogCaptureFixture) -> None:
     view = _CountingView()
     middleware = IdempotencyMiddleware(view)
 
-    with caplog.at_level(logging.WARNING, logger="core.idempotency"):
+    with caplog.at_level(logging.WARNING, logger="apps.core.idempotency"):
         middleware(_post(key="x" * 500))
         middleware(_post(key="\x00\x01\x02"))
 
@@ -401,7 +401,7 @@ def test_unclaimable_key_returns_409_without_running_the_view() -> None:
     middleware = IdempotencyMiddleware(view)
 
     with patch(
-        "core.models.IdempotencyRecordManager.reserve",
+        "apps.core.models.IdempotencyRecordManager.reserve",
         return_value=(None, False),
     ):
         response = middleware(_post(key="unclaimable"))
@@ -490,7 +490,7 @@ def test_fingerprint_mismatch_logs_warning(caplog: pytest.LogCaptureFixture) -> 
     middleware = IdempotencyMiddleware(view)
 
     middleware(_post(path="/account/", key="fp-log"))
-    with caplog.at_level(logging.WARNING, logger="core.idempotency"):
+    with caplog.at_level(logging.WARNING, logger="apps.core.idempotency"):
         middleware(_post(path="/favourites/", key="fp-log"))
 
     assert any(

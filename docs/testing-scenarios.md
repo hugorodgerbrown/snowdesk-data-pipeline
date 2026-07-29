@@ -502,7 +502,7 @@ the LAN — `runserver 0.0.0.0:8000`).
 
 > Automated: [test_pwa_lifecycle_update.py::test_update_banner_appears_on_new_sw_bytes](../tests/e2e/test_pwa_lifecycle_update.py)
 > — drives the byte-diff via a server-side monkeypatch of
-> `public.views._serve_sw_file` rather than DevTools' "Update" button;
+> `apps.public.views._serve_sw_file` rather than DevTools' "Update" button;
 > Playwright cannot observe or intercept a service worker's own script
 > fetch (confirmed during the SNOW-389 spike — see
 > [_spike_results.py](../tests/e2e/_spike_results.py)).

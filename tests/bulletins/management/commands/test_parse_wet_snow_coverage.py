@@ -246,7 +246,7 @@ class TestParseWetSnowCoverage:
 
     def test_does_not_mutate_database(self) -> None:
         """Command is read-only: Bulletin count is unchanged after running."""
-        from bulletins.models import Bulletin as BulletinModel
+        from apps.bulletins.models import Bulletin as BulletinModel
 
         BulletinFactory.create(
             lang="en",

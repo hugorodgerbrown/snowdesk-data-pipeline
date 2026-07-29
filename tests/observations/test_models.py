@@ -1,5 +1,5 @@
 """
-tests/observations/test_models.py — Tests for observations.models.
+tests/observations/test_models.py — Tests for apps.observations.models.
 
 Covers:
   FieldObservation field values, to_string, Meta.ordering.
@@ -24,7 +24,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from observations.models import FieldObservation, _haversine_km
+from apps.observations.models import FieldObservation, _haversine_km
 from tests.factories import (
     FieldObservationFactory,
     MicroRegionFactory,

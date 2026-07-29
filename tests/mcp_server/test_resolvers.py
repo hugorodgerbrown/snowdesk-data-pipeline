@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_resolvers.py — Tests for mcp_server.resolvers.
+tests/mcp_server/test_resolvers.py — Tests for apps.mcp_server.resolvers.
 
 Covers ``resolve_region`` (exact ``region_id`` lookup), ``search_places``
 (fuzzy name search, including the alpine-name misspelling table from the
@@ -17,8 +17,8 @@ from django.core.cache import cache
 from django.db.models import Max
 from django.utils import timezone
 
-from mcp_server import resolvers
-from regions.models import RegionAlias, Resort
+from apps.mcp_server import resolvers
+from apps.regions.models import RegionAlias, Resort
 from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,

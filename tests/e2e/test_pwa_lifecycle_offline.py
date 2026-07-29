@@ -98,7 +98,7 @@ def test_offline_banner_and_network_required_controls(
 
     Uses the canonical bulletin page (pre-seeded by ``_load_test_data``)
     because it carries the subscribe form's ``data-network-required``
-    attribute (``accounts/templates/accounts/partials/subscribe_form.html``).
+    attribute (``apps/accounts/templates/accounts/partials/subscribe_form.html``).
     """
     page = pwa_page.page
     page.goto(pwa_page.live_server_url + "/ch-4115/martigny-verbier/2026-04-08/")

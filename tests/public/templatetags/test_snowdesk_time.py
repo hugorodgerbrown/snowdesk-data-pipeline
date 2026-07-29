@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from public.templatetags.snowdesk_time import (
+from apps.public.templatetags.snowdesk_time import (
     danger_level_digit,
     danger_level_key,
     danger_level_label,

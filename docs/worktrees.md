@@ -84,7 +84,7 @@ owns the sample favourites.
 | Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier); owns the seeded favourites |
 
 The constants are defined in
-`bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
+`apps/bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
 `NORMAL_USER_EMAIL`, `DEV_USER_PASSWORD`, `SUBSCRIBED_REGION_ID`).
 
 ## Force-reseed procedure
@@ -173,18 +173,18 @@ locally fetched bulletin or additional setup:
 - Off-season "no bulletin" regions
 - `regions.RegionAlias` rows (SNOW-409) — the seed is CH-only and does not
   include them; some curated aliases target AT/IT regions that don't exist in a
-  fresh worktree DB at all. To exercise `mcp_server.resolvers.search_places`
+  fresh worktree DB at all. To exercise `apps.mcp_server.resolvers.search_places`
   against the curated aliases (e.g. to reproduce a "Sitten" → CH-4121 style
   query locally), load the EAWS fixtures the alias rows' natural keys depend on
   first:
 
   ```bash
   uv run python manage.py loaddata \
-      regions/fixtures/eaws_CH.json \
-      regions/fixtures/eaws_FR.json \
-      regions/fixtures/eaws_AT.json \
-      regions/fixtures/eaws_IT.json \
-      regions/fixtures/region_aliases.json
+      apps/regions/fixtures/eaws_CH.json \
+      apps/regions/fixtures/eaws_FR.json \
+      apps/regions/fixtures/eaws_AT.json \
+      apps/regions/fixtures/eaws_IT.json \
+      apps/regions/fixtures/region_aliases.json
   ```
 
 ### Changing the dataset
@@ -193,7 +193,7 @@ The dataset shape lives in code, not a committed fixture:
 
 - Bulletin/weather coverage, the CAAML payload template, and the danger
   gradient are the module-level helpers in
-  `bulletins/management/commands/seed_test_data.py`.
+  `apps/bulletins/management/commands/seed_test_data.py`.
 - Row *values* come from the factories in `tests/factories.py`.
 
 After changing either, re-run `monitor_query_counts` (read-only) to verify the

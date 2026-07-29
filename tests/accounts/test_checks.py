@@ -1,7 +1,7 @@
 """
 tests/accounts/test_checks.py — Tests for the VAPID subject system check.
 
-Exercises ``accounts.checks.check_vapid_claim_email`` directly against
+Exercises ``apps.accounts.checks.check_vapid_claim_email`` directly against
 monkeypatched ``push_config.VAPID_CLAIM_EMAIL`` values — no full app startup
 needed. Covers a valid ``mailto:``, a valid ``https:``, and two invalid
 cases (a bare address with no scheme, and an empty string).
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from accounts import checks, push_config
+from apps.accounts import checks, push_config
 
 
 def test_valid_mailto_subject_passes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,7 +33,7 @@ def test_bare_address_without_scheme_fails(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(push_config, "VAPID_CLAIM_EMAIL", "noreply@localhost")
     errors = checks.check_vapid_claim_email(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "accounts.push_config.E001"
+    assert errors[0].id == "apps.accounts.push_config.E001"
     assert "noreply@localhost" in errors[0].msg
 
 
@@ -42,4 +42,4 @@ def test_empty_string_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(push_config, "VAPID_CLAIM_EMAIL", "")
     errors = checks.check_vapid_claim_email(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "accounts.push_config.E001"
+    assert errors[0].id == "apps.accounts.push_config.E001"

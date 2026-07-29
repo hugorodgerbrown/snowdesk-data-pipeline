@@ -60,7 +60,7 @@ paths. That is acceptable — these are anonymous data or infrastructure
 endpoints, not page views; analytics attribution of map interactions comes from
 the page-load event on `/map/`, not from individual data-layer requests. The
 exempt set must be kept in sync with the `@cache_control(public=True)` GET
-endpoints in `public/api_urls.py` and the `Cache-Control: public` static routes
+endpoints in `apps/public/api_urls.py` and the `Cache-Control: public` static routes
 in `config/urls.py`. The behaviour is regression-tested with
 `@override_settings(POSTHOG_API_KEY="phc_test")` in
 `tests/public/test_map_api.py` (API endpoints) and in the per-surface test

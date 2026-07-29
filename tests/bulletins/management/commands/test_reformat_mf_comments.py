@@ -30,8 +30,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from bulletins.models import Bulletin
-from bulletins.services.render_model import (
+from apps.bulletins.models import Bulletin
+from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
@@ -387,7 +387,7 @@ class TestReformatSkipDayRatings:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.recompute_region_day"
+            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day"
         ) as mock_recompute:
             call_command(
                 "reformat_mf_comments",
@@ -405,7 +405,7 @@ class TestReformatSkipDayRatings:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.recompute_region_day"
+            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day"
         ) as mock_recompute:
             call_command(
                 "reformat_mf_comments",
@@ -475,7 +475,7 @@ class TestReformatRenderModelBuildError:
         b = _make_fr_bulletin()
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            "apps.bulletins.management.commands.reformat_mf_comments.build_render_model",
             side_effect=RenderModelBuildError("forced failure"),
         ):
             with pytest.raises(CommandError):
@@ -493,7 +493,7 @@ class TestReformatRenderModelBuildError:
         _make_fr_bulletin()
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            "apps.bulletins.management.commands.reformat_mf_comments.build_render_model",
             side_effect=RenderModelBuildError("forced failure"),
         ):
             with pytest.raises(CommandError, match="failed render-model rebuild"):
@@ -514,7 +514,7 @@ class TestReformatRenderModelBuildError:
             return build_render_model(props)
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            "apps.bulletins.management.commands.reformat_mf_comments.build_render_model",
             side_effect=_fail_first,
         ):
             with pytest.raises(CommandError):
@@ -543,7 +543,7 @@ class TestReformatDayRatingFailure:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day",
             side_effect=Exception("forced rating failure"),
         ):
             with pytest.raises(CommandError, match="day-rating recompute"):
@@ -567,7 +567,7 @@ class TestReformatDayRatingFailure:
                 raise Exception("first pair fails")
 
         with patch(
-            "bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day",
             side_effect=_fail_first,
         ):
             with pytest.raises(CommandError):

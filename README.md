@@ -22,7 +22,7 @@ uv run python manage.py runserver
 
 In local development, run `fetch_bulletins` with `--local-mirror` so you
 don't hit the live APIs. The SLF mirror replays
-`bulletins/local_mirrors/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
+`apps/bulletins/local_mirrors/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
 command catalogue: [docs/management-commands.md](docs/management-commands.md).
 
 ## Data sources

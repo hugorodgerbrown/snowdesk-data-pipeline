@@ -1,0 +1,21 @@
+"""
+apps/public/apps.py — Django app configuration for the public bulletin site.
+
+Registers the public-facing avalanche bulletin viewer as a Django
+application so that templates, template tags, and URL routing are
+discovered automatically.
+"""
+
+from django.apps import AppConfig
+
+
+class PublicConfig(AppConfig):
+    """App config for the public bulletin viewer."""
+
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.public"
+    verbose_name = "Public Bulletin Site"
+
+    def ready(self) -> None:
+        """Register system checks declared in ``apps/public/checks.py``."""
+        from . import checks  # noqa: F401 — import side-effect: registers checks

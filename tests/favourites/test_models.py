@@ -1,5 +1,5 @@
 """
-tests/favourites/test_models.py — Tests for favourites.models.
+tests/favourites/test_models.py — Tests for apps.favourites.models.
 
 Covers:
   Favourite to_string / __str__ format (with and without a name).
@@ -22,7 +22,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from favourites.models import Favourite
+from apps.favourites.models import Favourite
 from tests.factories import (
     FavouriteFactory,
     MicroRegionFactory,

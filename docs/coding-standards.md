@@ -22,15 +22,17 @@ is probably wrong — fix it rather than relaxing the rule.
 
 ```
 config/          Django project: split settings (base/development/production), urls, wsgi
-core/            Shared abstractions (BaseModel; abstract, no concrete tables),
+apps/            Parent package for the nine Django apps (SNOW-557 — moved
+                 here without changing any app label)
+  core/          Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware, the require_htmx decorator, and
                  the monitor_query_counts command
-regions/         Geographic reference data — MicroRegion / MajorRegion /
+  regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures,
                  build_france_fixture, build_switzerland_fixture,
                  audit_resort_regions)
-bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
+  bulletins/     Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
                  services (slf_fetcher / albina_fetcher / meteofrance_fetcher /
                  meteofrance_translator / meteofrance_archive_loader /
@@ -39,8 +41,8 @@ bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  weather_display / geoip), the dev-only SLF / Open-Meteo
                  mirror endpoints, and the bulletin and weather management
                  commands
-accounts/        Signed-token email subscription flow — Subscriber, Subscription
-public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
+  accounts/      Signed-token email subscription flow — Subscriber, Subscription
+  public/        Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
   factories.py   FactoryBoy factories for every model
@@ -51,16 +53,16 @@ static/          CSS/JS assets (includes compiled output.css)
 logs/            Runtime log files (gitignored except .gitkeep)
 ```
 
-The `bulletins/` ↔ `regions/` split is deliberate: `regions/` holds
-stable shared lookup data (regions, resorts); `bulletins/` holds
+The `apps/bulletins/` ↔ `apps/regions/` split is deliberate: `regions/`
+holds stable shared lookup data (regions, resorts); `bulletins/` holds
 everything that originates from the SLF API and the denormalisation that
 drives the calendar. `core/` exists so neither app needs to import
 abstract bases from the other.
 
 Tests live in a **top-level** `tests/` directory, not inside each app.
-The tree under `tests/` mirrors the source tree: `bulletins/models.py`
+The tree under `tests/` mirrors the source tree: `apps/bulletins/models.py`
 has tests at `tests/bulletins/test_weather_snapshot_model.py` and
-`regions/models.py` has tests at `tests/regions/models/test_models.py`.
+`apps/regions/models.py` has tests at `tests/regions/models/test_models.py`.
 
 ---
 
@@ -93,13 +95,13 @@ Follow the Zen of Python (h/t Tim Peters):
 Every module starts with a docstring block whose first line names the
 file and gives a one-line purpose, followed by a short description of
 what the module contains and why. See
-[bulletins/models.py](../bulletins/models.py) or
-[bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
+[apps/bulletins/models.py](../apps/bulletins/models.py) or
+[apps/bulletins/services/slf_fetcher.py](../apps/bulletins/services/slf_fetcher.py)
 for the canonical shape:
 
 ```python
 """
-bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
+apps/bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML API (fetch_bulletin_page).
@@ -135,10 +137,10 @@ Contains pure-ish functions that:
   `**kwargs` are exempt but should still be typed where feasible
   (`*args: Any, **kwargs: Any`).
 - Use `from __future__ import annotations` in modules that reference
-  forward types (see [bulletins/models.py](../bulletins/models.py),
-  [regions/models.py](../regions/models.py),
-  [bulletins/schema.py](../bulletins/schema.py),
-  [public/views.py](../public/views.py)).
+  forward types (see [apps/bulletins/models.py](../apps/bulletins/models.py),
+  [apps/regions/models.py](../apps/regions/models.py),
+  [apps/bulletins/schema.py](../apps/bulletins/schema.py),
+  [apps/public/views.py](../apps/public/views.py)).
 - Use `collections.abc` for `Callable`, `Iterable`, etc. — not `typing`.
 - `mypy` runs with `strict_optional`, `warn_return_any`,
   `warn_unused_ignores`, `warn_unreachable`, `disallow_untyped_defs`,
@@ -182,14 +184,14 @@ Contains pure-ish functions that:
 - Max cyclomatic complexity is 8 (`max-complexity = 8`). If you hit
   `C901`, **refactor** — don't `# noqa` it. The extracted-helper pattern
   in `_process_bulletin` / `run_pipeline` in
-  [bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
+  [apps/bulletins/services/slf_fetcher.py](../apps/bulletins/services/slf_fetcher.py)
   is the reference example.
 - Only suppress lint warnings with `# noqa: <code>` when there is a good
   reason, and always leave an inline comment explaining why. See the
   `mark_safe` calls in
-  [public/templatetags/snowdesk_html.py](../public/templatetags/snowdesk_html.py)
+  [apps/public/templatetags/snowdesk_html.py](../apps/public/templatetags/snowdesk_html.py)
   and
-  [public/templatetags/card_tags.py](../public/templatetags/card_tags.py)
+  [apps/public/templatetags/card_tags.py](../apps/public/templatetags/card_tags.py)
   for acceptable usage.
 
 ### 2.7 Datetimes
@@ -198,7 +200,7 @@ Contains pure-ish functions that:
   settings; naive datetimes will raise warnings in tests.
 - Use `datetime.UTC` (Python 3.11+), not `timezone.utc` or `pytz`.
 - CAAML timestamps are parsed through `_parse_dt` in
-  [bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py)
+  [apps/bulletins/services/slf_fetcher.py](../apps/bulletins/services/slf_fetcher.py)
   which always returns a UTC-aware datetime.
 - In factories, use `tzinfo=UTC` — see
   [tests/factories.py](../tests/factories.py).
@@ -212,7 +214,7 @@ Contains pure-ish functions that:
 Every concrete model must:
 
 1. **Inherit from `BaseModel`**
-   ([core/models.py](../core/models.py)), which provides `id`
+   ([apps/core/models.py](../apps/core/models.py)), which provides `id`
    (BigAutoField), `uuid`, `created_at`, `updated_at`.
 2. **Define a `Meta`** that inherits from `BaseModel.Meta` and sets an
    explicit `ordering` (default is `-created_at` via BaseModel).
@@ -221,9 +223,9 @@ Every concrete model must:
    via `objects = XxxQuerySet.as_manager()`. Domain query methods live
    on the queryset — not on the model.
 5. **Have an AdminModel** registered in the owning app's `admin.py`
-   ([bulletins/admin.py](../bulletins/admin.py),
-   [regions/admin.py](../regions/admin.py),
-   [accounts/admin.py](../accounts/admin.py)) with at minimum
+   ([apps/bulletins/admin.py](../apps/bulletins/admin.py),
+   [apps/regions/admin.py](../apps/regions/admin.py),
+   [apps/accounts/admin.py](../apps/accounts/admin.py)) with at minimum
    `list_display`, `search_fields` where useful, and `readonly_fields`
    for timestamp columns.
 6. **Have a Factory** in [tests/factories.py](../tests/factories.py).
@@ -232,7 +234,7 @@ Every concrete model must:
    `tests/bulletins/test_weather_snapshot_model.py`).
 
 Keep business logic **out** of models. Put it in the owning app's
-`services/` subdirectory (e.g. [bulletins/services/](../bulletins/services/)).
+`services/` subdirectory (e.g. [apps/bulletins/services/](../apps/bulletins/services/)).
 Models may expose thin accessors (e.g. `Bulletin.get_danger_ratings()`
 which builds dataclass views over `raw_data`) but must not perform I/O,
 fetch, or mutate other records.
@@ -241,7 +243,7 @@ fetch, or mutate other records.
 
 - Defined inside the owning model as a nested class when the choice is
   specific to that model (e.g. `PipelineRun.Status`).
-- Defined in [bulletins/schema.py](../bulletins/schema.py) when the choice
+- Defined in [apps/bulletins/schema.py](../apps/bulletins/schema.py) when the choice
   comes from an external schema (CAAML) and is shared.
 - Each member is `NAME = "value", "Human label"`.
 
@@ -258,10 +260,10 @@ fetch, or mutate other records.
 - Full-page views return a complete HTML response.
 - HTMX fragment views return only the inner HTML snippet. They are
   routed under a `partials/` prefix in the owning app's `urls.py`
-  (e.g. [public/urls.py](../public/urls.py),
-  [accounts/urls.py](../accounts/urls.py)) and guarded with the
+  (e.g. [apps/public/urls.py](../apps/public/urls.py),
+  [apps/accounts/urls.py](../apps/accounts/urls.py)) and guarded with the
   `require_htmx` decorator from
-  [core/decorators.py](../core/decorators.py).
+  [apps/core/decorators.py](../apps/core/decorators.py).
 - Views are thin: parse query params, enforce permissions, call the ORM or
   service layer, render a template. No business logic.
 - Use `@require_GET` / `@require_POST` from
@@ -275,9 +277,9 @@ fetch, or mutate other records.
 ### 3.6 Services
 
 - Located in each app's `services/` subdirectory (e.g.
-  [bulletins/services/](../bulletins/services/)). The bulletin ingestion
+  [apps/bulletins/services/](../apps/bulletins/services/)). The bulletin ingestion
   (SLF, ALBINA, Météo-France), render-model, day-rating, weather-fetching,
-  weather-display, and archive services all live under `bulletins/services/`.
+  weather-display, and archive services all live under `apps/bulletins/services/`.
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.
@@ -289,8 +291,8 @@ fetch, or mutate other records.
 ### 3.7 Management commands
 
 Every command under an app's `management/commands/` subdirectory
-(`bulletins/management/commands/`, `regions/management/commands/`,
-`core/management/commands/`) must:
+(`apps/bulletins/management/commands/`, `apps/regions/management/commands/`,
+`apps/core/management/commands/`) must:
 
 - Have a module header docstring and class docstring.
 - Override `add_arguments(self, parser: ArgumentParser) -> None` with
@@ -304,7 +306,7 @@ Every command under an app's `management/commands/` subdirectory
 - Raise `CommandError` on fatal failure.
 
 See
-[bulletins/management/commands/fetch_bulletins.py](../bulletins/management/commands/fetch_bulletins.py)
+[apps/bulletins/management/commands/fetch_bulletins.py](../apps/bulletins/management/commands/fetch_bulletins.py)
 for the reference shape, and
 [docs/management-commands.md](management-commands.md) for the full
 catalogue and flag reference.
@@ -530,14 +532,14 @@ storage, so `Bulletin.raw_data` always looks like:
 Read it via `Bulletin._properties` (or the `get_danger_ratings()` /
 `get_avalanche_problems()` helpers) — do **not** access
 `raw_data["properties"]` directly from callers. See
-[bulletins/models.py](../bulletins/models.py) and
-[bulletins/schema.py](../bulletins/schema.py).
+[apps/bulletins/models.py](../apps/bulletins/models.py) and
+[apps/bulletins/schema.py](../apps/bulletins/schema.py).
 
 ### 7.2 Dataclass views over JSON
 
 Structured slices of `raw_data` are exposed via frozen dataclasses
 (`Elevation`, `DangerRating`, `AvalancheProblem`) defined in
-[bulletins/schema.py](../bulletins/schema.py). They map CAAML's camelCase
+[apps/bulletins/schema.py](../apps/bulletins/schema.py). They map CAAML's camelCase
 keys to snake_case attributes via `from_dict` classmethods. They are
 **read-only views** — they do not validate input, and absent fields
 become `None` or empty tuples.
@@ -545,7 +547,7 @@ become `None` or empty tuples.
 ### 7.3 Upserts
 
 Bulletin writes go through `upsert_bulletin` in
-[bulletins/services/slf_fetcher.py](../bulletins/services/slf_fetcher.py),
+[apps/bulletins/services/slf_fetcher.py](../apps/bulletins/services/slf_fetcher.py),
 which uses `Bulletin.objects.update_or_create` keyed on `bulletin_id`.
 Re-runs must be idempotent.
 

@@ -17,8 +17,8 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from bulletins.models import Bulletin
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin
+from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
     BulletinFactory,
@@ -30,7 +30,7 @@ from tests.factories import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_TOKEN_BACKEND = "accounts.backends.TokenBackend"
+_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
 _FROZEN_NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
 
@@ -94,7 +94,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -109,7 +109,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -129,7 +129,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -144,7 +144,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -157,7 +157,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15", "?ref=email")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -171,7 +171,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -185,7 +185,7 @@ class TestBulletinViewedEvent:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -205,7 +205,7 @@ class TestBulletinViewedNotFiredOnEmptyState:
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -216,7 +216,7 @@ class TestBulletinViewedNotFiredOnEmptyState:
 class TestBulletinViewedNotFiredOnExamples:
     """bulletin_viewed must NOT fire on /examples/* pages.
 
-    The ``_track_bulletin_viewed`` guard in ``public/views.py`` exits early
+    The ``_track_bulletin_viewed`` guard in ``apps/public/views.py`` exits early
     when ``request.path.startswith("/examples/")``.  These tests exercise
     the actual ``/examples/random/`` and ``/examples/category/<level>/``
     URLs so that removing the guard would cause the tests to fail.
@@ -229,7 +229,7 @@ class TestBulletinViewedNotFiredOnExamples:
         url = reverse("public:examples_random")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
@@ -261,7 +261,7 @@ class TestBulletinViewedNotFiredOnExamples:
         url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
-            patch("public.views.analytics.track") as mock_track,
+            patch("apps.public.views.analytics.track") as mock_track,
         ):
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]

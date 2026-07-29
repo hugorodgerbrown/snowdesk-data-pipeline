@@ -7,7 +7,7 @@ everything it needs to run the check.
 
 Covered:
 
-* ``public.context_processors.pwa_version`` returns the two build strings
+* ``apps.public.context_processors.pwa_version`` returns the two build strings
   and passes them through untouched.
 * Every page response bakes the current build into the
   ``<meta name="pwa-app-version">`` tag.
@@ -24,7 +24,7 @@ import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
 
-from public.context_processors import pwa_version
+from apps.public.context_processors import pwa_version
 
 
 def test_context_processor_returns_configured_values() -> None:

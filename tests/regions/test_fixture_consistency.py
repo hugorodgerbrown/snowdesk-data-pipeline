@@ -1,8 +1,8 @@
 """
 tests/regions/test_fixture_consistency.py — SNOW-178 regression guard.
 
-Loads the committed ``regions/fixtures/eaws_CH.json`` and
-``regions/fixtures/resorts.json`` fixtures and asserts that every geocoded
+Loads the committed ``apps/regions/fixtures/eaws_CH.json`` and
+``apps/regions/fixtures/resorts.json`` fixtures and asserts that every geocoded
 resort's (longitude, latitude) point lies inside its FK MicroRegion's
 ``boundary`` polygon.
 
@@ -14,7 +14,7 @@ This test exists to catch two classes of drift:
 
 If this test fails in CI, run:
   uv run python manage.py audit_resort_regions --commit
-  uv run python manage.py loaddata regions/fixtures/resorts.json
+  uv run python manage.py loaddata apps/regions/fixtures/resorts.json
 
 then re-run the test to confirm the fix.
 """
@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 from django.core.management import call_command
 
-from regions.models import Resort
+from apps.regions.models import Resort
 
 
 @pytest.mark.django_db(transaction=True)
@@ -42,8 +42,8 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
     from shapely.geometry import Point, shape
 
     # Load the committed fixtures into the test DB.
-    call_command("loaddata", "regions/fixtures/eaws_CH.json", verbosity=0)
-    call_command("loaddata", "regions/fixtures/resorts.json", verbosity=0)
+    call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
+    call_command("loaddata", "apps/regions/fixtures/resorts.json", verbosity=0)
 
     geocoded = list(
         Resort.objects.select_related("region")
@@ -75,5 +75,5 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
         f"{len(failures)} resort(s) outside their FK polygon:\n"
         + "\n".join(failures)
         + "\n\nFix: uv run python manage.py audit_resort_regions --commit"
-        + "\n     uv run python manage.py loaddata regions/fixtures/resorts.json"
+        + "\n     uv run python manage.py loaddata apps/regions/fixtures/resorts.json"
     )

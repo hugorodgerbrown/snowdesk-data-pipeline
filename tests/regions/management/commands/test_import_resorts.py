@@ -18,7 +18,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from regions.models import Resort
+from apps.regions.models import Resort
 from tests.factories import MicroRegionFactory, ResortFactory
 
 COLUMNS = [

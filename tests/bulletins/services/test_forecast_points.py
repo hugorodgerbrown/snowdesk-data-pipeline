@@ -12,7 +12,7 @@ Covers:
     internally and re-fetches by the lookup kwargs).
   - fetch_elevation is called exactly once per resolution.
 
-fetch_elevation is mocked at the bulletins.services.forecast_points module
+fetch_elevation is mocked at the apps.bulletins.services.forecast_points module
 seam so no HTTP mocking leaks into these DB-level resolution tests.
 """
 
@@ -24,16 +24,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bulletins.models import ForecastPoint
-from bulletins.services.forecast_points import resolve_forecast_point
-from core.coordinates import InvalidCoordinatesError
+from apps.bulletins.models import ForecastPoint
+from apps.bulletins.services.forecast_points import resolve_forecast_point
+from apps.core.coordinates import InvalidCoordinatesError
 from tests.factories import ForecastPointFactory
 
 
 def _patch_elevation(elevation: float) -> AbstractContextManager[MagicMock]:
     """Patch fetch_elevation (module seam) to return a fixed elevation."""
     return patch(
-        "bulletins.services.forecast_points.fetch_elevation",
+        "apps.bulletins.services.forecast_points.fetch_elevation",
         return_value=elevation,
     )
 

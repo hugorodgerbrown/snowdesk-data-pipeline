@@ -36,7 +36,7 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from observations.models import FieldObservation
+from apps.observations.models import FieldObservation
 from tests.e2e.conftest import FavouritesPage
 from tests.factories import FavouriteFactory, FieldObservationFactory
 

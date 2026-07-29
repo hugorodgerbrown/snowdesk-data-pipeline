@@ -23,11 +23,11 @@ from django.urls import reverse
 from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Account
-from bulletins.models import Bulletin
-from bulletins.services.render_model import RENDER_MODEL_VERSION
-from public.views import BULLETIN_SOURCE_LINKS
-from regions.models import MicroRegion
+from apps.accounts.models import Account
+from apps.bulletins.models import Bulletin
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.public.views import BULLETIN_SOURCE_LINKS
+from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
     BulletinFactory,
@@ -141,7 +141,7 @@ def _problem(
     """
     Build a raw render-model problem dict (as stored in DB, pre-enrichment).
 
-    ``public.views.enrich_render_model`` converts these to the richer shape
+    ``apps.public.views.enrich_render_model`` converts these to the richer shape
     expected by templates at render time.  Tests must store only JSON-safe
     structures in the DB.
     """
@@ -424,7 +424,7 @@ class TestEnrichAvalancheProblemAspectOrder:
 
     def _enrich(self, aspects: list[str]) -> dict[str, Any]:
         """Call _enrich_avalanche_problem with a minimal CAAML problem dict."""
-        from public.views import _enrich_avalanche_problem
+        from apps.public.views import _enrich_avalanche_problem
 
         problem = {
             "problemType": "wind_slab",
@@ -2049,7 +2049,7 @@ class TestDayWindowsElevationSplit:
 
     def test_single_rating_per_period_unchanged(self) -> None:
         """One rating in a period → one row with empty caption (SLF baseline)."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2058,7 +2058,7 @@ class TestDayWindowsElevationSplit:
 
     def test_matching_bands_collapse_to_single_row(self) -> None:
         """Two band ratings with same level → one row, no elevation caption."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2071,7 +2071,7 @@ class TestDayWindowsElevationSplit:
 
     def test_differing_numeric_bands_emit_two_rows(self) -> None:
         """Differing band levels with numeric pivot → two rows, ordered low→high."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2090,7 +2090,7 @@ class TestDayWindowsElevationSplit:
 
     def test_treeline_pivot_emits_distinct_captions(self) -> None:
         """Treeline-pivoted bands produce 'below treeline' / 'above treeline'."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2109,7 +2109,7 @@ class TestDayWindowsElevationSplit:
 
     def test_albina_no_all_day_emits_per_period(self) -> None:
         """No ``all_day`` rating → emit earlier then later, each potentially split."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2129,7 +2129,7 @@ class TestDayWindowsElevationSplit:
 
     def test_all_day_split_with_later_overlay(self) -> None:
         """A split all_day with a higher later overlay emits both, in order."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2156,7 +2156,7 @@ class TestDayWindowsElevationSplit:
         low/no-elevation]. The banded pair already partitions the whole mountain; the
         unbanded 'low' is redundant and must be suppressed so only 2 rows render.
         """
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2179,7 +2179,7 @@ class TestDayWindowsElevationSplit:
 
         SLF all_day regression: a single unbanded rating must not be suppressed.
         """
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2187,7 +2187,7 @@ class TestDayWindowsElevationSplit:
 
     def test_banded_only_kept_unchanged(self) -> None:
         """Two banded ratings with no unbanded entry are not affected by the rule."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2312,7 +2312,7 @@ class TestMFElevationBandSplitBulletinPage:
 
     def test_day_risk_panel_row_level_keys(self) -> None:
         """Two-row MF panel has 'low' (lower band) and 'moderate' (upper band)."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rm_ratings = [
             {
@@ -2345,7 +2345,7 @@ class TestMFElevationBandSplitBulletinPage:
 
     def test_day_risk_panel_elevation_captions(self) -> None:
         """Both rows carry non-empty elevation captions with '2400' in them."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rm_ratings = [
             {
@@ -2432,7 +2432,7 @@ class TestDayWindowsElevationBounds:
 
     def test_above_band_is_lower_bound_type(self) -> None:
         """A lowerBound-only band ("above X") resolves to bound_type LOWER."""
-        from public.views import _rm_elevation_bounds
+        from apps.public.views import _rm_elevation_bounds
 
         bounds = _rm_elevation_bounds(
             {"lower": 2400, "upper": None, "treeline": False, "treeline_side": None}
@@ -2442,7 +2442,7 @@ class TestDayWindowsElevationBounds:
 
     def test_below_band_is_upper_bound_type(self) -> None:
         """An upperBound-only band ("below X") resolves to bound_type UPPER."""
-        from public.views import _rm_elevation_bounds
+        from apps.public.views import _rm_elevation_bounds
 
         bounds = _rm_elevation_bounds(
             {"lower": None, "upper": 2400, "treeline": False, "treeline_side": None}
@@ -2452,7 +2452,7 @@ class TestDayWindowsElevationBounds:
 
     def test_treeline_side_is_reconstructed(self) -> None:
         """The treeline token is put back on the correct bound for the glyph."""
-        from public.views import _rm_elevation_bounds
+        from apps.public.views import _rm_elevation_bounds
 
         above = _rm_elevation_bounds(
             {"lower": None, "upper": None, "treeline": True, "treeline_side": "lower"}
@@ -2467,13 +2467,13 @@ class TestDayWindowsElevationBounds:
 
     def test_empty_elevation_is_falsey(self) -> None:
         """A missing elevation yields an empty (falsey) ElevationBounds."""
-        from public.views import _rm_elevation_bounds
+        from apps.public.views import _rm_elevation_bounds
 
         assert not _rm_elevation_bounds(None)
 
     def test_banded_rows_carry_elevation_bounds(self) -> None:
         """Each row of a banded pair carries an ElevationBounds with a bound_type."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2487,7 +2487,7 @@ class TestDayWindowsElevationBounds:
 
     def test_single_row_has_no_elevation_bounds(self) -> None:
         """An unbanded (single) row leaves ``elevation_bounds`` unset — no glyph."""
-        from public.views import _day_windows_from_rm_ratings
+        from apps.public.views import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2511,7 +2511,7 @@ class TestDayWindowsBandedRender:
 
     def _make_banded_bulletin(self, region: MicroRegion) -> Bulletin:
         """Create a bulletin with two all_day elevation-band ratings."""
-        from bulletins.services.render_model import RENDER_MODEL_VERSION
+        from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 3, 15)
         vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
@@ -2821,7 +2821,7 @@ class TestDayCharacterEyebrow:
         self, client: Client, region: MicroRegion
     ) -> None:
         """A version=0 error bulletin replaces the body and suppresses the callout."""
-        from bulletins.services.render_model import RENDER_MODEL_VERSION
+        from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 3, 21)
         _make_am_bulletin(
@@ -3114,7 +3114,7 @@ class TestBuildOgDescription:
 
     def test_short_panel_contains_label_and_number(self) -> None:
         """A panel with label and number produces a description containing both."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         panel = {
             "danger_key": "considerable",
@@ -3128,7 +3128,7 @@ class TestBuildOgDescription:
 
     def test_long_key_message_truncates_to_155_chars(self) -> None:
         """When label + key_message exceeds 155 chars the result is at most 155 chars."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         long_message = "word " * 50  # 250 chars
         panel = {
@@ -3142,7 +3142,7 @@ class TestBuildOgDescription:
 
     def test_long_key_message_truncates_on_word_boundary(self) -> None:
         """Truncation never cuts a word mid-way; result does not end with a space."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         long_message = "word " * 50
         panel = {
@@ -3158,7 +3158,7 @@ class TestBuildOgDescription:
 
     def test_html_tags_stripped_from_key_message(self) -> None:
         """HTML markup in key_message is stripped; no angle brackets survive."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         panel = {
             "danger_key": "high",
@@ -3173,13 +3173,13 @@ class TestBuildOgDescription:
 
     def test_panel_none_returns_empty_string(self) -> None:
         """A None panel returns an empty string."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         assert _build_og_description(None) == ""
 
     def test_panel_without_danger_key_returns_empty_string(self) -> None:
         """A panel missing danger_key (empty-state) returns an empty string."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         panel = {
             "danger_label": "High",
@@ -3190,7 +3190,7 @@ class TestBuildOgDescription:
 
     def test_panel_with_label_only_no_number(self) -> None:
         """When only danger_label is present (no number), label still appears."""
-        from public.views import _build_og_description
+        from apps.public.views import _build_og_description
 
         panel = {
             "danger_key": "low",
@@ -3373,7 +3373,7 @@ class TestStructuredData:
 # SNOW-222: subscribe panel states
 # ---------------------------------------------------------------------------
 
-_TOKEN_BACKEND = "accounts.backends.TokenBackend"
+_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
 
 def _make_session_client(account: Account) -> Client:
@@ -3452,7 +3452,7 @@ class TestBestRatingFromRmEntries:
 
     def _call(self, entries: list[dict[str, Any]]) -> tuple[str, str] | None:
         """Call the helper under test."""
-        from public.views import _best_rating_from_rm_entries
+        from apps.public.views import _best_rating_from_rm_entries
 
         return _best_rating_from_rm_entries(entries)
 
@@ -3512,7 +3512,7 @@ class TestNormaliseDangerPattern:
 
     def _call(self, raw: str) -> dict[str, str]:
         """Call the helper under test."""
-        from public.views import _normalise_danger_pattern
+        from apps.public.views import _normalise_danger_pattern
 
         return _normalise_danger_pattern(raw)
 
@@ -3597,14 +3597,14 @@ class TestDangerPatternPropagation:
 
     def test_no_patterns_produces_empty_list_on_card(self) -> None:
         """Calling with no danger_patterns leaves each card with an empty list."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits([self._minimal_trait()])
         assert cards[0]["danger_patterns"] == []
 
     def test_patterns_propagated_to_single_card(self) -> None:
         """Danger patterns passed in are normalised and placed on the card."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._minimal_trait()], danger_patterns=["DP1"]
@@ -3615,7 +3615,7 @@ class TestDangerPatternPropagation:
 
     def test_patterns_propagated_to_all_cards(self) -> None:
         """When multiple traits are built, all cards receive the same pattern list."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         traits = [
             self._minimal_trait("wind_slab"),
@@ -3632,7 +3632,7 @@ class TestDangerPatternPropagation:
 
     def test_slf_card_has_empty_patterns(self) -> None:
         """SLF cards built with no patterns carry an empty danger_patterns list."""
-        from public.views import _problem_cards_from_render_model_traits
+        from apps.public.views import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._minimal_trait()], danger_patterns=[]
@@ -3781,7 +3781,7 @@ def _render_model_with_ratings(
 
     Used to drive the morning-rating badge tests without going through the
     raw CAAML path — the projected ratings list is the primary source for
-    :func:`public.views._resolve_period_danger_from_rm`.
+    :func:`apps.public.views._resolve_period_danger_from_rm`.
     """
     return {
         "version": 5,
@@ -3860,7 +3860,7 @@ class TestBuildMorningRating:
     """Unit tests for the ``_build_morning_rating`` view helper."""
 
     def _call(self, panel: dict) -> dict | None:
-        from public.views import _build_morning_rating
+        from apps.public.views import _build_morning_rating
 
         return _build_morning_rating(panel)
 
@@ -3967,20 +3967,20 @@ class TestComputePeriodTransition:
 
     def test_returns_none_for_no_ratings(self) -> None:
         """An empty ratings list returns None."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         assert compute_period_transition(self._make_rm([])) is None
 
     def test_returns_none_for_single_all_day_rating(self) -> None:
         """A single all_day rating has no split — returns None."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm([self._rm_rating("moderate")])
         assert compute_period_transition(rm) is None
 
     def test_slf_escalating_all_day_to_later(self) -> None:
         """all_day moderate → later considerable: direction=rise, temporal."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -3999,7 +3999,7 @@ class TestComputePeriodTransition:
 
     def test_slf_deescalating_all_day_to_later(self) -> None:
         """all_day considerable → later moderate: direction=fall, temporal."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -4015,7 +4015,7 @@ class TestComputePeriodTransition:
 
     def test_slf_flat_but_split_all_day_to_later(self) -> None:
         """all_day considerable → later considerable: direction=none, temporal."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -4032,7 +4032,7 @@ class TestComputePeriodTransition:
 
     def test_euregio_elevation_banded(self) -> None:
         """ALBINA earlier/later with elevation bounds: partition_type=elevation."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -4051,7 +4051,7 @@ class TestComputePeriodTransition:
 
     def test_temporal_earlier_to_later_without_elevation(self) -> None:
         """ALBINA earlier/later without elevation → temporal, not elevation."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -4066,7 +4066,7 @@ class TestComputePeriodTransition:
 
     def test_subdivision_included_in_rank_comparison(self) -> None:
         """Subdivision modifies the rank: moderate+ ranks above moderate."""
-        from bulletins.services.render_model import compute_period_transition
+        from apps.bulletins.services.render_model import compute_period_transition
 
         rm = self._make_rm(
             [
@@ -4229,7 +4229,7 @@ class TestBuildPeriodTransitionChip:
     """Unit tests for the ``_build_period_transition_chip`` view helper."""
 
     def _call(self, pt: Any) -> dict | None:
-        from public.views import _build_period_transition_chip
+        from apps.public.views import _build_period_transition_chip
 
         return _build_period_transition_chip(pt)
 
@@ -4239,7 +4239,7 @@ class TestBuildPeriodTransitionChip:
 
     def test_returns_none_for_flat_but_split(self) -> None:
         """direction='none' returns None (chip suppressed for flat-but-split)."""
-        from bulletins.services.render_model import PeriodTransition
+        from apps.bulletins.services.render_model import PeriodTransition
 
         pt = PeriodTransition(
             direction="none",
@@ -4254,7 +4254,7 @@ class TestBuildPeriodTransitionChip:
 
     def test_temporal_rise_chip_text(self) -> None:
         """Temporal rise: chip_text is 'rises to L3'."""
-        from bulletins.services.render_model import PeriodTransition
+        from apps.bulletins.services.render_model import PeriodTransition
 
         pt = PeriodTransition(
             direction="rise",
@@ -4274,7 +4274,7 @@ class TestBuildPeriodTransitionChip:
 
     def test_temporal_fall_chip_text(self) -> None:
         """Temporal fall: chip_text is 'falls to L2'."""
-        from bulletins.services.render_model import PeriodTransition
+        from apps.bulletins.services.render_model import PeriodTransition
 
         pt = PeriodTransition(
             direction="fall",
@@ -4292,7 +4292,7 @@ class TestBuildPeriodTransitionChip:
 
     def test_elevation_rise_includes_partition_label(self) -> None:
         """Elevation rise with partition_label: chip text includes the label."""
-        from bulletins.services.render_model import PeriodTransition
+        from apps.bulletins.services.render_model import PeriodTransition
 
         pt = PeriodTransition(
             direction="rise",
@@ -4310,7 +4310,7 @@ class TestBuildPeriodTransitionChip:
 
     def test_subdivision_included_in_label(self) -> None:
         """Subdivision suffix is included in the chip text level label."""
-        from bulletins.services.render_model import PeriodTransition
+        from apps.bulletins.services.render_model import PeriodTransition
 
         pt = PeriodTransition(
             direction="rise",
@@ -5062,7 +5062,7 @@ class TestAvalancheSizeLabel:
 
     def _card_from_trait(self, avalanche_size: int | None) -> dict:
         """Build a card dict from a trait with the given avalanche_size."""
-        from public.views import _build_single_trait_card
+        from apps.public.views import _build_single_trait_card
 
         trait = {
             "category": "dry",
@@ -5534,7 +5534,9 @@ class TestObservationCountsStrip:
         ]
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9100"})
-        with patch("public.views._get_observation_counts", return_value=fake_counts):
+        with patch(
+            "apps.public.views._get_observation_counts", return_value=fake_counts
+        ):
             response = client.get(url)
 
         assert response.status_code == 200
@@ -5586,8 +5588,12 @@ class TestObservationCountsStrip:
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9102"})
         with (
-            patch("public.views._get_observation_counts", return_value=fake_counts),
-            patch("public.views._get_observation_has_user_located", return_value=True),
+            patch(
+                "apps.public.views._get_observation_counts", return_value=fake_counts
+            ),
+            patch(
+                "apps.public.views._get_observation_has_user_located", return_value=True
+            ),
         ):
             response = client.get(url)
 
@@ -5612,8 +5618,13 @@ class TestObservationCountsStrip:
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9103"})
         with (
-            patch("public.views._get_observation_counts", return_value=fake_counts),
-            patch("public.views._get_observation_has_user_located", return_value=False),
+            patch(
+                "apps.public.views._get_observation_counts", return_value=fake_counts
+            ),
+            patch(
+                "apps.public.views._get_observation_has_user_located",
+                return_value=False,
+            ),
         ):
             response = client.get(url)
 
@@ -5803,7 +5814,7 @@ class TestTendencyOutlook:
         import logging
 
         rm = _albina_tendency_render_model("future_unknown_type")
-        with caplog.at_level(logging.WARNING, logger="public.views"):
+        with caplog.at_level(logging.WARNING, logger="apps.public.views"):
             content = self._make_bulletin(albina_region, rm)
 
         # The outlook block must still render (neutral fallback, not suppressed).

@@ -26,8 +26,8 @@ import pytest  # noqa: E402
 from django.core.management import call_command  # noqa: E402
 from load_archive import load_archive as run_loader  # noqa: E402
 
-from bulletins.models import Bulletin, PipelineRun  # noqa: E402
-from bulletins.services.meteofrance_archive_loader import (  # noqa: E402
+from apps.bulletins.models import Bulletin, PipelineRun  # noqa: E402
+from apps.bulletins.services.meteofrance_archive_loader import (  # noqa: E402
     _fixup_envelope,
 )
 

@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from bulletins.services.fetcher_common import (
+from apps.bulletins.services.fetcher_common import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
@@ -380,7 +380,7 @@ class TestNormaliseBulletinResponse:
         monkeypatch.setattr(logging.getLogger("bulletins"), "propagate", True)
 
         with caplog.at_level(
-            logging.WARNING, logger="bulletins.services.fetcher_common"
+            logging.WARNING, logger="apps.bulletins.services.fetcher_common"
         ):
             normalise_bulletin_response({"no_bulletins": True}, "MY_SOURCE")
 

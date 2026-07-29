@@ -3,7 +3,7 @@ tests/e2e/test_offline_observation_submit.py — Playwright test for SNOW-420:
 offline field-report submission through the client mutation queue.
 
 Covers the full offline → reconnect journey wiring
-``observations.views.report_submit`` through ``window.pwaMutationQueue``
+``apps.observations.views.report_submit`` through ``window.pwaMutationQueue``
 (``static/js/report.js`` / ``static/js/mutation_queue.js``, SNOW-376):
 
 1. A tap while offline enqueues exactly one ``queue:mutations`` row and
@@ -17,7 +17,7 @@ Covers the full offline → reconnect journey wiring
    the reconnect, not whenever the mutation happened to replay.
 3. Replaying the same operation a second time — same Idempotency-Key, same
    body — does not create a duplicate row:
-   ``core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
+   ``apps.core.idempotency.IdempotencyMiddleware`` dedupes it server-side.
 
 Uses the simulated-SW pattern (``navigator.serviceWorker`` stripped) — see
 ``docs/client-side-tests.md``'s "SW-lifecycle tests: real vs simulated" —
@@ -48,7 +48,7 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from observations.models import FieldObservation
+from apps.observations.models import FieldObservation
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, UserFactory
 
@@ -191,7 +191,7 @@ def test_offline_report_submission_syncs_without_duplicate(
 
     # Idempotency: re-insert a row carrying the SAME Idempotency-Key/body
     # and drain again — the server must not create a second row
-    # (core.idempotency.IdempotencyMiddleware dedupes the replay).
+    # (apps.core.idempotency.IdempotencyMiddleware dedupes the replay).
     # principal: row.principal preserves the original enqueue-time stamp so
     # the SNOW-462 drain-guard doesn't discard this row before it reaches
     # the server (which would make the assertion below pass for the wrong

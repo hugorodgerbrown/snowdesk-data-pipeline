@@ -1,0 +1,177 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/accounts/templates/accounts/setup.html — Post-verification credential-setup page.
+
+Reached after verify_view logs the user in (SNOW-430). Shows a welcome card
+plus an optional "set a password" card (SNOW-431); SNOW-434 adds a "save a
+passkey" card. None of the credential options is a gate — "Continue to your
+account" always reaches the manage page.
+{% endcomment %}
+{% load i18n static components %}
+
+{# SNOW-553: sharing=False. Every /account/ URL is disallowed in       #}
+{# robots.txt, so a crawler fetching this page to build an unfurl card  #}
+{# should not be here in the first place; several of these routes also  #}
+{# carry a single-use token in the path. The tab title and description  #}
+{# still render — it is only the og:/twitter: card identity that is     #}
+{# withheld.                                                            #}
+{% block page_meta %}
+    {% trans "Finish setting up — Snowdesk" as page_title %}
+    {% trans "Your Snowdesk email is verified. Finish setting up your account." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <div class="px-4 py-10">
+        <div class="max-w-narrow mx-auto">
+            {% card padding="p-8" %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                {% trans "You're verified" %}
+            </h1>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Your email address is confirmed. You can manage your account and subscriptions from here." %}
+            </p>
+            <div>
+                {% url 'accounts:manage' as manage_url %}
+                {% trans "Continue to your account" as label %}
+                {% include "includes/_button.html" with label=label href=manage_url variant="primary" full_width=True %}
+            </div>
+            {% endcard %}
+
+            {% comment %}
+                Optional "set a password" card (SNOW-431). Skipping is not a
+                gate — the "Continue to your account" button above always
+                reaches the manage page. SNOW-434 adds a passkey card here too.
+            {% endcomment %}
+            {% card padding="p-8" extra="mt-6" %}
+            <h2 class="text-lg font-semibold text-text-1 mb-2">
+                {% trans "Set a password" %}
+            </h2>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Optional — set a password so you can sign in without waiting for an email link." %}
+            </p>
+            <form method="post" action="{% url 'accounts:set_password' %}" novalidate>
+                {% csrf_token %}
+                {% if password_form.non_field_errors %}
+                    <ul class="mb-4 space-y-0.5">
+                        {% for error in password_form.non_field_errors %}
+                            <li class="text-xs text-form-error">{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <div class="mb-4">
+                    <label
+                        for="{{ password_form.new_password1.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "New password" %}
+                    </label>
+                    {{ password_form.new_password1 }}
+                    {% if password_form.new_password1.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in password_form.new_password1.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                <div class="mb-4">
+                    <label
+                        for="{{ password_form.new_password2.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "Confirm password" %}
+                    </label>
+                    {{ password_form.new_password2 }}
+                    {% if password_form.new_password2.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in password_form.new_password2.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                {% trans "Set password" as label %}
+                {% include "includes/_button.html" with label=label variant="secondary" full_width=True %}
+            </form>
+            {% endcard %}
+
+            {% comment %}
+                Optional "save a passkey" card (SNOW-434). Wires the existing
+                WebAuthn registration endpoints via window.Passkey.registerPasskey
+                (same pattern as manage.html). On success it auto-advances to
+                the manage page; on an unsupported browser the whole card hides
+                (progressive enhancement). Not a gate.
+            {% endcomment %}
+            {% card padding="p-8" extra="mt-6" %}
+            <div id="passkey-setup">
+                <h2 class="text-lg font-semibold text-text-1 mb-2">
+                    {% trans "Save a passkey" %}
+                </h2>
+                <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                    {% trans "Optional — save a passkey for this device to sign in with Face ID, Touch ID, or your device PIN, no password needed." %}
+                </p>
+                {% trans "Save a passkey for this device" as label %}
+                {% include "includes/_button.html" with label=label variant="secondary" full_width=True button_type="button" button_id="btn-register-passkey" %}
+                <div
+                    id="passkey-feedback"
+                    role="status"
+                    aria-live="polite"
+                    class="hidden mt-4 text-sm text-text-2"
+                >
+                </div>
+            </div>
+            {% endcard %}
+        </div>
+    </div>
+
+    {% comment %}
+        Passkey registration wiring (SNOW-434) — reuses the existing
+        window.Passkey.registerPasskey helper and WebAuthn endpoints. On
+        passkey:registered the user auto-advances to the manage page (the same
+        destination as the password path); on passkey:unsupported the card is
+        hidden.
+    {% endcomment %}
+    <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
+    <script nonce="{{ request.csp_nonce }}">
+        (function () {
+            'use strict';
+
+            var regBtn = document.getElementById("btn-register-passkey");
+            var feedback = document.getElementById("passkey-feedback");
+            var card = document.getElementById("passkey-setup");
+            var MANAGE_URL = "{% url 'accounts:manage' %}";
+
+            function showFeedback(msg) {
+                if (!feedback) return;
+                feedback.textContent = msg;
+                feedback.classList.remove("hidden");
+            }
+
+            if (regBtn) {
+                regBtn.addEventListener("click", function () {
+                    regBtn.disabled = true;
+                    window.Passkey.registerPasskey(
+                        "{% url 'accounts:passkey_register_request' %}",
+                        "{% url 'accounts:passkey_register_response' %}"
+                    );
+                });
+            }
+
+            /* Success — auto-advance to the finish (manage) step. */
+            document.addEventListener("passkey:registered", function () {
+                window.location.href = MANAGE_URL;
+            });
+            document.addEventListener("passkey:cancelled", function () {
+                if (regBtn) regBtn.disabled = false;
+            });
+            document.addEventListener("passkey:unsupported", function () {
+                if (card) card.style.display = "none";
+            });
+            document.addEventListener("passkey:error", function () {
+                if (regBtn) regBtn.disabled = false;
+                showFeedback("{% trans "Passkey registration failed. Please try again." %}");
+            });
+        })();
+    </script>
+{% endblock %}

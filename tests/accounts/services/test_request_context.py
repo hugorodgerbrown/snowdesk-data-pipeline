@@ -18,8 +18,13 @@ from typing import Any
 
 import pytest
 
-from accounts.services.request_context import geo_match_snapshot
-from regions.services.point_match import ELSEWHERE, IN_NEIGHBOUR, IN_REGION, UNKNOWN
+from apps.accounts.services.request_context import geo_match_snapshot
+from apps.regions.services.point_match import (
+    ELSEWHERE,
+    IN_NEIGHBOUR,
+    IN_REGION,
+    UNKNOWN,
+)
 from tests.factories import MicroRegionFactory, RequestLogFactory
 
 
@@ -41,7 +46,7 @@ def _square_polygon(x0: float, y0: float, x1: float, y1: float) -> dict[str, Any
 
 @pytest.mark.django_db
 class TestGeoMatchSnapshot:
-    """Tests for accounts.services.request_context.geo_match_snapshot."""
+    """Tests for apps.accounts.services.request_context.geo_match_snapshot."""
 
     def test_in_region(self) -> None:
         """Returns geo_match_kind=IN_REGION when coords are inside the target."""

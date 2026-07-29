@@ -30,8 +30,8 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from bulletins.models import Bulletin
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,

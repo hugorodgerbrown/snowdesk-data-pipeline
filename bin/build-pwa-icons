@@ -54,7 +54,7 @@
  * darker rust) for the maskable canvas and BACKGROUND_COLOUR_STAGING
  * (#7c2d12 too) so all four staging PNGs read as a single amber tile.
  * Keep MASKABLE_CANVAS_COLOUR_STAGING and the theme_color in
- * public/site_environment.PWAEnvironmentIdentity.STAGING (#b45309, one
+ * apps/public/site_environment.PWAEnvironmentIdentity.STAGING (#b45309, one
  * shade brighter for the OS chrome tint) in the same amber family — the
  * two are seen side by side (status bar next to icon) on installed
  * Android PWAs.
@@ -84,7 +84,7 @@ const MASKABLE_CANVAS_COLOUR = '#2d4a3e';
 // SNOW-399 — staging palette. The rect fill and both canvases share the
 // darker rust (#7c2d12) so every staging PNG reads as one amber tile.
 // The theme colour (#b45309, one shade brighter) lives in
-// public/site_environment.PWAEnvironmentIdentity.STAGING and drives the
+// apps/public/site_environment.PWAEnvironmentIdentity.STAGING and drives the
 // OS status-bar tint next to the installed icon.
 const BACKGROUND_COLOUR_STAGING = '#7c2d12';
 const MASKABLE_CANVAS_COLOUR_STAGING = '#7c2d12';

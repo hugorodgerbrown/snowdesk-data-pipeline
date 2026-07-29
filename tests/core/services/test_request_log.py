@@ -1,5 +1,5 @@
 """
-tests/core/services/test_request_log.py — Tests for core.services.request_log.capture.
+tests/core/services/test_request_log.py — Tests for apps.core.services.request_log.capture.
 
 Exercises the end-to-end capture path: builds a synthetic request via
 RequestFactory, patches geo_lookup to return a deterministic GeoLookup, and
@@ -16,9 +16,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import RequestFactory
 
-from bulletins.services.geoip import GeoLookup
-from core.models import RequestLog
-from core.services.request_log import capture
+from apps.bulletins.services.geoip import GeoLookup
+from apps.core.models import RequestLog
+from apps.core.services.request_log import capture
 from tests.factories import AccountFactory
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ class TestCapture:
     def test_creates_one_row_per_call(self, rf: RequestFactory) -> None:
         """capture() creates exactly one RequestLog row per invocation."""
         request = _make_request(rf)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
             capture(request)
             capture(request)
         assert RequestLog.objects.count() == 2
@@ -89,7 +89,7 @@ class TestCapture:
     def test_returns_saved_instance(self, rf: RequestFactory) -> None:
         """capture() returns the newly saved RequestLog instance."""
         request = _make_request(rf)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
             log = capture(request)
         assert log.pk is not None
         assert RequestLog.objects.filter(pk=log.pk).exists()
@@ -97,7 +97,7 @@ class TestCapture:
     def test_ip_captured_from_remote_addr(self, rf: RequestFactory) -> None:
         """capture() stores REMOTE_ADDR as ip_address when no XFF."""
         request = _make_request(rf, ip="203.0.113.7")
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert str(log.ip_address) == "203.0.113.7"
 
@@ -105,14 +105,14 @@ class TestCapture:
         """capture() prefers the leftmost X-Forwarded-For IP."""
         request = _make_request(rf, ip="10.0.0.1")
         request.META["HTTP_X_FORWARDED_FOR"] = "203.0.113.99, 10.0.0.1"
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert str(log.ip_address) == "203.0.113.99"
 
     def test_geo_fields_populated_from_geo_lookup(self, rf: RequestFactory) -> None:
         """Geo fields on the RequestLog come from the geo_lookup result."""
         request = _make_request(rf)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=_FAKE_GEO):
             log = capture(request)
         assert log.country_code == "CH"
         assert log.subdivision_code == "VS"
@@ -126,7 +126,7 @@ class TestCapture:
     ) -> None:
         """When geo_lookup returns None, geo fields are empty / null."""
         request = _make_request(rf)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.country_code == ""
         assert log.city == ""
@@ -135,7 +135,7 @@ class TestCapture:
     def test_language_parsed_from_accept_language(self, rf: RequestFactory) -> None:
         """capture() parses the primary language tag from Accept-Language."""
         request = _make_request(rf, accept_language="de-CH,de;q=0.9")
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.language == "de"
         assert log.accept_language == "de-CH,de;q=0.9"
@@ -143,14 +143,14 @@ class TestCapture:
     def test_user_agent_captured(self, rf: RequestFactory) -> None:
         """capture() stores the HTTP_USER_AGENT header."""
         request = _make_request(rf, ua="Snowdesk-Test/1.0")
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.user_agent == "Snowdesk-Test/1.0"
 
     def test_referer_captured(self, rf: RequestFactory) -> None:
         """capture() stores the Referer header."""
         request = _make_request(rf, referer="https://example.com/origin")
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.referer == "https://example.com/origin"
 
@@ -158,14 +158,14 @@ class TestCapture:
         """capture() stores the session key."""
         request = _make_request(rf)
         request.session.session_key = "mysession123"
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.session_key == "mysession123"
 
     def test_anonymous_request_leaves_account_null(self, rf: RequestFactory) -> None:
         """Anonymous requests (unauthenticated) result in account=None."""
         request = _make_request(rf, user=None)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.account is None
 
@@ -173,7 +173,7 @@ class TestCapture:
         """Authenticated requests link the RequestLog to the Account profile on request.user."""
         account = AccountFactory.create()
         request = _make_request(rf, user=account.user)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.account_id == account.pk
 
@@ -181,14 +181,14 @@ class TestCapture:
         """capture() stores the Sec-Purpose header on sec_purpose."""
         request = _make_request(rf)
         request.META["HTTP_SEC_PURPOSE"] = "prefetch"
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.sec_purpose == "prefetch"
 
     def test_sec_purpose_empty_when_header_absent(self, rf: RequestFactory) -> None:
         """When Sec-Purpose is not sent, sec_purpose is an empty string."""
         request = _make_request(rf)
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.sec_purpose == ""
 
@@ -196,6 +196,6 @@ class TestCapture:
         """Values longer than 64 characters are truncated to fit the field."""
         request = _make_request(rf)
         request.META["HTTP_SEC_PURPOSE"] = "x" * 100
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert len(log.sec_purpose) == 64

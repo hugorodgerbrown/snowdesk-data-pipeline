@@ -21,11 +21,11 @@ from django.core.mail import EmailMultiAlternatives
 from django.test import RequestFactory
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.services.email import (
+from apps.accounts.services.email import (
     send_account_access_email,
     send_subscription_confirmation_email,
 )
-from accounts.services.token import SALT_ACCOUNT_ACCESS, verify_token
+from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, verify_token
 from tests.factories import MicroRegionFactory
 
 
@@ -252,7 +252,7 @@ class TestEmailServiceLogging:
 
         email = "caplog-access@example.com"
 
-        with caplog.at_level(logging.INFO, logger="accounts.services.email"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.services.email"):
             send_account_access_email(email)
 
         all_messages = [r.getMessage() for r in caplog.records]
@@ -279,7 +279,7 @@ class TestEmailServiceLogging:
         email = "caplog-confirm@example.com"
         region = MicroRegionFactory.create(name="Test Region")
 
-        with caplog.at_level(logging.INFO, logger="accounts.services.email"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.services.email"):
             send_subscription_confirmation_email(email, region=region)
 
         all_messages = [r.getMessage() for r in caplog.records]

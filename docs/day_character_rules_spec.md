@@ -10,7 +10,7 @@ last-reviewed: 2026-06-10
 ## Overview
 
 Implemented as `compute_day_character(render_model) -> str` in
-`bulletins/services/render_model.py`. Takes a render model dict (as produced
+`apps/bulletins/services/render_model.py`. Takes a render model dict (as produced
 by `build_render_model`) and returns one of five string labels. This was
 task 13 in the SnowDesk design doc: compute labels for all historical
 bulletins and verify the distribution looks sensible before surfacing them
@@ -90,8 +90,8 @@ Run against all stored bulletins and print a distribution:
 
 ```python
 from collections import Counter
-from bulletins.models import Bulletin
-from bulletins.services.render_model import compute_day_character
+from apps.bulletins.models import Bulletin
+from apps.bulletins.services.render_model import compute_day_character
 
 labels = [compute_day_character(b.render_model) for b in Bulletin.objects.all()]
 for label, count in Counter(labels).most_common():

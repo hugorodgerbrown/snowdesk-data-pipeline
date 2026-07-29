@@ -1,0 +1,155 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/resort.html — Public resort detail page (SNOW-504).
+
+Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``), rendered
+by ``apps.public.views.resort_detail``. Cross-linked from the bulletin page's
+"Resorts in this region" list and from the map's resort-pin popup, whose
+CTA now reads "View resort →" and links here instead of straight to the
+bulletin.
+
+Sections, top to bottom:
+  1. Resort name (+ alternative/marketing name, when set), canton, and
+     parent region name.
+  2. Today's danger chip — reuses the ``.danger-tile`` component from
+     ``_region_tooltip.html`` — alongside a "View bulletin →" link to the
+     parent region's evergreen bulletin page.
+  3. The favourite/unfavourite control
+     (``favourites/partials/_resort_favourite_button.html``).
+  4. Weather (SNOW-509) — the parent region's ``WeatherSnapshot``, via the
+     shared ``includes/_weather_panel.html`` partial (no region ``<h1>``, no
+     share button; this page already has its own resort ``<h1>``). Product
+     decision: Option 1 — no per-resort Open-Meteo fetch; point weather
+     stays a favourite-page feature. See
+     ``docs/decisions/resort-page-weather-shows-region-snapshot.md``.
+  5. Field-observation counts (SNOW-508) — point-local, scoped to
+     ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
+     coordinates, falling back to the region-wide count (the ``bulletin.html``
+     pattern) when the resort has no coordinates.
+
+Resorts with ``needs_review=True`` or null coordinates still render here —
+only the map-anchor affordance is skipped, and this page has none.
+
+Context expected (built by ``apps.public.views.resort_detail``):
+  resort                        — regions.Resort instance.
+  region                        — regions.MicroRegion instance (resort.region,
+                                   select_related region).
+  region_id                     — str: region.region_id, for the weather
+                                   panel's HTMX retry URL.
+  day_rating                    — bulletins.RegionDayRating for today, or None.
+  target_date                   — datetime.date: today.
+  bulletin_url                  — str: the region's evergreen bulletin URL.
+  favourited                    — bool.
+  favourite_uuid                — str: "" when not favourited.
+  can_favourite                 — bool.
+  signin_url                    — str: accounts:sign_in URL.
+  local_observations            — apps.public.views.LocalObservationResult:
+                                   visible / scope ("point"|"region") /
+                                   counts (list[(label, count)]).
+  observation_has_user_located  — bool.
+  weather_display                — dict from ``build_weather_display()``, or
+                                   None (region's ``WeatherSnapshot`` for
+                                   ``target_date``).
+  weather_htmx_trigger           — bool: True when ``weather_display`` is
+                                   None, so the panel fires the
+                                   belt-and-braces HTMX retry.
+{% endcomment %}
+{% load i18n snowdesk_time %}
+
+{# SNOW-553: this page is the sharpest case the sharing-metadata rule    #}
+{# exists for — SNOW-504 built /resorts/<id>/<slug>/ specifically as an  #}
+{# indexable, shareable URL cross-linked from the map's resort popup,    #}
+{# and until now it unfurled with no title, description or og:url.      #}
+{% block page_meta %}
+    {% blocktrans with name=resort.name trimmed asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
+    {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
+        {{ name }} ski resort — avalanche danger and bulletin for {{ region }}.
+    {% endblocktrans %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main
+        class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+        data-testid="resort-detail"
+        data-resort-id="{{ resort.pk }}"
+    >
+        <div class="mb-6">
+            <h1 class="text-2xl font-semibold tracking-tight" data-testid="resort-heading">
+                {{ resort.name }}
+            </h1>
+            {% if resort.name_alt %}
+                <p class="text-sm text-text-3">{{ resort.name_alt }}</p>
+            {% endif %}
+            <p class="mt-1 text-sm text-text-2" data-testid="resort-location">
+                {{ resort.canton }}
+                <span aria-hidden="true"> &middot; </span>
+                {{ region.name }}
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4 mb-6" data-testid="resort-danger">
+            {% if day_rating %}
+                <span
+                    class="danger-tile"
+                    data-level="{{ day_rating.max_rating }}"
+                    data-testid="resort-danger-chip"
+                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+            {% else %}
+                <p class="text-sm text-text-3" data-testid="resort-no-rating">
+                    {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                        {{ d }}{% endblocktrans %}
+                </p>
+            {% endif %}
+            {% include "includes/_button.html" with label=_("View bulletin →") href=bulletin_url variant="secondary" size="compact" %}
+        </div>
+
+        <div class="mb-6">
+            {% include "favourites/partials/_resort_favourite_button.html" %}
+        </div>
+
+        {# ── Weather (SNOW-509) — parent region's WeatherSnapshot ── #}
+        <section data-testid="resort-weather-section">
+            {% include "includes/_weather_panel.html" with weather_display=weather_display weather_htmx_trigger=weather_htmx_trigger region_id=region_id page_date=target_date htmx_variant=True region_name="" subregion_name="" panel_testid="resort-weather" testid_prefix="resort-weather" panel_extra_classes="rounded-card mb-4" %}
+        </section>
+
+        {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
+        {% if local_observations.visible %}
+            <section class="mt-6" aria-labelledby="obs-counts-heading">
+                <h2
+                    id="obs-counts-heading"
+                    class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-3"
+                >
+                    {% if local_observations.scope == "point" %}
+                        {% trans "Reported nearby" %}
+                    {% else %}
+                        {% trans "Reported in this region" %}
+                    {% endif %}
+                </h2>
+                {% if local_observations.counts %}
+                    <ul class="flex flex-wrap gap-2">
+                        {% for label, count in local_observations.counts %}
+                            <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
+                                <span class="font-medium">{{ count }}</span>
+                                <span>{{ label }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    {% if observation_has_user_located %}
+                        <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
+                            {% trans "Some reports were placed manually" %}
+                        </p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-sm text-text-3" data-testid="resort-observations-empty">
+                        {% if local_observations.scope == "point" %}
+                            {% trans "No reports near here today." %}
+                        {% else %}
+                            {% trans "No reports in this region today." %}
+                        {% endif %}
+                    </p>
+                {% endif %}
+            </section>
+        {% endif %}
+    </main>
+{% endblock %}

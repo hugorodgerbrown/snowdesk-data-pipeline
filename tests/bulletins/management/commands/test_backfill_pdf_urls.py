@@ -21,8 +21,8 @@ import requests
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from bulletins.management.commands.backfill_pdf_urls import _albina_cdn_region
-from bulletins.models import Bulletin
+from apps.bulletins.management.commands.backfill_pdf_urls import _albina_cdn_region
+from apps.bulletins.models import Bulletin
 from tests.factories import BulletinFactory
 
 
@@ -180,7 +180,7 @@ class TestBackfillPdfUrlsCommit:
         mock_session.headers = {}
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls.requests.Session",
+            "apps.bulletins.management.commands.backfill_pdf_urls.requests.Session",
             return_value=mock_session,
         ):
             call_command("backfill_pdf_urls", commit=True)
@@ -197,7 +197,7 @@ class TestBackfillPdfUrlsCommit:
         mock_session.headers = {}
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls.requests.Session",
+            "apps.bulletins.management.commands.backfill_pdf_urls.requests.Session",
             return_value=mock_session,
         ):
             call_command("backfill_pdf_urls", commit=True)
@@ -324,7 +324,7 @@ class TestBackfillPdfUrlsRegressions:
         mock_session.headers = {}
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls.requests.Session",
+            "apps.bulletins.management.commands.backfill_pdf_urls.requests.Session",
             return_value=mock_session,
         ):
             call_command("backfill_pdf_urls", commit=True)
@@ -343,7 +343,7 @@ class TestBackfillPdfUrlsErrorExit:
         _make_slf_bulletin()
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            "apps.bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
             side_effect=RuntimeError("forced error"),
         ):
             with pytest.raises(CommandError, match="error"):
@@ -358,7 +358,7 @@ class TestBackfillPdfUrlsErrorExit:
         _make_slf_bulletin()
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            "apps.bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
             return_value="javascript:alert(1)",
         ):
             with pytest.raises(CommandError, match="error"):
@@ -373,7 +373,7 @@ class TestBackfillPdfUrlsErrorExit:
         _make_slf_bulletin()
 
         with patch(
-            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            "apps.bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
             return_value="http://example.com/bulletin.pdf",
         ):
             with pytest.raises(CommandError, match="error"):

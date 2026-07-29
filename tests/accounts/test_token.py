@@ -20,7 +20,7 @@ import pytest
 from django.conf import settings
 from freezegun import freeze_time
 
-from accounts.services.token import (
+from apps.accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
     SALT_UNSUBSCRIBE,
     generate_token,
@@ -188,14 +188,14 @@ class TestVerifyUnsubscribeTokenLogging:
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
-        from accounts.services.token import SALT_UNSUBSCRIBE, generate_token
+        from apps.accounts.services.token import SALT_UNSUBSCRIBE, generate_token
 
         monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
 
         # Sign a value with no '|' so the split check fails.
         no_sep_token = generate_token("noseparatorvalue", salt=SALT_UNSUBSCRIBE)
 
-        with caplog.at_level(logging.WARNING, logger="accounts.services.token"):
+        with caplog.at_level(logging.WARNING, logger="apps.accounts.services.token"):
             result = verify_unsubscribe_token(no_sep_token)
 
         assert result is None

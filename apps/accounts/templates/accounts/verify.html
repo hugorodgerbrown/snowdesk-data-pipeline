@@ -1,0 +1,33 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/accounts/templates/accounts/verify.html — Email-verification confirm page.
+
+Rendered on GET of /account/verify/<token>/ for a valid token. It performs no
+state change: only the POST from this form marks the account verified and logs
+the user in (safe against link-prefetch scanners). SNOW-430.
+{% endcomment %}
+{% load i18n %}
+
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Verify your email — Snowdesk" as page_title %}
+    {% trans "Confirm your email address to finish setting up your Snowdesk account." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{% trans "Verify your email" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "Tap the button below to confirm your email address and finish setting up your account." %}
+{% endblock %}
+
+{% block status_cta %}
+    <form method="post" class="mt-6">
+        {% csrf_token %}
+        {% trans "Verify my email" as label %}
+        {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+    </form>
+{% endblock %}

@@ -214,7 +214,7 @@ suite, worth knowing before adding another one:
    `context.route()` ever fire for the initial `/sw.js` registration
    fetch or a `registration.update()` re-fetch. To simulate a changed
    `sw.js` (a new deploy), monkeypatch the Django view that serves it
-   (`public.views._serve_sw_file`) instead — `live_server` runs in-process,
+   (`apps.public.views._serve_sw_file`) instead — `live_server` runs in-process,
    so this changes what bytes the live server actually returns.
 2. **A second `wait_for_function()` (or any further `page.evaluate()`)
    call, issued while an earlier SW-driven promise is still settling,

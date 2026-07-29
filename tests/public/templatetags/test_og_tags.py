@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from public.templatetags.og_tags import og_locale
+from apps.public.templatetags.og_tags import og_locale
 
 
 class TestOgLocale:

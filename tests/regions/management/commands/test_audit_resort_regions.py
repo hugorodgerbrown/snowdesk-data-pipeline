@@ -77,7 +77,7 @@ class TestAuditResortRegionsDryRun:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
@@ -109,7 +109,7 @@ class TestAuditResortRegionsDryRun:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
@@ -134,7 +134,7 @@ class TestAuditResortRegionsDryRun:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
@@ -161,7 +161,7 @@ class TestAuditResortRegionsDryRun:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
@@ -196,12 +196,12 @@ class TestAuditResortRegionsCommit:
         # Stub _write_resorts_fixture so we don't write to the real fixture.
         write_calls: list[Path] = []
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
         # Patch the imported _write_resorts_fixture inside audit_resort_regions.
-        import regions.management.commands.dump_resorts_fixture as dump_mod
+        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
 
         original_write = dump_mod._write_resorts_fixture
 
@@ -244,11 +244,11 @@ class TestAuditResortRegionsCommit:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
-        import regions.management.commands.dump_resorts_fixture as dump_mod
+        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
 
         monkeypatch.setattr(dump_mod, "_write_resorts_fixture", lambda *a, **kw: None)
 
@@ -275,11 +275,11 @@ class TestAuditResortRegionsCommit:
         tmp_fixture = tmp_path / "resorts.json"
         tmp_fixture.write_text("[]", encoding="utf-8")
 
-        from regions.management.commands import audit_resort_regions as mod
+        from apps.regions.management.commands import audit_resort_regions as mod
 
         monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
 
-        import regions.management.commands.dump_resorts_fixture as dump_mod
+        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
 
         monkeypatch.setattr(dump_mod, "_write_resorts_fixture", lambda *a, **kw: None)
 

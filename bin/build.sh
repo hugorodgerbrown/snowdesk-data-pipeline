@@ -40,11 +40,11 @@ uv run --no-sync python manage.py migrate
 # applied by hand with ``manage.py import_resorts --commit``. See
 # docs/decisions/resorts-are-editable-data.md.
 uv run --no-sync python manage.py loaddata \
-    regions/fixtures/eaws_CH.json \
-    regions/fixtures/eaws_FR.json \
-    regions/fixtures/eaws_AT.json \
-    regions/fixtures/eaws_IT.json \
-    regions/fixtures/region_aliases.json
+    apps/regions/fixtures/eaws_CH.json \
+    apps/regions/fixtures/eaws_FR.json \
+    apps/regions/fixtures/eaws_AT.json \
+    apps/regions/fixtures/eaws_IT.json \
+    apps/regions/fixtures/region_aliases.json
 
 # Precompute per-region offline-basemap tile coverage (SNOW-521) on every
 # tier — pure function of each region's (static) geometry, so recomputing
@@ -53,7 +53,7 @@ uv run --no-sync python manage.py loaddata \
 # FR/AT/IT fixtures, which don't (see docs/offline-map.md).
 uv run --no-sync python manage.py compute_basemap_download --commit
 
-# Sync waffle.Flag rows to core/fixtures/waffle_flags.json — create + delete
+# Sync waffle.Flag rows to apps/core/fixtures/waffle_flags.json — create + delete
 # only, never edit-in-place, so an operator's live admin-tuned targeting on
 # an existing flag survives every deploy. Idempotent (a no-op once the DB
 # matches the manifest) — see docs/management-commands.md.

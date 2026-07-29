@@ -18,7 +18,7 @@ import pytest
 from django.template import Context, Template
 from django.utils.safestring import SafeString
 
-from public.templatetags.snowdesk_html import (
+from apps.public.templatetags.snowdesk_html import (
     prose_body,
     prose_title,
     snowdesk_html,

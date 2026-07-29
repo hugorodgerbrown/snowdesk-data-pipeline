@@ -23,7 +23,7 @@ from django.utils import timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from regions.models import Resort
+from apps.regions.models import Resort
 from tests.factories import FieldObservationFactory, WeatherSnapshotFactory
 
 

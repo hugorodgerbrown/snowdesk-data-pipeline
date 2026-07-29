@@ -16,7 +16,7 @@ model) and is the only test in the suite that exercises the seed path. All other
 tests use factories directly so they remain fast.
 
 The ``_disable_inline_weather_warmup`` autouse fixture in ``conftest.py``
-patches out ``public.views.fetch_weather_async`` so the implicit warmup
+patches out ``apps.public.views.fetch_weather_async`` so the implicit warmup
 triggered by a past-date render never reaches the network here.
 """
 

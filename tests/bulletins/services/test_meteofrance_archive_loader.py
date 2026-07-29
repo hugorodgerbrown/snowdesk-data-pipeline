@@ -4,7 +4,7 @@
 # Exercises load_meteofrance_archive() in both dry-run and commit modes against
 # minimal NDJSON lines, covering the key counter fields and the triggered_by
 # propagation.
-"""Tests for bulletins.services.meteofrance_archive_loader."""
+"""Tests for apps.bulletins.services.meteofrance_archive_loader."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from typing import Any
 import pytest
 from django.core.management import call_command
 
-from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.meteofrance_archive_loader import (
+from apps.bulletins.models import Bulletin, PipelineRun
+from apps.bulletins.services.meteofrance_archive_loader import (
     LoadResult,
     _slug_to_region_id,
     load_meteofrance_archive,
 )
-from regions.models import MicroRegion
+from apps.regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -172,7 +172,7 @@ def _patch_paths(
     Also monkeypatches ``lookup`` to return values from the synthetic name
     map, avoiding dependency on the vendored EAWS files.
     """
-    from regions.management.commands import build_switzerland_fixture as mod
+    from apps.regions.management.commands import build_switzerland_fixture as mod
 
     monkeypatch.setattr(mod, "_EAWS_GEOJSON", eaws_path)
     monkeypatch.setattr(mod, "_CH_FIXTURE", fixture_path)
@@ -280,7 +280,7 @@ class TestBuildSwitzerlandFixtureCommit:
         """When lookup returns None, the L4 name falls back to the region_id."""
         eaws, fixture = _seed_sources(tmp_path)
         _patch_paths(monkeypatch, eaws, fixture)
-        from regions.management.commands import build_switzerland_fixture as mod
+        from apps.regions.management.commands import build_switzerland_fixture as mod
 
         monkeypatch.setattr(mod, "lookup", lambda key, lang: None)
 

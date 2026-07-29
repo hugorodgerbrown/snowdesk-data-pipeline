@@ -1,7 +1,7 @@
 # _massifs.py — Shim that re-exports the canonical massifs module.
 #
 # The canonical implementation has moved to
-# ``bulletins/services/meteofrance_massifs.py`` so it can be imported by the
+# ``apps/bulletins/services/meteofrance_massifs.py`` so it can be imported by the
 # Django admin archive-upload view without duplicating the lookup tables.
 #
 # This shim exists so the offline scripts in ``scripts/meteofrance-archive/``
@@ -24,5 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bulletins.services.meteofrance_massifs import *  # noqa: E402, F401, F403
-from bulletins.services.meteofrance_massifs import _normalise_slug  # noqa: E402, F401
+from apps.bulletins.services.meteofrance_massifs import *  # noqa: E402, F401, F403
+from apps.bulletins.services.meteofrance_massifs import (
+    _normalise_slug,  # noqa: E402, F401
+)
