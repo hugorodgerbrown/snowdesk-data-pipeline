@@ -5,24 +5,35 @@ Covers the 302 happy path, click row creation (including RequestLog FK),
 Cache-Control header, 404 on unknown token, 410 on null bulletin, and the
 ``share_link_clicked`` analytics event. Also verifies the 302 status code
 explicitly (not 301) and the visitor hash stability.
+
+SNOW-551 adds the abuse bounds: only GET/HEAD are accepted, speculative
+requests (HEAD, ``Sec-Purpose: prefetch`` / ``prerender``) redirect
+without recording anything, and follows are capped per (token, IP).
 """
 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from datetime import date
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.models import BulletinShareClick
 from core.models import RequestLog
+from public.views import SHARE_CLICK_RATE
 from tests.factories import (
     BulletinShareFactory,
     MicroRegionFactory,
 )
+
+# How many follows of one link from one IP are allowed before the 429.
+_SHARE_RATE_LIMIT = int(SHARE_CLICK_RATE.split("/")[0])
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -119,17 +130,20 @@ class TestShareRedirectClickTracking:
         click = BulletinShareClick.objects.get(share=share)
         assert click.request.referer == "https://example.com/some-page"
 
-    def test_click_row_captures_sec_purpose(self, client: Client) -> None:
-        """Sec-Purpose: prefetch header is captured on the linked RequestLog."""
+    def test_click_row_captures_sec_purpose_on_a_real_visit(
+        self, client: Client
+    ) -> None:
+        """A non-speculative Sec-Purpose is still captured on the RequestLog.
+
+        SNOW-551 skips the writes for ``prefetch`` / ``prerender``; any
+        other value is a real navigation and still logs, header and all.
+        """
         share = BulletinShareFactory.create()
 
-        client.get(
-            _redirect_url(share.token),
-            HTTP_SEC_PURPOSE="prefetch",
-        )
+        client.get(_redirect_url(share.token), HTTP_SEC_PURPOSE="navigate")
 
         click = BulletinShareClick.objects.get(share=share)
-        assert click.request.sec_purpose == "prefetch"
+        assert click.request.sec_purpose == "navigate"
 
     def test_visitor_hash_is_deterministic(self, client: Client) -> None:
         """Two clicks from the same IP + UA produce the same visitor_hash."""
@@ -292,3 +306,155 @@ class TestShareLinkClickedAnalytics:
         # Either a Django session key (32-char hex-ish) or an anon-<uuid> string.
         assert distinct_id, "distinct_id must be non-empty for anonymous visitors"
         assert distinct_id.startswith("anon-") or len(distinct_id) >= 16
+
+
+# ---------------------------------------------------------------------------
+# Abuse bounds (SNOW-551) — method allowlist, speculative-request skip,
+# per-(token, IP) rate limit.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestShareRedirectAbuseBounds:
+    """The endpoint writes three rows on arrival; those writes are bounded."""
+
+    @pytest.fixture(autouse=True)
+    def _live_rate_limit(self, settings: SettingsWrapper) -> Iterator[None]:
+        """Switch the rate limiter on and isolate its counters per test.
+
+        ``config.settings.development`` sets ``RATELIMIT_ENABLE = False``,
+        so the decorator is inert under the test settings. Turning it on —
+        rather than taking the ``request.limited = True`` shortcut used
+        elsewhere in the suite — is what makes these tests prove the
+        decorator is wired with the right *key function* and *rate*, which
+        is the substance of SNOW-551's rate-limit decision; the view's
+        handling of ``request.limited`` is trivial by comparison.
+
+        django_ratelimit keeps its counters in the default cache, which is
+        process-wide and outlives a single test, so the tests that
+        deliberately exhaust a budget would otherwise leak into the ones
+        that expect a fresh one.
+        """
+        settings.RATELIMIT_ENABLE = True
+        cache.clear()
+        yield
+        cache.clear()
+
+    @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
+    def test_non_get_methods_are_rejected(self, client: Client, method: str) -> None:
+        """A state-changing method gets 405 rather than silently writing."""
+        share = BulletinShareFactory.create()
+
+        response = getattr(client, method)(_redirect_url(share.token))
+
+        assert response.status_code == 405
+        assert BulletinShareClick.objects.count() == 0
+        assert RequestLog.objects.count() == 0
+
+    @pytest.mark.parametrize("sec_purpose", ["prefetch", "prerender"])
+    def test_prefetch_redirects_without_recording_a_click(
+        self, client: Client, sec_purpose: str
+    ) -> None:
+        """A speculative request still redirects but records nothing.
+
+        Previously proven to be stored *as a click*, inflating the metric
+        with links nobody chose to follow.
+        """
+        share = BulletinShareFactory.create()
+
+        with patch("public.views.analytics.track") as mock_track:
+            response = client.get(
+                _redirect_url(share.token),
+                HTTP_SEC_PURPOSE=sec_purpose,
+            )
+
+        assert response.status_code == 302
+        assert BulletinShareClick.objects.count() == 0
+        assert RequestLog.objects.count() == 0
+        assert mock_track.call_args_list == []
+
+    def test_structured_sec_purpose_value_is_recognised(self, client: Client) -> None:
+        """``prefetch;anonymous-client-ip`` is a prefetch too."""
+        share = BulletinShareFactory.create()
+
+        client.get(
+            _redirect_url(share.token),
+            HTTP_SEC_PURPOSE="prefetch;anonymous-client-ip",
+        )
+
+        assert BulletinShareClick.objects.count() == 0
+
+    def test_head_redirects_without_recording_a_click(self, client: Client) -> None:
+        """HEAD is answered but never counted."""
+        share = BulletinShareFactory.create()
+
+        response = client.head(_redirect_url(share.token))
+
+        assert response.status_code == 302
+        assert BulletinShareClick.objects.count() == 0
+        assert RequestLog.objects.count() == 0
+
+    def test_prefetch_on_a_dead_share_still_returns_410(self, client: Client) -> None:
+        """The skip covers the 410 branch as well as the redirect."""
+        share = BulletinShareFactory.create(bulletin=None)
+
+        response = client.get(_redirect_url(share.token), HTTP_SEC_PURPOSE="prefetch")
+
+        assert response.status_code == 410
+        assert BulletinShareClick.objects.count() == 0
+
+    def test_ordinary_get_still_records_a_click(self, client: Client) -> None:
+        """Positive control — a plain GET is unaffected by any of the above."""
+        share = BulletinShareFactory.create()
+
+        with patch("public.views.analytics.track") as mock_track:
+            response = client.get(_redirect_url(share.token))
+
+        assert response.status_code == 302
+        assert BulletinShareClick.objects.count() == 1
+        assert [
+            c for c in mock_track.call_args_list if c.args[0] == "share_link_clicked"
+        ]
+
+    def test_rate_limit_bounds_one_token_from_one_ip(self, client: Client) -> None:
+        """The 31st follow of one link from one IP within the hour is refused."""
+        share = BulletinShareFactory.create()
+        url = _redirect_url(share.token)
+
+        for _ in range(_SHARE_RATE_LIMIT):
+            assert client.get(url, REMOTE_ADDR="203.0.113.1").status_code == 302
+
+        blocked = client.get(url, REMOTE_ADDR="203.0.113.1")
+
+        assert blocked.status_code == 429
+        assert BulletinShareClick.objects.count() == _SHARE_RATE_LIMIT
+
+    def test_rate_limit_is_per_token_not_per_ip(self, client: Client) -> None:
+        """Exhausting one link's budget must not block a different link.
+
+        A flat per-IP cap would make one NATed office network share a
+        single budget across unrelated share links.
+        """
+        exhausted = BulletinShareFactory.create()
+        other = BulletinShareFactory.create()
+        ip = "203.0.113.2"
+
+        for _ in range(_SHARE_RATE_LIMIT):
+            client.get(_redirect_url(exhausted.token), REMOTE_ADDR=ip)
+        assert (
+            client.get(_redirect_url(exhausted.token), REMOTE_ADDR=ip).status_code
+            == 429
+        )
+
+        assert client.get(_redirect_url(other.token), REMOTE_ADDR=ip).status_code == 302
+
+    def test_rate_limit_is_per_ip_not_global(self, client: Client) -> None:
+        """One abusive IP must not lock everyone else out of the same link."""
+        share = BulletinShareFactory.create()
+        url = _redirect_url(share.token)
+
+        for _ in range(_SHARE_RATE_LIMIT):
+            client.get(url, REMOTE_ADDR="203.0.113.3")
+        assert client.get(url, REMOTE_ADDR="203.0.113.3").status_code == 429
+
+        assert client.get(url, REMOTE_ADDR="198.51.100.7").status_code == 302

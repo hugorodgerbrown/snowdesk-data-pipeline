@@ -20,6 +20,19 @@ over this autouse no-op. Tests that exercise the helper itself import it
 from ``bulletins.services.weather_fetcher`` and are unaffected by the
 ``public.views`` patch.
 
+The ``_disable_posthog`` autouse fixture (SNOW-548) pins the analytics
+kill switches off for every test regardless of how the process was
+launched. ``tox.ini`` already sets ``POSTHOG_API_KEY=`` for
+``[testenv:test]``, but that guard lives entirely in the tox environment:
+a bare ``pytest`` invocation — against convention, but routine during
+iterative debugging — picks up whatever is in the developer's ``.env``
+and ``config.settings.development`` forwards it straight through to
+``AnalyticsConfig.ready()``, producing live uploads to PostHog from a
+test run. The fixture closes that hole from the other direction, and
+along the way makes the suite deterministic: a developer with
+``PWA_TELEMETRY_ENABLED=False`` in ``.env`` was previously watching 28
+analytics tests fail locally that pass in CI.
+
 Email tests no longer need a sync-force fixture — the test settings module
 inherits ``ImmediateBackend`` from ``development.py``, which runs tasks inline
 and populates ``mail.outbox`` synchronously.
@@ -27,6 +40,7 @@ and populates ``mail.outbox`` synchronously.
 
 from __future__ import annotations
 
+import posthog
 import pytest
 from pytest_django.fixtures import SettingsWrapper
 
@@ -35,6 +49,36 @@ from pytest_django.fixtures import SettingsWrapper
 def _force_sync_weather_fetch(settings: SettingsWrapper) -> None:
     """Force synchronous weather fetch in tests by default (SNOW-164)."""
     settings.WEATHER_FETCH_ASYNC = False
+
+
+@pytest.fixture(autouse=True)
+def _disable_posthog(settings: SettingsWrapper) -> None:
+    """Guarantee no test run reaches PostHog over the network (SNOW-548).
+
+    Pins both halves of the analytics configuration rather than trusting
+    the launcher:
+
+    * ``POSTHOG_API_KEY = ""`` — the condition ``analytics.track()`` and
+      ``analytics.signals.emit_server_signal()`` short-circuit on. Also
+      set on the ``posthog`` module globals, because
+      ``AnalyticsConfig.ready()`` copies the setting onto them once at
+      startup and a settings override alone would leave a live client
+      behind.
+    * ``PWA_TELEMETRY_ENABLED = True`` — the operator master switch. It
+      is forced *on* deliberately: it gates the telemetry pipeline's
+      behaviour, not its network access, so tests must see the shipped
+      default rather than whatever a developer happens to have in
+      ``.env``. With the API key empty, nothing leaves the process
+      either way.
+
+    Tests that exercise the enabled path re-override these via
+    ``@override_settings`` and patch ``posthog.capture`` explicitly, so
+    they assert against a mock rather than ambient global state.
+    """
+    settings.POSTHOG_API_KEY = ""
+    settings.PWA_TELEMETRY_ENABLED = True
+    posthog.api_key = ""
+    posthog.disabled = True
 
 
 @pytest.fixture(autouse=True)

@@ -94,8 +94,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
         <meta name="pwa-app-min-version" content="{{ APP_MIN_VERSION }}">
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
+        {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
+        {# PK leaks user count and growth rate and is trivially guessable. #}
         {# Empty content for anonymous requests — db.js treats it as null. #}
-        <meta name="pwa-user-id" content="{% if request.user.is_authenticated %}{{ request.user.pk }}{% endif %}">
+        <meta name="pwa-user-id" content="{{ PWA_USER_ID }}">
         {# Telemetry master switch (settings.PWA_TELEMETRY_ENABLED). "0"   #}
         {# turns static/js/telemetry.js into an inert no-op — no buffering, #}
         {# no sendBeacon, no /api/telemetry POSTs. Set                      #}

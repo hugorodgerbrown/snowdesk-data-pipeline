@@ -203,7 +203,10 @@ def _process_line(
         counts: Mutable counter object updated by this call.
 
     """
-    from bulletins.services.slf_fetcher import upsert_bulletin
+    from bulletins.services.slf_fetcher import (
+        NoResolvableRegionsError,
+        upsert_bulletin,
+    )
 
     properties = _parse_envelope(raw_line, line_number)
     if properties is None:
@@ -226,7 +229,19 @@ def _process_line(
         counts.would_upsert += 1
         return
 
-    created = upsert_bulletin(properties, run)
+    # A row whose regions are all unresolvable is a per-row failure, not a
+    # reason to abandon the rest of the file (SNOW-547) — same posture as the
+    # unknown-slug and bad-shape branches above, and as the ALBINA / MF live
+    # fetchers, which already catch broadly around upsert_bulletin.
+    try:
+        created = upsert_bulletin(properties, run)
+    except NoResolvableRegionsError:
+        logger.exception("Line %d: skipping %s", line_number, bulletin_id)
+        # _record_run_failure alone is enough to surface this: it feeds
+        # LoadResult.failed, which the admin already warns on.
+        _record_run_failure(run)
+        return
+
     if created:
         counts.created += 1
         logger.debug("Created %s", bulletin_id)

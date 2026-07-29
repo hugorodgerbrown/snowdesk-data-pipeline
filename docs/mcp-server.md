@@ -100,9 +100,13 @@ Implementation: `mcp_server/resolvers.py::search_places` — NFKD ASCII-fold
 (`mcp_server/normalise.py::normalise`), scored with
 `rapidfuzz.process.extract(scorer=WRatio, score_cutoff=70)`. The candidate
 pool (~1500 rows) is cached in the Django default cache under a key
-fingerprinted on `max(updated_at)` across the four source tables
-(`MicroRegion`, `MajorRegion`, `Resort`, `RegionAlias`) — any edit is a
-guaranteed cache miss, no explicit invalidation call site needed.
+fingerprinted on `max(updated_at)` **and the row count** across the four
+source tables (`MicroRegion`, `MajorRegion`, `Resort`, `RegionAlias`) —
+any create, edit, or delete is a guaranteed cache miss, no explicit
+invalidation call site needed. The count is what covers deletes
+(SNOW-552): removing a row whose `updated_at` is not the maximum leaves
+the timestamp aggregate unchanged, so a timestamp-only fingerprint went
+on serving the deleted row for up to the one-hour `_POOL_TTL`.
 
 ### `get_current_conditions`
 

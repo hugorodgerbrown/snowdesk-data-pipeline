@@ -6,6 +6,11 @@ event to ``analytics.track()`` (which is patched here to avoid a real
 PostHog call), and returns 204 on success. Failure modes 400 / 405 /
 413 / 415 are exercised so a broken client doesn't discover them in
 production.
+
+SNOW-550: the ``distinct_id`` tests here also pin that the envelope's
+``user_id`` is never trusted. The endpoint is CSRF-exempt and needs no
+authentication, so a client-asserted identity would let any POST
+attribute events to someone else's PostHog history.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import pytest
 from django.test import Client, override_settings
 
 from analytics.schema import MAX_PAYLOAD_BYTES
+from tests.factories import AccountFactory
 
 # Every test in this module hits the Django test client, which triggers
 # the IdempotencyMiddleware / PosthogContextMiddleware DB access even
@@ -132,19 +138,72 @@ class TestReceiverAcceptsValidPayload:
         assert props["client_timestamp"] == "2026-07-16T10:00:00+00:00"
 
     @_POSTHOG
-    def test_user_id_wins_over_session_id(self) -> None:
-        """distinct_id resolution prefers user_id, then session_id, then _anon."""
+    def test_authenticated_request_uses_the_server_derived_identity(self) -> None:
+        """SNOW-550: the signed-in user's own identity wins, not the envelope.
+
+        Replaces ``test_user_id_wins_over_session_id``, which asserted the
+        spec §16.6 preference order this change removes. The value is
+        ``Account.uuid`` (SNOW-549), derived from ``request.user``.
+        """
+        account = AccountFactory.create()
+        client = Client()
+        client.force_login(account.user)
+
         with patch("posthog.capture") as mock_capture:
-            Client().post(
+            client.post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event(user_id="U", session_id="S")),
                 content_type="application/json",
             )
-        assert mock_capture.call_args.kwargs["distinct_id"] == "U"
+
+        assert mock_capture.call_args.kwargs["distinct_id"] == str(account.uuid)
 
     @_POSTHOG
-    def test_session_id_used_when_user_id_absent(self) -> None:
-        """distinct_id falls back to session_id when user_id is None."""
+    def test_authenticated_request_ignores_a_spoofed_user_id(self) -> None:
+        """A spoofed user_id cannot redirect events onto another identity."""
+        account = AccountFactory.create()
+        victim = AccountFactory.create()
+        client = Client()
+        client.force_login(account.user)
+
+        with patch("posthog.capture") as mock_capture:
+            client.post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event(user_id=str(victim.uuid))),
+                content_type="application/json",
+            )
+
+        distinct_id = mock_capture.call_args.kwargs["distinct_id"]
+        assert distinct_id == str(account.uuid)
+        assert distinct_id != str(victim.uuid)
+
+    @_POSTHOG
+    def test_anonymous_request_never_uses_a_spoofed_user_id(self) -> None:
+        """SNOW-550: an unauthenticated POST cannot claim someone's identity.
+
+        The endpoint is deliberately CSRF-exempt and needs no auth, so
+        this is the whole attack: any POST with an allowed event name and
+        a guessed ``user_id`` used to corrupt that user's PostHog history.
+        It must fall through to ``session_id`` instead.
+        """
+        victim = AccountFactory.create()
+
+        with patch("posthog.capture") as mock_capture:
+            Client().post(
+                "/api/telemetry",
+                data=json.dumps(
+                    _valid_event(user_id=str(victim.uuid), session_id="S-only")
+                ),
+                content_type="application/json",
+            )
+
+        distinct_id = mock_capture.call_args.kwargs["distinct_id"]
+        assert distinct_id == "S-only"
+        assert distinct_id != str(victim.uuid)
+
+    @_POSTHOG
+    def test_session_id_used_when_anonymous(self) -> None:
+        """An anonymous request resolves to its session_id."""
         with patch("posthog.capture") as mock_capture:
             Client().post(
                 "/api/telemetry",
@@ -155,7 +214,11 @@ class TestReceiverAcceptsValidPayload:
 
     @_POSTHOG
     def test_anon_sentinel_when_both_ids_stripped(self) -> None:
-        """distinct_id falls back to ``_anon`` when both IDs are None (opt-out)."""
+        """distinct_id falls back to ``_anon`` when both IDs are None (opt-out).
+
+        Unchanged by SNOW-550 — an anonymous request with no session id
+        still lands on the sentinel rather than an asserted identity.
+        """
         with patch("posthog.capture") as mock_capture:
             Client().post(
                 "/api/telemetry",

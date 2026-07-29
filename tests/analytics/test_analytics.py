@@ -6,13 +6,17 @@ Covers:
              raises AnalyticsPIIError for each banned key.
   alias()  — no-op when key unset; calls through when key is set.
   Settings callables — POSTHOG_MW_REQUEST_FILTER and POSTHOG_MW_TAG_MAP.
+  Test-suite network guard (SNOW-548) — the suite cannot reach PostHog
+             regardless of the launching process's environment.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 from unittest.mock import patch
 
+import posthog
 import pytest
 from django.conf import settings
 from django.test import RequestFactory, override_settings
@@ -226,3 +230,45 @@ class TestPosthogMwRequestFilter:
             settings, "POSTHOG_MW_REQUEST_FILTER"
         )
         assert request_filter(self._make_request()) is True
+
+
+# ---------------------------------------------------------------------------
+# Test-suite network guard (SNOW-548)
+# ---------------------------------------------------------------------------
+
+
+class TestPosthogDisabledInTests:
+    """The suite never reaches PostHog, however the process was launched.
+
+    ``tox.ini`` sets ``POSTHOG_API_KEY=`` for ``[testenv:test]``, but a
+    bare ``pytest`` run inherits whatever is in the developer's ``.env``
+    and ``AnalyticsConfig.ready()`` forwards it to the module-level
+    client. The autouse ``_disable_posthog`` fixture in
+    ``tests/conftest.py`` is what makes these assertions hold either way.
+    """
+
+    def test_module_client_is_disabled(self) -> None:
+        """The global posthog client is off with no key, mid-test."""
+        assert posthog.disabled is True
+        assert posthog.api_key == ""
+
+    def test_setting_is_empty(self) -> None:
+        """The setting every no-op branch checks reads as empty."""
+        assert settings.POSTHOG_API_KEY == ""
+
+    def test_telemetry_master_switch_is_on(self) -> None:
+        """PWA_TELEMETRY_ENABLED shows the shipped default, not local .env.
+
+        A developer running with ``PWA_TELEMETRY_ENABLED=False`` in
+        ``.env`` was silently no-opping ``emit_server_signal`` and
+        ``telemetry_receive``, failing 28 analytics tests locally that
+        pass in CI.
+        """
+        assert settings.PWA_TELEMETRY_ENABLED is True
+
+    def test_env_key_does_not_leak_into_a_request_cycle(self) -> None:
+        """An ambient env var cannot re-enable capture during a request."""
+        with patch.dict(os.environ, {"POSTHOG_API_KEY": "phc_leaked_key"}):
+            with patch("posthog.capture") as mock_capture:
+                analytics.track("test_event", "user-1")
+        mock_capture.assert_not_called()

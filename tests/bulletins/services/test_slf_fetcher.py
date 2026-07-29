@@ -31,6 +31,7 @@ from bulletins.models import (
 )
 from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
 from bulletins.services.slf_fetcher import (
+    NoResolvableRegionsError,
     UnknownRegionError,
     _get_region,
     _normalise_response,
@@ -328,23 +329,46 @@ class TestUpsertBulletin:
         )
         assert region_ids == ["CH-4115", "CH-7111"]
 
-    def test_skips_unknown_region_with_warning(self) -> None:
-        """upsert_bulletin skips unseeded region_ids and completes successfully.
+    def test_all_unknown_regions_raises_before_any_write(self) -> None:
+        """SNOW-547: a bulletin that resolves no region at all fails loudly.
 
-        EUREGIO bulletins may reference regions not yet in the fixture set.
-        Rather than aborting the entire bulletin, upsert_bulletin logs a
-        WARNING and links only the regions it can resolve.
+        This used to be the *expected* outcome — ``created is True`` with
+        zero linked regions. On an update that silently erased the
+        bulletin's entire coverage from the map while the pipeline run
+        reported success, indistinguishable from a legitimately
+        empty-``regions`` bulletin. It now raises before the transaction,
+        leaving prior state untouched, mirroring
+        ``test_malformed_region_leaves_existing_bulletin_unchanged``.
         """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(), run)
+        original_issued_at = Bulletin.objects.get(bulletin_id="test-001").issued_at
+
+        raw_bad = _make_raw_bulletin(
+            publication_time="2025-03-15T12:00:00Z",
+            regions=[{"regionID": "CH-XXXX", "name": "Nonexistent"}],
+        )
+        with pytest.raises(NoResolvableRegionsError):
+            upsert_bulletin(raw_bad, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.issued_at == original_issued_at
+        region_ids = list(
+            bulletin.regions.order_by("region_id").values_list("region_id", flat=True)
+        )
+        assert region_ids == ["CH-4115", "CH-7111"]
+
+    def test_all_unknown_regions_on_a_new_bulletin_creates_nothing(self) -> None:
+        """SNOW-547: the first ingest of an all-unknown bulletin writes no row."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(
             regions=[{"regionID": "CH-XXXX", "name": "Nonexistent"}],
         )
-        created = upsert_bulletin(raw, run)
 
-        assert created is True
-        # No RegionBulletin links for the unknown region
-        bulletin = Bulletin.objects.get(bulletin_id="test-001")
-        assert bulletin.regions.count() == 0
+        with pytest.raises(NoResolvableRegionsError):
+            upsert_bulletin(raw, run)
+
+        assert not Bulletin.objects.filter(bulletin_id="test-001").exists()
 
     def test_unknown_region_warning_partially_linked(self) -> None:
         """When a bulletin has mixed known/unknown regions, only known are linked."""
@@ -749,6 +773,34 @@ class TestRunPipeline:
         assert run.status == PipelineRun.Status.SUCCESS
         assert run.records_created == 2
         assert Bulletin.objects.count() == 2
+
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
+    def test_all_unknown_regions_increments_records_failed(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """SNOW-547: an unresolvable bulletin fails itself, not the batch.
+
+        ``records_failed > 0`` is what makes ``fetch_bulletins`` exit
+        non-zero per the management-command contract, so cron/CI notice.
+        The rest of the page still ingests.
+        """
+        unresolvable = _make_raw_bulletin("no-regions", "2025-03-15T08:00:00Z")
+        unresolvable["regions"] = [{"regionID": "CH-XXXX", "name": "Nonexistent"}]
+        mock_fetch.return_value = [
+            unresolvable,
+            _make_raw_bulletin("fine", "2025-03-15T09:00:00Z"),
+        ]
+
+        run = run_slf_pipeline(
+            start=date(2025, 3, 15),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+        )
+
+        assert run.records_failed == 1
+        assert run.records_created == 1
+        assert not Bulletin.objects.filter(bulletin_id="no-regions").exists()
+        assert Bulletin.objects.filter(bulletin_id="fine").exists()
 
     @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock) -> None:

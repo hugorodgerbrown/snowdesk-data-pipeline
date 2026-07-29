@@ -114,8 +114,9 @@ class TestBulletinViewedEvent:
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
         assert len(calls) == 1
-        # Authenticated distinct_id is User PK (account.user_id) as string.
-        assert calls[0].args[1] == str(account.user_id)
+        # SNOW-549: authenticated distinct_id is Account.uuid, never the
+        # sequential auth.User PK.
+        assert calls[0].args[1] == str(account.uuid)
 
     def test_distinct_id_is_non_empty_for_anon(
         self, region: MicroRegion, bulletin: Bulletin

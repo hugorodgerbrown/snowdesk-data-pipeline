@@ -45,6 +45,7 @@ from bulletins.models import Bulletin, PipelineRun, RegionBulletin
 from bulletins.services.day_rating import apply_bulletin_day_ratings
 from bulletins.services.fetcher_common import (
     OUTCOME_CREATED,
+    OUTCOME_FAILED,
     OUTCOME_UPDATED,
     normalise_bulletin_response,
 )
@@ -222,6 +223,23 @@ class UnknownRegionError(LookupError):
     """
 
 
+class NoResolvableRegionsError(LookupError):
+    """Raised when *every* region on a bulletin is unresolvable (SNOW-547).
+
+    A bulletin that lists regions but resolves none of them would
+    otherwise be ingested as a success while erasing all of its coverage:
+    the update path deletes the existing ``RegionBulletin`` rows, creates
+    no replacements, and reports created/updated with ``records_failed``
+    untouched. That is indistinguishable from a legitimately
+    empty-``regions`` bulletin, which is benign and must keep succeeding.
+
+    The partial case — at least one region resolves — deliberately stays
+    a WARNING and a success. Failing on partial resolution would turn
+    every scheduled run red on routine fixture drift from a single stale
+    region ID; only total coverage loss is unambiguous enough to fail on.
+    """
+
+
 def _get_region(region_id: str) -> MicroRegion:
     """
     Look up the MicroRegion for an ingested bulletin entry.
@@ -283,6 +301,45 @@ def _resolve_bulletin_regions(
             continue
         resolved.append((region, raw_region["name"]))
     return resolved, skipped
+
+
+def _assert_any_region_resolved(
+    bulletin_id: str,
+    raw_regions: list[dict[str, str]],
+    resolved_regions: list[tuple[MicroRegion, str]],
+    skipped_regions: list[str],
+) -> None:
+    """Raise if a bulletin listed regions but resolved none of them (SNOW-547).
+
+    Called *before* the write transaction, so a total resolution failure
+    leaves the bulletin's existing region links untouched instead of
+    deleting them and creating no replacements — which reported success
+    while silently erasing the bulletin's coverage from the map.
+
+    A bulletin with no ``regions`` at all is a different, benign case and
+    passes; so does partial resolution, which stays a WARNING (see
+    ``NoResolvableRegionsError``).
+
+    Args:
+        bulletin_id: The bulletin being ingested, for the error message.
+        raw_regions: The ``regions`` list from the raw bulletin dict.
+        resolved_regions: Pairs returned by ``_resolve_bulletin_regions``.
+        skipped_regions: Unresolved region_ids from the same call.
+
+    Raises:
+        NoResolvableRegionsError: ``raw_regions`` is non-empty and
+            ``resolved_regions`` is empty.
+
+    """
+    if not raw_regions or resolved_regions:
+        return
+    raise NoResolvableRegionsError(
+        f"Bulletin {bulletin_id}: none of the {len(raw_regions)} region(s) "
+        f"resolved ({', '.join(sorted(skipped_regions))}). Ingesting would "
+        "delete this bulletin's existing region links and replace them with "
+        "nothing. Check regions/fixtures/ against the upstream EAWS region "
+        "scheme before re-ingesting."
+    )
 
 
 def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
@@ -352,6 +409,13 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     # leave a bulletin with a truncated link set. Unknown-but-well-formed
     # regions are skipped as before (absent from the fixtures, not an error).
     resolved_regions, skipped_regions = _resolve_bulletin_regions(raw_regions)
+
+    # Total resolution failure is a coverage-erasing event, not a skip
+    # (SNOW-547) — raised here, before the transaction below deletes the
+    # existing links, so prior state survives untouched.
+    _assert_any_region_resolved(
+        bulletin_id, raw_regions, resolved_regions, skipped_regions
+    )
 
     # Replace the bulletin and its region links in one transaction so a
     # failure can never commit a bulletin with a half-written link set — the
@@ -469,7 +533,18 @@ def _process_bulletin(
     if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
-    created = upsert_bulletin(raw, run, pdf_url=_slf_pdf_url(raw))
+    # A bulletin whose regions are all unresolvable fails that bulletin, not
+    # the batch (SNOW-547) — the same posture RenderModelBuildError takes
+    # inside upsert_bulletin. records_failed makes fetch_bulletins exit
+    # non-zero per the management-command contract, so cron/CI surface it.
+    try:
+        created = upsert_bulletin(raw, run, pdf_url=_slf_pdf_url(raw))
+    except NoResolvableRegionsError:
+        logger.exception("Skipping bulletin %s", raw["bulletinID"])
+        run.records_failed += 1
+        run.save(update_fields=["records_failed"])
+        return OUTCOME_FAILED
+
     return OUTCOME_CREATED if created else OUTCOME_UPDATED
 
 
@@ -569,6 +644,7 @@ def run_slf_pipeline(
         OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
         _OUTCOME_SKIPPED_NEWER: 0,
+        OUTCOME_FAILED: 0,
     }
     offset = 0
     pages_fetched = 0
@@ -617,12 +693,14 @@ def run_slf_pipeline(
         return run
 
     logger.info(
-        "Pipeline run %s finished: %d pages, %d created, %d updated, %d skipped",
+        "Pipeline run %s finished: %d pages, %d created, %d updated, "
+        "%d skipped, %d failed",
         run.pk,
         pages_fetched,
         counts[OUTCOME_CREATED],
         counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],
+        counts[OUTCOME_FAILED],
     )
 
     if dry_run:
