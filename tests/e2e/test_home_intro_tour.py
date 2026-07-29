@@ -39,6 +39,20 @@ DISMISSED_VALUE = "dismissed"
 MAP_HELP_STORAGE_KEY = "snowdesk.map.help"
 
 
+def _assert_tour_on_first_step(page: Page) -> None:
+    """Assert the open coachmark tour is showing step 1.
+
+    ``#map-help-step-count`` is styled ``text-transform: uppercase``, and
+    ``inner_text()`` returns text as rendered — so the DOM's "Step 1 of 13"
+    arrives as "STEP 1 OF 13". Compare case-insensitively rather than
+    against the casing of either the template string or the CSS.
+    """
+    count = page.locator("#map-help-step-count").inner_text().strip()
+    assert count.upper().startswith("STEP 1"), (
+        f"the tour should open on step 1; step counter read {count!r}"
+    )
+
+
 def _navigate_home_with_sw_stripped(
     page: Page, live_server_url: str, query: str = ""
 ) -> None:
@@ -115,9 +129,7 @@ def test_explore_cta_dismisses_and_opens_the_tour(
         DISMISSED_VALUE
     )
     page.wait_for_selector("#map-help-overlay:not([hidden])", timeout=5_000)
-    assert (
-        page.locator("#map-help-step-count").inner_text().strip().startswith("Step 1")
-    ), "the tour should open on step 1"
+    _assert_tour_on_first_step(page)
     assert page_errors == [], f"JS errors: {page_errors}"
 
 
@@ -196,7 +208,5 @@ def test_tour_does_not_autostart_but_still_opens_from_the_roundel(
     page.locator("#map-help-toggle").click()
 
     page.wait_for_selector("#map-help-overlay:not([hidden])", timeout=5_000)
-    assert (
-        page.locator("#map-help-step-count").inner_text().strip().startswith("Step 1")
-    ), "the roundel should still open the tour, from step 1"
+    _assert_tour_on_first_step(page)
     assert page_errors == [], f"JS errors: {page_errors}"
