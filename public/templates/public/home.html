@@ -80,7 +80,10 @@ and loads home_intro.js in addition to the shared map assets.
     {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
-    {% include "public/partials/_map_embed.html" with show_intro=True %}
+    {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
+    {# here via #home-intro's "Explore the map" CTA or the "?" roundel,  #}
+    {# never automatically straight after the intro is dismissed.        #}
+    {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
     {# htmx.min.js is shared by both sheet surfaces below (field-report   #}

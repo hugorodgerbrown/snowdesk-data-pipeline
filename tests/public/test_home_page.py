@@ -21,6 +21,10 @@ Covers:
     controls (SNOW-535).
   - The intro card links onward to a sample bulletin and the reading
     guide (SNOW-535).
+  - The intro card carries a "×" close control wired to the shared
+    overlays.js dismiss idiom (SNOW-535).
+  - #map-help-overlay opts out of the coachmark tour's first-load
+    auto-start on the homepage (SNOW-535).
 """
 
 from __future__ import annotations
@@ -129,6 +133,33 @@ class TestHomePageBasic:
         content = response.content.decode()
         assert reverse("public:examples_random") in content
         assert reverse("public:how_to_read_bulletin") in content
+
+    def test_intro_renders_close_button(self) -> None:
+        """SNOW-535: the intro card carries a "×" wired to the shared dismiss idiom.
+
+        Distinct from #home-intro-dismiss ("Explore the map"), which also
+        opens the map-help tour — the "×" only closes the card.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="home-intro-close"' in content
+        assert content.count('data-action="dismiss"') >= 2, (
+            "both #home-intro-close and #home-intro-dismiss should opt into "
+            "the shared overlays.js dismiss handler"
+        )
+
+    def test_map_help_overlay_opts_out_of_autostart_on_homepage(self) -> None:
+        """SNOW-535: #map-help-overlay carries the no-autostart opt-out on /.
+
+        The tour must only open there via the "?" roundel or #home-intro's
+        "Explore the map" CTA — never automatically straight after a
+        visitor dismisses the intro card.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert "data-map-help-no-autostart" in content
 
     def test_home_renders_offmap_banner(self) -> None:
         """The #offmap-banner element is present on / (moved from map.html in SNOW-344).

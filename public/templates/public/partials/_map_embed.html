@@ -25,6 +25,14 @@ Optional context:
                         (bottom-left, beside the legend toggle) so that
                         returning off-season visitors see the archive
                         notice even after dismissing #home-intro.
+  map_help_autostart  — bool (default True): when False, #map-help-overlay
+                        carries data-map-help-no-autostart and
+                        static/js/map_help.js's first-load auto-start is
+                        skipped — the tour then only opens via the "?"
+                        roundel or (on the homepage) the #home-intro CTA.
+                        home.html passes False (SNOW-535): the tour must
+                        not throw itself at a visitor straight after they
+                        dismiss #home-intro.
 {% endcomment %}
 {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
 {# result badge. Extracted to a shared include (SNOW-162) so the      #}
@@ -780,6 +788,18 @@ Optional context:
         aria-describedby="map-help-tooltip-title map-help-tooltip-body"
         data-overlay
         data-overlay-persist="snowdesk.map.help=seen"
+        {# SNOW-535: opt out of map_help.js's first-load auto-start. The       #}
+        {# homepage embeds #home-intro, whose "Explore the map" CTA (and the   #}
+        {# "?" roundel) are the only ways this tour should open there — an     #}
+        {# auto-start straight after dismissing the intro read as the site     #}
+        {# throwing a second overlay at a visitor who had just cleared one.    #}
+        {# Data-driven (an attribute the including template opts into) rather  #}
+        {# than a hardcoded "am I home.html" check, so another page embedding  #}
+        {# this partial can keep the auto-start behaviour if that's right for  #}
+        {# it. default_if_none, not the |default filter: map_help_autostart=   #}
+        {# False is itself falsy, and |default substitutes on any falsy value —#}
+        {# it would silently override the homepage's opt-out back to True.    #}
+        {% if not map_help_autostart|default_if_none:True %}data-map-help-no-autostart{% endif %}
     >
         <div id="map-help-ring" aria-hidden="true"></div>
         {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
@@ -854,15 +874,49 @@ Optional context:
             data-overlay-persist="snowdesk.home.intro=dismissed"
         >
             <div class="home-intro-card">
+                {# SNOW-535: "×" close, top-right — the standard overlay dismiss #}
+                {# idiom (SNOW-486): data-action="dismiss" inside the [data-overlay] #}
+                {# #home-intro is enough for overlays.js's shared handler to hide + #}
+                {# persist; the icon mirrors #map-help-close's. Unlike            #}
+                {# #home-intro-dismiss below, this does NOT also open the map help #}
+                {# tour — a plain "close" reads as "not now", not "show me around". #}
+                <button
+                    id="home-intro-close"
+                    type="button"
+                    class="home-intro-close"
+                    data-action="dismiss"
+                    aria-label='{% trans "Dismiss" %}'
+                >
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                    </svg>
+                </button>
                 <div class="home-intro-identity">
                     <span class="home-intro-wordmark">Snowdesk</span>
                 </div>
-                <p class="home-intro-tagline">
-                    {% trans "Bulletins from SLF, Météo-France and avalanche.report combine into one map. Colour shows the highest published danger for the selected day — tap a region for the full bulletin, broken down by time, elevation and aspect." %}
-                </p>
-                <p class="home-intro-tagline">
-                    {% trans "Tap a region, search by name, or use your location to jump straight there. Drag the timeline or press play to replay the season, and check Layers or the ? tour for more." %}
-                </p>
+                {# SNOW-535: two-column at a wide viewport (static/css/map.css) — #}
+                {# wrapping both paragraphs together is what lets that rule lay   #}
+                {# them out side by side without touching the offseason ref or   #}
+                {# the actions row below, which stay full-width. #}
+                <div class="home-intro-taglines">
+                    <p class="home-intro-tagline">
+                        {% trans "Bulletins from SLF, Météo-France and avalanche.report combine into one map. Colour shows the highest published danger for the selected day — tap a region for the full bulletin, broken down by time, elevation and aspect." %}
+                    </p>
+                    <p class="home-intro-tagline">
+                        {% trans "Tap a region, search by name, or use your location to jump straight there. Drag the timeline or press play to replay the season, and check Layers or the ? tour for more." %}
+                    </p>
+                </div>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
                     {# archive, not live. Carried in the first-visit panel.       #}
@@ -878,6 +932,12 @@ Optional context:
                     {# overlays.js handler, which hides the overlay and persists #}
                     {# snowdesk.home.intro — home_intro.js listens for           #}
                     {# overlay:dismissed to clear the /#about hash.               #}
+                    {# SNOW-535: this CTA also opens the map-help coachmark tour —#}
+                    {# home_intro.js binds its own click listener alongside the   #}
+                    {# shared dismiss handler and dispatches                      #}
+                    {# 'snowdesk:map-help-requested', which map_help.js listens   #}
+                    {# for and answers by calling its own open() entry point, so  #}
+                    {# the tour logic itself stays in one place.                 #}
                     <button
                         id="home-intro-dismiss"
                         type="button"

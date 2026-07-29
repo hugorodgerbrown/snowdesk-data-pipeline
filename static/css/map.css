@@ -1662,6 +1662,7 @@
 }
 
 .home-intro-card {
+    position: relative;
     pointer-events: auto;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(12px);
@@ -1670,7 +1671,12 @@
     box-shadow: var(--shadow-glass);
     border-radius: 12px;
     padding: 20px 22px;
-    max-width: 320px;
+    /* SNOW-535: widened from 320px — the two-paragraph copy this now carries
+       read as cramped at the old width. See the min-width:960px rule below
+       for the further widen + two-column tagline layout at a wide viewport,
+       which is also what keeps the card short enough there to clear the
+       bottom-left (i) legend toggle (tests/e2e/test_map_bottom_bar.py). */
+    max-width: 380px;
     color: var(--color-text-1);
     font-family: var(--sans);
 }
@@ -1680,6 +1686,9 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 10px;
+    /* Clears the "×" close button (top-right, 28px) so a short wordmark row
+       never sits underneath it. */
+    padding-right: 28px;
 }
 
 .home-intro-wordmark {
@@ -1689,11 +1698,37 @@
     color: var(--color-text-1);
 }
 
+.home-intro-taglines {
+    display: flex;
+    flex-direction: column;
+}
+
 .home-intro-tagline {
     font-size: 13px;
     line-height: 1.5;
     color: var(--color-text-2);
     margin: 0 0 12px;
+}
+
+/* SNOW-535: wide viewport — widen the card further and lay the two tagline
+   paragraphs out side by side rather than stacked, which shortens the card
+   noticeably (the height that grew tall enough to cover the bottom-left (i)
+   legend toggle at common desktop viewport sizes). 960px mirrors
+   --breakpoint-desktop in src/css/main.css's @theme — repeated literally
+   because CSS custom properties cannot be read inside an @media feature. */
+@media (min-width: 960px) {
+    .home-intro-card {
+        max-width: 640px;
+    }
+
+    .home-intro-taglines {
+        flex-direction: row;
+        gap: 16px;
+    }
+
+    .home-intro-tagline {
+        margin: 0;
+    }
 }
 
 /* SNOW-445: the persistent off-season archive notice is now a full-width bar
@@ -1755,6 +1790,40 @@
 
 .home-intro--no-motion .home-intro-dismiss {
     transition: none;
+}
+
+/* SNOW-535: "×" close, top-right — mirrors .map-help-close below (SNOW-457),
+   the same corner-dismiss idiom applied to this card. */
+.home-intro-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-text-3);
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+}
+
+.home-intro-close:hover {
+    color: var(--color-text-1);
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.home-intro--no-motion .home-intro-close {
+    transition: none;
+}
+
+.home-intro-close:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
 }
 
 /* Dark mode: the glass card uses the dark glass token automatically via
