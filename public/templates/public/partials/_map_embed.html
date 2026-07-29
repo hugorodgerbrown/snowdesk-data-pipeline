@@ -858,7 +858,10 @@ Optional context:
                     <span class="home-intro-wordmark">Snowdesk</span>
                 </div>
                 <p class="home-intro-tagline">
-                    {% trans "Avalanche danger across the Alps — by region, aspect and elevation. Tap a region for today's bulletin." %}
+                    {% trans "Bulletins from SLF, Météo-France and avalanche.report combine into one map. Colour shows the highest published danger for the selected day — tap a region for the full bulletin, broken down by time, elevation and aspect." %}
+                </p>
+                <p class="home-intro-tagline">
+                    {% trans "Tap a region, search by name, or use your location to jump straight there. Drag the timeline or press play to replay the season, and check Layers or the ? tour for more." %}
                 </p>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
@@ -884,6 +887,15 @@ Optional context:
                     >
                         {% trans "Explore the map" %}
                     </button>
+                    {# SNOW-535: onward links to a sample bulletin and the guide, so a #}
+                    {# visitor who isn't ready to commit to the map can still see what #}
+                    {# Snowdesk offers. #}
+                    <a href="{% url 'public:examples_random' %}" class="home-intro-sample-link">
+                        {% trans "See a sample bulletin" %}
+                    </a>
+                    <a href="{% url 'public:how_to_read_bulletin' %}" class="home-intro-sample-link">
+                        {% trans "How to read a bulletin" %}
+                    </a>
                 </div>
             </div>
         </div>
