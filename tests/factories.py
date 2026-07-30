@@ -35,7 +35,10 @@ from apps.bulletins.models import (
     RegionDayRating,
     WeatherSnapshot,
 )
-from apps.bulletins.services.day_rating import DAY_RATING_VERSION
+from apps.bulletins.services.day_rating import (
+    DAY_RATING_VERSION,
+    target_day_for_valid_from,
+)
 from apps.bulletins.services.forecast_points import (
     quantise_elevation,
     quantise_lat,
@@ -207,6 +210,9 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     issued_at = factory.Faker("date_time_this_year", tzinfo=UTC)
     valid_from = factory.LazyAttribute(lambda obj: obj.issued_at)
     valid_to = factory.LazyAttribute(lambda obj: obj.issued_at)
+    target_date = factory.LazyAttribute(
+        lambda obj: target_day_for_valid_from(obj.valid_from)
+    )
     lang = "en"
     unscheduled = False
     pipeline_run = factory.SubFactory(PipelineRunFactory)
@@ -539,7 +545,9 @@ class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping
         model = BulletinGrouping
 
     bulletin = factory.SubFactory(BulletinFactory)
-    target_date = factory.LazyFunction(lambda: datetime.date(2026, 1, 15))
+    target_date = factory.LazyAttribute(
+        lambda obj: target_day_for_valid_from(obj.bulletin.valid_from)
+    )
     boundary = factory.LazyFunction(
         lambda: {
             "type": "Polygon",
