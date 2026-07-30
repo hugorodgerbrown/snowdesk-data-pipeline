@@ -2146,7 +2146,7 @@ def test_groupings_excludes_the_superseded_issue_for_the_day() -> None:
     """Only the bulletin that won the day is drawn, not every one targeting it.
 
     SLF publishes twice daily, and both the morning-of-X issue and the
-    previous evening's satisfy ``_target_day(b) == X``, so both hold a
+    previous evening's satisfy ``target_date == X``, so both hold a
     BulletinGrouping row for X. ``recompute_region_day`` picks one winner per
     region; the endpoint must follow that verdict rather than returning two
     overlapping outlines for the same terrain.

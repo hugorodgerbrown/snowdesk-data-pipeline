@@ -49,8 +49,8 @@ _FAR_BOUNDARY = {
     ],
 }
 
-# Valid_from that resolves to 2026-01-15 under the _target_day morning rule
-# (16:00 UTC on the 14th → morning of the 15th via SLF convention).
+# Valid_from that resolves to 2026-01-15 under the target_day_for_valid_from
+# morning rule (16:00 UTC on the 14th → morning of the 15th via SLF convention).
 _VALID_FROM = datetime.datetime(2026, 1, 14, 16, 0, 0, tzinfo=UTC)
 
 

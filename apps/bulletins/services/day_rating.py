@@ -13,7 +13,8 @@ Aggregation policy (v8 — elevation-band split + afternoon-elevated split + AM/
       fallback when no morning-of-X bulletin exists.
     - Evening-of-X (valid_from.date() == X, hour >= 12) is excluded — its
       target day is X+1.
-  - Formally: keep candidates where ``_target_day(b) == X``; pick the one
+  - Formally: keep candidates where ``target_date == X`` (a stored column,
+    populated at ingest by ``target_day_for_valid_from``); pick the one
     with the latest ``valid_from``.  Because morning-of-X has a later
     ``valid_from`` than prior-evening-of-(X-1), this naturally implements
     the morning-wins / prior-evening-fallback convention.
@@ -191,23 +192,6 @@ def target_day_for_valid_from(valid_from: datetime.datetime) -> datetime.date:
     if valid_from.hour < 12:
         return valid_from.date()
     return (valid_from + timedelta(days=1)).date()
-
-
-def _target_day(bulletin: "Bulletin") -> datetime.date:
-    """
-    Return the calendar day that a bulletin is forecasting.
-
-    Thin wrapper over ``target_day_for_valid_from`` — see there for the rule
-    and the reasoning behind the noon boundary.
-
-    Args:
-        bulletin: A Bulletin instance with a timezone-aware ``valid_from``.
-
-    Returns:
-        The calendar date that this bulletin is forecasting.
-
-    """
-    return target_day_for_valid_from(bulletin.valid_from)
 
 
 def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
@@ -543,10 +527,11 @@ def recompute_region_day(
     ``day`` (the morning-of-day if available; otherwise the prior-evening).
     Aggregates min/max ratings across that bulletin's traits only.
 
-    The SQL pre-filter fetches bulletins with ``valid_from.date`` in
-    ``{day, day - 1}`` to capture both the morning-of-day and
-    prior-evening candidates; a Python post-filter via ``_target_day``
-    then drops any evening-of-day bulletin (whose target is day+1).
+    Candidates are selected with a single ``target_date=day`` equality
+    filter — ``target_date`` is populated at ingest time by
+    ``target_day_for_valid_from``, so this already excludes any
+    evening-of-day bulletin (whose target is day+1) without a Python
+    post-filter.
 
     Sets ``min_rating`` / ``max_rating`` using the v8 policy: elevation-band
     split from ``danger.ratings`` (precedence 1), afternoon-elevated trait
@@ -568,20 +553,18 @@ def recompute_region_day(
 
     no_rating = RegionDayRating.Rating.NO_RATING
 
-    # SQL pre-filter: valid_from date in {day, day-1} covers the two possible
-    # candidate bulletins for day X (morning-of-X and evening-of-(X-1)).
-    pre_candidates = list(
+    # target_date is populated at ingest time by target_day_for_valid_from,
+    # so a single equality filter already selects exactly the candidates for
+    # day X (morning-of-X and prior-evening-of-(X-1)) and excludes the
+    # evening-of-X bulletin (whose target is X+1) — no Python post-filter
+    # needed.
+    candidates = list(
         Bulletin.objects.filter(
             regions=region,
-            valid_from__date__in=[day, day - timedelta(days=1)],
+            target_date=day,
             render_model_version__gte=RENDER_MODEL_VERSION,
         )
     )
-
-    # Python post-filter: keep only bulletins whose target day equals ``day``.
-    # This drops the evening-of-X bulletin (valid_from.date() == day, hour >= 12)
-    # whose target is actually day+1.
-    candidates = [b for b in pre_candidates if _target_day(b) == day]
 
     # Source/bands (SNOW-292): blank/None unless the chosen bulletin is ALBINA.
     source_str: str = ""
@@ -714,9 +697,10 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
     """
     Recompute RegionDayRating for the (region, target_day) pairs of a bulletin.
 
-    A bulletin targets exactly one calendar day — determined by ``_target_day``:
-    morning issues (valid_from.hour < 12) target their own date; evening issues
-    (valid_from.hour >= 12) target the following date.
+    A bulletin targets exactly one calendar day — read from ``bulletin.target_date``
+    (populated at ingest time), falling back to ``target_day_for_valid_from`` for
+    any un-backfilled row: morning issues (valid_from.hour < 12) target their
+    own date; evening issues (valid_from.hour >= 12) target the following date.
 
     For each region linked to the bulletin, calls ``recompute_region_day`` for
     that single target day.  The recompute also pulls in the complementary
@@ -750,7 +734,7 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
     """
     from apps.bulletins.models import RegionDayRating
 
-    target = _target_day(bulletin)
+    target = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
 
     # Gather distinct regions linked to this bulletin.
     regions = list(bulletin.regions.all())

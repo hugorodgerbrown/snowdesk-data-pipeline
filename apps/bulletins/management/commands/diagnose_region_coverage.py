@@ -37,7 +37,6 @@ from typing import Any
 from django.core.management.base import BaseCommand
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.services.day_rating import _target_day
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -153,8 +152,8 @@ class Command(BaseCommand):
         ``RegionBulletin`` join, so the answer is independent of any local
         linking step that might be the source of the gap under investigation.
 
-        If ``target_date`` is given, restrict to bulletins whose
-        ``_target_day`` equals that date — mirroring the candidate filter in
+        If ``target_date`` is given, restrict to bulletins whose stored
+        ``target_date`` equals that date — mirroring the candidate filter in
         ``recompute_region_day``.
         """
         if target_date is None:
@@ -165,19 +164,12 @@ class Command(BaseCommand):
                 _collect_region_ids(raw_data, seen)
             return seen
 
-        # Target-date scope: a bulletin can target ``target_date`` if it was
-        # issued on the morning of that day or on the prior evening. Pull
-        # both candidate days then filter by ``_target_day`` exactly.
-        candidates = Bulletin.objects.filter(
-            valid_from__date__in=[
-                target_date,
-                target_date - dt.timedelta(days=1),
-            ],
-        )
+        # Target-date scope: target_date is populated at ingest time by
+        # target_day_for_valid_from, so a single equality filter selects
+        # exactly the bulletins forecasting this day.
+        candidates = Bulletin.objects.filter(target_date=target_date)
         seen = set()
         for bulletin in candidates.iterator():
-            if _target_day(bulletin) != target_date:
-                continue
             _collect_region_ids(bulletin.raw_data, seen)
         return seen
 

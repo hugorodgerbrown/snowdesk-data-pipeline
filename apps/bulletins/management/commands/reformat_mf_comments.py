@@ -41,7 +41,10 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.day_rating import _target_day, recompute_region_day
+from apps.bulletins.services.day_rating import (
+    recompute_region_day,
+    target_day_for_valid_from,
+)
 from apps.bulletins.services.meteofrance_translator import format_comment_as_html
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
@@ -270,7 +273,7 @@ class Command(BaseCommand):
         pairs: set[tuple[Any, datetime.date]] = set()
         for bulletin in bulletins:
             regions = list(bulletin.regions.all())
-            day = _target_day(bulletin)
+            day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
             for region in regions:
                 pairs.add((region, day))
 

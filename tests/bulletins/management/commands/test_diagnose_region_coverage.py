@@ -200,8 +200,8 @@ class TestDateFlag:
         """An evening bulletin (valid_from.hour >= 12) targets the *next* day.
 
         A bulletin issued on the evening of 2026-03-14 should be picked up
-        by ``--date 2026-03-15``, mirroring the ``_target_day`` rule used
-        elsewhere in the pipeline.
+        by ``--date 2026-03-15``, mirroring the ``target_day_for_valid_from``
+        rule used elsewhere in the pipeline.
         """
         MicroRegionFactory.create(region_id="CH-E001")
         _bulletin_with_regions(

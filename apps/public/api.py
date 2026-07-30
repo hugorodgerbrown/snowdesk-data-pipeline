@@ -888,7 +888,7 @@ def _build_groupings_payload(
     # Restrict to bulletins that actually won at least one region for the day.
     #
     # Two bulletins routinely target the same day: the morning-of-X issue and
-    # the previous evening's, which both satisfy ``_target_day(b) == X``. Both
+    # the previous evening's, which both satisfy ``target_date == X``. Both
     # get a BulletinGrouping row, so without this filter the endpoint returns
     # two near-identical overlapping outlines for most days — invisible while
     # the layer was an opt-in dashed overlay, obvious now it is drawn
