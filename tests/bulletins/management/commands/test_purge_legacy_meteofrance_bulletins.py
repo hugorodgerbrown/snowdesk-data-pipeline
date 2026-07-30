@@ -260,6 +260,28 @@ class TestDayRatingRecompute:
 class TestBulletinShareGate:
     """A live BulletinShare on a candidate blocks --commit unless overridden."""
 
+    def test_share_does_not_block_dry_run(self, capsys: pytest.CaptureFixture) -> None:
+        """A dry-run reports the share count but does not raise.
+
+        Nothing is being deleted in a dry-run, so nothing can be orphaned —
+        the share gate must only fire under --commit.
+
+        Args:
+            capsys: pytest stdout capture fixture.
+
+        """
+        old, _new = _old_and_new()
+        region = _region("FR-02")
+        BulletinShareFactory.create(
+            bulletin=old, region=region, target_date=old.target_date
+        )
+
+        call_command("purge_legacy_meteofrance_bulletins")
+
+        out = capsys.readouterr().out
+        assert "BulletinShare(bulletin to null)=1" in out
+        assert Bulletin.objects.filter(pk=old.pk).exists()
+
     def test_share_blocks_commit(self) -> None:
         """The command refuses to delete a bulletin with a live share."""
         old, _new = _old_and_new()

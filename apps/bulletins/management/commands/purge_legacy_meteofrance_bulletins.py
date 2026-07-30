@@ -317,23 +317,22 @@ class Command(BaseCommand):
         deleted = 0
         for i in range(0, len(pks), batch_size):
             chunk = pks[i : i + batch_size]
-            Bulletin.objects.filter(pk__in=chunk).delete()
-            deleted += len(chunk)
+            n, _ = Bulletin.objects.filter(pk__in=chunk).delete()
+            deleted += n
         return deleted
 
-    def _check_gates(
-        self, report: _PurgeReport, *, allow_orphaned_shares: bool
-    ) -> None:
-        """Raise if the report fails a pre-delete safety gate.
+    def _check_unreplaced_gate(self, report: _PurgeReport) -> None:
+        """Raise if any candidate has no new-grammar replacement.
+
+        Unconditional in both dry-run and ``--commit`` modes — an incomplete
+        archive load should fail a dry-run just as loudly as a real run, so
+        the runbook's pre-flight step surfaces it before anything is deleted.
 
         Args:
             report: The report built by ``_walk``.
-            allow_orphaned_shares: Whether a non-zero ``BulletinShare`` count
-                should be tolerated.
 
         Raises:
-            CommandError: A candidate has no replacement, or the share gate
-                fires without ``--allow-orphaned-shares``.
+            CommandError: Any candidate has no replacement.
 
         """
         if report.unreplaced:
@@ -342,6 +341,27 @@ class Command(BaseCommand):
                 "replacement — see the report above. Load the rebuilt archive "
                 "before purging."
             )
+
+    def _check_share_gate(
+        self, report: _PurgeReport, *, allow_orphaned_shares: bool
+    ) -> None:
+        """Raise if a live BulletinShare would be orphaned by the delete.
+
+        Only meaningful once something is actually about to be deleted, so
+        the caller must only invoke this under ``--commit`` — a dry-run still
+        *reports* ``report.share_count`` but must not fail on it, since
+        nothing is being deleted.
+
+        Args:
+            report: The report built by ``_walk``.
+            allow_orphaned_shares: Whether a non-zero ``BulletinShare`` count
+                should be tolerated.
+
+        Raises:
+            CommandError: The share gate fires without
+                ``--allow-orphaned-shares``.
+
+        """
         if report.share_count and not allow_orphaned_shares:
             raise CommandError(
                 f"{report.share_count} BulletinShare row(s) reference bulletin(s) "
@@ -355,6 +375,7 @@ class Command(BaseCommand):
         *,
         batch_size: int,
         skip_day_ratings: bool,
+        allow_orphaned_shares: bool,
         verbosity: int,
     ) -> None:
         """Delete the replaceable candidates and refresh their day ratings.
@@ -363,12 +384,20 @@ class Command(BaseCommand):
             report: The report built by ``_walk``.
             batch_size: Rows per delete chunk.
             skip_day_ratings: Whether to skip the RegionDayRating refresh.
+            allow_orphaned_shares: Whether a non-zero ``BulletinShare`` count
+                should be tolerated.
             verbosity: Django's ``--verbosity``.
 
         Raises:
-            CommandError: A day-rating recompute failed after deleting.
+            CommandError: The share gate fires without
+                ``--allow-orphaned-shares``, or a day-rating recompute failed
+                after deleting.
 
         """
+        # Only meaningful now that something is actually about to be deleted
+        # — a dry-run must report the share count without failing on it.
+        self._check_share_gate(report, allow_orphaned_shares=allow_orphaned_shares)
+
         # Collect (region, day) pairs before deleting — the RegionBulletin
         # links that back bulletin.regions.all() cascade away with the row.
         pairs = day_rating_pairs(report.replaceable)
@@ -401,10 +430,10 @@ class Command(BaseCommand):
             **options: Parsed command-line options.
 
         Raises:
-            CommandError: Any candidate has no replacement, the share gate
-                fires without ``--allow-orphaned-shares``, or a day-rating
-                recompute fails after deleting — so cron/CI see a non-zero
-                exit.
+            CommandError: Any candidate has no replacement (both modes); or,
+                under ``--commit`` only, the share gate fires without
+                ``--allow-orphaned-shares``, or a day-rating recompute fails
+                after deleting — so cron/CI see a non-zero exit.
 
         """
         commit: bool = options["commit"]
@@ -422,7 +451,9 @@ class Command(BaseCommand):
         if verbosity:
             self._print_report(report)
 
-        self._check_gates(report, allow_orphaned_shares=allow_orphaned_shares)
+        # Unconditional in both modes: an incomplete archive load should fail
+        # a dry-run just as loudly as a real run.
+        self._check_unreplaced_gate(report)
 
         if not report.replaceable:
             if verbosity:
@@ -443,5 +474,6 @@ class Command(BaseCommand):
             report,
             batch_size=batch_size,
             skip_day_ratings=skip_day_ratings,
+            allow_orphaned_shares=allow_orphaned_shares,
             verbosity=verbosity,
         )
