@@ -120,8 +120,9 @@ class _Counts:
 def _payload_fingerprint(properties: dict[str, Any]) -> str:
     """Return a stable digest of an envelope's forecast content.
 
-    ``bulletinID`` and the fields derived from it are excluded so that two
-    records sharing an id are compared on what they actually forecast.
+    ``bulletinID`` is excluded — it is what two colliding records already agree
+    on, so including it would tell us nothing. Everything else is compared,
+    including timestamps, so a difference anywhere in the payload counts.
 
     Args:
         properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
