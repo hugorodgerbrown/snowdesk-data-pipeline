@@ -16,8 +16,8 @@ from django.contrib.admin import site
 from django.test import Client
 from django.urls import reverse
 
-from bulletins.admin import BulletinAdmin
-from bulletins.models import Bulletin, PipelineRun
+from apps.bulletins.admin import BulletinAdmin
+from apps.bulletins.models import Bulletin, PipelineRun
 from tests.factories import BulletinFactory, PipelineRunFactory, UserFactory
 
 
@@ -44,7 +44,9 @@ class TestBackfillView:
             records_created=10,
             records_updated=2,
         )
-        with patch("bulletins.admin.run_slf_pipeline", return_value=run) as mock_run:
+        with patch(
+            "apps.bulletins.admin.run_slf_pipeline", return_value=run
+        ) as mock_run:
             response = admin_client.post(BACKFILL_URL)
 
         mock_run.assert_called_once_with(
@@ -64,7 +66,7 @@ class TestBackfillView:
             records_created=5,
             records_updated=1,
         )
-        with patch("bulletins.admin.run_slf_pipeline", return_value=run):
+        with patch("apps.bulletins.admin.run_slf_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -78,7 +80,7 @@ class TestBackfillView:
             status=PipelineRun.Status.FAILED,
             error_message="API timeout",
         )
-        with patch("bulletins.admin.run_slf_pipeline", return_value=run):
+        with patch("apps.bulletins.admin.run_slf_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -88,7 +90,7 @@ class TestBackfillView:
     def test_exception_shows_error(self, admin_client: Client) -> None:
         """An exception during the pipeline shows an error message."""
         with patch(
-            "bulletins.admin.run_slf_pipeline", side_effect=RuntimeError("boom")
+            "apps.bulletins.admin.run_slf_pipeline", side_effect=RuntimeError("boom")
         ):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
@@ -125,7 +127,7 @@ class TestAdminXssEscape:
         """Return a BulletinAdmin instance bound to the default admin site."""
         from django.contrib.admin import site
 
-        from bulletins.models import Bulletin as BulletinModel
+        from apps.bulletins.models import Bulletin as BulletinModel
 
         return BulletinAdmin(BulletinModel, site)
 
@@ -241,7 +243,7 @@ class TestBulletinAdminHelpers:
 
     def test_render_comment_empty_markdown_returns_dash(self) -> None:
         """When ``html_to_markdown`` returns "", the dash placeholder is used."""
-        with patch("bulletins.admin.html_to_markdown", return_value=""):
+        with patch("apps.bulletins.admin.html_to_markdown", return_value=""):
             result = _admin()._render_comment("<div></div>")
         assert result == "—"
 

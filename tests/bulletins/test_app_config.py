@@ -2,13 +2,13 @@
 
 from django.apps import apps
 
-from bulletins.apps import BulletinsConfig
+from apps.bulletins.apps import BulletinsConfig
 
 
 def test_bulletins_app_is_registered() -> None:
     config = apps.get_app_config("bulletins")
     assert isinstance(config, BulletinsConfig)
-    assert config.name == "bulletins"
+    assert config.name == "apps.bulletins"
     assert config.label == "bulletins"
     assert config.default_auto_field == "django.db.models.BigAutoField"
 

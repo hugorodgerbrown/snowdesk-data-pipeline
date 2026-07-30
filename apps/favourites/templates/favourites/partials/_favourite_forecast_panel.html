@@ -1,0 +1,59 @@
+{% load i18n static %}
+{% comment %}
+favourites/partials/_favourite_forecast_panel.html — Multi-day point forecast panel.
+
+Rendered by apps.favourites.views.favourite_card, included from
+_favourite_card.html's "Weather — this spot" section when a
+``forecast_panel`` context exists (SNOW-417). Two parts:
+
+  1. Compact day strip — one column per forecast day: weekday label,
+     weather icon, hi/lo temperature, and a snowfall chip when the day's
+     ``snowfall_sum`` is non-zero.
+  2. Expandable hourly detail — one ``_collapsible_panel.html`` per
+     near-term day (``day.hourly`` non-empty), listing that day's hourly
+     series via ``_favourite_forecast_hourly_body.html``.
+
+Context:
+    panel : ForecastPanel — {"days": [ForecastPanelDay, ...]}, from
+            apps.bulletins.services.weather_display.build_point_forecast_panel.
+{% endcomment %}
+<div class="space-y-3" data-testid="favourite-forecast-panel">
+    {# 1. Compact day strip #}
+    <div class="flex gap-2 overflow-x-auto pb-1">
+        {% for day in panel.days %}
+            <div
+                class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-3 py-2 min-w-[76px] shrink-0"
+                data-testid="favourite-forecast-day"
+                data-date="{{ day.date|date:'Y-m-d' }}"
+            >
+                <span class="text-xs font-mono uppercase tracking-widest text-text-3">{{ day.weekday_label }}</span>
+                <img
+                    src="{% static 'icons/weather/'|add:day.icon_filename %}"
+                    class="w-8 h-8"
+                    alt="{{ day.condition_label }}"
+                >
+                <span class="text-sm text-text-1 whitespace-nowrap">
+                    {% if day.temp_max is not None %}{{ day.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}<span
+                        class="text-text-3"
+                    >/{% if day.temp_min is not None %}{{ day.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+                </span>
+                {% if day.snowfall_sum %}
+                    {% blocktrans with cm=day.snowfall_sum|floatformat:0 trimmed asvar snowfall_chip_text %}
+                        {{ cm }} cm
+                    {% endblocktrans %}
+                    {% include "includes/_chip.html" with text=snowfall_chip_text data_testid="favourite-forecast-snowfall" %}
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    {# 2. Expandable hourly detail — near-term days only #}
+    {% for day in panel.days %}
+        {% if day.hourly %}
+            {% blocktrans with weekday=day.weekday_label trimmed asvar hourly_title %}
+                Hourly detail — {{ weekday }}
+            {% endblocktrans %}
+            {% include "includes/_collapsible_panel.html" with title=hourly_title data_testid="favourite-forecast-hourly" body_template="favourites/partials/_favourite_forecast_hourly_body.html" hourly=day.hourly %}
+        {% endif %}
+    {% endfor %}
+</div>

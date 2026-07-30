@@ -1,11 +1,11 @@
 ---
 name: bulletins-regions-split
-description: Why bulletins/ and regions/ are separate apps, and why core/ holds the shared abstract bases
+description: Why apps/bulletins/ and apps/regions/ are separate apps, and why apps/core/ holds the shared abstract bases
 status: current
 last-reviewed: 2026-06-10
 ---
 
-# App split: bulletins/ vs regions/ (with core/ as neutral ground)
+# App split: apps/bulletins/ vs apps/regions/ (with apps/core/ as neutral ground)
 
 **Decision.** Geographic reference data (`MicroRegion`, `MajorRegion`,
 `SubRegion`, `Resort`) lives in `regions/`; everything that originates from

@@ -25,7 +25,7 @@ matters because SW-based push on iOS is fragile — a background SW eviction
 silently drops the notification — whereas a declarative payload is rendered
 by the OS even if the SW is gone.
 
-`accounts/models.py::PushSubscription.mechanism` records which path a
+`apps/accounts/models.py::PushSubscription.mechanism` records which path a
 given subscription uses:
 
 - `sw` — the service-worker-parsed path (`{title, body, url}`), used by
@@ -37,7 +37,7 @@ given subscription uses:
 detection and sends the result as a `"mechanism"` field on the
 `/account/push/register/` POST body.
 
-`accounts/push_service.py::dispatch_push` branches the *outgoing wire
+`apps/accounts/push_service.py::dispatch_push` branches the *outgoing wire
 payload* on `sub.mechanism` (see `_build_wire_payload`). For a `declarative`
 subscription, whatever `{title, body, url}`-shaped payload the caller
 passes in is translated to:
@@ -125,9 +125,9 @@ Web Push dispatch (RFC 8292 §2). It **must** start with `mailto:` or
 Push) reject the JWT with a 403 for anything else, and the failure only
 surfaces at dispatch time in production.
 
-`accounts/checks.py::check_vapid_claim_email` — registered via
-`accounts/apps.py::AccountsConfig.ready()` — fails
-`manage.py check` (error code `accounts.push_config.E001`) if
+`apps/accounts/checks.py::check_vapid_claim_email` — registered via
+`apps/accounts/apps.py::AccountsConfig.ready()` — fails
+`manage.py check` (error code `apps.accounts.push_config.E001`) if
 `VAPID_CLAIM_EMAIL` doesn't start with one of those two prefixes, catching
 a misconfigured environment before it reaches production silently.
 

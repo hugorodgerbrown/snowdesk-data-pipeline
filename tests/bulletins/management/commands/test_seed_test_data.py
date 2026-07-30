@@ -38,8 +38,8 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from accounts.models import Account, Subscription
-from bulletins.management.commands.seed_test_data import (
+from apps.accounts.models import Account, Subscription
+from apps.bulletins.management.commands.seed_test_data import (
     _EAWS_CH_FIXTURE,
     DEV_USER_PASSWORD,
     MAP_DATE,
@@ -49,7 +49,7 @@ from bulletins.management.commands.seed_test_data import (
     _adjacency_from_fixture,
     _contiguous_groups,
 )
-from bulletins.models import (
+from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
     ForecastPoint,
@@ -58,8 +58,8 @@ from bulletins.models import (
     RegionDayRating,
     WeatherSnapshot,
 )
-from bulletins.services.render_model import RENDER_MODEL_VERSION
-from favourites.models import Favourite
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.favourites.models import Favourite
 
 User = get_user_model()
 

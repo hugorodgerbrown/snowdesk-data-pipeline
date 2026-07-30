@@ -18,8 +18,12 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from regions.models import MicroRegion
-from regions.services.basemap_tiles import MICRO_BAND, bbox_from_boundary, build_blob
+from apps.regions.models import MicroRegion
+from apps.regions.services.basemap_tiles import (
+    MICRO_BAND,
+    bbox_from_boundary,
+    build_blob,
+)
 from tests.factories import MicroRegionFactory
 
 _BOUNDARY = {

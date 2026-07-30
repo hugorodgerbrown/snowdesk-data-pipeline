@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_season.py — Unit tests for mcp_server.season.
+tests/mcp_server/test_season.py — Unit tests for apps.mcp_server.season.
 
 ``current_or_last_season`` is a pure function (no ``date.today()`` call
 inside it — IoC via the ``today`` parameter), so every case is exercised
@@ -13,7 +13,7 @@ import datetime
 
 import pytest
 
-from mcp_server.season import current_or_last_season
+from apps.mcp_server.season import current_or_last_season
 
 _CASES = [
     (

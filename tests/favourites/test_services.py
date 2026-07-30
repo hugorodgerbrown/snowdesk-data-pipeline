@@ -1,5 +1,5 @@
 """
-tests/favourites/test_services.py — Tests for favourites.services.
+tests/favourites/test_services.py — Tests for apps.favourites.services.
 
 Covers:
   create_favourite — happy path (resolves ForecastPoint, sets elevation
@@ -16,7 +16,7 @@ Covers:
     (PROTECT).
 
 All Open-Meteo network calls are avoided by patching
-``favourites.services.resolve_forecast_point``.
+``apps.favourites.services.resolve_forecast_point``.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from django.contrib.auth.models import User
 from django.db import connection
 from pytest_django.fixtures import SettingsWrapper
 
-from bulletins.models import ForecastPoint
-from favourites.models import Favourite
-from favourites.services import (
+from apps.bulletins.models import ForecastPoint
+from apps.favourites.models import Favourite
+from apps.favourites.services import (
     FavouriteLimitReached,
     ResortNotGeocoded,
     create_favourite,
@@ -56,8 +56,10 @@ class TestCreateFavouriteHappyPath:
         point = ForecastPointFactory.create(elevation=1834.0)
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4, name="My pin")
 
@@ -74,8 +76,10 @@ class TestCreateFavouriteHappyPath:
         region = MicroRegionFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=region),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=region),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
 
@@ -93,9 +97,11 @@ class TestCreateFavouriteHappyPath:
         point = ForecastPointFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
             patch(
-                "favourites.services.region_for_point", return_value=None
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch(
+                "apps.favourites.services.region_for_point", return_value=None
             ) as mock_rfp,
         ):
             create_favourite(user, 46.1, 7.4)
@@ -108,8 +114,10 @@ class TestCreateFavouriteHappyPath:
         point = ForecastPointFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
 
@@ -126,8 +134,10 @@ class TestCreateFavouriteRegionNull:
         point = ForecastPointFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 89.9, 179.9)
 
@@ -150,7 +160,7 @@ class TestCreateResortFavourite:
         )
 
         with patch(
-            "favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_point", return_value=point
         ) as mock_resolve:
             favourite = create_resort_favourite(user, resort)
 
@@ -180,7 +190,9 @@ class TestCreateResortFavourite:
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             first = create_resort_favourite(user, resort)
             second = create_resort_favourite(user, resort)
 
@@ -195,15 +207,17 @@ class TestCreateResortFavourite:
         user = UserFactory.create()
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             create_favourite(user, 46.1, 7.4)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
         resort_point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
         with patch(
-            "favourites.services.resolve_forecast_point", return_value=resort_point
+            "apps.favourites.services.resolve_forecast_point", return_value=resort_point
         ):
             with pytest.raises(FavouriteLimitReached):
                 create_resort_favourite(user, resort)
@@ -223,8 +237,12 @@ class TestCreateResortFavourite:
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.Favourite.objects.for_user") as mock_for_user,
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch(
+                "apps.favourites.services.Favourite.objects.for_user"
+            ) as mock_for_user,
         ):
             mock_for_user.return_value.count.side_effect = [0, 1]
             with pytest.raises(FavouriteLimitReached):
@@ -260,9 +278,11 @@ class TestCreateResortFavourite:
         hit_queryset.first.return_value = winning_favourite
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
             patch(
-                "favourites.services.Favourite.objects.filter",
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch(
+                "apps.favourites.services.Favourite.objects.filter",
                 side_effect=[empty_queryset, hit_queryset],
             ),
         ):
@@ -290,8 +310,10 @@ class TestCreateFavouriteCap:
         longitude = 7.4 + n * 0.05
         point = ForecastPointFactory.create(latitude=latitude, longitude=longitude)
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             return create_favourite(user, latitude, longitude)
 
@@ -329,9 +351,13 @@ class TestCreateFavouriteCap:
         point = ForecastPointFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
-            patch("favourites.services.Favourite.objects.for_user") as mock_for_user,
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.Favourite.objects.for_user"
+            ) as mock_for_user,
         ):
             mock_for_user.return_value.count.side_effect = [0, 1]
             with pytest.raises(FavouriteLimitReached):
@@ -361,10 +387,10 @@ class TestCreateFavouriteCap:
         existing_point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
         with (
             patch(
-                "favourites.services.resolve_forecast_point",
+                "apps.favourites.services.resolve_forecast_point",
                 return_value=existing_point,
             ),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             create_favourite(user, 46.1, 7.4)
 
@@ -390,8 +416,10 @@ class TestCreateFavouriteCap:
             threading.Thread(target=worker, args=(offset,)) for offset in (0.1, 0.2)
         ]
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             for thread in threads:
                 thread.start()
@@ -411,8 +439,10 @@ class TestDeleteFavourite:
         user = UserFactory.create()
         point = ForecastPointFactory.create()
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
 
@@ -425,8 +455,10 @@ class TestDeleteFavourite:
         user = UserFactory.create()
         point = ForecastPointFactory.create()
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
 
@@ -440,8 +472,10 @@ class TestDeleteFavourite:
         other_user = UserFactory.create()
         point = ForecastPointFactory.create()
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(owner, 46.1, 7.4)
 

@@ -2,7 +2,7 @@
 tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
 Covers (v8 elevation-band split + AM/PM split + ALBINA bands policy):
-  - _target_day: morning/evening/boundary rules.
+  - target_day_for_valid_from: morning/evening/boundary rules.
   - Single bulletin, two traits (dry=1, wet=3) → min=max=headline_key (considerable).
   - Single bulletin, single trait (dry=3) → min=max=considerable (stable).
   - Single bulletin with empty traits but danger.key="low" → min=max=low (fallback).
@@ -46,20 +46,20 @@ from unittest.mock import patch
 
 import pytest
 
-from bulletins.models import Bulletin, RegionDayRating
-from bulletins.services.day_rating import (
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _derive_albina_bands,
     _detect_elevation_band_split,
     _elevation_to_band_id,
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
-    _target_day,
     apply_bulletin_day_ratings,
     recompute_region_day,
+    target_day_for_valid_from,
 )
-from bulletins.services.render_model import RENDER_MODEL_VERSION
-from regions.models import MicroRegion
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -259,45 +259,33 @@ class TestResolveMinMaxKeys:
 
 
 # ---------------------------------------------------------------------------
-# _target_day
+# target_day_for_valid_from
 # ---------------------------------------------------------------------------
 
 
 class TestTargetDay:
-    """Unit tests for _target_day() — no DB required."""
+    """Unit tests for target_day_for_valid_from() — no DB required."""
 
     def test_morning_bulletin_targets_same_day(self) -> None:
         """valid_from.hour < 12 → target day is valid_from.date()."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 7, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 25, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 25)
+        valid_from = datetime.datetime(2026, 3, 25, 7, 0, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 25)
 
     def test_evening_bulletin_targets_next_day(self) -> None:
         """valid_from.hour >= 12 → target day is valid_from.date() + 1."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 16, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 26, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 26)
+        valid_from = datetime.datetime(2026, 3, 25, 16, 0, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 26)
 
     def test_noon_boundary_is_evening(self) -> None:
         """valid_from.hour == 12 (exactly noon) is treated as evening (>= 12)."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 12, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 26, 17, 0, tzinfo=UTC),
-        )
+        valid_from = datetime.datetime(2026, 3, 25, 12, 0, tzinfo=UTC)
         # noon is >= 12 so target is the NEXT day
-        assert _target_day(b) == datetime.date(2026, 3, 26)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 26)
 
     def test_morning_boundary_11_59_targets_same_day(self) -> None:
         """valid_from.hour == 11 (just before noon) is treated as morning."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 11, 59, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 25, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 25)
+        valid_from = datetime.datetime(2026, 3, 25, 11, 59, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 25)
 
 
 # ---------------------------------------------------------------------------
@@ -825,7 +813,7 @@ class TestApplyBulletinDayRatings:
         )
 
         with patch(
-            "bulletins.services.day_rating.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=RuntimeError("boom"),
         ):
             failures = apply_bulletin_day_ratings(bulletin)
@@ -866,7 +854,7 @@ class TestApplyBulletinDayRatings:
             real_recompute(region, day, commit=commit)
 
         with patch(
-            "bulletins.services.day_rating.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=_fail_only_bad_region,
         ):
             failures = apply_bulletin_day_ratings(bulletin)
@@ -891,7 +879,7 @@ class TestUpsertBulletinSwallowsException:
 
     def test_exception_is_caught_not_propagated(self) -> None:
         """When apply_bulletin_day_ratings raises, upsert_bulletin still returns."""
-        from bulletins.services.slf_fetcher import upsert_bulletin
+        from apps.bulletins.services.slf_fetcher import upsert_bulletin
 
         run = PipelineRunFactory.create()
         # Seed the region first — regions are fixture-backed (no auto-create).
@@ -912,7 +900,7 @@ class TestUpsertBulletinSwallowsException:
         }
 
         with patch(
-            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
             side_effect=RuntimeError("test explosion"),
         ):
             result = upsert_bulletin(raw, run)
@@ -1901,6 +1889,13 @@ class TestMeteoFranceMultiIssueDay:
         covered date with ``hour < 12`` (targets its own day).  Both therefore
         resolve to the covered day and compete, which is what makes the
         ordering matter.
+
+        This is also the interaction SNOW-560 flagged as a tripwire when it
+        moved candidate selection onto the stored ``target_date`` column: giving
+        Météo-France a real issue time could have shifted a previous-evening
+        issue's target by a day.  It does not — the evening issue's
+        ``valid_from`` lands in the afternoon of the *previous* date, and the
+        rule adds a day, which is exactly the covered date.
         """
         evening = _make_bulletin_for_region(
             MicroRegionFactory.create(region_id="FR-03", name="Bauges"),
@@ -1915,8 +1910,16 @@ class TestMeteoFranceMultiIssueDay:
             source="meteofrance",
         )
 
-        assert _target_day(evening) == datetime.date(2026, 2, 13)
-        assert _target_day(morning) == datetime.date(2026, 2, 13)
+        # The stored column is what recompute_region_day filters on.
+        assert evening.target_date == datetime.date(2026, 2, 13)
+        assert morning.target_date == datetime.date(2026, 2, 13)
+        # And it agrees with the derivation rule it was populated from.
+        assert target_day_for_valid_from(evening.valid_from) == datetime.date(
+            2026, 2, 13
+        )
+        assert target_day_for_valid_from(morning.valid_from) == datetime.date(
+            2026, 2, 13
+        )
 
     def test_prior_evening_alone_still_supplies_the_rating(self) -> None:
         """A day with only the evening issue is unaffected."""

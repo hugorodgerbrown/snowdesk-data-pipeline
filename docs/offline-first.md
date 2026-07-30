@@ -30,19 +30,19 @@ Every row must have a code home. Any gap is a compliance regression.
 
 | §    | Requirement                                        | Ticket        | Code                                                                                              |
 |------|----------------------------------------------------|---------------|---------------------------------------------------------------------------------------------------|
-| 12.2 | `X-App-Version` on every response                  | SNOW-369      | `core.middleware.AppVersionHeaderMiddleware` in `config/settings/base.py::MIDDLEWARE`             |
+| 12.2 | `X-App-Version` on every response                  | SNOW-369      | `apps.core.middleware.AppVersionHeaderMiddleware` in `config/settings/base.py::MIDDLEWARE`             |
 | 12.2 | `X-App-Min-Version` on every response              | SNOW-369      | Same middleware; reads `settings.APP_MIN_VERSION`                                                 |
-| 12.2 | `/api/version` endpoint                            | SNOW-369      | `public.api.version_view` at `/api/version/`                                                      |
-| 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
-| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
-| 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `core.freshness.apply_freshness_headers`; applied by data-bearing views in `public/api.py`        |
+| 12.2 | `/api/version` endpoint                            | SNOW-369      | `apps.public.api.version_view` at `/api/version/`                                                      |
+| 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
+| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
+| 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
 | 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on the manage page                           |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
-| 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). **Offline:** both network paths (`flush()` fetch and the critical-event `sendBeacon`) short-circuit while `navigator.onLine === false` — events stay enqueued and drain on the next `online` flush, so offline never fires a doomed request. |
+| 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `apps/analytics/views.py::telemetry_receive`, `apps/analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). **Offline:** both network paths (`flush()` fetch and the critical-event `sendBeacon`) short-circuit while `navigator.onLine === false` — events stay enqueued and drain on the next `online` flush, so offline never fires a doomed request. |
 
 ## Version + freshness contract
 
@@ -59,7 +59,7 @@ the next in-flight request rather than needing a poll.
 
 The client's own build is baked into `<meta name="pwa-app-version">`
 and `<meta name="pwa-app-min-version">` at page-render time (see
-`public.context_processors.pwa_version`). `pwa_version_check.js`
+`apps.public.context_processors.pwa_version`). `pwa_version_check.js`
 compares the two on every fetch / HTMX response.
 
 A header drift is treated as a **hint, not a verdict**: cacheable API
@@ -92,7 +92,7 @@ conditionally omitting them.
 ### Freshness headers (SNOW-370 / SNOW-377)
 
 Data-bearing responses carry three headers via
-`core.freshness.apply_freshness_headers`:
+`apps.core.freshness.apply_freshness_headers`:
 
 - `X-Data-Generated-At` — when the source data was produced (tz-aware ISO 8601).
 - `X-Data-Max-Age` — seconds after which the data is "stale but usable".
@@ -100,7 +100,7 @@ Data-bearing responses carry three headers via
   operational decisions. Omitted for non-safety data (pass
   `unsafe_after=None`).
 
-The `core.freshness.freshness_state()` helper and the
+The `apps.core.freshness.freshness_state()` helper and the
 `pwa_freshness.freshness_state` template tag classify the state
 server-side so a page's first paint carries the correct verdict:
 `fresh` (green), `stale` (yellow), or `unsafe` (red).
@@ -115,7 +115,7 @@ Defaults for safety-critical data: 24h `max_age`, 48h `unsafe_after`.
 ### §12.6 relaxation — cached-with-explicit-staleness (SNOW-418)
 
 The spec's default posture for safety-critical data is network-only: no
-cache, fail closed offline. `favourites/views.py` (`favourite_card`,
+cache, fail closed offline. `apps/favourites/views.py` (`favourite_card`,
 `favourite_list`) documents the one accepted relaxation of that rule —
 cache the response with its freshness envelope, and let the client
 classify staleness itself rather than never caching at all:
@@ -139,7 +139,7 @@ for the store's shape.
 
 ## Idempotency (SNOW-371)
 
-`core.idempotency.IdempotencyMiddleware` (mounted immediately after
+`apps.core.idempotency.IdempotencyMiddleware` (mounted immediately after
 `CsrfViewMiddleware`) inspects state-changing requests
 (`POST`/`PATCH`/`PUT`/`DELETE`). Requests carrying an `Idempotency-Key`
 header are deduplicated by that key for 24h so the PWA mutation queue
@@ -323,7 +323,7 @@ Shipped from the observability + IndexedDB track:
   user actually observed the problem rather than whenever the queued
   mutation replays. See [`mutation-queue.md`](mutation-queue.md#consumers).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
-  `analytics/schema.py` envelope validation, and the five §16.2
+  `apps/analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,
   `pwa.push.sent`, `pwa.push.gone_410`, `pwa.idempotency.replay`)
   wired into their existing call sites. See
@@ -340,7 +340,7 @@ Shipped from the observability + IndexedDB track:
 - **SNOW-418** — First `data:*` consumer: caches favourites, region
   rating, and (once SNOW-416 lands) point weather in `data:favourites`
   for offline reads, per the §12.6 relaxation above. See
-  `favourites/views.py` and `static/js/favourites_offline.js`.
+  `apps/favourites/views.py` and `static/js/favourites_offline.js`.
 - **SNOW-384** — Wires every remaining `pwa.*` emit call site so the
   eight §16.4 PostHog dashboards are buildable off real signal:
   `client_version` + a self-contained `POSTHOG_API_KEY` gate on every

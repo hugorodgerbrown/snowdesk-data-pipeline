@@ -1,11 +1,11 @@
-"""Tests for core.middleware — Query, Security, and AppVersion header middleware."""
+"""Tests for apps.core.middleware — Query, Security, and AppVersion header middleware."""
 
 from __future__ import annotations
 
 import pytest
 from django.test import Client, override_settings
 
-from accounts.services.token import (
+from apps.accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
     generate_token,
     generate_unsubscribe_token,

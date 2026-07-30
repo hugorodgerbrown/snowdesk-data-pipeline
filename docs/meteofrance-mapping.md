@@ -7,11 +7,11 @@ last-reviewed: 2026-06-10
 
 # MeteoFrance DPBRA → CAAML JSON mapping spec
 
-**Status:** implemented — see `bulletins/services/meteofrance_translator.py`; this doc is the field-mapping reference.
+**Status:** implemented — see `apps/bulletins/services/meteofrance_translator.py`; this doc is the field-mapping reference.
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
 document into the same CAAML JSON dict shape that SLF and ALBINA emit,
-ready to feed straight into `bulletins/services/slf_fetcher.py::upsert_bulletin()`.
+ready to feed straight into `apps/bulletins/services/slf_fetcher.py::upsert_bulletin()`.
 **Source format:** Météo-France DPBRA XML
 (`<BULLETINS_NEIGE_AVALANCHE>` root element with bulletin attributes on
 the root itself — there is no inner `<BULLETIN>` wrapper despite the
@@ -88,12 +88,12 @@ bulletinID = "FR-{NN}-{validity_date}-{publication_stamp}"
 
 - `{NN}`: the MF integer massif ID zero-padded to two digits,
   matching the EAWS `FR-NN` region ID (1:1 mapping established by
-  SNOW-179 — see `regions/management/commands/build_france_fixture.py`).
+  SNOW-179 — see `apps/regions/management/commands/build_france_fixture.py`).
   Example: massif `Chablais` (`@ID="1"`) → `FR-01`.
 - `validity_date`: `@DATEVALIDITE` truncated to date in Europe/Paris.
 - `publication_stamp`: `@DATEDIFFUSION` as `YYYYMMDDHHMMSS` in **UTC**.
 
-Built by `bulletins/services/meteofrance_identity.build_bulletin_id`, which the
+Built by `apps/bulletins/services/meteofrance_identity.build_bulletin_id`, which the
 archive loader also uses so both ingest paths share one grammar.
 
 The publication stamp is load-bearing, not decoration. Météo-France publishes
@@ -156,7 +156,7 @@ Each DPBRA document covers exactly one massif. The `FR-NN` ↔ MF integer
 mapping is 1:1 and was established by **SNOW-179**: massif `Chablais`
 (`@ID="1"`) maps to EAWS region `FR-01`, `Mercantour` (`@ID="23"`) to
 `FR-23`, `Cinto-Rotondo` (`@ID="40"`) to `FR-40`, and so on. All 35
-active massif IDs are already present in `regions/fixtures/eaws_FR.json`
+active massif IDs are already present in `apps/regions/fixtures/eaws_FR.json`
 as `MicroRegion` rows, so `upsert_bulletin`'s `_get_region` lookup will
 resolve them without further fixture work.
 
@@ -441,7 +441,7 @@ maintain a static "delegated regions" set seeded from the catalogue.
 - **Discovery / HTTP.** The DPBRA endpoint shape (single massif fetch URL,
   rate limits, auth header) is the orchestrator's concern.
 - **Region fixtures.** Already loaded by **SNOW-179**
-  (`regions/fixtures/eaws_FR.json` — 35 `MicroRegion` rows, EAWS `FR-NN`
+  (`apps/regions/fixtures/eaws_FR.json` — 35 `MicroRegion` rows, EAWS `FR-NN`
   IDs 1:1 with MF integer massif codes).
 - **Backfill.** DPBRA has no historical archive in this *XML* format;
   the live API is forward-going only. Pre-2026 data is available as
@@ -480,7 +480,7 @@ production; the backfill remains a follow-up SNOW ticket.
 
 ### Cross-validation
 
-Comparing the output of `bulletins/services/meteofrance_translator.py`
+Comparing the output of `apps/bulletins/services/meteofrance_translator.py`
 against the same `(date, massif)` row in
 `meteofrance_bra_hist`'s CSV catches translation bugs the unit-test
 fixtures may miss — particularly around the elevation-split semantics
@@ -501,7 +501,7 @@ and `evolurisque` evolution arrows. Low-cost validation; high signal.
    been removed.
 3. ~~**Massif code scheme.**~~ **Resolved by SNOW-179.** All 35 massifs
    are already loaded as `MicroRegion` rows in
-   `regions/fixtures/eaws_FR.json`, with `FR-NN` ↔ MF integer ID 1:1
+   `apps/regions/fixtures/eaws_FR.json`, with `FR-NN` ↔ MF integer ID 1:1
    (`int("FR-68".split("-")[1]) == 68`). Catalogue cross-reference at
    [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json).
    No further fixture or migration work required for ingestion.

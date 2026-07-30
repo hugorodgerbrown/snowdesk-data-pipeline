@@ -10,9 +10,9 @@ last-reviewed: 2026-07-26
 **Decision.** `/api/bulletin-groupings.geojson?d=<date>` (SNOW-526) sets a
 `Cache-Control` header that depends on whether `<date>` is *settled* — no
 future ingest run can still change that day's dissolved boundary geometry.
-`bulletins/services/settled.py`'s `is_settled()` derives the threshold
+`apps/bulletins/services/settled.py`'s `is_settled()` derives the threshold
 (`earliest_mutable_date()`) from the **same** `BulletinSource` registry
-(`bulletins.services.slf_fetcher.get_sources()`) and the same
+(`apps.bulletins.services.slf_fetcher.get_sources()`) and the same
 `latest_date_fn()` calls that `fetch_bulletins.Command._default_start_date`
 already uses to pick its default `--start-date`. There is no second,
 hand-maintained constant for "how far back is safe" — the boundary is
@@ -84,7 +84,7 @@ and only bounds the shared-cache staleness window.
 - **`latest_slf_date()` is a global, not an SLF-scoped, maximum.** Unlike
   `latest_albina_date()` / `latest_meteofrance_date()`, which filter on
   their own `Bulletin.Source`, SLF's registry entry
-  (`bulletins/services/slf_fetcher.py`'s `latest_slf_date()`) calls the
+  (`apps/bulletins/services/slf_fetcher.py`'s `latest_slf_date()`) calls the
   unfiltered `Bulletin.objects.latest_valid_from_date()` — the most recent
   `valid_from` across **every** provider's rows, not just SLF's. So when
   another provider is further ahead than SLF, `earliest_mutable_date()`'s
@@ -107,12 +107,12 @@ would make a manual backfill much harder to flush and buys nothing the
 `earliest_mutable_date()` runs a fixed number of DB aggregate queries (one
 per registered `BulletinSource`) — cheap in isolation, but
 `bulletin_groupings_geojson` needs the answer on every request, including a
-payload cache hit. Rather than pay that cost every time, `public/api.py`
+payload cache hit. Rather than pay that cost every time, `apps/public/api.py`
 memoises the threshold at the call site
 (`_cached_earliest_mutable_date()`, `cache.get_or_set` for
 `_SETTLED_THRESHOLD_CACHE_TIMEOUT` = 60 s, a key distinct from the
 per-`(country, date)` payload cache) rather than inside
-`bulletins.services.settled` itself — that module stays a pure, uncached
+`apps.bulletins.services.settled` itself — that module stays a pure, uncached
 derivation any other caller can trust for a live answer. A stale memoised
 value is safe by construction: staleness can only make the threshold OLDER
 (smaller), so it can only under-report which dates are settled, never

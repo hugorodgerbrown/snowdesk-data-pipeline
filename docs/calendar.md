@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating denormalisation and day_rating aggregation feeding the month-grid calendar_partial HTMX fragment
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-30
 ---
 
 # Calendar and RegionDayRating
@@ -14,7 +14,7 @@ is a server-rendered HTMX fragment backed by a denormalised per-(region,
 date) rating table — no JSON API, no per-day render-model reads at
 request time.
 
-**Model**: `bulletins.models.RegionDayRating` — one row per
+**Model**: `apps.bulletins.models.RegionDayRating` — one row per
 `(region, calendar day)` with:
 - `min_rating` / `max_rating` — `Rating` `TextChoices`
   (`no_rating`, `low`, `moderate`, `considerable`, `high`, `very_high`).
@@ -28,8 +28,8 @@ request time.
   constant when the aggregation policy changes.
 - `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
 
-**Aggregation policy** (see `bulletins/services/day_rating.py`):
-- For day X, pick the single bulletin whose `_target_day` equals X with
+**Aggregation policy** (see `apps/bulletins/services/day_rating.py`):
+- For day X, pick the single bulletin whose `target_date` equals X with
   the latest `valid_from`. Morning-of-X (hour < 12) naturally wins over
   prior-evening-of-(X−1) (hour ≥ 12) because its `valid_from` is later.
   Evening-of-X (hour ≥ 12) targets X+1 and is excluded.
@@ -55,7 +55,7 @@ Pass `--skip-day-ratings` to suppress that step when you only want to
 refresh the render models (e.g. debugging a render-model bug without
 touching the calendar).
 
-**Calendar partial**: `public.views.calendar_partial` at
+**Calendar partial**: `apps.public.views.calendar_partial` at
 `/partials/calendar/<region_id>/<year>/<month>/` (name:
 `public:calendar_partial`). HTMX-only — non-HTMX requests get 400. The
 fragment wraps itself in `<div id="bulletin-calendar">` so prev/next
@@ -66,5 +66,5 @@ degrade silently rather than 404. An optional `?date=YYYY-MM-DD`
 selects a specific tile for highlight rendering.
 
 **Route ordering**: `partials/calendar/...` is registered before
-`<str:region_id>/` in [`public/urls.py`](../public/urls.py). Same
+`<str:region_id>/` in [`apps/public/urls.py`](../apps/public/urls.py). Same
 top-to-bottom concern as `/map/` — don't reorder.

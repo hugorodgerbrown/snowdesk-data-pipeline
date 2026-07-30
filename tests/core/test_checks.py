@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from django.test import override_settings
 
-from core import checks
+from apps.core import checks
 
 
 @override_settings(DEBUG=False, SITE_BASE_URL="http://localhost:8000")
@@ -89,7 +89,7 @@ def test_core_app_config_is_coreconfig() -> None:
     """
     from django.apps import apps
 
-    from core.apps import CoreConfig
+    from apps.core.apps import CoreConfig
 
     assert isinstance(apps.get_app_config("core"), CoreConfig)
 

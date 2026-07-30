@@ -6,7 +6,7 @@
 # loader overwrites one with the other while the live fetcher skips the second
 # outright (SNOW-559).  These tests pin the grammar both ingest paths build, so
 # a change on one side cannot silently diverge from the other.
-"""Tests for bulletins.services.meteofrance_identity."""
+"""Tests for apps.bulletins.services.meteofrance_identity."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from bulletins.services.meteofrance_identity import (
+from apps.bulletins.services.meteofrance_identity import (
     BULLETIN_ID_RE,
     build_bulletin_id,
     compact_publication_stamp,

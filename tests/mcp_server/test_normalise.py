@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_normalise.py — Unit tests for mcp_server.normalise.
+tests/mcp_server/test_normalise.py — Unit tests for apps.mcp_server.normalise.
 
 Parametrised across the alpine-name misspelling table from the SNOW-391
 implementation plan — every ``input -> expected`` case runs independently
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_server.normalise import normalise
+from apps.mcp_server.normalise import normalise
 
 # Each row: (input, expected_normalised, pytest id).
 _CASES = [

@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from django.http import HttpResponse
 
-from core.freshness import (
+from apps.core.freshness import (
     DEFAULT_MAX_AGE_SECONDS,
     DEFAULT_UNSAFE_AFTER_SECONDS,
     apply_freshness_headers,

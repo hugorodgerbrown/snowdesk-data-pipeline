@@ -1,0 +1,14 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_limit.html — Favourite-cap-reached error partial.
+
+Rendered by apps.favourites.views.favourite_create at HTTP 200 (so HTMX swaps it
+into the target) when the requesting user has already reached
+settings.FAVOURITES_MAX_PER_USER.
+{% endcomment %}
+<div
+    class="rounded-tag border border-status-warning-text/30 bg-status-warning-bg px-3 py-2 text-sm text-status-warning-text"
+    role="alert"
+>
+    {% trans "You've reached your saved-pin limit. Remove one to save another." %}
+</div>

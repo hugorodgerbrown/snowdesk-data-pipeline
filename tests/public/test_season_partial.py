@@ -26,8 +26,8 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from bulletins.models import Bulletin, RegionDayRating
-from bulletins.services.day_rating import apply_bulletin_day_ratings
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,

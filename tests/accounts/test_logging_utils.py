@@ -1,5 +1,5 @@
 """
-tests/accounts/test_logging_utils.py — Tests for accounts.logging_utils.
+tests/accounts/test_logging_utils.py — Tests for apps.accounts.logging_utils.
 
 Covers mask_email: normal address, single-char local part, empty local part,
 no ``@`` character, empty string, a check that the full original address never
@@ -8,7 +8,7 @@ appears in the output for the normal case, and a unicode local-part case.
 
 from __future__ import annotations
 
-from accounts.logging_utils import mask_email
+from apps.accounts.logging_utils import mask_email
 
 
 class TestMaskEmail:

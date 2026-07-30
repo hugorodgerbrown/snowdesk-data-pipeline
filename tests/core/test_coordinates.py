@@ -1,5 +1,5 @@
 """
-tests/core/test_coordinates.py — Tests for core.coordinates (SNOW-464).
+tests/core/test_coordinates.py — Tests for apps.core.coordinates (SNOW-464).
 
 Covers validate_coordinates and validate_accuracy_radius_km: finiteness,
 WGS-84 bounds, inclusive boundaries, and non-negative accuracy.
@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from core.coordinates import (
+from apps.core.coordinates import (
     InvalidCoordinatesError,
     validate_accuracy_radius_km,
     validate_coordinates,

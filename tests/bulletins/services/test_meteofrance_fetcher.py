@@ -30,7 +30,7 @@ import pytest
 import requests
 from django.test import override_settings
 
-from bulletins.services.meteofrance_fetcher import (
+from apps.bulletins.services.meteofrance_fetcher import (
     _meteofrance_pdf_url,
     _read_local_mirror,
     _resolve_base_url,
@@ -99,28 +99,28 @@ def _mock_http_error(status: int = 500) -> MagicMock:
 class TestFetchMeteofrance:
     """fetch_meteofrance_bulletin handles HTTP and file:// paths."""
 
-    @patch("bulletins.services.meteofrance_fetcher.requests.get")
+    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
     def test_returns_bytes_on_200(self, mock_get: MagicMock) -> None:
         """A 200 response returns the content bytes."""
         mock_get.return_value = _mock_ok(b"<xml/>")
         result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
         assert result == b"<xml/>"
 
-    @patch("bulletins.services.meteofrance_fetcher.requests.get")
+    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
     def test_returns_none_on_404(self, mock_get: MagicMock) -> None:
         """A 404 response returns None (no bulletin today)."""
         mock_get.return_value = _mock_404()
         result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
         assert result is None
 
-    @patch("bulletins.services.meteofrance_fetcher.requests.get")
+    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
     def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
         """A 500 response raises requests.HTTPError."""
         mock_get.return_value = _mock_http_error(500)
         with pytest.raises(requests.HTTPError):
             fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
 
-    @patch("bulletins.services.meteofrance_fetcher.requests.get")
+    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
     def test_url_uses_massif_id(self, mock_get: MagicMock) -> None:
         """The request URL includes the massif ID at the correct path."""
         mock_get.return_value = _mock_ok(b"<xml/>")
@@ -128,7 +128,7 @@ class TestFetchMeteofrance:
         call_url = mock_get.call_args[0][0]
         assert "/massif/7/BRA" in call_url
 
-    @patch("bulletins.services.meteofrance_fetcher.requests.get")
+    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
     def test_api_key_sent_as_header(self, mock_get: MagicMock) -> None:
         """The apikey header is sent with the request."""
         mock_get.return_value = _mock_ok(b"<xml/>")
@@ -249,7 +249,7 @@ class TestRunMeteofrance:
                 base_url=f"file://{tmp}",
             )
 
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         assert Bulletin.objects.count() == 0
         assert run.records_created == 0
@@ -290,7 +290,7 @@ class TestRunMeteofrance:
     def test_http_error_increments_records_failed(self) -> None:
         """An HTTP error for a massif increments records_failed."""
         with patch(
-            "bulletins.services.meteofrance_fetcher.fetch_meteofrance_bulletin"
+            "apps.bulletins.services.meteofrance_fetcher.fetch_meteofrance_bulletin"
         ) as mock_fetch:
             mock_fetch.side_effect = requests.HTTPError("500 Server Error")
             run = run_meteofrance_pipeline(
@@ -341,7 +341,7 @@ class TestRunMeteofrance:
                 base_url=f"file://{tmp}",
             )
 
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).exists()
         assert run.records_created == 1
@@ -371,7 +371,7 @@ class TestRunMeteofrance:
                 base_url=f"file://{tmp}",
             )
 
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         # Still only one bulletin in the DB.
         assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).count() == 1
@@ -441,7 +441,9 @@ class TestRunMeteofrance:
         """
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         mirror_url = f"file://{_SAMPLE_DIR}"
-        with patch("bulletins.services.meteofrance_fetcher.requests.get") as mock_get:
+        with patch(
+            "apps.bulletins.services.meteofrance_fetcher.requests.get"
+        ) as mock_get:
             run = run_meteofrance_pipeline(
                 date(2026, 5, 18),
                 date(2026, 5, 18),
@@ -454,7 +456,7 @@ class TestRunMeteofrance:
         # No HTTP call should have been made.
         mock_get.assert_not_called()
 
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).exists()
         assert run.records_created == 1
@@ -482,7 +484,7 @@ class TestRunMeteofrance:
                 base_url=f"file://{tmp}",
             )
 
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         b = Bulletin.objects.get(bulletin_id=_LIVE_ID)
         raw_props = (b.raw_data or {}).get("properties", {})
@@ -532,7 +534,7 @@ class TestLatestMeteofrancoDate:
 
     def test_ignores_non_meteofrance_bulletins(self) -> None:
         """Bulletins whose render_model.source != "meteofrance" are not counted."""
-        from bulletins.models import Bulletin, PipelineRun
+        from apps.bulletins.models import Bulletin, PipelineRun
 
         run = PipelineRun.objects.create(triggered_by="test")
         Bulletin.objects.create(
@@ -771,7 +773,7 @@ class TestReissuedBulletin:
 
     def test_reissue_creates_a_second_row(self) -> None:
         """Both issues of one massif-day coexist."""
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         with tempfile.TemporaryDirectory() as tmp:
@@ -803,7 +805,7 @@ class TestReissuedBulletin:
 
     def test_reissue_id_carries_its_own_stamp(self) -> None:
         """The second row is keyed by the re-issue's own publication instant."""
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         with tempfile.TemporaryDirectory() as tmp:
@@ -829,7 +831,7 @@ class TestReissuedBulletin:
         so the existing skip is still correct — it just no longer swallows
         genuine re-issues.
         """
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         with tempfile.TemporaryDirectory() as tmp:

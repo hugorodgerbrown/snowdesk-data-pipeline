@@ -18,7 +18,7 @@ queue with no call-site changes for any adopter.
 ## Consumers
 
 - **`static/js/report.js`** (SNOW-420) — the first real consumer.
-  Field-report submission (`observations.views.report_submit`) is routed
+  Field-report submission (`apps.observations.views.report_submit`) is routed
   through `window.pwaMutationQueue.enqueue()` instead of `hx-post`, so a
   report tapped offline is captured immediately, persisted, and replayed
   on reconnect. `report.js` stamps a hidden `observed_at` input with the
@@ -31,13 +31,13 @@ queue with no call-site changes for any adopter.
   a `<template>` embedded in the form partial (server-rendered so
   copy/i18n/design-tokens live in one place), and reveals a "will sync
   when you're back online" line when the tap happened offline. See
-  `observations/views.py`'s module docstring for the server-side
+  `apps/observations/views.py`'s module docstring for the server-side
   `observed_at` validation contract, and
   `tests/e2e/test_offline_observation_submit.py` for the full offline →
   reconnect journey test.
 
 - **`static/js/favourites.js`** (SNOW-479) — the second consumer.
-  Favourite *creation* (`favourites.views.favourite_create`) is routed
+  Favourite *creation* (`apps.favourites.views.favourite_create`) is routed
   through `window.pwaMutationQueue.enqueue()` instead of `hx-post`, so a
   pin saved offline is captured immediately and replayed on reconnect
   (rename/delete stay online-only `hx-post`). On enqueue `favourites.js`
@@ -208,12 +208,12 @@ available to any other caller that needs to discard the whole queue.
 
 This client-side partitioning is a best-effort layer that reduces the
 attack surface for a shared-device account change; SNOW-463
-(`core/idempotency.py`'s method/path/principal/body fingerprint) is the
+(`apps/core/idempotency.py`'s method/path/principal/body fingerprint) is the
 airtight server-side backstop that holds regardless of client state.
 
 ## Idempotency-Key
 
-Server contract: `core/idempotency.py::IdempotencyMiddleware`. Every
+Server contract: `apps/core/idempotency.py::IdempotencyMiddleware`. Every
 enqueued row mints its key once, at enqueue time
 (`crypto.randomUUID()`), and sends the IDENTICAL value on every replay
 via the `Idempotency-Key` header — this is what lets the server
@@ -281,7 +281,7 @@ relying entirely on the page-lifecycle drain triggers above instead.
 | `static/js/sw_register.js` | `drain-mutations` message bridge (tab-open fast path). |
 | `templates/includes/_toast_banner.html` | Full-width top-of-page permanent-failure toast. |
 | `templates/includes/nav.html` | `[data-sync-badge]` pill. |
-| `core/idempotency.py` | Server-side `Idempotency-Key` dedup contract. |
+| `apps/core/idempotency.py` | Server-side `Idempotency-Key` dedup contract. |
 
 ## Tests
 
@@ -304,7 +304,7 @@ round-trip, the optimistic confirmation + sync-pending line + nav badge
 render immediately, a reconnect drains the queue against the real
 `report_submit` / `favourite_create` view (the latter with the tap-time
 `observed_at` preserved for observations), and a replayed duplicate does
-not create a second row (`core.idempotency.IdempotencyMiddleware`).
+not create a second row (`apps.core.idempotency.IdempotencyMiddleware`).
 `test_offline_observation_submit.py` additionally covers report.js's
 Reset-Required guard (a report tap must not show the optimistic
 confirmation when IndexedDB is in the terminal Reset Required state). The

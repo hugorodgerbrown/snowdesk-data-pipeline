@@ -1,5 +1,5 @@
 """
-tests/public/test_decorators.py — Unit tests for public.decorators.
+tests/public/test_decorators.py — Unit tests for apps.public.decorators.
 
 Covers the ``lowercase_region_id`` decorator:
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 from django.http import HttpRequest, HttpResponse, HttpResponsePermanentRedirect
 
-from public.decorators import lowercase_region_id
+from apps.public.decorators import lowercase_region_id
 
 
 def _make_request(path: str, query_string: str = "") -> HttpRequest:

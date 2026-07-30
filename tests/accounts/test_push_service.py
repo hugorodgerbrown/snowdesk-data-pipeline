@@ -26,8 +26,8 @@ import pytest
 from django.utils import timezone
 from pywebpush import WebPushException
 
-from accounts.models import PushSubscription
-from accounts.push_service import _worker_dispatch_push, dispatch_push
+from apps.accounts.models import PushSubscription
+from apps.accounts.push_service import _worker_dispatch_push, dispatch_push
 from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
@@ -48,7 +48,7 @@ class TestDispatchPush:
         sub = PushSubscriptionFactory.create()
         mock_response = MagicMock()
         mock_response.status_code = 201
-        with patch("accounts.push_service.webpush", return_value=mock_response):
+        with patch("apps.accounts.push_service.webpush", return_value=mock_response):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result == {"ok": True, "status": 201}
         # Row must still exist.
@@ -71,8 +71,8 @@ class TestDispatchPush:
         before = timezone.now()
         exc = _make_webpush_exception(410)
         with (
-            patch("accounts.push_service.webpush", side_effect=exc),
-            patch("accounts.push_service.emit_server_signal") as mock_emit,
+            patch("apps.accounts.push_service.webpush", side_effect=exc),
+            patch("apps.accounts.push_service.emit_server_signal") as mock_emit,
         ):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result["ok"] is False
@@ -93,7 +93,7 @@ class TestDispatchPush:
         """
         sub = PushSubscriptionFactory.create()
         exc = _make_webpush_exception(404)
-        with patch("accounts.push_service.webpush", side_effect=exc):
+        with patch("apps.accounts.push_service.webpush", side_effect=exc):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result["ok"] is False
         assert result["status"] == 404
@@ -103,7 +103,7 @@ class TestDispatchPush:
         """A 500 WebPushException returns {ok: False} but does not delete the row."""
         sub = PushSubscriptionFactory.create()
         exc = _make_webpush_exception(500)
-        with patch("accounts.push_service.webpush", side_effect=exc):
+        with patch("apps.accounts.push_service.webpush", side_effect=exc):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result["ok"] is False
         assert result["status"] == 500
@@ -114,7 +114,7 @@ class TestDispatchPush:
         """A WebPushException with no response returns status=None."""
         sub = PushSubscriptionFactory.create()
         exc = WebPushException("No response available", response=None)
-        with patch("accounts.push_service.webpush", side_effect=exc):
+        with patch("apps.accounts.push_service.webpush", side_effect=exc):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result["ok"] is False
         assert result["status"] is None
@@ -127,7 +127,7 @@ class TestDispatchPush:
         mock_response = MagicMock()
         mock_response.status_code = 201
         with patch(
-            "accounts.push_service.webpush", return_value=mock_response
+            "apps.accounts.push_service.webpush", return_value=mock_response
         ) as mock_webpush:
             dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         _, call_kwargs = mock_webpush.call_args
@@ -140,7 +140,7 @@ class TestDispatchPush:
         mock_response = MagicMock()
         mock_response.status_code = 201
         with patch(
-            "accounts.push_service.webpush", return_value=mock_response
+            "apps.accounts.push_service.webpush", return_value=mock_response
         ) as mock_webpush:
             dispatch_push(sub, payload)
         _, call_kwargs = mock_webpush.call_args
@@ -157,7 +157,7 @@ class TestDispatchPush:
         mock_response = MagicMock()
         mock_response.status_code = 201
         with patch(
-            "accounts.push_service.webpush", return_value=mock_response
+            "apps.accounts.push_service.webpush", return_value=mock_response
         ) as mock_webpush:
             dispatch_push(sub, payload)
         _, call_kwargs = mock_webpush.call_args
@@ -191,7 +191,7 @@ class TestDispatchPushLogging:
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         account = AccountFactory.create(user__email="push-caplog@example.com")
         sub = PushSubscriptionFactory.create(account=account)
         exc = WebPushException(
@@ -199,8 +199,8 @@ class TestDispatchPushLogging:
             response=MagicMock(status_code=410),
         )
         with (
-            caplog.at_level(logging.INFO, logger="accounts.push_service"),
-            patch("accounts.push_service.webpush", side_effect=exc),
+            caplog.at_level(logging.INFO, logger="apps.accounts.push_service"),
+            patch("apps.accounts.push_service.webpush", side_effect=exc),
         ):
             dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
 
@@ -231,7 +231,7 @@ class TestWorkerDispatchPush:
         """Worker loads the subscription by PK and calls dispatch_push once."""
         sub = PushSubscriptionFactory.create()
         payload = {"title": "Hi", "body": "Test", "url": "/"}
-        with patch("accounts.push_service.dispatch_push") as mock_dispatch:
+        with patch("apps.accounts.push_service.dispatch_push") as mock_dispatch:
             _worker_dispatch_push.call(sub.pk, payload)
         mock_dispatch.assert_called_once()
         call_args = mock_dispatch.call_args
@@ -242,7 +242,7 @@ class TestWorkerDispatchPush:
     def test_does_not_exist_does_not_raise(self) -> None:
         """Worker exits silently when the PushSubscription row no longer exists."""
         payload = {"title": "Hi", "body": "Test", "url": "/"}
-        with patch("accounts.push_service.dispatch_push") as mock_dispatch:
+        with patch("apps.accounts.push_service.dispatch_push") as mock_dispatch:
             _worker_dispatch_push.call(999999, payload)
         mock_dispatch.assert_not_called()
 
@@ -250,7 +250,7 @@ class TestWorkerDispatchPush:
         """SNOW-384: client_version passed to the worker reaches dispatch_push."""
         sub = PushSubscriptionFactory.create()
         payload = {"title": "Hi", "body": "Test", "url": "/"}
-        with patch("accounts.push_service.dispatch_push") as mock_dispatch:
+        with patch("apps.accounts.push_service.dispatch_push") as mock_dispatch:
             _worker_dispatch_push.call(sub.pk, payload, "2026.07.16.abc")
         call_args = mock_dispatch.call_args
         assert call_args[0][2] == "2026.07.16.abc"
@@ -266,14 +266,14 @@ class TestWorkerDispatchPush:
         exercises the DoesNotExist path with a non-existent PK. The log message
         must reference the pk= only — no email should be emitted.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         account = AccountFactory.create(user__email="worker-caplog@example.com")
         nonexistent_pk = account.pk + 999999
         payload = {"title": "Hi", "body": "Test", "url": "/"}
 
         with (
-            caplog.at_level(logging.INFO, logger="accounts.push_service"),
-            patch("accounts.push_service.dispatch_push"),
+            caplog.at_level(logging.INFO, logger="apps.accounts.push_service"),
+            patch("apps.accounts.push_service.dispatch_push"),
         ):
             _worker_dispatch_push.call(nonexistent_pk, payload)
 

@@ -96,21 +96,21 @@ INSTALLED_APPS = [
     # prune_db_task_results management commands. django_tasks (the decorator
     # package) does not need to be in INSTALLED_APPS per its README.
     "django_tasks_db",
-    # ``core.apps.BootstrapTolerantCSPTrackerConfig`` is a thin subclass of
+    # ``apps.core.apps.BootstrapTolerantCSPTrackerConfig`` is a thin subclass of
     # ``csp.apps.CSPTrackerConfig`` that tolerates a missing ``django_cache``
-    # table on first boot — see core/apps.py for the why.
-    "core.apps.BootstrapTolerantCSPTrackerConfig",
+    # table on first boot — see apps/core/apps.py for the why.
+    "apps.core.apps.BootstrapTolerantCSPTrackerConfig",
     "waffle",
     # Local
-    "core",
-    "regions",
-    "bulletins",
-    "public",
-    "accounts",
-    "analytics",
-    "observations",
-    "favourites",
-    "mcp_server",
+    "apps.core",
+    "apps.regions",
+    "apps.bulletins",
+    "apps.public",
+    "apps.accounts",
+    "apps.analytics",
+    "apps.observations",
+    "apps.favourites",
+    "apps.mcp_server",
 ]
 
 MIDDLEWARE = [
@@ -129,7 +129,7 @@ MIDDLEWARE = [
     # request already passed CSRF when the row was cached, so a replay of
     # an already-successful mutation is safe to serve without a second
     # CSRF check.
-    "core.idempotency.IdempotencyMiddleware",
+    "apps.core.idempotency.IdempotencyMiddleware",
     # django-waffle. Reads request.user (populated by AuthenticationMiddleware
     # above) so per-user / superuser / staff flag targeting works.
     # Adds ``request.waffles`` for view-side flag checks; mounts no URL conf
@@ -147,15 +147,15 @@ MIDDLEWARE = [
     # Exposes X-DB-Query-Count on responses when QUERY_COUNT_HEADER_ENABLED
     # is True (dev + perf). No-op otherwise, so it is safe to leave mounted
     # in production.
-    "core.middleware.QueryCountMiddleware",
+    "apps.core.middleware.QueryCountMiddleware",
     # Sets Referrer-Policy and Permissions-Policy on every response.
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
-    "core.middleware.SecurityHeadersMiddleware",
+    "apps.core.middleware.SecurityHeadersMiddleware",
     # Stamps X-App-Version and X-App-Min-Version on every response so the
     # PWA client can detect a forced-update state on any response, not just
     # a poll of /api/version (SNOW-369, spec §5.3).
-    "core.middleware.AppVersionHeaderMiddleware",
+    "apps.core.middleware.AppVersionHeaderMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
     # the Content-Security-Policy(-Report-Only) header. The nonce middleware
@@ -179,27 +179,27 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
-                "accounts.context_processors.nav_subscriptions",
+                "apps.accounts.context_processors.nav_subscriptions",
                 # SNOW-549: injects PWA_USER_ID (Account.uuid) so base.html can
                 # bake the signed-in user's public identifier into the
                 # pwa-user-id meta tag the mutation queue reads as its
                 # principal — never the sequential auth.User PK.
-                "accounts.context_processors.pwa_user_identity",
+                "apps.accounts.context_processors.pwa_user_identity",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
-                "public.context_processors.site_base_url",
+                "apps.public.context_processors.site_base_url",
                 # Injects APP_VERSION / APP_MIN_VERSION into every template so
                 # base.html can bake them into <meta> tags for the client-side
                 # version check (SNOW-374).
-                "public.context_processors.pwa_version",
+                "apps.public.context_processors.pwa_version",
                 # Injects PWA_TELEMETRY_ENABLED so base.html can bake the
                 # telemetry master switch into a <meta> tag read by
                 # static/js/telemetry.js (docs/telemetry-pipeline.md).
-                "public.context_processors.pwa_telemetry",
+                "apps.public.context_processors.pwa_telemetry",
                 # SNOW-399: injects SITE_ENVIRONMENT and the derived
                 # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
                 # base.html can render a distinct app name, icon, and theme
                 # colour on staging vs production PWA installs.
-                "public.context_processors.site_environment",
+                "apps.public.context_processors.site_environment",
             ],
         },
     },
@@ -254,7 +254,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTHENTICATION_BACKENDS = [
     # Verifies signed magic-link tokens; used by account_view and passkey auth.
-    "accounts.backends.TokenBackend",
+    "apps.accounts.backends.TokenBackend",
     # Standard Django password backend; used by the admin login form for staff.
     "django.contrib.auth.backends.ModelBackend",
 ]
@@ -264,8 +264,8 @@ AUTHENTICATION_BACKENDS = [
 # ---------------------------------------------------------------------------
 # Server-side event capture via the posthog-python client and the official
 # PosthogContextMiddleware. The global posthog module-level client is
-# initialised in ``analytics/apps.py`` ``AppConfig.ready()``. The wrappers
-# in ``analytics/__init__.py`` are no-ops when POSTHOG_API_KEY is empty so
+# initialised in ``apps/analytics/apps.py`` ``AppConfig.ready()``. The wrappers
+# in ``apps/analytics/__init__.py`` are no-ops when POSTHOG_API_KEY is empty so
 # no events are sent during local development or test runs unless the key is
 # explicitly populated. Set to the EU project key in production via the
 # environment.
@@ -282,7 +282,7 @@ POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
 #   * ``static/js/telemetry.js`` becomes an inert no-op — no event
 #     buffering, no ``navigator.sendBeacon``, no ``/api/telemetry`` POSTs
 #     (the ``pwa-telemetry-enabled`` meta tag in base.html carries the
-#     value to the client via ``public.context_processors.pwa_telemetry``).
+#     value to the client via ``apps.public.context_processors.pwa_telemetry``).
 #   * The ``/api/telemetry`` receiver accepts and drops (still 204 so a
 #     stale shell drains its local queue cleanly).
 #   * The server-emitted §16.2 signals (``emit_server_signal``) no-op.
@@ -333,12 +333,12 @@ POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
 # filter, which is what ``_posthog_request_filter`` below implements.
 #
 # SNOW-299: keep this set in sync with the ``@cache_control(public=True)``
-# GET endpoints declared in ``public/api_urls.py``.
+# GET endpoints declared in ``apps/public/api_urls.py``.
 # SNOW-338: also keep in sync with the ``Cache-Control: public`` static
 # routes declared in ``config/urls.py``.
 _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
     {
-        # Map-data JSON/GeoJSON API endpoints (public/api_urls.py) — SNOW-299.
+        # Map-data JSON/GeoJSON API endpoints (apps/public/api_urls.py) — SNOW-299.
         "/api/ratings/",
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
@@ -444,7 +444,9 @@ SLF_API_BASE_URL = config(
 # --stash`` runs. NDJSON: one un-wrapped CAAML record per line, sorted
 # ascending by ``validTime.startTime``, deduped by ``bulletinID``. Both
 # the stash writer and the local mirror view read from this path.
-SLF_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "slf_archive.ndjson"
+SLF_ARCHIVE_PATH = (
+    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "slf_archive.ndjson"
+)
 
 # On-disk archive of every Open-Meteo weather record captured by
 # ``fetch_weather --stash`` runs.
@@ -453,7 +455,7 @@ SLF_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "slf_archive.ndjso
 # with the later ``captured_at`` winning. Both the stash writer and the
 # local Open-Meteo mirror view read from this path.
 OPENMETEO_ARCHIVE_PATH = (
-    BASE_DIR / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
+    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
 )
 
 # ALBINA bulletin API. The CDN publishes per-date, per-region files
@@ -467,7 +469,9 @@ ALBINA_API_BASE_URL = config(
 
 # On-disk archive of ALBINA bulletins captured from the avalanche.report CDN.
 # NDJSON: one unwrapped CAAML record per line; deduped by ``bulletinID``.
-ALBINA_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
+ALBINA_ARCHIVE_PATH = (
+    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
+)
 
 # ALBINA region identifiers covered by the fetcher. These map to the three
 # top-level avalanche.report CDN paths: Tyrol (AT-07), South Tyrol (IT-32-BZ),
@@ -501,7 +505,7 @@ METEOFRANCE_API_LOCAL_MIRROR_URL = config(
 # --stash`` runs. NDJSON: one translated CAAML record per line, sorted
 # ascending by ``validTime.startTime``, deduped by ``bulletinID``.
 METEOFRANCE_ARCHIVE_PATH = (
-    BASE_DIR / "bulletins" / "local_mirrors" / "meteofrance_archive.ndjson"
+    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "meteofrance_archive.ndjson"
 )
 
 # MeteoFrance DPBRA massif IDs covered by the fetcher.
@@ -520,18 +524,18 @@ METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
 # GeoIP
 # ---------------------------------------------------------------------------
 # Path to the MaxMind GeoLite2-City mmdb database file. Used by
-# ``bulletins.services.geoip.geo_lookup`` to resolve a client IP to country,
+# ``apps.bulletins.services.geoip.geo_lookup`` to resolve a client IP to country,
 # subdivision, city, and coordinates at each request inflection point.
 # Downloaded by ``bin/fetch-geoip-data`` on deploy and locally (see
-# data/geoip/README.md). Set to None to disable GeoIP lookups (geo_lookup
-# will return None for every IP).
+# reference_data/geoip/README.md). Set to None to disable GeoIP lookups
+# (geo_lookup will return None for every IP).
 #
 # Credentials for downloading the GeoLite2-City database from MaxMind.
 # Obtain a free account at https://www.maxmind.com/en/geolite2/signup.
 # Leave empty to skip the download (local dev without a MaxMind account
 # will still boot — geo fields will simply be empty).
 
-GEOIP_PATH = BASE_DIR / "data" / "geoip" / "GeoLite2-City.mmdb"
+GEOIP_PATH = BASE_DIR / "reference_data" / "geoip" / "GeoLite2-City.mmdb"
 
 MAXMIND_ACCOUNT_ID = config("MAXMIND_ACCOUNT_ID", default="")
 MAXMIND_LICENSE_KEY = config("MAXMIND_LICENSE_KEY", default="")
@@ -539,7 +543,7 @@ MAXMIND_LICENSE_KEY = config("MAXMIND_LICENSE_KEY", default="")
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
-# When True, ``core.middleware.QueryCountMiddleware`` forces the debug
+# When True, ``apps.core.middleware.QueryCountMiddleware`` forces the debug
 # cursor and writes an ``X-DB-Query-Count`` header on every response. Off
 # by default so production pays no cost; development.py and perf.py turn
 # it on so local pages and the ``monitor_query_counts`` command can see
@@ -671,7 +675,7 @@ WAFFLE_CREATE_MISSING_FLAGS = False
 # Account-access token
 # ---------------------------------------------------------------------------
 # Maximum age (in seconds) for account-access tokens verified by
-# accounts/services/token.py.  Defaults to 24 hours.
+# apps/accounts/services/token.py.  Defaults to 24 hours.
 
 ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 
@@ -680,7 +684,7 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 # Favourites (SNOW-413)
 # ---------------------------------------------------------------------------
 # Maximum number of Favourite rows a single user may hold at once, enforced
-# by favourites.services.create_favourite.
+# by apps.favourites.services.create_favourite.
 
 FAVOURITES_MAX_PER_USER = config("FAVOURITES_MAX_PER_USER", default=25, cast=int)
 
@@ -708,8 +712,8 @@ SITE_NAME = "Snowdesk"
 # distinct from a production one — different app name, theme colour, and
 # icon set so the two home-screen icons can be told apart at a glance.
 # Anything other than "production" is treated as a non-production install
-# by the PWA manifest view (``public.views.serve_manifest``) and the site
-# ``<head>`` (``public/templates/public/base.html``).
+# by the PWA manifest view (``apps.public.views.serve_manifest``) and the site
+# ``<head>`` (``apps/public/templates/public/base.html``).
 SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
@@ -763,7 +767,7 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 # ---------------------------------------------------------------------------
 # Changing basemap is a rare, deliberate event, so the vendor URLs live
 # in this catalogue and the env picks a key rather than a raw URL. The
-# resolved catalogue is passed through ``public.views.map_view`` context
+# resolved catalogue is passed through ``apps.public.views.map_view`` context
 # and rendered as one ``<button data-basemap-key data-basemap-url>`` per
 # style inside the ``#basemap-menu`` popover (SNOW-58); the env-resolved
 # default key is rendered as ``data-default-basemap-key`` on ``#map``.
@@ -874,22 +878,22 @@ LOGGING = {
             "level": "ERROR",
             "propagate": False,
         },
-        "core": {
+        "apps.core": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,
         },
-        "regions": {
+        "apps.regions": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,
         },
-        "bulletins": {
+        "apps.bulletins": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,
         },
-        "accounts": {
+        "apps.accounts": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

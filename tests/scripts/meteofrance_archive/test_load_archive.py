@@ -26,9 +26,9 @@ import pytest  # noqa: E402
 from django.core.management import call_command  # noqa: E402
 from load_archive import load_archive as run_loader  # noqa: E402
 
-from bulletins.models import Bulletin, PipelineRun  # noqa: E402
-from bulletins.services.meteofrance_archive_loader import (  # noqa: E402
-    _fixup_envelope,
+from apps.bulletins.models import Bulletin, PipelineRun  # noqa: E402
+from apps.bulletins.services.meteofrance_archive_loader import (  # noqa: E402
+    fixup_envelope,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -48,12 +48,12 @@ def _load_fr_regions(db: object) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _fixup_envelope unit tests (no DB required)
+# fixup_envelope unit tests (no DB required)
 # ---------------------------------------------------------------------------
 
 
 class TestFixupEnvelope:
-    """Unit tests for _fixup_envelope — no database access needed."""
+    """Unit tests for fixup_envelope — no database access needed."""
 
     def test_translates_region_id(self) -> None:
         """regionID is translated from FR-{SLUG} to FR-{NN}."""
@@ -62,7 +62,7 @@ class TestFixupEnvelope:
             "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
-        _fixup_envelope(properties)
+        fixup_envelope(properties)
         regions = properties["regions"]
         assert isinstance(regions, list)
         assert regions[0]["regionID"] == "FR-02"
@@ -74,7 +74,7 @@ class TestFixupEnvelope:
             "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "CHABLAIS", "date": "2026-01-15"}},
         }
-        bulletin_id = _fixup_envelope(properties)
+        bulletin_id = fixup_envelope(properties)
         assert bulletin_id == "FR-01-2026-01-15-20260114160000"
         assert properties["bulletinID"] == "FR-01-2026-01-15-20260114160000"
 
@@ -85,7 +85,7 @@ class TestFixupEnvelope:
             "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "UNKNOWNMASSIF", "date": "2026-01-15"}},
         }
-        result = _fixup_envelope(properties)
+        result = fixup_envelope(properties)
         assert result is None
         assert "bulletinID" not in properties
 
@@ -94,7 +94,7 @@ class TestFixupEnvelope:
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-ARAVIS", "name": "Aravis"}],
         }
-        result = _fixup_envelope(properties)
+        result = fixup_envelope(properties)
         assert result is None
 
     def test_missing_regions_returns_none(self) -> None:
@@ -103,7 +103,7 @@ class TestFixupEnvelope:
             "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
-        result = _fixup_envelope(properties)
+        result = fixup_envelope(properties)
         assert result is None
 
     def test_mont_blanc_region_id(self) -> None:
@@ -113,7 +113,7 @@ class TestFixupEnvelope:
             "publicationTime": "2026-01-19T16:00:00Z",
             "customData": {"MF": {"massif": "MONT-BLANC", "date": "2026-01-20"}},
         }
-        bulletin_id = _fixup_envelope(properties)
+        bulletin_id = fixup_envelope(properties)
         assert bulletin_id == "FR-03-2026-01-20-20260119160000"
 
 

@@ -1,5 +1,5 @@
 """
-tests/core/test_http.py — Tests for core.http.
+tests/core/test_http.py — Tests for apps.core.http.
 
 ``client_ip``: the leftmost-XFF path, multi-hop XFF chains, whitespace
 trimming, missing/empty header fallback to REMOTE_ADDR, and the
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from django.test import RequestFactory
 
-from core.http import client_ip, is_speculative
+from apps.core.http import client_ip, is_speculative
 
 
 class TestClientIp:

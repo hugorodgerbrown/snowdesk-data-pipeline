@@ -13,7 +13,7 @@ event buffer SNOW-385, cached bulletin data) writes to the same
 per-app IndexedDB database, keyed by a small set of long-lived object
 stores.
 
-Loaded on every public page from `public/templates/public/base.html`
+Loaded on every public page from `apps/public/templates/public/base.html`
 as the first PWA script (deferred). Exposes exactly one surface:
 `window.pwaDb`.
 

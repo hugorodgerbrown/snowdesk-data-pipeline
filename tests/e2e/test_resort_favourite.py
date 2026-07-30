@@ -33,8 +33,8 @@ import pytest
 from django.urls import reverse
 from playwright.sync_api import Page
 
-from favourites.models import Favourite
-from favourites.services import create_resort_favourite
+from apps.favourites.models import Favourite
+from apps.favourites.services import create_resort_favourite
 from tests.e2e.conftest import FavouritesPage
 from tests.factories import ResortFactory
 

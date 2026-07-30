@@ -49,11 +49,12 @@ from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 
-from bulletins.models import RegionDayRating
-from bulletins.services.slf_fetcher import BulletinSource
-from observations.models import FieldObservation
-from public import api as public_api
-from regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
+from apps.bulletins.models import RegionDayRating
+from apps.bulletins.services.slf_fetcher import BulletinSource
+from apps.observations.models import FieldObservation
+from apps.public import api as public_api
+from apps.regions.models import Resort
+from apps.regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
 from tests.factories import (
     BulletinGroupingFactory,
     FavouriteFactory,
@@ -232,7 +233,7 @@ def test_ratings_cache_hit_avoids_db_on_second_call() -> None:
     assert resp1.status_code == 200
 
     # Second call — should return from cache without hitting _build_ratings_payload.
-    with patch("public.api._build_ratings_payload") as mock_build:
+    with patch("apps.public.api._build_ratings_payload") as mock_build:
         resp2 = client.get(url)
         assert resp2.status_code == 200
         assert resp2.json() == resp1.json()
@@ -1158,7 +1159,7 @@ def test_region_summary_query_count() -> None:
     pre-warm it before the measured block to keep the assertion deterministic.
     The warm-cache path issues zero additional queries.
     """
-    from bulletins.services.coverage import covered_region_ids
+    from apps.bulletins.services.coverage import covered_region_ids
 
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -1783,7 +1784,7 @@ def test_regions_geojson_query_count() -> None:
     # SNOW-54: pre-warm the coverage cache so the view's covered_region_ids()
     # call is served from cache and the captured query count reflects only the
     # region SELECT (the autouse clear_ratings_cache fixture empties it first).
-    from bulletins.services.coverage import covered_region_ids
+    from apps.bulletins.services.coverage import covered_region_ids
 
     covered_region_ids()
 
@@ -2145,7 +2146,7 @@ def test_groupings_excludes_the_superseded_issue_for_the_day() -> None:
     """Only the bulletin that won the day is drawn, not every one targeting it.
 
     SLF publishes twice daily, and both the morning-of-X issue and the
-    previous evening's satisfy ``_target_day(b) == X``, so both hold a
+    previous evening's satisfy ``target_date == X``, so both hold a
     BulletinGrouping row for X. ``recompute_region_day`` picks one winner per
     region; the endpoint must follow that verdict rather than returning two
     overlapping outlines for the same terrain.
@@ -2229,7 +2230,7 @@ def _stub_get_sources(
 ) -> Callable[[], dict[str, BulletinSource]]:
     """Build a ``get_sources``-shaped callable with one source's latest date fixed.
 
-    Used to control ``bulletins.services.settled.earliest_mutable_date()``'s
+    Used to control ``apps.bulletins.services.settled.earliest_mutable_date()``'s
     result deterministically (see the SNOW-526 plan's sparse-fixture-DB risk
     note) without depending on real ``Bulletin`` rows or seed data.
     """
@@ -2254,7 +2255,7 @@ def _stub_get_sources(
 def test_groupings_settled_date_gets_immutable_long_cache() -> None:
     """A date before the earliest-mutable threshold is public/7d/immutable (SNOW-526)."""
     with patch(
-        "bulletins.services.settled.get_sources",
+        "apps.bulletins.services.settled.get_sources",
         _stub_get_sources(dt.date(2026, 1, 20)),
     ):
         response = Client().get(_groupings_url("2026-01-15"))
@@ -2269,7 +2270,7 @@ def test_groupings_settled_date_gets_immutable_long_cache() -> None:
 def test_groupings_unsettled_date_keeps_short_cache_no_immutable() -> None:
     """A date on/after the threshold keeps the existing public/300s, no immutable."""
     with patch(
-        "bulletins.services.settled.get_sources",
+        "apps.bulletins.services.settled.get_sources",
         _stub_get_sources(dt.date(2026, 1, 10)),
     ):
         response = Client().get(_groupings_url("2026-01-15"))
@@ -2301,7 +2302,7 @@ def test_groupings_boundary_date_is_unsettled() -> None:
     provider's next ingest run could still rewrite it.
     """
     with patch(
-        "bulletins.services.settled.get_sources",
+        "apps.bulletins.services.settled.get_sources",
         _stub_get_sources(dt.date(2026, 1, 15)),
     ):
         response = Client().get(_groupings_url("2026-01-15"))
@@ -2321,7 +2322,7 @@ def test_groupings_cache_hit_avoids_db_on_second_call() -> None:
     resp1 = Client().get(url)
     assert resp1.status_code == 200
 
-    with patch("public.api._build_groupings_payload") as mock_build:
+    with patch("apps.public.api._build_groupings_payload") as mock_build:
         resp2 = Client().get(url)
         assert resp2.status_code == 200
         assert resp2.json() == resp1.json()
@@ -2334,9 +2335,9 @@ def test_groupings_query_count() -> None:
 
     Two queries build the payload: the ``RegionDayRating`` filter and the
     ``select_related`` grouping query. SNOW-526's settled-threshold check
-    (``bulletins.services.settled.earliest_mutable_date()``, one aggregate
+    (``apps.bulletins.services.settled.earliest_mutable_date()``, one aggregate
     per registered ``BulletinSource``) is memoised at the call site
-    (``public.api._cached_earliest_mutable_date``) for 60s, so it must NOT
+    (``apps.public.api._cached_earliest_mutable_date``) for 60s, so it must NOT
     show up here as extra queries on every request — only on a cold memo.
     Warmed explicitly below (a direct call, not an HTTP round trip, so it
     can't also warm the payload cache key this test measures).
@@ -2640,3 +2641,54 @@ class TestCommunityReportsGeojson:
             response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
         assert "no-store" in response.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# kind=RESORT filtering (SNOW-544)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resorts_by_region_excludes_touring_terrain() -> None:
+    """Lift-less touring terrain is not a resort, so it is not listed."""
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    ResortFactory.create(region=region, name="Verbier")
+    ResortFactory.create(
+        region=region, name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN
+    )
+
+    data = Client().get(reverse("api:resorts_by_region")).json()
+    assert data == {"CH-4115": ["Verbier"]}
+
+
+@pytest.mark.django_db
+def test_resorts_by_region_omits_a_region_left_with_no_resorts() -> None:
+    """A region holding only touring terrain drops out entirely.
+
+    The endpoint already omits regions with no resorts; filtering must
+    not leave one behind with an empty list.
+    """
+    region = MicroRegionFactory.create(region_id="CH-1247", slug="ch-1247")
+    ResortFactory.create(
+        region=region, name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN
+    )
+
+    assert Client().get(reverse("api:resorts_by_region")).json() == {}
+
+
+@pytest.mark.django_db
+def test_resorts_geojson_excludes_touring_terrain() -> None:
+    """Drawing touring terrain as a resort pin would claim lifts that don't exist."""
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    ResortFactory.create(region=region, name="Verbier", latitude=46.1, longitude=7.2)
+    ResortFactory.create(
+        region=region,
+        name="Grimsel",
+        latitude=46.57,
+        longitude=8.33,
+        kind=Resort.Kind.TOURING_TERRAIN,
+    )
+
+    data = Client().get(reverse("api:resorts_geojson")).json()
+    names = [f["properties"]["name"] for f in data["features"]]
+    assert names == ["Verbier"]

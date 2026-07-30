@@ -2,7 +2,7 @@
 name: management-commands
 description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-07-23
+last-reviewed: 2026-07-30
 ---
 
 # Management commands
@@ -120,10 +120,59 @@ automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
 from the factories.
 
+### `seed_test_week` — load the "golden week" of real bulletins
+
+`seed_test_data` builds a *navigable* dataset from factories, but it is CH-only,
+uses one date for the map, and rates every map-coverage region `moderate`. That
+makes anything about behaviour **across** days untestable — whether the region
+partition shifts between issues, whether a morning bulletin supersedes the
+previous evening's, whether a past date is genuinely immutable.
+
+`seed_test_week` loads the **golden week** instead: seven consecutive real days
+(Mon 2026-02-09 → Sun 2026-02-15), all three providers, full regional coverage,
+selected from the committed archives under `apps/bulletins/local_mirrors/` (SNOW-528).
+
+```bash
+uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+uv run python manage.py seed_test_week --commit
+```
+
+Nothing is fetched — the full 2025/26 season is already committed and
+git-tracked, so the command needs no network access and no running dev server
+(unlike `fetch_bulletins --local-mirror`, which replays the same archives over
+HTTP and always ends its window at today). Every record goes through the
+production `upsert_bulletin`, so the corpus gets its `RegionBulletin` links,
+`RegionDayRating` rows and `BulletinGrouping` boundaries from the same services
+the live ingest path uses.
+
+Loads roughly 356 bulletins: SLF 144 (morning **and** evening issues on all
+seven days), ALBINA 51 (AT + IT), Météo-France 161. The week was picked for
+structural interest — all five danger levels, and a real mid-week swing
+(considerable → high → very_high on the Thursday and Friday → back down).
+
+It is a **separate command**, not a `seed_test_data --include golden-week`
+layer: `SeedModel` names *models*, whereas the golden week seeds the same models
+from a different *source*, so folding it in would have made
+`--include golden-week bulletin` a contradiction and left `--all` carrying a
+special-case exclusion to protect the [SNOW-13 query-count
+baseline](query-counts.md). Keeping the commands apart makes that baseline safe
+structurally.
+
+Read-only by default (a dry run writes nothing at all, not even a
+`PipelineRun`); `--commit` persists. It refuses to run when `DEBUG=False`, fails
+early with a copy-pasteable `loaddata` line when the region reference data is
+missing, and exits non-zero if any record fails to ingest. Re-running is
+idempotent — `upsert_bulletin` keys on `bulletinID`.
+
+Week selection and per-provider target-day resolution live in
+[`apps/bulletins/services/golden_week.py`](../bulletins/services/golden_week.py); see
+[`decisions/golden-week-derived-not-committed.md`](decisions/golden-week-derived-not-committed.md)
+for why the corpus is derived at seed time rather than committed as a fixture.
+
 ### Region fixtures (auto-loaded on deploy)
 
 `build.sh` and `build_headless.sh` run `loaddata` against all four
-`regions/fixtures/eaws_*.json` files (and `region_aliases.json` on the web
+`apps/regions/fixtures/eaws_*.json` files (and `region_aliases.json` on the web
 service) on every deploy. The operator workflow for a fixture change is
 therefore:
 
@@ -149,7 +198,7 @@ are applied by hand with `import_resorts` (below). Rationale:
 
 `Resort`'s editorial columns (operator, website, elevations, lift/run
 counts, piste length, season dates, curator notes) are curated in a
-spreadsheet, exported to `regions/data/resorts.tsv`. `import_resorts`
+spreadsheet, exported to `apps/regions/data/resorts.tsv`. `import_resorts`
 reconciles the database against it in three modes, all on by default:
 
 | Mode | Effect |
@@ -190,7 +239,7 @@ any deploy.
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
-`core/fixtures/waffle_flags.json` (SNOW-502) by **create + delete
+`apps/core/fixtures/waffle_flags.json` (SNOW-502) by **create + delete
 only** — an existing flag is never edited in place, so an operator's
 live admin-tuned targeting (`superusers`, `everyone`, `percent`, …)
 always survives a re-run. See [`docs/feature-flags.md`](feature-flags.md)
@@ -208,7 +257,7 @@ uv run python manage.py sync_waffle_flags --commit --manifest path/to/flags.json
 ```
 
 Read-only by default; `--commit` persists. `--manifest PATH` overrides
-the default manifest path (`core/fixtures/waffle_flags.json`). Respects
+the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 `--verbosity`. A missing manifest file, malformed JSON, an entry missing
 `name`/`note`, a duplicate `name`, or an unrecognised key all raise a
 `CommandError` (non-zero exit).
@@ -310,6 +359,26 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
+- `backfill_bulletin_target_dates --commit` — one-off post-deploy step
+  after SNOW-560: populates `Bulletin.target_date` for rows that predate
+  the field. `target_date` is normally set inline by `upsert_bulletin` at
+  ingest time (`target_day_for_valid_from(valid_from)`, the same rule
+  `recompute_region_day` uses); this command back-fills historical rows.
+  Read-only by default; pass `--commit` to persist. The queryset
+  (`target_date__isnull=True`) is itself the idempotency mechanism — a
+  second run selects zero rows. Raises `CommandError` and exits non-zero
+  if any row fails to derive a value so cron/CI can detect partial failures.
+
+  ```bash
+  # Dry-run — counts how many bulletins would be populated.
+  uv run python manage.py backfill_bulletin_target_dates
+
+  # Persist (run on Render after deploying SNOW-560).
+  uv run python manage.py backfill_bulletin_target_dates --commit
+  ```
+
+  Flags: `--commit`.
+
 - `fetch_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).
@@ -320,7 +389,7 @@ incident that invalidates derived state:
   region polygons; refixes FKs and rewrites the resort fixture.
 - `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
   anchors every geocoded, unlinked `Resort` to a shared `bulletins.ForecastPoint`
-  via `bulletins.services.forecast_points.resolve_forecast_point` (the same
+  via `apps.bulletins.services.forecast_points.resolve_forecast_point` (the same
   SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
   `ForecastPoint.objects.active()` (favourite-OR-resort) so the scheduled
   `fetch_weather` point pass picks up linked resorts automatically — no
@@ -463,7 +532,7 @@ uv run python manage.py fetch_bulletins --source slf \
 #   python scripts/fetch_albina_archive.py [--start-date YYYY-MM-DD]
 #                                          [--end-date YYYY-MM-DD]
 #                                          [--regions AT-07 IT-32-BZ IT-32-TN]
-#   Overwrites bulletins/local_mirrors/albina_archive.ndjson from the live ALBINA CDN.
+#   Overwrites apps/bulletins/local_mirrors/albina_archive.ndjson from the live ALBINA CDN.
 #   Incremental additions handled by: fetch_bulletins --source albina --stash
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
@@ -492,7 +561,7 @@ uv run python manage.py monitor_query_counts           # CI / local gate
 uv run python manage.py monitor_query_counts --commit  # accept new counts
 
 # Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
-# union of their L4 children. Run after editing regions/fixtures/eaws_CH.json
+# union of their L4 children. Run after editing apps/regions/fixtures/eaws_CH.json
 # (e.g. when EAWS publishes a new season). Read-only by default; --commit
 # to write the consolidated fixture.
 uv run python manage.py refresh_eaws_fixtures           # diff-only
@@ -527,13 +596,13 @@ uv run python manage.py dump_resorts_fixture --commit  # write the fixture
 #   (c) Point outside every polygon — warning; never auto-fixed
 # Exits non-zero when bucket-(b) is non-empty and --commit was not passed.
 # --commit re-FKs bucket-(b) resorts and calls dump_resorts_fixture's
-# writer to refresh regions/fixtures/resorts.json. Then run:
-#   loaddata regions/fixtures/resorts.json
+# writer to refresh apps/regions/fixtures/resorts.json. Then run:
+#   loaddata apps/regions/fixtures/resorts.json
 uv run python manage.py audit_resort_regions           # detect FK drift
 uv run python manage.py audit_resort_regions --commit  # fix FKs + fixture
 
 # Export a CSV of day-character labels and the inputs that feed the
-# five-rule cascade in bulletins.services.render_model.compute_day_character.
+# five-rule cascade in apps.bulletins.services.render_model.compute_day_character.
 # One row per Bulletin. Pure SELECT — defaults to stdout, --output PATH
 # writes a file. Use --lang/--start-date/--end-date to narrow the scan.
 uv run python manage.py export_day_character_csv > dc.csv               # whole archive
@@ -543,7 +612,7 @@ uv run python manage.py export_day_character_csv \
 
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
 
-# Build (or rebuild) regions/fixtures/eaws_CH.json from EAWS source files
+# Build (or rebuild) apps/regions/fixtures/eaws_CH.json from EAWS source files
 # (source: https://gitlab.com/eaws/eaws-regions — CC0):
 #   reference_data/eaws/micro-regions/CH_micro-regions.geojson  — EAWS L4 IDs + geometry
 #   reference_data/eaws/names/de.json                           — EAWS canonical German names
@@ -556,11 +625,11 @@ uv run python manage.py build_switzerland_fixture          # preview only
 uv run python manage.py build_switzerland_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-uv run python manage.py loaddata regions/fixtures/eaws_CH.json
+uv run python manage.py loaddata apps/regions/fixtures/eaws_CH.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
-# Build (or rebuild) regions/fixtures/eaws_FR.json from three source files:
+# Build (or rebuild) apps/regions/fixtures/eaws_FR.json from three source files:
 #   reference_data/eaws/micro-regions/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
 #   reference_data/eaws/names/fr.json (+ en.json)               — EAWS canonical names
 #   reference_data/meteofrance/liste-massifs.geojson            — MF mountain groupings
@@ -570,11 +639,11 @@ uv run python manage.py build_france_fixture          # preview only
 uv run python manage.py build_france_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-uv run python manage.py loaddata regions/fixtures/eaws_FR.json
+uv run python manage.py loaddata apps/regions/fixtures/eaws_FR.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
-# Build (or rebuild) regions/fixtures/eaws_AT.json from vendored EAWS source files
+# Build (or rebuild) apps/regions/fixtures/eaws_AT.json from vendored EAWS source files
 # (source: https://gitlab.com/eaws/eaws-regions — CC0):
 #   reference_data/eaws/micro-regions/AT-02_micro-regions.geojson.json … AT-08_micro-regions.geojson.json
 # Produces 7 L1 MajorRegion (one per Austrian state), N L2 SubRegion, N L4 MicroRegion.
@@ -583,11 +652,11 @@ uv run python manage.py build_austria_fixture          # preview only
 uv run python manage.py build_austria_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-uv run python manage.py loaddata regions/fixtures/eaws_AT.json
+uv run python manage.py loaddata apps/regions/fixtures/eaws_AT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
-# Build (or rebuild) regions/fixtures/eaws_IT.json from vendored EAWS source files
+# Build (or rebuild) apps/regions/fixtures/eaws_IT.json from vendored EAWS source files
 # (source: https://gitlab.com/eaws/eaws-regions — CC0):
 #   reference_data/eaws/micro-regions/IT-21_micro-regions.geojson.json … (7 files)
 # Produces 7 L1 MajorRegion, N L2 SubRegion, N L4 MicroRegion.
@@ -596,7 +665,7 @@ uv run python manage.py build_italy_fixture          # preview only
 uv run python manage.py build_italy_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-uv run python manage.py loaddata regions/fixtures/eaws_IT.json
+uv run python manage.py loaddata apps/regions/fixtures/eaws_IT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 ```
@@ -690,7 +759,7 @@ uv run python manage.py fetch_weather \
 # settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
 uv run python manage.py fetch_weather --local-mirror --commit
 
-# Capture the default window to bulletins/local_mirrors/openmeteo_archive.ndjson.
+# Capture the default window to apps/bulletins/local_mirrors/openmeteo_archive.ndjson.
 uv run python manage.py fetch_weather --stash
 
 # Full-fidelity: persist and stash.
@@ -709,7 +778,7 @@ uv run python manage.py fetch_weather --commit --skip-points
 #   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
 #   --commit                   persist WeatherSnapshot/ForecastPointWeather rows;
 #                              omit for a read-only run
-#   --local-mirror             replay from bulletins/local_mirrors/openmeteo_archive.ndjson
+#   --local-mirror             replay from apps/bulletins/local_mirrors/openmeteo_archive.ndjson
 #                              via the dev-only view (development.py only); the
 #                              active-ForecastPoint pass is skipped under this flag
 #   --delay        SECONDS     seconds between per-region archive calls (default 1.0;

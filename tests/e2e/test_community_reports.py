@@ -9,7 +9,7 @@ needed — unlike favourites, the overlay shows anonymised, publicly-shared
 data with no per-user eligibility gate).
 
 The SNOW-475 test below is signed-in (field reports require
-authentication + a verified account — see ``observations.views._auth_gate``)
+authentication + a verified account — see ``apps.observations.views._auth_gate``)
 and drives the MANUAL location-source path by dispatching
 ``snowdesk:geolocate-error`` directly rather than waiting on a real
 (ungranted) geolocation permission — deterministic in headless Chromium,
@@ -25,7 +25,7 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from observations.models import FieldObservation
+from apps.observations.models import FieldObservation
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory, FieldObservationFactory, UserFactory
 

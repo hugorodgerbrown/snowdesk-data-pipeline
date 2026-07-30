@@ -171,4 +171,4 @@ extraction (SNOW-88).
 If the goal is purely to avoid re-hitting the SLF API for analysis work
 on the data we already have, the existing `--stash` flag on
 `fetch_bulletins` plus the on-disk NDJSON archive in
-`bulletins/services/slf_archive.py` already address that.
+`apps/bulletins/services/slf_archive.py` already address that.

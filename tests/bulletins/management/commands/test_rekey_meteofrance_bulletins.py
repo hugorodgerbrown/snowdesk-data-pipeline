@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from django.core.management import CommandError, call_command
 
-from bulletins.models import Bulletin
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin
+from apps.regions.models import MicroRegion
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 # 2026-02-12T16:00 Paris (CET, UTC+1) → 15:00Z.

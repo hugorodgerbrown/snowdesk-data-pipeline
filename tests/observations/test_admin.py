@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from django.contrib import admin
 
-from observations.admin import FieldObservationAdmin
-from observations.models import FieldObservation
+from apps.observations.admin import FieldObservationAdmin
+from apps.observations.models import FieldObservation
 
 
 class TestFieldObservationAdminRegistration:

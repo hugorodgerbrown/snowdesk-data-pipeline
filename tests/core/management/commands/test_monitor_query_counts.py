@@ -20,7 +20,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from core.management.commands import monitor_query_counts as cmd_module
+from apps.core.management.commands import monitor_query_counts as cmd_module
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ last-reviewed: 2026-07-30
 
 # Rebuild the Météo-France archive
 
-`bulletins/local_mirrors/meteofrance_archive.ndjson` is a **generated artefact**.
+`apps/bulletins/local_mirrors/meteofrance_archive.ndjson` is a **generated artefact**.
 When the extractor in `scripts/meteofrance-archive/` changes, the committed
 NDJSON has to be regenerated or the fix reaches no data.
 

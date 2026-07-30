@@ -32,8 +32,8 @@ from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
-from bulletins.models import Bulletin
-from regions.models import MicroRegion
+from apps.bulletins.models import Bulletin
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -122,7 +122,7 @@ class TestFetchWeatherSnippetForecastPath:
         )
 
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region",
+            "apps.public.views.fetch_weather_for_region",
             lambda *args, **kwargs: (snapshot, True),
         )
 
@@ -153,7 +153,7 @@ class TestFetchWeatherSnippetForecastPath:
             weather_code=1,
         )
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region",
+            "apps.public.views.fetch_weather_for_region",
             lambda *args, **kwargs: (snapshot, False),
         )
 
@@ -190,7 +190,7 @@ class TestFetchWeatherSnippetArchivePath:
         )
 
         monkeypatch.setattr(
-            "public.views.fetch_archive_for_region",
+            "apps.public.views.fetch_archive_for_region",
             lambda *args, **kwargs: [(snapshot, True)],
         )
 
@@ -215,7 +215,7 @@ class TestFetchWeatherSnippetArchivePath:
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
 
         monkeypatch.setattr(
-            "public.views.fetch_archive_for_region",
+            "apps.public.views.fetch_archive_for_region",
             lambda *args, **kwargs: [],
         )
 
@@ -256,7 +256,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
             raise AssertionError("API must not be called")
 
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region", _must_not_be_called
+            "apps.public.views.fetch_weather_for_region", _must_not_be_called
         )
 
         client = Client()
@@ -291,7 +291,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
             raise AssertionError("API must not be called")
 
         monkeypatch.setattr(
-            "public.views.fetch_archive_for_region", _must_not_be_called
+            "apps.public.views.fetch_archive_for_region", _must_not_be_called
         )
 
         client = Client()
@@ -383,7 +383,7 @@ class TestFetchWeatherSnippetFailure:
         today = timezone.localdate()
 
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region",
+            "apps.public.views.fetch_weather_for_region",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 requests.HTTPError("503 Service Unavailable")
             ),
@@ -407,7 +407,7 @@ class TestFetchWeatherSnippetFailure:
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
 
         monkeypatch.setattr(
-            "public.views.fetch_archive_for_region",
+            "apps.public.views.fetch_archive_for_region",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 requests.HTTPError("503 Service Unavailable")
             ),
@@ -440,7 +440,7 @@ class TestFetchWeatherSnippetCsrf:
         today = timezone.localdate()
 
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region",
+            "apps.public.views.fetch_weather_for_region",
             lambda *args, **kwargs: (None, False),
         )
 
@@ -458,7 +458,7 @@ class TestFetchWeatherSnippetCsrf:
         today = timezone.localdate()
 
         monkeypatch.setattr(
-            "public.views.fetch_weather_for_region",
+            "apps.public.views.fetch_weather_for_region",
             lambda *args, **kwargs: (None, False),
         )
 
@@ -609,7 +609,7 @@ class TestBulletinDetailWeatherTrigger:
         def _spy(region: MicroRegion, target_date: Any) -> None:
             calls.append((region.region_id, target_date))
 
-        monkeypatch.setattr("public.views.fetch_weather_async", _spy)
+        monkeypatch.setattr("apps.public.views.fetch_weather_async", _spy)
 
         region = MicroRegionFactory.create(region_id="CH-9001", name="Spy", slug="spy")
         past = timezone.localdate() - timedelta(days=2)
@@ -645,7 +645,7 @@ class TestBulletinDetailWeatherTrigger:
         """Today's page keeps the HTMX path; the async warmup only covers past dates."""
         calls: list = []
         monkeypatch.setattr(
-            "public.views.fetch_weather_async",
+            "apps.public.views.fetch_weather_async",
             lambda *a, **kw: calls.append(a),
         )
 

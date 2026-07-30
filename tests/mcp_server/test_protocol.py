@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_protocol.py — Tests for mcp_server.protocol.
+tests/mcp_server/test_protocol.py — Tests for apps.mcp_server.protocol.
 
 Covers the JSON-RPC 2.0 envelope (every reserved error code), the MCP
 handshake methods (``initialize``, ``notifications/initialized``,
@@ -7,9 +7,9 @@ handshake methods (``initialize``, ``notifications/initialized``,
 ``tools/call``).
 
 The ``tools/call`` section also exercises every ``_handle_*`` adapter in
-``mcp_server.tools`` end-to-end (the dispatcher entry point a real MCP
+``apps.mcp_server.tools`` end-to-end (the dispatcher entry point a real MCP
 client actually calls), plus every argument-validation error branch in
-``mcp_server.tools``'s ``_require_str`` / ``_required_iso_date`` /
+``apps.mcp_server.tools``'s ``_require_str`` / ``_required_iso_date`` /
 ``_optional_iso_date`` helpers — the direct-call tests in
 ``tests/mcp_server/test_tools.py`` only cover the business functions, not
 the adapters that unpack a JSON-RPC ``arguments`` dict into them.
@@ -25,9 +25,9 @@ import pytest
 from django.core.cache import cache
 from freezegun import freeze_time
 
-from bulletins.models import RegionDayRating
-from mcp_server import protocol
-from mcp_server.tools import TOOLS
+from apps.bulletins.models import RegionDayRating
+from apps.mcp_server import protocol
+from apps.mcp_server.tools import TOOLS
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -374,7 +374,7 @@ def test_tools_call_list_resorts_in_region_returns_structured_content() -> None:
 # ---------------------------------------------------------------------------
 #
 # These exercise the _require_str / _required_iso_date / _optional_iso_date
-# helpers in mcp_server.tools via the same tools/call round-trip a real MCP
+# helpers in apps.mcp_server.tools via the same tools/call round-trip a real MCP
 # client uses. A validation failure is a ToolError, so it surfaces as
 # isError=True with the message in content[0]["text"] — not a JSON-RPC
 # protocol-level error.

@@ -3,9 +3,9 @@ tests/e2e/test_offline_bulletin_groupings_cache.py — SNOW-526 Playwright
 coverage: the shell cache only persists a settled bulletin-groupings.geojson
 response.
 
-``public/api.py``'s ``bulletin_groupings_geojson`` sets a date-aware
-``Cache-Control`` (branching on ``public.api._cached_earliest_mutable_date()``
-— a memoised wrapper around ``bulletins.services.settled.
+``apps/public/api.py``'s ``bulletin_groupings_geojson`` sets a date-aware
+``Cache-Control`` (branching on ``apps.public.api._cached_earliest_mutable_date()``
+— a memoised wrapper around ``apps.bulletins.services.settled.
 earliest_mutable_date()``) and ``static/js/sw.js``'s ``_staleWhileRevalidate``
 only writes the shell cache when the response declares itself ``immutable``
 (``shouldPersist()`` in ``static/js/basemap_cache_core.js``, gated by
@@ -33,7 +33,7 @@ Cache Storage, so these tests probe Cache Storage directly (``caches.match``
 ``_probeExact`` uses) rather than inferring persistence from a failed
 network call.
 
-``public.api.earliest_mutable_date`` is monkeypatched directly (rather than
+``apps.public.api.earliest_mutable_date`` is monkeypatched directly (rather than
 seeding ``Bulletin``/``BulletinGrouping`` rows and letting the real fetcher
 registry derive the threshold) so each test controls its settled/unsettled
 outcome deterministically — the registry-derivation logic itself is covered
@@ -45,7 +45,7 @@ persist-gating behaves correctly given whatever the server decides.
 
 ``django.core.cache.cache`` is cleared at the start of each test: unlike the
 ``_load_test_data`` fixture's tests, ``pwa_page`` doesn't clear it, and
-``public.api._cached_earliest_mutable_date()`` memoises the threshold for
+``apps.public.api._cached_earliest_mutable_date()`` memoises the threshold for
 60s (SNOW-526) — without an explicit clear, one test's monkeypatched
 threshold could still be cached when the next test's differently-patched
 fetch runs.
@@ -155,7 +155,9 @@ def test_settled_date_second_fetch_is_served_from_shell_cache(
     makes the resource usable offline.
     """
     cache.clear()
-    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2099, 1, 1))
+    monkeypatch.setattr(
+        "apps.public.api.earliest_mutable_date", lambda: date(2099, 1, 1)
+    )
 
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -200,7 +202,7 @@ def test_unsettled_date_is_not_persisted_to_the_shell_cache(
 
     Both halves run against a SINGLE patched threshold, with the two dates
     straddling it, rather than re-patching between them.
-    ``public.api._cached_earliest_mutable_date()`` memoises the threshold
+    ``apps.public.api._cached_earliest_mutable_date()`` memoises the threshold
     for 60s (SNOW-526), so the first request warms the memo and a later
     re-patch would be ignored — which is exactly how an earlier version of
     this test failed on CI: the negative half was still being classified
@@ -209,7 +211,9 @@ def test_unsettled_date_is_not_persisted_to_the_shell_cache(
     production, where a single boundary classifies every date.
     """
     cache.clear()
-    monkeypatch.setattr("public.api.earliest_mutable_date", lambda: date(2026, 1, 1))
+    monkeypatch.setattr(
+        "apps.public.api.earliest_mutable_date", lambda: date(2026, 1, 1)
+    )
 
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"

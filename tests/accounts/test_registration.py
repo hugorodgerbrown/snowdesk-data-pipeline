@@ -26,9 +26,9 @@ from django.test import Client
 from django.urls import reverse
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Account
-from accounts.services.email import send_verification_email
-from accounts.services.token import (
+from apps.accounts.models import Account
+from apps.accounts.services.email import send_verification_email
+from apps.accounts.services.token import (
     SALT_EMAIL_VERIFICATION,
     generate_token,
     verify_token,
@@ -125,13 +125,15 @@ class TestRegisterView:
         from django.contrib.auth.models import AnonymousUser
         from django.test import RequestFactory
 
-        from accounts.views import register_view
+        from apps.accounts.views import register_view
 
         rf = RequestFactory()
         request = rf.post(self.URL, data={"email": "rl@example.com"})
         request.user = AnonymousUser()
 
-        with patch("accounts.views.get_usage", return_value={"should_limit": True}):
+        with patch(
+            "apps.accounts.views.get_usage", return_value={"should_limit": True}
+        ):
             response = register_view(request)
         assert response.status_code == 429
 

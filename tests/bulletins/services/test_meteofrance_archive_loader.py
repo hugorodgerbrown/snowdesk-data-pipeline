@@ -15,14 +15,14 @@ from typing import Any
 import pytest
 from django.core.management import call_command
 
-from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.meteofrance_archive_loader import (
+from apps.bulletins.models import Bulletin, PipelineRun
+from apps.bulletins.services.meteofrance_archive_loader import (
     LoadResult,
     _slug_to_region_id,
     load_meteofrance_archive,
 )
-from bulletins.services.meteofrance_identity import compact_publication_stamp
-from regions.models import MicroRegion
+from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
+from apps.regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -577,3 +577,38 @@ class TestCollisionReporting:
             "collides" in record.message or "collides" in record.getMessage()
             for record in caplog.records
         )
+
+
+# ---------------------------------------------------------------------------
+# target_date matches customData.MF.date (SNOW-560)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestTargetDateMatchesArchiveDate:
+    """target_date, derived uniformly from valid_from, agrees with the archive.
+
+    SNOW-560 dropped the scoped idea of reading Météo-France's own day field
+    (``customData.MF.date``) at ingest time — it does not exist on
+    live-fetched bulletins, only on this PDF-scraped archive — in favour of
+    deriving target_date from valid_from for every provider via
+    target_day_for_valid_from. This test pins that the derived value still
+    agrees with the archive's own day field for a real MF record.
+
+    This is also the tripwire for SNOW-559: if that ticket ever changes MF's
+    valid_from to the real issue time, a previous-evening issue would shift
+    target_date by a day relative to customData.MF.date, and this test goes
+    red.
+    """
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    def test_target_date_matches_custom_data_mf_date(self) -> None:
+        """The derived target_date equals the archive's customData.MF.date."""
+        load_meteofrance_archive([_ARAVIS_LINE], commit=True)
+
+        bulletin = Bulletin.objects.get()
+        expected = date.fromisoformat(
+            json.loads(_ARAVIS_LINE)["properties"]["customData"]["MF"]["date"]
+        )
+        assert bulletin.target_date == expected

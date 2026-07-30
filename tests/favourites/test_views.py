@@ -1,5 +1,5 @@
 """
-tests/favourites/test_views.py — Tests for favourites.views.
+tests/favourites/test_views.py — Tests for apps.favourites.views.
 
 Covers:
   favourite_create — anonymous → 403; non-HTMX → 400; rate-limited → 429;
@@ -59,7 +59,7 @@ Covers:
                         count.
 
 The Open-Meteo network call is avoided throughout by patching
-``favourites.services.resolve_forecast_point``.
+``apps.favourites.services.resolve_forecast_point``.
 """
 
 from __future__ import annotations
@@ -77,8 +77,8 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
 from freezegun import freeze_time
 
-from bulletins.services.render_model import RENDER_MODEL_VERSION
-from favourites.models import Favourite
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.favourites.models import Favourite
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
@@ -223,12 +223,12 @@ def _create_via_service(
     user: Any, latitude: float = 46.1, longitude: float = 7.4
 ) -> Favourite:
     """Create a Favourite directly via the service, mocking the Open-Meteo call."""
-    from favourites.services import create_favourite  # noqa: PLC0415
+    from apps.favourites.services import create_favourite  # noqa: PLC0415
 
     point = ForecastPointFactory.create(latitude=latitude, longitude=longitude)
     with (
-        patch("favourites.services.resolve_forecast_point", return_value=point),
-        patch("favourites.services.region_for_point", return_value=None),
+        patch("apps.favourites.services.resolve_forecast_point", return_value=point),
+        patch("apps.favourites.services.region_for_point", return_value=None),
     ):
         return create_favourite(user, latitude, longitude)
 
@@ -311,7 +311,7 @@ class TestFavouriteCreateValidation:
         """
         user = UserFactory.create()
         client.force_login(user)
-        with patch("favourites.services.resolve_forecast_point") as mock_resolve:
+        with patch("apps.favourites.services.resolve_forecast_point") as mock_resolve:
             response = client.post(CREATE_URL, {"lat": lat, "lon": lon}, **HTMX_HEADERS)
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
@@ -329,8 +329,10 @@ class TestFavouriteCreateSuccess:
         point = ForecastPointFactory.create()
 
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
                 CREATE_URL,
@@ -364,8 +366,10 @@ class TestFavouriteCreateCap:
 
         point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
         with (
-            patch("favourites.services.resolve_forecast_point", return_value=point),
-            patch("favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
                 CREATE_URL, {"lat": "47.0", "lon": "8.0"}, **HTMX_HEADERS
@@ -409,7 +413,7 @@ class TestFavouriteCreateRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        from favourites.views import favourite_create  # noqa: PLC0415
+        from apps.favourites.views import favourite_create  # noqa: PLC0415
 
         resp = favourite_create(request)
         assert resp.status_code == 429
@@ -508,7 +512,7 @@ class TestFavouriteCreateFromResortRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        from favourites.views import favourite_create_from_resort  # noqa: PLC0415
+        from apps.favourites.views import favourite_create_from_resort  # noqa: PLC0415
 
         resp = favourite_create_from_resort(request)
         assert resp.status_code == 429
@@ -546,7 +550,9 @@ class TestFavouriteCreateFromResortSuccess:
         )
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -564,7 +570,9 @@ class TestFavouriteCreateFromResortSuccess:
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             first = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -594,7 +602,9 @@ class TestFavouriteCreateFromResortCap:
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
         point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -695,7 +705,7 @@ class TestFavouriteResortToggleRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        from favourites.views import favourite_resort_toggle  # noqa: PLC0415
+        from apps.favourites.views import favourite_resort_toggle  # noqa: PLC0415
 
         resp = favourite_resort_toggle(request, resort.pk)
         assert resp.status_code == 429
@@ -715,7 +725,9 @@ class TestFavouriteResortToggleSuccess:
         )
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             first = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
             assert first.status_code == 200
             assert Favourite.objects.filter(user=user, resort=resort).exists()
@@ -742,7 +754,9 @@ class TestFavouriteResortToggleCap:
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
         point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
 
         assert response.status_code == 409
@@ -1339,13 +1353,15 @@ class TestFavouritesGeojson:
 
     def test_resort_id_is_set_for_a_resort_favourite(self, client: Client) -> None:
         """A resort favourite's resort_id property matches the linked Resort (SNOW-499)."""
-        from favourites.services import create_resort_favourite  # noqa: PLC0415
+        from apps.favourites.services import create_resort_favourite  # noqa: PLC0415
 
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
-        with patch("favourites.services.resolve_forecast_point", return_value=point):
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
             create_resort_favourite(user, resort)
 
         response = client.get(GEOJSON_URL)

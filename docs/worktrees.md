@@ -84,7 +84,7 @@ owns the sample favourites.
 | Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier); owns the seeded favourites |
 
 The constants are defined in
-`bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
+`apps/bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
 `NORMAL_USER_EMAIL`, `DEV_USER_PASSWORD`, `SUBSCRIBED_REGION_ID`).
 
 ## Force-reseed procedure
@@ -163,29 +163,56 @@ contains so it can be relied on and extended safely.
 ### Known gaps
 
 The following scenarios are not covered by the seed and require either a
-locally fetched bulletin or additional setup:
+locally fetched bulletin or additional setup. **Most of them are covered by the
+golden week instead** — see [Golden week](#golden-week-real-cross-day-data)
+below:
 
-- ALBINA provider (multi-region, banded elevation danger, split-day)
-- Météo-France provider (massif-level bulletins)
-- High danger ratings (3 Considerable / 4 High / 5 Very high)
+- ALBINA provider (multi-region, banded elevation danger, split-day) —
+  *golden week*
+- Météo-France provider (massif-level bulletins) — *golden week*
+- High danger ratings (3 Considerable / 4 High / 5 Very high) — *golden week*
 - Wet-snow problem days
 - Split-day (morning/afternoon) danger profiles
 - Off-season "no bulletin" regions
 - `regions.RegionAlias` rows (SNOW-409) — the seed is CH-only and does not
   include them; some curated aliases target AT/IT regions that don't exist in a
-  fresh worktree DB at all. To exercise `mcp_server.resolvers.search_places`
+  fresh worktree DB at all. To exercise `apps.mcp_server.resolvers.search_places`
   against the curated aliases (e.g. to reproduce a "Sitten" → CH-4121 style
   query locally), load the EAWS fixtures the alias rows' natural keys depend on
   first:
 
   ```bash
   uv run python manage.py loaddata \
-      regions/fixtures/eaws_CH.json \
-      regions/fixtures/eaws_FR.json \
-      regions/fixtures/eaws_AT.json \
-      regions/fixtures/eaws_IT.json \
-      regions/fixtures/region_aliases.json
+      apps/regions/fixtures/eaws_CH.json \
+      apps/regions/fixtures/eaws_FR.json \
+      apps/regions/fixtures/eaws_AT.json \
+      apps/regions/fixtures/eaws_IT.json \
+      apps/regions/fixtures/region_aliases.json
   ```
+
+### Golden week — real cross-day data
+
+The factory dataset above is deliberately synthetic and CH-only, which makes
+anything about behaviour *across* days untestable. For that, load the **golden
+week** on top: seven consecutive real days (Mon 2026-02-09 → Sun 2026-02-15),
+all three providers, selected from the committed `apps/bulletins/local_mirrors/`
+archives.
+
+```bash
+uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+uv run python manage.py seed_test_week --commit
+```
+
+Roughly 356 bulletins — SLF 144, ALBINA 51 (AT + IT), Météo-France 161 — with
+morning *and* evening SLF issues on every day, all five danger levels, and a
+real mid-week swing up to `very_high` on the Thursday and Friday. Use it when
+testing the scrubber over real dates, the settled/unsettled cache boundary,
+cross-border ALBINA bulletins, or any map design judgement that would otherwise
+be made against a flat `moderate` blob.
+
+It writes to different dates than the factory dataset (February rather than
+April), so the two coexist in one database without colliding. Full command
+reference: [`docs/management-commands.md`](management-commands.md#seed_test_week--load-the-golden-week-of-real-bulletins).
 
 ### Changing the dataset
 
@@ -193,7 +220,7 @@ The dataset shape lives in code, not a committed fixture:
 
 - Bulletin/weather coverage, the CAAML payload template, and the danger
   gradient are the module-level helpers in
-  `bulletins/management/commands/seed_test_data.py`.
+  `apps/bulletins/management/commands/seed_test_data.py`.
 - Row *values* come from the factories in `tests/factories.py`.
 
 After changing either, re-run `monitor_query_counts` (read-only) to verify the

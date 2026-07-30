@@ -1,7 +1,7 @@
 """
 tests/accounts/test_identity.py — the public-facing user identifier (SNOW-549).
 
-Covers ``accounts.identity`` and the ``pwa-user-id`` meta tag it feeds:
+Covers ``apps.accounts.identity`` and the ``pwa-user-id`` meta tag it feeds:
 
 * an authenticated user resolves to ``Account.uuid``, never to the
   sequential ``auth.User`` primary key;
@@ -20,7 +20,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
 from django.test import Client
 
-from accounts.identity import request_identity, user_identity
+from apps.accounts.identity import request_identity, user_identity
 from tests.factories import AccountFactory, UserFactory
 
 _META_RE = re.compile(rb'<meta name="pwa-user-id" content="([^"]*)"')

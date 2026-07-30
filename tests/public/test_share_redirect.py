@@ -24,9 +24,9 @@ from django.test import Client
 from django.urls import reverse
 from pytest_django.fixtures import SettingsWrapper
 
-from bulletins.models import BulletinShareClick
-from core.models import RequestLog
-from public.views import SHARE_CLICK_RATE
+from apps.bulletins.models import BulletinShareClick
+from apps.core.models import RequestLog
+from apps.public.views import SHARE_CLICK_RATE
 from tests.factories import (
     BulletinShareFactory,
     MicroRegionFactory,
@@ -259,7 +259,7 @@ class TestShareLinkClickedAnalytics:
         region = MicroRegionFactory.create(region_id="CH-4115")
         share = BulletinShareFactory.create(region=region)
 
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             client.get(_redirect_url(share.token))
 
         calls = [
@@ -273,7 +273,7 @@ class TestShareLinkClickedAnalytics:
         """The event fires even when the bulletin has been deleted (410 path)."""
         share = BulletinShareFactory.create(bulletin=None)
 
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             client.get(_redirect_url(share.token))
 
         calls = [
@@ -283,7 +283,7 @@ class TestShareLinkClickedAnalytics:
 
     def test_not_fired_on_unknown_token(self, client: Client) -> None:
         """A 404 on an unknown token must not fire the event."""
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             client.get(_redirect_url("doesnotexist"))
 
         calls = [
@@ -295,7 +295,7 @@ class TestShareLinkClickedAnalytics:
         """Anonymous follows use the existing session key or a request-scoped UUID."""
         share = BulletinShareFactory.create()
 
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             client.get(_redirect_url(share.token))
 
         calls = [
@@ -362,7 +362,7 @@ class TestShareRedirectAbuseBounds:
         """
         share = BulletinShareFactory.create()
 
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             response = client.get(
                 _redirect_url(share.token),
                 HTTP_SEC_PURPOSE=sec_purpose,
@@ -407,7 +407,7 @@ class TestShareRedirectAbuseBounds:
         """Positive control — a plain GET is unaffected by any of the above."""
         share = BulletinShareFactory.create()
 
-        with patch("public.views.analytics.track") as mock_track:
+        with patch("apps.public.views.analytics.track") as mock_track:
             response = client.get(_redirect_url(share.token))
 
         assert response.status_code == 302

@@ -28,7 +28,7 @@ from unittest.mock import patch
 import pytest
 from django.test import Client
 
-from accounts.models import PushSubscription
+from apps.accounts.models import PushSubscription
 from tests.factories import AccountFactory, PushSubscriptionFactory, UserFactory
 
 # ---------------------------------------------------------------------------
@@ -339,7 +339,7 @@ class TestPushTest:
             "body": "Test",
             "url": "/",
         }
-        with patch("accounts.push_views.enqueue_push") as mock_enqueue:
+        with patch("apps.accounts.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, body)
         assert response.status_code == 200
         data = response.json()
@@ -354,7 +354,7 @@ class TestPushTest:
             endpoint="https://push.example.com/test-target-2"
         )
         body = {"endpoint": push_sub.endpoint}
-        with patch("accounts.push_views.enqueue_push") as mock_enqueue:
+        with patch("apps.accounts.push_views.enqueue_push") as mock_enqueue:
             response = staff_client.post(
                 _TEST_URL,
                 data=json.dumps(body),
@@ -372,7 +372,7 @@ class TestPushTest:
         """Without endpoint filter, enqueue_push is called once per stored sub."""
         PushSubscriptionFactory.create()
         PushSubscriptionFactory.create()
-        with patch("accounts.push_views.enqueue_push") as mock_enqueue:
+        with patch("apps.accounts.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, {})
         assert response.status_code == 200
         assert mock_enqueue.call_count == 2
@@ -389,7 +389,7 @@ class TestPushTest:
 
         PushSubscriptionFactory.create()
         PushSubscriptionFactory.create(inactive_at=timezone.now())
-        with patch("accounts.push_views.enqueue_push") as mock_enqueue:
+        with patch("apps.accounts.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, {})
         assert response.status_code == 200
         assert mock_enqueue.call_count == 1
@@ -415,7 +415,7 @@ class TestPushRegisterLogging:
         The accounts logger has propagate=False in base.py; we flip it for
         the duration of this test so caplog can capture the records.
         """
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
         staff = UserFactory.create()
         client = Client()
         client.force_login(staff)
@@ -428,7 +428,7 @@ class TestPushRegisterLogging:
             },
         }
 
-        with caplog.at_level(logging.INFO, logger="accounts.push_views"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.push_views"):
             _post_json(client, _REGISTER_URL, body)
 
         all_messages = [r.getMessage() for r in caplog.records]

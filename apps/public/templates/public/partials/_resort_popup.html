@@ -1,0 +1,155 @@
+{% load i18n snowdesk_time %}
+{% comment %}
+apps/public/templates/public/partials/_resort_popup.html — Resort-pin popup
+body.
+
+Server-rendered by ``apps.public.api.resort_popup`` and injected into a
+``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in ``static/js/map.js``
+(SNOW-499). Public endpoint — resorts are a public reference layer, so this
+partial always renders the name/region/metadata content for anonymous
+visitors too. Only the favourite star is gated on authentication
+(``can_favourite``); anonymous visitors see a sign-in CTA in its place
+instead of a hidden control.
+
+Content:
+  1. Resort name (+ alternative/marketing name, when set).
+  2. Parent region name.
+  3. Metadata rows (SNOW-501): operator, website, lifts, runs, piste
+     length, elevation range, typical season. Every row always renders —
+     a blank field shows a dashed-box placeholder rather than being
+     omitted, so missing curation stays visible: the public/non-staff
+     placeholder is an em-dash, the staff placeholder (``is_staff``) is an
+     explicit "Add <field>" hint.
+  4. Either the favourite/unfavourite star (``can_favourite``) or a
+     sign-in CTA.
+  5. "View resort →" CTA linking to the resort's own page (SNOW-504) — the
+     bulletin link itself now lives on that page rather than in the popup.
+
+Context variables expected:
+  resort         — regions.Resort instance.
+  region         — regions.MicroRegion instance (resort.region).
+  favourited     — bool: True when the requesting user already has a
+                   Favourite for this resort.
+  favourite_uuid — str: the existing Favourite's uuid (for unfavourite),
+                   or "" when not favourited.
+  can_favourite  — bool: True when the requesting user is authenticated.
+  signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
+  resort_url     — str: URL to the resort's own page (SNOW-504).
+  is_staff       — bool: True when the requesting user is staff (SNOW-501)
+                   — switches metadata placeholders to curation hints.
+{% endcomment %}
+<div class="flex flex-col gap-2" data-testid="resort-popup" data-resort-id="{{ resort.pk }}">
+    <div>
+        <h2 class="text-sm font-semibold text-text-1">{{ resort.name }}</h2>
+        {% if resort.name_alt %}
+            <p class="text-xs text-text-3">{{ resort.name_alt }}</p>
+        {% endif %}
+    </div>
+    <p class="text-xs text-text-2">{{ region.name }}</p>
+    <div class="flex flex-col gap-1 border-t border-b border-border py-2">
+        {% include "public/partials/_resort_meta_row.html" with label=_("Operator") value=resort.operator_name is_staff=is_staff staff_hint=_("Add operator name") %}
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-text-3">{% trans "Website" %}</span>
+            {% if resort.website %}
+                <a
+                    href="{{ resort.website }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-xs text-status-info-text underline"
+                >{% trans "Official website" %}</a>
+            {% else %}
+                <span
+                    class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                >
+                    {% if is_staff %}
+                        {% trans "Add website" %}
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </span>
+            {% endif %}
+        </div>
+        {% include "public/partials/_resort_meta_row.html" with label=_("Lifts") value=resort.num_lifts|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add lift count") %}
+        {% include "public/partials/_resort_meta_row.html" with label=_("Runs") value=resort.num_runs|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add run count") %}
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-text-3">{% trans "Piste length" %}</span>
+            {% if resort.total_piste_km is not None %}
+                <span class="text-xs text-text-2">{{ resort.total_piste_km|floatformat:"-1" }} km</span>
+            {% else %}
+                <span
+                    class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                >
+                    {% if is_staff %}
+                        {% trans "Add piste length" %}
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </span>
+            {% endif %}
+        </div>
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-text-3">{% trans "Elevation" %}</span>
+            {% if resort.base_elevation_m is not None and resort.top_elevation_m is not None %}
+                <span class="text-xs text-text-2">{{ resort.base_elevation_m }}&ndash;{{ resort.top_elevation_m }}
+                    m</span>
+            {% else %}
+                <span
+                    class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                >
+                    {% if is_staff %}
+                        {% trans "Add elevation range" %}
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </span>
+            {% endif %}
+        </div>
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-text-3">{% trans "Season" %}</span>
+            {% with s_open=resort.typical_season_open|month_day s_close=resort.typical_season_close|month_day %}
+                {% if s_open and s_close %}
+                    <span class="text-xs text-text-2">{{ s_open|date:"j M" }}&ndash;{{ s_close|date:"j M" }}</span>
+                {% else %}
+                    <span
+                        class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                    >
+                        {% if is_staff %}
+                            {% trans "Add typical season" %}
+                        {% else %}
+                            &mdash;
+                        {% endif %}
+                    </span>
+                {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+    {% if can_favourite %}
+        <button
+            type="button"
+            data-resort-star
+            data-resort-id="{{ resort.pk }}"
+            data-resort-name="{{ resort.name }}"
+            data-resort-lat="{{ resort.latitude|default:'' }}"
+            data-resort-lon="{{ resort.longitude|default:'' }}"
+            data-favourited="{{ favourited|yesno:'true,false' }}"
+            data-favourite-uuid="{{ favourite_uuid }}"
+            aria-pressed="{{ favourited|yesno:'true,false' }}"
+            class="flex items-center gap-2 self-start rounded-pill border border-border px-3 py-1.5 text-sm font-medium text-text-1 hover:border-text-2"
+        >
+            <span aria-hidden="true">{% if favourited %}★{% else %}☆{% endif %}</span>
+            {% if favourited %}
+                {% trans "Saved" %}
+            {% else %}
+                {% trans "Save resort" %}
+            {% endif %}
+        </button>
+    {% else %}
+        <a
+            href="{{ signin_url }}"
+            class="self-start text-sm font-medium text-status-info-text underline"
+        >
+            {% trans "Sign in to save this resort" %}
+        </a>
+    {% endif %}
+    {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" size="compact" %}
+</div>

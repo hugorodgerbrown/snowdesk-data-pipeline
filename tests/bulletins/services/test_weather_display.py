@@ -22,8 +22,8 @@ from datetime import UTC
 
 import pytest
 
-from bulletins.models import WeatherSnapshot
-from bulletins.services.weather_display import (
+from apps.bulletins.models import WeatherSnapshot
+from apps.bulletins.services.weather_display import (
     DEFAULT_BUCKET,
     DEFAULT_ICON_BUCKET,
     WEATHER_BUCKETS,

@@ -18,26 +18,29 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 
 ```
 config/          Django project settings (split base/development/production)
-core/            Shared abstractions (BaseModel; abstract, no concrete tables),
+apps/            Parent package for the nine Django apps (SNOW-557 — moved
+                 here without changing any app label; see
+                 docs/decisions/ for the why)
+  core/          Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware and the monitor_query_counts command
-regions/         Geographic reference data — MicroRegion / MajorRegion /
+  regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures) and the
                  curated resort sheet + its import_resorts command
-bulletins/       Everything that originates from provider APIs — the models
+  bulletins/     Everything that originates from provider APIs — the models
                  (Bulletin, RegionBulletin, PipelineRun, RegionDayRating,
                  WeatherSnapshot, …), the per-provider fetchers/translators
                  and render-model services under services/, the ingestion
                  commands (see docs/management-commands.md), and their admin
                  classes
-accounts/        Signed-token subscription flow (see docs/accounts.md);
+  accounts/      Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Subscriber`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself) and ``PasskeyCredential`` (FK
                  to auth.User — any authenticated user can register passkeys)
-public/          Public-facing bulletin site
-  api.py         Plain JsonResponse endpoints consumed by the map page
-  api_urls.py    URL routing for /api/ (namespace: api:)
-  debug_views.py Staff-only design-debug pages (mounted at /debug/* when DEBUG=True)
+  public/        Public-facing bulletin site
+    api.py       Plain JsonResponse endpoints consumed by the map page
+    api_urls.py  URL routing for /api/ (namespace: api:)
+    debug_views.py Staff-only design-debug pages (mounted at /debug/* when DEBUG=True)
 templates/       Project-level templates shared across apps
   includes/      Reusable partials (bulletin_header.html, nav.html, …)
 src/             Tailwind CSS source (main.css — not served directly)
@@ -45,7 +48,7 @@ static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
 
-The `bulletins/` ↔ `regions/` split is deliberate — rationale in
+The `apps/bulletins/` ↔ `apps/regions/` split is deliberate — rationale in
 [`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md).
 
 ## Running locally
@@ -132,7 +135,7 @@ These are correct as written; reporting them as bugs is a false positive.
 - **`except A, B:` (comma-separated, no parentheses) is valid Python 3.14
   syntax** ([PEP 758](https://peps.python.org/pep-0758/)), equivalent to
   `except (A, B):`. This project pins Python 3.14 and uses the form
-  deliberately (e.g. `favourites/views.py`, `regions/services/point_match.py`).
+  deliberately (e.g. `apps/favourites/views.py`, `apps/regions/services/point_match.py`).
   It is **not** Python 2 syntax and **not** a `SyntaxError` — do not report it
   or "fix" it to the parenthesised form. (A `SyntaxError` from this line means
   something invoked the system Python 3.9, not the project interpreter; run
@@ -169,15 +172,15 @@ point, so don't skip pieces for "simple" models:
 Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
 via the `fetch_bulletins` command.
 
-- **SLF** (`bulletins/services/slf_fetcher.py`) — paginated CAAML list API,
+- **SLF** (`apps/bulletins/services/slf_fetcher.py`) — paginated CAAML list API,
   no auth, no date filter:
   `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`.
   Reverse-chronological; the pipeline pages until it passes the start-date
   boundary. Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
-- **ALBINA** (`bulletins/services/albina_fetcher.py`) — EUREGIO
+- **ALBINA** (`apps/bulletins/services/albina_fetcher.py`) — EUREGIO
   avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
   IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
-- **Météo-France** (`bulletins/services/meteofrance_fetcher.py`,
+- **Météo-France** (`apps/bulletins/services/meteofrance_fetcher.py`,
   `meteofrance_translator.py`) — DPBRA XML per massif behind an API key
   (`METEOFRANCE_API_KEY`), translated to the CAAML v6 shape that
   `upsert_bulletin` expects
@@ -192,6 +195,16 @@ cases (A single-level, B structurally-enhanced, C split-day multi-problem)
 per provider, each with a README, enforced by a round-trip test. Read a
 sentinel before reasoning about any provider's payload shape; don't trust
 prose descriptions of the schema.
+
+A full 2025/26 season for all three providers is committed under
+`apps/bulletins/local_mirrors/*.ndjson` (~30 MB, git-tracked) — written by
+`fetch_bulletins --stash` and replayed by the dev-mirror views. For testing
+behaviour **across** days, load the *golden week* from it with
+`seed_test_week --commit`: seven consecutive real days, all three providers,
+morning and evening issues, a real danger swing
+([`docs/decisions/golden-week-derived-not-committed.md`](docs/decisions/golden-week-derived-not-committed.md)).
+Don't replay sentinels onto a shared date to simulate a day — that manufactures
+region overlaps that cannot occur upstream.
 
 ## Management command design
 
@@ -238,15 +251,15 @@ URL and fails a page that is in neither state
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
 - Partial/fragment views return only the inner HTML snippet; they are routed under
-  `public/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
+  `apps/public/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 
 ## Design system
 
 The canonical reference is the staff-only **component library at `/_components/`**
-(source: [`public/design_tokens.py`](public/design_tokens.py), variant fixtures in
-[`public/_component_fixtures.py`](public/_component_fixtures.py)). Read it before
+(source: [`apps/public/design_tokens.py`](apps/public/design_tokens.py), variant fixtures in
+[`apps/public/_component_fixtures.py`](apps/public/_component_fixtures.py)). Read it before
 adding any new visual surface. Rules for any change that adds or touches
 templates — enforced by `bin/ds-lint` (`tox -e ds-lint`, and the `lint-guards`
 CI workflow), which blocks every PR that introduces a violation:
@@ -406,6 +419,9 @@ Read these when working in the relevant area:
 |------|-----|
 | Domain term → code symbol map | [`docs/glossary.md`](docs/glossary.md) |
 | Accepted architectural decisions | [`docs/decisions/`](docs/decisions/) |
+| Coding standards (repo layout, style, model/service/view/test conventions) | [`docs/coding-standards.md`](docs/coding-standards.md) |
+| Bulletin page design handover (tokens, WhiteRisk replicate-then-subtract plan) | [`docs/design-system.md`](docs/design-system.md) |
+| Site structure (routes, AI-generated summary fields) | [`docs/site-structure.md`](docs/site-structure.md) |
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
@@ -446,4 +462,4 @@ Read these when working in the relevant area:
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk.info; server is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |
-| Worktree DB seeding, dev credentials, seed_test_data dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |
+| Worktree DB seeding, dev credentials, seed_test_data + seed_test_week (golden week) dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |

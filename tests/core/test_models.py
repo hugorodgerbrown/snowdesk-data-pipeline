@@ -1,5 +1,5 @@
 """
-tests/core/test_models.py — Tests for the core.models.RequestLog concrete model.
+tests/core/test_models.py — Tests for the apps.core.models.RequestLog concrete model.
 
 Covers factory creation, to_string() format, anonymise() field clearing,
 default ordering, and the from_request() manager method (end-to-end capture
@@ -13,8 +13,8 @@ from unittest.mock import patch
 import pytest
 from django.test import RequestFactory
 
-from bulletins.services.geoip import GeoLookup
-from core.models import RequestLog
+from apps.bulletins.services.geoip import GeoLookup
+from apps.core.models import RequestLog
 from tests.factories import AccountFactory, RequestLogFactory
 
 
@@ -150,7 +150,7 @@ class TestRequestLogFromRequest:
         anon = type("U", (), {"is_authenticated": False})()
         request.user = anon  # noqa: PGH003 — synthetic minimal user object
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = RequestLog.objects.from_request(request)
 
         assert str(log.ip_address) == "203.0.113.5"
@@ -163,7 +163,7 @@ class TestRequestLogFromRequest:
         request.session = type("S", (), {"session_key": "y"})()
         request.user = account.user  # noqa: PGH003 — auth.User is request.user
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=None):
             log = RequestLog.objects.from_request(request)
 
         assert log.account_id == account.pk
@@ -183,7 +183,7 @@ class TestRequestLogFromRequest:
         anon = type("U", (), {"is_authenticated": False})()
         request.user = anon  # noqa: PGH003 — synthetic minimal user object
 
-        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+        with patch("apps.bulletins.services.geoip.geo_lookup", return_value=geo):
             log = RequestLog.objects.from_request(request)
 
         assert log.country_code == "FR"

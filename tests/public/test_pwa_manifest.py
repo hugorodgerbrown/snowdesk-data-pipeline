@@ -10,7 +10,7 @@ the home page and keeps every public path inside the standalone window
 ``/map/``). SNOW-118 added the manifest-polish fields (``id``, ``lang``,
 ``description``, ``categories``, ``screenshots``) that drive Chrome's
 rich install dialog and app-listing metadata, and migrated the manifest
-from a static file to ``public.views.serve_manifest`` so identity URLs
+from a static file to ``apps.public.views.serve_manifest`` so identity URLs
 can be rendered absolute against ``settings.SITE_BASE_URL``.
 
 Tests fetch the manifest over HTTP via the test ``Client`` so the

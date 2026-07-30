@@ -2,7 +2,7 @@
 
 Without these head tags, "Add to Home Screen" on an iPhone produces a
 screenshot icon and a non-standalone Safari window. The tags are emitted
-from ``public/templates/public/base.html`` so every public page that
+from ``apps/public/templates/public/base.html`` so every public page that
 extends ``base.html`` carries them — these tests sample the home page
 since every public route inherits the same ``<head>``.
 

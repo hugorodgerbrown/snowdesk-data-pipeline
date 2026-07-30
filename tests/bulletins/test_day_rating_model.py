@@ -21,7 +21,7 @@ import pytest
 from django.contrib import admin
 from django.db import IntegrityError
 
-from bulletins.models import RegionDayRating
+from apps.bulletins.models import RegionDayRating
 from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 

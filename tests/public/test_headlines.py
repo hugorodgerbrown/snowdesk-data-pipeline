@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from bulletins.services.render_model import derive_problem_family
-from public.headlines import HEADLINE_MATRIX_VERSION, headline_for
+from apps.bulletins.services.render_model import derive_problem_family
+from apps.public.headlines import HEADLINE_MATRIX_VERSION, headline_for
 
 # ---------------------------------------------------------------------------
 # Helpers

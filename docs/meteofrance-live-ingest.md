@@ -157,12 +157,12 @@ live path.
 
 ## Implementation notes
 
-- **`bulletins/services/meteofrance_fetcher.py`** — HTTP/local-mirror
+- **`apps/bulletins/services/meteofrance_fetcher.py`** — HTTP/local-mirror
   fetch, pipeline orchestration, stash writer, `latest_meteofrance_date`.
-- **`bulletins/services/meteofrance_translator.py`** — pure DPBRA XML →
+- **`apps/bulletins/services/meteofrance_translator.py`** — pure DPBRA XML →
   CAAML JSON translator; no I/O. Raises `MeteoFranceDelegatedRegionError`
   or `MeteoFranceTranslationError` on bad input.
-- **`bulletins/services/meteofrance_massifs.py`** — static massif-ID
+- **`apps/bulletins/services/meteofrance_massifs.py`** — static massif-ID
   catalogue (mirrors `METEOFRANCE_MASSIF_IDS`).
 - **Regression tests** — `tests/bulletins/services/test_meteofrance_fetcher.py`
   covers HTTP paths, local-mirror, delegated-region skip, idempotency,

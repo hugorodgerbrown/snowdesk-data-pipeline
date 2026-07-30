@@ -1,7 +1,7 @@
 """
 tests/bulletins/test_albina_mirror.py — Tests for the ALBINA dev mirror view.
 
-The mirror replays ``bulletins/local_mirrors/albina_archive.ndjson`` with the
+The mirror replays ``apps/bulletins/local_mirrors/albina_archive.ndjson`` with the
 same URL shape as the ALBINA CDN so that ``fetch_albina_bulletins
 --source local-mirror`` can run end-to-end without network access.
 

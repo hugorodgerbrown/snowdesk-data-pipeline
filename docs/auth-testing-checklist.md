@@ -8,7 +8,7 @@ last-reviewed: 2026-07-24
 # Login / Logout Testing Checklist — Snowdesk
 
 A tick-box script for manually exercising every authentication journey in the
-`accounts/` app (mounted at `/account/`). Complements the scenario tables in
+`apps/accounts/` app (mounted at `/account/`). Complements the scenario tables in
 [`testing-scenarios.md`](testing-scenarios.md); this doc is auth-focused and
 covers the sign-in methods, registration, password reset, and email change that
 the scenario doc does not.

@@ -2,7 +2,7 @@
 # bin/sw-version — Service-worker shell cache-version tool (SNOW-517).
 #
 # Single source of truth for static/js/sw.js's hand-bumped CACHE_VERSION
-# constant. Wraps core/sw_shell.py (pure Python, no Django) — see that
+# constant. Wraps apps/core/sw_shell.py (pure Python, no Django) — see that
 # module's docstring for the content-hash / chicken-and-egg approach that
 # decides whether a bump is owed.
 #
@@ -25,7 +25,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from core.sw_shell import (  # noqa: E402 — sys.path must be set up first
+from apps.core.sw_shell import (  # noqa: E402 — sys.path must be set up first
     bump_owed,
     compute_shell_hash,
     next_version,

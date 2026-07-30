@@ -28,7 +28,7 @@ on days where conditions deteriorate in the afternoon.
 
 ## How peak is computed
 
-`bulletins/services/day_rating.py` — `recompute_region_day` — implements the
+`apps/bulletins/services/day_rating.py` — `recompute_region_day` — implements the
 split logic:
 
 1. A single authoritative bulletin is selected for each (region, calendar day)
@@ -56,13 +56,13 @@ SNOW-252 regression fixture; see
 
 | Surface | Where | Field read |
 |---------|-------|------------|
-| Map choropleth | `public/api.py` `_build_ratings_payload` | `max_rating` via `_RATING_TO_INT` |
-| Map tooltip (region summary chip) | `public/api.py` `region_summary` → `public/templates/public/_region_tooltip.html` | `day_rating.max_rating` |
-| Season-trend calendar tiles | `public/season_calendar.py` `build_season_grid` → `public/templates/public/partials/_season_calendar.html` | `rdr.max_rating` as `max_rating_key` |
+| Map choropleth | `apps/public/api.py` `_build_ratings_payload` | `max_rating` via `_RATING_TO_INT` |
+| Map tooltip (region summary chip) | `apps/public/api.py` `region_summary` → `apps/public/templates/public/_region_tooltip.html` | `day_rating.max_rating` |
+| Season-trend calendar tiles | `apps/public/season_calendar.py` `build_season_grid` → `apps/public/templates/public/partials/_season_calendar.html` | `rdr.max_rating` as `max_rating_key` |
 
 ## Explicit exclusion
 
-**Bulletin detail page hero** (`public/views.py` `bulletin_view`) — unchanged
+**Bulletin detail page hero** (`apps/public/views.py` `bulletin_view`) — unchanged
 by SNOW-252. The hero is a full-detail view that displays the complete
 morning-and-afternoon breakdown (SNOW-246), not a compressed single chip.
 
@@ -78,7 +78,7 @@ inline from `upsert_bulletin` after each ingest). The same function:
    `make_template_fragment_key("season_calendar", ...)` in
    `apply_bulletin_day_ratings`).
 
-The `ratings` endpoint at `public/api.py` uses a 5-minute server-side
+The `ratings` endpoint at `apps/public/api.py` uses a 5-minute server-side
 `cache.get_or_set` keyed on `(country, date)`. After a new bulletin lands the
 choropleth colour is stale for at most 5 minutes; the season calendar is
 invalidated immediately.

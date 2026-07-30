@@ -17,13 +17,13 @@ import factory
 from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
-from accounts.models import (
+from apps.accounts.models import (
     Account,
     PasskeyCredential,
     PushSubscription,
     Subscription,
 )
-from bulletins.models import (
+from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
     BulletinShare,
@@ -35,23 +35,26 @@ from bulletins.models import (
     RegionDayRating,
     WeatherSnapshot,
 )
-from bulletins.services.day_rating import DAY_RATING_VERSION
-from bulletins.services.forecast_points import (
+from apps.bulletins.services.day_rating import (
+    DAY_RATING_VERSION,
+    target_day_for_valid_from,
+)
+from apps.bulletins.services.forecast_points import (
     quantise_elevation,
     quantise_lat,
     quantise_lon,
 )
-from core.models import RequestLog
-from favourites.models import Favourite
-from observations.models import FieldObservation
-from regions.models import (
+from apps.core.models import RequestLog
+from apps.favourites.models import Favourite
+from apps.observations.models import FieldObservation
+from apps.regions.models import (
     MajorRegion,
     MicroRegion,
     RegionAlias,
     Resort,
     SubRegion,
 )
-from regions.services.basemap_tiles import MICRO_BAND, build_blob
+from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 
 # A small representative Alpine bbox (roughly Valais) used as
 # MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework
@@ -207,6 +210,9 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     issued_at = factory.Faker("date_time_this_year", tzinfo=UTC)
     valid_from = factory.LazyAttribute(lambda obj: obj.issued_at)
     valid_to = factory.LazyAttribute(lambda obj: obj.issued_at)
+    target_date = factory.LazyAttribute(
+        lambda obj: target_day_for_valid_from(obj.valid_from)
+    )
     lang = "en"
     unscheduled = False
     pipeline_run = factory.SubFactory(PipelineRunFactory)
@@ -539,7 +545,9 @@ class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping
         model = BulletinGrouping
 
     bulletin = factory.SubFactory(BulletinFactory)
-    target_date = factory.LazyFunction(lambda: datetime.date(2026, 1, 15))
+    target_date = factory.LazyAttribute(
+        lambda obj: target_day_for_valid_from(obj.bulletin.valid_from)
+    )
     boundary = factory.LazyFunction(
         lambda: {
             "type": "Polygon",

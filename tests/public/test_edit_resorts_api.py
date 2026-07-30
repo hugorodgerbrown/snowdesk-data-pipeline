@@ -30,8 +30,8 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from waffle.testutils import override_flag
 
-from regions.forms import RESORT_DETAIL_FIELDS
-from regions.models import Resort
+from apps.regions.forms import RESORT_DETAIL_FIELDS
+from apps.regions.models import Resort
 from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
 
 # ---------------------------------------------------------------------------
@@ -1064,13 +1064,13 @@ class TestPointInPolygon:
 
     def test_point_inside_polygon_returns_true(self) -> None:
         """A point clearly inside the outer ring is reported as inside."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         assert _point_in_polygon(lat=5.0, lon=5.0, polygon=self.SQUARE) is True
 
     def test_point_outside_polygon_returns_false(self) -> None:
         """A point clearly outside the outer ring is reported as outside."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         assert _point_in_polygon(lat=20.0, lon=20.0, polygon=self.SQUARE) is False
 
@@ -1079,7 +1079,7 @@ class TestPointInPolygon:
         A point inside a hole is reported as outside — the standard
         ray-cast over all rings flips parity correctly for holes.
         """
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         assert (
             _point_in_polygon(lat=5.0, lon=5.0, polygon=self.SQUARE_WITH_HOLE) is False
@@ -1087,7 +1087,7 @@ class TestPointInPolygon:
 
     def test_point_outside_hole_but_inside_outer_returns_true(self) -> None:
         """A point inside the outer ring but outside the hole is inside."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         assert (
             _point_in_polygon(lat=2.0, lon=2.0, polygon=self.SQUARE_WITH_HOLE) is True
@@ -1095,7 +1095,7 @@ class TestPointInPolygon:
 
     def test_empty_polygon_returns_false(self) -> None:
         """A degenerate polygon with no rings is treated as empty."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         assert (
             _point_in_polygon(
@@ -1106,7 +1106,7 @@ class TestPointInPolygon:
 
     def test_multipolygon_single_member_point_inside(self) -> None:
         """A MultiPolygon with one member behaves like the equivalent Polygon."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         multi = {
             "type": "MultiPolygon",
@@ -1118,7 +1118,7 @@ class TestPointInPolygon:
 
     def test_multipolygon_single_member_point_outside(self) -> None:
         """A point outside the only member of a MultiPolygon returns False."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         multi = {
             "type": "MultiPolygon",
@@ -1130,7 +1130,7 @@ class TestPointInPolygon:
 
     def test_multipolygon_point_inside_second_member(self) -> None:
         """A point inside the second (disjoint) member of a MultiPolygon returns True."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         # Two disjoint squares: [0..10]×[0..10] and [20..30]×[20..30].
         multi = {
@@ -1153,7 +1153,7 @@ class TestPointInPolygon:
 
     def test_multipolygon_point_outside_all_members(self) -> None:
         """A point outside every member of a MultiPolygon returns False."""
-        from public.api import _point_in_polygon
+        from apps.public.api import _point_in_polygon
 
         multi = {
             "type": "MultiPolygon",
@@ -1186,19 +1186,19 @@ class TestBboxOfPolygon:
 
     def test_polygon_returns_correct_bbox(self) -> None:
         """Bbox of the unit square is (0, 0, 10, 10)."""
-        from public.api import _bbox_of_polygon
+        from apps.public.api import _bbox_of_polygon
 
         assert _bbox_of_polygon(self.SQUARE) == (0.0, 0.0, 10.0, 10.0)
 
     def test_empty_polygon_returns_none(self) -> None:
         """A Polygon with empty coordinates returns None."""
-        from public.api import _bbox_of_polygon
+        from apps.public.api import _bbox_of_polygon
 
         assert _bbox_of_polygon({"type": "Polygon", "coordinates": []}) is None
 
     def test_multipolygon_single_member_matches_polygon(self) -> None:
         """A MultiPolygon with one member gives the same bbox as the Polygon."""
-        from public.api import _bbox_of_polygon
+        from apps.public.api import _bbox_of_polygon
 
         multi = {
             "type": "MultiPolygon",
@@ -1210,7 +1210,7 @@ class TestBboxOfPolygon:
 
     def test_multipolygon_multiple_members_enclosing_bbox(self) -> None:
         """Bbox of a MultiPolygon spans all member polygons."""
-        from public.api import _bbox_of_polygon
+        from apps.public.api import _bbox_of_polygon
 
         # Two disjoint squares: [0..10]×[0..10] and [20..30]×[20..30].
         multi = {
@@ -1240,7 +1240,7 @@ class TestRegionForPoint:
 
     def test_finds_containing_region(self) -> None:
         """Returns the region whose polygon contains the test point."""
-        from public.api import _region_for_point
+        from apps.public.api import _region_for_point
 
         target = MicroRegionFactory.create(
             region_id="CH-A",
@@ -1265,7 +1265,7 @@ class TestRegionForPoint:
 
     def test_returns_none_outside_every_region(self) -> None:
         """Returns ``None`` when the point falls in no coverage."""
-        from public.api import _region_for_point
+        from apps.public.api import _region_for_point
 
         MicroRegionFactory.create(
             region_id="CH-X",
@@ -1280,7 +1280,7 @@ class TestRegionForPoint:
 
     def test_skips_regions_without_boundary(self) -> None:
         """Regions with ``boundary=None`` are excluded from the lookup."""
-        from public.api import _region_for_point
+        from apps.public.api import _region_for_point
 
         MicroRegionFactory.create(region_id="CH-NOBOUND", boundary=None)
         assert _region_for_point(lat=46.5, lon=7.5) is None

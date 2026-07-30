@@ -24,8 +24,8 @@ from typing import Any
 
 import pytest
 
-from bulletins.services.meteofrance_translator import parse_dpbra_xml
-from bulletins.services.render_model import build_render_model
+from apps.bulletins.services.meteofrance_translator import parse_dpbra_xml
+from apps.bulletins.services.render_model import build_render_model
 
 SENTINELS_DIR = Path(__file__).resolve().parent
 

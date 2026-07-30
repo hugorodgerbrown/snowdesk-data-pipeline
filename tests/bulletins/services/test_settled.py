@@ -1,7 +1,7 @@
 """
 tests/bulletins/services/test_settled.py — Cover the settled-date boundary.
 
-Exercises ``bulletins.services.settled.earliest_mutable_date`` /
+Exercises ``apps.bulletins.services.settled.earliest_mutable_date`` /
 ``is_settled`` against a patched ``get_sources()`` registry (per the risk
 note in the SNOW-526 plan: sparse fixture DBs make ``min()`` across real
 sources drag the threshold to ``SEASON_START_DATE``, so these tests build a
@@ -20,9 +20,9 @@ import pytest
 from django.test import override_settings
 from django.utils import timezone
 
-from bulletins.management.commands.fetch_bulletins import Command
-from bulletins.services.settled import earliest_mutable_date, is_settled
-from bulletins.services.slf_fetcher import BulletinSource, get_sources
+from apps.bulletins.management.commands.fetch_bulletins import Command
+from apps.bulletins.services.settled import earliest_mutable_date, is_settled
+from apps.bulletins.services.slf_fetcher import BulletinSource, get_sources
 
 _TODAY = date(2026, 4, 16)
 _SEASON_START = date(2025, 11, 1)
@@ -62,22 +62,22 @@ class TestEarliestMutableDate:
     """Cover ``earliest_mutable_date()`` across empty, populated, and mixed registries."""
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_all_sources_empty_falls_back_to_season_start(
         self, mock_localdate: object
     ) -> None:
         """No source has a bulletin: the whole season is still mutable."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=None, ALBINA=None, METEOFRANCE=None),
         ):
             assert earliest_mutable_date() == _SEASON_START
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_takes_minimum_across_sources(self, mock_localdate: object) -> None:
         """The earliest of the per-source latest dates wins."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(
                 SLF=date(2026, 4, 10),
                 ALBINA=date(2026, 4, 5),
@@ -86,22 +86,22 @@ class TestEarliestMutableDate:
         ):
             assert earliest_mutable_date() == date(2026, 4, 5)
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_none_sources_contribute_no_constraint(
         self, mock_localdate: object
     ) -> None:
         """A source with no rows yet is ignored, not treated as the minimum."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=date(2026, 4, 10), ALBINA=None),
         ):
             assert earliest_mutable_date() == date(2026, 4, 10)
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_capped_at_today(self, mock_localdate: object) -> None:
         """A source's latest date in the future never pushes past today."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=_TODAY + timedelta(days=3)),
         ):
             assert earliest_mutable_date() == _TODAY
@@ -110,31 +110,31 @@ class TestEarliestMutableDate:
 class TestIsSettled:
     """Cover ``is_settled()`` against a fixed threshold."""
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_date_before_threshold_is_settled(self, mock_localdate: object) -> None:
         """A day strictly before the threshold is settled."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=date(2026, 4, 10)),
         ):
             assert is_settled(date(2026, 4, 9)) is True
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_date_equal_to_threshold_is_not_settled(
         self, mock_localdate: object
     ) -> None:
         """The boundary date itself is still mutable (the regression that matters)."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=date(2026, 4, 10)),
         ):
             assert is_settled(date(2026, 4, 10)) is False
 
-    @patch("bulletins.services.settled.timezone.localdate", return_value=_TODAY)
+    @patch("apps.bulletins.services.settled.timezone.localdate", return_value=_TODAY)
     def test_date_after_threshold_is_not_settled(self, mock_localdate: object) -> None:
         """A day after the threshold is not settled."""
         with patch(
-            "bulletins.services.settled.get_sources",
+            "apps.bulletins.services.settled.get_sources",
             _patched_sources(SLF=date(2026, 4, 10)),
         ):
             assert is_settled(date(2026, 4, 11)) is False

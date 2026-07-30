@@ -1,7 +1,7 @@
 """
 tests/regions/test_region_aliases_fixture.py — SNOW-409 fixture integrity guard.
 
-Reads ``regions/fixtures/region_aliases.json`` and the four ``eaws_*.json``
+Reads ``apps/regions/fixtures/region_aliases.json`` and the four ``eaws_*.json``
 fixtures directly as JSON — no Django, no database — and checks that every
 alias row's ``region`` natural key resolves to a MicroRegion actually
 present in the committed EAWS fixtures, and that no ``(region, alias_text)``
@@ -16,13 +16,13 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURES_DIR = REPO_ROOT / "regions" / "fixtures"
+FIXTURES_DIR = REPO_ROOT / "apps" / "regions" / "fixtures"
 
 _EAWS_FIXTURE_NAMES = ["eaws_CH.json", "eaws_FR.json", "eaws_AT.json", "eaws_IT.json"]
 
 
 def _load_fixture(name: str) -> list[dict[str, Any]]:
-    """Return the parsed JSON rows for a fixture file under regions/fixtures/."""
+    """Return the parsed JSON rows for a fixture file under apps/regions/fixtures/."""
     with (FIXTURES_DIR / name).open(encoding="utf-8") as f:
         rows: list[dict[str, Any]] = json.load(f)
         return rows
@@ -39,7 +39,7 @@ def _known_micro_region_ids() -> set[str]:
 
 
 def _region_aliases_rows() -> list[dict[str, Any]]:
-    """Return the parsed rows from regions/fixtures/region_aliases.json."""
+    """Return the parsed rows from apps/regions/fixtures/region_aliases.json."""
     return _load_fixture("region_aliases.json")
 
 

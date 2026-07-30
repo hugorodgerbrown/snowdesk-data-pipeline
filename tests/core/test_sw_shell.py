@@ -6,7 +6,7 @@ chicken-and-egg guard that bumping the version alone must not re-trigger
 "bump owed".
 
 Builds a throwaway shell tree under ``tmp_path`` and monkeypatches
-``core.sw_shell``'s module-level path constants to point at it, so tests
+``apps.core.sw_shell``'s module-level path constants to point at it, so tests
 never touch the real repo's ``static/js/sw.js`` / ``sw-shell.hash``.
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from core import sw_shell
+from apps.core import sw_shell
 
 _SW_JS_TEMPLATE = "const CACHE_VERSION = 'snowdesk-shell-v{version}';\n"
 
@@ -34,7 +34,7 @@ def _write_shell_tree(root: Path, *, version: int = 37) -> None:
     css_dir.mkdir(parents=True, exist_ok=True)
     (css_dir / "main.css").write_text("body { color: red; }\n", encoding="utf-8")
 
-    templates_dir = root / "public" / "templates" / "public"
+    templates_dir = root / "apps" / "public" / "templates" / "public"
     partials_dir = templates_dir / "partials"
     partials_dir.mkdir(parents=True, exist_ok=True)
     (templates_dir / "base.html").write_text("<html></html>\n", encoding="utf-8")
@@ -48,7 +48,7 @@ def _write_shell_tree(root: Path, *, version: int = 37) -> None:
 
 @pytest.fixture()
 def shell_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Build a temp shell tree and repoint core.sw_shell's globals at it."""
+    """Build a temp shell tree and repoint apps.core.sw_shell's globals at it."""
     _write_shell_tree(tmp_path)
     monkeypatch.setattr(sw_shell, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sw_shell, "SW_JS_PATH", tmp_path / "static" / "js" / "sw.js")
@@ -115,9 +115,9 @@ class TestBumpOwed:
     def test_mutated_template_is_owed(self, shell_tree: Path) -> None:
         """A shell template edit also flips bump_owed() — not just JS/CSS."""
         sw_shell.write_committed_hash(sw_shell.compute_shell_hash())
-        (shell_tree / "public" / "templates" / "public" / "home.html").write_text(
-            "<div>changed</div>\n", encoding="utf-8"
-        )
+        (
+            shell_tree / "apps" / "public" / "templates" / "public" / "home.html"
+        ).write_text("<div>changed</div>\n", encoding="utf-8")
         assert sw_shell.bump_owed() is True
 
     def test_missing_hash_file_is_owed(self, shell_tree: Path) -> None:

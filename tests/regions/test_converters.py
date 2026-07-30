@@ -17,13 +17,15 @@ from pathlib import Path
 
 import pytest
 
-from regions.converters import RegionIdConverter
+from apps.regions.converters import RegionIdConverter
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_FIXTURE_DIR = Path(__file__).resolve().parent.parent.parent / "regions" / "fixtures"
+_FIXTURE_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "apps" / "regions" / "fixtures"
+)
 
 _FIXTURE_FILES = [
     _FIXTURE_DIR / "eaws_AT.json",

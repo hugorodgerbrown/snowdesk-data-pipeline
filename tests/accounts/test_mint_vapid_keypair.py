@@ -43,7 +43,7 @@ def _call(tmp_secret: Path, *args: str, **options: object) -> tuple[str, str]:
         # Patch _resolve_secret_path so we use the exact tmp_path, not
         # BASE_DIR / name (BASE_DIR points at the repo root in tests).
         with patch(
-            "accounts.management.commands.mint_vapid_keypair._resolve_secret_path",
+            "apps.accounts.management.commands.mint_vapid_keypair._resolve_secret_path",
             return_value=tmp_secret,
         ):
             call_command(

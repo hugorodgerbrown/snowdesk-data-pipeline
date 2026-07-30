@@ -41,7 +41,7 @@ from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
-from public.views import (
+from apps.public.views import (
     _community_reports_context,
     _default_region_label,
     _favourites_context,

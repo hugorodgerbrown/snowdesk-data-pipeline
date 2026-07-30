@@ -34,7 +34,7 @@ const SWISSTOPO_STYLE = 'https://tiles.example/swisstopo/style.json';
 /**
  * Build the #basemap-menu fixture: one row per overlay key plus the two
  * basemap radio rows (Standard active, Swisstopo not) — mirroring
- * public/templates/public/partials/_map_embed.html — each carrying a
+ * apps/public/templates/public/partials/_map_embed.html — each carrying a
  * `.sync-dot` starting at `data-sync-state="unknown"`.
  */
 function buildFixture({

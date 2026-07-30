@@ -25,7 +25,7 @@ from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
 
-from public.templatetags.components import (
+from apps.public.templatetags.components import (
     _button_chrome_classes,
     _card_chrome_classes,
 )

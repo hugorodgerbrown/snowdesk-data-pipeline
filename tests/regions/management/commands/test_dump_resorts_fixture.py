@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 
-from regions.models import Resort
+from apps.regions.models import Resort
 from tests.factories import MicroRegionFactory, ResortFactory
 
-FIXTURE_PATH = Path("regions/fixtures/resorts.json")
+FIXTURE_PATH = Path("apps/regions/fixtures/resorts.json")
 
 
 @pytest.mark.django_db

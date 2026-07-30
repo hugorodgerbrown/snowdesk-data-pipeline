@@ -11,7 +11,7 @@
  *
  * home_intro.js reads `#home-intro` and returns early if it's absent, so
  * the fixture (mirroring the shape rendered by
- * public/templates/public/partials/_map_embed.html) must exist BEFORE the
+ * apps/public/templates/public/partials/_map_embed.html) must exist BEFORE the
  * module is imported. Both modules are dynamically imported per test (via
  * `vi.resetModules()` + `await import(...)`) so each test gets a fresh
  * IIFE run against its own fixture/location/localStorage state.

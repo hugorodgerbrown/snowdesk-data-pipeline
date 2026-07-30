@@ -1,4 +1,4 @@
-"""tests/regions/test_names.py — Unit tests for regions.names lookup helper.
+"""tests/regions/test_names.py — Unit tests for apps.regions.names lookup helper.
 
 Covers:
   - Returns expected names for known region IDs across all four languages.
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-import regions.names as names_mod
-from regions.names import lookup
+from apps.regions import names as names_mod
+from apps.regions.names import lookup
 
 # ---------------------------------------------------------------------------
 # Helpers

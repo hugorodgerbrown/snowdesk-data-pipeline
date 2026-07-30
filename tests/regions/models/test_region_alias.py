@@ -8,7 +8,7 @@ Covers string representation, the unique-together constraint on
 import pytest
 from django.db import IntegrityError, transaction
 
-from regions.models import RegionAlias
+from apps.regions.models import RegionAlias
 from tests.factories import MicroRegionFactory, RegionAliasFactory
 
 

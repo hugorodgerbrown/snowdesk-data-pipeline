@@ -2,7 +2,7 @@
 # bin/ds-lint — Design-system linter for Snowdesk templates.
 #
 # Scans every .html template under the configured template roots for
-# patterns that bypass the design tokens registered in public/design_tokens.py
+# patterns that bypass the design tokens registered in apps/public/design_tokens.py
 # (radius literals, raw Tailwind palette utilities, inline primary-button
 # class-strings that should use a `_button` partial, etc).
 #
@@ -38,10 +38,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # (inline styles, no CSS variables) and the DS tokens don't apply.
 TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "templates",
-    REPO_ROOT / "public" / "templates",
-    REPO_ROOT / "accounts" / "templates",
-    REPO_ROOT / "bulletins" / "templates",
-    REPO_ROOT / "observations" / "templates",
+    REPO_ROOT / "apps" / "public" / "templates",
+    REPO_ROOT / "apps" / "accounts" / "templates",
+    REPO_ROOT / "apps" / "bulletins" / "templates",
+    REPO_ROOT / "apps" / "observations" / "templates",
+    REPO_ROOT / "apps" / "favourites" / "templates",
 )
 
 # Path-glob allowlist — files whose violations are tolerated globally.
@@ -49,8 +50,8 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
 # overrides, email layouts). Prefer the per-line `ds-lint-allow` comment
 # over adding entries here; file-level suppression is a last resort.
 PATH_ALLOWLIST: tuple[str, ...] = (
-    "bulletins/templates/admin/*",
-    "accounts/templates/accounts/emails/*",
+    "apps/bulletins/templates/admin/*",
+    "apps/accounts/templates/accounts/emails/*",
     # Country-flag colours are mandated by each country's flag spec; they
     # are not stylistic choices and cannot be tokenized.
     "templates/includes/country_flags_sprite.html",

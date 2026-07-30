@@ -26,8 +26,8 @@ from django.urls import reverse
 from django.utils import timezone
 from pytest_django.fixtures import SettingsWrapper
 
-from accounts.models import Account
-from accounts.services.token import (
+from apps.accounts.models import Account
+from apps.accounts.services.token import (
     generate_email_change_token,
     verify_email_change_token,
 )
@@ -140,12 +140,14 @@ class TestChangeEmailRequestView:
     def test_rate_limited_returns_429(self) -> None:
         from django.test import RequestFactory
 
-        from accounts.views import change_email_view
+        from apps.accounts.views import change_email_view
 
         account = AccountFactory.create()
         request = RequestFactory().post(self.URL, {"email": "new@example.com"})
         request.user = account.user
-        with patch("accounts.views.get_usage", return_value={"should_limit": True}):
+        with patch(
+            "apps.accounts.views.get_usage", return_value={"should_limit": True}
+        ):
             assert change_email_view(request).status_code == 429
 
 

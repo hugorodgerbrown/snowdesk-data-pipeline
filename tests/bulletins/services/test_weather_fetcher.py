@@ -27,8 +27,8 @@ import pytest
 import requests
 from django.db import IntegrityError
 
-from bulletins.models import WeatherSnapshot
-from bulletins.services.weather_fetcher import (
+from apps.bulletins.models import WeatherSnapshot
+from apps.bulletins.services.weather_fetcher import (
     _parse_dt_preserve_offset,
     backfill_all_regions,
     fetch_all_regions,
@@ -141,7 +141,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_weather_for_region(region, target, commit=True)
@@ -163,7 +163,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_weather_for_region(region, target, commit=False)
@@ -180,7 +180,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_region(region, target, commit=False)
 
         mock.assert_called_once()
@@ -195,7 +195,7 @@ class TestFetchWeatherForRegion:
 
         api_data = _make_forecast_response(weather_code=3)
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_weather_for_region(region, target, commit=True)
@@ -220,7 +220,7 @@ class TestFetchWeatherForRegion:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             return_value=mock_response,
         ):
             with pytest.raises(requests.HTTPError):
@@ -233,7 +233,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_weather_for_region(region, target, commit=True)
@@ -252,7 +252,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_region(region, target, commit=False)
 
         call_kwargs = mock.call_args
@@ -268,7 +268,7 @@ class TestFetchWeatherForRegion:
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_region(region, target, commit=False)
 
         params = mock.call_args[1]["params"]
@@ -296,7 +296,7 @@ class TestFetchAllRegions:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = fetch_all_regions(target, commit=True)
@@ -314,7 +314,7 @@ class TestFetchAllRegions:
         target = datetime.date(2026, 5, 1)
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_forecast_response()),
         ) as mock:
             counts = fetch_all_regions(target, commit=True)
@@ -331,7 +331,7 @@ class TestFetchAllRegions:
         mock_response.raise_for_status.side_effect = requests.HTTPError("500")
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             return_value=mock_response,
         ):
             counts = fetch_all_regions(target, commit=True)
@@ -347,7 +347,7 @@ class TestFetchAllRegions:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = fetch_all_regions(target, commit=True)
@@ -362,7 +362,7 @@ class TestFetchAllRegions:
         api_data = _make_forecast_response()
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = fetch_all_regions(target, commit=False)
@@ -402,7 +402,7 @@ class TestFetchArchiveForRegion:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_archive_for_region(region, start, end, commit=True)
@@ -431,7 +431,7 @@ class TestFetchArchiveForRegion:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_archive_for_region(region, start, end, commit=False)
@@ -446,7 +446,7 @@ class TestFetchArchiveForRegion:
         mock_response.raise_for_status.side_effect = requests.HTTPError("503")
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             return_value=mock_response,
         ):
             with pytest.raises(requests.HTTPError):
@@ -473,7 +473,7 @@ class TestFetchArchiveForRegion:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             result = fetch_archive_for_region(region, target, target, commit=True)
@@ -501,7 +501,7 @@ class TestFetchArchiveForRegion:
         )
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_archive_for_region(region, start, end, commit=False)
 
         params = mock.call_args[1]["params"]
@@ -544,7 +544,8 @@ class TestFetchArchiveForRegionValidation:
         )
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             pytest.raises(ValueError, match="differ in length"),
         ):
@@ -566,7 +567,8 @@ class TestFetchArchiveForRegionValidation:
         collected: list[dict[str, Any]] = []
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             pytest.raises(ValueError),
         ):
@@ -586,7 +588,8 @@ class TestFetchArchiveForRegionValidation:
         )
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             pytest.raises(ValueError, match="contiguously"),
         ):
@@ -604,7 +607,8 @@ class TestFetchArchiveForRegionValidation:
         )
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             pytest.raises(ValueError, match="contiguously"),
         ):
@@ -631,7 +635,8 @@ class TestFetchArchiveForRegionValidation:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
             ),
             patch.object(
                 WeatherSnapshot.objects, "update_or_create", side_effect=_fail_on_second
@@ -667,7 +672,7 @@ class TestBackfillAllRegions:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = backfill_all_regions(start, end, commit=True)
@@ -688,7 +693,7 @@ class TestBackfillAllRegions:
         end = datetime.date(2026, 4, 28)
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_archive_response([], [], [], [])),
         ) as mock:
             counts = backfill_all_regions(start, end, commit=True)
@@ -706,7 +711,7 @@ class TestBackfillAllRegions:
         mock_response.raise_for_status.side_effect = requests.HTTPError("500")
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             return_value=mock_response,
         ):
             counts = backfill_all_regions(start, end, commit=True)
@@ -727,7 +732,7 @@ class TestBackfillAllRegions:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = backfill_all_regions(start, end, commit=False)
@@ -750,7 +755,7 @@ class TestBackfillAllRegions:
         )
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             counts = backfill_all_regions(start, end, commit=True)
@@ -774,10 +779,10 @@ class TestBackfillAllRegions:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get",
+                "apps.bulletins.services.weather_fetcher.requests.get",
                 _mock_get(api_data),
             ),
-            patch("bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
+            patch("apps.bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
         ):
             backfill_all_regions(target, target, commit=True, delay=0.5)
 
@@ -800,10 +805,10 @@ class TestBackfillAllRegions:
 
         with (
             patch(
-                "bulletins.services.weather_fetcher.requests.get",
+                "apps.bulletins.services.weather_fetcher.requests.get",
                 _mock_get(api_data),
             ),
-            patch("bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
+            patch("apps.bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
         ):
             backfill_all_regions(target, target, commit=True, delay=0.0)
 
@@ -826,7 +831,7 @@ class TestBaseUrlThreading:
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_region(
                 region,
                 target,
@@ -841,14 +846,14 @@ class TestBaseUrlThreading:
         self,
     ) -> None:
         """When base_url=None, the module-level FORECAST_URL is used."""
-        from bulletins.services.weather_fetcher import FORECAST_URL
+        from apps.bulletins.services.weather_fetcher import FORECAST_URL
 
         region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_region(region, target, commit=False)
 
         called_url = mock.call_args[0][0]
@@ -867,7 +872,7 @@ class TestBaseUrlThreading:
         )
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_archive_for_region(
                 region,
                 start,
@@ -883,7 +888,7 @@ class TestBaseUrlThreading:
         self,
     ) -> None:
         """When base_url=None, the module-level ARCHIVE_URL is used."""
-        from bulletins.services.weather_fetcher import ARCHIVE_URL
+        from apps.bulletins.services.weather_fetcher import ARCHIVE_URL
 
         region = MicroRegionFactory.create()
         start = end = datetime.date(2026, 4, 28)
@@ -895,7 +900,7 @@ class TestBaseUrlThreading:
         )
         mock = _mock_get(api_data)
 
-        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
             fetch_archive_for_region(region, start, end, commit=False)
 
         called_url = mock.call_args[0][0]
@@ -919,7 +924,7 @@ class TestOnFetchedCallback:
         captured: list[dict] = []
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             fetch_weather_for_region(
                 region,
@@ -945,7 +950,7 @@ class TestOnFetchedCallback:
 
         # Should not raise even without on_fetched.
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             fetch_weather_for_region(region, target, commit=False)
 
@@ -971,7 +976,7 @@ class TestOnFetchedCallback:
         captured: list[dict] = []
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             fetch_archive_for_region(
                 region,
@@ -1002,7 +1007,7 @@ class TestOnFetchedCallback:
         captured: list[dict] = []
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
         ):
             result = fetch_weather_for_region(
                 region,
@@ -1052,7 +1057,7 @@ class TestResolveWeatherSource:
         """'local-mirror' raises CommandError when the setting is completely absent."""
         from django.core.management.base import CommandError
 
-        from bulletins.services import weather_fetcher
+        from apps.bulletins.services import weather_fetcher
 
         original = getattr(weather_fetcher, "resolve_weather_source", None)
         # Simulate missing attribute by deleting the setting entirely.
@@ -1098,7 +1103,7 @@ class TestFetchWeatherAsync:
             sunsets=[f"{target.isoformat()}T17:00+02:00"],
         )
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ):
             fetch_weather_async(region, target)
@@ -1118,7 +1123,7 @@ class TestFetchWeatherAsync:
             raise requests.HTTPError("503")
 
         monkeypatch.setattr(
-            "bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
+            "apps.bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
         )
 
         # Must not raise.
@@ -1141,10 +1146,10 @@ class TestFetchWeatherAsync:
             raise AssertionError("API must not be called when snapshot already exists")
 
         monkeypatch.setattr(
-            "bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
+            "apps.bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
         )
         monkeypatch.setattr(
-            "bulletins.services.weather_fetcher.fetch_weather_for_region", _boom
+            "apps.bulletins.services.weather_fetcher.fetch_weather_for_region", _boom
         )
 
         fetch_weather_async(region, target)
@@ -1171,7 +1176,7 @@ class TestFetchWeatherAsync:
         api_data = _make_forecast_response(target_date=target.isoformat())
 
         with patch(
-            "bulletins.services.weather_fetcher.requests.get",
+            "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(api_data),
         ) as mock_get:
             fetch_weather_async(region, target)

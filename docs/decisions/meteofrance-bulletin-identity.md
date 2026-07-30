@@ -10,7 +10,7 @@ last-reviewed: 2026-07-30
 **Decision.** A Météo-France `bulletin_id` is
 `FR-{NN}-{covered date}-{YYYYMMDDHHMMSS}` — massif, the day the bulletin
 forecasts, and the **publication instant in UTC**. Both ingest paths build it
-through `bulletins/services/meteofrance_identity.py`. A record with no usable
+through `apps/bulletins/services/meteofrance_identity.py`. A record with no usable
 publication timestamp is a failure, never an id without the stamp.
 
 The two paths take that timestamp from different places and are therefore

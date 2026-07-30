@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from django.contrib import admin
 
-from favourites.admin import FavouriteAdmin
-from favourites.models import Favourite
+from apps.favourites.admin import FavouriteAdmin
+from apps.favourites.models import Favourite
 
 
 class TestFavouriteAdminRegistration:

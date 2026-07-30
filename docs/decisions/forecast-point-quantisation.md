@@ -33,8 +33,8 @@ geometry.
 that has no existing candidate within both thresholds, even for pins whose
 cell matches an existing row's cell exactly (elevation can still exceed the
 band tolerance). `_haversine_m()` is a private copy local to
-`bulletins/services/forecast_points.py`, mirroring
-`mcp_server/resolvers.py::_haversine_km`. Extracting a shared `core`
+`apps/bulletins/services/forecast_points.py`, mirroring
+`apps/mcp_server/resolvers.py::_haversine_km`. Extracting a shared `core`
 haversine helper is deferred — the `mcp_server` copy is private to that
 app, and refactoring it as part of this ticket would be scope creep; a
 future ticket touching either call site should do the extraction.

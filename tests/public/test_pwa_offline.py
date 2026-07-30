@@ -3,7 +3,7 @@ Server-side tests for the SNOW-377 offline / freshness UI.
 
 Covers the server-rendered half of the contract:
 
-* ``core.freshness.freshness_state()`` — the three-state classifier that
+* ``apps.core.freshness.freshness_state()`` — the three-state classifier that
   the client mirrors. Boundary conditions exercised.
 * ``pwa_freshness.freshness_state`` template tag — usable from a
   template, ``None`` / naive datetimes downgrade safely.
@@ -24,7 +24,7 @@ import pytest
 from django.template import Context, Template
 from django.test import Client
 
-from core.freshness import freshness_state
+from apps.core.freshness import freshness_state
 
 # ---------------------------------------------------------------------------
 # freshness_state() classifier

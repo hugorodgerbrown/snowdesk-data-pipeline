@@ -34,13 +34,17 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from bulletins.services.openmeteo_archive import read_archive
+from apps.bulletins.services.openmeteo_archive import read_archive
 from tests.factories import BulletinFactory, MicroRegionFactory, WeatherSnapshotFactory
 
-PATCH_FETCH_ALL = "bulletins.management.commands.fetch_weather.fetch_all_regions"
-PATCH_BACKFILL_ALL = "bulletins.management.commands.fetch_weather.backfill_all_regions"
-PATCH_FETCH_ALL_POINTS = "bulletins.management.commands.fetch_weather.fetch_all_points"
-PATCH_TODAY = "bulletins.management.commands.fetch_weather.timezone.localdate"
+PATCH_FETCH_ALL = "apps.bulletins.management.commands.fetch_weather.fetch_all_regions"
+PATCH_BACKFILL_ALL = (
+    "apps.bulletins.management.commands.fetch_weather.backfill_all_regions"
+)
+PATCH_FETCH_ALL_POINTS = (
+    "apps.bulletins.management.commands.fetch_weather.fetch_all_points"
+)
+PATCH_TODAY = "apps.bulletins.management.commands.fetch_weather.timezone.localdate"
 
 
 def _make_counts(

@@ -1,0 +1,40 @@
+{% comment %}
+apps/public/templates/public/help/_topic_map.html — "The map" panel body.
+
+Content partial for the help page (SNOW-456); included via the
+body_template parameter of includes/_collapsible_panel.html.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The map colours every region by its current avalanche danger level, from pale green (Low) through to red
+            (Very High). Use the search box to jump straight to a region by name, the locate-me button to centre the map
+            on your position, and pinch or scroll to zoom and pan. The info panel in the corner shows the legend and the
+            current data sources.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            A basemap picker lets you switch between the standard map style and each country's national mapping-agency
+            basemap (Swisstopo, IGN, basemap.at) where available.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-favourites">
+        {% blocktrans trimmed %}
+            An overlay toggle shows your saved favourite pins directly on the map, alongside the resorts layer.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-community">
+        {% blocktrans trimmed %}
+            A community-reports overlay shows anonymised, publicly-shared field observations from other Snowdesk users
+            on the map.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-report">
+        {% blocktrans trimmed %}
+            The Report button lets you submit a quick field observation &mdash; conditions you've seen in person &mdash;
+            for the region you're viewing.
+        {% endblocktrans %}
+    </p>
+</div>

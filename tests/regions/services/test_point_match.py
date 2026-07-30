@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-from accounts.models import Subscription
-from regions.services.point_match import (
+from apps.accounts.models import Subscription
+from apps.regions.services.point_match import (
     ELSEWHERE,
     IN_NEIGHBOUR,
     IN_REGION,

@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from core.sw_shell import read_cache_version
+from apps.core.sw_shell import read_cache_version
 from tests.e2e.conftest import PwaPage, _session_login
 from tests.factories import UserFactory
 

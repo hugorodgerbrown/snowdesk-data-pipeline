@@ -3,7 +3,7 @@
 Originally covered the SNOW-9 ``/api/offline-manifest/map/`` precache
 endpoint as well, but that endpoint was retired in SNOW-79 (PWA shell
 rewrite). The remaining surface is ``/sw.js`` itself — served by
-``public.views.serve_sw`` and consumed by ``static/js/sw_register.js``.
+``apps.public.views.serve_sw`` and consumed by ``static/js/sw_register.js``.
 SNOW-118 added a pre-cached offline fallback page and asserts that the
 SW source references it so the network-first navigation strategy can
 return it on a both-fail miss.

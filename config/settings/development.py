@@ -107,8 +107,8 @@ CSP_REPORT_ONLY = True
 # ---------------------------------------------------------------------------
 # Local SLF mirror (dev only)
 # ---------------------------------------------------------------------------
-# URL of the development-only view at ``bulletins.dev_views.slf_mirror``,
-# which replays ``bulletins/local_mirrors/slf_archive.ndjson`` with the same
+# URL of the development-only view at ``apps.bulletins.dev_views.slf_mirror``,
+# which replays ``apps/bulletins/local_mirrors/slf_archive.ndjson`` with the same
 # limit/offset paging contract as the upstream SLF API. Only defined in
 # development.py so that ``fetch_bulletins --source local-mirror`` errors
 # loudly if anyone tries to run it against a production-like environment.
@@ -120,8 +120,8 @@ SLF_API_LOCAL_MIRROR_URL = config(
 # ---------------------------------------------------------------------------
 # Local ALBINA mirror (dev only)
 # ---------------------------------------------------------------------------
-# URL of the development-only view at ``bulletins.dev_views.albina_mirror``,
-# which replays ``bulletins/local_mirrors/albina_archive.ndjson`` with the
+# URL of the development-only view at ``apps.bulletins.dev_views.albina_mirror``,
+# which replays ``apps/bulletins/local_mirrors/albina_archive.ndjson`` with the
 # same date/region path contract as the upstream avalanche.report CDN. Only
 # defined in development.py so that ``fetch_bulletins --source albina
 # --local-mirror`` errors loudly if anyone tries to run it against a
@@ -134,8 +134,9 @@ ALBINA_API_LOCAL_MIRROR_URL = config(
 # ---------------------------------------------------------------------------
 # Local Open-Meteo mirror (dev only)
 # ---------------------------------------------------------------------------
-# Base URL of the development-only view at ``bulletins.dev_views.openmeteo_mirror``,
-# which replays ``bulletins/local_mirrors/openmeteo_archive.ndjson`` in an
+# Base URL of the development-only view at
+# ``apps.bulletins.dev_views.openmeteo_mirror``,
+# which replays ``apps/bulletins/local_mirrors/openmeteo_archive.ndjson`` in an
 # Open-Meteo-compatible response shape. Only defined in development.py so that
 # ``fetch_weather --local-mirror`` errors loudly if anyone tries to run it
 # against a production-like environment.

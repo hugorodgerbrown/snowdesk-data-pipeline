@@ -1,8 +1,8 @@
 # tests/bulletins/test_meteofrance_archive_integrity.py — Invariants for the
 # committed Météo-France archive.
 #
-# bulletins/local_mirrors/meteofrance_archive.ndjson is a generated artefact,
-# 4,671 records and ~18 MB, so it is not reviewed by reading its diff. These
+# apps/bulletins/local_mirrors/meteofrance_archive.ndjson is a generated
+# artefact, 4,671 records and ~25 MB, so it is not reviewed by its diff. These
 # tests are the review: they assert the properties a rebuild must preserve, so a
 # regression in the offline extractor is caught here rather than by noticing
 # months later that bulletins look thin or are dated in the future (SNOW-559).
@@ -20,10 +20,11 @@ from typing import Any
 
 import pytest
 
-from bulletins.services.meteofrance_identity import compact_publication_stamp
+from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
 
 ARCHIVE = (
     Path(__file__).resolve().parents[2]
+    / "apps"
     / "bulletins"
     / "local_mirrors"
     / "meteofrance_archive.ndjson"
@@ -45,8 +46,10 @@ def records() -> list[dict[str, Any]]:
         The parsed ``properties`` sub-dict of each archive line.
 
     """
-    if not ARCHIVE.exists():
-        pytest.skip(f"Archive not present: {ARCHIVE}")
+    # The archive is git-tracked, so absence is a real failure — not a reason to
+    # skip. Skipping here would turn every assertion below into a silent no-op,
+    # which is exactly the class of hole these tests exist to close.
+    assert ARCHIVE.exists(), f"Archive not present: {ARCHIVE}"
     out: list[dict[str, Any]] = []
     with ARCHIVE.open(encoding="utf-8") as handle:
         for line in handle:
