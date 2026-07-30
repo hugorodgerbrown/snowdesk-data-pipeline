@@ -124,7 +124,7 @@ def _slug_to_region_id(slug: str) -> str:
     return f"FR-{code:02d}"
 
 
-def _fixup_envelope(
+def fixup_envelope(
     properties: dict[str, Any],
 ) -> str | None:
     """Translate ``regionID`` and synthesise ``bulletinID`` for one envelope.
@@ -214,7 +214,7 @@ def _process_line(
         _record_run_failure(run)
         return
 
-    bulletin_id = _fixup_envelope(properties)
+    bulletin_id = fixup_envelope(properties)
     if bulletin_id is None:
         raw_slug = properties.get("customData", {}).get("MF", {}).get("massif", "")
         if raw_slug and _normalise_slug(raw_slug) not in SLUG_TO_CODE:

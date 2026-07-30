@@ -196,6 +196,16 @@ per provider, each with a README, enforced by a round-trip test. Read a
 sentinel before reasoning about any provider's payload shape; don't trust
 prose descriptions of the schema.
 
+A full 2025/26 season for all three providers is committed under
+`apps/bulletins/local_mirrors/*.ndjson` (~30 MB, git-tracked) — written by
+`fetch_bulletins --stash` and replayed by the dev-mirror views. For testing
+behaviour **across** days, load the *golden week* from it with
+`seed_test_week --commit`: seven consecutive real days, all three providers,
+morning and evening issues, a real danger swing
+([`docs/decisions/golden-week-derived-not-committed.md`](docs/decisions/golden-week-derived-not-committed.md)).
+Don't replay sentinels onto a shared date to simulate a day — that manufactures
+region overlaps that cannot occur upstream.
+
 ## Management command design
 
 These rules apply to **every** new or refactored management command
@@ -450,4 +460,4 @@ Read these when working in the relevant area:
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk.info; server is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |
-| Worktree DB seeding, dev credentials, seed_test_data dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |
+| Worktree DB seeding, dev credentials, seed_test_data + seed_test_week (golden week) dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |
