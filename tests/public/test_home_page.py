@@ -17,10 +17,10 @@ Covers:
   - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
   - The meta description names all five territories and stays inside the
     ~155-character budget search results render (SNOW-535).
-  - The intro card renders both tagline paragraphs — sources/colour and
-    controls (SNOW-535).
-  - The intro card links onward to a sample bulletin and the reading
-    guide (SNOW-535).
+  - The intro card renders both tagline paragraphs — data sources and
+    the registration pitch.
+  - The intro card's actions row carries no onward links — the "Explore
+    the map" CTA is its only action.
   - The intro card carries a "×" close control wired to the shared
     overlays.js dismiss idiom (SNOW-535).
   - #map-help-overlay opts out of the coachmark tour's first-load
@@ -82,11 +82,11 @@ class TestHomePageBasic:
         assert 'id="home-intro"' in content
 
     def test_title_and_og_title_are_alps_wide(self) -> None:
-        """SNOW-535: title/og:title name the Alps, not just Switzerland."""
+        """Title/og:title name the Alps, not just Switzerland."""
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert "Snowdesk — Avalanche bulletins across the Alps" in content
+        assert "Alpine Avalanche Bulletins · Snowdesk" in content
         assert "Swiss avalanche bulletins" not in content
 
     def test_meta_description_names_non_swiss_territories(self) -> None:
@@ -117,22 +117,47 @@ class TestHomePageBasic:
         assert len(description) <= 160
 
     def test_intro_renders_both_tagline_paragraphs(self) -> None:
-        """SNOW-535: the intro card carries both the sources/colour paragraph
-        and the controls paragraph.
+        """The intro card carries both the sources paragraph and the
+        registration paragraph.
         """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert "Météo-France and avalanche.report combine into one map" in content
-        assert "Drag the timeline or press play to replay the season" in content
+        assert (
+            "sourced daily from SLF (Switzerland), ALBINA (Austria, Italy)" in content
+        )
+        assert "with Snowdesk to view field observations" in content
 
-    def test_intro_renders_onward_sample_links(self) -> None:
-        """SNOW-535: the intro card links to a sample bulletin and the guide."""
+    def test_intro_registration_pitch_links_to_register(self) -> None:
+        """The word "Register" in the second tagline links to the sign-up flow.
+
+        The card tells a visitor to register but its only button explores the
+        map, so the word itself has to carry them there.
+        """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert reverse("public:examples_random") in content
-        assert reverse("public:how_to_read_bulletin") in content
+        assert (
+            f'<a href="{reverse("accounts:register")}" '
+            'class="home-intro-inline-link">Register</a>'
+        ) in content
+
+    def test_intro_carries_no_onward_links(self) -> None:
+        """The intro card's only action is the "Explore the map" CTA.
+
+        SNOW-535 added onward links to a sample bulletin and the reading guide
+        beneath the CTA; they are gone. Both pages remain reachable elsewhere
+        (the help topics, llms.txt), so this asserts against the card's own
+        actions row rather than the whole page.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        actions = re.search(
+            r'<div class="home-intro-actions">(.*?)</div>', content, re.DOTALL
+        )
+        assert actions is not None, "#home-intro should render an actions row"
+        assert "<a " not in actions.group(1)
 
     def test_intro_renders_close_button(self) -> None:
         """SNOW-535: the intro card carries a "×" wired to the shared dismiss idiom.
