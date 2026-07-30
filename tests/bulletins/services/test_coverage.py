@@ -16,8 +16,8 @@ from django.core.cache import cache
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from bulletins.models import RegionDayRating
-from bulletins.services.coverage import covered_region_ids
+from apps.bulletins.models import RegionDayRating
+from apps.bulletins.services.coverage import covered_region_ids
 from tests.factories import (
     MicroRegionFactory,
     RegionDayRatingFactory,

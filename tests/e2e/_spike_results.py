@@ -41,7 +41,7 @@ SPIKE_RESULTS: dict[str, SpikeResult] = {
             "initial registration fetch nor a registration.update() "
             "re-fetch) — confirmed by a page.on('request', ...) listener "
             "that never fired for /sw.js either. The working mechanism "
-            "instead monkeypatches public.views._serve_sw_file on the "
+            "instead monkeypatches apps.public.views._serve_sw_file on the "
             "live_server's in-process Django app (live_server runs in a "
             "background thread in the same interpreter, not a subprocess) "
             "so the *server* returns byte-different content on the second "

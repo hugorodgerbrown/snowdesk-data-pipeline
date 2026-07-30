@@ -16,7 +16,7 @@ import datetime
 import pytest
 from django.contrib import admin
 
-from bulletins.models import BulletinGrouping
+from apps.bulletins.models import BulletinGrouping
 from tests.factories import BulletinGroupingFactory
 
 

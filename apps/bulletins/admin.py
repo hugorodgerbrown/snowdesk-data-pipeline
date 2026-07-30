@@ -1,0 +1,868 @@
+"""
+apps/bulletins/admin.py — Django admin registrations for bulletin models.
+
+Provides list views and detail views for Bulletin, RegionBulletin,
+RegionDayRating, PipelineRun, and WeatherSnapshot so that operators can
+inspect pipeline runs and bulletin data without needing direct database
+access.
+
+Includes the SNOW-22 safe rendering helpers (danger_ratings,
+avalanche_problems, aggregation, weather_forecast, etc.) and the
+backfill action that triggers a full season re-ingest from the admin UI.
+
+Also includes the WeatherSnapshot admin with a one-click "Fetch today's
+weather" button that calls fetch_all_regions() directly from the
+changelist page.
+
+Also includes the PipelineRunAdmin with an upload UI for the Météo-France
+BRA NDJSON archive (SNOW-227) — operators can drop a ``bulletins.ndjson``
+file produced by the offline script pipeline directly into the production
+database without needing SSH access.
+
+Also includes the ForecastPointWeatherAdmin (SNOW-416), the point analogue
+of WeatherSnapshotAdmin without the one-click fetch button — the point
+pass runs from ``fetch_weather`` only, not the admin UI.
+"""
+
+import io
+import json
+import logging
+from datetime import date
+from typing import cast
+
+import bleach
+from django.contrib import admin, messages
+from django.db.models import Count, QuerySet
+from django.http import HttpRequest, HttpResponseRedirect
+from django.urls import URLPattern, path, reverse
+from django.utils import timezone
+from django.utils.html import format_html, format_html_join
+
+from apps.bulletins.models import (
+    Bulletin,
+    BulletinGrouping,
+    BulletinShare,
+    BulletinShareClick,
+    ForecastPoint,
+    ForecastPointWeather,
+    PipelineRun,
+    RegionBulletin,
+    RegionDayRating,
+    WeatherSnapshot,
+)
+from apps.bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
+from apps.bulletins.services.slf_fetcher import run_slf_pipeline
+from apps.bulletins.services.weather_fetcher import fetch_all_regions
+from apps.core.utils import html_to_markdown
+
+logger = logging.getLogger(__name__)
+
+
+@admin.register(PipelineRun)
+class PipelineRunAdmin(admin.ModelAdmin):
+    """Admin view for PipelineRun.
+
+    Extends the standard changelist with an "Upload Météo-France archive"
+    button that lets operators load a ``bulletins.ndjson`` file (produced by
+    the offline Météo-France BRA pipeline) into the production database
+    without needing SSH access (SNOW-227).
+    """
+
+    change_list_template = "admin/bulletins/pipelinerun/change_list.html"
+
+    list_display = [
+        "id",
+        "status",
+        "triggered_by",
+        "started_at",
+        "finished_at",
+        "records_created",
+        "records_updated",
+    ]
+    list_filter = ["status", "triggered_by"]
+    readonly_fields = [
+        "started_at",
+        "finished_at",
+        "status",
+        "records_created",
+        "records_updated",
+        "error_message",
+    ]
+    ordering = ["-started_at"]
+
+    def get_urls(self) -> list[URLPattern]:
+        """Add a custom URL for the Météo-France archive upload endpoint."""
+        custom_urls = [
+            path(
+                "upload-meteofrance-archive/",
+                self.admin_site.admin_view(self.upload_meteofrance_archive_view),
+                name="bulletins_pipelinerun_upload_meteofrance_archive",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def upload_meteofrance_archive_view(
+        self, request: HttpRequest
+    ) -> HttpResponseRedirect:
+        """Handle the "Upload Météo-France archive" form POST.
+
+        Reads the uploaded ``archive`` file, passes it to
+        ``load_meteofrance_archive`` with ``commit=True``, and redirects back to
+        the PipelineRun changelist with an informative admin message.
+
+        Message levels:
+        - ``SUCCESS`` — all rows processed cleanly.
+        - ``WARNING`` — at least one row failed or had an unknown slug.
+        - ``ERROR`` — no file was provided, or an unexpected exception
+          occurred during processing.
+
+        A GET request is simply redirected to the changelist without
+        calling the loader.
+        """
+        changelist_url = reverse("admin:bulletins_pipelinerun_changelist")
+
+        if request.method != "POST":
+            return HttpResponseRedirect(changelist_url)
+
+        upload = request.FILES.get("archive")
+        if upload is None:
+            self.message_user(
+                request,
+                "No archive file was provided. Please select a .ndjson file to upload.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        logger.info(
+            "Admin Météo-France archive upload: %s (%d bytes), triggered by %s",
+            upload.name,
+            upload.size,
+            request.user,
+        )
+
+        text_file = io.TextIOWrapper(upload, encoding="utf-8")
+        try:
+            result = load_meteofrance_archive(
+                text_file,
+                commit=True,
+                triggered_by="admin upload",
+            )
+        except Exception:
+            logger.exception("Admin Météo-France archive upload failed")
+            self.message_user(
+                request,
+                "Archive upload failed — check the server logs for details.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+        finally:
+            text_file.detach()
+
+        summary = result.as_summary()
+        level = (
+            messages.WARNING
+            if result.failed > 0 or result.unknown_slug > 0
+            else messages.SUCCESS
+        )
+        self.message_user(request, summary, level)
+        return HttpResponseRedirect(changelist_url)
+
+
+class RegionBulletinInline(admin.TabularInline):
+    """Inline display of regions on the Bulletin admin page."""
+
+    model = RegionBulletin
+    extra = 0
+    readonly_fields = ["region", "region_name_at_time", "created_at"]
+    verbose_name = "Bulletin Region"
+
+
+@admin.register(Bulletin)
+class BulletinAdmin(admin.ModelAdmin):
+    """Admin view for Bulletin."""
+
+    list_display = [
+        "bulletin_id",
+        "issued_at",
+        "valid_from",
+        "valid_to",
+        "lang",
+        "region_count",
+        "highest_danger_rating",
+        "danger_ratings",
+        "pdf_url",
+        "updated_at",
+    ]
+    list_filter = ["lang", "unscheduled", "issued_at"]
+    search_fields = ["bulletin_id"]
+    ordering = ["-issued_at"]
+    readonly_fields = [
+        "bulletin_id",
+        "issued_at",
+        "valid_from",
+        "valid_to",
+        "next_update",
+        "lang",
+        "unscheduled",
+        "danger_ratings",
+        "avalanche_problems",
+        "aggregation",
+        "weather_forecast",
+        "weather_review",
+        "snowpack_structure",
+        "tendency",
+        "pdf_url",
+        "raw_data_pretty",
+        "render_model_pretty",
+        "created_at",
+        "updated_at",
+    ]
+    inlines = [RegionBulletinInline]
+    exclude = ["raw_data", "render_model", "pipeline_run"]
+
+    BACKFILL_START = date(2025, 12, 1)
+
+    def get_urls(self) -> list[URLPattern]:
+        """Add a custom URL for triggering the season backfill."""
+        custom_urls = [
+            path(
+                "backfill/",
+                self.admin_site.admin_view(self.backfill_view),
+                name="bulletins_bulletin_backfill",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def backfill_view(self, request: HttpRequest) -> HttpResponseRedirect:
+        """
+        Handle the backfill button POST.
+
+        Runs the data pipeline from BACKFILL_START to today and redirects
+        back to the changelist with a success or error message.
+        """
+        if request.method != "POST":
+            self.message_user(request, "Invalid request method.", messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
+
+        start = self.BACKFILL_START
+        end = date.today()
+
+        logger.info("Admin backfill triggered: %s to %s", start, end)
+        try:
+            run = run_slf_pipeline(
+                start=start,
+                end=end,
+                triggered_by="admin backfill",
+                dry_run=False,
+                force=False,
+            )
+        except Exception:
+            logger.exception("Admin backfill failed")
+            self.message_user(request, "Backfill failed — check logs.", messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
+
+        if run.status == PipelineRun.Status.FAILED:
+            self.message_user(
+                request,
+                f"Backfill run #{run.pk} failed: {run.error_message}",
+                messages.ERROR,
+            )
+        else:
+            self.message_user(
+                request,
+                f"Backfill complete — {run.records_created} created, "
+                f"{run.records_updated} updated.",
+                messages.SUCCESS,
+            )
+        return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
+
+    def _get_properties(self, obj: Bulletin) -> dict:
+        """
+        Extract the CAAML properties dict from the GeoJSON raw_data envelope.
+
+        Args:
+            obj: The Bulletin instance.
+
+        Returns:
+            The properties dict, or an empty dict if not present.
+
+        """
+        return obj.raw_data.get("properties", {}) if obj.raw_data else {}
+
+    def _render_comment(self, text: str | None) -> str:
+        """
+        Convert an HTML comment to Markdown and render in a styled block.
+
+        Strips HTML tags, converts headings/lists/bold/italic to Markdown,
+        and displays the result in a scrollable container. Returns a dash
+        if the input is empty.
+
+        Args:
+            text: The raw HTML comment text from the CAAML bulletin.
+
+        Returns:
+            An HTML string for the admin detail view.
+
+        """
+        if not text:
+            return "—"
+        markdown = html_to_markdown(text)
+        if not markdown:
+            return "—"
+        return format_html(
+            '<pre style="max-height:300px;overflow:auto;background:#f5f5f5;'
+            "padding:0.75rem;border-radius:4px;"
+            "line-height:1.5;white-space:pre-wrap;word-break:break-word"
+            '">{}</pre>',
+            markdown,
+        )
+
+    # Danger level display names and colour coding.
+    _DANGER_COLOURS: dict[str, tuple[str, str]] = {
+        "low": ("#d1fae5", "#065f46"),
+        "moderate": ("#fef3c7", "#92400e"),
+        "considerable": ("#fed7aa", "#9a3412"),
+        "high": ("#fee2e2", "#991b1b"),
+        "very_high": ("#fca5a5", "#7f1d1d"),
+    }
+
+    @staticmethod
+    def _format_danger_level(value: str) -> str:
+        """
+        Capitalise and clean up a CAAML danger level value for display.
+
+        Args:
+            value: Raw danger level string (e.g. "very_high").
+
+        Returns:
+            Human-readable label (e.g. "Very high").
+
+        """
+        return value.replace("_", " ").capitalize()
+
+    @staticmethod
+    def _format_time_period(value: str) -> str:
+        """
+        Format a CAAML validTimePeriod value for display.
+
+        Args:
+            value: Raw time period string (e.g. "all_day").
+
+        Returns:
+            Human-readable label (e.g. "All day").
+
+        """
+        return value.replace("_", " ").capitalize()
+
+    @staticmethod
+    def _format_elevation(elevation: dict | None) -> str:
+        """
+        Format an elevation object to a readable string.
+
+        Args:
+            elevation: Dict with optional "lowerBound" and "upperBound" keys.
+
+        Returns:
+            A string like "Above 2000m", "Below 2400m", or "All elevations".
+
+        """
+        if not elevation:
+            return "All elevations"
+        lower = elevation.get("lowerBound")
+        upper = elevation.get("upperBound")
+        if lower and upper:
+            return f"{lower}m – {upper}m"
+        if lower:
+            return f"Above {lower}m"
+        if upper:
+            return f"Below {upper}m"
+        return "All elevations"
+
+    @admin.display(description="Danger ratings")
+    def danger_ratings(self, obj: Bulletin) -> str:
+        """
+        Render danger ratings as a colour-coded HTML table.
+
+        Shows the danger level, time period, and elevation for each
+        rating entry in the bulletin.
+        """
+        props = self._get_properties(obj)
+        ratings = props.get("dangerRatings", [])
+        if not ratings:
+            return "—"
+
+        rows = []
+        for r in ratings:
+            level = r.get("mainValue", "unknown")
+            period = r.get("validTimePeriod", "all_day")
+            elevation = r.get("elevation")
+            bg, fg = self._DANGER_COLOURS.get(level, ("#f3f4f6", "#374151"))
+            badge = format_html(
+                '<span style="background:{};color:{};padding:2px 8px;'
+                "border-radius:4px;font-weight:600;"
+                'text-transform:uppercase">{}</span>',
+                bg,
+                fg,
+                self._format_danger_level(level),
+            )
+            rows.append(
+                (
+                    badge,
+                    self._format_time_period(period),
+                    self._format_elevation(elevation),
+                )
+            )
+
+        body = format_html_join(
+            "",
+            "<tr>"
+            '<td style="padding:6px 12px">{}</td>'
+            '<td style="padding:6px 12px">{}</td>'
+            '<td style="padding:6px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
+            '<table style="border-collapse:collapse;">'
+            '<thead><tr style="border-bottom:2px solid #d1d5db">'
+            '<th style="padding:6px 12px;text-align:left">Level</th>'
+            '<th style="padding:6px 12px;text-align:left">Period</th>'
+            '<th style="padding:6px 12px;text-align:left">Elevation</th>'
+            "</tr></thead>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
+        )
+
+    @admin.display(description="Avalanche problems")
+    def avalanche_problems(self, obj: Bulletin) -> str:
+        """
+        Render avalanche problems as an HTML table.
+
+        Shows the problem type, danger level, time period, elevation,
+        aspects, and any comment text (converted from HTML to Markdown).
+        """
+        props = self._get_properties(obj)
+        problems = props.get("avalancheProblems", [])
+        if not problems:
+            return "—"
+
+        rows = []
+        for p in problems:
+            problem_type = (
+                p.get("problemType", "unknown").replace("_", " ").capitalize()
+            )
+            level = p.get("dangerRatingValue", "")
+            period = p.get("validTimePeriod", "all_day")
+            elevation = p.get("elevation")
+            aspects = ", ".join(p.get("aspects", []))
+            comment = p.get("comment", "")
+
+            bg, fg = self._DANGER_COLOURS.get(level, ("#f3f4f6", "#374151"))
+            level_badge = (
+                format_html(
+                    '<span style="background:{};color:{};padding:2px 8px;'
+                    "border-radius:4px;font-weight:600;"
+                    'text-transform:uppercase">{}</span>',
+                    bg,
+                    fg,
+                    self._format_danger_level(level),
+                )
+                if level
+                else "—"
+            )
+
+            comment_cell: str = "—"
+            if comment:
+                # bleach.clean strips any residual HTML tags from the converted
+                # markdown before it is inserted into the admin table cell.
+                md = bleach.clean(html_to_markdown(comment), tags=[], strip=True)
+                if md:
+                    comment_cell = format_html(
+                        '<div style="margin-top:4px;color:#6b7280">{}</div>', md
+                    )
+
+            rows.append(
+                (
+                    problem_type,
+                    level_badge,
+                    self._format_time_period(period),
+                    self._format_elevation(elevation),
+                    aspects or "—",
+                    comment_cell,
+                )
+            )
+
+        body = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
+            '<td style="padding:8px 12px;font-weight:600">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
+            '<table style="border-collapse:collapse;width:100%">'
+            '<thead><tr style="border-bottom:2px solid #d1d5db">'
+            '<th style="padding:6px 12px;text-align:left">Problem</th>'
+            '<th style="padding:6px 12px;text-align:left">Level</th>'
+            '<th style="padding:6px 12px;text-align:left">Period</th>'
+            '<th style="padding:6px 12px;text-align:left">Elevation</th>'
+            '<th style="padding:6px 12px;text-align:left">Aspects</th>'
+            '<th style="padding:6px 12px;text-align:left">Comment</th>'
+            "</tr></thead>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
+        )
+
+    @admin.display(description="Aggregation (customData.CH)")
+    def aggregation(self, obj: Bulletin) -> str:
+        """
+        Render the SLF customData.CH.aggregation array as an HTML table.
+
+        This is the SLF-authored dry/wet grouping that drives the render
+        model's trait split. One row per aggregation entry.
+        """
+        props = self._get_properties(obj)
+        entries = props.get("customData", {}).get("CH", {}).get("aggregation", [])
+        if not entries:
+            return "—"
+
+        rows = []
+        for entry in entries:
+            category = entry.get("category", "")
+            period = entry.get("validTimePeriod", "")
+            title = entry.get("title", "")
+            problem_types = ", ".join(
+                pt.replace("_", " ") for pt in entry.get("problemTypes", [])
+            )
+            rows.append(
+                (
+                    category or "—",
+                    self._format_time_period(period) if period else "—",
+                    title or "—",
+                    problem_types or "—",
+                )
+            )
+
+        body = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
+            '<td style="padding:8px 12px;font-weight:600;'
+            'text-transform:uppercase">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
+            '<table style="border-collapse:collapse;width:100%">'
+            '<thead><tr style="border-bottom:2px solid #d1d5db">'
+            '<th style="padding:6px 12px;text-align:left">Category</th>'
+            '<th style="padding:6px 12px;text-align:left">Period</th>'
+            '<th style="padding:6px 12px;text-align:left">Title</th>'
+            '<th style="padding:6px 12px;text-align:left">Problem types</th>'
+            "</tr></thead>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
+        )
+
+    @admin.display(description="Weather forecast")
+    def weather_forecast(self, obj: Bulletin) -> str:
+        """Extract and render the weather forecast comment."""
+        props = self._get_properties(obj)
+        forecast = props.get("weatherForecast", {})
+        return self._render_comment(forecast.get("comment") if forecast else None)
+
+    @admin.display(description="Weather review")
+    def weather_review(self, obj: Bulletin) -> str:
+        """Extract and render the weather review comment."""
+        props = self._get_properties(obj)
+        review = props.get("weatherReview", {})
+        return self._render_comment(review.get("comment") if review else None)
+
+    @admin.display(description="Snowpack structure")
+    def snowpack_structure(self, obj: Bulletin) -> str:
+        """Extract and render the snowpack structure comment."""
+        props = self._get_properties(obj)
+        snowpack = props.get("snowpackStructure", {})
+        return self._render_comment(snowpack.get("comment") if snowpack else None)
+
+    @admin.display(description="Tendency")
+    def tendency(self, obj: Bulletin) -> str:
+        """Extract and render tendency comments (may be a list)."""
+        props = self._get_properties(obj)
+        tendency_data = props.get("tendency", [])
+        if not tendency_data:
+            return "—"
+        comments = [
+            t.get("comment", "")
+            for t in tendency_data
+            if isinstance(t, dict) and t.get("comment")
+        ]
+        return self._render_comment("\n\n".join(comments) if comments else None)
+
+    @admin.display(description="Raw data")
+    def raw_data_pretty(self, obj: Bulletin) -> str:
+        """Render raw_data as syntax-highlighted, indented JSON."""
+        formatted = json.dumps(obj.raw_data, indent=2, ensure_ascii=False)
+        return format_html(
+            '<pre style="max-height:400px;overflow:auto;background:#f5f5f5;'
+            "padding:0.75rem;border-radius:4px;"
+            'white-space:pre-wrap;word-break:break-word">{}</pre>',
+            formatted,
+        )
+
+    @admin.display(description="Render model")
+    def render_model_pretty(self, obj: Bulletin) -> str:
+        """Render render_model as syntax-highlighted, indented JSON."""
+        formatted = json.dumps(obj.render_model, indent=2, ensure_ascii=False)
+        return format_html(
+            '<pre style="max-height:400px;overflow:auto;background:#f5f5f5;'
+            "padding:0.75rem;border-radius:4px;"
+            'white-space:pre-wrap;word-break:break-word">{}</pre>',
+            formatted,
+        )
+
+
+@admin.register(RegionDayRating)
+class RegionDayRatingAdmin(admin.ModelAdmin):
+    """Admin view for RegionDayRating."""
+
+    list_display = (
+        "region",
+        "date",
+        "min_rating",
+        "max_rating",
+        "max_subdivision",
+        "version",
+    )
+    list_filter = ("min_rating", "max_rating", "version")
+    search_fields = ("region__region_id",)
+    date_hierarchy = "date"
+    raw_id_fields = ("region", "source_bulletin")
+    ordering = ("-date", "region__region_id")
+    readonly_fields = ("uuid", "created_at", "updated_at")
+
+
+@admin.register(WeatherSnapshot)
+class WeatherSnapshotAdmin(admin.ModelAdmin):
+    """Admin view for WeatherSnapshot."""
+
+    change_list_template = "admin/bulletins/weathersnapshot/change_list.html"
+
+    list_display = ["id", "region", "valid_for_date", "weather_code", "fetched_at"]
+    list_filter = ["valid_for_date"]
+    search_fields = ["region__region_id", "region__name"]
+    list_select_related = ("region",)
+    raw_id_fields = ("region",)
+    readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
+    ordering = ["-valid_for_date", "region__region_id"]
+
+    def get_urls(self) -> list[URLPattern]:
+        """Add a custom URL for the one-click weather fetch button."""
+        custom_urls = [
+            path(
+                "fetch-today/",
+                self.admin_site.admin_view(self.fetch_today_view),
+                name="bulletins_weathersnapshot_fetch_today",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def fetch_today_view(self, request: HttpRequest) -> HttpResponseRedirect:
+        """
+        Handle the "Fetch today's weather" button POST.
+
+        Calls fetch_all_regions() for today's date and redirects back to the
+        changelist with a success, warning, or error message so the operator
+        can see the outcome without inspecting logs.
+
+        A warning-level message is used (rather than success) when any regions
+        failed, so the operator notices the partial failure immediately.
+        """
+        changelist_url = reverse("admin:bulletins_weathersnapshot_changelist")
+
+        if request.method != "POST":
+            return HttpResponseRedirect(changelist_url)
+
+        today = timezone.localdate()
+        logger.info("Admin weather fetch triggered for %s", today)
+
+        try:
+            counts = fetch_all_regions(today, commit=True)
+        except Exception:
+            logger.exception("Admin weather fetch failed")
+            self.message_user(
+                request,
+                "Weather fetch failed — check the server logs.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        created = counts["created"]
+        updated = counts["updated"]
+        skipped = counts["skipped"]
+        failed = counts["failed"]
+
+        summary = (
+            f"Fetched today's weather: {created} created, {updated} updated, "
+            f"{skipped} skipped, {failed} failed."
+        )
+        level = messages.WARNING if failed > 0 else messages.SUCCESS
+        self.message_user(request, summary, level)
+
+        return HttpResponseRedirect(changelist_url)
+
+
+# ---------------------------------------------------------------------------
+# BulletinShare
+# ---------------------------------------------------------------------------
+
+
+class BulletinShareClickInline(admin.TabularInline):
+    """Inline display of click rows on the BulletinShare admin page."""
+
+    model = BulletinShareClick
+    extra = 0
+    readonly_fields = [
+        "request",
+        "visitor_hash",
+        "created_at",
+    ]
+    raw_id_fields = ["request"]
+    can_delete = False
+    verbose_name = "Click"
+    verbose_name_plural = "Clicks"
+
+
+@admin.register(BulletinShare)
+class BulletinShareAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShare."""
+
+    list_display = [
+        "token",
+        "region",
+        "target_date",
+        "bulletin",
+        "click_count",
+        "created_at",
+    ]
+    list_filter = ["target_date"]
+    search_fields = ["token", "region__region_id", "region__name"]
+    readonly_fields = [
+        "token",
+        "bulletin",
+        "region",
+        "target_date",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-created_at"]
+    inlines = [BulletinShareClickInline]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[BulletinShare]:
+        """Annotate with click count to avoid one query per row on the changelist."""
+        qs: QuerySet[BulletinShare] = super().get_queryset(request)
+        return qs.annotate(_click_count=Count("clicks"))
+
+    @admin.display(description="Clicks", ordering="_click_count")
+    def click_count(self, obj: BulletinShare) -> int:
+        """Return the pre-annotated click count for this share link."""
+        return cast(int, getattr(obj, "_click_count", 0))
+
+
+# ---------------------------------------------------------------------------
+# BulletinShareClick
+# ---------------------------------------------------------------------------
+
+
+@admin.register(BulletinShareClick)
+class BulletinShareClickAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShareClick."""
+
+    list_display = [
+        "id",
+        "share",
+        "request",
+        "visitor_hash",
+        "created_at",
+    ]
+    list_filter = ["request__country_code"]
+    search_fields = ["share__token", "visitor_hash", "request__ip_address"]
+    readonly_fields = [
+        "share",
+        "request",
+        "visitor_hash",
+        "created_at",
+        "updated_at",
+    ]
+    raw_id_fields = ["request"]
+    ordering = ["-created_at"]
+
+
+# ---------------------------------------------------------------------------
+# BulletinGrouping (SNOW-323)
+# ---------------------------------------------------------------------------
+
+
+@admin.register(BulletinGrouping)
+class BulletinGroupingAdmin(admin.ModelAdmin):
+    """Admin view for BulletinGrouping."""
+
+    list_display = (
+        "bulletin",
+        "target_date",
+        "countries",
+    )
+    list_filter = ("target_date",)
+    date_hierarchy = "target_date"
+    raw_id_fields = ("bulletin",)
+    readonly_fields = ("uuid", "created_at", "updated_at")
+    ordering = ("-target_date",)
+
+
+@admin.register(ForecastPoint)
+class ForecastPointAdmin(admin.ModelAdmin):
+    """Admin view for ForecastPoint."""
+
+    list_display = (
+        "id",
+        "latitude",
+        "longitude",
+        "elevation",
+        "lat_cell",
+        "lon_cell",
+        "elevation_band",
+    )
+    list_filter = ("elevation_band",)
+    readonly_fields = ("uuid", "created_at", "updated_at")
+    ordering = ("-created_at",)
+
+
+@admin.register(ForecastPointWeather)
+class ForecastPointWeatherAdmin(admin.ModelAdmin):
+    """Admin view for ForecastPointWeather."""
+
+    list_display = [
+        "id",
+        "forecast_point",
+        "valid_for_date",
+        "weather_code",
+        "temperature_2m_max",
+        "snowfall_sum",
+        "wind_speed_10m_max",
+        "fetched_at",
+    ]
+    list_filter = ["valid_for_date"]
+    list_select_related = ("forecast_point",)
+    raw_id_fields = ("forecast_point",)
+    readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
+    ordering = ["-valid_for_date", "forecast_point__id"]

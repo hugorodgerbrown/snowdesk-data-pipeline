@@ -23,7 +23,7 @@ from typing import Any, cast
 import pytest
 from django.core.management import call_command
 
-FIXTURES_DIR = Path("regions/fixtures")
+FIXTURES_DIR = Path("apps/regions/fixtures")
 EAWS_FIXTURE = FIXTURES_DIR / "eaws_CH.json"
 
 
@@ -75,7 +75,7 @@ class TestBoundaryFromChildren:
 
     def test_adjacent_polygons_collapse_to_single_polygon(self) -> None:
         """Two L4 children sharing an edge produce one Polygon, not a Multi."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _boundary_from_children,
         )
 
@@ -114,7 +114,7 @@ class TestBoundaryFromChildren:
 
     def test_disjoint_polygons_yield_multipolygon(self) -> None:
         """Two L4 children with no shared edge yield a MultiPolygon."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _boundary_from_children,
         )
 
@@ -154,7 +154,7 @@ class TestBoundaryFromChildren:
 
     def test_returns_json_safe_lists(self) -> None:
         """Coordinates round-trip through json — no shapely tuple residue."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _boundary_from_children,
         )
 
@@ -210,7 +210,7 @@ class TestBboxFromChildren:
 
     def test_bbox_from_multipolygon_children(self) -> None:
         """A MultiPolygon boundary yields the correct union bbox (no crash)."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _bbox_from_children,
         )
 
@@ -250,7 +250,7 @@ class TestBboxFromChildren:
 
     def test_bbox_from_polygon_children(self) -> None:
         """A plain Polygon boundary still yields the correct bbox."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _bbox_from_children,
         )
 
@@ -277,7 +277,7 @@ class TestBboxFromChildren:
 
     def test_mixed_polygon_and_multipolygon_children(self) -> None:
         """Polygon and MultiPolygon children in one call share a union bbox."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _bbox_from_children,
         )
 
@@ -320,7 +320,7 @@ class TestBboxFromChildren:
 
     def test_unsupported_geometry_type_raises(self) -> None:
         """A non-(Multi)Polygon boundary raises a clear error, not a crash."""
-        from regions.management.commands.refresh_eaws_fixtures import (
+        from apps.regions.management.commands.refresh_eaws_fixtures import (
             _bbox_from_children,
         )
 
@@ -482,6 +482,6 @@ def _patch_fixture_paths(
     eaws: Path,
 ) -> None:
     """Redirect the command's module-level fixture path to the tmp_path copy."""
-    from regions.management.commands import refresh_eaws_fixtures as mod
+    from apps.regions.management.commands import refresh_eaws_fixtures as mod
 
     monkeypatch.setattr(mod, "_EAWS_FIXTURE", eaws)

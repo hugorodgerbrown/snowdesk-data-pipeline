@@ -7,7 +7,7 @@ last-reviewed: 2026-07-24
 
 # Weather-driven bulletin header
 
-The bulletin detail page renders a unified header panel whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`bulletins/models.py`](../bulletins/models.py)); display logic lives in [`bulletins/services/weather_display.py`](../bulletins/services/weather_display.py); the panel markup lives in [`templates/includes/_weather_panel.html`](../templates/includes/_weather_panel.html), included by both [`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html) and the resort page ([`public/templates/public/resort.html`](../public/templates/public/resort.html)); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather panel** section.
+The bulletin detail page renders a unified header panel whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`apps/bulletins/models.py`](../apps/bulletins/models.py)); display logic lives in [`apps/bulletins/services/weather_display.py`](../apps/bulletins/services/weather_display.py); the panel markup lives in [`templates/includes/_weather_panel.html`](../templates/includes/_weather_panel.html), included by both [`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html) and the resort page ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather panel** section.
 
 The bulletin page always renders `templates/includes/bulletin_header.html` — a thin wrapper around the shared panel that adds region wayfinding (H1 + subregion eyebrow) and the share button. There is no feature flag controlling template selection; the `weather_header` flag, the legacy `bulletin_masthead.html` partial, and the pre-SNOW-100 band partial (`bulletin_weather_header.html`) were all removed when the unified header shipped (SNOW-100). The only flag in the inventory is `edit_map` — see [`docs/feature-flags.md`](feature-flags.md).
 
@@ -16,9 +16,9 @@ The bulletin page always renders `templates/includes/bulletin_header.html` — a
 `includes/_weather_panel.html` is a parameterised partial with two callers:
 
 * **Bulletin masthead** (`includes/bulletin_header.html`) — `panel_tag="header"`, region `<h1>`, subregion eyebrow, share button. Rendered output is unchanged from before the SNOW-509 extraction.
-* **Resort page** (`public/templates/public/resort.html`) — no region `<h1>` (the page has its own resort `<h1>`), no share button, shows the *parent region's* `WeatherSnapshot` — never a per-resort forecast. See [`docs/decisions/resort-page-weather-shows-region-snapshot.md`](decisions/resort-page-weather-shows-region-snapshot.md) for why. Point-local weather (a favourited pin's own forecast) stays a favourite-page-only feature — see the ForecastPanel section below.
+* **Resort page** (`apps/public/templates/public/resort.html`) — no region `<h1>` (the page has its own resort `<h1>`), no share button, shows the *parent region's* `WeatherSnapshot` — never a per-resort forecast. See [`docs/decisions/resort-page-weather-shows-region-snapshot.md`](decisions/resort-page-weather-shows-region-snapshot.md) for why. Point-local weather (a favourited pin's own forecast) stays a favourite-page-only feature — see the ForecastPanel section below.
 
-`public.views.fetch_weather_snippet` (the belt-and-braces HTMX retry, below) accepts `?variant=panel` to select which of the two templates the retry response uses.
+`apps.public.views.fetch_weather_snippet` (the belt-and-braces HTMX retry, below) accepts `?variant=panel` to select which of the two templates the retry response uses.
 
 ## Data flow
 
@@ -34,7 +34,7 @@ WeatherSnapshot         build_weather_display(...)        _weather_panel.html
                                                                  includes it)
 ```
 
-`bulletin_detail` in [`public/views.py`](../public/views.py) fetches the snapshot via `WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()` and passes the `WeatherDisplay` dict (or `None`) into the template context as `weather_display`. `resort_detail` does the same lookup keyed on `resort.region` (SNOW-509). When `weather_display` is `None` the panel still renders — the hero icon is omitted, weather/sunrise lines are dropped from the metadata strip, and `data-weather-bucket="none"` triggers a neutral dark fallback colour via `--color-weather-fallback`.
+`bulletin_detail` in [`apps/public/views.py`](../apps/public/views.py) fetches the snapshot via `WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()` and passes the `WeatherDisplay` dict (or `None`) into the template context as `weather_display`. `resort_detail` does the same lookup keyed on `resort.region` (SNOW-509). When `weather_display` is `None` the panel still renders — the hero icon is omitted, weather/sunrise lines are dropped from the metadata strip, and `data-weather-bucket="none"` triggers a neutral dark fallback colour via `--color-weather-fallback`.
 
 ## Bucket map
 
@@ -146,7 +146,7 @@ For the favourite detail card's multi-day panel, `build_point_forecast_panel(sna
                                 └─ None when snapshots is empty
 ```
 
-`favourites.views.favourite_card` queries
+`apps.favourites.views.favourite_card` queries
 `ForecastPointWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
 `-valid_for_date`, the opposite of what a forward-looking panel wants),
 slices to `POINT_FORECAST_DAYS`, and passes the panel or `None` into

@@ -1,6 +1,6 @@
-"""Smoke tests for core.models.BaseModel (SNOW-91)."""
+"""Smoke tests for apps.core.models.BaseModel (SNOW-91)."""
 
-from core.models import BaseModel
+from apps.core.models import BaseModel
 
 
 def test_base_model_is_abstract() -> None:
@@ -18,14 +18,14 @@ def test_base_model_default_ordering() -> None:
 
 def test_account_inherits_base_model() -> None:
     """Account is a profile model extending BaseModel, not AbstractBaseUser."""
-    from accounts.models import Account
+    from apps.accounts.models import Account
 
     assert issubclass(Account, BaseModel)
 
 
 def test_pipeline_models_inherit_base_model() -> None:
-    from bulletins.models import Bulletin, PipelineRun
-    from regions.models import MicroRegion
+    from apps.bulletins.models import Bulletin, PipelineRun
+    from apps.regions.models import MicroRegion
 
     for model in (Bulletin, PipelineRun, MicroRegion):
         assert issubclass(model, BaseModel)

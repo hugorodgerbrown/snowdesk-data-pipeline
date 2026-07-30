@@ -145,7 +145,7 @@ def test_llms_full_line_carries_country_and_major_region() -> None:
     )
 
     body = _body()
-    # The country name (from public.api.COUNTRY_NAMES) and the English
+    # The country name (from apps.public.api.COUNTRY_NAMES) and the English
     # major-region name both appear on the same line as the region link.
     line = next(line for line in body.splitlines() if "/ch-4115/" in line)
     assert "Switzerland" in line

@@ -1,5 +1,5 @@
 """
-tests/mcp_server/test_views.py — Tests for mcp_server.views.mcp_endpoint.
+tests/mcp_server/test_views.py — Tests for apps.mcp_server.views.mcp_endpoint.
 
 Covers the HTTP-layer contract: POST-only JSON-RPC dispatch, the 405
 method guard, CSRF exemption, ``Cache-Control: no-store`` on every
@@ -88,7 +88,7 @@ def test_slashless_url_reaches_the_endpoint_without_a_redirect(client: Client) -
 
 @pytest.mark.django_db
 def test_canonical_and_slashless_urls_share_one_view(client: Client) -> None:
-    """Both spellings reverse/route to ``mcp_server.views.mcp_endpoint``."""
+    """Both spellings reverse/route to ``apps.mcp_server.views.mcp_endpoint``."""
     assert reverse("api:mcp:endpoint") == "/api/mcp/"
     assert reverse("api:mcp:endpoint_noslash") == "/api/mcp"
 

@@ -1,7 +1,7 @@
 """
 tests/bulletins/test_openmeteo_mirror.py — Tests for the dev-only Open-Meteo mirror view.
 
-The mirror replays ``bulletins/local_mirrors/openmeteo_archive.ndjson`` in an Open-Meteo-
+The mirror replays ``apps/bulletins/local_mirrors/openmeteo_archive.ndjson`` in an Open-Meteo-
 compatible response shape, resolved by lat/lon to a Region and filtered by
 date range. These tests exercise it via the Django test client (DEBUG is True
 under config.settings.development, so the URLs are mounted).
@@ -16,8 +16,8 @@ from typing import Any, cast
 import pytest
 from django.test import Client, override_settings
 
-from bulletins.services.openmeteo_archive import write_archive
-from regions.models import Centre
+from apps.bulletins.services.openmeteo_archive import write_archive
+from apps.regions.models import Centre
 from tests.factories import MicroRegionFactory
 
 

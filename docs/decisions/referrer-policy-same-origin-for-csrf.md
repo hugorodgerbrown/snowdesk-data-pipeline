@@ -9,7 +9,7 @@ last-reviewed: 2026-07-19
 
 ## Decision
 
-Token-bearing views in `accounts/views.py` set their own `Referrer-Policy`
+Token-bearing views in `apps/accounts/views.py` set their own `Referrer-Policy`
 header (overriding the global `strict-origin-when-cross-origin` default from
 `SecurityHeadersMiddleware`). The value depends on whether the response
 renders a same-origin POST form:

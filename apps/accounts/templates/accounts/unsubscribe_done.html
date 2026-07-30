@@ -1,0 +1,32 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/accounts/templates/accounts/unsubscribe_done.html — Unsubscribe complete.
+
+Shown after a successful unsubscribe POST, or when the region subscription was
+already removed (idempotent re-submit).
+{% endcomment %}
+{% load i18n components %}
+
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Unsubscribed — Snowdesk" as page_title %}
+    {% trans "You have been successfully unsubscribed from Snowdesk avalanche bulletin alerts." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{% trans "You've been unsubscribed" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "You will no longer receive avalanche bulletin alerts for that region." %}
+{% endblock %}
+
+{% block status_cta %}
+    <div class="mt-6">
+        {% url 'public:home' as home_url %}
+        {% trans "Back to Snowdesk" as label %}
+        {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
+    </div>
+{% endblock %}

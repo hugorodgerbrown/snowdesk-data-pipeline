@@ -13,8 +13,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 
-from accounts.aaguids import lookup as aaguid_lookup
-from accounts.models import (
+from apps.accounts.aaguids import lookup as aaguid_lookup
+from apps.accounts.models import (
     Account,
     PasskeyCredential,
     Subscription,
@@ -32,7 +32,7 @@ User = get_user_model()
 
 
 class TestAaguidLookup:
-    """Tests for accounts.aaguids.lookup."""
+    """Tests for apps.accounts.aaguids.lookup."""
 
     def test_returns_name_for_known_aaguid(self) -> None:
         assert (
@@ -356,8 +356,8 @@ class TestUserIsVerified:
     """Tests for the shared ``user_is_verified`` helper (SNOW-477).
 
     This is the single definition behind both the server-side field-report gate
-    (``observations/views.py``) and the client-side ``report_eligible`` flag
-    (``public/views.py``).
+    (``apps/observations/views.py``) and the client-side ``report_eligible`` flag
+    (``apps/public/views.py``).
     """
 
     def test_false_for_anonymous_user(self) -> None:

@@ -1,0 +1,244 @@
+{% comment %}
+apps/public/templates/public/base.html — Canonical layout for the public site.
+
+Pulled out of bulletin.html (the "most complete, use as base" page flagged
+in SNOW-9). Every public page extends this template, including home.html (which
+hosts the map at /).
+Subscription pages (apps/accounts/templates/accounts/) also extend this file
+directly.
+
+Blocks
+------
+page_meta       : page identity — <title>, meta description, og:url, and
+                  the og:/twitter: title+description pair. Every page
+                  overrides this with a single
+                  {% include "includes/_page_meta.html" with title=… description=… %}.
+                  Pass sharing=False (with a comment saying why) for a
+                  page that should never produce a share card. There is
+                  no separate title / meta_description block: one emitter
+                  is the whole point, so that a page cannot half-set its
+                  metadata or omit it by accident (SNOW-553).
+og_tags         : OpenGraph / Twitter card constants that do not vary by
+                  page — og:site_name, og:locale, og:image and
+                  its dimensions and alt text, twitter:card,
+                  twitter:image, twitter:image:alt. Pages should not need
+                  to override this; per-page identity belongs in
+                  page_meta.
+favicon         : the <link rel="icon"> tag. Default points at the plain
+                  favicon.svg; bulletin.html overrides with a level-tinted
+                  variant matching the page's danger rating.
+extra_head      : page-specific <head> content (stylesheets, scripts,
+                  embedded JSON). Loaded AFTER output.css so page-level
+                  overrides win.
+body_class      : Tailwind classes on <body>. Default gives background,
+                  text colour, font, min-h-screen, and flex-col so pages
+                  with a centred hero (home.html) can rely on flex-1 to
+                  fill remaining vertical space.
+nav             : top navigation. Default = the plain wordmark variant;
+                  pages that want a back-chevron override this block.
+content         : the page body.
+site_footer     : the global site footer. Default = the small SLF
+                  attribution + Terms link partial introduced in
+                  SNOW-30 to satisfy the SLF CC BY 4.0 licence.
+                  Pages with a richer per-page footer (bulletin.html)
+                  still inherit this line below the rich one — the
+                  rich footer is page-content; this is the site
+                  licence line. Override with {% block site_footer %}{% endblock %}
+                  only if a page needs to reposition the licence
+                  line (e.g. into a floating overlay), not to remove
+                  it.
+extra_js        : scripts loaded at end of <body>. Used by
+                  accounts/ templates to inject HTMX.
+{% endcomment %}
+{% load i18n og_tags static %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {% block favicon %}
+            <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        {% endblock %}
+        {# SNOW-553: page identity — <title>, description, og:url, and the    #}
+        {# og:/twitter: title+description pair — comes from one emitter, so  #}
+        {# a page can only omit it deliberately. Every child template        #}
+        {# overrides this block with a single include; the default below is  #}
+        {# a last-resort fallback, not something a real page should hit.     #}
+        {% block page_meta %}
+            {% include "includes/_page_meta.html" with title=SITE_NAME_DISPLAY description="" %}
+        {% endblock page_meta %}
+        {# SNOW-218: OpenGraph / Twitter card constants that don't vary by    #}
+        {# page. Per-page identity lives in the page_meta block above.        #}
+        {# SNOW-399: og:site_name reflects SITE_NAME_DISPLAY so a shared       #}
+        {# staging link previews as "Snowdesk (Staging)" and isn't mistaken    #}
+        {# for a production URL.                                              #}
+        {% block og_tags %}
+            <meta property="og:site_name" content="{{ SITE_NAME_DISPLAY }}">
+            {# og:type moved into the page_meta emitter (SNOW-555) — it is  #}
+            {# the one "constant" that isn't one, since bulletin pages are  #}
+            {# articles, and a child template cannot un-emit an inherited   #}
+            {# tag.                                                          #}
+            <meta property="og:locale" content="{{ LANGUAGE_CODE|og_locale }}">
+            <meta property="og:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
+            <meta property="og:image:width" content="1200">
+            <meta property="og:image:height" content="630">
+            <meta
+                property="og:image:alt"
+                content="{% trans 'Snowdesk — avalanche bulletins across the Alps' %}"
+            >
+            <meta name="twitter:card" content="summary_large_image">
+            <meta name="twitter:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
+            <meta
+                name="twitter:image:alt"
+                content="{% trans 'Snowdesk — avalanche bulletins across the Alps' %}"
+            >
+        {% endblock og_tags %}
+        {# SNOW-79: PWA manifest + theme colour are linked site-wide so the   #}
+        {# browser's install affordance is available from any public page,    #}
+        {# not just /map/. The SW registration script runs deferred at the    #}
+        {# end of <body> via {% block extra_js %}.                            #}
+        {# SNOW-118: the manifest is served by ``apps.public.views.serve_manifest`` #}
+        {# (not as a static file) so ``id``, ``start_url``, and ``scope`` can #}
+        {# be rendered as absolute URLs from ``settings.SITE_BASE_URL``.       #}
+        <link rel="manifest" href="{% url 'web_manifest' %}">
+        {# SNOW-399: PWA_THEME_COLOR is the environment-appropriate hex —      #}
+        {# amber on staging, brand dark on production. Kept in sync with the  #}
+        {# manifest theme_color by apps.public.site_environment.                    #}
+        {# ds-lint-allow: meta tag does not resolve CSS variables; mobile browser chrome requires a literal hex #}
+        <meta name="theme-color" content="{{ PWA_THEME_COLOR }}">
+        {# SNOW-374: PWA version-check contract. Bake the current build      #}
+        {# into the shell so the client can compare against X-App-Version /  #}
+        {# X-App-Min-Version on every response and trigger a forced-update   #}
+        {# modal when it falls behind. Empty content strings are safe — the  #}
+        {# client treats them as "no constraint declared".                    #}
+        <meta name="pwa-app-version" content="{{ APP_VERSION }}">
+        <meta name="pwa-app-min-version" content="{{ APP_MIN_VERSION }}">
+        {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
+        {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
+        {# PK leaks user count and growth rate and is trivially guessable. #}
+        {# Empty content for anonymous requests — db.js treats it as null. #}
+        <meta name="pwa-user-id" content="{{ PWA_USER_ID }}">
+        {# Telemetry master switch (settings.PWA_TELEMETRY_ENABLED). "0"   #}
+        {# turns static/js/telemetry.js into an inert no-op — no buffering, #}
+        {# no sendBeacon, no /api/telemetry POSTs. Set                      #}
+        {# PWA_TELEMETRY_ENABLED=False in .env to silence telemetry when    #}
+        {# running locally (docs/telemetry-pipeline.md).                    #}
+        <meta name="pwa-telemetry-enabled" content="{{ PWA_TELEMETRY_ENABLED|yesno:'1,0' }}">
+
+        {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
+        {# Screen" on iPhone produces a screenshot icon and a non-         #}
+        {# standalone Safari window. apple-touch-icon must be opaque (no   #}
+        {# transparency) — iOS rounds the corners automatically.           #}
+        {# SNOW-399: apple-touch-icon href and apple-mobile-web-app-title  #}
+        {# resolve against PWA_ICON_DIR / SITE_NAME_DISPLAY so a staging   #}
+        {# install lands on the iOS home screen with a distinct amber      #}
+        {# tile and a "Snowdesk (Staging)" label — the manifest doesn't    #}
+        {# apply on iOS, so this legacy contract is the only mechanism.    #}
+        <link rel="apple-touch-icon" sizes="180x180" href="{{ PWA_ICON_DIR }}apple-touch-icon-180.png">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="{{ SITE_NAME_DISPLAY }}">
+        {% include "includes/theme_head.html" %}
+        {# Preload primary font files so the browser fetches them in parallel    #}
+        {# with the stylesheet rather than after CSS parsing discovers them.     #}
+        {# Only the two DM Sans files are preloaded — they cover weights 400–600 #}
+        {# for Latin and Latin-ext, which are all that regular pages need.       #}
+        {# DM Mono is not preloaded as it only appears in non-critical contexts. #}
+        <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin.woff2' %}">
+        <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin-ext.woff2' %}">
+        <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {% block extra_head %}{% endblock %}
+    </head>
+    <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
+        {# SNOW-377: persistent offline banner. Hidden by default; revealed by #}
+        {# pwa_offline.js when the browser reports offline or a request fails. #}
+        {% include "includes/_offline_banner.html" %}
+        {% block nav %}
+            {% include "includes/nav.html" %}
+        {% endblock %}
+        {% block content %}{% endblock %}
+        {% block site_footer %}
+            {% include "public/_site_footer.html" %}
+        {% endblock %}
+        {# SNOW-79 follow-up: SW-update banner. Hidden by default; revealed by   #}
+        {# sw_register.js when a new service worker has installed and the page  #}
+        {# is still controlled by the old one, and by pwa_version_check.js on   #}
+        {# an X-App-Version drift (SNOW-374 soft-update path).                  #}
+        {% include "includes/_sw_update_banner.html" %}
+        {# SNOW-374: forced-update modal. Hidden by default; opened by       #}
+        {# pwa_version_check.js when the server declares an X-App-Min-Version #}
+        {# above the shell's build, or when the soft banner has escalated    #}
+        {# past its 24h grace window on cold launch.                          #}
+        {% include "includes/_pwa_update_modal.html" %}
+        {# SNOW-379: install-prompt banners. Two hidden divs (Android /     #}
+        {# iOS); pwa_install.js reveals the platform-appropriate one once   #}
+        {# the meaningful-action threshold is met (2 distinct regions       #}
+        {# viewed or >30s engaged) and the 30-day dismiss cool-off has       #}
+        {# elapsed.                                                          #}
+        {% include "includes/_pwa_install_prompt.html" %}
+        {# SNOW-375: terminal Reset Required overlay. Hidden by default;   #}
+        {# revealed by static/js/db.js when an IndexedDB migration throws #}
+        {# or the DB refuses to open. The CTA calls the SNOW-378          #}
+        {# pwa_reset.js six-step wipe.                                    #}
+        {% include "includes/_pwa_reset_required.html" %}
+        {# SNOW-376: full-width mutation-queue permanent-failure toast.   #}
+        {# Hidden by default; revealed by static/js/mutation_queue.js     #}
+        {# when a queued mutation is marked "failed" (a non-408/429 4xx, #}
+        {# or one that exhausted its retry budget).                      #}
+        {% include "includes/_toast_banner.html" %}
+        {# SNOW-486: shared "×" dismiss handler for every [data-action=    #}
+        {# "dismiss"] control inside a [data-overlay] element, plus the   #}
+        {# toast auto-dismiss controller. No dependency on the scripts    #}
+        {# below — loads first among them so it's registered before any   #}
+        {# overlay could plausibly be revealed and clicked.                #}
+        <script src="{% static 'js/overlays.js' %}" defer></script>
+        {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
+        {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
+        {# and telemetry.js (queue:events + context helper).              #}
+        <script src="{% static 'js/db.js' %}" defer></script>
+        {# SNOW-388: stamps X-Client-Version on same-origin fetch/HTMX      #}
+        {# requests. MUST load FIRST among the fetch-wrapping scripts below #}
+        {# (sw_register.js, pwa_version_check.js, pwa_offline.js) so it     #}
+        {# becomes the INNERMOST wrapper — sw_register.js dispatches a      #}
+        {# fetch() synchronously at its own IIFE-load (fetchSwConfig), so   #}
+        {# any script that installs its fetch wrapper AFTER sw_register.js  #}
+        {# misses that call entirely. See the header comment in             #}
+        {# pwa_client_version.js for the full load-order rationale.         #}
+        <script src="{% static 'js/pwa_client_version.js' %}" defer></script>
+        {# SNOW-385: first-party client telemetry buffer + sendBeacon    #}
+        {# critical-event path. MUST load after db.js. Consumer scripts   #}
+        {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
+        {# the load order is defensive rather than strict.                #}
+        <script src="{% static 'js/telemetry.js' %}" defer></script>
+        {# SNOW-376: pure backoff/classification helpers shared by the      #}
+        {# page (below) and the SW's Background Sync self-drain path       #}
+        {# (static/js/sw.js, via importScripts). Must load BEFORE          #}
+        {# mutation_queue.js, which reads window.pwaMutationQueueCore.     #}
+        <script src="{% static 'js/mutation_queue_core.js' %}" defer></script>
+        {# SNOW-376: real client mutation-queue behind window.pwaMutationQueue #}
+        {# (SNOW-384 shipped the no-op stub every existing call site already #}
+        {# adopted). Loaded after telemetry.js per the same defensive-load-  #}
+        {# order convention as every other pwaTelemetry consumer below.      #}
+        <script src="{% static 'js/mutation_queue.js' %}" defer></script>
+        {# SNOW-79: register the PWA shell SW from every public page.       #}
+        {# SNOW-388: dispatches a fetch() synchronously at IIFE-load — must #}
+        {# load AFTER pwa_client_version.js above so that fetch is wrapped. #}
+        <script src="{% static 'js/sw_register.js' %}" defer></script>
+        {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
+        <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
+        {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
+        {# headers feed the banner and network failures reveal it.          #}
+        <script src="{% static 'js/pwa_offline.js' %}" defer></script>
+        {# SNOW-418: caches favourites (roster + card) into data:favourites #}
+        {# on every successful load, and repaints from that cache on a     #}
+        {# failed favourites:list / favourites:card HTMX request. Loads    #}
+        {# after db.js (needs window.pwaDb) and pwa_offline.js (shares the #}
+        {# same htmx:sendError convention).                                #}
+        <script src="{% static 'js/favourites_offline.js' %}" defer></script>
+        {# SNOW-379: install-prompt orchestration. Captures                  #}
+        {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}
+        {# on iOS Safari once engagement threshold is met.                   #}
+        <script src="{% static 'js/pwa_install.js' %}" defer></script>
+        {% block extra_js %}{% endblock %}
+    </body>
+</html>

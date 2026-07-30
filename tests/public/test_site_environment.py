@@ -1,6 +1,6 @@
 """tests/public/test_site_environment.py — PWA identity resolver (SNOW-399).
 
-Unit-level guards for ``public.site_environment.PWAEnvironmentIdentity``.
+Unit-level guards for ``apps.public.site_environment.PWAEnvironmentIdentity``.
 The manifest view and the template context processor both consume
 ``from_settings()``; keeping a direct unit test here means a regression
 in the resolver surfaces without depending on the HTTP layer or the
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from django.test import override_settings
 
-from public.site_environment import PWAEnvironmentIdentity
+from apps.public.site_environment import PWAEnvironmentIdentity
 
 
 @override_settings(SITE_ENVIRONMENT="production")

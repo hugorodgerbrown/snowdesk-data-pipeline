@@ -1,7 +1,7 @@
 # load_archive.py — Thin CLI wrapper over the canonical Météo-France archive loader.
 #
 # The canonical loading logic has moved to
-# ``bulletins.services.meteofrance_archive_loader.load_meteofrance_archive``
+# ``apps.bulletins.services.meteofrance_archive_loader.load_meteofrance_archive``
 # so it can be invoked by both this offline script and the Django admin
 # upload view (SNOW-227).
 #
@@ -102,7 +102,9 @@ def load_archive(
         Exit code: ``0`` on clean completion, ``1`` if any row failed.
 
     """
-    from bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
+    from apps.bulletins.services.meteofrance_archive_loader import (
+        load_meteofrance_archive,
+    )
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)

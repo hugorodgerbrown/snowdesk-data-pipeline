@@ -1,5 +1,5 @@
 """
-tests/bulletins/services/test_geoip.py — Tests for bulletins.services.geoip.
+tests/bulletins/services/test_geoip.py — Tests for apps.bulletins.services.geoip.
 
 Covers the happy path (public IP returning a GeoLookup), private/loopback
 addresses, malformed input, and missing-mmdb graceful degradation.
@@ -18,8 +18,12 @@ import pytest
 from django.conf import settings as django_settings
 from pytest_django.fixtures import SettingsWrapper
 
-from bulletins.services import geoip as geoip_module
-from bulletins.services.geoip import GeoLookup, geo_lookup, reset_reader_for_testing
+from apps.bulletins.services import geoip as geoip_module
+from apps.bulletins.services.geoip import (
+    GeoLookup,
+    geo_lookup,
+    reset_reader_for_testing,
+)
 
 # Marker: skip if the City DB doesn't exist locally.
 _GEOIP_DB_EXISTS = (

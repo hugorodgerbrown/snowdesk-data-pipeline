@@ -1,7 +1,7 @@
 """
 tests/public/test_feeds.py — Tests for the per-country RSS/Atom feeds.
 
-Covers ``CountryBulletinFeed`` in ``public/feeds.py`` (SNOW-396):
+Covers ``CountryBulletinFeed`` in ``apps/public/feeds.py`` (SNOW-396):
 
 * The four covered country codes (ch, at, it, fr) all resolve.
 * Unknown country codes return 404.

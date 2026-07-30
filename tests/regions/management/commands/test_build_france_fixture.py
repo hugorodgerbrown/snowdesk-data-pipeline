@@ -7,7 +7,7 @@ Covers the ``build_france_fixture`` command:
   - Idempotent: second --commit reports 0 change(s).
   - L4 entries have correct region_id, name (from EAWS names lookup),
     subregion FK natural key, and country (inferred via the L1 parent).
-  - Names come from regions.names.lookup (monkeypatched in tests).
+  - Names come from apps.regions.names.lookup (monkeypatched in tests).
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _write_json(path: Path, data: object) -> None:
 # ---------------------------------------------------------------------------
 
 # Synthetic EAWS name map used in tests — injected via monkeypatch on
-# regions.names.lookup so tests do not rely on the real vendored files.
+# apps.regions.names.lookup so tests do not rely on the real vendored files.
 _SYNTHETIC_FR_NAMES: dict[str, str] = {
     "FR-01": "Chablais",
     "FR-02": "Aravis",
@@ -137,10 +137,10 @@ def _patch_paths(
 ) -> None:
     """Redirect the command's module-level path constants to the tmp_path copies.
 
-    Also monkeypatches ``regions.names.lookup`` to return values from the
+    Also monkeypatches ``apps.regions.names.lookup`` to return values from the
     synthetic name map, avoiding dependency on the vendored EAWS files.
     """
-    from regions.management.commands import build_france_fixture as mod
+    from apps.regions.management.commands import build_france_fixture as mod
 
     monkeypatch.setattr(mod, "_EAWS_GEOJSON", eaws_path)
     monkeypatch.setattr(mod, "_MF_MASSIFS", mf_path)
@@ -279,7 +279,7 @@ class TestBuildFranceFixtureCommit:
         eaws, mf, fixture = _seed_sources(tmp_path)
         _patch_paths(monkeypatch, eaws, mf, fixture)
         # Override lookup to always return None
-        from regions.management.commands import build_france_fixture as mod
+        from apps.regions.management.commands import build_france_fixture as mod
 
         monkeypatch.setattr(mod, "lookup", lambda key, lang: None)
 

@@ -4,7 +4,7 @@
  *
  * The module reads #map-controls-br / #map-controls-collapsible /
  * #map-controls-toggle and returns early if any is absent, so the fixture
- * (mirroring public/templates/public/partials/_map_embed.html) must exist
+ * (mirroring apps/public/templates/public/partials/_map_embed.html) must exist
  * BEFORE the module is imported. Each test re-imports via vi.resetModules()
  * so the IIFE runs fresh against its own fixture and localStorage state.
  *

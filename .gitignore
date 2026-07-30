@@ -67,4 +67,4 @@ Thumbs.db
 .vapid-private.*
 
 # GeoIP database files — downloaded by bin/fetch-geoip-data; not committed
-data/geoip/*.mmdb
+reference_data/geoip/*.mmdb

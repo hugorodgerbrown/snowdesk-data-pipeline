@@ -23,17 +23,19 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from bulletins.models import PipelineRun
-from bulletins.services.slf_archive import read_archive, write_archive
+from apps.bulletins.models import PipelineRun
+from apps.bulletins.services.slf_archive import read_archive, write_archive
 from tests.factories import BulletinFactory, PipelineRunFactory
 
 # ---------------------------------------------------------------------------
 # Patch targets
 # ---------------------------------------------------------------------------
 
-PATCH_SLF = "bulletins.services.slf_fetcher.run_slf_pipeline"
-PATCH_ALBINA = "bulletins.services.albina_fetcher.run_albina_pipeline"
-PATCH_METEOFRANCE = "bulletins.services.meteofrance_fetcher.run_meteofrance_pipeline"
+PATCH_SLF = "apps.bulletins.services.slf_fetcher.run_slf_pipeline"
+PATCH_ALBINA = "apps.bulletins.services.albina_fetcher.run_albina_pipeline"
+PATCH_METEOFRANCE = (
+    "apps.bulletins.services.meteofrance_fetcher.run_meteofrance_pipeline"
+)
 # The registry is built lazily; patch the underlying functions at their
 # canonical locations so both the command and the registry pick up the mock.
 
@@ -151,7 +153,7 @@ class TestFetchBulletinsDateResolution:
         mock_run.return_value = _make_successful_run()
 
         with patch(
-            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
+            "apps.bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins", "--source", "slf", "--today")
@@ -217,7 +219,7 @@ class TestFetchBulletinsDateResolution:
         mock_run.return_value = _make_successful_run()
 
         with patch(
-            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
+            "apps.bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins", "--source", "slf")
@@ -245,7 +247,7 @@ class TestFetchBulletinsDateResolution:
         )
 
         with patch(
-            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
+            "apps.bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins", "--source", "slf")
@@ -261,7 +263,7 @@ class TestFetchBulletinsDateResolution:
         mock_run.return_value = _make_successful_run()
 
         with patch(
-            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
+            "apps.bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command(
@@ -802,7 +804,7 @@ class TestFetchBulletinsErrorHandling:
 
         with (
             patch(
-                "bulletins.management.commands.fetch_bulletins.Command._flush_stash",
+                "apps.bulletins.management.commands.fetch_bulletins.Command._flush_stash",
                 side_effect=[PermissionError("disk full"), None],
             ),
             override_settings(

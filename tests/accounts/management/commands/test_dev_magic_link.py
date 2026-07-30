@@ -19,8 +19,8 @@ from django.core.management import CommandError, call_command
 from django.test import override_settings
 from django.utils import timezone
 
-from accounts.models import Account
-from accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
+from apps.accounts.models import Account
+from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
 from tests.factories import AccountFactory
 
 User = get_user_model()

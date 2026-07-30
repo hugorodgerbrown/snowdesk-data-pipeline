@@ -20,7 +20,7 @@ import pytest
 from django.http import HttpResponse
 from playwright.sync_api import Route
 
-from public import views as public_views
+from apps.public import views as public_views
 from tests.e2e.conftest import PwaPage
 
 # ---------------------------------------------------------------------------

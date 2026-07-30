@@ -42,7 +42,7 @@ repos:
         # Target list MUST match tox.ini's [testenv:mypy] command exactly, so a
         # local commit can't pass while CI mypy fails on a package the hook
         # skipped (SNOW-512).
-        entry: .venv/bin/mypy core/ bulletins/ regions/ public/ accounts/ analytics/ tests/ config/ observations/ favourites/ mcp_server/ schedule.py
+        entry: .venv/bin/mypy apps/core/ apps/bulletins/ apps/regions/ apps/public/ apps/accounts/ apps/analytics/ tests/ config/ apps/observations/ apps/favourites/ apps/mcp_server/ schedule.py
         language: system
         types: [python]
         pass_filenames: false

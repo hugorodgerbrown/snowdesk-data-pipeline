@@ -67,7 +67,7 @@ the resort's own coordinates, with a region-wide fallback for resorts
 missing coordinates (SNOW-508).
 
 Keep this table up to date as new flags land. The **source of truth for
-which flags exist** is `core/fixtures/waffle_flags.json` (SNOW-502) — the
+which flags exist** is `apps/core/fixtures/waffle_flags.json` (SNOW-502) — the
 `sync_waffle_flags` management command reconciles the DB to that manifest
 on every deploy; this table is the human-readable summary of the same set.
 
@@ -104,7 +104,7 @@ The change takes effect on the next request — there's no cache to bust.
 ## How to add a new flag
 
 1. **Pick a name** following the convention above.
-2. **Add an entry** to `core/fixtures/waffle_flags.json` (SNOW-502):
+2. **Add an entry** to `apps/core/fixtures/waffle_flags.json` (SNOW-502):
 
    ```json
    {
@@ -170,7 +170,7 @@ The change takes effect on the next request — there's no cache to bust.
 
 ## How to remove a flag
 
-1. **Remove the manifest entry** from `core/fixtures/waffle_flags.json`.
+1. **Remove the manifest entry** from `apps/core/fixtures/waffle_flags.json`.
 2. **Strip every `{% flag %}` / `flag_is_active()` call site** that gates
    on the flag, in the **same commit** — a leftover call site fails
    closed (`WAFFLE_FLAG_DEFAULT = False`) once the row is gone, which

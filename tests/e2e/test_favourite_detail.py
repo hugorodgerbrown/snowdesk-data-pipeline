@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from regions.models import MicroRegion
+from apps.regions.models import MicroRegion
 from tests.e2e.conftest import FavouritesPage
 from tests.factories import FavouriteFactory
 

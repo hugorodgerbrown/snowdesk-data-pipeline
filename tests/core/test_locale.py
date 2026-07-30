@@ -1,5 +1,5 @@
 """
-tests/core/test_locale.py — Tests for core.locale.primary_language.
+tests/core/test_locale.py — Tests for apps.core.locale.primary_language.
 
 Covers the common Accept-Language patterns, q-value stripping, the
 primary-subtag extraction (e.g. "en-GB" → "en"), and graceful degradation
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.locale import primary_language
+from apps.core.locale import primary_language
 
 
 class TestPrimaryLanguage:

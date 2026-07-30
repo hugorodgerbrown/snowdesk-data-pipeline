@@ -5,7 +5,7 @@ Server-side tests for the PWA telemetry master switch.
 for the first-party PWA telemetry pipeline (docs/telemetry-pipeline.md).
 The server half is covered here:
 
-* ``public.context_processors.pwa_telemetry`` exposes the flag as a bool.
+* ``apps.public.context_processors.pwa_telemetry`` exposes the flag as a bool.
 * Every public page bakes it into the ``<meta name="pwa-telemetry-enabled">``
   tag as ``"1"`` (enabled) / ``"0"`` (disabled) — the value
   ``static/js/telemetry.js`` reads to decide whether to run at all.
@@ -21,7 +21,7 @@ import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
 
-from public.context_processors import pwa_telemetry
+from apps.public.context_processors import pwa_telemetry
 
 
 def test_context_processor_returns_true_by_default() -> None:

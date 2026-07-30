@@ -7,7 +7,7 @@ bold/italic, ordered/unordered lists, nested tags, and edge cases.
 
 from __future__ import annotations
 
-from core.utils import html_to_markdown
+from apps.core.utils import html_to_markdown
 
 
 class TestHtmlToMarkdown:

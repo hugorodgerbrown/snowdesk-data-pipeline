@@ -22,7 +22,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from observations.models import FieldObservation
+from apps.observations.models import FieldObservation
 from tests.factories import FieldObservationFactory, MicroRegionFactory, UserFactory
 
 

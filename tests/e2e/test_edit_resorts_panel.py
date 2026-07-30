@@ -48,7 +48,7 @@ from playwright.sync_api import Page, expect
 from pytest_django.live_server_helper import LiveServer
 from waffle.models import Flag
 
-from regions.models import Resort
+from apps.regions.models import Resort
 from tests.e2e.conftest import _session_login
 from tests.factories import UserFactory
 

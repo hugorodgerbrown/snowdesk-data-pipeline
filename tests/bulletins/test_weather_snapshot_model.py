@@ -15,7 +15,7 @@ import datetime
 import pytest
 from django.db import IntegrityError
 
-from bulletins.models import WeatherSnapshot
+from apps.bulletins.models import WeatherSnapshot
 from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
 

@@ -19,8 +19,8 @@ from datetime import UTC
 
 import pytest
 
-from bulletins.models import BulletinGrouping
-from bulletins.services.grouping import compute_bulletin_grouping_boundary
+from apps.bulletins.models import BulletinGrouping
+from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from tests.factories import (
     BulletinFactory,
     BulletinGroupingFactory,

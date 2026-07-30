@@ -1,12 +1,12 @@
 """tests/analytics/test_signals.py — server-side PWA signal helper.
 
-Covers ``analytics.signals.emit_server_signal`` (SNOW-381, spec §16.2)
+Covers ``apps.analytics.signals.emit_server_signal`` (SNOW-381, spec §16.2)
 and the five call sites where it's wired into existing code paths:
 
-* ``public.api.version``                 — pwa.version.endpoint.hit
-* ``public.api.sw_config``               — pwa.sw_config.hit
-* ``accounts.push_service``               — pwa.push.sent / pwa.push.gone_410
-* ``core.idempotency.IdempotencyMiddleware`` — pwa.idempotency.replay
+* ``apps.public.api.version``                 — pwa.version.endpoint.hit
+* ``apps.public.api.sw_config``               — pwa.sw_config.hit
+* ``apps.accounts.push_service``               — pwa.push.sent / pwa.push.gone_410
+* ``apps.core.idempotency.IdempotencyMiddleware`` — pwa.idempotency.replay
 
 Each test patches ``posthog.capture`` so the real network client is
 never hit.
@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 from django.test import Client, override_settings
 
-from analytics.signals import SERVER_DISTINCT_ID, emit_server_signal
+from apps.analytics.signals import SERVER_DISTINCT_ID, emit_server_signal
 
 _POSTHOG = override_settings(
     POSTHOG_API_KEY="test-key", POSTHOG_HOST="https://eu.posthog.com"
@@ -75,14 +75,14 @@ class TestEmitServerSignal:
         even calls ``analytics.track()`` when the key is unset, rather than
         relying solely on ``track()``'s own internal no-op.
         """
-        with patch("analytics.signals.analytics.track") as mock_track:
+        with patch("apps.analytics.signals.analytics.track") as mock_track:
             emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
         mock_track.assert_not_called()
 
     @override_settings(POSTHOG_API_KEY="test-key")
     def test_analytics_track_called_when_key_set(self) -> None:
         """SNOW-384: with a key configured, ``analytics.track()`` is called."""
-        with patch("analytics.signals.analytics.track") as mock_track:
+        with patch("apps.analytics.signals.analytics.track") as mock_track:
             emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
         mock_track.assert_called_once_with(
             "pwa.push.sent", SERVER_DISTINCT_ID, {"subscription_pk": 1}
@@ -163,7 +163,7 @@ class TestPushSentSignals:
     @_POSTHOG
     def test_success_emits_push_sent(self) -> None:
         """A 2xx response from pywebpush fires pwa.push.sent."""
-        from accounts.push_service import dispatch_push
+        from apps.accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -172,7 +172,7 @@ class TestPushSentSignals:
             status_code = 201
 
         with (
-            patch("accounts.push_service.webpush", return_value=_FakeResp()),
+            patch("apps.accounts.push_service.webpush", return_value=_FakeResp()),
             patch("posthog.capture") as mock_capture,
         ):
             result = dispatch_push(sub, {"title": "t", "body": "b"})
@@ -185,7 +185,7 @@ class TestPushSentSignals:
     @_POSTHOG
     def test_success_threads_client_version(self) -> None:
         """SNOW-384: client_version passed to dispatch_push lands in properties."""
-        from accounts.push_service import dispatch_push
+        from apps.accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -194,7 +194,7 @@ class TestPushSentSignals:
             status_code = 201
 
         with (
-            patch("accounts.push_service.webpush", return_value=_FakeResp()),
+            patch("apps.accounts.push_service.webpush", return_value=_FakeResp()),
             patch("posthog.capture") as mock_capture,
         ):
             dispatch_push(
@@ -220,7 +220,7 @@ class TestPushSentSignals:
         """
         from pywebpush import WebPushException
 
-        from accounts.push_service import dispatch_push
+        from apps.accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -233,7 +233,7 @@ class TestPushSentSignals:
         exc.response = _FakeResp()
 
         with (
-            patch("accounts.push_service.webpush", side_effect=exc),
+            patch("apps.accounts.push_service.webpush", side_effect=exc),
             patch("posthog.capture") as mock_capture,
         ):
             result = dispatch_push(sub, {"title": "t", "body": "b"})
@@ -243,7 +243,7 @@ class TestPushSentSignals:
         events = [c.kwargs["event"] for c in mock_capture.call_args_list]
         assert "pwa.push.gone_410" in events
         # Subscription row is kept but marked inactive.
-        from accounts.models import PushSubscription
+        from apps.accounts.models import PushSubscription
 
         row = PushSubscription.objects.get(pk=sub_pk)
         assert row.inactive_at is not None
@@ -258,7 +258,7 @@ class TestIdempotencyReplaySignal:
         """A second POST with the same Idempotency-Key fires the signal."""
         from django.http import HttpRequest, HttpResponse
 
-        from core.idempotency import IdempotencyMiddleware
+        from apps.core.idempotency import IdempotencyMiddleware
 
         def _view(_request: HttpRequest) -> HttpResponse:
             return HttpResponse(b"created", status=201, content_type="text/plain")

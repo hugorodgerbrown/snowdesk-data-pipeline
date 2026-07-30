@@ -10,7 +10,7 @@ last-reviewed: 2026-06-10
 **Decision.** Every raw bulletin — from any provider — is wrapped before
 storage so `Bulletin.raw_data` always holds
 `{ "type": "Feature", "geometry": null, "properties": { …raw CAAML… } }`.
-The wrap happens in `upsert_bulletin()` (`bulletins/services/slf_fetcher.py`),
+The wrap happens in `upsert_bulletin()` (`apps/bulletins/services/slf_fetcher.py`),
 which all provider fetchers share.
 
 **Why.** Downstream consumers (render model builder, admin raw viewer,

@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 from django.test import Client, override_settings
 
-from analytics.schema import MAX_PAYLOAD_BYTES
+from apps.analytics.schema import MAX_PAYLOAD_BYTES
 from tests.factories import AccountFactory
 
 # Every test in this module hits the Django test client, which triggers
@@ -358,7 +358,7 @@ class TestReceiverRateLimit:
         """
         from django.test import RequestFactory
 
-        from analytics.views import telemetry_receive
+        from apps.analytics.views import telemetry_receive
 
         request = RequestFactory().post(
             "/api/telemetry",
@@ -398,7 +398,7 @@ class TestReceiverNoPostHogKey:
         per-event forward loop — ``analytics.track`` is never called at
         all, not merely no-opping internally.
         """
-        with patch("analytics.views.analytics.track") as mock_track:
+        with patch("apps.analytics.views.analytics.track") as mock_track:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps({"events": [_valid_event(), _valid_event()]}),
@@ -414,7 +414,7 @@ class TestReceiverKeyGatePositive:
     @_POSTHOG
     def test_analytics_track_called_when_key_set(self) -> None:
         """SNOW-384: with a key configured, the forward loop still runs."""
-        with patch("analytics.views.analytics.track") as mock_track:
+        with patch("apps.analytics.views.analytics.track") as mock_track:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),
@@ -434,7 +434,7 @@ class TestReceiverMasterSwitch:
         The key is populated to prove the master switch wins over the
         key gate — with telemetry disabled, nothing forwards regardless.
         """
-        with patch("analytics.views.analytics.track") as mock_track:
+        with patch("apps.analytics.views.analytics.track") as mock_track:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),

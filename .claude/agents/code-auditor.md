@@ -35,8 +35,8 @@ open, what's carried forward under "watching").
   valid Python 3.14 syntax ([PEP 758](https://peps.python.org/pep-0758/)),
   equivalent to `except (A, B):`, used deliberately across the codebase. It
   is not Python 2 syntax, not a `SyntaxError`, and not a bug.
-- **Apps**: `config/`, `core/`, `regions/`, `bulletins/`, `accounts/`,
-  `public/`, plus `analytics/` if present.
+- **Apps**: `config/`, `apps/core/`, `apps/regions/`, `apps/bulletins/`,
+  `apps/accounts/`, `apps/public/`, plus `apps/analytics/` if present.
 - **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
   management-command contract, and design-system rules there are the
   yardstick you measure drift against.

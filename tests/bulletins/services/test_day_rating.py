@@ -46,8 +46,8 @@ from unittest.mock import patch
 
 import pytest
 
-from bulletins.models import Bulletin, RegionDayRating
-from bulletins.services.day_rating import (
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _derive_albina_bands,
     _detect_elevation_band_split,
@@ -58,8 +58,8 @@ from bulletins.services.day_rating import (
     apply_bulletin_day_ratings,
     recompute_region_day,
 )
-from bulletins.services.render_model import RENDER_MODEL_VERSION
-from regions.models import MicroRegion
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -825,7 +825,7 @@ class TestApplyBulletinDayRatings:
         )
 
         with patch(
-            "bulletins.services.day_rating.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=RuntimeError("boom"),
         ):
             failures = apply_bulletin_day_ratings(bulletin)
@@ -866,7 +866,7 @@ class TestApplyBulletinDayRatings:
             real_recompute(region, day, commit=commit)
 
         with patch(
-            "bulletins.services.day_rating.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=_fail_only_bad_region,
         ):
             failures = apply_bulletin_day_ratings(bulletin)
@@ -891,7 +891,7 @@ class TestUpsertBulletinSwallowsException:
 
     def test_exception_is_caught_not_propagated(self) -> None:
         """When apply_bulletin_day_ratings raises, upsert_bulletin still returns."""
-        from bulletins.services.slf_fetcher import upsert_bulletin
+        from apps.bulletins.services.slf_fetcher import upsert_bulletin
 
         run = PipelineRunFactory.create()
         # Seed the region first — regions are fixture-backed (no auto-create).
@@ -912,7 +912,7 @@ class TestUpsertBulletinSwallowsException:
         }
 
         with patch(
-            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
             side_effect=RuntimeError("test explosion"),
         ):
             result = upsert_bulletin(raw, run)

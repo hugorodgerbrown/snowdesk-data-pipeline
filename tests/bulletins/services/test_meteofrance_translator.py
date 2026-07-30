@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from bulletins.services.meteofrance_translator import (
+from apps.bulletins.services.meteofrance_translator import (
     MeteoFranceDelegatedRegionError,
     MeteoFranceTranslationError,
     _aspects_from_pente,
@@ -643,7 +643,7 @@ class TestBleachAllowlistSanity:
 
     def test_formatter_output_survives_bleach(self) -> None:
         """HTML produced by format_comment_as_html is not stripped by bleach."""
-        from public.templatetags.snowdesk_html import snowdesk_html
+        from apps.public.templatetags.snowdesk_html import snowdesk_html
 
         raw = (
             "Enneigement :\n"

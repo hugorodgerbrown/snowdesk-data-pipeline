@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from bulletins.models import BulletinShare, BulletinShareClick
+from apps.bulletins.models import BulletinShare, BulletinShareClick
 from tests.factories import (
     BulletinShareClickFactory,
     BulletinShareFactory,

@@ -159,10 +159,10 @@ def _patch_paths(
 ) -> None:
     """Redirect the command's module-level path constants to tmp_path copies.
 
-    Also monkeypatches ``regions.names.lookup`` to return values from the
+    Also monkeypatches ``apps.regions.names.lookup`` to return values from the
     synthetic name map, avoiding dependency on the vendored EAWS files.
     """
-    from regions.management.commands import build_austria_fixture as mod
+    from apps.regions.management.commands import build_austria_fixture as mod
 
     monkeypatch.setattr(mod, "_EAWS_DIR", eaws_dir)
     monkeypatch.setattr(mod, "_AT_STATE_CODES", ["AT-07", "AT-08"])
@@ -350,7 +350,7 @@ class TestBuildAustriaFixtureCommit:
         eaws_dir, fixture = _seed_sources(tmp_path)
         _patch_paths(monkeypatch, eaws_dir, fixture)
         # Override lookup to always return None
-        from regions.management.commands import build_austria_fixture as mod
+        from apps.regions.management.commands import build_austria_fixture as mod
 
         monkeypatch.setattr(mod, "lookup", lambda key, lang: None)
 

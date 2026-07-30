@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 
-from regions.services.basemap_tiles import (
+from apps.regions.services.basemap_tiles import (
     DOWNLOAD_CEILING_MB,
     MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE,

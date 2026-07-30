@@ -7,10 +7,10 @@ last-reviewed: 2026-07-28
 
 # Resorts are editable data, not deploy-time reference data
 
-**Decision.** `regions/fixtures/resorts.json` is **not** in the `loaddata`
+**Decision.** `apps/regions/fixtures/resorts.json` is **not** in the `loaddata`
 list in `build.sh` / `build_headless.sh`. Each environment's database owns
 its `Resort` rows; they are edited in the admin and the map editor. Bulk
-editorial changes are curated in `regions/data/resorts.tsv` and applied by
+editorial changes are curated in `apps/regions/data/resorts.tsv` and applied by
 hand with `manage.py import_resorts --commit`. The fixture's only remaining
 job is seeding a fresh local or CI database (`bin/init-worktree`,
 `tests/seeding.py`, `seed_test_data`), refreshed from a local DB by

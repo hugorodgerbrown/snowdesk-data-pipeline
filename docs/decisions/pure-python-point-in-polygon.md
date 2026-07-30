@@ -10,7 +10,7 @@ last-reviewed: 2026-06-14
 **Decision.** The subscribe and add-region request handlers classify a
 subscriber's geolocation relative to the target MicroRegion using a
 pure-Python ray-casting implementation in
-`regions/services/point_match.py`, not the Shapely-based helper used by
+`apps/regions/services/point_match.py`, not the Shapely-based helper used by
 `audit_resort_regions`. Raw geo and language fields (country, city, lat/lon,
 `accept_language`, primary language) are read from `Subscription.subscribed_via`
 (a FK to `core.RequestLog`) rather than being duplicated onto `Subscription`.

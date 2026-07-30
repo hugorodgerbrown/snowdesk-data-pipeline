@@ -5,7 +5,7 @@
 # (docs frontmatter + CLAUDE.md routing guard), ``tox -e djangofmt``
 # (template formatting — the CI backstop for the bypassable pre-commit
 # hook), and ``tox -e sw-version`` (SNOW-517 — CACHE_VERSION must be
-# bumped whenever a shell source changes; see core/sw_shell.py and
+# bumped whenever a shell source changes; see apps/core/sw_shell.py and
 # docs/offline-map.md).
 #
 # The job contexts are required status checks in the "Main branch rules"
@@ -31,12 +31,12 @@ on:
       - "bin/ds-lint"
       - "bin/docs-lint"
       - "bin/sw-version"
-      - "core/sw_shell.py"
+      - "apps/core/sw_shell.py"
       - "static/js/**"
       - "src/css/**"
-      - "public/templates/public/base.html"
-      - "public/templates/public/home.html"
-      - "public/templates/public/partials/_map_embed.html"
+      - "apps/public/templates/public/base.html"
+      - "apps/public/templates/public/home.html"
+      - "apps/public/templates/public/partials/_map_embed.html"
       - "static/offline.html"
       - "tox.ini"
       - ".github/workflows/lint-guards.yml"

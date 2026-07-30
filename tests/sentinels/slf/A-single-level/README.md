@@ -5,7 +5,7 @@
 | **bulletinID** | `e292ca8f-17b5-4a11-92bc-dd406d2eed2a` |
 | **Date** | 2025-10-31 (validTime 2025-10-31T16:00:00Z – 2025-11-01T16:00:00Z) |
 | **Region** | All CH micro-regions (full-country bulletin) |
-| **Source** | `bulletins/local_mirrors/slf_archive.ndjson` |
+| **Source** | `apps/bulletins/local_mirrors/slf_archive.ndjson` |
 
 ## Why this is variant A
 

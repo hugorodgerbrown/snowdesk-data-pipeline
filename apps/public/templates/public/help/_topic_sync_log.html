@@ -1,0 +1,29 @@
+{% comment %}
+apps/public/templates/public/help/_topic_sync_log.html — "Sync log" panel body.
+
+Content partial for the help page (SNOW-482); included via the
+body_template parameter of includes/_collapsible_panel.html. Gated on
+the sync_log waffle flag, mirroring the flag that gates the manage-page
+sync-log panel this topic documents.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The offline banner shows two clocks: when this device last synced with the server, and when the server
+            generated the data it last returned. They can differ &mdash; off-season, the newest avalanche rating might
+            be weeks old even though your device synced minutes ago.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Your account page has a "Sync log" panel listing your device's most recent real syncs with the server
+            (cached, offline-served pages don't count). It keeps the newest 100 entries.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            "Reset local data on this device" clears the sync log along with everything else cached on this device.
+        {% endblocktrans %}
+    </p>
+</div>

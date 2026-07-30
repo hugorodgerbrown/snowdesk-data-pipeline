@@ -5,7 +5,7 @@
 | **bulletinID** | `0333d1d0-17eb-4e22-9fc9-98a914a3984e` |
 | **Date** | 2026-03-05 (validTime 2026-03-05T16:00:00Z – 2026-03-06T16:00:00Z) |
 | **Region** | All CH micro-regions (full-country bulletin) |
-| **Source** | `bulletins/local_mirrors/slf_archive.ndjson` |
+| **Source** | `apps/bulletins/local_mirrors/slf_archive.ndjson` |
 
 ## Why this is variant C
 

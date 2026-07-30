@@ -18,7 +18,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.utils import timezone
 
-from accounts.models import PushSubscription
+from apps.accounts.models import PushSubscription
 from tests.factories import AccountFactory, PushSubscriptionFactory
 
 

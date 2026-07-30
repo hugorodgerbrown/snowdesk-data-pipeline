@@ -1,0 +1,80 @@
+{% comment %}
+apps/public/templates/public/_region_tooltip.html — Tooltip body for the region
+MapLibre Popup on /map/.
+
+Server-rendered by ``apps.public.api.region_summary`` and injected into a
+``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
+``static/js/map.js``. The popup is anchored to the region's north edge
+via ``featureNorthAnchor`` (SNOW-318).
+
+Content:
+  1. Header row — danger-tile chip (when a bulletin exists) or default
+     Snowdesk icon (when no RegionDayRating row exists), and region name.
+     The chip is presentational only; the bulletin CTA below is the
+     sole link out of the popup.
+  2. Geographic breadcrumb — three levels in English:
+     country › major (L1) › sub-region (L2).
+     Uses ``name_en`` on MajorRegion / SubRegion, falling back to
+     ``name_native`` for any future entry that lacks an English variant.
+  3. Bulletin CTA — when a bulletin exists, a button-styled link to open
+     it for the displayed date. When no bulletin is available, a muted
+     "No bulletin available for…" label is shown instead.
+
+Context variables expected:
+  region        — MicroRegion instance, with subregion__major select_related.
+  day_rating    — RegionDayRating instance for the displayed date, or None.
+  bulletin_url  — Absolute URL for the day's bulletin (dated or evergreen).
+  country_name  — Human-readable country name (e.g. "Switzerland").
+  target_date   — datetime.date for the displayed day.
+  covered       — bool; True when the pipeline has ever rated this region.
+                  False for permanently-uncovered regions (e.g. Swiss Lowlands).
+  provider_name — Human-readable provider label (e.g. "SLF", "ALBINA",
+                  "Météo-France") for the uncovered tooltip copy.
+{% endcomment %}
+{% load i18n snowdesk_time static %}
+
+<div class="region-tooltip" data-region-id="{{ region.region_id }}">
+    <div class="region-tooltip-header">
+        {% if day_rating %}
+            <span
+                class="danger-tile"
+                data-level="{{ day_rating.max_rating }}"
+                data-testid="region-tooltip-rating-chip"
+            >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        {% else %}
+            <img
+                src="{% static 'favicon.svg' %}"
+                alt=""
+                width="32"
+                height="32"
+                class="region-tooltip-icon-default"
+            >
+        {% endif %}
+        <h2 class="region-tooltip-name">{{ region.name }}</h2>
+    </div>
+    <p class="region-tooltip-breadcrumb">
+        {{ country_name }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.name_en|default:region.subregion.name_native }}
+    </p>
+    {% if day_rating %}
+        <a href="{{ bulletin_url }}" class="region-tooltip-bulletin-link" data-testid="region-tooltip-bulletin-link">
+            {% blocktrans with d=target_date|date:"j M Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
+        </a>
+    {% else %}
+        {% if not covered %}
+            <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-uncovered">
+                {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
+                    area{% endblocktrans %}
+            </p>
+        {% else %}
+            <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-no-bulletin">
+                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                    {{ d }}{% endblocktrans %}
+            </p>
+        {% endif %}
+    {% endif %}
+    <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
+</div>

@@ -1,0 +1,25 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/accounts/templates/accounts/register_sent.html — "Check your inbox" page.
+
+Shown after a registration POST. The response is identical whether the email
+was new, already registered-and-unverified, or already verified, to prevent
+account enumeration (SNOW-430).
+{% endcomment %}
+{% load i18n %}
+
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached by following a single-use token or submitting  #}
+{# a form — not a URL anyone means to share, and under the /account/    #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Check your inbox — Snowdesk" as page_title %}
+    {% trans "We've sent you a link to verify your Snowdesk email address." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "If that address needs verifying, we've sent you a link to confirm it. It expires in 24 hours." %}
+{% endblock %}

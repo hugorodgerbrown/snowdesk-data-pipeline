@@ -5,7 +5,7 @@
 | **bulletinID** | `6dc598e1-2a96-466b-9a60-9ab72f94ace4` |
 | **Date** | 2025-11-28/29 (validTime startTime 2025-11-28T16:00:00Z, endTime 2025-11-29T16:00:00Z) |
 | **Region** | AT-07 (Northern Tyrol), covering 12 sub-regions |
-| **Source** | `bulletins/local_mirrors/albina_archive.ndjson` |
+| **Source** | `apps/bulletins/local_mirrors/albina_archive.ndjson` |
 
 ## Why this is variant B
 

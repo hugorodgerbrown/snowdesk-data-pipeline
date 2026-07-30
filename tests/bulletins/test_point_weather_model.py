@@ -19,7 +19,7 @@ import datetime
 import pytest
 from django.db import IntegrityError
 
-from bulletins.models import ForecastPointWeather
+from apps.bulletins.models import ForecastPointWeather
 from tests.factories import ForecastPointFactory, ForecastPointWeatherFactory
 
 

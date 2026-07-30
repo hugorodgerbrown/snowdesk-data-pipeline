@@ -52,7 +52,7 @@ silent CI failure with nothing to `git diff`.
 - `ruff` stays the one tool pinned **exactly** (not a range) in the `lint`
   group, because it is also consumed by `.pre-commit-config.yaml`'s
   `ruff-pre-commit` `rev:`, and the two must stay eyeball-equal — see
-  `CODING_STANDARDS.md` §6.5.
+  `docs/coding-standards.md` §6.5.
 
 ## Deliberate exception: SAST rulesets stay live-fetched
 

@@ -1,7 +1,7 @@
 """
 tests/bulletins/test_dev_mirror.py — Tests for the dev-only SLF mirror view.
 
-The mirror replays ``bulletins/local_mirrors/slf_archive.ndjson`` with the same
+The mirror replays ``apps/bulletins/local_mirrors/slf_archive.ndjson`` with the same
 limit/offset paging contract as the upstream SLF API. These tests
 exercise it via the Django test client (DEBUG is True under
 config.settings.development, so the URL is mounted).
@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from django.test import Client, override_settings
 
-from bulletins.services.slf_archive import write_archive
+from apps.bulletins.services.slf_archive import write_archive
 
 
 def _record(bulletin_id: str, publication_time: str) -> dict[str, Any]:

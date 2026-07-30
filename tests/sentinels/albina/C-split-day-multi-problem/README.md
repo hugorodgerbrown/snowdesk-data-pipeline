@@ -5,7 +5,7 @@
 | **bulletinID** | `27357867-b6eb-47a3-9542-d3a91e77eb6d` |
 | **Date** | 2026-02-25/26 (validTime startTime 2026-02-25T16:00:00Z, endTime 2026-02-26T16:00:00Z) |
 | **Region** | AT-07 (Northern Tyrol), covering 4 sub-regions (Brandenberg Alps, Kaiser Mountains, Kitzbühel Alps Wildseeloder, Karwendel Mountains East) |
-| **Source** | `bulletins/local_mirrors/albina_archive.ndjson` |
+| **Source** | `apps/bulletins/local_mirrors/albina_archive.ndjson` |
 
 ## Why this is variant C
 

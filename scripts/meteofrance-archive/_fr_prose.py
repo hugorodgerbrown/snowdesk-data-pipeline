@@ -27,7 +27,7 @@
 # Elevation patterns
 # ------------------
 # Reuse the three regexes already established in
-# ``bulletins/services/meteofrance_translator.py``.  Return value mirrors the
+# ``apps/bulletins/services/meteofrance_translator.py``.  Return value mirrors the
 # CAAML ``elevation`` sub-object used by the rest of the pipeline.
 #
 # Size mapping
@@ -221,7 +221,7 @@ def extract_aspects(text: str) -> list[str]:
 # Elevation extraction
 # ---------------------------------------------------------------------------
 
-# Reuse the same three patterns as bulletins/services/meteofrance_translator.py,
+# Reuse the same three patterns as apps/bulletins/services/meteofrance_translator.py,
 # with one extension: _BETWEEN also handles the BRA prose form
 # "Entre 2700 m et 3600 m" where 'm' appears after each altitude.
 _ABOVE = re.compile(r"[Aa]u-dessus de (\d{3,4})\s?m")

@@ -1,1 +1,1 @@
-"""Tests for accounts/services."""
+"""Tests for apps/accounts/services."""

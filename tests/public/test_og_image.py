@@ -3,7 +3,7 @@ tests/public/test_og_image.py — Spec assertions for the OG / social share card
 
 SNOW-221 replaces the placeholder ``static/social/og-default.png`` with the
 production card referenced by the ``og:image`` / ``twitter:image`` tags in
-``public/templates/public/base.html``. These tests lock the binding acceptance
+``apps/public/templates/public/base.html``. These tests lock the binding acceptance
 criteria against the committed binary so a future re-export (e.g. an
 oversized or wrong-ratio PNG) fails CI rather than shipping silently.
 

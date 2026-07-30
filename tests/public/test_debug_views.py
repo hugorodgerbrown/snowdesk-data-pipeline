@@ -1,6 +1,6 @@
 """
 tests/public/test_debug_views.py — Tests for the component-library page and
-the other staff-only debug pages hosted in public/debug_views.py.
+the other staff-only debug pages hosted in apps/public/debug_views.py.
 
 Covers:
   - Anonymous and non-staff users are redirected to /admin/login/.
@@ -34,9 +34,9 @@ from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Account
-from core.sw_shell import read_cache_version
-from public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
+from apps.accounts.models import Account
+from apps.core.sw_shell import read_cache_version
+from apps.public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
 from tests.factories import AccountFactory, UserFactory
 
 
@@ -464,7 +464,7 @@ class TestSubscribeOutcomesPanel:
         self, htmx_staff_client: Client
     ) -> None:
         """Five variants are registered and each carries a ``"partial"`` key."""
-        from public.design_tokens import get_category
+        from apps.public.design_tokens import get_category
 
         category = get_category("subscribe-outcomes")
         assert category is not None

@@ -1,5 +1,5 @@
 """
-tests/observations/test_views.py — Tests for observations.views.
+tests/observations/test_views.py — Tests for apps.observations.views.
 
 Covers:
   report_form   — non-HTMX → 400; anonymous → 403;
@@ -32,7 +32,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.utils import timezone
 
-from observations.models import FieldObservation
+from apps.observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
     MicroRegionFactory,
@@ -192,7 +192,7 @@ class TestReportFormSuccess:
         """Valid lat/lon with flag active + authenticated user returns 200."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
                 {"lat": "46.1", "lon": "7.1", "location_source": "GPS"},
@@ -208,7 +208,9 @@ class TestReportFormSuccess:
         client.force_login(user)
 
         fake_region = MicroRegionFactory.create(name="Zermatt-Saas")
-        with patch("observations.views.region_for_point", return_value=fake_region):
+        with patch(
+            "apps.observations.views.region_for_point", return_value=fake_region
+        ):
             response = client.get(
                 FORM_URL,
                 {"lat": "46.0", "lon": "7.7", "location_source": "GPS"},
@@ -222,7 +224,7 @@ class TestReportFormSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
                 {"lat": "0.0", "lon": "0.0", "location_source": "GPS"},
@@ -236,7 +238,7 @@ class TestReportFormSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
                 {"lat": "46.1", "lon": "7.1", "location_source": "GPS"},
@@ -251,7 +253,7 @@ class TestReportFormSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
                 {
@@ -410,7 +412,7 @@ class TestReportSubmitInvalidCoordinates:
         """A non-finite or out-of-range lat/lon is rejected before any write."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point") as mock_region:
+        with patch("apps.observations.views.region_for_point") as mock_region:
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -435,7 +437,7 @@ class TestReportSubmitInvalidCoordinates:
         """
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -460,7 +462,7 @@ class TestReportSubmitLocationSourceGate:
         """POST with valid GPS but no location_source → 400."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -476,7 +478,7 @@ class TestReportSubmitLocationSourceGate:
         """POST with an unknown location_source value → 400."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -498,7 +500,7 @@ class TestReportSubmitObservationTypeGate:
         """POST with valid GPS but no observation_type → 400."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -514,7 +516,7 @@ class TestReportSubmitObservationTypeGate:
         """POST with an unknown observation_type value → 400."""
         user = _verified_user()
         client.force_login(user)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -537,7 +539,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -566,7 +568,7 @@ class TestReportSubmitSuccess:
         user = _verified_user(is_staff=False)
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -587,7 +589,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             client.post(
                 SUBMIT_URL,
                 {
@@ -607,7 +609,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -628,7 +630,7 @@ class TestReportSubmitSuccess:
         client.force_login(user)
 
         region = MicroRegionFactory.create(name="Verbier")
-        with patch("observations.views.region_for_point", return_value=region):
+        with patch("apps.observations.views.region_for_point", return_value=region):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -658,7 +660,7 @@ class TestReportSubmitSuccess:
             FieldObservation.OBSERVATION_TYPE.FRACTURES,
         ]
         for obs_type in types:
-            with patch("observations.views.region_for_point", return_value=None):
+            with patch("apps.observations.views.region_for_point", return_value=None):
                 resp = client.post(
                     SUBMIT_URL,
                     {
@@ -678,7 +680,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             client.post(
                 SUBMIT_URL,
                 {
@@ -703,7 +705,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -735,7 +737,7 @@ class TestReportSubmitSuccess:
         client.force_login(user)
 
         # region_for_point returns None for a point outside all known boundaries.
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -759,7 +761,7 @@ class TestReportSubmitSuccess:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             client.post(
                 SUBMIT_URL,
                 {
@@ -792,7 +794,7 @@ class TestReportSubmitObservedAt:
         client.force_login(user)
 
         observed_at = timezone.now() - timedelta(hours=3)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -815,7 +817,7 @@ class TestReportSubmitObservedAt:
         client.force_login(user)
 
         before = timezone.now()
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -838,7 +840,7 @@ class TestReportSubmitObservedAt:
         client.force_login(user)
 
         naive_recent = (timezone.now() - timedelta(hours=1)).replace(tzinfo=None)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -862,7 +864,7 @@ class TestReportSubmitObservedAt:
         user = _verified_user()
         client.force_login(user)
 
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -886,7 +888,7 @@ class TestReportSubmitObservedAt:
         client.force_login(user)
 
         future = timezone.now() + timedelta(days=1)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -908,7 +910,7 @@ class TestReportSubmitObservedAt:
         client.force_login(user)
 
         too_old = timezone.now() - timedelta(days=60)
-        with patch("observations.views.region_for_point", return_value=None):
+        with patch("apps.observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
                 {
@@ -961,7 +963,7 @@ class TestReportSubmitRateLimit:
         htmx_mw = HtmxMiddleware(lambda _: _HR())
         htmx_mw(request)
 
-        from observations.views import report_submit  # noqa: PLC0415
+        from apps.observations.views import report_submit  # noqa: PLC0415
 
         resp = report_submit(request)
         assert resp.status_code == 429

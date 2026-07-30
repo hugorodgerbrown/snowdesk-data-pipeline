@@ -4,8 +4,8 @@ tests/bin/test_sw_version_cli.py — Subprocess tests for bin/sw-version
 modes.
 
 Each test builds a throwaway "mini repo" under ``tmp_path`` — a copy of
-``bin/sw-version`` and ``core/sw_shell.py`` plus a minimal shell tree in
-the same relative layout ``core.sw_shell.SHELL_SOURCES`` expects — and
+``bin/sw-version`` and ``apps/core/sw_shell.py`` plus a minimal shell tree in
+the same relative layout ``apps.core.sw_shell.SHELL_SOURCES`` expects — and
 invokes the CLI with that directory as ``cwd``. ``bin/sw-version`` derives
 its own ``REPO_ROOT`` from ``Path(__file__).resolve().parent.parent``, so
 running the copy from ``tmp_path`` makes it operate entirely against the
@@ -33,7 +33,7 @@ def _build_isolated_repo(root: Path, *, version: int = 1) -> Path:
     Build a throwaway repo under `root` and return the path to its
     `bin/sw-version` copy.
 
-    Copies the real `bin/sw-version` and `core/sw_shell.py` verbatim (so
+    Copies the real `bin/sw-version` and `apps/core/sw_shell.py` verbatim (so
     the test always exercises the actual tool code, not a reimplementation)
     alongside a minimal shell tree in the layout `SHELL_SOURCES` expects.
     """
@@ -42,8 +42,11 @@ def _build_isolated_repo(root: Path, *, version: int = 1) -> Path:
     shutil.copyfile(REPO_ROOT / "bin" / "sw-version", sw_version_copy)
     sw_version_copy.chmod(0o755)
 
-    (root / "core").mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(REPO_ROOT / "core" / "sw_shell.py", root / "core" / "sw_shell.py")
+    (root / "apps" / "core").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(
+        REPO_ROOT / "apps" / "core" / "sw_shell.py",
+        root / "apps" / "core" / "sw_shell.py",
+    )
 
     js_dir = root / "static" / "js"
     js_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +59,7 @@ def _build_isolated_repo(root: Path, *, version: int = 1) -> Path:
     css_dir.mkdir(parents=True, exist_ok=True)
     (css_dir / "main.css").write_text("body { color: red; }\n", encoding="utf-8")
 
-    templates_dir = root / "public" / "templates" / "public"
+    templates_dir = root / "apps" / "public" / "templates" / "public"
     partials_dir = templates_dir / "partials"
     partials_dir.mkdir(parents=True, exist_ok=True)
     (templates_dir / "base.html").write_text("<html></html>\n", encoding="utf-8")

@@ -86,7 +86,7 @@ from django.conf import settings
 
 from tests.e2e.conftest import PwaPage, _wait_for_sw_control
 
-# Matches the picker's curated key order (public.views._BASEMAP_LABELS) —
+# Matches the picker's curated key order (apps.public.views._BASEMAP_LABELS) —
 # see tests/public/test_map_page.py::test_map_view_passes_basemap_catalogue
 # for the same hardcoded tuple. ``swisstopo_light`` is deliberately excluded
 # from the picker (SNOW-367) and so never reaches the SW's allowlist.

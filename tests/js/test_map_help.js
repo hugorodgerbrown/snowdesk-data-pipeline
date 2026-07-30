@@ -35,7 +35,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const STORAGE_KEY = 'snowdesk.map.help';
 const DISMISSED_VALUE = 'seen';
 
-// Mirrors the template's 13 step definitions (public/templates/public/
+// Mirrors the template's 13 step definitions (apps/public/templates/public/
 // partials/_map_embed.html), in template order.
 //
 // Every one of those targets is server-rendered unconditionally — none of
@@ -91,7 +91,7 @@ function targetsMarkup() {
 
 /**
  * Build the #map-help-overlay fixture (mirroring
- * public/templates/public/partials/_map_embed.html) plus its step targets,
+ * apps/public/templates/public/partials/_map_embed.html) plus its step targets,
  * optionally carrying the data-map-help-no-autostart opt-out home.html
  * sets (SNOW-535) to gate map_help.js's auto-start.
  */

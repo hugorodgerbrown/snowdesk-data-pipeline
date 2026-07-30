@@ -13,7 +13,7 @@ Covers:
 
 from __future__ import annotations
 
-from bulletins.services.render_model import detect_prose_spatial
+from apps.bulletins.services.render_model import detect_prose_spatial
 
 
 class TestDetectProseSpatialTruePositives:

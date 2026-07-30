@@ -1,0 +1,40 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_problem.html — Single altitude-annotated
+problem card for the favourite detail card (SNOW-422).
+
+Context:
+  card — one entry from favourite_card's ``problem_cards`` (a
+         ``apps.public.views.problem_cards_for_bulletin`` card, extended with
+         ``altitude_relevance`` by
+         ``apps.favourites.relevance.annotate_problem_relevance``): one of
+         relevance.RELEVANCE_APPLIES / RELEVANCE_ABOVE / RELEVANCE_BELOW,
+         or falsy when the problem carries no usable elevation band (no
+         data, or a treeline-pivoted bound).
+
+Renders an altitude-relative annotation chip above the shared bulletin
+problem card (``public/_rating_block.html``, unchanged). No chip is shown
+when ``card.altitude_relevance`` is falsy — an unannotated problem is still
+shown in full, just without an altitude verdict (highlight, never suppress;
+never fabricate a verdict from missing or treeline-pivoted data).
+
+Copy is altitude-relative only — never safety-relative. The word "safe" (or
+"not at risk" / "you're fine") must never appear here.
+{% endcomment %}
+{% if card.altitude_relevance %}
+    {% if card.altitude_relevance == "APPLIES" %}
+        {% trans "Applies at this altitude" as relevance_text %}
+    {% elif card.altitude_relevance == "ABOVE" %}
+        {% trans "Above this location" as relevance_text %}
+    {% elif card.altitude_relevance == "BELOW" %}
+        {% trans "Below this location" as relevance_text %}
+    {% endif %}
+    <div
+        class="mb-1.5"
+        data-testid="altitude-relevance-chip"
+        data-relevance="{{ card.altitude_relevance }}"
+    >
+        {% include "includes/_chip.html" with text=relevance_text %}
+    </div>
+{% endif %}
+{% include "public/_rating_block.html" with card=card %}

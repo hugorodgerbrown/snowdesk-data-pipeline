@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from public.templatetags.hazard_icons import category_danger_icon, hazard_icon
+from apps.public.templatetags.hazard_icons import category_danger_icon, hazard_icon
 
 
 class TestHazardIcon:

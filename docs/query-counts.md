@@ -16,7 +16,7 @@ way they see a Lighthouse-score delta.
 
 ## Two surfaces
 
-- `core.middleware.QueryCountMiddleware` attaches an
+- `apps.core.middleware.QueryCountMiddleware` attaches an
   `X-DB-Query-Count` header to every response when
   `settings.QUERY_COUNT_HEADER_ENABLED` is truthy — on in
   `development` and `perf`, off in `production`. Useful for ad-hoc
@@ -28,7 +28,7 @@ way they see a Lighthouse-score delta.
 ## Adding a new monitored URL
 
 Append a `(name, url)` tuple to `MONITORED_URLS` in
-`core/management/commands/monitor_query_counts.py`, then run
+`apps/core/management/commands/monitor_query_counts.py`, then run
 `uv run python manage.py monitor_query_counts --commit` to seed
 the new baseline row.
 

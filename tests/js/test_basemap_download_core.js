@@ -7,7 +7,7 @@
  * ``centreTileURL`` (the single "done-probe" tile URL for a region's
  * download summary) — the two pure functions left after SNOW-521's
  * per-region rework moved tile enumeration and byte-estimate arithmetic
- * server-side (``regions/services/basemap_tiles.py``).
+ * server-side (``apps/regions/services/basemap_tiles.py``).
  *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is

@@ -1,9 +1,9 @@
 """
 tests/bulletins/test_schema.py — Tests for the CAAML schema dataclasses
-and TextChoices enums in bulletins/schema.py.
+and TextChoices enums in apps/bulletins/schema.py.
 """
 
-from bulletins.schema import (
+from apps.bulletins.schema import (
     AvalancheProblem,
     AvalancheProblemType,
     DangerRating,

@@ -4,10 +4,10 @@ scripts/fetch_albina_archive.py — One-off season fetcher for ALBINA bulletins.
 Walks the ALBINA CDN at ``static.avalanche.report/bulletins/YYYY-MM-DD/``
 and pulls every ALBINA regional CAAMLv6 bulletin (AT-07, IT-32-BZ,
 IT-32-TN) for the date range, then writes one bulletin per line to
-``bulletins/local_mirrors/albina_archive.ndjson`` (ascending by
+``apps/bulletins/local_mirrors/albina_archive.ndjson`` (ascending by
 ``validTime.startTime``).
 
-The output mirrors the shape of ``bulletins/local_mirrors/slf_archive.ndjson``
+The output mirrors the shape of ``apps/bulletins/local_mirrors/slf_archive.ndjson``
 so ``fetch_bulletins --source albina --source local-mirror --commit`` can seed a
 dev DB from the committed artefact without a network call.
 
@@ -43,7 +43,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = REPO_ROOT / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
+DEFAULT_OUTPUT = (
+    REPO_ROOT / "apps" / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
+)
 
 # Regions Snowdesk has fixture coverage for. Pulling other ALBINA regions
 # (AT-02..AT-08, etc.) would 200 but the resulting bulletins would fail

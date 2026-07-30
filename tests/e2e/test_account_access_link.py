@@ -25,8 +25,8 @@ from typing import Any
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from accounts.models import Account
-from accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
+from apps.accounts.models import Account
+from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
 from tests.factories import AccountFactory
 
 

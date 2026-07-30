@@ -15,7 +15,7 @@ a region deliberately opens **no** popup: the region detail popup
 (`openRegionPopup`, fed by `api:region_summary`) is still implemented in
 `map.js` but has no trigger, because it covered the terrain the visitor had
 just tapped. `/map/` permanently redirects
-here (301, query string forwarded). The template (`public/templates/public/home.html`)
+here (301, query string forwarded). The template (`apps/public/templates/public/home.html`)
 extends `base.html`. Static assets are `static/js/map.js` and `static/css/map.css`.
 
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
@@ -34,7 +34,7 @@ existing sample-bulletin button.
 **Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers
 pill in the top-right utility cluster opens a popover of basemap radio
 options. The catalogue is `settings.BASEMAP_STYLES` × `_BASEMAP_LABELS`
-(in `public/views.py`); the view passes `basemaps` (ordered list of
+(in `apps/public/views.py`); the view passes `basemaps` (ordered list of
 `{key, label, url}`) and `default_basemap_key` (the env-resolved
 fallback) to the template. The user's choice is persisted in
 `localStorage["snowdesk.map.basemap"]`; on boot, the JS uses the stored
@@ -75,7 +75,7 @@ from the in-memory cache.
 **Favourites overlay (SNOW-414)**: an eligible (authenticated) visitor
 sees an "Add favourite" pill in the bottom-right
 control stack (`#map-controls-br`) and a `favourites` overlay toggle in the
-basemap menu's Overlays section, both rendered by `public/views.py`'s
+basemap menu's Overlays section, both rendered by `apps/public/views.py`'s
 `_favourites_context()` and `_map_embed.html`. `#map` carries
 `data-favourites-eligible="true|false"` always, and `data-favourites-url`
 (the per-user `favourites:geojson` endpoint) only when eligible — anonymous
@@ -97,13 +97,13 @@ round-trip dispatches `snowdesk:favourites-changed` (re-fetch geojson +
 `setData`), and delete additionally dispatches `snowdesk:favourite-detail-close`
 so map.js removes the popup. The "Add favourite" flow itself (placement,
 drag-to-refine, the create sheet, CSRF handling) is documented in
-`favourites/views.py`'s module docstring and `static/js/favourites.js`'s
+`apps/favourites/views.py`'s module docstring and `static/js/favourites.js`'s
 header comment — there is no server-side "fetch one favourite" endpoint, so
 the pin-detail rename/delete markup is reconstructed client-side from the
 `__UUID__`-templated
 `favourite_rename_url_template` / `favourite_delete_url_template` context
 vars — the same reverse-with-a-dummy-id-then-string-replace trick
-`public/views.py::home()` uses for `edit_save_url_template`
+`apps/public/views.py::home()` uses for `edit_save_url_template`
 (`api:edit_resort_save`).
 
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
@@ -197,12 +197,12 @@ under the user's finger never silently re-picks. Tests:
 `tests/e2e/test_place_pin_clearance.py` (the real thing, at 375x812).
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
-`public/urls.py`. Do not reorder these — Django matches URL patterns
+`apps/public/urls.py`. Do not reorder these — Django matches URL patterns
 top-to-bottom and the generic region pattern would swallow `/map/` if it
 appeared first.
 
 **JSON API** — plain `JsonResponse` views, no DRF. Mounted at `/api/` in
-`config/urls.py` under the `api:` namespace (`public/api_urls.py`):
+`config/urls.py` under the `api:` namespace (`apps/public/api_urls.py`):
 
 | URL | Name | Response |
 |-----|------|----------|
@@ -214,13 +214,13 @@ appeared first.
 | `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. Never carries `properties.download`, same as major-regions.geojson above. |
 | `GET /api/region-basemap-tiles/?id=<region_id>` | `api:region_basemap_tiles` | The full precomputed `basemap_download` blob (incl. `z` tile-index ranges) for one MicroRegion (`MicroRegion.region_id` only — SNOW-521). 400 on a missing `?id=`; 404 for an unknown id or a region with no computed blob yet. Fetched on demand — see [`offline-map.md`](offline-map.md#offline-overlay-caches--download-basemap-snow-492-snow-521) for the full download flow. |
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. **Currently unused by the client** — the region popup lost its trigger (see the intro above); the endpoint is kept alongside `openRegionPopup` pending a decision on a replacement detail surface. |
-| `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the L4 layer, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
+| `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `apps.bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`apps.bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`apps.public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the L4 layer, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, floored to the nearest 15 min), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
 
 **Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
 `regions.geojson` (L4 only — MajorRegion/SubRegion never carry it) is a
 small, flat summary projected from the region's precomputed
-`basemap_download` field (`regions/services/basemap_tiles.py`,
+`basemap_download` field (`apps/regions/services/basemap_tiles.py`,
 `blob_summary`, populated by `manage.py compute_basemap_download`) —
 never computed at request time, since region geometry and the basemap
 tile grid are both static:
@@ -282,7 +282,7 @@ hand-curated metadata fields (SNOW-500 — alternative name, operator,
 website, lifts, runs, piste km, base/top elevation, typical season
 open/close). Each input carries `data-resort-field="<model field>"`; the
 server-side list they are validated against is
-`regions.forms.RESORT_DETAIL_FIELDS` (a `ResortDetailsForm` ModelForm, so
+`apps.regions.forms.RESORT_DETAIL_FIELDS` (a `ResortDetailsForm` ModelForm, so
 every constraint stays on the model). Adding a field means adding it in
 both places and nowhere else.
 
@@ -334,7 +334,7 @@ continues in the ordinary edit flow on the resort they just added.
 A created resort lives only in the environment's own database (see
 [`docs/decisions/resorts-are-editable-data.md`](decisions/resorts-are-editable-data.md)):
 run `dump_resorts_fixture --commit` to carry it to other worktrees and
-CI, and add it to `regions/data/resorts.tsv` so the next
+CI, and add it to `apps/regions/data/resorts.tsv` so the next
 `import_resorts` reconciliation does not delete it as an unlisted row.
 
 | URL | Name | Method | Notes |
@@ -344,9 +344,9 @@ CI, and add it to `regions/data/resorts.tsv` so the next
 | `/api/edit/resorts/create/` | `api:edit_resort_create` | POST | Flag-gated. JSON body `{name, canton?, latitude, longitude, details?}`; same coordinate and `details` rules as `save`. The parent region comes from the pin; an omitted `canton` is inherited from that region's existing resorts. Returns `201` with the same body shape `save` answers with (a catalogue entry plus geocode provenance). Errors: `400 invalid_identity` (blank/over-long name, or a canton the region cannot supply), `400 no_region`, `409 duplicate_name`. |
 
 All three endpoints 404 when the `edit_map` flag is inactive
-(`_require_edit_map_flag()` in `public/api.py` raises `Http404`). The
+(`_require_edit_map_flag()` in `apps/public/api.py` raises `Http404`). The
 page itself silently falls back to the normal map when `?edit=resorts`
-is set without the flag (`public/views.py`), so the URL is safe to
+is set without the flag (`apps/public/views.py`), so the URL is safe to
 bookmark.
 
 Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
@@ -360,13 +360,13 @@ Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 
 Edits land in the local SQLite only. Run the dump command after a session
 of placements to regenerate the seed fixture at
-`regions/fixtures/resorts.json`, which is what carries them to other
+`apps/regions/fixtures/resorts.json`, which is what carries them to other
 worktrees and CI:
 
 ```bash
 uv run python manage.py dump_resorts_fixture          # dry-run, prints diff
 uv run python manage.py dump_resorts_fixture --commit # writes the file
-git diff regions/fixtures/resorts.json                    # review
+git diff apps/regions/fixtures/resorts.json                    # review
 ```
 
 The dump uses `use_natural_foreign_keys=True` (so `region` round-trips

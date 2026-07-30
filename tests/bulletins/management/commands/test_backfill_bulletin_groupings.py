@@ -17,11 +17,11 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from bulletins.models import BulletinGrouping
+from apps.bulletins.models import BulletinGrouping
 from tests.factories import BulletinFactory, BulletinGroupingFactory, PipelineRunFactory
 
 _PATCH_TARGET = (
-    "bulletins.management.commands.backfill_bulletin_groupings"
+    "apps.bulletins.management.commands.backfill_bulletin_groupings"
     ".compute_bulletin_grouping_boundary"
 )
 

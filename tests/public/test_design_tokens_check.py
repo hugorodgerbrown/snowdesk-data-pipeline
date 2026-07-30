@@ -1,7 +1,7 @@
 """
 tests/public/test_design_tokens_check.py — Tests for the design-token sync check.
 
-The check (public/checks.py) keeps FOUNDATION_CATEGORIES in lockstep with
+The check (apps/public/checks.py) keeps FOUNDATION_CATEGORIES in lockstep with
 the @theme {} and .dark {} blocks in src/css/main.css. These tests cover
 the parser internals (so a future formatting change in main.css doesn't
 silently break the check) and a behavioural integration test against a
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from django.test import override_settings
 
-from public import checks
-from public.design_tokens import FoundationCategory, IconToken, Token
+from apps.public import checks
+from apps.public.design_tokens import FoundationCategory, IconToken, Token
 
 
 def test_strip_comments_removes_block_comments() -> None:
@@ -86,15 +86,17 @@ def test_check_passes_when_registry_matches_css(
     """Happy path: identical values → no errors."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #000;")
     monkeypatch.setattr(
-        "public.checks.FOUNDATION_CATEGORIES",
+        "apps.public.checks.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#fff", "#000")),
         raising=False,
     )
-    monkeypatch.setattr("public.design_tokens.FOUNDATION_CATEGORIES", (), raising=False)
-    # ``check_design_tokens_match_css`` re-imports from ``public.design_tokens``
+    monkeypatch.setattr(
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES", (), raising=False
+    )
+    # ``check_design_tokens_match_css`` re-imports from ``apps.public.design_tokens``
     # at call time, so patch that module instead.
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#fff", "#000")),
         raising=False,
     )
@@ -109,14 +111,14 @@ def test_check_flags_missing_token_in_theme(
     """Token in registry but missing from @theme → E002."""
     _write_css(fake_css_dir, "--other: 1;", "")
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--missing", "M", "#fff", None)),
         raising=False,
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E002"
+    assert errors[0].id == "apps.public.design_tokens.E002"
 
 
 def test_check_flags_light_value_drift(
@@ -125,14 +127,14 @@ def test_check_flags_light_value_drift(
     """Token light value differs → E003."""
     _write_css(fake_css_dir, "--color-x: #fff;", "")
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#000", None)),
         raising=False,
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E003"
+    assert errors[0].id == "apps.public.design_tokens.E003"
 
 
 def test_check_flags_unexpected_dark_override(
@@ -141,14 +143,14 @@ def test_check_flags_unexpected_dark_override(
     """Token marked theme-invariant but appears in .dark {} → E004."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #000;")
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#fff", None)),
         raising=False,
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E004"
+    assert errors[0].id == "apps.public.design_tokens.E004"
 
 
 def test_check_flags_missing_dark_override(
@@ -157,14 +159,14 @@ def test_check_flags_missing_dark_override(
     """Token has dark value in registry but no .dark {} entry → E005."""
     _write_css(fake_css_dir, "--color-x: #fff;", "")
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#fff", "#000")),
         raising=False,
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E005"
+    assert errors[0].id == "apps.public.design_tokens.E005"
 
 
 def test_check_flags_dark_value_drift(
@@ -173,25 +175,27 @@ def test_check_flags_dark_value_drift(
     """Token dark value differs → E006."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #111;")
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(Token("--color-x", "X", "#fff", "#000")),
         raising=False,
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E006"
+    assert errors[0].id == "apps.public.design_tokens.E006"
 
 
 def test_check_flags_missing_css_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Missing src/css/main.css → E001 with a helpful path."""
-    monkeypatch.setattr("public.design_tokens.FOUNDATION_CATEGORIES", (), raising=False)
+    monkeypatch.setattr(
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES", (), raising=False
+    )
     with override_settings(BASE_DIR=str(tmp_path)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert len(errors) == 1
-    assert errors[0].id == "public.design_tokens.E001"
+    assert errors[0].id == "apps.public.design_tokens.E001"
 
 
 def test_check_skips_icon_tokens(
@@ -214,7 +218,7 @@ def test_check_skips_icon_tokens(
         ),
     )
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES", (category,), raising=False
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES", (category,), raising=False
     )
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
@@ -231,7 +235,7 @@ def test_check_normalises_whitespace_in_values(
         "",
     )
     monkeypatch.setattr(
-        "public.design_tokens.FOUNDATION_CATEGORIES",
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
         _patched_categories(
             Token("--font-sans", "Sans", "'DM Sans', system-ui, sans-serif", None)
         ),

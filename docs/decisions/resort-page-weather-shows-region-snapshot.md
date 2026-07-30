@@ -8,7 +8,7 @@ last-reviewed: 2026-07-24
 # Resort-page weather shows the region snapshot, not a per-resort forecast
 
 **Decision.** The public resort page (`/resorts/<id>/<slug>/`,
-`public.views.resort_detail`) renders the *parent region's* `WeatherSnapshot`
+`apps.public.views.resort_detail`) renders the *parent region's* `WeatherSnapshot`
 — the same one `bulletin_detail` shows on that region's bulletin page — via
 the shared `templates/includes/_weather_panel.html` partial. It does not
 issue a per-resort Open-Meteo fetch and does not read

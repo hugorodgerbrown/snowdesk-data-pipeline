@@ -21,8 +21,8 @@ import pytest
 from django.conf import settings
 from django.test import RequestFactory, override_settings
 
-import analytics
-from analytics.exceptions import AnalyticsPIIError
+from apps import analytics
+from apps.analytics.exceptions import AnalyticsPIIError
 
 # ---------------------------------------------------------------------------
 # track() — no-op when key is absent

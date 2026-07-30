@@ -40,7 +40,7 @@ import pytest
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-from favourites.models import Favourite
+from apps.favourites.models import Favourite
 from tests.e2e.conftest import _session_login
 from tests.factories import AccountFactory
 

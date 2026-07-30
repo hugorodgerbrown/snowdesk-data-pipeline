@@ -1,5 +1,5 @@
 """
-tests/analytics/test_schema.py — Tests for analytics.schema.ALLOWED_EVENTS.
+tests/analytics/test_schema.py — Tests for apps.analytics.schema.ALLOWED_EVENTS.
 
 Covers the SNOW-414 map-favourites allowlist addition: the three
 ``map.favourite.*`` events must be members of ``ALLOWED_EVENTS`` (so the
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from analytics.schema import ALLOWED_EVENTS, TelemetrySchemaError, parse_payload
+from apps.analytics.schema import ALLOWED_EVENTS, TelemetrySchemaError, parse_payload
 
 
 class TestFavouriteEventsAllowlisted:

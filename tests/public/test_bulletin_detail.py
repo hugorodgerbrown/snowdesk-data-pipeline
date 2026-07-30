@@ -22,15 +22,15 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from bulletins.models import Bulletin, RegionDayRating
-from public.views import (
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.public.views import (
     _get_nav_dates,
     _has_later_bulletin,
     _issues_for_date,
     _resolve_selected_issue,
     _select_bulletin_for_date,
 )
-from regions.models import MicroRegion
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
@@ -502,7 +502,7 @@ class TestBulletinDetailView:
         # ``next: HH:MM`` tooltip on the disabled `»` chip) can opt in.
         # The current layout does not surface the value in the DOM.
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         Bulletin.objects.filter(pk=am.pk).update(
             next_update=datetime(2026, 3, 15, 15, 0, tzinfo=UTC)
@@ -526,7 +526,7 @@ class TestBulletinDetailView:
     ) -> None:
         """After the next_update time has passed, the disabled label is absent."""
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        from bulletins.models import Bulletin
+        from apps.bulletins.models import Bulletin
 
         Bulletin.objects.filter(pk=am.pk).update(
             next_update=datetime(2026, 3, 15, 15, 0, tzinfo=UTC)
@@ -575,9 +575,9 @@ class TestBulletinDetailView:
         )
 
         # Patch RENDER_MODEL_VERSION in the view module to 2 so version 1 appears stale.
-        with patch("public.views.RENDER_MODEL_VERSION", 2):
+        with patch("apps.public.views.RENDER_MODEL_VERSION", 2):
             with _freeze("2026-03-15T10:00:00+00:00"):
-                with caplog.at_level("WARNING", logger="public.views"):
+                with caplog.at_level("WARNING", logger="apps.public.views"):
                     response = client.get(url)
 
         assert response.status_code == 200
@@ -593,7 +593,7 @@ class TestBulletinDetailView:
         self, client: Client, region: MicroRegion, caplog: pytest.LogCaptureFixture
     ) -> None:
         """When stale rebuild raises RenderModelBuildError, page returns 200 with error card."""
-        from bulletins.services.render_model import RenderModelBuildError
+        from apps.bulletins.services.render_model import RenderModelBuildError
 
         am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
         url = reverse(
@@ -605,13 +605,13 @@ class TestBulletinDetailView:
             },
         )
 
-        with patch("public.views.RENDER_MODEL_VERSION", 2):
+        with patch("apps.public.views.RENDER_MODEL_VERSION", 2):
             with patch(
-                "public.views.build_render_model",
+                "apps.public.views.build_render_model",
                 side_effect=RenderModelBuildError("validation failed"),
             ):
                 with _freeze("2026-03-15T10:00:00+00:00"):
-                    with caplog.at_level("ERROR", logger="public.views"):
+                    with caplog.at_level("ERROR", logger="apps.public.views"):
                         response = client.get(url)
 
         assert response.status_code == 200

@@ -23,15 +23,15 @@ follow-up blocked on SNOW-375's IndexedDB scaffolding.
 
 | Component | File |
 |-----------|------|
-| Receiver view | `analytics/views.py::telemetry_receive` |
-| Envelope schema + allowlist | `analytics/schema.py` |
-| Server-side signal helper | `analytics/signals.py::emit_server_signal` |
-| URL routing (namespace `analytics:`) | `analytics/urls.py` mounted at `/api/telemetry` in `config/urls.py` |
-| PostHog client (shared with `analytics.track`) | `analytics/apps.py::AnalyticsConfig.ready` |
+| Receiver view | `apps/analytics/views.py::telemetry_receive` |
+| Envelope schema + allowlist | `apps/analytics/schema.py` |
+| Server-side signal helper | `apps/analytics/signals.py::emit_server_signal` |
+| URL routing (namespace `analytics:`) | `apps/analytics/urls.py` mounted at `/api/telemetry` in `config/urls.py` |
+| PostHog client (shared with `analytics.track`) | `apps/analytics/apps.py::AnalyticsConfig.ready` |
 
 ## Receiver contract — `POST /api/telemetry`
 
-`analytics.views.telemetry_receive` accepts one of two shapes:
+`apps.analytics.views.telemetry_receive` accepts one of two shapes:
 
 ```json
 {"events": [envelope, envelope, ...]}   // batched — normal buffer flush
@@ -45,7 +45,7 @@ The eight-field envelope per spec §16.1:
 
 | Key | Required | Type | Notes |
 |-----|----------|------|-------|
-| `event` | yes | string | Must appear in `analytics.schema.ALLOWED_EVENTS`. |
+| `event` | yes | string | Must appear in `apps.analytics.schema.ALLOWED_EVENTS`. |
 | `timestamp` | yes | string | ISO-8601. Preserved verbatim as `client_timestamp` on the PostHog event. |
 | `client_version` | yes | string | Non-empty. Lifted into `properties`. |
 | `session_id` | no | string / null | Used as PostHog `distinct_id` for anonymous requests. |
@@ -69,7 +69,7 @@ not identity.
 ignoring `user_id` entirely:
 
 1. the requester's own identity from `request.user`, when authenticated
-   (`accounts.identity.request_identity` — the `Account.uuid` below);
+   (`apps.accounts.identity.request_identity` — the `Account.uuid` below);
 2. the envelope's `session_id`, for anonymous requests;
 3. the `_anon` sentinel when the session id is stripped too.
 
@@ -80,7 +80,7 @@ there is no reason to accept the client's claim.
 ## User identity — `Account.uuid` (cutover 2026-07-29)
 
 The public-facing identifier for a signed-in user is `Account.uuid`,
-resolved through [`accounts/identity.py`](../accounts/identity.py)
+resolved through [`apps/accounts/identity.py`](../apps/accounts/identity.py)
 (`user_identity` / `request_identity`). It is what every PostHog
 `distinct_id` carries, and what `base.html` renders into the
 `pwa-user-id` meta tag that the PWA mutation queue reads as its
@@ -131,7 +131,7 @@ PostHog, so the CSRF risk surface is empty.
 
 Server-side IP address is never captured into an event property.
 PostHog's own IP-derived GeoIP enrichment continues to run (see
-`analytics/apps.py`).
+`apps/analytics/apps.py`).
 
 ## Event catalogue
 
@@ -141,7 +141,7 @@ through the same client-emitted / server-emitted split below.
 
 ### Client-emitted (via the receiver)
 
-Declared in `analytics.schema.ALLOWED_EVENTS`. Any event name not in
+Declared in `apps.analytics.schema.ALLOWED_EVENTS`. Any event name not in
 this frozenset returns `400 invalid_envelope`. Adding an event =
 change the frozenset + document the property shape here.
 
@@ -186,11 +186,11 @@ synthetic PostHog distinct_id `_server`.
 
 | Signal | Call site | Fires when |
 |--------|-----------|------------|
-| `pwa.version.endpoint.hit` | `public/api.py::version` | Client fetches `/api/version` |
-| `pwa.sw_config.hit` | `public/api.py::sw_config` | Client fetches `/api/sw-config` |
-| `pwa.push.sent` | `accounts/push_service.py::dispatch_push` | Push service returns 2xx |
+| `pwa.version.endpoint.hit` | `apps/public/api.py::version` | Client fetches `/api/version` |
+| `pwa.sw_config.hit` | `apps/public/api.py::sw_config` | Client fetches `/api/sw-config` |
+| `pwa.push.sent` | `apps/accounts/push_service.py::dispatch_push` | Push service returns 2xx |
 | `pwa.push.gone_410` | Same | Push service returns 410 (subscription lost) |
-| `pwa.idempotency.replay` | `core/idempotency.py::IdempotencyMiddleware` | Cache hit — same `Idempotency-Key` seen twice |
+| `pwa.idempotency.replay` | `apps/core/idempotency.py::IdempotencyMiddleware` | Cache hit — same `Idempotency-Key` seen twice |
 
 Every server-side signal (SNOW-384) carries a `client_version` property
 read from the `X-Client-Version` request header
@@ -219,7 +219,7 @@ python-decouple; `config/settings/base.py`) and:
 
 - **Client** — `static/js/telemetry.js` becomes an inert no-op. The
   server renders `<meta name="pwa-telemetry-enabled" content="0">`
-  (via `public.context_processors.pwa_telemetry`); the script reads it
+  (via `apps.public.context_processors.pwa_telemetry`); the script reads it
   once at load and skips all buffering, `sendBeacon`, `/api/telemetry`
   POSTs, and the flush-trigger listeners. `window.pwaTelemetry` still
   exists (its `emit`/`flush` just return early) so every
@@ -238,10 +238,10 @@ identification.
 
 ### PostHog key gate (forwarding only)
 
-- `emit_server_signal` (`analytics/signals.py`) checks
+- `emit_server_signal` (`apps/analytics/signals.py`) checks
   `settings.POSTHOG_API_KEY` itself before calling `analytics.track()`
   — logged at DEBUG, no-op when unset. The `/api/telemetry` receiver
-  (`analytics/views.py::_posthog_configured`) does the same immediately
+  (`apps/analytics/views.py::_posthog_configured`) does the same immediately
   after schema validation: dev / test environments still accept
   `POST /api/telemetry` and 204 without contacting PostHog, but the
   per-event forward loop (and the PII check normally performed inside
@@ -261,7 +261,7 @@ identification.
 
 Shipped in the SNOW-375 + SNOW-385 PR alongside the IndexedDB
 scaffolding. `static/js/telemetry.js` — loaded after `db.js` in
-`public/templates/public/base.html`. Public API:
+`apps/public/templates/public/base.html`. Public API:
 
 ```js
 window.pwaTelemetry = {
@@ -353,9 +353,9 @@ below the table.
 | `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` (default) / `pwa.reset.forced` (called with `forced=true`) |
 | `static/js/db.js::_enterResetRequired` (Reset Required overlay CTA) | Calls `resetLocalData(true)` → `pwa.reset.forced` |
 | `static/js/push_demo.js::reverifyPushSubscription` | `pwa.push.subscription_lost` |
-| `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `analytics.schema` §16.2, fired from both the min-version-mismatch and 24h-escalation callers; `properties.trigger` distinguishes them |
+| `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `apps.analytics.schema` §16.2, fired from both the min-version-mismatch and 24h-escalation callers; `properties.trigger` distinguishes them |
 | `static/js/pwa_install.js` | `pwa.install.prompted` (`revealBanner`) / `.accepted` (accepted `userChoice`) / `.dismissed` (`dismissBanner`) / `.completed` (`onInstalled`) / `.notifications_granted` (the iOS `Notification.permission` check inside `onInstalled`) |
-| `templates/includes/_freshness_indicator.html` (inline `<script>`) | `pwa.freshness.fresh` / `.stale` / `.unsafe` — sourced from the partial's own `state` render context (server-computed by `core.freshness.freshness_state`); the partial isn't included on a live page yet (design-system component), so the hook fires wherever/whenever a future template adopts it |
+| `templates/includes/_freshness_indicator.html` (inline `<script>`) | `pwa.freshness.fresh` / `.stale` / `.unsafe` — sourced from the partial's own `state` render context (server-computed by `apps.core.freshness.freshness_state`); the partial isn't included on a live page yet (design-system component), so the hook fires wherever/whenever a future template adopts it |
 | `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
 | `static/js/sw_register.js` | `pwa.sw.update_available` (`showUpdateBanner`, once per distinct waiting worker) / `.update_applied` (the SW-driven `controllerchange` reload path) / `pwa.kill_switch.activated` with `properties.mechanism: 'a'` (the pre-register kill fetch — `fetchSwConfig()` returning `kill: true`) |
 | `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
@@ -422,7 +422,7 @@ closing most of the "not covered" gap this section used to describe:
 | File | Covers |
 |------|--------|
 | `tests/e2e/test_pwa_lifecycle_install.py` | `pwa.sw.installed`, `.activated` (first install) |
-| `tests/e2e/test_pwa_lifecycle_update.py` | `pwa.sw.update_available` (a byte-different `sw.js`, via a server-side monkeypatch of `public.views._serve_sw_file` — Playwright cannot intercept a SW's own script fetch); the header-drift and forced-update paths (no dedicated `pwa.sw.*` event, but the banner/modal/reset behaviour itself) |
+| `tests/e2e/test_pwa_lifecycle_update.py` | `pwa.sw.update_available` (a byte-different `sw.js`, via a server-side monkeypatch of `apps.public.views._serve_sw_file` — Playwright cannot intercept a SW's own script fetch); the header-drift and forced-update paths (no dedicated `pwa.sw.*` event, but the banner/modal/reset behaviour itself) |
 | `tests/e2e/test_pwa_lifecycle_kill_and_reset.py` | Mechanism A's pre-register kill gate and `pwa.reset.user_initiated` (best-effort) |
 | `tests/e2e/test_pwa_push_journey.py` | `pwa.push.received`, `.shown` |
 

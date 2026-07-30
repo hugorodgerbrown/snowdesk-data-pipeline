@@ -65,7 +65,7 @@ from django.test import Client
 from playwright.sync_api import BrowserContext, Page
 from pytest_django.live_server_helper import LiveServer
 
-from accounts.models import Account
+from apps.accounts.models import Account
 from tests.factories import AccountFactory
 from tests.seeding import seed_test_dataset
 
@@ -76,9 +76,9 @@ from tests.seeding import seed_test_dataset
 _PWA_DB_NAME = "snowdesk-pwa-v1"
 
 # Session backend used for magic-link / passkey logins — see
-# accounts/backends.py. Matches the pattern in
+# apps/accounts/backends.py. Matches the pattern in
 # tests/accounts/test_passkey_views.py's _make_session_client.
-_TOKEN_BACKEND = "accounts.backends.TokenBackend"
+_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
 
 @pytest.fixture()
@@ -94,7 +94,7 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
 def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the Open-Meteo elevation lookup for every e2e test.
 
-    Creating a ``Favourite`` runs ``favourites.services.create_favourite`` →
+    Creating a ``Favourite`` runs ``apps.favourites.services.create_favourite`` →
     ``resolve_forecast_point`` → ``fetch_elevation``, which makes a live
     ``requests.get`` to ``https://api.open-meteo.com/v1/elevation`` with a
     30s timeout. The favourite-submit / drain tests replay that POST against
@@ -113,7 +113,7 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     unaffected.
     """
     monkeypatch.setattr(
-        "bulletins.services.forecast_points.fetch_elevation",
+        "apps.bulletins.services.forecast_points.fetch_elevation",
         lambda latitude, longitude, base_url=None: 1500.0,
     )
 

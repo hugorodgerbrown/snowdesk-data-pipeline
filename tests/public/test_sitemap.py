@@ -23,7 +23,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from regions.models import MicroRegion
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,

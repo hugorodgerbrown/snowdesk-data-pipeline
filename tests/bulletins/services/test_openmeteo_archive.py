@@ -1,7 +1,7 @@
 """
 tests/bulletins/services/test_openmeteo_archive.py — Tests for the Open-Meteo NDJSON archive.
 
-Covers the pure functions in ``bulletins.services.openmeteo_archive``:
+Covers the pure functions in ``apps.bulletins.services.openmeteo_archive``:
   - read_archive: round-trip, missing-file safety, blank-line tolerance
   - merge: dedup by (region_id, date) with later-captured_at-wins semantics,
     sort order, empty inputs
@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from bulletins.services.openmeteo_archive import merge, read_archive, write_archive
+from apps.bulletins.services.openmeteo_archive import merge, read_archive, write_archive
 
 
 def _record(

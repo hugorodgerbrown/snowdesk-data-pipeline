@@ -1,13 +1,13 @@
 """
 tests/public/test_aspect_rose.py — Tests for the aspect_rose template filter.
 
-Covers the ``aspect_rose`` filter in ``public.templatetags.card_tags``
+Covers the ``aspect_rose`` filter in ``apps.public.templatetags.card_tags``
 and its helper ``_wedge``.
 """
 
 from __future__ import annotations
 
-from public.templatetags.card_tags import _wedge, aspect_rose
+from apps.public.templatetags.card_tags import _wedge, aspect_rose
 
 
 class TestWedge:

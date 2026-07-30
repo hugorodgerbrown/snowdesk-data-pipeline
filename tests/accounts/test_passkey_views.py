@@ -27,8 +27,8 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Account, PasskeyCredential
-from accounts.services.passkey import PasskeyError, PasskeyUnknownCredentialError
+from apps.accounts.models import Account, PasskeyCredential
+from apps.accounts.services.passkey import PasskeyError, PasskeyUnknownCredentialError
 from tests.factories import AccountFactory, PasskeyCredentialFactory, UserFactory
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ from tests.factories import AccountFactory, PasskeyCredentialFactory, UserFactor
 _HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 
-_TOKEN_BACKEND = "accounts.backends.TokenBackend"
+_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
 
 def _make_session_client(user: User) -> Client:
@@ -109,7 +109,7 @@ class TestPasskeyAuthResponse:
         _set_auth_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey._verify_auth_response",
+            "apps.accounts.views_passkey._verify_auth_response",
             return_value=user,
         ):
             resp = client.post(
@@ -128,7 +128,7 @@ class TestPasskeyAuthResponse:
         _set_auth_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey._verify_auth_response",
+            "apps.accounts.views_passkey._verify_auth_response",
             side_effect=PasskeyUnknownCredentialError("bad-cred-id"),
         ):
             resp = client.post(
@@ -147,7 +147,7 @@ class TestPasskeyAuthResponse:
         _set_auth_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey._verify_auth_response",
+            "apps.accounts.views_passkey._verify_auth_response",
             side_effect=PasskeyError("bad signature"),
         ):
             resp = client.post(
@@ -244,7 +244,7 @@ class TestPasskeyRegisterResponse:
         passkey = PasskeyCredentialFactory.create(user=account.user)
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             return_value=passkey,
         ):
             resp = client.post(
@@ -274,7 +274,7 @@ class TestPasskeyRegisterResponse:
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             side_effect=PasskeyError("bad"),
         ):
             resp = client.post(
@@ -296,7 +296,7 @@ class TestPasskeyRegisterResponse:
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             side_effect=PasskeyError("internal detail that must not escape"),
         ):
             resp = client.post(
@@ -334,7 +334,7 @@ class TestPasskeyRegisterResponse:
         passkey = PasskeyCredentialFactory.create(user=staff_user)
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             return_value=passkey,
         ):
             resp = client.post(
@@ -471,7 +471,7 @@ class TestPasskeyViewsLogging:
         """
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         user = UserFactory.create(
             email="passkey-auth@example.com",
@@ -481,10 +481,10 @@ class TestPasskeyViewsLogging:
         _set_auth_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey._verify_auth_response",
+            "apps.accounts.views_passkey._verify_auth_response",
             return_value=user,
         ):
-            with caplog.at_level(logging.INFO, logger="accounts.views_passkey"):
+            with caplog.at_level(logging.INFO, logger="apps.accounts.views_passkey"):
                 client.post(
                     reverse("accounts:passkey_auth_response"),
                     data=json.dumps({"id": "dGVzdA"}),
@@ -512,17 +512,17 @@ class TestPasskeyViewsLogging:
         """passkey_register_response failure logs user pk=, not the email address."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         account = AccountFactory.create(user__email="passkey-reg-fail@example.com")
         client = _make_session_client(account.user)
         _set_reg_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey.verify_and_save_registration",
+            "apps.accounts.views_passkey.verify_and_save_registration",
             side_effect=PasskeyError("bad registration"),
         ):
-            with caplog.at_level(logging.INFO, logger="accounts.views_passkey"):
+            with caplog.at_level(logging.INFO, logger="apps.accounts.views_passkey"):
                 client.post(
                     reverse("accounts:passkey_register_response"),
                     data=json.dumps({"id": "dGVzdA"}),
@@ -550,13 +550,13 @@ class TestPasskeyViewsLogging:
         """passkey_delete logs user pk=, not the email address."""
         import logging
 
-        monkeypatch.setattr(logging.getLogger("accounts"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
 
         account = AccountFactory.create(user__email="passkey-del@example.com")
         passkey = PasskeyCredentialFactory.create(user=account.user)
         client = _make_session_client(account.user)
 
-        with caplog.at_level(logging.INFO, logger="accounts.views_passkey"):
+        with caplog.at_level(logging.INFO, logger="apps.accounts.views_passkey"):
             client.post(
                 reverse(
                     "accounts:passkey_delete",
@@ -597,7 +597,7 @@ class TestStaffUserPasskeyAuth:
         _set_auth_challenge(client, "dGVzdA")
 
         with patch(
-            "accounts.views_passkey._verify_auth_response",
+            "apps.accounts.views_passkey._verify_auth_response",
             return_value=staff_user,
         ):
             resp = client.post(

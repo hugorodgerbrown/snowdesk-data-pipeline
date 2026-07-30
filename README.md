@@ -22,7 +22,7 @@ uv run python manage.py runserver
 
 In local development, run `fetch_bulletins` with `--local-mirror` so you
 don't hit the live APIs. The SLF mirror replays
-`bulletins/local_mirrors/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
+`apps/bulletins/local_mirrors/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
 command catalogue: [docs/management-commands.md](docs/management-commands.md).
 
 ## Data sources
@@ -88,7 +88,7 @@ uv run tox -e test               # run tests with coverage (mirrors CI)
 uv run tox                       # full CI (fmt, lint, mypy, django-checks, test)
 ```
 
-See [CODING_STANDARDS.md](CODING_STANDARDS.md) for conventions and
+See [docs/coding-standards.md](docs/coding-standards.md) for conventions and
 [CLAUDE.md](CLAUDE.md) for detailed development guidance.
 
 ---

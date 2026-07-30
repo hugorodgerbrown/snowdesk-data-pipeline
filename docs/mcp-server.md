@@ -21,7 +21,7 @@ Content-Type: application/json
 ```
 
 The endpoint speaks plain **JSON-RPC 2.0 over a single Django POST view**
-(`mcp_server/views.py::mcp_endpoint`) — there is no `mcp` SDK, no ASGI, no
+(`apps/mcp_server/views.py::mcp_endpoint`) — there is no `mcp` SDK, no ASGI, no
 Starlette. Snowdesk is WSGI-only (`gunicorn config.wsgi`), and the MCP
 Streamable-HTTP spec permits a POST-only endpoint that returns
 `application/json` and rejects GET with 405; that is exactly what a plain
@@ -34,11 +34,11 @@ sidesteps standing up an ASGI stack for this one surface.
   user typed, and `APPEND_SLASH` cannot redirect a POST to the canonical
   URL without dropping the body (the client replays the 301 as a GET → the
   405 below), so a URL pasted without the slash would otherwise fail to
-  connect. See `mcp_server/urls.py`.
+  connect. See `apps/mcp_server/urls.py`.
 * **`GET /api/mcp/`** → `405` with `Allow: POST`.
 * **CSRF-exempt** — JSON-RPC clients cannot mint CSRF tokens, and every
   tool is read-only, so the CSRF risk surface is empty. Same rationale as
-  `analytics.views.telemetry_receive` (`docs/telemetry-pipeline.md`).
+  `apps.analytics.views.telemetry_receive` (`docs/telemetry-pipeline.md`).
 * **Rate-limited** to 60 requests/minute per source IP
   (`django-ratelimit`, `block=True`) — an over-limit request is rejected
   automatically with a bare `403`, before the view body runs.
@@ -50,7 +50,7 @@ sidesteps standing up an ASGI stack for this one surface.
 * Negotiates protocol version in `initialize`: if the client's requested
   `protocolVersion` is one this server recognises (`2024-11-05`,
   `2025-03-26`, `2025-06-18`, or `2025-11-25` — see
-  `mcp_server/protocol.py::SUPPORTED_PROTOCOL_VERSIONS`), the server
+  `apps/mcp_server/protocol.py::SUPPORTED_PROTOCOL_VERSIONS`), the server
   echoes it back; otherwise it returns its preferred version
   (`"2025-06-18"`, `PROTOCOL_VERSION`) and lets the client decide whether
   to disconnect, per spec.
@@ -67,7 +67,7 @@ sidesteps standing up an ASGI stack for this one surface.
 
 ## Tools
 
-All thirteen are implemented in `mcp_server/tools.py`, composed from
+All thirteen are implemented in `apps/mcp_server/tools.py`, composed from
 services that already exist elsewhere in the codebase — no new query
 logic.
 
@@ -95,9 +95,9 @@ an exact `region_id`.
   Ties are broken micro > major > resort. Empty `results` on no match — a
   successful response, not an error.
 
-Implementation: `mcp_server/resolvers.py::search_places` — NFKD ASCII-fold
+Implementation: `apps/mcp_server/resolvers.py::search_places` — NFKD ASCII-fold
 + lowercase + `sankt`/`st.` → `saint` + punctuation strip
-(`mcp_server/normalise.py::normalise`), scored with
+(`apps/mcp_server/normalise.py::normalise`), scored with
 `rapidfuzz.process.extract(scorer=WRatio, score_cutoff=70)`. The candidate
 pool (~1500 rows) is cached in the Django default cache under a key
 fingerprinted on `max(updated_at)` **and the row count** across the four
@@ -125,8 +125,8 @@ Returns the danger rating and forecaster prose for one region on one day.
 Returns the structured avalanche-problem list for one region on one day —
 the decision-support detail behind the scalar `danger_level` returned by
 `get_current_conditions`. Sourced from `Bulletin.get_avalanche_problems()`
-(`bulletins/models.py`), which parses the bulletin's `avalancheProblems`
-CAAML array into `AvalancheProblem` dataclasses (`bulletins/schema.py`).
+(`apps/bulletins/models.py`), which parses the bulletin's `avalancheProblems`
+CAAML array into `AvalancheProblem` dataclasses (`apps/bulletins/schema.py`).
 
 * **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
   optional — defaults to today).
@@ -146,7 +146,7 @@ CAAML array into `AvalancheProblem` dataclasses (`bulletins/schema.py`).
 `subdivision` (SLF's CH sub-level qualifier), `avalanche_type` (ALBINA's
 slab/loose/glide axis), `snowpack_stability`, and `frequency` — as
 low-value for a general-purpose LLM caller. See
-`AvalancheProblem`'s docstring in `bulletins/schema.py` for the full field
+`AvalancheProblem`'s docstring in `apps/bulletins/schema.py` for the full field
 set these are drawn from.
 
 ### `get_danger_history`
@@ -165,7 +165,7 @@ range.
 **Cost cap:** the requested range is always clamped to a single avalanche
 season (1 November → 31 May) — the season containing today, or, off
 season (June–October), the most recently completed one
-(`mcp_server/season.py::current_or_last_season`). `clamped` reports
+(`apps/mcp_server/season.py::current_or_last_season`). `clamped` reports
 whether either bound was adjusted. A range entirely outside the season
 window returns `days: []` with `clamped: true` and the season bounds — a
 successful empty response, not an error. `days` is always the **full,
@@ -261,7 +261,7 @@ region).
   lat/lon, non-positive radius, and non-integer `limit` are all
   rejected as JSON-RPC `-32602` (invalid params).
 * **Distance:** pure-Python haversine
-  (`mcp_server.resolvers._haversine_km`) against
+  (`apps.mcp_server.resolvers._haversine_km`) against
   `MicroRegion.centre` — no PostGIS or Shapely dependency, matching
   the request-path point-in-polygon precedent.
 * **Empty results** when nothing is inside the radius (e.g. a query
@@ -333,7 +333,7 @@ parent hierarchy, source provider, resorts, a computed bounding box, its
 * **`bbox`** is computed in pure Python from `MicroRegion.boundary`
   GeoJSON (`Polygon` or `MultiPolygon`) — no Shapely, no PostGIS, the
   same dependency-free precedent as
-  `mcp_server.resolvers._haversine_km`. `null` when the boundary is
+  `apps.mcp_server.resolvers._haversine_km`. `null` when the boundary is
   missing or malformed.
 * **`coverage_first_date`/`coverage_last_date`** come from
   `RegionDayRating.objects.filter(region=region).aggregate(Min("date"),
@@ -416,7 +416,7 @@ wants visibility into.
 
 ## Error codes
 
-Standard JSON-RPC 2.0 reserved codes (`mcp_server/protocol.py`):
+Standard JSON-RPC 2.0 reserved codes (`apps/mcp_server/protocol.py`):
 
 | Code | Meaning | When |
 |------|---------|------|
@@ -470,8 +470,8 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
   (fr) vs `Leuk` (de)). `regions.RegionAlias` (SNOW-409) closes this gap
   with a hand-curated `(region, alias_text)` table — `search_places` folds
   its rows into the candidate pool alongside `MicroRegion`/`MajorRegion`/
-  `Resort` names (`mcp_server/resolvers.py::_build_candidate_pool`). Only
-  ~10 rows are seeded so far (see `regions/fixtures/region_aliases.json`)
+  `Resort` names (`apps/mcp_server/resolvers.py::_build_candidate_pool`). Only
+  ~10 rows are seeded so far (see `apps/regions/fixtures/region_aliases.json`)
   — each was verified against the committed EAWS fixtures before being
   added, so coverage is intentionally narrow rather than guessed. A query
   with no curated alias and no letter overlap with the canonical name

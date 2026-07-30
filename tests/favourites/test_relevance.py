@@ -1,5 +1,5 @@
 """
-tests/favourites/test_relevance.py — Tests for favourites.relevance.
+tests/favourites/test_relevance.py — Tests for apps.favourites.relevance.
 
 Covers:
   band_relevance — pure boundary matrix over both-bounds / lower-only /
@@ -29,8 +29,8 @@ from typing import Any
 
 import pytest
 
-from bulletins.services.render_model import build_render_model
-from favourites.relevance import (
+from apps.bulletins.services.render_model import build_render_model
+from apps.favourites.relevance import (
     RELEVANCE_ABOVE,
     RELEVANCE_APPLIES,
     RELEVANCE_BELOW,
@@ -38,7 +38,11 @@ from favourites.relevance import (
     annotate_problem_relevance,
     band_relevance,
 )
-from public.views import ElevationBounds, _resolve_problem_cards, enrich_render_model
+from apps.public.views import (
+    ElevationBounds,
+    _resolve_problem_cards,
+    enrich_render_model,
+)
 
 SENTINELS_DIR = Path(__file__).resolve().parent.parent / "sentinels"
 
@@ -86,7 +90,7 @@ def _bounds(lower: str = "", upper: str = "", bound_type: str = "") -> Elevation
 
 
 class TestRelevanceFromBounds:
-    """Tests for favourites.relevance._relevance_from_bounds."""
+    """Tests for apps.favourites.relevance._relevance_from_bounds."""
 
     def test_none_elevation_is_unannotated(self) -> None:
         """A None elevation value returns None (no band data at all)."""

@@ -18,8 +18,8 @@ from django.urls import reverse
 if TYPE_CHECKING:
     from django.test.client import _MonkeyPatchedWSGIResponse as _Response
 
-from bulletins.models import BulletinShare
-from regions.models import MicroRegion
+from apps.bulletins.models import BulletinShare
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -249,7 +249,7 @@ class TestShareCreateRateLimit:
         )
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr added by middleware
 
-        from public.api import share_create
+        from apps.public.api import share_create
 
         response = share_create(request)
         assert response.status_code == 429

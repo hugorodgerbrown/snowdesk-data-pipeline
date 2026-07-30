@@ -1,5 +1,5 @@
 """
-tests/accounts/test_admin.py — Tests for accounts/admin.py.
+tests/accounts/test_admin.py — Tests for apps/accounts/admin.py.
 
 Covers:
   - search_fields configuration for each admin class.
@@ -17,13 +17,13 @@ import pytest
 from django.contrib.admin.sites import AdminSite
 from django.test import RequestFactory
 
-from accounts.admin import (
+from apps.accounts.admin import (
     AccountAdmin,
     PasskeyCredentialAdmin,
     PushSubscriptionAdmin,
     SubscriptionAdmin,
 )
-from accounts.models import (
+from apps.accounts.models import (
     Account,
     PasskeyCredential,
     PushSubscription,
