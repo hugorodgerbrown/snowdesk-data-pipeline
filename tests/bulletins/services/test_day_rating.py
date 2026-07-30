@@ -1852,3 +1852,86 @@ class TestMFElevationBandSplitIntegration:
         rdr = RegionDayRating.objects.get(region=region, date=day)
         assert rdr.min_rating == RegionDayRating.Rating.LOW
         assert rdr.max_rating == RegionDayRating.Rating.MODERATE
+
+
+@pytest.mark.django_db
+class TestMeteoFranceMultiIssueDay:
+    """The morning issue wins for a Météo-France massif-day, with no MF branch.
+
+    Before SNOW-559 both archive issues of one massif-day carried a synthetic
+    midnight ``valid_from``, so ``max(candidates, key=valid_from)`` had nothing
+    to order them by and the winner was whichever the queryset happened to
+    return first.  Extraction now takes ``validTime.startTime`` from the
+    bulletin's own "Rédigé le … à 16h" line, which restores the ordering the
+    existing single-bulletin policy already relies on.
+    """
+
+    def test_morning_issue_is_chosen_over_prior_evening(self) -> None:
+        """The later-published issue supplies the day's rating."""
+        region = MicroRegionFactory.create(region_id="FR-02", name="Aravis")
+        day = datetime.date(2026, 2, 13)
+
+        # Previous-evening issue: written 2026-02-12 at 16:00 Paris (15:00Z).
+        _make_bulletin_for_region(
+            region,
+            datetime.datetime(2026, 2, 12, 15, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 13, 23, 59, 59, tzinfo=UTC),
+            headline_key="high",
+            source="meteofrance",
+        )
+        # Morning refresh: written 2026-02-13 at 09:00 Paris (08:00Z).
+        _make_bulletin_for_region(
+            region,
+            datetime.datetime(2026, 2, 13, 8, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 13, 23, 59, 59, tzinfo=UTC),
+            headline_key="considerable",
+            source="meteofrance",
+        )
+
+        recompute_region_day(region, day)
+
+        rating = RegionDayRating.objects.get(region=region, date=day)
+        assert rating.max_rating == "considerable"
+
+    def test_both_issues_target_the_covered_day(self) -> None:
+        """Neither issue is filtered out by the target-day rule.
+
+        The evening issue's ``valid_from`` is on the previous date with
+        ``hour >= 12`` (targets the next day); the morning issue's is on the
+        covered date with ``hour < 12`` (targets its own day).  Both therefore
+        resolve to the covered day and compete, which is what makes the
+        ordering matter.
+        """
+        evening = _make_bulletin_for_region(
+            MicroRegionFactory.create(region_id="FR-03", name="Bauges"),
+            datetime.datetime(2026, 2, 12, 15, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 13, 23, 59, 59, tzinfo=UTC),
+            source="meteofrance",
+        )
+        morning = _make_bulletin_for_region(
+            MicroRegionFactory.create(region_id="FR-04", name="Chartreuse"),
+            datetime.datetime(2026, 2, 13, 8, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 13, 23, 59, 59, tzinfo=UTC),
+            source="meteofrance",
+        )
+
+        assert _target_day(evening) == datetime.date(2026, 2, 13)
+        assert _target_day(morning) == datetime.date(2026, 2, 13)
+
+    def test_prior_evening_alone_still_supplies_the_rating(self) -> None:
+        """A day with only the evening issue is unaffected."""
+        region = MicroRegionFactory.create(region_id="FR-05", name="Belledonne")
+        day = datetime.date(2026, 2, 13)
+
+        _make_bulletin_for_region(
+            region,
+            datetime.datetime(2026, 2, 12, 15, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 13, 23, 59, 59, tzinfo=UTC),
+            headline_key="high",
+            source="meteofrance",
+        )
+
+        recompute_region_day(region, day)
+
+        rating = RegionDayRating.objects.get(region=region, date=day)
+        assert rating.max_rating == "high"

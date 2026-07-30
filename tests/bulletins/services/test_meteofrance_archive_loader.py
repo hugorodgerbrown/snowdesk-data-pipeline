@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from bulletins.services.meteofrance_archive_loader import (
     _slug_to_region_id,
     load_meteofrance_archive,
 )
+from bulletins.services.meteofrance_identity import compact_publication_stamp
 from regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------
@@ -27,7 +29,14 @@ from regions.models import MicroRegion
 # ---------------------------------------------------------------------------
 
 
-def _make_line(slug: str, code: str, date_str: str) -> str:
+def _make_line(
+    slug: str,
+    code: str,
+    date_str: str,
+    *,
+    publication_time: str | None = None,
+    danger: str = "moderate",
+) -> str:
     """Return a minimal valid NDJSON line for a given massif slug and date.
 
     Args:
@@ -36,27 +45,64 @@ def _make_line(slug: str, code: str, date_str: str) -> str:
         code: Zero-padded massif code used in ``regionID``
             (e.g. ``"02"``).
         date_str: Date string in ``YYYY-MM-DD`` format.
+        publication_time: The publication instant, which forms the trailing
+            component of the synthesised ``bulletinID``.  Defaults to 16:00 UTC
+            on the day before ``date_str`` — the standard previous-evening
+            issue.  Pass an explicit value to build a second issue for the same
+            massif-day.
+        danger: ``mainValue`` for a single danger rating, so two issues of one
+            day can be given differing content.
 
     Returns:
         JSON-serialised NDJSON line.
 
     """
+    if publication_time is None:
+        previous_day = date.fromisoformat(date_str) - timedelta(days=1)
+        publication_time = f"{previous_day.isoformat()}T16:00:00Z"
     envelope: dict[str, Any] = {
         "type": "Feature",
         "geometry": None,
         "properties": {
             "lang": "fr",
             "regions": [{"regionID": f"FR-{slug}", "name": slug.capitalize()}],
+            "publicationTime": publication_time,
             "validTime": {
-                "startTime": f"{date_str}T00:00:00+00:00",
+                "startTime": publication_time,
                 "endTime": f"{date_str}T23:59:59+00:00",
             },
             "customData": {"MF": {"massif": slug, "date": date_str}},
-            "dangerRatings": [],
+            "dangerRatings": [
+                {
+                    "mainValue": danger,
+                    "elevation": {"lowerBound": None, "upperBound": None},
+                    "valid": True,
+                }
+            ],
             "avalancheProblems": [],
         },
     }
     return json.dumps(envelope)
+
+
+def _expected_id(code: str, date_str: str, publication_time: str | None = None) -> str:
+    """Return the ``bulletin_id`` ``_make_line`` will produce.
+
+    Args:
+        code: Zero-padded massif code (e.g. ``"02"``).
+        date_str: The covered date in ``YYYY-MM-DD`` form.
+        publication_time: Matching the argument of the same name on
+            ``_make_line``.
+
+    Returns:
+        The expected ``FR-{NN}-{covered}-{stamp}`` identifier.
+
+    """
+    if publication_time is None:
+        previous_day = date.fromisoformat(date_str) - timedelta(days=1)
+        publication_time = f"{previous_day.isoformat()}T16:00:00Z"
+    stamp = compact_publication_stamp(publication_time)
+    return f"FR-{code}-{date_str}-{stamp}"
 
 
 _ARAVIS_LINE = _make_line("ARAVIS", "02", "2026-01-15")
@@ -318,3 +364,216 @@ class TestTriggeredBy:
         )
         run = PipelineRun.objects.get()
         assert run.triggered_by == "meteofrance-archive-backfill"
+
+
+# ---------------------------------------------------------------------------
+# Multi-issue days — the SNOW-559 collision
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMultipleIssuesPerDay:
+    """Two issues of one massif-day must coexist as two rows.
+
+    Météo-France publishes a previous-evening issue and a morning refresh for
+    the same covered day.  Under the old ``FR-{NN}-{covered date}`` id they
+    collided and ``upsert_bulletin``'s ``update_or_create`` silently overwrote
+    one with the other, the winner decided by line order in the file.
+    """
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    EVENING = "2026-01-14T16:00:00Z"
+    MORNING = "2026-01-15T07:30:00Z"
+
+    def _two_issues(self) -> list[str]:
+        """Return the evening and morning issues for ARAVIS on 2026-01-15.
+
+        Returns:
+            Two NDJSON lines with differing danger ratings.
+
+        """
+        return [
+            _make_line(
+                "ARAVIS",
+                "02",
+                "2026-01-15",
+                publication_time=self.EVENING,
+                danger="high",
+            ),
+            _make_line(
+                "ARAVIS",
+                "02",
+                "2026-01-15",
+                publication_time=self.MORNING,
+                danger="considerable",
+            ),
+        ]
+
+    def test_both_issues_are_stored(self) -> None:
+        """Two issues of one massif-day produce two rows, not one overwrite."""
+        result = load_meteofrance_archive(self._two_issues(), commit=True)
+
+        assert result.created == 2
+        assert result.updated == 0
+        assert (
+            Bulletin.objects.filter(bulletin_id__startswith="FR-02-2026-01-15").count()
+            == 2
+        )
+
+    def test_ids_carry_the_publication_stamp(self) -> None:
+        """Each row is identified by its own publication instant."""
+        load_meteofrance_archive(self._two_issues(), commit=True)
+
+        assert Bulletin.objects.filter(
+            bulletin_id=_expected_id("02", "2026-01-15", self.EVENING)
+        ).exists()
+        assert Bulletin.objects.filter(
+            bulletin_id=_expected_id("02", "2026-01-15", self.MORNING)
+        ).exists()
+
+    def test_load_is_order_independent(self) -> None:
+        """Reversing the input yields the same rows with the same content.
+
+        This is the property the ticket is really about: previously the surviving
+        issue depended on which line came last.
+        """
+        lines = self._two_issues()
+        load_meteofrance_archive(lines, commit=True)
+        forward = {
+            b.bulletin_id: b.raw_data["properties"]["dangerRatings"][0]["mainValue"]
+            for b in Bulletin.objects.filter(bulletin_id__startswith="FR-02-")
+        }
+
+        Bulletin.objects.all().delete()
+        load_meteofrance_archive(list(reversed(lines)), commit=True)
+        reverse = {
+            b.bulletin_id: b.raw_data["properties"]["dangerRatings"][0]["mainValue"]
+            for b in Bulletin.objects.filter(bulletin_id__startswith="FR-02-")
+        }
+
+        assert forward == reverse
+        assert len(forward) == 2
+
+    def test_reload_is_idempotent(self) -> None:
+        """Loading the same file twice updates rather than duplicating."""
+        lines = self._two_issues()
+        load_meteofrance_archive(lines, commit=True)
+        second = load_meteofrance_archive(lines, commit=True)
+
+        assert second.created == 0
+        assert second.updated == 2
+        assert Bulletin.objects.count() == 2
+
+
+@pytest.mark.django_db
+class TestMissingPublicationTime:
+    """A record without a usable publicationTime is a per-row failure."""
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    def _line_without_publication_time(self) -> str:
+        """Return an otherwise-valid NDJSON line with publicationTime stripped.
+
+        Returns:
+            A JSON line whose ``publicationTime`` is ``None``.
+
+        """
+        envelope = json.loads(_ARAVIS_LINE)
+        envelope["properties"]["publicationTime"] = None
+        return json.dumps(envelope)
+
+    def test_counted_as_bad_shape(self) -> None:
+        """The row is skipped and counted, not stored under an ambiguous id."""
+        result = load_meteofrance_archive(
+            [self._line_without_publication_time()], commit=True
+        )
+
+        assert result.bad_shape == 1
+        assert result.created == 0
+        assert Bulletin.objects.count() == 0
+
+    def test_increments_records_failed(self) -> None:
+        """The PipelineRun records the failure so cron and CI notice."""
+        load_meteofrance_archive([self._line_without_publication_time()], commit=True)
+
+        assert PipelineRun.objects.get().records_failed == 1
+
+    def test_unparseable_publication_time_also_fails(self) -> None:
+        """A malformed timestamp is treated the same as a missing one."""
+        envelope = json.loads(_ARAVIS_LINE)
+        envelope["properties"]["publicationTime"] = "not-a-timestamp"
+        result = load_meteofrance_archive([json.dumps(envelope)], commit=True)
+
+        assert result.bad_shape == 1
+        assert Bulletin.objects.count() == 0
+
+    def test_does_not_abort_the_rest_of_the_file(self) -> None:
+        """A bad row does not prevent later rows from loading."""
+        result = load_meteofrance_archive(
+            [self._line_without_publication_time(), _CHABLAIS_LINE], commit=True
+        )
+
+        assert result.bad_shape == 1
+        assert result.created == 1
+
+
+@pytest.mark.django_db
+class TestCollisionReporting:
+    """Two records on one id must be loud when their content differs."""
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    def test_identical_duplicates_are_quiet(self) -> None:
+        """A duplicated line is counted as a duplicate, not a collision.
+
+        The archive holds 32 byte-identical duplicate downloads, where the same
+        PDF was fetched twice.  Those coalesce harmlessly.
+        """
+        result = load_meteofrance_archive([_ARAVIS_LINE, _ARAVIS_LINE], commit=True)
+
+        assert result.duplicates == 1
+        assert result.collisions == 0
+        assert result.failed == 0
+        assert Bulletin.objects.count() == 1
+
+    def test_differing_content_on_one_id_is_a_failure(self) -> None:
+        """Two distinct bulletins sharing an id warn and count as failed."""
+        same_stamp = "2026-01-14T16:00:00Z"
+        lines = [
+            _make_line(
+                "ARAVIS", "02", "2026-01-15", publication_time=same_stamp, danger="high"
+            ),
+            _make_line(
+                "ARAVIS", "02", "2026-01-15", publication_time=same_stamp, danger="low"
+            ),
+        ]
+        result = load_meteofrance_archive(lines, commit=True)
+
+        assert result.collisions == 1
+        assert result.duplicates == 0
+        assert result.failed == 1
+
+    def test_collision_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The collision warning names the offending id.
+
+        Args:
+            caplog: pytest log capture fixture.
+
+        """
+        same_stamp = "2026-01-14T16:00:00Z"
+        lines = [
+            _make_line(
+                "ARAVIS", "02", "2026-01-15", publication_time=same_stamp, danger="high"
+            ),
+            _make_line(
+                "ARAVIS", "02", "2026-01-15", publication_time=same_stamp, danger="low"
+            ),
+        ]
+        with caplog.at_level("WARNING"):
+            load_meteofrance_archive(lines, commit=True)
+
+        assert any(
+            "collides" in record.message or "collides" in record.getMessage()
+            for record in caplog.records
+        )

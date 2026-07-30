@@ -37,6 +37,8 @@ from zoneinfo import ZoneInfo
 
 from defusedxml.ElementTree import ParseError, fromstring
 
+from bulletins.services.meteofrance_identity import build_bulletin_id
+
 if TYPE_CHECKING:
     # The ``Element`` type lives in the stdlib; defusedxml.fromstring returns
     # plain xml.etree.ElementTree.Element instances. This import is type-only —
@@ -823,16 +825,20 @@ def _parse_header(root: Element) -> tuple[int, str, str, str, str, bool, str]:
     amendment_str = root.attrib.get("AMENDEMENT", "false").strip().lower()
     is_amendment = amendment_str == "true"
 
-    if is_amendment:
-        logger.info(
-            "MeteoFrance bulletin @ID=%d @MASSIF=%s has AMENDEMENT=true — "
-            "logging for later amendment-suffix implementation.",
-            massif_id,
-            massif_name,
-        )
-
+    # The id carries @DATEDIFFUSION, so an amendment is separated from the issue
+    # it amends by its own publication timestamp — no suffix needed.  The
+    # ``unscheduled`` flag still records that it was one.
     validity_date = _parse_local_date(date_validite)
-    bulletin_id = f"FR-{massif_id:02d}-{validity_date.isoformat()}"
+    bulletin_id = build_bulletin_id(
+        f"FR-{massif_id:02d}",
+        validity_date.isoformat(),
+        _parse_local_to_utc(date_diffusion),
+    )
+    if bulletin_id is None:
+        raise MeteoFranceTranslationError(
+            f"Cannot build a bulletin id for massif {massif_id}: "
+            f"unusable @DATEDIFFUSION {date_diffusion!r}."
+        )
     return (
         massif_id,
         massif_name,
