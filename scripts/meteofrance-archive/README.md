@@ -86,10 +86,11 @@ massif,date,heures,url,status
 CHABLAIS,2026-01-15,20260115100000,https://donneespubliques.meteofrance.fr/.../BRA.CHABLAIS.20260115100000.pdf,ok
 ```
 
-Multiple `heures` per (massif, date) are preserved. When aria2c downloads
-both and the same normalised filename is used for both, the later download
-overwrites the earlier one on disk — this is the intended behaviour for
-re-published bulletins.
+Multiple `heures` per (massif, date) are preserved, and each becomes its own
+downloaded file — see Stage 3. Météo-France publishes more than one BRA per
+massif per covered day (a previous-evening issue and a morning refresh), and
+both are wanted: they are distinct forecasts, and the later one frequently
+revises the danger ratings.
 
 **Massif filter:** defaults to the 23 Alpine massifs. Pass
 `--massif CHABLAIS MONT-BLANC ...` to restrict.
@@ -106,13 +107,22 @@ format:
 
 ```
 https://donneespubliques.meteofrance.fr/.../BRA.CHABLAIS.20260115100000.pdf
-  out=BRA.CHABLAIS.2026-01-15.pdf
+  out=BRA.CHABLAIS.20260115100000.pdf
 
 ```
 
-The `--out` directive normalises the filename to `BRA.{MASSIF}.{YYYY-MM-DD}.pdf`,
-stripping the `heures` timestamp from the URL. This ensures all bulletins for a
-given (massif, date) land on the same file path, and the last download wins.
+The `--out` directive **retains** the `heures` timestamp, so every issue lands on
+its own path.
+
+This previously collapsed to `BRA.{MASSIF}.{YYYY-MM-DD}.pdf`, on the assumption
+that a later bulletin for a given (massif, date) superseded the earlier one. It
+does not — both are wanted — and aria2c refuses to overwrite, so the second
+download was renamed `.1` and the third `.2`. That produced files which look like
+duplicates but are distinct bulletins, in *download* order rather than publication
+order, and it destroyed the only per-file record of which issue was which. The
+resulting archive collapsed 105 massif-days onto one record each, 56 of them
+losing differing danger ratings (SNOW-559). See
+[`docs/decisions/meteofrance-bulletin-identity.md`](../../docs/decisions/meteofrance-bulletin-identity.md).
 
 **Exit code 2** if any rows are skipped (missing massif/url). Treat this as a
 warning, not a fatal error — the skipped rows are logged to stderr.

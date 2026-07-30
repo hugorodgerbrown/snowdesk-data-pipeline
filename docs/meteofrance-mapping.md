@@ -80,10 +80,10 @@ follow-up ticket for HTTP/scheduling work.
 ## 3. Identifier strategy
 
 DPBRA exposes no UUID. The synthesised `bulletinID` is deterministic so
-re-fetches are idempotent and amended bulletins overwrite cleanly:
+re-fetches are idempotent:
 
 ```
-bulletinID = "FR-{NN}-{validity_date}[-A{amendment_seq}]"
+bulletinID = "FR-{NN}-{validity_date}-{publication_stamp}"
 ```
 
 - `{NN}`: the MF integer massif ID zero-padded to two digits,
@@ -91,9 +91,20 @@ bulletinID = "FR-{NN}-{validity_date}[-A{amendment_seq}]"
   SNOW-179 — see `regions/management/commands/build_france_fixture.py`).
   Example: massif `Chablais` (`@ID="1"`) → `FR-01`.
 - `validity_date`: `@DATEVALIDITE` truncated to date in Europe/Paris.
-- `amendment_seq`: appended only when `@AMENDEMENT="true"`. Open
-  question (item 2 in §9) — confirm whether `@ID` increments on
-  amendment so we can derive the suffix.
+- `publication_stamp`: `@DATEDIFFUSION` as `YYYYMMDDHHMMSS` in **UTC**.
+
+Built by `bulletins/services/meteofrance_identity.build_bulletin_id`, which the
+archive loader also uses so both ingest paths share one grammar.
+
+The publication stamp is load-bearing, not decoration. Météo-France publishes
+more than one BRA per massif per covered day — typically a previous-evening
+issue and a morning refresh — so without it the day's issues collide, and SNOW-559
+found that the live fetcher then silently *skipped* the second while the archive
+loader silently *overwrote* one with the other. It also removes any need for an
+amendment suffix: a same-day amendment carries its own `@DATEDIFFUSION`, so it
+lands on its own row, with `unscheduled` recording that it was one. Full
+reasoning and the measurements:
+[`docs/decisions/meteofrance-bulletin-identity.md`](decisions/meteofrance-bulletin-identity.md).
 
 `bulletinID` is globally unique by construction — the `FR-` prefix
 separates MF from SLF (`CH-`) and ALBINA (`AT-…`, `IT-…`).
@@ -123,7 +134,7 @@ The original local-time strings are preserved verbatim under
 
 | CAAML key | DPBRA source | Transform |
 |---|---|---|
-| `bulletinID` | `@ID`, `@DATEVALIDITE`, `@AMENDEMENT` | see §3 |
+| `bulletinID` | `@ID`, `@DATEVALIDITE`, `@DATEDIFFUSION` | see §3 |
 | `lang` | — | constant `"fr"` |
 | `validTime.startTime` | `@DATEBULLETIN` | `_parse` |
 | `validTime.endTime` | `@DATEVALIDITE` | `_parse` |
@@ -480,16 +491,14 @@ and `evolurisque` evolution arrows. Low-cost validation; high signal.
 1. ~~**Confirm `SAT_TO_EAWS` table.**~~ **Resolved.** The lookup in §5.4
    is verified against `guide-avalanche-2025-meteo-france.pdf` p.13.
    Empirically aligned with the 2026-05-18 sample for codes {2, 4, 6}.
-2. **Amendment behaviour.** Unresolved pending live observation. The 2026-05-18
-   sample had zero `@AMENDEMENT="true"` bulletins (0/35), and the avalanche
-   guide doesn't document the attribute (it's part of the API contract, not
-   the reader guide). The implementation already logs `(@ID, @AMENDEMENT)` at
-   INFO level whenever `@AMENDEMENT="true"` is encountered (see
-   `bulletins/services/meteofrance_translator.py` `_parse_header`), so the
-   first amended bulletin in production will surface a log entry that lets us
-   decide on the amendment-suffix strategy. No further action until a live
-   example is observed. Track via the first amended-bulletin log entry in the
-   `snowdesk-scheduler` worker logs.
+2. ~~**Amendment behaviour.**~~ **Resolved by SNOW-559 — no suffix needed.**
+   The `bulletinID` now carries `@DATEDIFFUSION`, so an amendment is separated
+   from the issue it amends by its own publication instant and lands on its own
+   row; `unscheduled` records that it was one. This subsumed the question rather
+   than answering it: the amendment case was only ever hard because the id
+   omitted the publication time, which also caused the day's two *scheduled*
+   issues to collide. The INFO log that anticipated a suffix implementation has
+   been removed.
 3. ~~**Massif code scheme.**~~ **Resolved by SNOW-179.** All 35 massifs
    are already loaded as `MicroRegion` rows in
    `regions/fixtures/eaws_FR.json`, with `FR-NN` ↔ MF integer ID 1:1

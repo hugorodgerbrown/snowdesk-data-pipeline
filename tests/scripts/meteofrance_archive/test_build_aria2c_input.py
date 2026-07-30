@@ -23,15 +23,15 @@ class TestNormaliseFilename:
     def test_basic_format(self) -> None:
         """Should produce BRA.{MASSIF}.{YYYY-MM-DD}.pdf."""
         assert (
-            normalise_filename("CHABLAIS", "2026-05-21")
-            == "BRA.CHABLAIS.2026-05-21.pdf"
+            normalise_filename("CHABLAIS", "20260521140706")
+            == "BRA.CHABLAIS.20260521140706.pdf"
         )
 
     def test_hyphenated_massif(self) -> None:
         """Hyphenated massif names should be preserved."""
         assert (
-            normalise_filename("MONT-BLANC", "2026-05-21")
-            == "BRA.MONT-BLANC.2026-05-21.pdf"
+            normalise_filename("MONT-BLANC", "20260521140706")
+            == "BRA.MONT-BLANC.20260521140706.pdf"
         )
 
 
@@ -41,11 +41,11 @@ class TestRowToAria2cEntry:
     def _row(
         self,
         massif: str = "CHABLAIS",
-        date: str = "2026-05-21",
+        heures: str = "20260521140706",
         url: str = "https://example.com/BRA.CHABLAIS.20260521140706.pdf",
     ) -> dict[str, str]:
         """Return a minimal CSV row dict."""
-        return {"massif": massif, "date": date, "url": url}
+        return {"massif": massif, "heures": heures, "url": url}
 
     def test_valid_row_returns_tuple(self) -> None:
         """A complete row should return a (url, out_line) tuple."""
@@ -53,40 +53,56 @@ class TestRowToAria2cEntry:
         assert result is not None
         url_line, out_line = result
         assert url_line == "https://example.com/BRA.CHABLAIS.20260521140706.pdf"
-        assert out_line == "  out=BRA.CHABLAIS.2026-05-21.pdf"
+        assert out_line == "  out=BRA.CHABLAIS.20260521140706.pdf"
 
     def test_missing_url_returns_none(self) -> None:
         """A row missing url should return None."""
-        row = {"massif": "CHABLAIS", "date": "2026-05-21", "url": ""}
+        row = {"massif": "CHABLAIS", "heures": "20260521140706", "url": ""}
         assert row_to_aria2c_entry(row) is None
 
     def test_missing_massif_returns_none(self) -> None:
         """A row missing massif should return None."""
-        row = {"massif": "", "date": "2026-05-21", "url": "https://example.com/bra.pdf"}
+        row = {
+            "massif": "",
+            "heures": "20260521140706",
+            "url": "https://example.com/bra.pdf",
+        }
         assert row_to_aria2c_entry(row) is None
 
-    def test_out_line_uses_normalised_filename(self) -> None:
-        """The out= directive should use the normalised filename, not the URL filename."""
-        row = self._row(massif="MONT-BLANC", date="2026-05-21")
+    def test_out_line_keeps_the_publication_timestamp(self) -> None:
+        """The out= directive must retain ``heures`` so each issue gets its own file.
+
+        This previously asserted the opposite — that the timestamp was stripped.
+        Collapsing it meant two issues of one massif-day contended for one
+        filename, aria2c renamed the loser ``.1``, and the record of which issue
+        was which was lost (SNOW-559).
+        """
+        row = self._row(massif="MONT-BLANC")
         result = row_to_aria2c_entry(row)
         assert result is not None
         _, out_line = result
-        assert "MONT-BLANC" in out_line
-        assert "2026-05-21" in out_line
-        # Should NOT contain the heures timestamp from the URL
-        assert "140706" not in out_line
+        assert out_line == "  out=BRA.MONT-BLANC.20260521140706.pdf"
+
+    def test_two_issues_of_one_day_get_different_filenames(self) -> None:
+        """Two issues published on the same date land on separate paths."""
+        evening = row_to_aria2c_entry(self._row(heures="20260521140706"))
+        morning = row_to_aria2c_entry(self._row(heures="20260522073000"))
+        assert evening is not None
+        assert morning is not None
+
+        assert evening[1] != morning[1]
 
 
 class TestBuildAria2cInput:
     """Tests for build_aria2c_input()."""
 
     def _row(
-        self, massif: str = "CHABLAIS", date: str = "2026-05-21"
+        self, massif: str = "CHABLAIS", heures: str = "20260521140706"
     ) -> dict[str, str]:
         """Return a minimal valid CSV row."""
         return {
             "massif": massif,
-            "date": date,
+            "heures": heures,
             "url": f"https://example.com/BRA.{massif}.20260521140706.pdf",
         }
 
@@ -105,7 +121,7 @@ class TestBuildAria2cInput:
 
     def test_invalid_row_increments_skipped(self) -> None:
         """A row with missing fields should be counted as skipped."""
-        rows = [{"massif": "", "date": "", "url": ""}]
+        rows = [{"massif": "", "heures": "", "url": ""}]
         lines, skipped = build_aria2c_input(rows)
         assert skipped == 1
         assert lines == []
@@ -113,7 +129,7 @@ class TestBuildAria2cInput:
     def test_url_appears_in_output(self) -> None:
         """The download URL should appear in the output lines."""
         url = "https://example.com/BRA.CHABLAIS.20260521140706.pdf"
-        rows = [{"massif": "CHABLAIS", "date": "2026-05-21", "url": url}]
+        rows = [{"massif": "CHABLAIS", "heures": "20260521140706", "url": url}]
         lines, _ = build_aria2c_input(rows)
         assert url in lines
 
@@ -151,7 +167,7 @@ class TestRun:
         assert output.exists()
         content = output.read_text()
         assert "https://example.com/bra.pdf" in content
-        assert "BRA.CHABLAIS.2026-05-21.pdf" in content
+        assert "BRA.CHABLAIS.20260521140706.pdf" in content
 
     def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
         """Without commit=True, no output file should be written."""
