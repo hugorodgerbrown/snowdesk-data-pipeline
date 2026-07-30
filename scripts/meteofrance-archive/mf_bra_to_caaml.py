@@ -28,8 +28,9 @@ import json
 import logging
 import re
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pdfplumber
 from _caaml import build_envelope
@@ -54,11 +55,11 @@ from _pdf_extract import (
     PAGE2_SNOW_LINE_SUD_X_END,
     PAGE2_SNOW_LINE_SUD_X_START,
     crop_full_width,
-    crop_left,
     crop_right,
     danger_numbers_bbox,
     extract_text_strip,
     extract_words_in_region,
+    find_heading_y,
 )
 from _sat_mapping import sat_to_problem_type
 
@@ -97,6 +98,41 @@ FRENCH_MONTHS: dict[str, int] = {
     "déc": 12,
     "dec": 12,
 }
+
+# Longest-prefix month lookup, used by ``french_month``.  Ordered so that the
+# longer of any two overlapping prefixes is tested first: ``"juillet"`` must be
+# matched before ``"jui"``, which would otherwise resolve July to June.
+FRENCH_MONTH_PREFIXES: tuple[tuple[str, int], ...] = (
+    ("janv", 1),
+    ("jan", 1),
+    ("févr", 2),
+    ("fevr", 2),
+    ("fév", 2),
+    ("fev", 2),
+    ("mars", 3),
+    ("mar", 3),
+    ("avri", 4),
+    ("avr", 4),
+    ("mai", 5),
+    ("juil", 7),
+    ("juin", 6),
+    ("jun", 6),
+    ("jui", 6),
+    ("août", 8),
+    ("aout", 8),
+    ("aoû", 8),
+    ("aou", 8),
+    ("sept", 9),
+    ("sep", 9),
+    ("octo", 10),
+    ("oct", 10),
+    ("nove", 11),
+    ("nov", 11),
+    ("déce", 12),
+    ("dece", 12),
+    ("déc", 12),
+    ("dec", 12),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -335,42 +371,125 @@ def extract_highlights(page: "pdfplumber.page.Page") -> str:
 # Avalanche activity / snowpack narrative extraction
 # ---------------------------------------------------------------------------
 
+# The headings that open and close the stability section.  Its height varies
+# with the volume of prose, so the section is located by these anchors rather
+# than by the fixed BAND_STABILITY constants (SNOW-559).
+_STABILITY_HEADING = "Stabilité du manteau neigeux"
+_STABILITY_END_HEADING = "Qualité de la neige"
+
+# Points to back off from the closing heading so the crop excludes it.
+_HEADING_EXCLUSION_MARGIN = 1.0
+
+# The two sub-section headings inside the stability section.  Météo-France uses
+# "Déclenchements" and "Départs" interchangeably for both the provoked and the
+# spontaneous half, and prints them in either order.
+_ACTIVITY_HEADING_RE = re.compile(
+    r"(?:D[ée]clenchements?|D[ée]parts?)\s+(provoqu[ée]s?|spontan[ée]s?)\s*:",
+    re.IGNORECASE,
+)
+
+
+def _is_triggered_heading(heading: str) -> bool:
+    """Return True when an activity heading introduces human-triggered releases.
+
+    Args:
+        heading: The matched heading text, e.g. ``"Départs provoqués :"``.
+
+    Returns:
+        ``True`` for the "provoqués" (triggered) half, ``False`` for the
+        "spontanés" (natural) half.
+
+    """
+    return "provoq" in heading.lower()
+
+
+def stability_band(page: "pdfplumber.page.Page") -> tuple[float, float]:
+    """Return the (top, bottom) y-bounds of the snowpack-stability section.
+
+    Derived from the section's own headings.  ``BAND_STABILITY`` is used as a
+    fallback for either bound that cannot be located, preserving the previous
+    behaviour on any bulletin whose layout does not match.
+
+    Anchoring on the headings both **extends** the band on long bulletins —
+    where the old fixed bottom of 360 pt cut the prose mid-sentence — and
+    tightens the top, excluding the "Indices de risque" legend line that sits
+    just above the heading.
+
+    Args:
+        page: pdfplumber page object for page 1.
+
+    Returns:
+        ``(top, bottom)`` in page coordinates.
+
+    """
+    default_top, default_bottom = BAND_STABILITY
+    top = find_heading_y(page, _STABILITY_HEADING)
+    if top is None:
+        top = default_top
+    # Search below the opening heading: "Qualité de la neige" recurs later in
+    # the snow-quality prose ("Qualité de la neige ce vendredi matin : …"), and
+    # the first occurrence after the heading is the section boundary.
+    bottom = find_heading_y(page, _STABILITY_END_HEADING, after=top)
+    if bottom is None:
+        bottom = default_bottom
+    else:
+        # pdfplumber keeps any character overlapping the crop box, so a bound
+        # set exactly at the heading's top still includes the heading.  Back off
+        # by a hair — the previous prose line ends ~10 pt above, so this cannot
+        # clip content.
+        bottom -= _HEADING_EXCLUSION_MARGIN
+    if bottom <= top:
+        return default_top, default_bottom
+    return top, bottom
+
 
 def extract_avalanche_activity(page: "pdfplumber.page.Page") -> dict[str, str]:
     """Extract avalanche activity descriptions from the stability section.
+
+    The stability prose spans the **full page width**, so this must crop
+    full-width and not ``crop_left``.  Cropping at ``COLUMN_SPLIT_X`` clipped
+    every line at ~80 characters mid-word, losing 63% of all comment lines
+    across the whole archive (SNOW-559).
 
     Args:
         page: pdfplumber page object for page 1.
 
     Returns:
         Dict with keys ``"spontaneous"`` and ``"triggered"``, each containing
-        the relevant prose text.
+        the relevant prose text.  Either may be ``""`` when the bulletin omits
+        that heading.
 
     """
-    left_region = crop_left(page, *BAND_STABILITY)
-    text = extract_text_strip(left_region)
+    text = extract_text_strip(crop_full_width(page, *stability_band(page)))
 
-    spontaneous = ""
-    triggered = ""
+    # Locate both headings wherever they occur and slice each section up to the
+    # next one.  The two sections appear in **either order** — ARAVIS leads with
+    # "Départs spontanés", VANOISE with "Déclenchements provoqués" — and each
+    # heading has two attested wordings.  The previous implementation split on
+    # the trigger heading and looked for the spontaneous heading only in the
+    # text before it, which silently returned nothing for 143 records (3.1%) and
+    # let ``triggered`` swallow the spontaneous prose whenever the order was
+    # reversed.
+    sections: dict[str, str] = {}
+    matches = list(_ACTIVITY_HEADING_RE.finditer(text))
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        key = "triggered" if _is_triggered_heading(match.group(0)) else "spontaneous"
+        # First heading of a kind wins; a repeat would be a layout oddity.
+        sections.setdefault(key, text[match.end() : end].strip())
 
-    # Split on "Déclenchements provoqués" to get the two halves.
-    _triggered_pat = r"Déclenchements?\s+provoqués?\s*:"
-    parts = re.split(_triggered_pat, text, maxsplit=1, flags=re.IGNORECASE)
-    if len(parts) == 2:
-        before = parts[0]
-        triggered_text = parts[1].strip()
-        # Extract spontaneous from before the split.
-        _spontaneous_pat = r"Départs?\s+spontanés?\s*:"
-        sp_parts = re.split(_spontaneous_pat, before, maxsplit=1, flags=re.IGNORECASE)
-        if len(sp_parts) == 2:
-            spontaneous = sp_parts[1].strip()
-        triggered = triggered_text
-
-    return {"spontaneous": spontaneous, "triggered": triggered}
+    return {
+        "spontaneous": sections.get("spontaneous", ""),
+        "triggered": sections.get("triggered", ""),
+    }
 
 
 def extract_snowpack_comment(page: "pdfplumber.page.Page") -> str:
-    """Extract the snowpack quality narrative from the left column.
+    """Extract the snowpack quality narrative from the stability section.
+
+    Crops full-width for the same reason as
+    :func:`extract_avalanche_activity` — the prose runs past
+    ``COLUMN_SPLIT_X`` and a left crop truncates it mid-word (SNOW-559).
 
     Args:
         page: pdfplumber page object for page 1.
@@ -379,8 +498,8 @@ def extract_snowpack_comment(page: "pdfplumber.page.Page") -> str:
         Prose text describing snow quality conditions, or ``""`` if not found.
 
     """
-    left_region = crop_left(page, *BAND_STABILITY)
-    text = extract_text_strip(left_region)
+    region = crop_full_width(page, *stability_band(page))
+    text = extract_text_strip(region)
     # The snowpack section follows "Stabilité du manteau neigeux".
     _snowpack_pat = r"Stabilité du manteau neigeux\s*(.+?)(?=Situation avalancheuse|$)"
     match = re.search(_snowpack_pat, text, re.DOTALL | re.IGNORECASE)
@@ -407,7 +526,7 @@ def extract_sat_labels(page: "pdfplumber.page.Page") -> list[str]:
         List of raw SAT label strings.
 
     """
-    region = crop_full_width(page, *BAND_STABILITY)
+    region = crop_full_width(page, *stability_band(page))
     text = extract_text_strip(region)
     match = re.search(
         r"Situation avalancheuse typique\s*:\s*(.+?)(?:\n|$)",
@@ -918,62 +1037,165 @@ def extract_tendency(page: "pdfplumber.page.Page") -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
-def _infer_date_with_year(month: int, day: int, today: date) -> date | None:
-    """Infer the full calendar date from a month/day pair and a reference date.
+# "Rédigé le vendredi 30 janvier 2026 à 16h" — the redaction line, which is the
+# only place on the page that states a **year**.  Group 1 is the day, 2 the
+# month name, 3 the year, 4 the hour, 5 the optional minutes.
+_REDIGE_RE = re.compile(
+    r"R[ée]dig[ée]\s+le\s+\w+\s+(\d{1,2})\s+(\w+)\s+(\d{4})\s+[àa]\s+(\d{1,2})\s*h(\d{2})?",
+    re.IGNORECASE,
+)
 
-    Assumes the current year, then steps back one year if the resulting date
-    is 180 or more days in the future relative to ``today``.  This handles the
-    season boundary: when today is 2026-05-21 a "17 NOV" in-PDF date would
-    produce 2026-11-17 (180 days ahead), which belongs to the previous season
-    and is corrected to 2025-11-17.  The threshold is ``>= 180`` — not
-    ``> 180`` — so that the exact boundary day is also caught.
+# "Estimation des risques pour le : VENDREDI 22 MAI" — the covered day, stated
+# without a year.
+_ESTIMATION_RE = re.compile(
+    r"Estimation des risques pour le\s*:\s*\w+\s+(\d+)\s+(\w+)",
+    re.IGNORECASE,
+)
+
+# A BRA covers the day of redaction or the day after (the previous-evening
+# issue).  Anything outside this window means the year anchor is wrong.
+_MAX_COVER_LAG_DAYS = 2
+
+# PDF metadata dates are ``D:YYYYMMDDHHmmSS`` with an optional trailing offset
+# (``Z``, ``+02'00'``).  Météo-France emits UTC with a ``Z`` suffix.
+_PDF_DATE_RE = re.compile(r"D:(\d{14})")
+
+# The bulletin's "Rédigé le … à 16h" line is naive Europe/Paris local time.
+_PARIS = ZoneInfo("Europe/Paris")
+
+
+def parse_pdf_metadata_timestamp(metadata: dict[str, object] | None) -> datetime | None:
+    """Return the PDF's creation timestamp as a UTC-aware datetime.
+
+    Météo-France renders each BRA issue to its own PDF, so this timestamp is
+    the publication instant and is distinct per issue — it is what makes the
+    two issues of one massif-day separable at all.  It is present on every one
+    of the 4,671 archived PDFs.
+
+    ``ModDate`` is accepted as a fallback; MF writes both, identically.
 
     Args:
-        month: Calendar month (1–12).
-        day: Calendar day (1–31).
-        today: The reference date (normally ``date.today()``).
+        metadata: The ``pdfplumber.PDF.metadata`` dict, or ``None``.
 
     Returns:
-        The inferred :class:`datetime.date`, or ``None`` if the combination of
-        month and day is invalid (e.g. 30 February).
+        A UTC-aware :class:`datetime.datetime`, or ``None`` if neither key
+        carries a parseable timestamp.
 
     """
-    try:
-        candidate = date(today.year, month, day)
-        if (candidate - today).days >= 180:
-            candidate = date(today.year - 1, month, day)
-        return candidate
-    except ValueError:
+    if not metadata:
         return None
+    for key in ("CreationDate", "ModDate"):
+        raw = metadata.get(key)
+        if not isinstance(raw, str):
+            continue
+        match = _PDF_DATE_RE.search(raw)
+        if not match:
+            continue
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
 
 
-def extract_bulletin_date(page: "pdfplumber.page.Page") -> date | None:
-    """Extract the validity date from the 'Estimation des risques pour le' line.
+def french_month(name: str) -> int | None:
+    """Return the month number for a French month name, or ``None``.
+
+    Matches on the longest distinguishing prefix rather than a fixed three
+    characters, because ``"juin"`` and ``"juillet"`` share ``"jui"`` — a
+    three-character lookup silently dates July bulletins to June.
+
+    Args:
+        name: A French month name, any case, accented or not.
+
+    Returns:
+        The month number 1–12, or ``None`` if the name is unrecognised.
+
+    """
+    lowered = name.strip().lower()
+    for prefix, month in FRENCH_MONTH_PREFIXES:
+        if lowered.startswith(prefix):
+            return month
+    return None
+
+
+def extract_redige_at(page: "pdfplumber.page.Page") -> datetime | None:
+    """Extract the redaction timestamp from the "Rédigé le …" header line.
+
+    This line is the only part of the bulletin that states a year, and it also
+    carries the nominal issue hour (``16h`` for the standard previous-evening
+    issue, ``17h`` and morning re-issues also occur).  Both are needed: the year
+    to date the bulletin deterministically, the hour as a real
+    ``validTime.startTime``.
 
     Args:
         page: pdfplumber page object for page 1.
 
     Returns:
-        The bulletin validity date, or None if parsing fails.
+        A naive Europe/Paris :class:`datetime.datetime`, or ``None`` if the line
+        is absent or unparseable.
+
+    """
+    text = extract_text_strip(crop_full_width(page, 0.0, BAND_DANGER[0]))
+    match = _REDIGE_RE.search(text)
+    if not match:
+        return None
+    month = french_month(match.group(2))
+    if month is None:
+        return None
+    try:
+        return datetime(
+            year=int(match.group(3)),
+            month=month,
+            day=int(match.group(1)),
+            hour=int(match.group(4)),
+            minute=int(match.group(5) or 0),
+        )
+    except ValueError:
+        return None
+
+
+def extract_bulletin_date(
+    page: "pdfplumber.page.Page",
+    redige_at: datetime,
+) -> date | None:
+    """Extract the covered date, anchoring its year on the redaction date.
+
+    The "Estimation des risques pour le" line states a day and month but no
+    year, so the year comes from ``redige_at`` — which is printed on the same
+    page.  The previous implementation guessed it from ``date.today()`` at
+    extraction time, which dated 267 archive records a year into the future and
+    made extraction unreproducible (SNOW-559).
+
+    Args:
+        page: pdfplumber page object for page 1.
+        redige_at: The redaction timestamp from :func:`extract_redige_at`.
+
+    Returns:
+        The covered date, or ``None`` if the line is absent, unparseable, or
+        lands outside the plausible window after ``redige_at``.
 
     """
     region = crop_full_width(page, *BAND_DANGER)
-    text = extract_text_strip(region)
-    # "Estimation des risques pour le : VENDREDI 22 MAI"
-    match = re.search(
-        r"Estimation des risques pour le\s*:\s*\w+\s+(\d+)\s+(\w+)",
-        text,
-        re.IGNORECASE,
-    )
+    match = _ESTIMATION_RE.search(extract_text_strip(region))
     if not match:
         return None
-    day = int(match.group(1))
-    month_str = match.group(2).lower()[:3]
-    month = FRENCH_MONTHS.get(month_str)
+    month = french_month(match.group(2))
     if month is None:
         return None
-    today = date.today()
-    return _infer_date_with_year(month, day, today)
+    day = int(match.group(1))
+
+    redige_date = redige_at.date()
+    for year in (redige_date.year, redige_date.year + 1):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        # A December bulletin covering January rolls into the next year, which
+        # is why the +1 candidate exists.
+        if 0 <= (candidate - redige_date).days <= _MAX_COVER_LAG_DAYS:
+            return candidate
+    return None
 
 
 def extract_massif_name(page: "pdfplumber.page.Page") -> str:
@@ -1021,15 +1243,33 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
                 slugify(massif_raw) if massif_raw else _slug_from_filename(pdf_path)
             )
 
-            bulletin_date = extract_bulletin_date(page1)
-            if bulletin_date is None:
-                logger.warning("Could not extract bulletin date from %s", pdf_path)
-                bulletin_date = _date_from_filename(pdf_path)
-
-            if bulletin_date is None:
+            # The publication instant, from PDF metadata.  This is the bulletin's
+            # identity — without it two issues of one massif-day are
+            # indistinguishable and one silently overwrites the other
+            # (SNOW-559).  Treat its absence as fatal for the record rather than
+            # emitting an unidentifiable row.
+            published_at = parse_pdf_metadata_timestamp(pdf.metadata)
+            if published_at is None:
                 logger.error(
-                    "Cannot determine bulletin date for %s; skipping", pdf_path
+                    "No CreationDate/ModDate in %s; cannot identify the issue, "
+                    "skipping",
+                    pdf_path,
                 )
+                return None
+
+            # The redaction line is the only place a year appears, and it also
+            # gives the nominal issue hour used as validTime.startTime.
+            redige_at = extract_redige_at(page1)
+            if redige_at is None:
+                logger.error(
+                    "Could not parse the 'Rédigé le …' line in %s; skipping",
+                    pdf_path,
+                )
+                return None
+
+            bulletin_date = extract_bulletin_date(page1, redige_at)
+            if bulletin_date is None:
+                logger.error("Cannot determine covered date for %s; skipping", pdf_path)
                 return None
 
             danger_ratings = extract_danger_ratings(page1)
@@ -1075,6 +1315,7 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
     ).strip()
 
     properties: dict[str, object] = {
+        "publicationTime": published_at.isoformat().replace("+00:00", "Z"),
         "dangerRatings": danger_ratings,
         "highlights": highlights,
         "avalancheActivity": {
@@ -1097,6 +1338,10 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
                 "date": bulletin_date.isoformat(),
                 "typicalAvalancheSituations": sat_labels,
                 "source_file": pdf_path.name,
+                # The nominal issue time as printed on the bulletin ("à 16h"),
+                # in Europe/Paris local time.  Kept alongside the UTC
+                # publicationTime for traceability back to the page.
+                "redigeAt": redige_at.isoformat(),
                 "historical": historical,
                 # Preserve the spontaneous/triggered split (SNOW-257).
                 # The concatenated ``avalancheActivity.comment`` is kept for
@@ -1112,6 +1357,7 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
     return build_envelope(
         massif=massif_slug,
         bulletin_date=bulletin_date,
+        valid_from=redige_at.replace(tzinfo=_PARIS).astimezone(UTC),
         properties=properties,
     )
 
@@ -1130,26 +1376,6 @@ def _slug_from_filename(pdf_path: Path) -> str:
     if len(parts) >= 2:
         return parts[1].upper()
     return "UNKNOWN"
-
-
-def _date_from_filename(pdf_path: Path) -> date | None:
-    """Derive a date from the PDF filename (BRA.{MASSIF}.{YYYYMMDD}*.pdf).
-
-    Args:
-        pdf_path: Path to the PDF file.
-
-    Returns:
-        Date object, or None if not parseable.
-
-    """
-    match = re.search(r"(\d{8})", pdf_path.stem)
-    if match:
-        date_str = match.group(1)
-        try:
-            return date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
-        except ValueError:
-            pass
-    return None
 
 
 # ---------------------------------------------------------------------------

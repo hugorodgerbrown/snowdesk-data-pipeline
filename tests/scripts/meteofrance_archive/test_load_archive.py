@@ -59,6 +59,7 @@ class TestFixupEnvelope:
         """regionID is translated from FR-{SLUG} to FR-{NN}."""
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-ARAVIS", "name": "Aravis"}],
+            "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
         fixup_envelope(properties)
@@ -67,19 +68,21 @@ class TestFixupEnvelope:
         assert regions[0]["regionID"] == "FR-02"
 
     def test_synthesises_bulletin_id(self) -> None:
-        """bulletinID is synthesised as FR-{NN}-{date}."""
+        """bulletinID is synthesised as FR-{NN}-{date}-{publication stamp}."""
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-CHABLAIS", "name": "Chablais"}],
+            "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "CHABLAIS", "date": "2026-01-15"}},
         }
         bulletin_id = fixup_envelope(properties)
-        assert bulletin_id == "FR-01-2026-01-15"
-        assert properties["bulletinID"] == "FR-01-2026-01-15"
+        assert bulletin_id == "FR-01-2026-01-15-20260114160000"
+        assert properties["bulletinID"] == "FR-01-2026-01-15-20260114160000"
 
     def test_unknown_slug_returns_none(self) -> None:
         """Unknown massif slug returns None without mutating properties."""
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-UNKNOWNMASSIF", "name": "Unknown"}],
+            "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "UNKNOWNMASSIF", "date": "2026-01-15"}},
         }
         result = fixup_envelope(properties)
@@ -97,6 +100,7 @@ class TestFixupEnvelope:
     def test_missing_regions_returns_none(self) -> None:
         """Missing regions list returns None."""
         properties: dict[str, Any] = {
+            "publicationTime": "2026-01-14T16:00:00Z",
             "customData": {"MF": {"massif": "ARAVIS", "date": "2026-01-15"}},
         }
         result = fixup_envelope(properties)
@@ -106,10 +110,11 @@ class TestFixupEnvelope:
         """MONT-BLANC slug translates to FR-03."""
         properties: dict[str, Any] = {
             "regions": [{"regionID": "FR-MONT-BLANC", "name": "Mont Blanc"}],
+            "publicationTime": "2026-01-19T16:00:00Z",
             "customData": {"MF": {"massif": "MONT-BLANC", "date": "2026-01-20"}},
         }
         bulletin_id = fixup_envelope(properties)
-        assert bulletin_id == "FR-03-2026-01-20"
+        assert bulletin_id == "FR-03-2026-01-20-20260119160000"
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +154,18 @@ class TestDryRun:
             ("ARAVIS", "02", "Aravis", "2026-01-15"),
             ("CHABLAIS", "01", "Chablais", "2026-01-15"),
         ]:
+            # publicationTime is required: it forms the trailing component of
+            # the synthesised bulletinID, and a row without it is a failure.
+            published = "2026-01-14T16:00:00Z"
             envelope = {
                 "type": "Feature",
                 "geometry": None,
                 "properties": {
                     "lang": "fr",
                     "regions": [{"regionID": f"FR-{slug}", "name": name}],
+                    "publicationTime": published,
                     "validTime": {
-                        "startTime": f"{date_str}T00:00:00+00:00",
+                        "startTime": published,
                         "endTime": f"{date_str}T23:59:59+00:00",
                     },
                     "customData": {"MF": {"massif": slug, "date": date_str}},
@@ -221,13 +230,13 @@ class TestCommitMode:
         """Synthesised bulletinIDs follow the FR-{NN}-{date} format."""
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
         ids = set(Bulletin.objects.values_list("bulletin_id", flat=True))
-        assert "FR-02-2026-01-15" in ids
-        assert "FR-03-2026-01-15" in ids
+        assert "FR-02-2026-01-15-20260114120000" in ids
+        assert "FR-03-2026-01-15-20260114120000" in ids
 
     def test_region_id_translated(self) -> None:
         """The stored raw_data uses FR-{NN} region IDs, not FR-{SLUG}."""
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
-        aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15")
+        aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15-20260114120000")
         regions = aravis.raw_data["properties"]["regions"]
         assert regions[0]["regionID"] == "FR-02"
 
@@ -259,7 +268,7 @@ class TestCommitMode:
     def test_lang_is_fr(self) -> None:
         """Stored bulletins have lang='fr'."""
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
-        aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15")
+        aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15-20260114120000")
         assert aravis.lang == "fr"
 
 
@@ -292,16 +301,20 @@ class TestRealSamples:
         """ARAVIS, MONT-BLANC, CHARTREUSE land under their canonical region IDs."""
         run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
         ids = set(Bulletin.objects.values_list("bulletin_id", flat=True))
-        assert "FR-02-2026-11-04" in ids  # ARAVIS
-        assert "FR-03-2026-11-04" in ids  # MONT-BLANC
-        assert "FR-07-2025-11-20" in ids  # CHARTREUSE
+        assert "FR-02-2025-11-04-20251103160000" in ids  # ARAVIS
+        assert "FR-03-2025-11-04-20251103160000" in ids  # MONT-BLANC
+        assert "FR-07-2025-11-20-20251119160000" in ids  # CHARTREUSE
 
     def test_space_form_slug_resolves(self) -> None:
         """EMBRUNAIS PARPAILLON (space form) lands under FR-20."""
         run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
-        assert Bulletin.objects.filter(bulletin_id="FR-20-2026-01-08").exists()
+        assert Bulletin.objects.filter(
+            bulletin_id="FR-20-2026-01-08-20260107160000"
+        ).exists()
 
     def test_mixed_hyphen_space_slug_resolves(self) -> None:
         """HAUT-VAR HAUT-VERDON (internal hyphens + middle space) lands under FR-22."""
         run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
-        assert Bulletin.objects.filter(bulletin_id="FR-22-2026-11-05").exists()
+        assert Bulletin.objects.filter(
+            bulletin_id="FR-22-2025-11-05-20251104160000"
+        ).exists()

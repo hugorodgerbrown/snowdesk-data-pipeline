@@ -28,21 +28,29 @@ from pathlib import Path
 EXIT_SKIPPED = 2
 
 
-def normalise_filename(massif: str, date_str: str) -> str:
-    """Return the normalised output filename for a BRA PDF.
+def normalise_filename(massif: str, heures: str) -> str:
+    """Return the output filename for a BRA PDF, keeping the publication time.
 
-    Normalises the filename to ``BRA.{MASSIF}.{YYYY-MM-DD}.pdf`` regardless
-    of the heures timestamp used in the download URL.
+    The filename retains the ``heures`` timestamp from the download URL, so each
+    issue lands on its own path.
+
+    This previously collapsed to ``BRA.{MASSIF}.{YYYY-MM-DD}.pdf``, discarding
+    ``heures``.  Météo-France publishes more than one BRA per massif per day, so
+    two issues then contended for one filename and aria2c renamed the loser
+    ``.1``, ``.2`` — which reads as a duplicate but is a distinct bulletin, in
+    *download* order rather than publication order.  That lost the only record of
+    which issue was which, and the identity it feeds
+    (``customData.MF.source_file``) could no longer tell them apart (SNOW-559).
 
     Args:
         massif: Canonical massif name (e.g. ``"CHABLAIS"``).
-        date_str: Date string in ``YYYY-MM-DD`` format.
+        heures: Publication timestamp from the URL, ``YYYYMMDDHHMMSS``.
 
     Returns:
-        Normalised filename string.
+        Output filename string.
 
     """
-    return f"BRA.{massif}.{date_str}.pdf"
+    return f"BRA.{massif}.{heures}.pdf"
 
 
 def row_to_aria2c_entry(row: dict[str, str]) -> tuple[str, str] | None:
@@ -50,10 +58,10 @@ def row_to_aria2c_entry(row: dict[str, str]) -> tuple[str, str] | None:
 
     Each entry consists of the download URL on one line followed by
     ``  out=<filename>`` on the next, which instructs aria2c to save the file
-    with the normalised name.
+    under that name.
 
     Args:
-        row: A CSV row dict with keys ``massif``, ``date``, ``url``.
+        row: A CSV row dict with keys ``massif``, ``heures``, ``url``.
 
     Returns:
         A tuple of ``(url_line, out_line)`` strings, or ``None`` if the row is
@@ -61,11 +69,11 @@ def row_to_aria2c_entry(row: dict[str, str]) -> tuple[str, str] | None:
 
     """
     massif = row.get("massif", "").strip()
-    date_str = row.get("date", "").strip()
+    heures = row.get("heures", "").strip()
     url = row.get("url", "").strip()
-    if not all([massif, date_str, url]):
+    if not all([massif, heures, url]):
         return None
-    filename = normalise_filename(massif, date_str)
+    filename = normalise_filename(massif, heures)
     return url, f"  out={filename}"
 
 

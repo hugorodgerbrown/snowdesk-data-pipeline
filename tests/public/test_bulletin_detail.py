@@ -29,6 +29,7 @@ from apps.public.views import (
     _issues_for_date,
     _resolve_selected_issue,
     _select_bulletin_for_date,
+    _select_default_issue,
 )
 from apps.regions.models import MicroRegion
 from tests.factories import (
@@ -1509,3 +1510,133 @@ class TestCanonicalUrl:
 
         assert response.status_code == 302
         assert response["Location"] == "/ch-4115/valais/2026-03-15/"
+
+
+@pytest.mark.django_db
+class TestMeteoFranceMultiIssueDay:
+    """A Météo-France massif-day with two issues resolves to the later one.
+
+    Archive-loaded MF bulletins used to carry a synthetic midnight
+    ``valid_from``, so both issues of a covered day sorted equally and the page
+    rendered whichever the queryset happened to return first. Extraction now
+    takes ``validTime.startTime`` from the bulletin's own "Rédigé le … à 16h"
+    line, which is what makes the 10:00-rule work for MF (SNOW-559).
+
+    The MF shape differs from the SLF one the other tests use: an evening issue
+    is valid from ~15:00Z on D-1 through to end of day D, and a morning refresh
+    from ~08:00Z on D through to the same end of day.
+    """
+
+    def _mf_issue(
+        self, region: MicroRegion, published: datetime, covered: date
+    ) -> Bulletin:
+        """Create an MF-shaped bulletin.
+
+        Args:
+            region: Region to link the bulletin to.
+            published: The issue instant (``valid_from``).
+            covered: The day the bulletin forecasts.
+
+        Returns:
+            The created Bulletin.
+
+        """
+        bulletin = BulletinFactory.create(
+            issued_at=published,
+            valid_from=published,
+            valid_to=datetime(
+                covered.year, covered.month, covered.day, 23, 59, 59, tzinfo=UTC
+            ),
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        return bulletin
+
+    def test_both_issues_are_discovered(self, region: MicroRegion) -> None:
+        """Both issues overlap the covered day and are returned in order.
+
+        Args:
+            region: The region fixture.
+
+        """
+        evening = self._mf_issue(
+            region, datetime(2026, 2, 12, 15, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+        morning = self._mf_issue(
+            region, datetime(2026, 2, 13, 8, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+
+        issues = _issues_for_date(region, date(2026, 2, 13))
+
+        assert [b.pk for b in issues] == [evening.pk, morning.pk]
+
+    def test_morning_refresh_is_the_default(self, region: MicroRegion) -> None:
+        """The 10:00 pivot picks the morning refresh over the prior evening.
+
+        Both issues span 10:00 on the covered day, so the tie is broken by
+        ``valid_from`` — which only orders them because the issue times are real.
+
+        Args:
+            region: The region fixture.
+
+        """
+        self._mf_issue(
+            region, datetime(2026, 2, 12, 15, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+        morning = self._mf_issue(
+            region, datetime(2026, 2, 13, 8, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+
+        selected = _select_default_issue(
+            _issues_for_date(region, date(2026, 2, 13)), date(2026, 2, 13)
+        )
+
+        assert selected is not None
+        assert selected.pk == morning.pk
+
+    def test_evening_issue_alone_is_selected(self, region: MicroRegion) -> None:
+        """A day with only the previous-evening issue still renders it.
+
+        Args:
+            region: The region fixture.
+
+        """
+        evening = self._mf_issue(
+            region, datetime(2026, 2, 12, 15, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+
+        selected = _select_default_issue(
+            _issues_for_date(region, date(2026, 2, 13)), date(2026, 2, 13)
+        )
+
+        assert selected is not None
+        assert selected.pk == evening.pk
+
+    def test_selection_is_deterministic_across_insertion_orders(
+        self, region: MicroRegion
+    ) -> None:
+        """Creating the morning issue first must not change which one wins.
+
+        Non-determinism here was the user-visible half of the collision bug:
+        with equal ``valid_from`` values the winner depended on row order.
+
+        Args:
+            region: The region fixture.
+
+        """
+        morning = self._mf_issue(
+            region, datetime(2026, 2, 13, 8, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+        self._mf_issue(
+            region, datetime(2026, 2, 12, 15, 0, tzinfo=UTC), date(2026, 2, 13)
+        )
+
+        selected = _select_default_issue(
+            _issues_for_date(region, date(2026, 2, 13)), date(2026, 2, 13)
+        )
+
+        assert selected is not None
+        assert selected.pk == morning.pk

@@ -327,8 +327,14 @@ class TestParseTwoBandBulletin:
         return parse_dpbra_xml(_sample("massif-001.xml"))
 
     def test_bulletin_id_format(self, result: dict) -> None:
-        """bulletinID is 'FR-{NN}-{YYYY-MM-DD}' (Paris-local date)."""
-        assert result["bulletinID"] == "FR-01-2026-05-18"
+        """bulletinID is 'FR-{NN}-{covered date}-{@DATEDIFFUSION as UTC}'.
+
+        The publication stamp is what separates the two issues Météo-France
+        publishes for one massif-day; without it they collided and the second
+        was silently skipped (SNOW-559).  Here @DATEDIFFUSION is
+        2026-05-17T16:02:00 Paris (CEST) → 14:02:00Z.
+        """
+        assert result["bulletinID"] == "FR-01-2026-05-18-20260517140200"
 
     def test_lang_is_fr(self, result: dict) -> None:
         """Language is always 'fr' for MeteoFrance bulletins."""

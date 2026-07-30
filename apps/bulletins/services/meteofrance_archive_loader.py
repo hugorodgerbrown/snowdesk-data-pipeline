@@ -15,17 +15,34 @@
 #      ``SLUG_TO_CODE`` from ``apps.bulletins.services.meteofrance_massifs``.
 #   2. ``bulletinID`` synthesis: the CAAML builder does not write one;
 #      ``upsert_bulletin`` requires one.  Synthesised as
-#      ``FR-{NN:02d}-{customData.MF.date}``.
+#      ``FR-{NN:02d}-{covered date}-{publication timestamp}``.
+#
+# The publication timestamp is what makes the id unique.  Météo-France issues
+# more than one BRA per massif per covered day — typically the previous evening
+# and a morning refresh — so ``FR-{NN}-{covered date}`` alone collided for 105
+# massif-days across the committed archive, and ``upsert_bulletin``'s
+# ``update_or_create`` silently overwrote one issue with the other, the winner
+# decided by line order in the file.  56 of those pairs differ in structured
+# forecast data (danger ratings, elevation bounds, tendency, wind), so real
+# content was being dropped (SNOW-559).
+#
+# Keying on ``(massif, covered date, publicationTime)`` is exact rather than
+# approximate: across the 4,671 archived records it yields 4,639 ids, matching
+# the 4,639 distinct PDFs by checksum, with no timestamp covering two distinct
+# PDFs.  The 32 records that do still coalesce are byte-identical duplicate
+# downloads and should coalesce.
 """Service for loading the Météo-France BRA NDJSON archive into the database."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, cast
 
+from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
 from apps.bulletins.services.meteofrance_massifs import SLUG_TO_CODE, _normalise_slug
 
 logger = logging.getLogger(__name__)
@@ -43,6 +60,13 @@ class LoadResult:
     updated: int
     failed: int
     pipeline_run_id: int | None
+    # Records that coalesced onto an id already seen with identical content —
+    # duplicate downloads of one PDF, which is benign.
+    duplicates: int = 0
+    # Records that coalesced onto an id already seen with *different* content —
+    # two distinct bulletins claiming one identity.  Never expected; counted
+    # toward ``failed`` so cron and CI notice (SNOW-559).
+    collisions: int = 0
 
     def as_summary(self) -> str:
         """Return a human-readable one-line summary for admin messages and logs.
@@ -58,7 +82,9 @@ class LoadResult:
                 f"[dry-run] {self.total} lines: "
                 f"{self.would_upsert} would-upsert, "
                 f"{self.unknown_slug} unknown-slug, "
-                f"{self.bad_shape} bad-shape."
+                f"{self.bad_shape} bad-shape, "
+                f"{self.duplicates} duplicate, "
+                f"{self.collisions} id-collision."
             )
         return (
             f"Loaded {self.total} lines: "
@@ -66,6 +92,8 @@ class LoadResult:
             f"{self.updated} updated, "
             f"{self.unknown_slug} unknown-slug, "
             f"{self.bad_shape} bad-shape, "
+            f"{self.duplicates} duplicate, "
+            f"{self.collisions} id-collision, "
             f"{self.failed} failed "
             f"(PipelineRun #{self.pipeline_run_id})."
         )
@@ -82,6 +110,98 @@ class _Counts:
         self.would_upsert = 0
         self.created = 0
         self.updated = 0
+        # bulletinID → payload fingerprint, so a genuine collision within one
+        # file can be told from a duplicate download of the same PDF.
+        self.fingerprints: dict[str, str] = {}
+        self.duplicates = 0
+        self.collisions = 0
+
+
+def _payload_fingerprint(properties: dict[str, Any]) -> str:
+    """Return a stable digest of an envelope's forecast content.
+
+    Two fields are excluded, both because they say nothing about what the
+    bulletin forecasts:
+
+    * ``bulletinID`` — what two colliding records already agree on by
+      definition.
+    * ``customData.MF.source_file`` — which PDF the record came from.  The
+      archive holds 32 pairs where one bulletin was downloaded twice, and the
+      filenames are the *only* thing that differs between them (the second
+      download was renamed ``.1``).  Comparing provenance as though it were
+      content would report all 32 as collisions on every full load, and a
+      warning that fires 32 times when nothing is wrong is a warning nobody
+      reads.
+
+    Everything else is compared, including timestamps.
+
+    Args:
+        properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
+
+    Returns:
+        A hex digest of the canonicalised payload.
+
+    """
+    payload = {key: value for key, value in properties.items() if key != "bulletinID"}
+    custom = payload.get("customData")
+    if isinstance(custom, dict) and isinstance(custom.get("MF"), dict):
+        # Rebuild the nested dicts rather than mutating the caller's payload.
+        payload["customData"] = {
+            **custom,
+            "MF": {k: v for k, v in custom["MF"].items() if k != "source_file"},
+        }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _check_for_collision(
+    bulletin_id: str,
+    properties: dict[str, Any],
+    line_number: int,
+    counts: _Counts,
+) -> bool:
+    """Record this id's fingerprint and report whether it is a real collision.
+
+    Two records resolving to one id are expected in one case only: the archive
+    contains 32 byte-identical duplicate downloads, where the same PDF was
+    fetched twice.  Those coalesce harmlessly and are counted, not warned about.
+
+    Anything else means two *different* bulletins claim one identity, which is
+    the failure mode this id scheme exists to prevent — so it warns and is
+    counted as a failure, making it visible in ``records_failed`` rather than
+    silently losing a forecast (SNOW-559, scope item 6).
+
+    Args:
+        bulletin_id: The synthesised id.
+        properties: The envelope being processed.
+        line_number: 1-based line counter for log messages.
+        counts: Mutable counter object updated by this call.
+
+    Returns:
+        ``True`` when this is a genuine collision with differing content.
+
+    """
+    fingerprint = _payload_fingerprint(properties)
+    previous = counts.fingerprints.get(bulletin_id)
+    if previous is None:
+        counts.fingerprints[bulletin_id] = fingerprint
+        return False
+    if previous == fingerprint:
+        counts.duplicates += 1
+        logger.debug(
+            "Line %d: %s duplicates an identical earlier record",
+            line_number,
+            bulletin_id,
+        )
+        return False
+    counts.collisions += 1
+    logger.warning(
+        "Line %d: %s collides with an earlier record that has different content "
+        "— two distinct bulletins share one identity",
+        line_number,
+        bulletin_id,
+    )
+    return True
 
 
 def _parse_envelope(raw_line: str, line_number: int) -> dict[str, Any] | None:
@@ -134,7 +254,8 @@ def fixup_envelope(
       ``FR-{NN}`` using ``SLUG_TO_CODE`` (after normalising the raw slug
       via ``_normalise_slug`` to fold the space/hyphen variants used by
       the upstream PDFs onto the canonical form).
-    - ``bulletinID`` is synthesised as ``FR-{NN}-{customData.MF.date}``.
+    - ``bulletinID`` is synthesised as
+      ``FR-{NN}-{customData.MF.date}-{publicationTime}``.
 
     Args:
         properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
@@ -151,6 +272,18 @@ def fixup_envelope(
         logger.warning("Missing customData.MF.massif or customData.MF.date — skipping")
         return None
 
+    published = compact_publication_stamp(properties.get("publicationTime"))
+    if published is None:
+        # Without a publication timestamp the record cannot be told apart from
+        # the day's other issue, so admitting it would reintroduce the silent
+        # overwrite this id scheme exists to prevent.
+        logger.warning(
+            "Missing or unparseable publicationTime for massif %r on %s — skipping",
+            raw_slug,
+            date_str,
+        )
+        return None
+
     slug = _normalise_slug(raw_slug)
     try:
         region_id = _slug_to_region_id(slug)
@@ -165,7 +298,7 @@ def fixup_envelope(
         logger.warning("Missing or malformed regions list for slug %r — skipping", slug)
         return None
 
-    bulletin_id = f"{region_id}-{date_str}"
+    bulletin_id = f"{region_id}-{date_str}-{published}"
     properties["bulletinID"] = bulletin_id
     return bulletin_id
 
@@ -223,6 +356,13 @@ def _process_line(
             counts.bad_shape += 1
         _record_run_failure(run)
         return
+
+    # A real collision is a per-row failure, but the row is still upserted:
+    # dropping it would lose a forecast, and which of the two "wins" is exactly
+    # the ambiguity being reported.  The warning plus records_failed is the
+    # signal (SNOW-559).
+    if _check_for_collision(bulletin_id, properties, line_number, counts):
+        _record_run_failure(run)
 
     if not commit:
         logger.debug("[dry-run] Would upsert %s", bulletin_id)
@@ -354,4 +494,6 @@ def load_meteofrance_archive(
         updated=counts.updated,
         failed=run.records_failed if run is not None else 0,
         pipeline_run_id=run.pk if run is not None else None,
+        duplicates=counts.duplicates,
+        collisions=counts.collisions,
     )

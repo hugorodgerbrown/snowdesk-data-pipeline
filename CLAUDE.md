@@ -440,6 +440,7 @@ Read these when working in the relevant area:
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
+| Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |
 | Météo-France live ingest operations | [`docs/meteofrance-live-ingest.md`](docs/meteofrance-live-ingest.md) |
 | SLF API historical-depth probe (2026-05-01) | [`docs/slf-api-history.md`](docs/slf-api-history.md) |
 | Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |
@@ -457,6 +458,7 @@ Read these when working in the relevant area:
 | MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
+| Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk.info; server is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |

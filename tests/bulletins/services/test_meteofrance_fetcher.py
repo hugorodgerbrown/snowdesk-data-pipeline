@@ -53,6 +53,11 @@ _SAMPLE_DIR = (
     / "bulletins-2026-05-18"
 )
 
+# The ``bulletin_id`` the FR-01 sample document produces: massif, covered date,
+# and @DATEDIFFUSION (2026-05-17T16:02:00 Paris → 14:02:00Z) as the publication
+# stamp that separates the day's issues (SNOW-559).
+_LIVE_ID = "FR-01-2026-05-18-20260517140200"
+
 
 def _sample(filename: str) -> bytes:
     """Return raw bytes from the research sample directory."""
@@ -318,8 +323,8 @@ class TestRunMeteofrance:
 
         assert len(collected) == 2
         ids = {r["bulletinID"] for r in collected}
-        assert "FR-01-2026-05-18" in ids
-        assert "FR-64-2026-05-18" in ids
+        assert "FR-01-2026-05-18-20260517140200" in ids
+        assert "FR-64-2026-05-18-20260517135700" in ids
 
     @pytest.mark.django_db
     def test_creates_bulletin_for_known_region(self) -> None:
@@ -338,7 +343,7 @@ class TestRunMeteofrance:
 
         from apps.bulletins.models import Bulletin
 
-        assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").exists()
+        assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).exists()
         assert run.records_created == 1
 
     @pytest.mark.django_db
@@ -369,7 +374,7 @@ class TestRunMeteofrance:
         from apps.bulletins.models import Bulletin
 
         # Still only one bulletin in the DB.
-        assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").count() == 1
+        assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).count() == 1
         assert run2.records_created == 0
 
     @pytest.mark.django_db
@@ -453,7 +458,7 @@ class TestRunMeteofrance:
 
         from apps.bulletins.models import Bulletin
 
-        assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").exists()
+        assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).exists()
         assert run.records_created == 1
 
     @pytest.mark.django_db
@@ -481,7 +486,7 @@ class TestRunMeteofrance:
 
         from apps.bulletins.models import Bulletin
 
-        b = Bulletin.objects.get(bulletin_id="FR-01-2026-05-18")
+        b = Bulletin.objects.get(bulletin_id=_LIVE_ID)
         raw_props = (b.raw_data or {}).get("properties", {})
         massif_slug: str = (
             raw_props.get("customData", {}).get("MF", {}).get("massif", "")
@@ -739,3 +744,108 @@ class TestMeteofrancePdfUrl:
         session = _make_session(mock_resp)
         result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
         assert result == ""
+
+
+@pytest.mark.django_db
+class TestReissuedBulletin:
+    """A re-issue with a new @DATEDIFFUSION must be stored, not skipped.
+
+    The live fetcher short-circuits on ``Bulletin.objects.filter(bulletin_id=…)
+    .exists()``.  Under the old ``FR-{NN}-{covered date}`` id that meant the
+    day's second issue was silently dropped and a massif was never updated after
+    the first fetch of the day — no warning, no ``records_failed`` (SNOW-559).
+    """
+
+    def _reissued_xml(self) -> bytes:
+        """Return the FR-01 sample with a later @DATEDIFFUSION.
+
+        Returns:
+            XML bytes identical to ``massif-001.xml`` but diffused at 07:30
+            rather than 16:02, i.e. the following morning's refresh.
+
+        """
+        original = _sample("massif-001.xml").decode("utf-8")
+        assert 'DATEDIFFUSION="2026-05-17T16:02:00"' in original
+        return original.replace(
+            'DATEDIFFUSION="2026-05-17T16:02:00"',
+            'DATEDIFFUSION="2026-05-18T07:30:00"',
+        ).encode("utf-8")
+
+    def test_reissue_creates_a_second_row(self) -> None:
+        """Both issues of one massif-day coexist."""
+        from apps.bulletins.models import Bulletin
+
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+            # The morning refresh replaces the file at the same URL.
+            (Path(tmp) / "massif-001.xml").write_bytes(self._reissued_xml())
+            second = run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+
+        assert second.records_created == 1
+        assert (
+            Bulletin.objects.filter(bulletin_id__startswith="FR-01-2026-05-18").count()
+            == 2
+        )
+
+    def test_reissue_id_carries_its_own_stamp(self) -> None:
+        """The second row is keyed by the re-issue's own publication instant."""
+        from apps.bulletins.models import Bulletin
+
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(self._reissued_xml())
+            run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+
+        # 2026-05-18T07:30:00 Paris (CEST, UTC+2) → 05:30:00Z.
+        assert Bulletin.objects.filter(
+            bulletin_id="FR-01-2026-05-18-20260518053000"
+        ).exists()
+
+    def test_identical_refetch_is_still_skipped(self) -> None:
+        """Re-fetching the same issue remains a no-op.
+
+        The publication stamp makes the id idempotent for an unchanged bulletin,
+        so the existing skip is still correct — it just no longer swallows
+        genuine re-issues.
+        """
+        from apps.bulletins.models import Bulletin
+
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            for _ in range(2):
+                last = run_meteofrance_pipeline(
+                    date(2026, 5, 18),
+                    date(2026, 5, 18),
+                    triggered_by="test",
+                    dry_run=False,
+                    massif_ids=(1,),
+                    base_url=f"file://{tmp}",
+                )
+
+        assert last.records_created == 0
+        assert last.records_updated == 0
+        assert Bulletin.objects.count() == 1

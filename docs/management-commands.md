@@ -292,6 +292,30 @@ incident that invalidates derived state:
 
   Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
   `--skip-day-ratings`.
+- `rekey_meteofrance_bulletins --commit` — one-off migration of FR bulletins from
+  the old `FR-{NN}-{covered date}` identifier to
+  `FR-{NN}-{covered date}-{publication timestamp}` (SNOW-559). The old id could
+  not distinguish the two BRAs Météo-France publishes for one massif-day, so one
+  silently overwrote the other. Derives each new id from that row's own
+  `raw_data`, skips rows already on the new grammar (so it is idempotent), and
+  refreshes `RegionDayRating` for every touched (region, day). Exits non-zero if
+  any row cannot be re-keyed — a row with no usable publication timestamp is
+  reported and left alone rather than given a guessed identity.
+
+  ```bash
+  # Read-only walk — reports what would change.
+  uv run python manage.py rekey_meteofrance_bulletins
+
+  # Persist.
+  uv run python manage.py rekey_meteofrance_bulletins --commit
+  ```
+
+  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
+  `--skip-day-ratings`.
+
+  Re-keying alone does not restore the issues that were previously overwritten;
+  reload the rebuilt archive afterwards
+  ([runbook](runbooks/rebuild-meteofrance-archive.md)).
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
 - `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
