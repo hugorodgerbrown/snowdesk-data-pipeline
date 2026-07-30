@@ -1,6 +1,8 @@
 /*
  * static/js/basemap_download_core.js — Pure tile-URL helpers for the
- * map's per-region "Download basemap" icons (SNOW-521 rework).
+ * map's basemap download controls (SNOW-521 per-region rework;
+ * SNOW-522 re-adds a client-side tile-math port for the custom-area
+ * control).
  *
  * Dependency-free IIFE attaching ``self.pwaBasemapDownloadCore`` — same
  * idiom as ``basemap_cache_core.js`` (frozen export, no side effects).
@@ -13,48 +15,100 @@
  * with per-region download: each region's tile coverage is precomputed
  * server-side (``regions.services.basemap_tiles`` — see that module's
  * docstring for the stored blob shape) and served over the API, so the
- * browser does no tile enumeration or byte-estimate arithmetic of its
- * own any more. This module has shrunk to the two pure functions that
- * turn that server-computed data into URLs:
+ * per-*region* download does no tile enumeration or byte-estimate
+ * arithmetic of its own — ``rangesToTileURLs``/``centreTileURL`` below
+ * still just turn that server-computed data into URLs.
+ *
+ * SNOW-522 re-introduces the tile-index/byte-estimate arithmetic
+ * client-side, deliberately, for the *custom-area* download: a
+ * user-drawn bbox (the map panned/zoomed under a fixed framing
+ * rectangle) is not precomputable server-side the way a region's fixed
+ * boundary is — there is no stable ID to precompute against, and the
+ * live "up to N MB" readout has to track every frame of that pan/zoom
+ * with no network round-trip. ``lonLatToTile``/``tileRangesForBBox``/
+ * ``tileCount``/``centreTile``/``buildBlob`` below are therefore a
+ * DELIBERATE re-port of ``apps/regions/services/basemap_tiles.py``'s
+ * pure functions of the same names (module docstring there has the full
+ * algorithm rationale) — this is not drift back to a client that forgot
+ * the math moved server-side; the two now legitimately coexist for two
+ * different download shapes. Kept honest against the Python by a shared
+ * golden vector asserted in both ``tests/js/test_basemap_download_core.js``
+ * and ``tests/regions/services/test_basemap_tiles.py`` — see either
+ * test's comment for the paired assertion. That shared vector is a
+ * convention, not a mechanism: nothing fails the build if the two drift,
+ * so treat any change to the Python tile math as also owed here.
+ *
+ * Coordinate convention: **(lon, lat) order**, matching
+ * ``basemap_tiles.py``'s deliberate carve-out from the project's usual
+ * (lat, lon) argument order — see that module's docstring. Kept
+ * identical here so a reader porting between the two never has to
+ * mentally swap axes.
  *
  * Public API — attached to ``self.pwaBasemapDownloadCore``:
  *
  *   rangesToTileURLs(template, blob)
  *     Expands a full basemap_download blob's ``z`` tile-index ranges
  *     (``{"<z>": [xmin, xmax, ymin, ymax]}``, as fetched from
- *     ``/api/region-basemap-tiles/?id=...``) into the full list of
- *     ``{z}/{x}/{y}`` tile URLs, substituted into ``template``. Returns
- *     ``[]`` for a falsy ``template`` or ``blob``, or a blob with no
- *     ``z`` ranges.
+ *     ``/api/region-basemap-tiles/?id=...`` OR produced locally by
+ *     ``buildBlob`` below) into the full list of ``{z}/{x}/{y}`` tile
+ *     URLs, substituted into ``template``. Returns ``[]`` for a falsy
+ *     ``template`` or ``blob``, or a blob with no ``z`` ranges.
  *   centreTileURL(template, summary)
  *     Builds the single tile URL for ``summary.centre_tile``
  *     (``{z, x, y}``) — the "done-probe" key: the client checks whether
  *     this one tile is present in the pinned cache as a proxy for "this
- *     region's download completed" (matches the region's server-picked
- *     centre tile at its tier's detail floor). Returns ``null`` for a
- *     falsy ``template``/``summary``/``summary.centre_tile``.
- *
- * The zoom-band, tile-enumeration, and byte-estimate helpers this module
- * used to hold (``zoomBand``, ``enumerateTileURLs``, ``estimateBytes``,
- * ``formatUpToMB``, and the underlying ``_lonToTileX``/``_latToTileY``
- * slippy-map math) moved server-side to
- * ``regions/services/basemap_tiles.py`` — the region-boundary geometry
- * they depended on lives in the database, and precomputing per-tier
- * once (region geometry and the tile grid are both static) beats
- * re-deriving the same numbers in every client on every viewport move.
+ *     download completed" (matches the download's centre tile at its
+ *     band's detail floor, whether server-picked (region) or
+ *     locally-computed (custom area)). Returns ``null`` for a falsy
+ *     ``template``/``summary``/``summary.centre_tile``.
+ *   lonLatToTile(lon, lat, z)
+ *     Web Mercator ``[x, y]`` tile indices for ``(lon, lat)`` at zoom
+ *     ``z`` — mirror of ``basemap_tiles.lon_lat_to_tile``. Not clamped
+ *     to the valid ``[0, 2**z - 1]`` range; ``tileRangesForBBox`` clamps
+ *     explicitly, matching the Python.
+ *   tileRangesForBBox(bbox, minZ, maxZ)
+ *     ``{"<z>": [xmin, xmax, ymin, ymax]}`` for every zoom in
+ *     ``[minZ, maxZ]`` — mirror of ``basemap_tiles.tile_ranges``, same
+ *     clamping.
+ *   tileCount(ranges)
+ *     Total tile count across every zoom level in ``ranges`` — mirror of
+ *     ``basemap_tiles.tile_count``.
+ *   centreTile(bbox, z)
+ *     The tile at ``bbox``'s centre point, at zoom ``z`` — mirror of
+ *     ``basemap_tiles.centre_tile``.
+ *   buildBlob(bbox, minZ, maxZ)
+ *     The full blob (``{band, count, mb, over_ceiling, centre_tile, z}``)
+ *     — mirror of ``basemap_tiles.build_blob`` — produced in the SAME
+ *     shape ``rangesToTileURLs``/``centreTileURL`` already consume, so a
+ *     locally-built blob and a server-fetched one are interchangeable.
+ *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_CEILING_MB
+ *     Constants mirroring ``basemap_tiles.py``'s module-level constants
+ *     of the same name (see there for the sizing rationale).
  */
 
 (function () {
   'use strict';
 
+  // Mirrors apps/regions/services/basemap_tiles.py::MICRO_BAND — the
+  // custom-area download uses the same zoom band as the region download
+  // (z10-14), so the two produce directly-comparable size estimates.
+  var MICRO_BAND = [10, 14];
+
+  // Mirrors apps/regions/services/basemap_tiles.py::WORST_CASE_BYTES_PER_TILE.
+  var WORST_CASE_BYTES_PER_TILE = 100 * 1024;
+
+  // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
+  var DOWNLOAD_CEILING_MB = 200;
+
   /**
    * Expand a full basemap_download blob's ``z`` ranges into tile URLs.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
-   * @param {{z?: Object<string, number[]>}} blob The full blob fetched from
-   *   ``/api/region-basemap-tiles/?id=...`` (``{band, count, mb,
-   *   over_ceiling, centre_tile, z}`` — see
-   *   ``regions/services/basemap_tiles.py``'s module docstring).
+   * @param {{z?: Object<string, number[]>}} blob The full blob — either
+   *   fetched from ``/api/region-basemap-tiles/?id=...`` or built locally
+   *   by ``buildBlob`` (``{band, count, mb, over_ceiling, centre_tile,
+   *   z}`` — see ``regions/services/basemap_tiles.py``'s module
+   *   docstring).
    * @returns {string[]}
    */
   function rangesToTileURLs(template, blob) {
@@ -74,13 +128,14 @@
   }
 
   /**
-   * Build the single "done-probe" tile URL for a region's download summary.
+   * Build the single "done-probe" tile URL for a download summary.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
    * @param {{centre_tile?: {z: number, x: number, y: number}}} summary A
-   *   region's download summary (the small ``{count, mb, over_ceiling,
+   *   download's summary (the small ``{count, mb, over_ceiling,
    *   centre_tile}`` shape inlined on the geojson endpoints' ``properties.
-   *   download``, or the equivalent fields on a full blob).
+   *   download``, a full server-fetched blob, or a locally-built
+   *   ``buildBlob`` result — all carry ``centre_tile`` in the same shape).
    * @returns {string | null}
    */
   function centreTileURL(template, summary) {
@@ -92,8 +147,140 @@
       .replace('{y}', String(y));
   }
 
+  /**
+   * Web Mercator ``[x, y]`` tile indices for ``(lon, lat)`` at zoom ``z``.
+   *
+   * Deliberate re-port of ``basemap_tiles.lon_lat_to_tile`` — see the
+   * module header above for why. Not clamped to the valid
+   * ``[0, 2**z - 1]`` range; ``tileRangesForBBox`` clamps explicitly,
+   * matching the Python.
+   *
+   * @param {number} lon Longitude in degrees.
+   * @param {number} lat Latitude in degrees.
+   * @param {number} z Zoom level.
+   * @returns {[number, number]}
+   */
+  function lonLatToTile(lon, lat, z) {
+    const n = Math.pow(2, z);
+    const x = Math.floor(((lon + 180.0) / 360.0) * n);
+    const latRad = (lat * Math.PI) / 180.0;
+    const y = Math.floor(
+      ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0) * n,
+    );
+    return [x, y];
+  }
+
+  /**
+   * Tile-index ranges covering ``bbox`` for every zoom in ``[minZ, maxZ]``.
+   *
+   * Deliberate re-port of ``basemap_tiles.tile_ranges``.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @param {number} minZ Shallowest zoom level (inclusive).
+   * @param {number} maxZ Deepest zoom level (inclusive).
+   * @returns {Object<string, [number, number, number, number]>}
+   *   ``{"<z>": [xmin, xmax, ymin, ymax]}`` — one entry per zoom level,
+   *   with indices clamped to the valid ``[0, 2**z - 1]`` range.
+   */
+  function tileRangesForBBox(bbox, minZ, maxZ) {
+    const [west, south, east, north] = bbox;
+    const ranges = {};
+    for (let z = minZ; z <= maxZ; z++) {
+      const [x0, y0] = lonLatToTile(west, north, z);
+      const [x1, y1] = lonLatToTile(east, south, z);
+      let xmin = Math.min(x0, x1);
+      let xmax = Math.max(x0, x1);
+      let ymin = Math.min(y0, y1);
+      let ymax = Math.max(y0, y1);
+      const maxIndex = Math.pow(2, z) - 1;
+      xmin = Math.max(0, Math.min(xmin, maxIndex));
+      xmax = Math.max(0, Math.min(xmax, maxIndex));
+      ymin = Math.max(0, Math.min(ymin, maxIndex));
+      ymax = Math.max(0, Math.min(ymax, maxIndex));
+      ranges[String(z)] = [xmin, xmax, ymin, ymax];
+    }
+    return ranges;
+  }
+
+  /**
+   * Total tile count across every zoom level in ``ranges``.
+   *
+   * Deliberate re-port of ``basemap_tiles.tile_count``.
+   *
+   * @param {Object<string, number[]>} ranges The ``{"<z>": [xmin, xmax,
+   *   ymin, ymax]}`` shape returned by ``tileRangesForBBox``.
+   * @returns {number}
+   */
+  function tileCount(ranges) {
+    let total = 0;
+    for (const key of Object.keys(ranges)) {
+      const [xmin, xmax, ymin, ymax] = ranges[key];
+      total += (xmax - xmin + 1) * (ymax - ymin + 1);
+    }
+    return total;
+  }
+
+  /**
+   * The tile at ``bbox``'s centre point, at zoom ``z`` — the "done-probe"
+   * key (see ``centreTileURL`` above).
+   *
+   * Deliberate re-port of ``basemap_tiles.centre_tile``.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @param {number} z Zoom level — the download's detail floor
+   *   (``MICRO_BAND[1]``).
+   * @returns {{z: number, x: number, y: number}}
+   */
+  function centreTile(bbox, z) {
+    const [west, south, east, north] = bbox;
+    const centreLon = (west + east) / 2.0;
+    const centreLat = (south + north) / 2.0;
+    const [x, y] = lonLatToTile(centreLon, centreLat, z);
+    return { z: z, x: x, y: y };
+  }
+
+  /**
+   * Build the full download blob for ``bbox`` — the SAME shape
+   * ``rangesToTileURLs``/``centreTileURL`` consume, and the same shape
+   * ``/api/region-basemap-tiles/`` serves for a region download.
+   *
+   * Deliberate re-port of ``basemap_tiles.build_blob``.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @param {number} minZ The shallowest zoom level (``MICRO_BAND[0]``).
+   * @param {number} maxZ The detail floor (``MICRO_BAND[1]``).
+   * @returns {{band: [number, number], count: number, mb: number,
+   *   over_ceiling: boolean, centre_tile: {z: number, x: number, y:
+   *   number}, z: Object<string, number[]>}}
+   */
+  function buildBlob(bbox, minZ, maxZ) {
+    const ranges = tileRangesForBBox(bbox, minZ, maxZ);
+    const count = tileCount(ranges);
+    const totalBytes = count * WORST_CASE_BYTES_PER_TILE;
+    const mb = Math.ceil(totalBytes / (1024 * 1024));
+    return {
+      band: [minZ, maxZ],
+      count: count,
+      mb: mb,
+      over_ceiling: mb > DOWNLOAD_CEILING_MB,
+      centre_tile: centreTile(bbox, maxZ),
+      z: ranges,
+    };
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
+    lonLatToTile: lonLatToTile,
+    tileRangesForBBox: tileRangesForBBox,
+    tileCount: tileCount,
+    centreTile: centreTile,
+    buildBlob: buildBlob,
+    MICRO_BAND: MICRO_BAND,
+    WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
+    DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
   });
 })();

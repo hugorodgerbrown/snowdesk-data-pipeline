@@ -193,6 +193,40 @@ def test_build_blob_pathologically_large_bbox_flags_over_ceiling() -> None:
     assert blob["over_ceiling"] is True
 
 
+def test_build_blob_golden_vector_matches_js_twin() -> None:
+    """Hand-checked build_blob() output, asserted identically in JS.
+
+    SNOW-522 re-ports this module's tile math into
+    ``static/js/basemap_download_core.js`` for the custom-area download
+    (a user-drawn bbox has no stable ID to precompute against
+    server-side — see that module's header for the full rationale).
+    There is no compiler/typechecker link between the two languages, so
+    this bbox/band pair and its exact expected shape are asserted
+    identically in ``tests/js/test_basemap_download_core.js``'s
+    ``describe('buildBlob (golden vector)', ...)`` block — the twin
+    assertion that is the parity guard for the deliberate re-port. A
+    change to either implementation that isn't mirrored in the other
+    will only be caught by keeping both of these up to date by hand.
+    """
+    bbox = [7.0, 46.0, 7.2, 46.2]
+    min_z, max_z = MICRO_BAND
+    blob = build_blob(bbox, min_z, max_z)
+    assert blob == {
+        "band": [10, 14],
+        "count": 205,
+        "mb": 21,
+        "over_ceiling": False,
+        "centre_tile": {"z": 14, "x": 8515, "y": 5822},
+        "z": {
+            "10": [531, 532, 363, 364],
+            "11": [1063, 1064, 726, 728],
+            "12": [2127, 2129, 1453, 1457],
+            "13": [4255, 4259, 2907, 2914],
+            "14": [8510, 8519, 5815, 5828],
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # blob_summary
 # ---------------------------------------------------------------------------

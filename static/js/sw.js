@@ -310,7 +310,7 @@ try {
 // zoom, which is what a mouse-driven desktop tool wants. Shell JS bytes
 // changed (map_edit_resorts.js); the panel template itself is not part of
 // the cached shell.
-const CACHE_VERSION = 'snowdesk-shell-v77';
+const CACHE_VERSION = 'snowdesk-shell-v81';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -352,7 +352,17 @@ const BASEMAP_PINNED_CACHE = 'snowdesk-basemap-pinned-v1';
 // module's closure) — a round number comfortably above one run's worth of
 // tiles, trimmed oldest-first same as BASEMAP_CACHE_MAX_ENTRIES. Entry-
 // count, not byte-exact, matching _trimCache's existing approximation.
-const BASEMAP_PINNED_CACHE_MAX_ENTRIES = 2500;
+//
+// SNOW-522: raised 2500 → 5000. This cache can now legitimately hold TWO
+// concurrent pinned downloads at once — a per-region download plus the
+// new custom-area download (static/js/map.js's
+// mapCustomDownloadControlInit) — each individually capable of running up
+// to DOWNLOAD_CEILING_MB (~2048 tiles at the 100 KB/tile worst case). The
+// original 2500 was sized for exactly one run; two runs near the ceiling
+// would have exceeded it and this trim would have silently evicted
+// whichever download was older, defeating the "exactly one custom area
+// coexists with the region download" contract.
+const BASEMAP_PINNED_CACHE_MAX_ENTRIES = 5000;
 
 // SNOW-484: the allowlist of cross-origin basemap origins it is safe to
 // cache. A service worker has no DOM, so it cannot itself read the

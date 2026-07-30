@@ -1,7 +1,7 @@
 """
 tests/e2e/test_cache_this_area.py — Playwright regression tests for the
 single-region "Download basemap" icon (SNOW-492, SNOW-493, SNOW-521 final
-shape).
+shape, SNOW-522 relocation).
 
 SNOW-521 went through two intermediate shapes before landing here: first a
 viewport-anchored docked confirm bar (``#basemap-download-bar``), then a
@@ -10,24 +10,42 @@ the docked bar required zooming in tight before the viewport was small
 enough to accept; the per-tier icons made download size non-monotonic with
 containment (an L1 region could read smaller than an L2 it contains),
 which read as a bug. The shipped shape is a single control
-(``#map-download-control``, rendered by ``_map_download_control.html`` into
-the bottom-right stack ``#map-controls-br``) for the focused MICRO region
-only, with no completion toast — the control itself carries the outcome (a
-green "available offline" circle on success, reverting to idle otherwise).
-It is always present: with nothing focused it holds the inert ``no-region``
-state rather than hiding. This file covers: the
+(``#map-download-control``, rendered by ``_map_download_control.html``) for
+the focused MICRO region only, with no completion toast — the control
+itself carries the outcome (a green "available offline" circle on success,
+reverting to idle otherwise).
+
+SNOW-521 rendered it into the bottom-right stack ``#map-controls-br`` and
+made it permanently present, holding the inert ``no-region`` state with
+nothing focused rather than hiding — a vanishing control in that stack
+would have shifted the stack's composition on every select/deselect.
+SNOW-522 moved it BACK into the ribbon header (between ``#region-readout``
+and ``#region-readout-action``, ``_season_ribbon.html``) so the bottom-right
+slot could become the new custom-area download control's home instead
+(``tests/e2e/test_custom_download_area.py``). Back in the header it is
+hidden-until-focused again via a CSS sibling rule keyed off
+``#region-readout.has-region`` — which is why ``_select_region`` below now
+also passes a ``region_name`` in the synthetic event detail: ``.has-region``
+is only set when ``seasonRibbonInit``'s ``updateReadout`` sees a truthy
+``dateKey && regionId && regionName``, so a detail with no name would leave
+the relocated control permanently ``display: none`` and every
+``icon.wait_for(state="visible")`` below would time out. The ``no-region``
+state itself stays in the state machine for the rarer case of a focused
+region with no computed download summary — the CSS now only hides it while
+NOTHING is focused at all. This file covers: the
 idle→busy→done flow, a reselected region reading ``done`` from real cache
 state rather than in-page memory, a probe that couldn't resolve the
 active basemap's tile template re-running once the style settles, and
 the disabled/over_ceiling and partial/failed-run branches.
 
 Every test requests ``_load_test_data`` (``pytestmark`` below) for its
-ratings/bulletin rows. It used to be needed for a second reason — the
-control lived inside ``_season_ribbon.html``'s ``{% if ribbon %}`` gate, so
-against an unseeded DB it did not exist in the DOM at all. That is no
-longer true now the control renders from ``_map_embed.html``, outside the
-gate; the fixture stays because ``_select_region`` still needs a page whose
-map has booted. ``pwa_page``'s own first navigation can race the seed
+ratings/bulletin rows — needed for two reasons now. First, ``_select_region``
+needs a page whose map has booted. Second, SNOW-522's move put the control
+back inside ``_season_ribbon.html``'s ``{% if ribbon %}`` gate (it briefly
+escaped that gate for the whole of its SNOW-521 stay in
+``#map-controls-br``): against an unseeded DB ``ribbon`` is ``None`` and
+neither ``#region-readout`` nor ``#map-download-control`` exist in the DOM
+at all. ``pwa_page``'s own first navigation can race the seed
 (fixture instantiation order between two same-scope, non-dependent fixtures
 is unspecified), so every test's first action is ``_reload_home`` — a
 second ``page.goto('/')`` — mirroring ``test_pwa_lifecycle_offline.py``'s
@@ -126,7 +144,10 @@ def _select_region(page: Page, region_id: str, download: dict[str, Any] | None) 
     """Inject a synthetic ``FEATURE_BY_REGION_ID`` entry and focus it.
 
     See the module docstring for why this bypasses the real
-    ``regions.geojson`` boot fetch entirely.
+    ``regions.geojson`` boot fetch entirely, and why ``region_name`` is
+    included in the dispatched event detail (SNOW-522: it is what flips
+    ``#region-readout``'s ``.has-region`` class, which is now what reveals
+    the relocated ``#map-download-control`` at all).
 
     Args:
         page: The Playwright page.
@@ -143,7 +164,7 @@ def _select_region(page: Page, region_id: str, download: dict[str, Any] | None) 
                 properties: { id: regionId, regionID: regionId, download },
             };
             document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-                detail: { region_id: regionId },
+                detail: { region_id: regionId, region_name: regionId },
             }));
         }""",
         {"regionId": region_id, "download": download},
@@ -242,13 +263,26 @@ def _wait_for_map_ready(page: Page) -> None:
     )
 
 
-def _wait_for_state(page: Page, state: str, timeout: int = 10000) -> None:
+def _wait_for_state(
+    page: Page,
+    state: str,
+    timeout: int = 10000,
+    selector: str = "#map-download-control",
+) -> None:
+    """Wait for ``selector``'s ``data-download-state`` to read ``state``.
+
+    ``selector`` defaults to the per-region control's id; SNOW-522's
+    ``tests/e2e/test_custom_download_area.py`` imports this same helper
+    with ``selector="#map-custom-download-control"`` rather than
+    duplicating it — both controls drive the same
+    ``data-download-state`` idiom.
+    """
     page.wait_for_function(
-        """(state) => {
-            const btn = document.getElementById('map-download-control');
+        """({ state, selector }) => {
+            const btn = document.querySelector(selector);
             return !!btn && btn.dataset.downloadState === state;
         }""",
-        arg=state,
+        arg={"state": state, "selector": selector},
         timeout=timeout,
     )
 

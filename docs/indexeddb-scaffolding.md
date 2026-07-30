@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
 status: current
-last-reviewed: 2026-07-22
+last-reviewed: 2026-07-30
 ---
 
 # IndexedDB scaffolding
@@ -37,7 +37,7 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart) |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart), `basemap.customArea` (SNOW-522 — the one persisted custom-area basemap download, written/read by `static/js/map.js`'s `mapCustomDownloadControlInit`; see below) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
@@ -62,6 +62,32 @@ consumer adds a store, bump `DB_VERSION` + add a migration branch in
               // in static/js/map.js's dropExpiredCommunityReports)
 }
 ```
+
+### `meta:app` row shape — `basemap.customArea` (SNOW-522)
+
+The one persisted custom-area basemap download — see
+[`offline-map.md`](offline-map.md#custom-area-download-snow-522) for the
+full feature. Exactly one row (one custom area) exists at a time; a
+confirmed re-download replaces it outright, never appends:
+
+```js
+{
+  key: 'basemap.customArea',
+  value: {
+    bbox,         // [west, south, east, north] in degrees — the framed area
+    band,         // [minZ, maxZ], currently always [10, 14] (MICRO_BAND)
+    centre_tile,  // {z, x, y} — the done-probe key, matching the region
+                  // download's own centre_tile shape (basemap_tiles.py)
+    savedAt,      // ISO 8601 timestamp of the confirmed download
+  },
+}
+```
+
+This row only records *where* the frame was — whether it is actually
+downloaded is never read off it directly, always re-probed against real
+`BASEMAP_PINNED_CACHE` contents via `centre_tile` (the same "layers menu
+is a live cache-state dashboard" invariant every download control
+follows).
 
 ### `log:sync` row shape (SNOW-482)
 

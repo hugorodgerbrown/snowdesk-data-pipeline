@@ -150,6 +150,46 @@ function computeBasemapSpriteURLs(map) {
   return urls;
 }
 
+// SNOW-521: same-origin data-feed + active-basemap-style URL list —
+// everything a basemap download warms besides its own tile ranges.
+// Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
+// full exclusion rationale re: favourites/community-reports) minus tile
+// enumeration, which comes from the caller's own blob instead.
+//
+// SNOW-522: lifted out of mapDownloadControlInit's closure (where it
+// started as a private helper) to module scope so the new
+// mapCustomDownloadControlInit can share this one copy rather than
+// duplicating it — everything it touches (COUNTRY_STATE, RATINGS_URL,
+// computeBasemapSpriteURLs) is already module-scope.
+//
+// @returns {string[]}
+function assembleBasemapDownloadFeedURLs() {
+  const mapEl = document.getElementById('map');
+  const urls = [];
+  const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
+  const addCountryFeeds = (base) => {
+    if (!base) return;
+    for (const code of enabledCountries) {
+      urls.push(base + '?country=' + code);
+    }
+  };
+  addCountryFeeds(mapEl.dataset.regionsUrl);
+  addCountryFeeds(mapEl.dataset.majorRegionsUrl);
+  addCountryFeeds(mapEl.dataset.subRegionsUrl);
+  if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
+  if (RATINGS_URL) {
+    for (const code of enabledCountries) {
+      urls.push(RATINGS_URL + '?country=' + code);
+    }
+  }
+  const activeBasemap = document.querySelector(
+    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
+  );
+  if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
+  urls.push(...computeBasemapSpriteURLs(MAP));
+  return urls;
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -4875,11 +4915,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // (an L1 region could read smaller than an L2 it contains), which read
 // as a bug.
 //
-// The control has since moved out of the #region-readout chip into the
-// bottom-right stack (#map-download-control, rendered by
-// public/partials/_map_download_control.html into #map-controls-br),
-// beside the layers pill — the layers menu is the cache-state dashboard
-// and this is the other control that writes to that cache.
+// The control has moved twice since. SNOW-521 moved it out of the
+// #region-readout chip into the bottom-right stack, beside the layers
+// pill — the layers menu is the cache-state dashboard and this is the
+// other control that writes to that cache. SNOW-522 moved it BACK into
+// the #region-readout chip (public/partials/_season_ribbon.html), and
+// handed the bottom-right slot to a second, distinct control — a
+// user-framed custom-area download (mapCustomDownloadControlInit,
+// below) — that this one does not need to know about; this IIFE finds
+// #map-download-control by id wherever it currently renders and is
+// otherwise unchanged by either move.
 //
 // Data source — no client-side tile enumeration. Region tile coverage
 // is precomputed server-side (regions/services/basemap_tiles.py) and
@@ -4888,12 +4933,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // itself needs), so showing the size is a pure in-memory lookup — no
 // extra fetch until the user actually clicks Download.
 //
-// Show/size — the control is ALWAYS rendered; focusing a region
-// (snowdesk:region-selected) moves it from 'no-region' to an actionable
-// state, independent of which overlay tiers (L1/L2) are toggled on. It is
-// never hidden: in the bottom-right stack a vanishing control would read
-// as a missing feature, and the stack's composition would shift under the
-// user on every select/deselect.
+// Show/size — the control is rendered whenever a region is focused
+// (snowdesk:region-selected moves it from 'no-region' to an actionable
+// state), independent of which overlay tiers (L1/L2) are toggled on.
+// Hidden until then via the same CSS sibling rule as its neighbour
+// #region-readout-action (#region-readout.has-region ~ …,
+// static/css/map.css) — back in the ribbon header a permanently-present
+// roundel with nothing focused would be the odd one out next to that
+// already-hidden-until-focused neighbour. The 'no-region' state stays in
+// the machine below for the rarer case of a focused region with no
+// computed download summary (properties.download is null).
 //
 // State (no-region/idle/busy/done/disabled/offline, data-download-state)
 // — idle/done are
@@ -5125,42 +5174,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Same-origin data-feed + active-basemap-style URL list — everything
-   * the download warms besides its own tile ranges. Mirrors
-   * SNOW-492/493's assembly (see the removed cacheNowInit for the full
-   * exclusion rationale re: favourites/community-reports) minus tile
-   * enumeration, which now comes from the fetched blob.
-   *
-   * @returns {string[]}
-   */
-  function _assembleFeedURLs() {
-    const mapEl = document.getElementById('map');
-    const urls = [];
-    const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
-    const addCountryFeeds = (base) => {
-      if (!base) return;
-      for (const code of enabledCountries) {
-        urls.push(base + '?country=' + code);
-      }
-    };
-    addCountryFeeds(mapEl.dataset.regionsUrl);
-    addCountryFeeds(mapEl.dataset.majorRegionsUrl);
-    addCountryFeeds(mapEl.dataset.subRegionsUrl);
-    if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
-    if (RATINGS_URL) {
-      for (const code of enabledCountries) {
-        urls.push(RATINGS_URL + '?country=' + code);
-      }
-    }
-    const activeBasemap = document.querySelector(
-      '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
-    );
-    if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
-    urls.push(...computeBasemapSpriteURLs(MAP));
-    return urls;
-  }
-
-  /**
    * Run the download: fetch the region's full blob, assemble the URL
    * list, and hand it to the SW's warm-cache handler.
    *
@@ -5202,7 +5215,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return;
     }
     const tileUrls = core.rangesToTileURLs(template, blob);
-    const urls = [..._assembleFeedURLs(), ...tileUrls];
+    const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
 
     const onProgress = (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -5276,6 +5289,698 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 
   if (currentRegionId) applyRegion(currentRegionId);
+})();
+
+// SNOW-522: "Download a custom area" — takes the bottom-right utility-stack
+// slot the per-region control (above) vacated when it moved back into the
+// ribbon header. Unlike that control there is no fixed region to size
+// ahead of time: clicking the roundel opens a framing overlay
+// (#map-frame-overlay, _map_embed.html) — a Google-Maps-style dim mask
+// with a fixed, centred frame. The user pans/zooms the map underneath it;
+// the live "up to N MB" readout is recomputed on every MapLibre 'move',
+// entirely client-side, via pwaBasemapDownloadCore.buildBlob
+// (static/js/basemap_download_core.js — see its header for why this tile
+// math is a deliberate re-port of the server-side module, not drift).
+//
+// Frame geometry — the frame's four corners (read from its own
+// getBoundingClientRect(), never a hardcoded size: the dimensions live in
+// CSS) are unprojected ALL FOUR, not just two opposite ones, and the bbox
+// is the min/max over the lot: MapLibre supports rotation, so a rotated
+// view makes the frame a non-axis-aligned quad on the map, and two
+// corners alone would under-cover it.
+//
+// Persistence — exactly one custom area exists at a time. A confirmed
+// download is saved to IndexedDB's meta:app store under
+// 'basemap.customArea', {bbox, band, centre_tile, savedAt} — the same
+// {key, value} row shape as basemap.origins (map.js:~450) and
+// mutations.principal. The roundel's "done" state is still PROBED, never
+// read off that row directly, exactly like the per-region control: real
+// BASEMAP_PINNED_CACHE contents (via the saved centre_tile) are the
+// source of truth for whether the area is actually downloaded — the
+// meta:app row only records WHERE the frame was. Clicking a 'done'
+// roundel re-opens framing at the saved area (MAP.fitBounds) rather than
+// re-downloading outright, so the user can move on from there.
+//
+// Evict-on-confirm — moving the frame and cancelling touches nothing.
+// Confirming a NEW bbox (one that differs from the saved one) first
+// deletes the OLD area's tiles from the pinned cache before warming the
+// new set — expanding the saved blob's ranges the same pure way a
+// download does (buildBlob is deterministic given bbox + band) and
+// calling cache.delete() on each URL, since sw.js has no per-entry-
+// deletion message (verified: its message handler covers only
+// version/SKIP_WAITING/register-basemap-origins/warm-cache — a page-side
+// caches.open() + delete() loop is the only option). Without this a
+// region download plus an abandoned custom area could together exceed
+// BASEMAP_PINNED_CACHE_MAX_ENTRIES (raised 2500 → 5000 in static/js/
+// sw.js, sized for exactly two concurrent pinned areas) and
+// _warmCache's own trim would silently evict whichever was older.
+//
+// Offline-integrity: mirrors mapDownloadControlInit's offline handling
+// exactly — neither opening the framing overlay nor confirming a download
+// is allowed while offline.
+(function mapCustomDownloadControlInit() {
+  const btn = document.getElementById('map-custom-download-control');
+  const overlayEl = document.getElementById('map-frame-overlay');
+  const frameAreaEl = document.getElementById('map-frame-area');
+  const frameRectEl = document.getElementById('map-frame-rect');
+  const readoutEl = document.getElementById('map-frame-readout');
+  const confirmBtn = document.getElementById('map-frame-confirm');
+  if (!btn || !overlayEl || !frameAreaEl || !frameRectEl || !readoutEl || !confirmBtn) {
+    return;
+  }
+
+  const CUSTOM_AREA_KEY = 'basemap.customArea';
+
+  // caches.keys() prefix match, not a hardcoded full cache name — same
+  // idiom (and same rationale) as mapDownloadControlInit's own copy of
+  // this constant, kept as a separate copy per that IIFE's convention of
+  // being a fully self-contained module (only assembleBasemapDownloadFeedURLs
+  // was lifted to module scope, deliberately — see its own comment).
+  const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+
+  // The persisted saved area, or null: {bbox, band, centre_tile, savedAt}.
+  let savedArea = null;
+
+  // The live bbox/blob for whatever the frame currently covers, while the
+  // overlay is open — null when it is closed.
+  let pendingBbox = null;
+  let pendingBlob = null;
+
+  // The 'move' listener registered while framing, so it can be removed on
+  // close. Null when not framing.
+  let moveHandler = null;
+
+  /**
+   * Open the (single) Cache Storage cache whose name starts with
+   * BASEMAP_PINNED_CACHE_PREFIX, or null if Cache Storage is unsupported
+   * or no such cache exists yet. Never throws — see
+   * mapDownloadControlInit's own copy for the full rationale.
+   *
+   * @returns {Promise<Cache | null>}
+   */
+  async function _openPinnedBasemapCache() {
+    if (!('caches' in window)) return null;
+    try {
+      const names = await caches.keys();
+      const name = names.find((n) => n.startsWith(BASEMAP_PINNED_CACHE_PREFIX));
+      return name ? await caches.open(name) : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  /**
+   * True when `centreTile` is present in the pinned cache — the
+   * done-probe proxy for "this custom area is downloaded". Returns `null`
+   * for "can't tell yet" (the active basemap's tile template isn't
+   * resolvable), exactly like mapDownloadControlInit's own probe.
+   *
+   * @param {{z: number, x: number, y: number}} centreTile
+   * @returns {Promise<boolean | null>}
+   */
+  async function _probeDone(centreTile) {
+    const core = self.pwaBasemapDownloadCore;
+    const template = activeBasemapTileTemplate(MAP);
+    if (!core || !template) return null;
+    const url = core.centreTileURL(template, { centre_tile: centreTile });
+    if (!url) return false;
+    const cache = await _openPinnedBasemapCache();
+    if (!cache) return false;
+    try {
+      return !!(await cache.match(url));
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * Paint `state` onto the roundel: data-download-state, the busy fill
+   * percentage, and an aria-label/title.
+   *
+   * @param {string} state - 'idle' | 'busy' | 'done' | 'offline'.
+   * @param {number} [pct] - Only meaningful for state 'busy'.
+   * @returns {void}
+   */
+  function setState(state, pct) {
+    btn.dataset.downloadState = state;
+    // 'idle' and 'done' both reopen framing on click (see the click
+    // handler below) — only 'busy' (a run is already going) and
+    // 'offline' are non-actionable.
+    btn.setAttribute(
+      'aria-disabled',
+      state === 'busy' || state === 'offline' ? 'true' : 'false',
+    );
+    if (state === 'busy') {
+      btn.style.setProperty('--download-progress', `${pct || 0}%`);
+    } else {
+      btn.style.removeProperty('--download-progress');
+    }
+    const text = {
+      idle: `Download a custom area's basemap`,
+      busy: `Downloading a custom area's basemap — ${pct || 0}%`,
+      done: `Custom area basemap downloaded — available offline`,
+      // Offline-integrity: no downloading of layers while offline.
+      offline: `Basemap download unavailable while offline`,
+    }[state];
+    btn.setAttribute('aria-label', text);
+    btn.title = text;
+  }
+
+  // True while a MAP 'idle' retry is already queued — see
+  // _retryWhenStyleSettles.
+  let styleSettleRetryPending = false;
+
+  /**
+   * Re-run renderControl the next time MapLibre goes idle — i.e. once the
+   * style (and so `activeBasemapTileTemplate`) has settled. Same
+   * rationale as mapDownloadControlInit's own copy: the done-probe needs
+   * a resolved basemap tile template, unavailable for the whole of boot.
+   *
+   * @returns {void}
+   */
+  function _retryWhenStyleSettles() {
+    if (styleSettleRetryPending) return;
+    if (!MAP || typeof MAP.once !== 'function') return;
+    styleSettleRetryPending = true;
+    MAP.once('idle', () => {
+      styleSettleRetryPending = false;
+      renderControl();
+    });
+  }
+
+  /**
+   * (Re)probe the roundel against the current savedArea. A stale async
+   * resolution (savedArea changed, or a run started, while the probe was
+   * in flight) is discarded rather than clobbering a newer state.
+   *
+   * @returns {Promise<void>}
+   */
+  async function renderControl() {
+    if (btn.dataset.downloadState === 'busy') return;
+    // Offline-integrity: an undownloaded area can't be fetched now, so it
+    // reads offline rather than actionable idle; an already-downloaded
+    // one still reads done (available offline, no fetch needed).
+    if (!savedArea) {
+      setState(navigator.onLine ? 'idle' : 'offline');
+      return;
+    }
+    const area = savedArea;
+    const done = await _probeDone(area.centre_tile);
+    if (savedArea !== area || btn.dataset.downloadState === 'busy') return;
+    if (done === null) {
+      setState(navigator.onLine ? 'idle' : 'offline');
+      _retryWhenStyleSettles();
+      return;
+    }
+    if (!navigator.onLine && !done) {
+      setState('offline');
+      return;
+    }
+    setState(done ? 'done' : 'idle');
+  }
+
+  /**
+   * Best-effort read of the persisted saved area from meta:app. Never
+   * throws — a read failure just leaves savedArea null, same as a first
+   * visit with nothing saved yet.
+   *
+   * @returns {Promise<void>}
+   */
+  async function _loadSavedArea() {
+    if (!window.pwaDb || typeof window.pwaDb.get !== 'function') return;
+    try {
+      const row = await window.pwaDb.get('meta:app', CUSTOM_AREA_KEY);
+      if (row && row.value && Array.isArray(row.value.bbox)) {
+        savedArea = row.value;
+      }
+    } catch (_err) {
+      // Best-effort — the control simply starts as if nothing were saved.
+    }
+  }
+
+  /**
+   * Best-effort persistence of `area` to meta:app, replacing whatever was
+   * there before — exactly one custom area exists at a time.
+   *
+   * @param {{bbox: number[], band: number[], centre_tile: Object, savedAt: string}} area
+   * @returns {void}
+   */
+  function _persistSavedArea(area) {
+    if (!window.pwaDb || typeof window.pwaDb.put !== 'function') return;
+    try {
+      window.pwaDb.put('meta:app', { key: CUSTOM_AREA_KEY, value: area }).catch(() => {});
+    } catch (_err) {
+      // Best-effort — the download itself already succeeded; only the
+      // "reopen at the saved area" convenience is lost this session.
+    }
+  }
+
+  /**
+   * Pixel padding (top/right/bottom/left) that fits MAP.fitBounds() to
+   * the frame rect's current on-screen position, rather than the whole
+   * map viewport — so re-opening at a saved area puts that area under
+   * the frame, not just somewhere on screen.
+   *
+   * @returns {{top: number, right: number, bottom: number, left: number} | null}
+   */
+  function _framePadding() {
+    if (!MAP || typeof MAP.getContainer !== 'function') return null;
+    const container = MAP.getContainer();
+    if (!container) return null;
+    const mapRect = container.getBoundingClientRect();
+    const frameRect = frameRectEl.getBoundingClientRect();
+    if (!mapRect.width || !mapRect.height) return null;
+    return {
+      top: Math.max(0, frameRect.top - mapRect.top),
+      right: Math.max(0, mapRect.right - frameRect.right),
+      bottom: Math.max(0, mapRect.bottom - frameRect.bottom),
+      left: Math.max(0, frameRect.left - mapRect.left),
+    };
+  }
+
+  /**
+   * The bbox currently under the frame: unproject all FOUR of its
+   * corners and take the min/max over the lot (see this IIFE's header
+   * comment for why two corners would under-cover a rotated view).
+   *
+   * @returns {[number, number, number, number] | null} [west, south,
+   *   east, north] in degrees, or null before the map is ready.
+   */
+  function _bboxFromFrame() {
+    const frameRect = frameRectEl.getBoundingClientRect();
+    return _bboxForBox(
+      frameRect.left + frameRect.width / 2,
+      frameRect.top + frameRect.height / 2,
+      frameRect.width,
+      frameRect.height,
+    );
+  }
+
+  /**
+   * The bbox a `width`x`height` box centred on viewport point (cx, cy)
+   * would cover. Pure projection maths — reads no DOM beyond the map's own
+   * offset and writes none, so the ceiling search below can evaluate a
+   * dozen candidate frame sizes without a single reflow.
+   *
+   * @param {number} cx - Centre x, in viewport pixels.
+   * @param {number} cy - Centre y, in viewport pixels.
+   * @param {number} width - Box width in pixels.
+   * @param {number} height - Box height in pixels.
+   * @returns {[number, number, number, number] | null} [west, south, east,
+   *   north] in degrees, or null before the map is ready.
+   */
+  function _bboxForBox(cx, cy, width, height) {
+    if (!MAP || typeof MAP.getContainer !== 'function') return null;
+    const container = MAP.getContainer();
+    if (!container) return null;
+    const mapRect = container.getBoundingClientRect();
+    const halfW = width / 2;
+    const halfH = height / 2;
+    const corners = [
+      [cx - halfW, cy - halfH],
+      [cx + halfW, cy - halfH],
+      [cx + halfW, cy + halfH],
+      [cx - halfW, cy + halfH],
+    ];
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const [vx, vy] of corners) {
+      const point = MAP.unproject([vx - mapRect.left, vy - mapRect.top]);
+      if (point.lng < west) west = point.lng;
+      if (point.lng > east) east = point.lng;
+      if (point.lat < south) south = point.lat;
+      if (point.lat > north) north = point.lat;
+    }
+    return [west, south, east, north];
+  }
+
+  /**
+   * The frame's full-size box — the centre of .map-frame-area and its
+   * content box, i.e. the gutter-inset rectangle the CSS allows. Read from
+   * the area rather than the frame itself so the frame's own (possibly
+   * capped) size never feeds back into the next measurement.
+   *
+   * @returns {{cx: number, cy: number, width: number, height: number} | null}
+   */
+  function _naturalFrameBox() {
+    if (!frameAreaEl) return null;
+    const rect = frameAreaEl.getBoundingClientRect();
+    const style = getComputedStyle(frameAreaEl);
+    const left = rect.left + parseFloat(style.paddingLeft || '0');
+    const right = rect.right - parseFloat(style.paddingRight || '0');
+    const top = rect.top + parseFloat(style.paddingTop || '0');
+    const bottom = rect.bottom - parseFloat(style.paddingBottom || '0');
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    if (!width || !height) return null;
+    return { cx: (left + right) / 2, cy: (top + bottom) / 2, width, height };
+  }
+
+  // Never shrink the frame below this fraction of its natural size. A
+  // frame smaller than this is not aimable, and reaching it means the
+  // ceiling cannot be met at this zoom at all — the over_ceiling backstop
+  // (a red readout and a disabled Download) then still applies, exactly as
+  // it did before the frame could shrink.
+  const MIN_FRAME_SCALE = 0.08;
+
+  /**
+   * Size the frame so its ground footprint never exceeds the download
+   * ceiling, and return the blob for the size chosen.
+   *
+   * Below the ceiling the frame fills its area and nothing is written. At
+   * the ceiling it stops growing and starts shrinking instead: because the
+   * ground area under one pixel quadruples with every zoom level out, the
+   * capped frame halves per level, so zooming out visibly contracts the
+   * frame around a fixed maximum area rather than letting the estimate run
+   * away and the readout go red.
+   *
+   * The first guess is analytic — cost is very nearly proportional to
+   * area, so `sqrt(ceiling / mb)` lands on or just under the cap — and the
+   * loop only mops up the error from tile quantisation, which makes the
+   * true boundary a step function rather than a smooth one.
+   *
+   * @returns {{bbox: [number, number, number, number], blob: Object} | null}
+   */
+  function _fitFrameToCeiling() {
+    const core = self.pwaBasemapDownloadCore;
+    const natural = _naturalFrameBox();
+    if (!core || !natural) return null;
+
+    const evaluate = (scale) => {
+      const bbox = _bboxForBox(
+        natural.cx,
+        natural.cy,
+        natural.width * scale,
+        natural.height * scale,
+      );
+      if (!bbox) return null;
+      return { bbox, blob: core.buildBlob(bbox, core.MICRO_BAND[0], core.MICRO_BAND[1]) };
+    };
+
+    let scale = 1;
+    let result = evaluate(scale);
+    if (!result) return null;
+
+    if (result.blob.mb > core.DOWNLOAD_CEILING_MB) {
+      scale = Math.max(
+        MIN_FRAME_SCALE,
+        Math.sqrt(core.DOWNLOAD_CEILING_MB / result.blob.mb),
+      );
+      for (let i = 0; i < 8; i++) {
+        const candidate = evaluate(scale);
+        if (!candidate) break;
+        result = candidate;
+        if (candidate.blob.mb <= core.DOWNLOAD_CEILING_MB) break;
+        if (scale <= MIN_FRAME_SCALE) break;
+        scale = Math.max(MIN_FRAME_SCALE, scale * 0.94);
+      }
+    }
+
+    if (scale < 1) {
+      frameRectEl.style.width = `${Math.round(natural.width * scale)}px`;
+      frameRectEl.style.height = `${Math.round(natural.height * scale)}px`;
+    } else {
+      // Back under the ceiling — hand sizing back to the stylesheet rather
+      // than pinning the frame at its natural pixel size, so a viewport
+      // resize keeps working.
+      frameRectEl.style.removeProperty('width');
+      frameRectEl.style.removeProperty('height');
+    }
+    return result;
+  }
+
+  /**
+   * Recompute pendingBbox/pendingBlob from the frame's current on-screen
+   * position and paint the readout. Cheap, local arithmetic
+   * (pwaBasemapDownloadCore.buildBlob) — called on every MapLibre 'move'
+   * with no debounce, which is the whole point of computing this
+   * client-side rather than round-tripping to the server on every pan.
+   *
+   * @returns {void}
+   */
+  function _updateReadout() {
+    const core = self.pwaBasemapDownloadCore;
+    // Sizing the frame and measuring it are the same step: the ceiling
+    // search already evaluated the box it settled on, so reuse its result
+    // rather than re-measuring the DOM it just wrote to (which would read
+    // back the pre-layout size on the same frame).
+    const fitted = core ? _fitFrameToCeiling() : null;
+    if (!core || !fitted) return;
+    pendingBbox = fitted.bbox;
+    pendingBlob = fitted.blob;
+    const overCeiling = pendingBlob.over_ceiling;
+    readoutEl.textContent = overCeiling
+      ? `Area too large to download (over ${core.DOWNLOAD_CEILING_MB} MB)`
+      : `Up to ${pendingBlob.mb} MB`;
+    readoutEl.classList.toggle('map-frame-readout--over-ceiling', overCeiling);
+    // Offline-integrity: never let the CTA's own Download button start a
+    // run while offline, even if the roundel that opened framing read
+    // idle at the time (a connectivity change mid-session).
+    confirmBtn.disabled = overCeiling || !navigator.onLine;
+  }
+
+  /**
+   * Convert a bbox [west, south, east, north] to MapLibre's fitBounds
+   * shape [[west, south], [east, north]].
+   *
+   * @param {[number, number, number, number]} bbox
+   * @returns {[[number, number], [number, number]]}
+   */
+  function _boundsFromBBox(bbox) {
+    const [west, south, east, north] = bbox;
+    return [[west, south], [east, north]];
+  }
+
+  /**
+   * Open the framing overlay: reveal it, move the map so the saved area
+   * (if one exists) lands under the frame, and start tracking the live
+   * readout on every 'move'.
+   *
+   * @returns {void}
+   */
+  function openFraming() {
+    if (!MAP) return;
+    overlayEl.removeAttribute('hidden');
+    // Strip the map furniture that has nothing to do with the area being
+    // framed — the region readout names a region the download does not
+    // follow, and the date ribbon/scrubber describe a day. Both would
+    // otherwise sit lit inside the cutout and read as part of the
+    // selection. Driven by a body class rather than per-element hidden
+    // attributes so each owner module keeps sole control of its own
+    // visibility state (see .map-framing in static/css/map.css).
+    document.body.classList.add('map-framing');
+    // Drop any cap left on the frame by the previous open, so _framePadding
+    // below measures the natural gutter rather than a shrunken frame from a
+    // zoom level the map is no longer at. _updateReadout re-applies the cap
+    // for the view we actually land on.
+    frameRectEl.style.removeProperty('width');
+    frameRectEl.style.removeProperty('height');
+    if (savedArea && Array.isArray(savedArea.bbox)) {
+      const options = { animate: false };
+      const padding = _framePadding();
+      if (padding) options.padding = padding;
+      MAP.fitBounds(_boundsFromBBox(savedArea.bbox), options);
+    }
+    _updateReadout();
+    moveHandler = () => _updateReadout();
+    MAP.on('move', moveHandler);
+  }
+
+  /**
+   * Stop tracking the frame (removes the 'move' listener) and clear the
+   * pending bbox/blob. Does NOT hide the overlay itself — the Cancel path
+   * (overlays.js's shared dismiss handler) already hid it before
+   * dispatching overlay:dismissed; the post-download path hides it
+   * explicitly in _closeFramingAfterRun below.
+   *
+   * @returns {void}
+   */
+  function _teardownFraming() {
+    // Restores the furniture openFraming stripped. Lives here rather than
+    // beside each hide because BOTH close paths (the shared overlays.js
+    // dismiss handler and _closeFramingAfterRun) funnel through this
+    // function — putting it anywhere else leaves one of them stripped.
+    document.body.classList.remove('map-framing');
+    if (moveHandler && MAP) {
+      MAP.off('move', moveHandler);
+    }
+    moveHandler = null;
+    pendingBbox = null;
+    pendingBlob = null;
+  }
+
+  /**
+   * Close the overlay once a confirmed download run has settled (success
+   * or failure) — the roundel itself carries the outcome (mirroring
+   * mapDownloadControlInit's "no toast" convention), so there is nothing
+   * further for the CTA bar to show.
+   *
+   * @returns {void}
+   */
+  function _closeFramingAfterRun() {
+    overlayEl.setAttribute('hidden', '');
+    _teardownFraming();
+  }
+
+  /**
+   * Whether two bboxes describe the same area, to a tolerance tight
+   * enough to absorb floating-point noise from repeated
+   * unproject()/fitBounds() round trips but loose enough that "the user
+   * didn't touch the map" always reads as unchanged.
+   *
+   * @param {number[] | null | undefined} a
+   * @param {number[] | null | undefined} b
+   * @returns {boolean}
+   */
+  function _bboxesEqual(a, b) {
+    if (!a || !b) return false;
+    for (let i = 0; i < 4; i++) {
+      if (Math.abs(a[i] - b[i]) > 1e-6) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Delete `area`'s previously-warmed tiles from the pinned cache —
+   * evict-on-confirm. There is no service-worker message for per-entry
+   * deletion (sw.js's message handler covers only version/SKIP_WAITING/
+   * register-basemap-origins/warm-cache), so this re-derives the exact
+   * same tile URLs a download of `area` would have warmed — buildBlob is
+   * a pure function of bbox + band, so it reproduces the same ranges —
+   * and deletes them from the page side.
+   *
+   * @param {{bbox: number[], band: number[]}} area
+   * @param {string} template
+   * @returns {Promise<void>}
+   */
+  async function _evictArea(area, template) {
+    const core = self.pwaBasemapDownloadCore;
+    if (!core || !template) return;
+    const cache = await _openPinnedBasemapCache();
+    if (!cache) return;
+    const staleBlob = core.buildBlob(area.bbox, area.band[0], area.band[1]);
+    const staleUrls = core.rangesToTileURLs(template, staleBlob);
+    await Promise.all(staleUrls.map((url) => cache.delete(url).catch(() => {})));
+  }
+
+  /**
+   * Run the confirmed download: evict the previous saved area's tiles if
+   * the framed bbox has moved, assemble the URL list, and hand it to the
+   * SW's warm-cache handler — mirrors mapDownloadControlInit's
+   * handleClick, sharing its assembleBasemapDownloadFeedURLs helper.
+   *
+   * @returns {Promise<void>}
+   */
+  async function handleConfirm() {
+    if (!pendingBbox || !pendingBlob || pendingBlob.over_ceiling) return;
+    // Offline-integrity: never start a download offline, even if a race
+    // left the button enabled at the moment of the click.
+    if (!navigator.onLine) {
+      setState('offline');
+      return;
+    }
+    const blob = pendingBlob;
+    const bbox = pendingBbox;
+    setState('busy', 0);
+
+    const core = self.pwaBasemapDownloadCore;
+    const template = activeBasemapTileTemplate(MAP);
+    // No tile template (style still settling) means no tiles to warm, and
+    // a feeds-only run must never claim done — the area would not in fact
+    // be available offline. Revert to idle so the user can retry.
+    if (!core || !template) {
+      setState('idle');
+      _closeFramingAfterRun();
+      return;
+    }
+
+    if (savedArea && !_bboxesEqual(savedArea.bbox, bbox)) {
+      await _evictArea(savedArea, template);
+    }
+
+    const tileUrls = core.rangesToTileURLs(template, blob);
+    const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
+
+    const onProgress = (done, total) => {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      setState('busy', pct);
+    };
+
+    const finish = (result) => {
+      // The roundel carries the outcome — no toast, mirroring
+      // mapDownloadControlInit. "done" requires at least one success and
+      // no failures; a partial, vacuous, or absent result reverts to
+      // idle so the user can retry, rather than claiming the area is
+      // downloaded.
+      if (result && result.ok > 0 && result.failed === 0) {
+        savedArea = {
+          bbox: bbox,
+          band: blob.band,
+          centre_tile: blob.centre_tile,
+          savedAt: new Date().toISOString(),
+        };
+        _persistSavedArea(savedArea);
+        setState('done');
+      } else {
+        setState('idle');
+      }
+      _closeFramingAfterRun();
+      // SNOW-505/522: the warm-cache run has just warmed the shell +
+      // pinned basemap caches; re-probe every sync dot against real
+      // cache state, mirroring mapDownloadControlInit's own post-run
+      // refresh — the layers menu is a live cache-state dashboard.
+      window.pwaLayerSyncStatus?.refresh();
+    };
+
+    if (typeof window.pwaWarmCache === 'function') {
+      window.pwaWarmCache(urls, { pinned: true, onProgress }).then(finish).catch(() => finish(null));
+    } else {
+      finish(null);
+    }
+  }
+
+  btn.addEventListener('click', () => {
+    if (btn.dataset.downloadState === 'busy') return;
+    // Offline-integrity: never open framing while offline — there would
+    // be nothing useful to do once inside it.
+    if (!navigator.onLine) {
+      setState('offline');
+      return;
+    }
+    openFraming();
+  });
+
+  confirmBtn.addEventListener('click', () => handleConfirm());
+
+  // Cancel goes through overlays.js's shared [data-action="dismiss"]
+  // handler (it already hid the overlay and dispatched this event by the
+  // time this listener runs) — teardown-only here, matching this IIFE's
+  // header comment.
+  document.addEventListener('overlay:dismissed', (e) => {
+    if (e.detail && e.detail.overlay === overlayEl) {
+      _teardownFraming();
+    }
+  });
+
+  // Per-basemap download state — see mapDownloadControlInit's own
+  // identical listener for the full rationale (the done-probe keys off
+  // the ACTIVE basemap's tile template).
+  document.addEventListener('snowdesk:basemap-changed', () => renderControl());
+
+  // Offline-integrity: re-render the roundel, and re-validate the open
+  // CTA's Download button, on every connectivity transition.
+  document.addEventListener('snowdesk:connectivity-changed', () => {
+    renderControl();
+    if (pendingBbox) _updateReadout();
+  });
+
+  // Boot: read the persisted saved area (independent of MAP — meta:app
+  // is a plain IndexedDB read), then probe it against real cache state
+  // once the map (and so the active basemap's tile template) is ready.
+  _loadSavedArea().then(() => renderControl());
+  MAP_READY_PROMISE.then(() => renderControl());
 })();
 
 // SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers

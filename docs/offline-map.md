@@ -1,8 +1,8 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, Download basemap, offline layers-menu gating, micro-region L4 recovery
+description: PWA shell — sw.js, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, Download basemap, custom-area download, offline layers-menu gating
 status: current
-last-reviewed: 2026-07-26
+last-reviewed: 2026-07-30
 ---
 
 # PWA shell
@@ -422,12 +422,8 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
 SNOW-492) is a **single-region download** — one control
 (`#map-download-control`) for the focused MICRO (leaf) region, rendered by
-`public/partials/_map_download_control.html` into the bottom-right control
-stack (`#map-controls-br`), beside the layers pill. It sat in the
-`#region-readout` chip in `_season_ribbon.html` until it was moved next to
-the layers menu — that menu is the cache-state dashboard, and this is the
-other control that writes to the same cache. This is the third shape of the SNOW-521
-rework: the first pass was a viewport-anchored docked bar
+`public/partials/_map_download_control.html`. This is the third shape of
+the SNOW-521 rework: the first pass was a viewport-anchored docked bar
 (`#cache-now-toggle` / `#basemap-download-bar`), which required zooming in
 tight before the viewport was small enough to accept; the second pass added
 one icon per breadcrumb tier (Major/Minor/Micro), which was dropped because
@@ -436,6 +432,22 @@ non-monotonic with containment (an L1 region could read smaller than an L2
 it contains) — read as a bug rather than a feature. The icon carries its
 own outcome (a green "available offline" circle on success) — there is no
 completion toast.
+
+The control has moved twice. SNOW-521 rendered it into the bottom-right
+control stack (`#map-controls-br`), beside the layers pill — that menu is
+the cache-state dashboard, and this was the other control that writes to
+the same cache — and made it permanently present (an inert `no-region`
+state with nothing focused) so the stack's composition never shifted
+under the user. **SNOW-522 moved it back** into the `#region-readout`
+chip in `_season_ribbon.html` — its original SNOW-314 home — and handed
+the bottom-right slot to a second, distinct control: a user-framed
+**custom-area download** (below). Back in the header it is
+hidden-until-focused again, via the same `#region-readout.has-region ~ …`
+CSS sibling rule as its neighbour `#region-readout-action`
+(`static/css/map.css`) — a permanently-present roundel next to an
+already-hidden-until-focused one would have been the odd one out. The
+`no-region` state stays in the machine for the rarer case of a focused
+region with no computed download summary.
 
 Region boundaries are fixed reference data and the basemap tile grid is
 static, so each region's tile coverage never changes — it's
@@ -450,10 +462,7 @@ serves the full blob (incl. tile ranges) on demand.
 **Show/size** — `static/js/map.js`'s `mapDownloadControlInit` reads the
 region's summary straight off `FEATURE_BY_REGION_ID[regionId].properties.
 download` (already loaded via `regions.geojson` — no extra fetch). The
-control is **always rendered**: with nothing focused it holds the inert
-`no-region` state rather than hiding, so the stack's composition never
-shifts under the user and a control they cannot see never reads as a
-missing feature. Focusing a region makes it actionable, independent of
+control is rendered whenever a region is focused, independent of
 which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
 (a 200 MB backstop against a pathologically large micro-region) shows a
 `disabled` control rather than starting an unbounded run.
@@ -532,21 +541,133 @@ region painted `idle` until the user reselected the region.
 tiles from a deliberate download serve offline. The passive path never writes to
 or trims the pinned partition — that is exclusively `_warmCache`'s pinned path.
 
-`static/js/basemap_download_core.js` is now two pure functions —
-`rangesToTileURLs(template, blob)` and `centreTileURL(template,
-summary)` — unit-tested directly without a MapLibre instance. Every
-other pure tile-math helper it used to hold (`zoomBand`,
-`enumerateTileURLs`, `estimateBytes`, `formatUpToMB`, and the underlying
-`_lonToTileX`/`_latToTileY` slippy-map math) moved server-side to
-`apps/regions/services/basemap_tiles.py` — region geometry lives in the
-database, and each region's tile coverage is static, so precomputing it
-once beats re-deriving the same numbers in every client on every
-viewport move.
+`static/js/basemap_download_core.js` holds `rangesToTileURLs(template,
+blob)` and `centreTileURL(template, summary)` — the two functions every
+download (region or custom-area) shares — unit-tested directly without a
+MapLibre instance. The zoom-band/tile-enumeration/byte-estimate helpers it
+used to hold (`zoomBand`, `enumerateTileURLs`, `estimateBytes`,
+`formatUpToMB`, and the underlying `_lonToTileX`/`_latToTileY` slippy-map
+math) moved server-side to `apps/regions/services/basemap_tiles.py` for
+the *region* download — region geometry lives in the database and each
+region's tile coverage is static, so precomputing it once beats
+re-deriving the same numbers in every client on every viewport move. SNOW-522
+(below) re-introduces that same tile math client-side, deliberately, for a
+second reason entirely: a user-drawn bbox has no stable ID to precompute
+against server-side.
 
 **Known gap** — tile ranges cover each region's rectangular bbox, not
 its exact polygon; some tiles just outside the boundary are included
 (coarser tiers over-include more). Simple and compact; polygon-clipping
 at build time is a possible future refinement, not built.
+
+### Custom-area download (SNOW-522)
+
+A second, distinct control — `#map-custom-download-control`, rendered by
+`public/partials/_map_custom_download_control.html` into the bottom-right
+stack the per-region control vacated (above). Unlike that control, there
+is no fixed region to size ahead of time: clicking it opens a **framing
+overlay** (`#map-frame-overlay`, `public/partials/_map_embed.html`) — a
+Google-Maps-style dim mask with a fixed frame that the user pans/zooms the
+map underneath, with a live "up to N MB" readout and a Cancel/Download CTA
+sheet.
+
+**Layout.** The overlay is `position: absolute` inside `#map`, not fixed to
+the viewport: that scopes the frame, the dim mask and the sheet to the map,
+and `#map`'s `overflow: hidden` clips the mask's 9999px spread so the site
+header and footer stay undimmed. It lays out as a column — the frame takes
+every pixel the sheet does not, so the two are physically adjacent rather
+than two objects floating apart, and the full-bleed sheet covers the season
+scrubber beneath it.
+
+**The frame shrinks to hold the area at the ceiling.** Rather than letting
+the estimate run past `DOWNLOAD_CEILING_MB` and turning the readout red,
+`_fitFrameToCeiling` caps the frame's *pixel* size so its ground footprint
+sticks at the maximum. Ground area per pixel quadruples with every zoom
+level out, so the capped frame halves in size per level — zooming out
+visibly contracts the frame around a fixed maximum area (the Google Maps
+behaviour). The first guess is analytic (`sqrt(ceiling / mb)`, since cost is
+very nearly proportional to area) and a short loop mops up the error from
+tile quantisation, which makes the true boundary a step function.
+
+Below the ceiling nothing is written and `.map-frame-rect` fills
+`.map-frame-area` (which owns the gutter) under stylesheet control; the cap
+is applied and cleared as inline `width`/`height`, so a viewport resize
+keeps working. `MIN_FRAME_SCALE` (0.08) stops the frame shrinking to an
+unaimable dot; it only binds at the map's own minimum zoom, and past it the
+original `over_ceiling` backstop — red readout, disabled Download — still
+applies.
+
+**Furniture is stripped while framing.** `openFraming` adds
+`.map-framing` to `<body>`; `static/css/map.css` hides `#season-ribbon`,
+`#map-date-ribbon`, `#map-utility-cluster`, `#map-controls-br` and
+`#map-legend` for the duration. Framing is a modal act with exactly two
+answers, both on the sheet, so every control that steers the map for some
+other purpose is noise — and each one would otherwise sit lit inside the
+cutout, reading as part of the area being chosen. The class is removed in
+`_teardownFraming`, which both close paths (the shared `overlays.js`
+dismiss handler and `_closeFramingAfterRun`) funnel through, so the
+furniture cannot be left stripped. Pan and zoom are untouched — they are
+the whole interaction. Covered by
+`tests/e2e/test_custom_download_area.py::test_framing_strips_the_map_furniture_and_cancel_restores_it`.
+
+**The size estimate is computed entirely client-side**, not via a new
+endpoint — this is the reason `basemap_download_core.js`'s tile math
+(`lonLatToTile`, `tileRangesForBBox`, `tileCount`, `centreTile`,
+`buildBlob`) exists again after SNOW-521 moved it server-side: a
+user-drawn bbox is not precomputable the way a region's fixed boundary
+is, and a readout that has to track a moving frame on every pan/zoom
+cannot pay a network round trip per frame. `buildBlob` is a deliberate
+re-port of `apps/regions/services/basemap_tiles.py::build_blob`, kept
+honest against the Python by a shared golden vector asserted in both
+`tests/js/test_basemap_download_core.js` and
+`tests/regions/services/test_basemap_tiles.py` — see
+[`docs/decisions/client-side-custom-area-tile-math.md`](decisions/client-side-custom-area-tile-math.md)
+for the full rationale and why that guard is a convention, not a
+mechanism.
+
+**Frame geometry** — `static/js/map.js`'s `mapCustomDownloadControlInit`
+reads the frame's four corners off its own `getBoundingClientRect()`
+(never a hardcoded size), unprojects **all four** (not just two opposite
+corners) via `MAP.unproject()`, and takes the min/max lon/lat over the
+lot. Two corners alone would under-cover a rotated view — MapLibre
+supports map rotation, which turns the frame into a non-axis-aligned quad
+on the ground. The readout recomputes on every MapLibre `'move'` event,
+with no debounce, since it is pure local arithmetic.
+
+**Persistence — exactly one custom area at a time.** A confirmed download
+is saved to IndexedDB's `meta:app` store under the key
+`basemap.customArea` (see
+[`indexeddb-scaffolding.md`](indexeddb-scaffolding.md) for the row
+shape) — the same `{key, value}` shape as `basemap.origins` and
+`mutations.principal`. The roundel's `done` state is still **probed**,
+never read off that row directly: exactly like the per-region control,
+real `BASEMAP_PINNED_CACHE` contents (via the saved `centre_tile`) are
+the source of truth for whether the area is actually downloaded — the
+`meta:app` row only records *where* the frame was. Clicking a `done`
+roundel re-opens framing at the saved area (`MAP.fitBounds`, padded to
+land the saved bbox under the frame) rather than re-downloading outright.
+
+**Evict-on-confirm.** Moving the frame and clicking Cancel touches
+nothing. Confirming a bbox that differs from the currently-saved one
+first deletes the *old* area's tiles from the pinned cache before
+warming the new set — expanding the saved blob's ranges the same pure
+way a download does (`buildBlob` is deterministic given `bbox` + `band`)
+and calling `cache.delete()` on each URL, since `sw.js` has no
+per-entry-deletion message (its `message` handler covers only
+`version`/`SKIP_WAITING`/`register-basemap-origins`/`warm-cache`) — a
+page-side `caches.open()` + `delete()` loop is the only option. Without
+this, a region download plus an abandoned custom area could together
+exceed `BASEMAP_PINNED_CACHE_MAX_ENTRIES` (raised 2500 → 5000 for
+exactly this reason — it is now sized for **two** concurrent pinned
+areas, one region and one custom, not one) and `_warmCache`'s own trim
+would silently evict whichever was older.
+
+On completion (success or failure), `window.pwaLayerSyncStatus?.refresh()`
+runs — same as the per-region control — so the layers-menu sync dots
+reflect the newly-warmed (or unchanged) cache state, and the framing
+overlay closes: the roundel itself carries the outcome, no toast.
+Offline-integrity mirrors the per-region control exactly: neither opening
+framing nor confirming a download is allowed while offline.
 
 ## Offline gating of the layers menu
 
