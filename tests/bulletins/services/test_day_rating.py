@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import datetime
 from datetime import UTC
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -55,7 +56,9 @@ from apps.bulletins.services.day_rating import (
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
     apply_bulletin_day_ratings,
+    day_rating_pairs,
     recompute_region_day,
+    refresh_day_ratings,
     target_day_for_valid_from,
 )
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
@@ -865,6 +868,113 @@ class TestApplyBulletinDayRatings:
             region=region_bad, date=target
         ).exists()
         ok_row = RegionDayRating.objects.get(region=region_ok, date=target)
+        assert ok_row.max_rating == "high"
+
+
+# ---------------------------------------------------------------------------
+# day_rating_pairs / refresh_day_ratings — the extracted batch-command helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDayRatingPairs:
+    """Tests for day_rating_pairs()."""
+
+    def test_collects_one_pair_per_linked_region(self) -> None:
+        """A bulletin linked to two regions contributes two pairs."""
+        region_a = MicroRegionFactory.create(region_id="CH-3001")
+        region_b = MicroRegionFactory.create(region_id="CH-3002")
+        vf = datetime.datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 1, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(region_a, vf, vt)
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region_b, region_name_at_time=region_b.name
+        )
+
+        pairs = day_rating_pairs([bulletin])
+
+        assert pairs == {
+            (region_a, datetime.date(2026, 3, 1)),
+            (region_b, datetime.date(2026, 3, 1)),
+        }
+
+    def test_deduplicates_pairs_across_bulletins(self) -> None:
+        """Two bulletins covering the same (region, day) yield a single pair."""
+        region = MicroRegionFactory.create(region_id="CH-3003")
+        vf = datetime.datetime(2026, 3, 2, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 2, 17, 0, tzinfo=UTC)
+        first = _make_bulletin_for_region(region, vf, vt)
+        second = _make_bulletin_for_region(region, vf, vt)
+
+        pairs = day_rating_pairs([first, second])
+
+        assert pairs == {(region, datetime.date(2026, 3, 2))}
+
+    def test_falls_back_to_target_day_for_valid_from_when_unbackfilled(self) -> None:
+        """A row with no stored target_date derives its day from valid_from."""
+        region = MicroRegionFactory.create(region_id="CH-3004")
+        vf = datetime.datetime(2026, 3, 3, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 3, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(region, vf, vt)
+        # Simulate a pre-SNOW-560 row that was never backfilled.
+        Bulletin.objects.filter(pk=bulletin.pk).update(target_date=None)
+        bulletin.refresh_from_db()
+
+        pairs = day_rating_pairs([bulletin])
+
+        assert pairs == {(region, target_day_for_valid_from(vf))}
+
+
+@pytest.mark.django_db
+class TestRefreshDayRatings:
+    """Tests for refresh_day_ratings()."""
+
+    def test_recomputes_every_pair(self) -> None:
+        """Each (region, day) pair is written via recompute_region_day."""
+        region = MicroRegionFactory.create(region_id="CH-3005")
+        vf = datetime.datetime(2026, 3, 4, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 4, 17, 0, tzinfo=UTC)
+        _make_bulletin_for_region(
+            region, vf, vt, traits=[_trait(3, "dry")], headline_key="considerable"
+        )
+
+        failures = refresh_day_ratings({(region, datetime.date(2026, 3, 4))})
+
+        assert failures == 0
+        rating = RegionDayRating.objects.get(
+            region=region, date=datetime.date(2026, 3, 4)
+        )
+        assert rating.max_rating == "considerable"
+
+    def test_counts_failures_without_aborting_remaining_pairs(self) -> None:
+        """A recompute failure for one pair does not stop the others."""
+        region_bad = MicroRegionFactory.create(region_id="CH-3006")
+        region_ok = MicroRegionFactory.create(region_id="CH-3007")
+        vf = datetime.datetime(2026, 3, 5, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 5, 17, 0, tzinfo=UTC)
+        _make_bulletin_for_region(
+            region_ok, vf, vt, traits=[_trait(4, "dry")], headline_key="high"
+        )
+        day = datetime.date(2026, 3, 5)
+
+        original = recompute_region_day
+
+        def _fail_only_bad_region(
+            region: Any, target_day: Any, *, commit: bool
+        ) -> None:
+            """Raise for region_bad; delegate to the real function otherwise."""
+            if region.pk == region_bad.pk:
+                raise ValueError("boom")
+            original(region, target_day, commit=commit)
+
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day",
+            side_effect=_fail_only_bad_region,
+        ):
+            failures = refresh_day_ratings({(region_bad, day), (region_ok, day)})
+
+        assert failures == 1
+        ok_row = RegionDayRating.objects.get(region=region_ok, date=day)
         assert ok_row.max_rating == "high"
 
 

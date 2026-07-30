@@ -80,17 +80,53 @@ means a crop bound has regressed.
 
 ## Then load it
 
-```bash
-uv run python manage.py rekey_meteofrance_bulletins --commit
-```
+`rekey_meteofrance_bulletins --commit` **cannot** be the first step against a
+database that already holds a full season of pre-SNOW-559 rows: it derives the
+new id from each row's own `raw_data`, and none of those rows carry a
+publication timestamp, so every one fails with "no publication timestamp" and
+the command exits non-zero on the first row. Load first, purge second — see
+[`meteofrance-archive-replace-not-merge`](../decisions/meteofrance-archive-replace-not-merge.md)
+for why that ordering (not delete-first, not re-keying) is the only safe one.
 
-Re-keys any rows still on the old `FR-{NN}-{covered date}` identifier. Idempotent
-and read-only without `--commit`. Then load the rebuilt archive — via the Django
-admin upload view or `scripts/meteofrance-archive/load_archive.py` — which
-creates the issues that the old identifier had been overwriting.
+1. **Load the rebuilt archive** — via the Django admin upload view or
+   `scripts/meteofrance-archive/load_archive.py`. Old-grammar and new-grammar
+   rows now coexist; the calendar and map briefly show duplicate massif-days.
 
-Watch the load summary for `id-collision`: it should be `0`. `duplicate` should
-be 32 for the full archive.
+   Watch the load summary for `id-collision`: it should be `0`. `duplicate`
+   should be 32 for the full archive.
+
+2. **Assert the post-load count.** `Bulletin.objects.filter(bulletin_id__regex=r"^FR-\d{2}-\d{4}-\d{2}-\d{2}-\d{14}$").count()`
+   should be **4,639** — the distinct new-grammar ids from
+   [`meteofrance-bulletin-identity`](../decisions/meteofrance-bulletin-identity.md).
+   A lower count means the load did not finish; re-run it before purging.
+
+3. **Purge dry-run** — reports the per-massif candidate/replaceable/unreplaced
+   table without deleting anything:
+
+   ```bash
+   uv run python manage.py purge_legacy_meteofrance_bulletins
+   ```
+
+   This must report `unreplaced=0` everywhere. A non-zero `unreplaced` count
+   means step 2's assertion should have caught an incomplete load — investigate
+   before proceeding; the command will refuse to delete an unreplaced
+   candidate regardless.
+
+4. **Purge, persisting:**
+
+   ```bash
+   uv run python manage.py purge_legacy_meteofrance_bulletins --commit
+   ```
+
+   Deletes every old-grammar row that has a new-grammar replacement, then
+   recomputes `RegionDayRating` for every touched (region, day) pair. Exits
+   non-zero if any candidate is unreplaced, if a live `BulletinShare`
+   references a candidate (pass `--allow-orphaned-shares` to override), or if
+   a day-rating recompute fails.
+
+After step 4, `Bulletin.objects.filter(bulletin_id__startswith="FR-").count()`
+should equal the 4,639 asserted in step 2 — every French bulletin now on the
+new grammar, no duplicates.
 
 ## Reproducibility
 

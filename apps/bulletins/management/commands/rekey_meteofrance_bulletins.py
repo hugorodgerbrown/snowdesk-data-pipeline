@@ -46,7 +46,6 @@ Typical use::
 
 from __future__ import annotations
 
-import datetime
 import logging
 from argparse import ArgumentParser
 from typing import Any
@@ -56,8 +55,8 @@ from django.db import IntegrityError, transaction
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import (
-    recompute_region_day,
-    target_day_for_valid_from,
+    day_rating_pairs,
+    refresh_day_ratings,
 )
 from apps.bulletins.services.meteofrance_identity import (
     BULLETIN_ID_RE,
@@ -295,6 +294,10 @@ class Command(BaseCommand):
     ) -> int:
         """Recompute RegionDayRating for every (region, day) touched.
 
+        Thin wrapper over ``day_rating.day_rating_pairs`` /
+        ``day_rating.refresh_day_ratings`` — this command supplies only its
+        own stdout reporting.
+
         Args:
             bulletins: Bulletins whose day ratings should be refreshed.
             verbosity: Django's ``--verbosity``; ``0`` suppresses progress
@@ -304,29 +307,13 @@ class Command(BaseCommand):
             The number of (region, day) pairs that failed to recompute.
 
         """
-        pairs: set[tuple[Any, datetime.date]] = set()
-        for bulletin in bulletins:
-            # Prefer the stored column (SNOW-560); fall back to deriving it for
-            # any row ingested before that migration backfilled it.
-            day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
-            for region in bulletin.regions.all():
-                pairs.add((region, day))
+        pairs = day_rating_pairs(bulletins)
 
         if verbosity:
             self.stdout.write(
                 f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
             )
-        failures = 0
-        for region, day in pairs:
-            try:
-                recompute_region_day(region, day, commit=True)
-            except Exception:
-                failures += 1
-                logger.exception(
-                    "Failed to refresh day rating for region=%s day=%s",
-                    region.region_id,
-                    day,
-                )
+        failures = refresh_day_ratings(pairs)
         if verbosity:
             self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
         return failures

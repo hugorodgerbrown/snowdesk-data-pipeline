@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Iterable
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
@@ -690,6 +691,64 @@ def recompute_region_day(
         pm_key,
         source_str,
     )
+
+
+def day_rating_pairs(
+    bulletins: Iterable["Bulletin"],
+) -> set[tuple["MicroRegion", date]]:
+    """
+    Return the distinct (region, target day) pairs touched by ``bulletins``.
+
+    Each bulletin's target day is read from ``bulletin.target_date``, falling
+    back to :func:`target_day_for_valid_from` for any un-backfilled row
+    (SNOW-560). Crossed with every region the bulletin is linked to via
+    ``RegionBulletin``, so a bulletin covering several regions contributes one
+    pair per region.
+
+    Shared by every management command that needs to refresh RegionDayRating
+    after a batch mutation (re-keying, reformatting, purging) — collect the
+    pairs before the mutation touches the bulletins' region links, then pass
+    them to :func:`refresh_day_ratings`.
+
+    Args:
+        bulletins: Bulletins whose (region, day) pairs should be collected.
+
+    Returns:
+        A set of ``(region, day)`` tuples, deduplicated across bulletins.
+
+    """
+    pairs: set[tuple["MicroRegion", date]] = set()
+    for bulletin in bulletins:
+        day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
+        for region in bulletin.regions.all():
+            pairs.add((region, day))
+    return pairs
+
+
+def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
+    """
+    Recompute RegionDayRating for every (region, day) pair supplied.
+
+    Args:
+        pairs: (region, day) tuples, typically produced by
+            :func:`day_rating_pairs`.
+
+    Returns:
+        The number of pairs that failed to recompute.
+
+    """
+    failures = 0
+    for region, day in pairs:
+        try:
+            recompute_region_day(region, day, commit=True)
+        except Exception:
+            failures += 1
+            logger.exception(
+                "Failed to refresh day rating for region=%s day=%s",
+                region.region_id,
+                day,
+            )
+    return failures
 
 
 def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
