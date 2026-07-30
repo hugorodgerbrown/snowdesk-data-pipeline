@@ -1671,12 +1671,16 @@
     box-shadow: var(--shadow-glass);
     border-radius: 12px;
     padding: 20px 22px;
-    /* SNOW-535: widened from 320px — the two-paragraph copy this now carries
-       read as cramped at the old width. See the min-width:960px rule below
-       for the further widen + two-column tagline layout at a wide viewport,
-       which is also what keeps the card short enough there to clear the
-       bottom-left (i) legend toggle (tests/e2e/test_map_bottom_bar.py). */
-    max-width: 380px;
+    /* SNOW-535: widened from 320px — the two-paragraph copy this carries read
+       as cramped at the old width. The card must also stay short enough to
+       clear the bottom-left (i) legend toggle (tests/e2e/test_map_bottom_bar.py).
+
+       The min() caps the card against the viewport so it never runs under the
+       right-anchored utility cluster: at 412px the flat 380px card spanned
+       x 16–396 while #basemap-toggle sits at x 360–400, so the card won the
+       hit test and the toggle could not be clicked. 96px = the 16px left
+       offset + the cluster's 44px column + 36px of breathing room. */
+    max-width: min(380px, calc(100vw - 96px));
     color: var(--color-text-1);
     font-family: var(--sans);
 }
@@ -1710,26 +1714,10 @@
     margin: 0 0 12px;
 }
 
-/* SNOW-535: wide viewport — widen the card further and lay the two tagline
-   paragraphs out side by side rather than stacked, which shortens the card
-   noticeably (the height that grew tall enough to cover the bottom-left (i)
-   legend toggle at common desktop viewport sizes). 960px mirrors
-   --breakpoint-desktop in src/css/main.css's @theme — repeated literally
-   because CSS custom properties cannot be read inside an @media feature. */
-@media (min-width: 960px) {
-    .home-intro-card {
-        max-width: 640px;
-    }
-
-    .home-intro-taglines {
-        flex-direction: row;
-        gap: 16px;
-    }
-
-    .home-intro-tagline {
-        margin: 0;
-    }
-}
+/* The taglines stack in one column at every viewport. SNOW-535 laid them out
+   side by side above 960px (in a card widened to 640px) to hold the card's
+   height down; that traded height for a 640px measure, which is too long a
+   line for 13px body text. The copy is short enough to stack instead. */
 
 /* SNOW-445: the persistent off-season archive notice is now a full-width bar
    above the map (#map-offseason-bar, styled with Tailwind status tokens in
@@ -1750,22 +1738,22 @@
     border-radius: 6px;
 }
 
+/* Inline link inside a tagline paragraph (the "Register" call-out). Underlined
+   rather than colour-only so it reads as a link against the muted body text. */
+.home-intro-inline-link {
+    color: var(--color-text-1);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.home-intro-inline-link:hover {
+    text-decoration-thickness: 2px;
+}
+
 .home-intro-actions {
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
-
-.home-intro-sample-link {
-    font-size: 13px;
-    color: var(--color-text-2);
-    text-decoration: none;
-    line-height: 1.4;
-}
-
-.home-intro-sample-link:hover {
-    color: var(--color-text-1);
-    text-decoration: underline;
 }
 
 .home-intro-dismiss {

@@ -903,18 +903,24 @@ Optional context:
                     </svg>
                 </button>
                 <div class="home-intro-identity">
-                    <span class="home-intro-wordmark">Snowdesk</span>
+                    <span class="home-intro-wordmark">{% trans "Welcome to Snowdesk" %}</span>
                 </div>
-                {# SNOW-535: two-column at a wide viewport (static/css/map.css) — #}
-                {# wrapping both paragraphs together is what lets that rule lay   #}
-                {# them out side by side without touching the offseason ref or   #}
-                {# the actions row below, which stay full-width. #}
+                {# The wrapper groups the two body paragraphs so their shared     #}
+                {# spacing lives in one rule (static/css/map.css), separate from  #}
+                {# the offseason ref and the actions row below.                   #}
                 <div class="home-intro-taglines">
                     <p class="home-intro-tagline">
-                        {% trans "Bulletins from SLF, Météo-France and avalanche.report combine into one map. Colour shows the highest published danger for the selected day — tap a region for the full bulletin, broken down by time, elevation and aspect." %}
+                        {% trans "Avalanche information across the Alps, sourced daily from SLF (Switzerland), ALBINA (Austria, Italy) and Météo-France (France). Each bulletin displays on the interactive map in its EAWS danger rating colour. Tap on a region to see the season timeline, and a link to the day's bulletin." %}
                     </p>
                     <p class="home-intro-tagline">
-                        {% trans "Tap a region, search by name, or use your location to jump straight there. Drag the timeline or press play to replay the season, and check Layers or the ? tour for more." %}
+                        {# The anchor sits inside the blocktrans so a translator can #}
+                        {# move "Register" wherever the sentence needs it.            #}
+                        {% url 'accounts:register' as register_url %}
+                        {% blocktrans trimmed %}
+                            <a href="{{ register_url }}" class="home-intro-inline-link">Register</a>
+                            with Snowdesk to view field observations, track favourite locations, and receive daily
+                            region updates.
+                        {% endblocktrans %}
                     </p>
                 </div>
                 {% if is_offseason %}
@@ -922,8 +928,8 @@ Optional context:
                     {# archive, not live. Carried in the first-visit panel.       #}
                     <p class="home-intro-offseason-ref">
                         {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
-                            Showing the {{ season_label }} season archive — live bulletins resume in
-                            {{ start_month }}.
+                            Map shows {{ season_label }} season — live bulletins resume in
+                            {{ start_month }}
                         {% endblocktrans %}
                     </p>
                 {% endif %}
@@ -947,15 +953,6 @@ Optional context:
                     >
                         {% trans "Explore the map" %}
                     </button>
-                    {# SNOW-535: onward links to a sample bulletin and the guide, so a #}
-                    {# visitor who isn't ready to commit to the map can still see what #}
-                    {# Snowdesk offers. #}
-                    <a href="{% url 'public:examples_random' %}" class="home-intro-sample-link">
-                        {% trans "See a sample bulletin" %}
-                    </a>
-                    <a href="{% url 'public:how_to_read_bulletin' %}" class="home-intro-sample-link">
-                        {% trans "How to read a bulletin" %}
-                    </a>
                 </div>
             </div>
         </div>
