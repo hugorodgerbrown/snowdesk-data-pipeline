@@ -364,6 +364,67 @@ def test_readout_tracks_the_frame_as_the_map_moves(pwa_page: PwaPage) -> None:
     assert "MB" in after
 
 
+def test_frame_shrinks_to_hold_the_area_at_the_download_ceiling(
+    pwa_page: PwaPage,
+) -> None:
+    """Zooming out past the ceiling shrinks the frame instead of going red.
+
+    Ground area per pixel quadruples with every zoom level out, so a frame
+    pinned at the maximum downloadable area must halve in size per level.
+    Asserted as a ratio rather than fixed pixel sizes so the test does not
+    encode the viewport or the CSS gutter — and with generous tolerance,
+    since tile quantisation makes the true ceiling a step function.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+
+    def frame_width() -> float:
+        box = page.locator("#map-frame-rect").bounding_box()
+        assert box is not None
+        # float(), not cast(): bounding_box()'s dict values resolve to Any,
+        # and the same playwright-stub asymmetry that _readout_text
+        # documents applies here too.
+        return float(box["width"])
+
+    def zoom_to(level: float) -> None:
+        page.evaluate("(z) => MAP.setZoom(z)", level)
+        page.wait_for_function(
+            "() => document.getElementById('map-frame-readout').innerText.length > 0"
+        )
+
+    # Well inside the ceiling: the frame fills its area and carries no
+    # inline size at all — sizing is the stylesheet's job until it bites.
+    zoom_to(12)
+    natural = frame_width()
+    assert (
+        page.evaluate("() => document.getElementById('map-frame-rect').style.width")
+        == ""
+    )
+
+    # Two levels out from wherever the cap starts biting, the frame must be
+    # about half the width it had one level in, and the readout must stay
+    # under the ceiling rather than flipping to the too-large state.
+    zoom_to(8)
+    wide = frame_width()
+    zoom_to(7)
+    narrow = frame_width()
+
+    assert wide < natural, "the cap should have shrunk the frame below its area"
+    assert 0.35 < narrow / wide < 0.7, (
+        f"expected roughly a halving per zoom level, got {narrow}/{wide}"
+    )
+    assert "too large" not in _readout_text(page).lower()
+    assert page.locator("#map-frame-confirm").is_enabled()
+
+    # Zooming back in releases the cap and hands sizing back to the CSS.
+    zoom_to(12)
+    assert (
+        page.evaluate("() => document.getElementById('map-frame-rect').style.width")
+        == ""
+    )
+    assert frame_width() == natural
+
+
 def test_download_warms_pinned_and_notifies_the_sync_dashboard(
     pwa_page: PwaPage,
 ) -> None:

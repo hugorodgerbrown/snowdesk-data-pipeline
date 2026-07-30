@@ -579,6 +579,24 @@ every pixel the sheet does not, so the two are physically adjacent rather
 than two objects floating apart, and the full-bleed sheet covers the season
 scrubber beneath it.
 
+**The frame shrinks to hold the area at the ceiling.** Rather than letting
+the estimate run past `DOWNLOAD_CEILING_MB` and turning the readout red,
+`_fitFrameToCeiling` caps the frame's *pixel* size so its ground footprint
+sticks at the maximum. Ground area per pixel quadruples with every zoom
+level out, so the capped frame halves in size per level — zooming out
+visibly contracts the frame around a fixed maximum area (the Google Maps
+behaviour). The first guess is analytic (`sqrt(ceiling / mb)`, since cost is
+very nearly proportional to area) and a short loop mops up the error from
+tile quantisation, which makes the true boundary a step function.
+
+Below the ceiling nothing is written and `.map-frame-rect` fills
+`.map-frame-area` (which owns the gutter) under stylesheet control; the cap
+is applied and cleared as inline `width`/`height`, so a viewport resize
+keeps working. `MIN_FRAME_SCALE` (0.08) stops the frame shrinking to an
+unaimable dot; it only binds at the map's own minimum zoom, and past it the
+original `over_ceiling` backstop — red readout, disabled Download — still
+applies.
+
 **Furniture is stripped while framing.** `openFraming` adds
 `.map-framing` to `<body>`; `static/css/map.css` hides `#season-ribbon`,
 `#map-date-ribbon`, `#map-utility-cluster`, `#map-controls-br` and

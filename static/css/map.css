@@ -2102,13 +2102,32 @@
    the surroundings you are choosing between and makes the "up to N MB"
    number feel arbitrary. Sized entirely in CSS so static/js/map.js never
    hardcodes dimensions — it reads getBoundingClientRect(). */
-.map-frame-rect {
+/* The box the frame may occupy. Owns the gutter and centres the frame
+   inside it — an even 48px on every side; tighter than that and the frame
+   stops reading as a frame and reads as the map's own edge.
+
+   The frame is a separate element because it does not always fill this
+   box: once the framed ground area would exceed DOWNLOAD_CEILING_MB,
+   map.js caps the frame's pixel size so its footprint sticks at the
+   maximum (see _fitFrameToCeiling). Ground area per pixel quadruples with
+   every zoom level out, so the capped frame halves in size per level —
+   it visibly shrinks as you zoom out, rather than the readout simply
+   going red. */
+.map-frame-area {
     flex: 1 1 auto;
-    /* An even 48px gutter on every side. Tighter than this and the frame
-       stops reading as a frame — it reads as the map's own edge. Falls
-       back to a proportional inset only where 96px of horizontal gutter
-       would leave too little frame to aim with (small phones). */
-    margin: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    min-height: 0;
+    pointer-events: none;
+}
+
+.map-frame-rect {
+    /* Default: fill the area. map.js overrides width/height inline when
+       the ceiling bites, and clears them again when it does not. */
+    width: 100%;
+    height: 100%;
     border: 2px solid var(--on-ink);
     border-radius: var(--radius-card, 12px);
     /* The dim mask: a single box-shadow spread 9999px in every direction
@@ -2123,18 +2142,18 @@
    so scale it back proportionally — the frame stays inset but remains big
    enough to aim with on a phone. */
 @media (max-width: 480px) {
-    .map-frame-rect {
-        margin: 32px 24px;
+    .map-frame-area {
+        padding: 32px 24px;
     }
 }
 
 @media (min-width: 640px) {
-    .map-frame-rect {
+    .map-frame-area {
         /* Cap the frame's width on a large viewport so it never becomes an
            unusably wide letterbox on an ultrawide monitor; the 48px base
            gutter still applies below that threshold. */
-        margin-left: max(48px, calc((100vw - 1100px) / 2));
-        margin-right: max(48px, calc((100vw - 1100px) / 2));
+        padding-left: max(48px, calc((100vw - 1100px) / 2));
+        padding-right: max(48px, calc((100vw - 1100px) / 2));
     }
 }
 

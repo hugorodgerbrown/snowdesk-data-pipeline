@@ -5341,10 +5341,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
 (function mapCustomDownloadControlInit() {
   const btn = document.getElementById('map-custom-download-control');
   const overlayEl = document.getElementById('map-frame-overlay');
+  const frameAreaEl = document.getElementById('map-frame-area');
   const frameRectEl = document.getElementById('map-frame-rect');
   const readoutEl = document.getElementById('map-frame-readout');
   const confirmBtn = document.getElementById('map-frame-confirm');
-  if (!btn || !overlayEl || !frameRectEl || !readoutEl || !confirmBtn) return;
+  if (!btn || !overlayEl || !frameAreaEl || !frameRectEl || !readoutEl || !confirmBtn) {
+    return;
+  }
 
   const CUSTOM_AREA_KEY = 'basemap.customArea';
 
@@ -5564,16 +5567,40 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *   east, north] in degrees, or null before the map is ready.
    */
   function _bboxFromFrame() {
+    const frameRect = frameRectEl.getBoundingClientRect();
+    return _bboxForBox(
+      frameRect.left + frameRect.width / 2,
+      frameRect.top + frameRect.height / 2,
+      frameRect.width,
+      frameRect.height,
+    );
+  }
+
+  /**
+   * The bbox a `width`x`height` box centred on viewport point (cx, cy)
+   * would cover. Pure projection maths — reads no DOM beyond the map's own
+   * offset and writes none, so the ceiling search below can evaluate a
+   * dozen candidate frame sizes without a single reflow.
+   *
+   * @param {number} cx - Centre x, in viewport pixels.
+   * @param {number} cy - Centre y, in viewport pixels.
+   * @param {number} width - Box width in pixels.
+   * @param {number} height - Box height in pixels.
+   * @returns {[number, number, number, number] | null} [west, south, east,
+   *   north] in degrees, or null before the map is ready.
+   */
+  function _bboxForBox(cx, cy, width, height) {
     if (!MAP || typeof MAP.getContainer !== 'function') return null;
     const container = MAP.getContainer();
     if (!container) return null;
     const mapRect = container.getBoundingClientRect();
-    const frameRect = frameRectEl.getBoundingClientRect();
+    const halfW = width / 2;
+    const halfH = height / 2;
     const corners = [
-      [frameRect.left, frameRect.top],
-      [frameRect.right, frameRect.top],
-      [frameRect.right, frameRect.bottom],
-      [frameRect.left, frameRect.bottom],
+      [cx - halfW, cy - halfH],
+      [cx + halfW, cy - halfH],
+      [cx + halfW, cy + halfH],
+      [cx - halfW, cy + halfH],
     ];
     let west = Infinity;
     let south = Infinity;
@@ -5590,6 +5617,101 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
+   * The frame's full-size box — the centre of .map-frame-area and its
+   * content box, i.e. the gutter-inset rectangle the CSS allows. Read from
+   * the area rather than the frame itself so the frame's own (possibly
+   * capped) size never feeds back into the next measurement.
+   *
+   * @returns {{cx: number, cy: number, width: number, height: number} | null}
+   */
+  function _naturalFrameBox() {
+    if (!frameAreaEl) return null;
+    const rect = frameAreaEl.getBoundingClientRect();
+    const style = getComputedStyle(frameAreaEl);
+    const left = rect.left + parseFloat(style.paddingLeft || '0');
+    const right = rect.right - parseFloat(style.paddingRight || '0');
+    const top = rect.top + parseFloat(style.paddingTop || '0');
+    const bottom = rect.bottom - parseFloat(style.paddingBottom || '0');
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    if (!width || !height) return null;
+    return { cx: (left + right) / 2, cy: (top + bottom) / 2, width, height };
+  }
+
+  // Never shrink the frame below this fraction of its natural size. A
+  // frame smaller than this is not aimable, and reaching it means the
+  // ceiling cannot be met at this zoom at all — the over_ceiling backstop
+  // (a red readout and a disabled Download) then still applies, exactly as
+  // it did before the frame could shrink.
+  const MIN_FRAME_SCALE = 0.08;
+
+  /**
+   * Size the frame so its ground footprint never exceeds the download
+   * ceiling, and return the blob for the size chosen.
+   *
+   * Below the ceiling the frame fills its area and nothing is written. At
+   * the ceiling it stops growing and starts shrinking instead: because the
+   * ground area under one pixel quadruples with every zoom level out, the
+   * capped frame halves per level, so zooming out visibly contracts the
+   * frame around a fixed maximum area rather than letting the estimate run
+   * away and the readout go red.
+   *
+   * The first guess is analytic — cost is very nearly proportional to
+   * area, so `sqrt(ceiling / mb)` lands on or just under the cap — and the
+   * loop only mops up the error from tile quantisation, which makes the
+   * true boundary a step function rather than a smooth one.
+   *
+   * @returns {{bbox: [number, number, number, number], blob: Object} | null}
+   */
+  function _fitFrameToCeiling() {
+    const core = self.pwaBasemapDownloadCore;
+    const natural = _naturalFrameBox();
+    if (!core || !natural) return null;
+
+    const evaluate = (scale) => {
+      const bbox = _bboxForBox(
+        natural.cx,
+        natural.cy,
+        natural.width * scale,
+        natural.height * scale,
+      );
+      if (!bbox) return null;
+      return { bbox, blob: core.buildBlob(bbox, core.MICRO_BAND[0], core.MICRO_BAND[1]) };
+    };
+
+    let scale = 1;
+    let result = evaluate(scale);
+    if (!result) return null;
+
+    if (result.blob.mb > core.DOWNLOAD_CEILING_MB) {
+      scale = Math.max(
+        MIN_FRAME_SCALE,
+        Math.sqrt(core.DOWNLOAD_CEILING_MB / result.blob.mb),
+      );
+      for (let i = 0; i < 8; i++) {
+        const candidate = evaluate(scale);
+        if (!candidate) break;
+        result = candidate;
+        if (candidate.blob.mb <= core.DOWNLOAD_CEILING_MB) break;
+        if (scale <= MIN_FRAME_SCALE) break;
+        scale = Math.max(MIN_FRAME_SCALE, scale * 0.94);
+      }
+    }
+
+    if (scale < 1) {
+      frameRectEl.style.width = `${Math.round(natural.width * scale)}px`;
+      frameRectEl.style.height = `${Math.round(natural.height * scale)}px`;
+    } else {
+      // Back under the ceiling — hand sizing back to the stylesheet rather
+      // than pinning the frame at its natural pixel size, so a viewport
+      // resize keeps working.
+      frameRectEl.style.removeProperty('width');
+      frameRectEl.style.removeProperty('height');
+    }
+    return result;
+  }
+
+  /**
    * Recompute pendingBbox/pendingBlob from the frame's current on-screen
    * position and paint the readout. Cheap, local arithmetic
    * (pwaBasemapDownloadCore.buildBlob) — called on every MapLibre 'move'
@@ -5600,10 +5722,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
    */
   function _updateReadout() {
     const core = self.pwaBasemapDownloadCore;
-    const bbox = _bboxFromFrame();
-    if (!core || !bbox) return;
-    pendingBbox = bbox;
-    pendingBlob = core.buildBlob(bbox, core.MICRO_BAND[0], core.MICRO_BAND[1]);
+    // Sizing the frame and measuring it are the same step: the ceiling
+    // search already evaluated the box it settled on, so reuse its result
+    // rather than re-measuring the DOM it just wrote to (which would read
+    // back the pre-layout size on the same frame).
+    const fitted = core ? _fitFrameToCeiling() : null;
+    if (!core || !fitted) return;
+    pendingBbox = fitted.bbox;
+    pendingBlob = fitted.blob;
     const overCeiling = pendingBlob.over_ceiling;
     readoutEl.textContent = overCeiling
       ? `Area too large to download (over ${core.DOWNLOAD_CEILING_MB} MB)`
@@ -5645,6 +5771,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // attributes so each owner module keeps sole control of its own
     // visibility state (see .map-framing in static/css/map.css).
     document.body.classList.add('map-framing');
+    // Drop any cap left on the frame by the previous open, so _framePadding
+    // below measures the natural gutter rather than a shrunken frame from a
+    // zoom level the map is no longer at. _updateReadout re-applies the cap
+    // for the view we actually land on.
+    frameRectEl.style.removeProperty('width');
+    frameRectEl.style.removeProperty('height');
     if (savedArea && Array.isArray(savedArea.bbox)) {
       const options = { animate: false };
       const padding = _framePadding();
