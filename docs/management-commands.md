@@ -313,9 +313,40 @@ incident that invalidates derived state:
   Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
   `--skip-day-ratings`.
 
-  Re-keying alone does not restore the issues that were previously overwritten;
-  reload the rebuilt archive afterwards
-  ([runbook](runbooks/rebuild-meteofrance-archive.md)).
+  Re-keying alone does not restore the issues that were previously overwritten.
+  It also cannot run against a database still holding a full season of
+  pre-SNOW-559 rows — none of them carry a usable publication timestamp, so
+  every row fails. For that population, load the rebuilt archive and then use
+  `purge_legacy_meteofrance_bulletins` below
+  ([runbook](runbooks/rebuild-meteofrance-archive.md),
+  [why](decisions/meteofrance-archive-replace-not-merge.md)).
+- `purge_legacy_meteofrance_bulletins --commit` — deletes old-grammar
+  `FR-{NN}-{covered date}` bulletins once the rebuilt archive has already
+  supplied a new-grammar `FR-{NN}-{covered date}-{publication timestamp}`
+  replacement (SNOW-559, SNOW-562). A candidate is deleted only when that
+  exact replacement already exists — never guessed, never deleted on a
+  region/date match alone. Reports a per-massif candidate/replaceable/
+  unreplaced table, plus the `RegionBulletin`/`BulletinGrouping` rows that will
+  cascade, the `RegionDayRating` rows whose `source_bulletin` will be nulled,
+  and any `BulletinShare` rows referencing a candidate. Refreshes
+  `RegionDayRating` for every touched (region, day) after deleting. Exits
+  non-zero if any candidate is unreplaced, if a live `BulletinShare` references
+  a candidate (without `--allow-orphaned-shares`), or if a day-rating
+  recompute fails.
+
+  ```bash
+  # Read-only walk — reports the pre-flight table, deletes nothing.
+  uv run python manage.py purge_legacy_meteofrance_bulletins
+
+  # Persist.
+  uv run python manage.py purge_legacy_meteofrance_bulletins --commit
+
+  # Persist even though some candidates have a live BulletinShare.
+  uv run python manage.py purge_legacy_meteofrance_bulletins --commit --allow-orphaned-shares
+  ```
+
+  Flags: `--commit`, `--batch-size N` (default 500), `--skip-day-ratings`,
+  `--allow-orphaned-shares`.
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
 - `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
