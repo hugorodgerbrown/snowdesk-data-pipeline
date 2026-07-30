@@ -514,7 +514,14 @@ def test_cache_now_button_leaves_busy_state(
                 },
             };
             document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-                detail: { region_id: 'CH-4115' },
+                // region_name is load-bearing, not decoration: SNOW-522
+                // moved this control back into the ribbon header, where it
+                // is shown by the sibling rule
+                // #region-readout.has-region ~ .map-download-control — and
+                // map.js only sets .has-region once it has a date, a region
+                // id AND a region name. Without the name the control stays
+                // display:none and never becomes visible.
+                detail: { region_id: 'CH-4115', region_name: 'Martigny-Verbier' },
             }));
         }"""
     )

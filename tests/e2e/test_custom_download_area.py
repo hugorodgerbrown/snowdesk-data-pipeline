@@ -100,17 +100,117 @@ def _readout_text(page: Page) -> str:
     return str(page.locator("#map-frame-readout").inner_text())
 
 
-def _move_the_frame(page: Page) -> None:
-    """Change the ground area under the fixed-pixel frame.
+_SYNC_SENTINEL = "__snow522_not_refreshed__"
 
-    A zoom change (rather than a pan) is used deliberately: the frame's
-    on-screen size never changes, so a pan alone can leave the framed
-    area's SIZE (and so its tile count / mb) numerically unchanged even
-    though its position did — a zoom change always changes the ground
-    footprint under a fixed-pixel frame. Clamped short of ``maxZoom``
-    (18, static/js/map.js) so the jump can never be rejected.
+
+def _arm_sync_dashboard_probe(page: Page) -> None:
+    """Stamp a sentinel on every sync dot so a later ``refresh()`` is observable.
+
+    ``window.pwaLayerSyncStatus`` cannot be spied on: it is installed with
+    ``Object.defineProperty(window, …, {writable: false, configurable:
+    false})`` over an ``Object.freeze``d value
+    (``static/js/map_layer_sync_status.js``), so assigning a stub over it
+    silently no-ops in sloppy mode and the assertion can never pass.
+
+    ``refresh()`` rewrites ``data-sync-state`` on every dot it probes, so
+    stamping a sentinel first and asserting it is gone afterwards observes
+    the real call rather than a stub of it.
     """
-    page.evaluate("() => MAP.setZoom(Math.min(MAP.getZoom() + 3, 17))")
+    page.evaluate(
+        """(sentinel) => {
+            document
+                .querySelectorAll('#basemap-menu .sync-dot')
+                .forEach((dot) => { dot.dataset.syncState = sentinel; });
+        }""",
+        _SYNC_SENTINEL,
+    )
+
+
+def _assert_sync_dashboard_refreshed(page: Page) -> None:
+    """Wait for ``refresh()`` to clear the sentinel stamped by the arm step."""
+    page.wait_for_function(
+        """(sentinel) => {
+            const dots = document.querySelectorAll('#basemap-menu .sync-dot');
+            return (
+                dots.length > 0 &&
+                [...dots].some((dot) => dot.dataset.syncState !== sentinel)
+            );
+        }""",
+        arg=_SYNC_SENTINEL,
+        timeout=10000,
+    )
+
+
+def _force_done_reprobe(page: Page) -> None:
+    """Re-run the control's done-probe now that the tile template is stubbed.
+
+    The probe keys off the ACTIVE basemap's tile template, which ``_boot``
+    only stubs *after* the map is ready — by which point the control has
+    already painted from a probe that had no template to look up. The real
+    app re-probes on ``snowdesk:basemap-changed`` (the download is
+    per-basemap), and the control listens for it, so dispatching it is the
+    supported way to ask for a fresh probe. ``test_cache_this_area.py``
+    gets the same effect for the region control by re-selecting the region.
+    """
+    page.evaluate(
+        "() => document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'))"
+    )
+
+
+def _frame_a_downloadable_area(page: Page) -> None:
+    """Zoom in until the framed area is under the download ceiling.
+
+    The homepage's default view frames most of Switzerland, which across
+    the z10–z14 band is comfortably over ``DOWNLOAD_CEILING_MB`` (200) —
+    so framing mode legitimately opens with ``#map-frame-confirm``
+    disabled and the readout reading "Area too large to download". Every
+    confirm-path test therefore has to zoom in first; without this the
+    click just times out against a disabled button.
+
+    Steps until the button enables rather than jumping to a hardcoded
+    zoom, so this stays correct if the frame's CSS size, the default
+    viewport, or the ceiling constant changes.
+    """
+    confirm = page.locator("#map-frame-confirm")
+    for _ in range(10):
+        if not confirm.is_disabled():
+            return
+        page.evaluate("() => MAP.setZoom(Math.min(MAP.getZoom() + 1, 16))")
+        # The 'move' handler recomputes the readout synchronously; poll for
+        # a non-empty readout as a settle signal rather than a fixed sleep.
+        page.wait_for_function(
+            "() => document.getElementById('map-frame-readout').innerText.length > 0"
+        )
+    raise AssertionError(
+        "the framed area never dropped under the download ceiling — "
+        f"readout still reads {_readout_text(page)!r}"
+    )
+
+
+def _move_the_frame(page: Page) -> None:
+    """Move the frame onto ground that does not overlap the previous area.
+
+    Deliberately a PAN, not a zoom. Zooming in leaves the new framed area
+    a strict *subset* of the old one, so the old area's tiles — including
+    its centre tile — are legitimately members of the new set too: the
+    evict-then-warm sequence deletes them and immediately re-adds them,
+    and an eviction assertion keyed on the old centre tile reads as a
+    failure when the behaviour is in fact correct. Panning clear of the
+    old footprint keeps the two tile sets disjoint, so eviction is
+    observable.
+
+    Panning by the frame's own width guarantees no overlap; the map's
+    ``maxBounds`` (roughly the Alps, static/js/map.js) comfortably
+    accommodates a frame-width step from the default view.
+    """
+    page.evaluate(
+        """() => {
+            const rect = document.getElementById('map-frame-rect').getBoundingClientRect();
+            const centre = MAP.project(MAP.getCenter());
+            // A full frame-width step east, in map-container pixels.
+            MAP.setCenter(MAP.unproject([centre.x + rect.width, centre.y]));
+        }"""
+    )
     # The 'move' handler recomputes the readout synchronously; poll for a
     # non-empty readout as a settle signal rather than a fixed sleep.
     page.wait_for_function(
@@ -211,11 +311,9 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
     download, region or custom-area alike.
     """
     page, worker = _boot(pwa_page)
-    page.evaluate(
-        "() => { window.__snow522Refreshed = false; "
-        "window.pwaLayerSyncStatus = { refresh: () => { window.__snow522Refreshed = true; } }; }"
-    )
     _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _arm_sync_dashboard_probe(page)
 
     _confirm_download(page, worker)
 
@@ -224,7 +322,7 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
     assert any(url.startswith(_STUB_TEMPLATE.split("{")[0]) for url in urls)
     assert any("country=ch" in url for url in urls)
     assert worker.evaluate("() => self.__snow521Pinned") is True
-    assert page.evaluate("() => window.__snow522Refreshed") is True
+    _assert_sync_dashboard_refreshed(page)
 
     area = _saved_area(page)
     assert area is not None
@@ -237,12 +335,14 @@ def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> N
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
+    _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
     _wait_for_overlay_closed(page)
     area = _saved_area(page)
     assert area is not None
 
     page, worker = _boot(pwa_page)
+    _force_done_reprobe(page)
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
 
     _open_framing(page)
@@ -261,6 +361,7 @@ def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> Non
     """Moving the frame and Cancelling touches neither the saved row nor the cache."""
     page, worker = _boot(pwa_page)
     _open_framing(page)
+    _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
     _wait_for_overlay_closed(page)
     area_before = _saved_area(page)
@@ -281,6 +382,7 @@ def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None
     """Confirming a moved frame evicts the previous area's pinned tiles first."""
     page, worker = _boot(pwa_page)
     _open_framing(page)
+    _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
     _wait_for_overlay_closed(page)
     area_before = _saved_area(page)
