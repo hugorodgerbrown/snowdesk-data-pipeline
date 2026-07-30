@@ -42,7 +42,10 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.bulletins.models import Bulletin, PipelineRun, RegionBulletin
-from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
+from apps.bulletins.services.day_rating import (
+    apply_bulletin_day_ratings,
+    target_day_for_valid_from,
+)
 from apps.bulletins.services.fetcher_common import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,
@@ -390,13 +393,16 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
 
+    valid_from = _parse_dt(raw["validTime"]["startTime"])
+
     defaults: dict[str, Any] = {
         "raw_data": raw_data,
         "render_model": computed_render_model,
         "render_model_version": computed_render_model_version,
         "issued_at": _resolve_issued_at(raw),
-        "valid_from": _parse_dt(raw["validTime"]["startTime"]),
+        "valid_from": valid_from,
         "valid_to": _parse_dt(raw["validTime"]["endTime"]),
+        "target_date": target_day_for_valid_from(valid_from),
         "next_update": _parse_dt(next_update_raw) if next_update_raw else None,
         "lang": raw.get("lang", LANG),
         "unscheduled": raw.get("unscheduled", False),
