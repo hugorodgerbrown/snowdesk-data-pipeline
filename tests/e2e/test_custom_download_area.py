@@ -229,6 +229,20 @@ def _confirm_download(
     _wait_for_state(page, expected, selector=_CONTROL, timeout=10000)
 
 
+def _display(page: Page, selector: str) -> str:
+    """The computed ``display`` of `selector`, or ``"absent"`` if not in the DOM."""
+    return cast(
+        str,
+        page.evaluate(
+            """(selector) => {
+                const el = document.querySelector(selector);
+                return el ? getComputedStyle(el).display : 'absent';
+            }""",
+            selector,
+        ),
+    )
+
+
 def _saved_area(page: Page) -> dict[str, Any] | None:
     """The persisted ``basemap.customArea`` meta:app row's value, or None."""
     row = page.evaluate("() => window.pwaDb.get('meta:app', 'basemap.customArea')")
@@ -282,6 +296,41 @@ def test_opening_framing_dims_the_map_and_shows_the_frame(pwa_page: PwaPage) -> 
     )
     assert "9999px" in box_shadow, "the dim mask is a 9999px box-shadow spread"
     assert "MB" in _readout_text(page)
+
+
+def test_framing_strips_the_map_furniture_and_cancel_restores_it(
+    pwa_page: PwaPage,
+) -> None:
+    """Framing hides every control/ribbon/legend; Cancel puts them all back.
+
+    Framing is a modal act with two answers, both on the CTA sheet, so the
+    controls that steer the map for other purposes are hidden — otherwise
+    they sit lit inside the cutout and read as part of the area being
+    chosen. Asserted on computed style rather than the body class so this
+    fails if the class stops driving the CSS, not just if it stops being
+    set.
+    """
+    page, _worker = _boot(pwa_page)
+    furniture = [
+        "#season-ribbon",
+        "#map-date-ribbon",
+        "#map-utility-cluster",
+        "#map-controls-br",
+        "#map-legend",
+    ]
+    before = {sel: _display(page, sel) for sel in furniture}
+    assert all(value != "none" for value in before.values()), before
+
+    _open_framing(page)
+
+    assert all(_display(page, sel) == "none" for sel in furniture), {
+        sel: _display(page, sel) for sel in furniture
+    }
+
+    page.click("#map-frame-cancel")
+    _wait_for_overlay_closed(page)
+
+    assert {sel: _display(page, sel) for sel in furniture} == before
 
 
 def test_readout_tracks_the_frame_as_the_map_moves(pwa_page: PwaPage) -> None:

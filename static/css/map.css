@@ -2067,15 +2067,25 @@
    ————————————————————————————————————————————————————————— */
 
 #map-frame-overlay {
-    position: fixed;
+    /* Absolute, not fixed: the overlay is a child of #map (position:
+       relative, overflow: hidden), so this scopes the frame, the dim mask
+       and the CTA sheet to the map itself. Fixed positioning measured
+       against the viewport instead, which pushed the cutout up over the
+       site header and the season banner — lighting page chrome that has
+       nothing to do with the framed area — and left the season scrubber
+       lit INSIDE the frame while the CTA sheet sat below the map entirely.
+       #map's overflow: hidden also clips the 9999px mask spread to the map,
+       so the header and footer stay undimmed. */
+    position: absolute;
     inset: 0;
     z-index: 8;
-    /* Centres .map-frame-rect via flex rather than absolute + transform
-       centring maths — .map-frame-cta escapes this layout entirely (its
-       own position: fixed below), so only the frame rect is affected. */
+    /* A column: the frame takes every pixel the CTA sheet doesn't, so the
+       two are physically adjacent rather than two objects floating apart.
+       The sheet used to be position:fixed to the viewport bottom while the
+       frame was centred in the whole viewport, which left a band of dimmed
+       map between them and made the readout read as unrelated chrome. */
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
     /* The overlay itself never intercepts pointer events — panning/
        zooming the map underneath must never be blocked by it. Only
        .map-frame-cta (below) opts back in for its own buttons. */
@@ -2086,13 +2096,15 @@
     display: none;
 }
 
-/* The frame: a fixed-size rectangle, portrait-ish on narrow viewports
-   (a phone held upright — most of this control's use), landscape on
-   wide ones. Sized in CSS so static/js/map.js never hardcodes
-   dimensions — it reads the frame's own getBoundingClientRect(). */
+/* The frame: fills the column above the CTA sheet, inset just enough to
+   read as a frame rather than a viewport edge. Deliberately large — the
+   point of framing is to choose an area, and a small rectangle both hides
+   the surroundings you are choosing between and makes the "up to N MB"
+   number feel arbitrary. Sized entirely in CSS so static/js/map.js never
+   hardcodes dimensions — it reads getBoundingClientRect(). */
 .map-frame-rect {
-    width: min(300px, calc(100vw - 64px));
-    height: min(420px, calc(100vh - 260px));
+    flex: 1 1 auto;
+    margin: 16px 16px 12px;
     border: 2px solid var(--on-ink);
     border-radius: var(--radius-card, 12px);
     /* The dim mask: a single box-shadow spread 9999px in every direction
@@ -2105,44 +2117,67 @@
 
 @media (min-width: 640px) {
     .map-frame-rect {
-        width: min(520px, calc(100vw - 160px));
-        height: min(340px, calc(100vh - 220px));
+        /* Wider gutters on desktop so the frame still reads as a frame on
+           a large viewport, and a cap so it never becomes an unusably
+           wide letterbox on an ultrawide monitor. */
+        margin-left: max(48px, calc((100vw - 1100px) / 2));
+        margin-right: max(48px, calc((100vw - 1100px) / 2));
     }
 }
 
-/* Docked CTA bar: the live size readout plus Cancel/Download. Fixed
-   (escapes #map-frame-overlay's flex centring, see above) and pinned to
-   the bottom, inset by the same --map-edge-inset-* tokens the roundel
-   stack and the favourite/report sheets use, so its edges line up with
-   the rest of the map chrome on notched devices too. */
+/* CTA sheet: the live size readout plus Cancel/Download, full-bleed along
+   the foot of the viewport in normal flow (the last child of the column
+   above) so it sits flush under the frame — the Google Maps reference
+   shape. Full-bleed rather than inset-with-radius because it deliberately
+   covers the season scrubber and footer beneath it: neither the timeline
+   nor the site chrome has any bearing on the area being downloaded, and
+   leaving them visible around a floating card was the "disconnected"
+   read. */
 .map-frame-cta {
-    position: fixed;
-    left: var(--map-edge-inset-left);
-    right: var(--map-edge-inset-right);
-    bottom: var(--map-edge-inset-bottom);
-    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    padding: 12px 16px;
-    border-radius: var(--radius-card, 12px);
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    border: 0.5px solid var(--border);
+    padding: 14px 20px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    background: var(--color-card);
+    border-top: 0.5px solid var(--border);
     box-shadow: var(--shadow-glass);
     color: var(--color-text-1);
     font-family: var(--sans);
-    /* Re-enables pointer events within the mask — this bar (and only
-       this bar) is interactive. */
+    /* Re-enables pointer events within the mask — this sheet (and only
+       this sheet) is interactive. */
     pointer-events: auto;
 }
 
 .map-frame-readout {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
+}
+
+/* Furniture stripped while framing (static/js/map.js's openFraming adds
+   the class). Framing is a modal act with exactly two answers — Download
+   or Cancel, both on the CTA sheet — so every control that steers the map
+   for some OTHER purpose is noise, and worse, each one sits lit inside the
+   cutout looking like part of the area being chosen.
+
+   What goes, and why none of it is load-bearing here:
+     #season-ribbon      names a region the custom area does not follow
+     #map-date-ribbon    describes a day; a download has no date
+     #map-utility-cluster search/locate — navigating away mid-frame
+     #map-controls-br    layers/favourite/report/help, incl. this very
+                         control (the sheet carries Cancel, so there is no
+                         way to get stuck with it hidden)
+     #map-legend         a key for the choropleth, which is dimmed anyway
+
+   The season scrubber needs no rule: the full-bleed CTA sheet covers it.
+   Pan and zoom are untouched — they are the whole interaction. */
+body.map-framing #season-ribbon,
+body.map-framing #map-date-ribbon,
+body.map-framing #map-utility-cluster,
+body.map-framing #map-controls-br,
+body.map-framing #map-legend {
+    display: none;
 }
 
 /* SNOW-522: painted when the framed area exceeds DOWNLOAD_CEILING_MB — the

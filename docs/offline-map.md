@@ -567,10 +567,30 @@ A second, distinct control — `#map-custom-download-control`, rendered by
 stack the per-region control vacated (above). Unlike that control, there
 is no fixed region to size ahead of time: clicking it opens a **framing
 overlay** (`#map-frame-overlay`, `public/partials/_map_embed.html`) — a
-Google-Maps-style dim mask with a fixed, centred frame (sized in CSS,
-portrait-ish on narrow viewports, landscape on wide ones) that the user
-pans/zooms the map underneath, with a live "up to N MB" readout and a
-docked Cancel/Download CTA bar.
+Google-Maps-style dim mask with a fixed frame that the user pans/zooms the
+map underneath, with a live "up to N MB" readout and a Cancel/Download CTA
+sheet.
+
+**Layout.** The overlay is `position: absolute` inside `#map`, not fixed to
+the viewport: that scopes the frame, the dim mask and the sheet to the map,
+and `#map`'s `overflow: hidden` clips the mask's 9999px spread so the site
+header and footer stay undimmed. It lays out as a column — the frame takes
+every pixel the sheet does not, so the two are physically adjacent rather
+than two objects floating apart, and the full-bleed sheet covers the season
+scrubber beneath it.
+
+**Furniture is stripped while framing.** `openFraming` adds
+`.map-framing` to `<body>`; `static/css/map.css` hides `#season-ribbon`,
+`#map-date-ribbon`, `#map-utility-cluster`, `#map-controls-br` and
+`#map-legend` for the duration. Framing is a modal act with exactly two
+answers, both on the sheet, so every control that steers the map for some
+other purpose is noise — and each one would otherwise sit lit inside the
+cutout, reading as part of the area being chosen. The class is removed in
+`_teardownFraming`, which both close paths (the shared `overlays.js`
+dismiss handler and `_closeFramingAfterRun`) funnel through, so the
+furniture cannot be left stripped. Pan and zoom are untouched — they are
+the whole interaction. Covered by
+`tests/e2e/test_custom_download_area.py::test_framing_strips_the_map_furniture_and_cancel_restores_it`.
 
 **The size estimate is computed entirely client-side**, not via a new
 endpoint — this is the reason `basemap_download_core.js`'s tile math

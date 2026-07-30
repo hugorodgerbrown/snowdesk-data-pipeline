@@ -5637,6 +5637,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
   function openFraming() {
     if (!MAP) return;
     overlayEl.removeAttribute('hidden');
+    // Strip the map furniture that has nothing to do with the area being
+    // framed — the region readout names a region the download does not
+    // follow, and the date ribbon/scrubber describe a day. Both would
+    // otherwise sit lit inside the cutout and read as part of the
+    // selection. Driven by a body class rather than per-element hidden
+    // attributes so each owner module keeps sole control of its own
+    // visibility state (see .map-framing in static/css/map.css).
+    document.body.classList.add('map-framing');
     if (savedArea && Array.isArray(savedArea.bbox)) {
       const options = { animate: false };
       const padding = _framePadding();
@@ -5658,6 +5666,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * @returns {void}
    */
   function _teardownFraming() {
+    // Restores the furniture openFraming stripped. Lives here rather than
+    // beside each hide because BOTH close paths (the shared overlays.js
+    // dismiss handler and _closeFramingAfterRun) funnel through this
+    // function — putting it anywhere else leaves one of them stripped.
+    document.body.classList.remove('map-framing');
     if (moveHandler && MAP) {
       MAP.off('move', moveHandler);
     }
