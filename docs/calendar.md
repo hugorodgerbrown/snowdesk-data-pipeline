@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating denormalisation and day_rating aggregation feeding the month-grid calendar_partial HTMX fragment
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-30
 ---
 
 # Calendar and RegionDayRating
@@ -29,7 +29,7 @@ request time.
 - `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
 
 **Aggregation policy** (see `apps/bulletins/services/day_rating.py`):
-- For day X, pick the single bulletin whose `_target_day` equals X with
+- For day X, pick the single bulletin whose `target_date` equals X with
   the latest `valid_from`. Morning-of-X (hour < 12) naturally wins over
   prior-evening-of-(X−1) (hour ≥ 12) because its `valid_from` is later.
   Evening-of-X (hour ≥ 12) targets X+1 and is excluded.
