@@ -2,7 +2,7 @@
 name: management-commands
 description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-07-23
+last-reviewed: 2026-07-30
 ---
 
 # Management commands
@@ -331,6 +331,26 @@ incident that invalidates derived state:
 
   # Persist (run on Render after deploying SNOW-323).
   uv run python manage.py backfill_bulletin_groupings --commit
+  ```
+
+  Flags: `--commit`.
+
+- `backfill_bulletin_target_dates --commit` — one-off post-deploy step
+  after SNOW-560: populates `Bulletin.target_date` for rows that predate
+  the field. `target_date` is normally set inline by `upsert_bulletin` at
+  ingest time (`target_day_for_valid_from(valid_from)`, the same rule
+  `recompute_region_day` uses); this command back-fills historical rows.
+  Read-only by default; pass `--commit` to persist. The queryset
+  (`target_date__isnull=True`) is itself the idempotency mechanism — a
+  second run selects zero rows. Raises `CommandError` and exits non-zero
+  if any row fails to derive a value so cron/CI can detect partial failures.
+
+  ```bash
+  # Dry-run — counts how many bulletins would be populated.
+  uv run python manage.py backfill_bulletin_target_dates
+
+  # Persist (run on Render after deploying SNOW-560).
+  uv run python manage.py backfill_bulletin_target_dates --commit
   ```
 
   Flags: `--commit`.
