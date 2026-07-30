@@ -90,9 +90,11 @@ def test_layers_menu_does_not_clip_under_header(
     ``#map`` (i.e. behind the nav + off-season banner).
     """
     _navigate_home_mobile(page, live_server.url)
-    # SNOW-535: at 375px the intro card is single-column and tall enough to
-    # cover the utility cluster, so #basemap-toggle is unclickable until it
-    # is dismissed — which is what a real visitor does first.
+    # Mirrors what a real visitor does before using the map. The card no
+    # longer covers #basemap-toggle (its max-width is capped against the
+    # viewport — see tests/e2e/test_home_intro_clearance.py), so this is
+    # fidelity rather than a workaround, and it is a no-op under the autouse
+    # suppression fixture anyway.
     _dismiss_home_intro(page)
 
     page.click("#basemap-toggle")
