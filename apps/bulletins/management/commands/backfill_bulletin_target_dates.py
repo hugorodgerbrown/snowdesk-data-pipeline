@@ -98,7 +98,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
-        processed, failed = _process_queryset(qs, commit=commit, verbosity=verbosity)
+        processed, failed = _process_queryset(
+            self, qs, total=total, commit=commit, verbosity=verbosity
+        )
 
         if commit:
             self.stdout.write(
@@ -126,11 +128,23 @@ class Command(BaseCommand):
             )
 
 
-def _process_queryset(qs: Any, *, commit: bool, verbosity: int) -> tuple[int, int]:
+def _process_queryset(
+    cmd: BaseCommand,
+    qs: Any,
+    *,
+    total: int,
+    commit: bool,
+    verbosity: int,
+) -> tuple[int, int]:
     """Iterate the queryset, deriving target_date and optionally bulk-updating.
 
+    In read-only mode the derivation still runs — so the summary reports a real
+    count of what would change — but nothing is accumulated or written.
+
     Args:
+        cmd: The calling command, used for progress output.
         qs: Queryset of Bulletin rows missing a target_date.
+        total: Total number of rows in ``qs``, for progress reporting.
         commit: If True, persist derived values via bulk_update.
         verbosity: Django verbosity level (0–3).
 
@@ -156,14 +170,20 @@ def _process_queryset(qs: Any, *, commit: bool, verbosity: int) -> tuple[int, in
             continue
 
         processed += 1
-        batch.append(bulletin)
 
-        if commit and len(batch) >= _BATCH_SIZE:
-            Bulletin.objects.bulk_update(batch, ["target_date"], batch_size=_BATCH_SIZE)
-            batch = []
+        # Only accumulate when we intend to write. A dry-run over a large table
+        # would otherwise hold every eligible row in memory for nothing.
+        if commit:
+            batch.append(bulletin)
+
+            if len(batch) >= _BATCH_SIZE:
+                Bulletin.objects.bulk_update(
+                    batch, ["target_date"], batch_size=_BATCH_SIZE
+                )
+                batch = []
 
         if verbosity >= 1 and processed % _LOG_INTERVAL == 0:
-            logger.debug("Processed %d bulletin(s) so far", processed)
+            cmd.stdout.write(f"  Processed {processed}/{total} bulletin(s)…")
 
     if commit and batch:
         Bulletin.objects.bulk_update(batch, ["target_date"], batch_size=_BATCH_SIZE)

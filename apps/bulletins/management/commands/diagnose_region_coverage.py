@@ -167,7 +167,7 @@ class Command(BaseCommand):
         # Target-date scope: target_date is populated at ingest time by
         # target_day_for_valid_from, so a single equality filter selects
         # exactly the bulletins forecasting this day.
-        candidates = Bulletin.objects.filter(target_date=target_date)
+        candidates = Bulletin.objects.for_target_date(target_date)
         seen = set()
         for bulletin in candidates.iterator():
             _collect_region_ids(bulletin.raw_data, seen)

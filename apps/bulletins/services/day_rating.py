@@ -559,9 +559,8 @@ def recompute_region_day(
     # evening-of-X bulletin (whose target is X+1) — no Python post-filter
     # needed.
     candidates = list(
-        Bulletin.objects.filter(
+        Bulletin.objects.for_target_date(day).filter(
             regions=region,
-            target_date=day,
             render_model_version__gte=RENDER_MODEL_VERSION,
         )
     )
