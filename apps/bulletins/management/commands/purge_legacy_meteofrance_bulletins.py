@@ -1,0 +1,447 @@
+"""
+apps/bulletins/management/commands/purge_legacy_meteofrance_bulletins.py.
+
+Management command.
+
+Deletes old-grammar Météo-France ``Bulletin`` rows — ``FR-{NN}-{covered
+date}`` — but only where a new-grammar replacement,
+``FR-{NN}-{covered date}-{publication timestamp}``, has already been loaded
+for the same massif-day (SNOW-559, SNOW-562).
+
+``rekey_meteofrance_bulletins`` cannot repair production: it derives the new
+id from a row's own ``raw_data``, but every pre-SNOW-559 row was written by an
+archive builder that never captured a publication timestamp, so every row
+fails with "no publication timestamp". The instant exists only in the source
+PDFs, which the rebuilt archive now carries under a **structurally disjoint**
+id — ``bulletin_id`` is ``unique=True``, so the rebuilt archive's rows load
+alongside the old ones rather than replacing them. This command removes the
+old ones once their replacement has landed.
+
+A candidate is deleted only when a matching new-grammar row already exists —
+see :func:`docs/decisions/meteofrance-archive-replace-not-merge.md` for the
+load-then-purge ordering this implies and why re-keying is structurally
+impossible for this population.
+
+``RegionBulletin`` and ``BulletinGrouping`` rows for a deleted bulletin cascade
+away (reported, not handled). ``RegionDayRating.source_bulletin`` is
+``SET_NULL`` and does **not** self-heal, so every touched (region, day) pair is
+collected before deletion and recomputed afterwards.
+``BulletinShare.bulletin`` is also ``SET_NULL``; a non-zero count of affected
+shares blocks ``--commit`` unless ``--allow-orphaned-shares`` is passed.
+
+Read-only by default — pass ``--commit`` to persist deletions (per the
+project-wide management command convention;
+see docs/decisions/dry-run-default-commands.md).
+
+Typical use::
+
+    # Read-only walk — reports the per-massif pre-flight table.
+    python manage.py purge_legacy_meteofrance_bulletins
+
+    # Persist.
+    python manage.py purge_legacy_meteofrance_bulletins --commit
+
+    # Persist even though some candidates have live BulletinShare rows.
+    python manage.py purge_legacy_meteofrance_bulletins --commit --allow-orphaned-shares
+
+    # Skip the day-rating refresh (e.g. when a full recompute follows).
+    python manage.py purge_legacy_meteofrance_bulletins --commit --skip-day-ratings
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from argparse import ArgumentParser
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any
+
+from django.core.management.base import BaseCommand, CommandError
+
+from apps.bulletins.models import (
+    Bulletin,
+    BulletinGrouping,
+    BulletinShare,
+    RegionBulletin,
+    RegionDayRating,
+)
+from apps.bulletins.services.day_rating import day_rating_pairs, refresh_day_ratings
+from apps.bulletins.services.meteofrance_identity import BULLETIN_ID_RE
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_BATCH_SIZE = 500
+
+# Rows to inspect: every Météo-France bulletin, old or new grammar.
+_FR_PREFIX = "FR-"
+
+# Strips the trailing publication stamp from a new-grammar id, recovering the
+# old-grammar id it replaces: FR-02-2026-02-13-20260212150000 → FR-02-2026-02-13.
+_STAMP_SUFFIX_RE = re.compile(r"-\d{14}$")
+
+
+@dataclass
+class _MassifStats:
+    """Per-massif (``FR-{NN}``) counts for the pre-flight report."""
+
+    candidates: int = 0
+    replaceable: int = 0
+    unreplaced: int = 0
+
+
+@dataclass
+class _PurgeReport:
+    """Everything gathered by one walk of the FR bulletin table."""
+
+    massifs: dict[str, _MassifStats] = field(default_factory=dict)
+    replaceable: list[Bulletin] = field(default_factory=list)
+    unreplaced: list[Bulletin] = field(default_factory=list)
+    new_grammar_count: int = 0
+    recovered_count: int = 0
+    region_bulletin_count: int = 0
+    grouping_count: int = 0
+    day_rating_count: int = 0
+    share_count: int = 0
+
+
+def _massif_code(bulletin_id: str) -> str:
+    """Return the ``FR-{NN}`` region component of a bulletin's id.
+
+    Args:
+        bulletin_id: The bulletin's current identifier.
+
+    Returns:
+        The massif identifier, or the full id when it is not the expected
+        shape (defensive — should not occur for rows matching ``FR-``).
+
+    """
+    parts = bulletin_id.split("-")
+    if len(parts) < 2:
+        return bulletin_id
+    return f"{parts[0]}-{parts[1]}"
+
+
+class Command(BaseCommand):
+    """Delete old-grammar FR bulletins that already have a new-grammar replacement."""
+
+    help = (
+        "Delete old-grammar FR-{NN}-{covered date} Bulletin rows once a "
+        "new-grammar FR-{NN}-{covered date}-{publication timestamp} replacement "
+        "already exists (SNOW-559, SNOW-562). Read-only unless --commit is "
+        "passed. A candidate with no replacement is reported and never deleted."
+    )
+
+    def add_arguments(self, parser: ArgumentParser) -> None:
+        """Register command-line arguments.
+
+        Args:
+            parser: The argument parser to configure.
+
+        """
+        parser.add_argument(
+            "--commit",
+            action="store_true",
+            help=(
+                "Delete replaceable old-grammar rows. Without this flag the "
+                "command is read-only."
+            ),
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=_DEFAULT_BATCH_SIZE,
+            metavar="N",
+            help=(
+                f"Process bulletins in batches of N (default: {_DEFAULT_BATCH_SIZE})."
+            ),
+        )
+        parser.add_argument(
+            "--skip-day-ratings",
+            action="store_true",
+            help="Skip the RegionDayRating refresh step after purging.",
+        )
+        parser.add_argument(
+            "--allow-orphaned-shares",
+            action="store_true",
+            help=(
+                "Proceed even when deleting would null the bulletin link on one "
+                "or more BulletinShare rows. Without this flag --commit refuses "
+                "to run when any candidate is referenced by a share."
+            ),
+        )
+
+    def _has_replacement(self, old_id: str) -> bool:
+        """Return whether a new-grammar replacement already exists for ``old_id``.
+
+        A candidate is replaceable iff some row matching ``BULLETIN_ID_RE`` has
+        a ``bulletin_id`` starting ``f"{old_id}-"`` — the new grammar is exactly
+        the old id plus ``-`` plus a 14-digit publication stamp. This is a
+        single indexed prefix lookup; no region/date re-parsing is needed.
+
+        Args:
+            old_id: The candidate's current (old-grammar) bulletin_id.
+
+        Returns:
+            ``True`` when a matching new-grammar row exists.
+
+        """
+        for candidate_id in Bulletin.objects.filter(
+            bulletin_id__startswith=f"{old_id}-"
+        ).values_list("bulletin_id", flat=True):
+            if BULLETIN_ID_RE.match(candidate_id):
+                return True
+        return False
+
+    def _walk(self, batch_size: int) -> _PurgeReport:
+        """Walk every FR bulletin in pk-ordered batches, building the report.
+
+        Args:
+            batch_size: Rows per batch.
+
+        Returns:
+            A populated ``_PurgeReport``.
+
+        """
+        qs = Bulletin.objects.filter(bulletin_id__startswith=_FR_PREFIX).order_by("pk")
+        total = qs.count()
+
+        massifs: dict[str, _MassifStats] = defaultdict(_MassifStats)
+        replaceable: list[Bulletin] = []
+        unreplaced: list[Bulletin] = []
+        new_grammar_count = 0
+        # Old-grammar ids implied by every new-grammar row seen — used to
+        # derive the number of second issues the load recovered.
+        massif_days_with_new_grammar: set[str] = set()
+
+        offset = 0
+        while offset < total:
+            batch_ids = list(
+                qs.values_list("pk", flat=True)[offset : offset + batch_size]
+            )
+            if not batch_ids:
+                break
+
+            batch = (
+                Bulletin.objects.filter(pk__in=batch_ids)
+                .order_by("pk")
+                .prefetch_related("regions")
+            )
+            for bulletin in batch:
+                if BULLETIN_ID_RE.match(bulletin.bulletin_id):
+                    new_grammar_count += 1
+                    massif_days_with_new_grammar.add(
+                        _STAMP_SUFFIX_RE.sub("", bulletin.bulletin_id)
+                    )
+                    continue
+
+                stats = massifs[_massif_code(bulletin.bulletin_id)]
+                stats.candidates += 1
+                if self._has_replacement(bulletin.bulletin_id):
+                    stats.replaceable += 1
+                    replaceable.append(bulletin)
+                else:
+                    stats.unreplaced += 1
+                    unreplaced.append(bulletin)
+
+            offset += batch_size
+
+        replaceable_pks = [b.pk for b in replaceable]
+        return _PurgeReport(
+            massifs=dict(massifs),
+            replaceable=replaceable,
+            unreplaced=unreplaced,
+            new_grammar_count=new_grammar_count,
+            recovered_count=new_grammar_count - len(massif_days_with_new_grammar),
+            region_bulletin_count=RegionBulletin.objects.filter(
+                bulletin_id__in=replaceable_pks
+            ).count(),
+            grouping_count=BulletinGrouping.objects.filter(
+                bulletin_id__in=replaceable_pks
+            ).count(),
+            day_rating_count=RegionDayRating.objects.filter(
+                source_bulletin_id__in=replaceable_pks
+            ).count(),
+            share_count=BulletinShare.objects.filter(
+                bulletin_id__in=replaceable_pks
+            ).count(),
+        )
+
+    def _print_report(self, report: _PurgeReport) -> None:
+        """Write the per-massif pre-flight table and totals to stdout.
+
+        Args:
+            report: The report built by ``_walk``.
+
+        """
+        self.stdout.write("Per-massif candidates (old-grammar FR bulletins):")
+        for massif in sorted(report.massifs):
+            stats = report.massifs[massif]
+            self.stdout.write(
+                f"  {massif}: candidates={stats.candidates} "
+                f"replaceable={stats.replaceable} unreplaced={stats.unreplaced}"
+            )
+        self.stdout.write(
+            f"Totals: candidates={len(report.replaceable) + len(report.unreplaced)} "
+            f"replaceable={len(report.replaceable)} unreplaced={len(report.unreplaced)}"
+        )
+        self.stdout.write(
+            "Cascading on delete: "
+            f"RegionBulletin={report.region_bulletin_count} "
+            f"BulletinGrouping={report.grouping_count} "
+            f"RegionDayRating(source_bulletin to null)={report.day_rating_count} "
+            f"BulletinShare(bulletin to null)={report.share_count}"
+        )
+        self.stdout.write(
+            f"New-grammar FR bulletins already loaded: {report.new_grammar_count} "
+            f"({report.recovered_count} second issue(s) recovered by the rebuilt "
+            "archive)."
+        )
+        if report.unreplaced:
+            self.stdout.write(self.style.WARNING("Unreplaced (will not be deleted):"))
+            for bulletin in report.unreplaced:
+                self.stdout.write(f"  {bulletin.bulletin_id}")
+
+    def _delete(self, bulletins: list[Bulletin], batch_size: int) -> int:
+        """Delete ``bulletins`` in pk-ordered chunks of ``batch_size``.
+
+        Args:
+            bulletins: The rows to delete.
+            batch_size: Rows per chunk.
+
+        Returns:
+            The number of Bulletin rows deleted.
+
+        """
+        pks = [b.pk for b in bulletins]
+        deleted = 0
+        for i in range(0, len(pks), batch_size):
+            chunk = pks[i : i + batch_size]
+            Bulletin.objects.filter(pk__in=chunk).delete()
+            deleted += len(chunk)
+        return deleted
+
+    def _check_gates(
+        self, report: _PurgeReport, *, allow_orphaned_shares: bool
+    ) -> None:
+        """Raise if the report fails a pre-delete safety gate.
+
+        Args:
+            report: The report built by ``_walk``.
+            allow_orphaned_shares: Whether a non-zero ``BulletinShare`` count
+                should be tolerated.
+
+        Raises:
+            CommandError: A candidate has no replacement, or the share gate
+                fires without ``--allow-orphaned-shares``.
+
+        """
+        if report.unreplaced:
+            raise CommandError(
+                f"{len(report.unreplaced)} legacy bulletin(s) have no new-grammar "
+                "replacement — see the report above. Load the rebuilt archive "
+                "before purging."
+            )
+        if report.share_count and not allow_orphaned_shares:
+            raise CommandError(
+                f"{report.share_count} BulletinShare row(s) reference bulletin(s) "
+                "that would be deleted, which would null their bulletin link. "
+                "Pass --allow-orphaned-shares to proceed."
+            )
+
+    def _purge(
+        self,
+        report: _PurgeReport,
+        *,
+        batch_size: int,
+        skip_day_ratings: bool,
+        verbosity: int,
+    ) -> None:
+        """Delete the replaceable candidates and refresh their day ratings.
+
+        Args:
+            report: The report built by ``_walk``.
+            batch_size: Rows per delete chunk.
+            skip_day_ratings: Whether to skip the RegionDayRating refresh.
+            verbosity: Django's ``--verbosity``.
+
+        Raises:
+            CommandError: A day-rating recompute failed after deleting.
+
+        """
+        # Collect (region, day) pairs before deleting — the RegionBulletin
+        # links that back bulletin.regions.all() cascade away with the row.
+        pairs = day_rating_pairs(report.replaceable)
+
+        deleted = self._delete(report.replaceable, batch_size)
+        if verbosity:
+            self.stdout.write(self.style.SUCCESS(f"Deleted {deleted} bulletin(s)."))
+
+        if skip_day_ratings:
+            return
+
+        if verbosity:
+            self.stdout.write(
+                f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
+            )
+        failures = refresh_day_ratings(pairs)
+        if verbosity:
+            self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
+        if failures:
+            raise CommandError(
+                f"{failures} day rating recompute(s) failed after purging — see "
+                "the log."
+            )
+
+    def handle(self, *args: Any, **options: Any) -> None:
+        """Execute the purge command.
+
+        Args:
+            *args: Unused positional arguments.
+            **options: Parsed command-line options.
+
+        Raises:
+            CommandError: Any candidate has no replacement, the share gate
+                fires without ``--allow-orphaned-shares``, or a day-rating
+                recompute fails after deleting — so cron/CI see a non-zero
+                exit.
+
+        """
+        commit: bool = options["commit"]
+        batch_size: int = options["batch_size"]
+        verbosity: int = options["verbosity"]
+        skip_day_ratings: bool = options["skip_day_ratings"]
+        allow_orphaned_shares: bool = options["allow_orphaned_shares"]
+
+        if verbosity:
+            mode = "commit" if commit else "read-only"
+            self.stdout.write(f"Inspecting Météo-France bulletins [{mode}].")
+
+        report = self._walk(batch_size)
+
+        if verbosity:
+            self._print_report(report)
+
+        self._check_gates(report, allow_orphaned_shares=allow_orphaned_shares)
+
+        if not report.replaceable:
+            if verbosity:
+                self.stdout.write(self.style.SUCCESS("Nothing to purge."))
+            return
+
+        if not commit:
+            if verbosity:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Would delete {len(report.replaceable)} bulletin(s). "
+                        "Read-only run — pass --commit to persist."
+                    )
+                )
+            return
+
+        self._purge(
+            report,
+            batch_size=batch_size,
+            skip_day_ratings=skip_day_ratings,
+            verbosity=verbosity,
+        )
