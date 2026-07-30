@@ -297,6 +297,20 @@ def test_opening_framing_dims_the_map_and_shows_the_frame(pwa_page: PwaPage) -> 
     assert "9999px" in box_shadow, "the dim mask is a 9999px box-shadow spread"
     assert "MB" in _readout_text(page)
 
+    # The instruction bar names the task. It precedes the frame in DOM
+    # order, so it needs its own stacking context to escape the frame's
+    # box-shadow mask — assert it is lifted, since a silently-dimmed
+    # instruction still "renders" and would pass a bare visibility check.
+    instruction = page.locator("#map-frame-instruction")
+    assert instruction.is_visible()
+    assert "offline" in instruction.inner_text().lower()
+    assert (
+        page.evaluate(
+            "() => getComputedStyle(document.getElementById('map-frame-instruction')).zIndex"
+        )
+        != "auto"
+    )
+
 
 def test_framing_strips_the_map_furniture_and_cancel_restores_it(
     pwa_page: PwaPage,

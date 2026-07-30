@@ -988,13 +988,22 @@ Optional context:
         aria-label='{% trans "Download a custom area" %}'
         data-overlay
     >
-        {# The frame itself: a fixed-size rectangle centred by the overlay's #}
-        {# flex layout (static/css/map.css). A single box-shadow spread      #}
-        {# 9999px darkens everything OUTSIDE it — one element, no separate   #}
-        {# mask, no clip-path. pointer-events: none throughout (frame AND    #}
-        {# overlay), so panning/zooming the map underneath is never          #}
-        {# intercepted — only .map-frame-cta below opts back into pointer    #}
-        {# events for its own buttons.                                      #}
+        {# Instruction bar. Mirrors the CTA sheet at the foot of the overlay #}
+        {# so the two read as a matched pair bracketing the frame: what to   #}
+        {# do at the top, what it costs and the actions at the bottom.       #}
+        {# Framing mode strips the map furniture, so without this the user   #}
+        {# is handed a dimmed map and a rectangle with nothing saying what   #}
+        {# the rectangle is for.                                            #}
+        <div class="map-frame-instruction" id="map-frame-instruction">
+            {% trans "Download selected area for offline use." %}
+        </div>
+        {# The frame itself, sized by the overlay's flex column              #}
+        {# (static/css/map.css). A single box-shadow spread 9999px darkens   #}
+        {# everything OUTSIDE it — one element, no separate mask, no         #}
+        {# clip-path. pointer-events: none throughout (frame AND overlay),   #}
+        {# so panning/zooming the map underneath is never intercepted —      #}
+        {# only .map-frame-cta below opts back into pointer events for its   #}
+        {# own buttons.                                                     #}
         <div id="map-frame-rect" class="map-frame-rect" aria-hidden="true"></div>
         {# Docked CTA bar: the live size readout plus Cancel/Download.       #}
         {# Cancel uses the shared data-action="dismiss" idiom (static/js/    #}

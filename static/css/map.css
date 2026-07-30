@@ -2104,7 +2104,11 @@
    hardcodes dimensions — it reads getBoundingClientRect(). */
 .map-frame-rect {
     flex: 1 1 auto;
-    margin: 16px 16px 12px;
+    /* An even 48px gutter on every side. Tighter than this and the frame
+       stops reading as a frame — it reads as the map's own edge. Falls
+       back to a proportional inset only where 96px of horizontal gutter
+       would leave too little frame to aim with (small phones). */
+    margin: 48px;
     border: 2px solid var(--on-ink);
     border-radius: var(--radius-card, 12px);
     /* The dim mask: a single box-shadow spread 9999px in every direction
@@ -2115,14 +2119,51 @@
     pointer-events: none;
 }
 
+/* Below ~480px a fixed 96px of horizontal gutter eats most of the screen,
+   so scale it back proportionally — the frame stays inset but remains big
+   enough to aim with on a phone. */
+@media (max-width: 480px) {
+    .map-frame-rect {
+        margin: 32px 24px;
+    }
+}
+
 @media (min-width: 640px) {
     .map-frame-rect {
-        /* Wider gutters on desktop so the frame still reads as a frame on
-           a large viewport, and a cap so it never becomes an unusably
-           wide letterbox on an ultrawide monitor. */
+        /* Cap the frame's width on a large viewport so it never becomes an
+           unusably wide letterbox on an ultrawide monitor; the 48px base
+           gutter still applies below that threshold. */
         margin-left: max(48px, calc((100vw - 1100px) / 2));
         margin-right: max(48px, calc((100vw - 1100px) / 2));
     }
+}
+
+/* Instruction sheet: says what the frame is FOR. Deliberately the visual
+   twin of .map-frame-cta below — same surface, same border, same padding
+   rhythm — so the pair brackets the frame: the instruction at the top, the
+   cost and the actions at the bottom. Framing strips the map furniture, so
+   without this the user is handed a dimmed map and a rectangle with
+   nothing naming the task. Not interactive, so it does NOT opt back into
+   pointer events: a drag started on the instruction bar still pans the map
+   underneath. */
+.map-frame-instruction {
+    /* Lifts the bar above .map-frame-rect's dim mask. The mask is that
+       element's own box-shadow, so it paints over every sibling EARLIER in
+       DOM order — and this bar precedes the frame. Without a stacking
+       context the instruction rendered visibly greyed while the CTA sheet
+       (which follows the frame, so paints after it) sat at full strength,
+       making a matched pair look like two different surfaces. */
+    position: relative;
+    z-index: 1;
+    padding: 14px 20px;
+    background: var(--color-card);
+    border-bottom: 0.5px solid var(--border);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 500;
+    text-align: center;
 }
 
 /* CTA sheet: the live size readout plus Cancel/Download, full-bleed along
@@ -2134,6 +2175,12 @@
    leaving them visible around a floating card was the "disconnected"
    read. */
 .map-frame-cta {
+    /* Same lift as .map-frame-instruction above. This sheet FOLLOWS the
+       frame in DOM order, so it already painted above the mask by source
+       order alone — stated explicitly so the pair cannot drift apart if
+       the markup is ever reordered. */
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: space-between;
