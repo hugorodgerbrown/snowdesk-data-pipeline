@@ -91,7 +91,13 @@ def _wait_for_overlay_closed(page: Page) -> None:
 
 
 def _readout_text(page: Page) -> str:
-    return page.locator("#map-frame-readout").inner_text()
+    # str(), not cast(): Playwright's own stubs already type inner_text()
+    # as str (unlike evaluate() below, which is genuinely Any in Playwright's
+    # own stubs regardless of environment) — a cast is "redundant" whenever
+    # those stubs are resolvable and only needed when they aren't (e.g. the
+    # tox mypy env's `type` dependency group deliberately excludes
+    # playwright — see pyproject.toml). str() satisfies both consistently.
+    return str(page.locator("#map-frame-readout").inner_text())
 
 
 def _move_the_frame(page: Page) -> None:
