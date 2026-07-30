@@ -98,11 +98,16 @@ class TestIdentity:
     def test_no_two_distinct_bulletins_share_an_identity(
         self, records: list[dict[str, Any]]
     ) -> None:
-        """Records that coalesce onto one id must have identical content.
+        """Records that coalesce onto one id must forecast the same thing.
 
-        The archive holds byte-identical duplicate downloads, which correctly
-        coalesce. Two records with *different* content on one id is the failure
-        this identity scheme exists to prevent.
+        32 pairs in the archive are one bulletin downloaded twice, and they
+        correctly coalesce. Two records with *different* forecast content on one
+        id is the failure this identity scheme exists to prevent.
+
+        ``source_file`` is excluded from the comparison for the same reason the
+        loader excludes it: it is the only field that differs between those 32
+        pairs, being the name of the file each was read from, and it says nothing
+        about the forecast.
 
         Args:
             records: Parsed archive records.
@@ -115,12 +120,14 @@ class TestIdentity:
                 f"{mf['massif']}-{mf['date']}-"
                 f"{compact_publication_stamp(record.get('publicationTime'))}"
             )
-            payload = json.dumps(
-                {k: v for k, v in record.items() if k != "bulletinID"},
-                sort_keys=True,
-                ensure_ascii=False,
+            comparable = {k: v for k, v in record.items() if k != "bulletinID"}
+            comparable["customData"] = {
+                **record["customData"],
+                "MF": {k: v for k, v in mf.items() if k != "source_file"},
+            }
+            by_id.setdefault(key, set()).add(
+                json.dumps(comparable, sort_keys=True, ensure_ascii=False)
             )
-            by_id.setdefault(key, set()).add(payload)
 
         clashes = {key: len(v) for key, v in by_id.items() if len(v) > 1}
 

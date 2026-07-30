@@ -120,9 +120,20 @@ class _Counts:
 def _payload_fingerprint(properties: dict[str, Any]) -> str:
     """Return a stable digest of an envelope's forecast content.
 
-    ``bulletinID`` is excluded — it is what two colliding records already agree
-    on, so including it would tell us nothing. Everything else is compared,
-    including timestamps, so a difference anywhere in the payload counts.
+    Two fields are excluded, both because they say nothing about what the
+    bulletin forecasts:
+
+    * ``bulletinID`` — what two colliding records already agree on by
+      definition.
+    * ``customData.MF.source_file`` — which PDF the record came from.  The
+      archive holds 32 pairs where one bulletin was downloaded twice, and the
+      filenames are the *only* thing that differs between them (the second
+      download was renamed ``.1``).  Comparing provenance as though it were
+      content would report all 32 as collisions on every full load, and a
+      warning that fires 32 times when nothing is wrong is a warning nobody
+      reads.
+
+    Everything else is compared, including timestamps.
 
     Args:
         properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
@@ -132,6 +143,13 @@ def _payload_fingerprint(properties: dict[str, Any]) -> str:
 
     """
     payload = {key: value for key, value in properties.items() if key != "bulletinID"}
+    custom = payload.get("customData")
+    if isinstance(custom, dict) and isinstance(custom.get("MF"), dict):
+        # Rebuild the nested dicts rather than mutating the caller's payload.
+        payload["customData"] = {
+            **custom,
+            "MF": {k: v for k, v in custom["MF"].items() if k != "source_file"},
+        }
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 

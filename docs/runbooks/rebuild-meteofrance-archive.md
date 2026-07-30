@@ -49,8 +49,13 @@ any PDF whose `source_file` already appears in the output.
 
 ## Assert before committing
 
-The NDJSON is 4,671 lines and ~18 MB; it is reviewed by these assertions, not by
-reading the diff.
+The NDJSON is 4,671 lines and ~25 MB (up from 12 MB before the prose fix); it is
+reviewed by these assertions, not by reading the diff.
+`tests/bulletins/test_meteofrance_archive_integrity.py` runs all of them, so
+`tox -e test` is the quickest check.
+
+Sort the file before committing (`sort rebuilt.ndjson > …`) — parallel workers
+emit interleaved, and a stable order keeps future rebuild diffs readable.
 
 | Check | Expected |
 |---|---|
