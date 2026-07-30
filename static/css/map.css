@@ -1451,28 +1451,44 @@
     }
 }
 
-/* SNOW-521: the "Download basemap" control. An earlier iteration rendered one
-   small roundel per breadcrumb tier (Major/Minor/Micro); only micro survived —
-   Major/Minor were dropped because their per-tier detail floors made the sizes
-   non-monotonic with containment (an L1 region could read smaller than the L2
-   it contains).
+/* SNOW-521/SNOW-522: the "Download basemap" control for the focused region.
+   An earlier iteration rendered one small roundel per breadcrumb tier
+   (Major/Minor/Micro); only micro survived — Major/Minor were dropped because
+   their per-tier detail floors made the sizes non-monotonic with containment
+   (an L1 region could read smaller than the L2 it contains).
 
-   The control has since moved out of the region-readout row and into the
-   bottom-right stack (#map-controls-br), joining the layers pill it shares a
-   concern with — the layers menu is the cache-state dashboard, and this is the
-   other control that writes to that cache. Renamed .region-readout-download →
-   .map-download-control to match: it no longer sits in, or next to, the region
-   readout. With the move it stopped being hidden-until-focused and became
-   permanently present, carrying a "no-region" state instead, so the stack's
-   composition no longer shifts as the user selects and deselects regions.
+   SNOW-521 moved it out of the region-readout row and into the bottom-right
+   stack (#map-controls-br), joining the layers pill it shares a concern with
+   — the layers menu is the cache-state dashboard, and this is the other
+   control that writes to that cache. Renamed .region-readout-download →
+   .map-download-control to match. With that move it stopped being
+   hidden-until-focused and became permanently present, carrying a
+   "no-region" state instead, so the bottom-right stack's composition never
+   shifted as the user selected and deselected regions.
+
+   SNOW-522 moved it BACK into the ribbon header (between #region-readout and
+   #region-readout-action) — the bottom-right slot became the new
+   custom-area download control's home instead. Back in the header it is
+   hidden-until-focused again, exactly like #region-readout-action beside it
+   (the sibling rule below): a permanently-present roundel next to two other
+   hidden-until-focused controls would be the odd one out, which was only
+   true while it stood alone in the bottom-right stack. The class keeps its
+   .map-download-control name — nothing in this ruleset is position-specific
+   — and the "no-region"/"disabled"/"offline" muted-glyph treatment further
+   down still applies for the rarer case where a region IS focused but has no
+   computed download summary.
 
    The now-removed .region-readout-downloads flex wrapper existed only to sit
    three tier roundels in a row inside .ribbon-header. */
 
 .map-download-control {
+    /* Hidden by default (the sibling rule below reveals it once a region is
+       focused); every other visual property still applies once shown, so
+       they stay in this same ruleset rather than a separate one keyed off
+       the sibling selector. */
+    display: none;
     position: relative;
     overflow: hidden;
-    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: var(--map-control-lg);
@@ -1490,8 +1506,20 @@
     transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-.map-download-control[hidden] {
-    display: none;
+/* Hidden until a region is focused — same idiom as .region-readout-action
+   immediately above it in the DOM (both are direct siblings of
+   #region-readout inside .ribbon-header). */
+#region-readout.has-region ~ .map-download-control {
+    display: inline-flex;
+}
+
+/* SNOW-522: the custom-area download control shares .map-download-control's
+   glass-roundel chrome (colour states, busy fill, done tick) but, unlike its
+   per-region sibling above, is NOT hidden-until-focused — it lives in the
+   bottom-right stack with no dependency on a focused region, so overrides
+   the shared display: none default back to always-shown. */
+.map-custom-download-control {
+    display: inline-flex;
 }
 
 .map-download-control:hover,
@@ -1629,15 +1657,19 @@
 .ribbon-cell--very_high   { background: var(--color-eaws-very-high); }
 
 /* —————————————————————————————————————————————————————————
-   Map-scoped z-index band (SNOW-486)
-   #home-intro and #map-help-overlay are positioned against other
-   #map controls (utility cluster, scrubber, legend) and live inside
-   #map's own stacking context, so they intentionally do NOT use the
-   global --z-banner/--z-toast/--z-popup/--z-modal scale declared in
-   src/css/main.css's @theme — lifting them out of #map would detach
-   them from the controls they're anchored to. This 0-7 scale is local
+   Map-scoped z-index band (SNOW-486; extended SNOW-522)
+   #home-intro, #map-help-overlay and #map-frame-overlay are positioned
+   against other #map controls (utility cluster, scrubber, legend) and
+   live inside #map's own stacking context, so they intentionally do NOT
+   use the global --z-banner/--z-toast/--z-popup/--z-modal scale declared
+   in src/css/main.css's @theme — lifting them out of #map would detach
+   them from the controls they're anchored to. This 0-8 scale is local
    to #map only: 0-4 cover the choropleth/legend/utility-cluster layers
-   above; 5 is #home-intro, 6 is the coachmark ring, 7 is its tooltip.
+   above; 5 is #home-intro, 6 is the coachmark ring, 7 is its tooltip,
+   8 is the custom-area download's framing overlay (mask + frame + CTA
+   bar) — deliberately above the coachmark tour, since opening the
+   framing overlay while the tour happens to be open should read as the
+   framing overlay winning, not layering oddly beneath a highlight ring.
    ————————————————————————————————————————————————————————— */
 
 /* —————————————————————————————————————————————————————————
@@ -2021,6 +2053,163 @@
 .map-help-btn:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
+}
+
+/* —————————————————————————————————————————————————————————
+   SNOW-522 — Custom-area basemap download framing overlay
+   (#map-frame-overlay, public/partials/_map_embed.html)
+   A Google-Maps-style dim mask with a fixed, centred frame: the user
+   pans/zooms the map underneath it, static/js/map.js's
+   mapCustomDownloadControlInit recomputes the "up to N MB" readout on
+   every MapLibre 'move'. z-index 8 on the map-scoped band above (the
+   comment block above .home-intro further up this file) — deliberately
+   above the coachmark tour (6/7).
+   ————————————————————————————————————————————————————————— */
+
+#map-frame-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    /* Centres .map-frame-rect via flex rather than absolute + transform
+       centring maths — .map-frame-cta escapes this layout entirely (its
+       own position: fixed below), so only the frame rect is affected. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* The overlay itself never intercepts pointer events — panning/
+       zooming the map underneath must never be blocked by it. Only
+       .map-frame-cta (below) opts back in for its own buttons. */
+    pointer-events: none;
+}
+
+#map-frame-overlay[hidden] {
+    display: none;
+}
+
+/* The frame: a fixed-size rectangle, portrait-ish on narrow viewports
+   (a phone held upright — most of this control's use), landscape on
+   wide ones. Sized in CSS so static/js/map.js never hardcodes
+   dimensions — it reads the frame's own getBoundingClientRect(). */
+.map-frame-rect {
+    width: min(300px, calc(100vw - 64px));
+    height: min(420px, calc(100vh - 260px));
+    border: 2px solid var(--on-ink);
+    border-radius: var(--radius-card, 12px);
+    /* The dim mask: a single box-shadow spread 9999px in every direction
+       darkens everything OUTSIDE this element's own box — no separate
+       full-screen mask element, no clip-path. Paints correctly at any
+       viewport size with nothing to recompute on resize. */
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+@media (min-width: 640px) {
+    .map-frame-rect {
+        width: min(520px, calc(100vw - 160px));
+        height: min(340px, calc(100vh - 220px));
+    }
+}
+
+/* Docked CTA bar: the live size readout plus Cancel/Download. Fixed
+   (escapes #map-frame-overlay's flex centring, see above) and pinned to
+   the bottom, inset by the same --map-edge-inset-* tokens the roundel
+   stack and the favourite/report sheets use, so its edges line up with
+   the rest of the map chrome on notched devices too. */
+.map-frame-cta {
+    position: fixed;
+    left: var(--map-edge-inset-left);
+    right: var(--map-edge-inset-right);
+    bottom: var(--map-edge-inset-bottom);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    border-radius: var(--radius-card, 12px);
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 0.5px solid var(--border);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+    /* Re-enables pointer events within the mask — this bar (and only
+       this bar) is interactive. */
+    pointer-events: auto;
+}
+
+.map-frame-readout {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* SNOW-522: painted when the framed area exceeds DOWNLOAD_CEILING_MB — the
+   same "too large" backstop the per-region control's disabled state
+   carries, mirrored here since a custom area's size is only known once
+   framed. static/js/map.js toggles this class alongside disabling
+   #map-frame-confirm. */
+.map-frame-readout--over-ceiling {
+    color: var(--color-status-error-text);
+}
+
+.map-frame-cta-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Reuses .map-help-btn's pill shape/weight (immediately above) rather than
+   a third near-identical button ruleset — renamed only because it lives in
+   a different overlay and .map-help-btn's own selectors (.map-help--no-motion
+   scoping) don't apply here. */
+.map-frame-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--sans);
+    transition: opacity 120ms ease;
+}
+
+.map-frame-btn--primary {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-frame-btn--primary:hover {
+    opacity: 0.85;
+}
+
+.map-frame-btn--primary:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.map-frame-btn--text {
+    background: transparent;
+    color: var(--color-text-2);
+}
+
+.map-frame-btn--text:hover {
+    color: var(--color-text-1);
+}
+
+.map-frame-btn:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .map-frame-btn {
+        transition: none;
+    }
 }
 
 /* SNOW-419: community-reports popup — a small, DOM-built card shown on

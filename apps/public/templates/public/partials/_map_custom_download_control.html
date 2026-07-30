@@ -1,0 +1,92 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_custom_download_control.html — "Download a custom
+area" control (SNOW-522).
+
+Takes the bottom-right utility-stack slot the per-region download control
+(_map_download_control.html) vacated when it moved back into the ribbon
+header. Clicking this roundel opens the framing overlay in _map_embed.html
+(#map-frame-overlay) — a Google-Maps-style dim mask with a fixed centred
+frame the user pans/zooms the map under, with a live "up to N MB" readout
+— rather than downloading immediately like its per-region sibling: there
+is no fixed area to size until the user has framed one.
+
+Same roundel/state-machine markup idiom as _map_download_control.html
+(data-download-state, per-state SVG glyphs, --download-progress fill) and
+the same .map-download-control CSS class for the shared glass-circle
+chrome (static/css/map.css) — but a distinct glyph (a viewfinder/frame,
+not a plain download arrow) so the two controls read as different
+affordances at a glance, and it is NOT hidden-until-focused: unlike the
+per-region control it has no dependency on a focused region, so it is
+always present in the bottom-right stack (matching every other roundel
+there).
+
+States (data-download-state): idle | busy | done | offline — no
+"no-region" (there is always a map area to frame) and no persistent
+"disabled" (the over_ceiling backstop applies to the CURRENT framed area,
+shown live in the overlay's CTA bar instead, not to this roundel).
+static/js/map.js's mapCustomDownloadControlInit drives the state and
+rewrites the title/aria-label to match — exactly like its per-region
+sibling, "done" is probed from real BASEMAP_PINNED_CACHE contents against
+the persisted saved-area's centre tile, never a stored flag.
+
+Takes no context.
+{% endcomment %}
+<button
+    type="button"
+    id="map-custom-download-control"
+    class="map-custom-download-control map-download-control"
+    data-download-state="idle"
+    aria-haspopup="dialog"
+    aria-controls="map-frame-overlay"
+    aria-label="{% trans "Download a custom area's basemap" %}"
+    title="{% trans "Download a custom area's basemap" %}"
+>
+    {# Viewfinder/frame glyph — four corner brackets — distinct from the   #}
+    {# plain download-arrow glyph the per-region control uses.             #}
+    <svg
+        class="map-download-control-icon map-download-control-icon--idle"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+        <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+        <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+        <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    </svg>
+    <svg
+        class="map-download-control-icon map-download-control-icon--busy"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+    <svg
+        class="map-download-control-icon map-download-control-icon--done"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20 6 9 17l-5-5" />
+    </svg>
+    <span class="map-download-control-percent" aria-hidden="true"></span>
+</button>

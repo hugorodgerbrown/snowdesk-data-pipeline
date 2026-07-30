@@ -59,12 +59,20 @@ active-day highlight in sync.
                         class="region-readout-leaf"
                     ></span></span>
             </div>
-            {# The "Download basemap" roundel used to sit here, between the   #}
-            {# readout and the view-bulletin action. It moved to the          #}
-            {# bottom-right control stack in _map_embed.html (partial:        #}
-            {# public/partials/_map_download_control.html) to sit beside the  #}
-            {# layers pill — the layers menu is the cache-state dashboard and #}
-            {# the download is the other control that writes to that cache.   #}
+            {# SNOW-522: the "Download basemap" roundel for the focused        #}
+            {# region moves back here, between the readout and the            #}
+            {# view-bulletin action — it briefly (SNOW-521) lived in the       #}
+            {# bottom-right control stack (_map_embed.html), but that slot is  #}
+            {# now the new custom-area download control's home (partial:      #}
+            {# public/partials/_map_custom_download_control.html). Like        #}
+            {# #region-readout-action below it, it is hidden until a region    #}
+            {# is focused (the sibling CSS rule in static/css/map.css) — the   #}
+            {# always-present "no-region" state made sense in the bottom-right #}
+            {# stack, where a vanishing roundel would have shifted the stack's #}
+            {# composition; here it sits beside two other already-hidden-      #}
+            {# until-focused controls, so a lone permanent roundel with        #}
+            {# nothing selected would have been the odd one out.               #}
+            {% include "public/partials/_map_download_control.html" %}
             {# View-bulletin action: a roundel holding just an arrow, with a   #}
             {# "View bulletin" tooltip. Shown only when a region is focused    #}
             {# (CSS sibling rule); map.js sets its href to the dated bulletin. #}

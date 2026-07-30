@@ -1,32 +1,34 @@
 {% load i18n %}
 {% comment %}
 public/partials/_map_download_control.html — the "Download basemap" control
-for the currently-focused region (SNOW-521, relocated since).
+for the currently-focused region (SNOW-521; relocated to the bottom-right
+utility stack, then SNOW-522 relocated it again).
 
-A member of the bottom-right control stack (#map-controls-br in
-_map_embed.html), sitting beside the layers pill: the layers menu is the
-cache-state dashboard, and this is the other control that writes to that
-cache. It was previously a roundel in the region-readout row
-(_season_ribbon.html) named .region-readout-download; both the placement
-and the name moved together.
+Lives in the ribbon header (public/partials/_season_ribbon.html), between
+#region-readout and #region-readout-action — its original SNOW-314 home.
+SNOW-521 moved it into the bottom-right control stack beside the layers
+pill; SNOW-522 moved it back and handed that bottom-right slot to the new
+custom-area download control (public/partials/_map_custom_download_control.html)
+instead, so the two distinct download affordances (whole focused region vs.
+a user-framed area) don't compete for the same spot.
 
 Takes no context. An earlier iteration rendered one of these per breadcrumb
 tier and took a ``tier`` argument; only the micro (leaf) tier survived —
 Major/Minor were dropped because their per-tier detail floors made the
 sizes non-monotonic with containment, which read as a bug.
 
-Unlike its predecessor this is NOT hidden until a region is focused: it is
-always present and starts in the "no-region" state, so the stack's
-composition doesn't shift as the user selects and deselects regions.
-map.js's mapDownloadControlInit drives data-download-state
-(no-region/idle/busy/done/disabled/offline) and rewrites the title/aria-label
-to match — the done state is probed from real BASEMAP_PINNED_CACHE contents,
-never a stored flag. Styled in static/css/map.css.
-
-The server-rendered label below is the nothing-focused wording, which is the
-correct first-paint state: map.js only adopts a region once regions.geojson
-has loaded. It also relabels for the other "no-region" cause — a focused
-region whose properties.download is null.
+Hidden until a region is focused, like its neighbour #region-readout-action
+(the sibling CSS rule ``#region-readout.has-region ~ .map-download-control``
+in static/css/map.css) — back in the ribbon header, a permanently-present
+roundel with nothing selected would be the odd one out next to two other
+hidden-until-focused controls; that was only right while it sat alone in
+the bottom-right stack. map.js's mapDownloadControlInit drives
+data-download-state (no-region/idle/busy/done/disabled/offline) and
+rewrites the title/aria-label to match — the done state is probed from real
+BASEMAP_PINNED_CACHE contents, never a stored flag. The "no-region" state
+stays in the machine for the focused-but-uncomputed case (properties.download
+is null) even though the CSS rule now also hides the control while nothing
+is focused at all.
 {% endcomment %}
 <button
     type="button"

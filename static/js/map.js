@@ -150,6 +150,46 @@ function computeBasemapSpriteURLs(map) {
   return urls;
 }
 
+// SNOW-521: same-origin data-feed + active-basemap-style URL list —
+// everything a basemap download warms besides its own tile ranges.
+// Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
+// full exclusion rationale re: favourites/community-reports) minus tile
+// enumeration, which comes from the caller's own blob instead.
+//
+// SNOW-522: lifted out of mapDownloadControlInit's closure (where it
+// started as a private helper) to module scope so the new
+// mapCustomDownloadControlInit can share this one copy rather than
+// duplicating it — everything it touches (COUNTRY_STATE, RATINGS_URL,
+// computeBasemapSpriteURLs) is already module-scope.
+//
+// @returns {string[]}
+function assembleBasemapDownloadFeedURLs() {
+  const mapEl = document.getElementById('map');
+  const urls = [];
+  const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
+  const addCountryFeeds = (base) => {
+    if (!base) return;
+    for (const code of enabledCountries) {
+      urls.push(base + '?country=' + code);
+    }
+  };
+  addCountryFeeds(mapEl.dataset.regionsUrl);
+  addCountryFeeds(mapEl.dataset.majorRegionsUrl);
+  addCountryFeeds(mapEl.dataset.subRegionsUrl);
+  if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
+  if (RATINGS_URL) {
+    for (const code of enabledCountries) {
+      urls.push(RATINGS_URL + '?country=' + code);
+    }
+  }
+  const activeBasemap = document.querySelector(
+    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
+  );
+  if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
+  urls.push(...computeBasemapSpriteURLs(MAP));
+  return urls;
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -4875,11 +4915,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // (an L1 region could read smaller than an L2 it contains), which read
 // as a bug.
 //
-// The control has since moved out of the #region-readout chip into the
-// bottom-right stack (#map-download-control, rendered by
-// public/partials/_map_download_control.html into #map-controls-br),
-// beside the layers pill — the layers menu is the cache-state dashboard
-// and this is the other control that writes to that cache.
+// The control has moved twice since. SNOW-521 moved it out of the
+// #region-readout chip into the bottom-right stack, beside the layers
+// pill — the layers menu is the cache-state dashboard and this is the
+// other control that writes to that cache. SNOW-522 moved it BACK into
+// the #region-readout chip (public/partials/_season_ribbon.html), and
+// handed the bottom-right slot to a second, distinct control — a
+// user-framed custom-area download (mapCustomDownloadControlInit,
+// below) — that this one does not need to know about; this IIFE finds
+// #map-download-control by id wherever it currently renders and is
+// otherwise unchanged by either move.
 //
 // Data source — no client-side tile enumeration. Region tile coverage
 // is precomputed server-side (regions/services/basemap_tiles.py) and
@@ -4888,12 +4933,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // itself needs), so showing the size is a pure in-memory lookup — no
 // extra fetch until the user actually clicks Download.
 //
-// Show/size — the control is ALWAYS rendered; focusing a region
-// (snowdesk:region-selected) moves it from 'no-region' to an actionable
-// state, independent of which overlay tiers (L1/L2) are toggled on. It is
-// never hidden: in the bottom-right stack a vanishing control would read
-// as a missing feature, and the stack's composition would shift under the
-// user on every select/deselect.
+// Show/size — the control is rendered whenever a region is focused
+// (snowdesk:region-selected moves it from 'no-region' to an actionable
+// state), independent of which overlay tiers (L1/L2) are toggled on.
+// Hidden until then via the same CSS sibling rule as its neighbour
+// #region-readout-action (#region-readout.has-region ~ …,
+// static/css/map.css) — back in the ribbon header a permanently-present
+// roundel with nothing focused would be the odd one out next to that
+// already-hidden-until-focused neighbour. The 'no-region' state stays in
+// the machine below for the rarer case of a focused region with no
+// computed download summary (properties.download is null).
 //
 // State (no-region/idle/busy/done/disabled/offline, data-download-state)
 // — idle/done are
@@ -5125,42 +5174,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Same-origin data-feed + active-basemap-style URL list — everything
-   * the download warms besides its own tile ranges. Mirrors
-   * SNOW-492/493's assembly (see the removed cacheNowInit for the full
-   * exclusion rationale re: favourites/community-reports) minus tile
-   * enumeration, which now comes from the fetched blob.
-   *
-   * @returns {string[]}
-   */
-  function _assembleFeedURLs() {
-    const mapEl = document.getElementById('map');
-    const urls = [];
-    const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
-    const addCountryFeeds = (base) => {
-      if (!base) return;
-      for (const code of enabledCountries) {
-        urls.push(base + '?country=' + code);
-      }
-    };
-    addCountryFeeds(mapEl.dataset.regionsUrl);
-    addCountryFeeds(mapEl.dataset.majorRegionsUrl);
-    addCountryFeeds(mapEl.dataset.subRegionsUrl);
-    if (mapEl.dataset.resortsGeojsonUrl) urls.push(mapEl.dataset.resortsGeojsonUrl);
-    if (RATINGS_URL) {
-      for (const code of enabledCountries) {
-        urls.push(RATINGS_URL + '?country=' + code);
-      }
-    }
-    const activeBasemap = document.querySelector(
-      '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
-    );
-    if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
-    urls.push(...computeBasemapSpriteURLs(MAP));
-    return urls;
-  }
-
-  /**
    * Run the download: fetch the region's full blob, assemble the URL
    * list, and hand it to the SW's warm-cache handler.
    *
@@ -5202,7 +5215,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return;
     }
     const tileUrls = core.rangesToTileURLs(template, blob);
-    const urls = [..._assembleFeedURLs(), ...tileUrls];
+    const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
 
     const onProgress = (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;

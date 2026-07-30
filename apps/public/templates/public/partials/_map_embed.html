@@ -406,13 +406,14 @@ Optional context:
         {# needs a fixed-height box wrapping an auto-height one.                #}
         <div id="map-controls-collapsible">
             <div class="map-controls-collapsible-inner">
-                {# "Download basemap" for the focused region, moved here from   #}
-                {# the region-readout row: the layers menu is the cache-state   #}
-                {# dashboard and this is the other control that writes to that  #}
-                {# cache, so the two offline concerns sit together. Always      #}
-                {# rendered (starts "no-region") rather than revealed on focus, #}
-                {# so the group's height never changes under the user.          #}
-                {% include "public/partials/_map_download_control.html" %}
+                {# SNOW-522: "Download this area" — a user-framed custom-area    #}
+                {# basemap download, taking the slot the per-region download     #}
+                {# control (_map_download_control.html) vacated when it moved    #}
+                {# back to the ribbon header (public/partials/_season_ribbon.html). #}
+                {# Always rendered (no focused-region dependency, unlike its      #}
+                {# sibling above), so the group's height never changes under the  #}
+                {# user. See public/partials/_map_custom_download_control.html.   #}
+                {% include "public/partials/_map_custom_download_control.html" %}
                 {# SNOW-414: "Add favourite" control — rendered regardless of           #}
                 {# authentication state, so anonymous visitors see the affordance and  #}
                 {# get a sign-in CTA on tap (favourites.js branches on                 #}
@@ -727,25 +728,32 @@ Optional context:
         <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
             {% trans "Names the region selected and its danger for the day." %}
         </li>
+        {# SNOW-522: reworded for the ribbon-header position (it briefly lived  #}
+        {# in the bottom-right stack under SNOW-521) and moved next to          #}
+        {# #region-readout — it now sits between that pill and                 #}
+        {# #region-readout-action in the DOM, so walking the tour top-to-       #}
+        {# bottom no longer zig-zags top-left → bottom-right → top-left.        #}
+        <li data-help-target="#map-download-control" data-help-title='{% trans "Download this region" %}'>
+            {% trans "Download the focused region's basemap for offline access." %}
+        </li>
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
             {% trans "Click through to the bulletin detail page." %}
         </li>
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
             {% trans "Search by name to jump straight to a region." %}
         </li>
-        {# The bottom-right stack, walked top to bottom in DOM order. The      #}
-        {# download step in particular has to sit here rather than earlier:    #}
-        {# the control moved out of the region-readout row, and leaving its    #}
-        {# step in the old second slot sent the highlight top-left →           #}
-        {# bottom-right → top-left again.                                      #}
+        {# The bottom-right stack, walked top to bottom in DOM order. #}
         <li data-help-target="#basemap-toggle" data-help-title='{% trans "Basemap and layers" %}'>
             {% trans "Switch base maps and toggle country outlines, region overlays and resorts." %}
         </li>
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
             {% trans "Centre the map on your current position." %}
         </li>
-        <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
-            {% trans "Download the selected region's basemap for offline access." %}
+        {# SNOW-522: the new custom-area download — takes the bottom-right      #}
+        {# slot the per-region control vacated when it moved to the ribbon      #}
+        {# header (the step above).                                            #}
+        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Download a custom area" %}'>
+            {% trans "Draw and download a custom area of the map for offline access." %}
         </li>
         <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
             {% trans "Pin a spot to your favourites for quick access later." %}
@@ -957,6 +965,65 @@ Optional context:
             </div>
         </div>
     {% endif %}
+    {# SNOW-522: framing overlay for the "Download a custom area" control    #}
+    {# (public/partials/_map_custom_download_control.html). A Google-Maps-   #}
+    {# style dim mask with a fixed, centred frame — the user pans/zooms the  #}
+    {# map underneath it; mapCustomDownloadControlInit (map.js) recomputes   #}
+    {# the "up to N MB" readout on every MapLibre 'move', with no network    #}
+    {# round trip (the tile math is ported client-side —                    #}
+    {# static/js/basemap_download_core.js). Position: fixed, inset: 0, like  #}
+    {# #map-help-overlay above, on #map's own local z-index band (static/    #}
+    {# css/map.css) rather than the --z-* chrome scale — same reasoning as   #}
+    {# that overlay's header comment: it is positioned against #map's own    #}
+    {# controls, not the page chrome. aria-modal="false" for the same reason #}
+    {# #map-help-overlay uses it: nothing here traps focus or blocks         #}
+    {# pointer events on the map underneath (the mask is pointer-events:     #}
+    {# none throughout, see .map-frame-rect below), so it would misstate     #}
+    {# the actual behaviour to claim otherwise.                              #}
+    <div
+        id="map-frame-overlay"
+        hidden
+        role="dialog"
+        aria-modal="false"
+        aria-label='{% trans "Download a custom area" %}'
+        data-overlay
+    >
+        {# The frame itself: a fixed-size rectangle centred by the overlay's #}
+        {# flex layout (static/css/map.css). A single box-shadow spread      #}
+        {# 9999px darkens everything OUTSIDE it — one element, no separate   #}
+        {# mask, no clip-path. pointer-events: none throughout (frame AND    #}
+        {# overlay), so panning/zooming the map underneath is never          #}
+        {# intercepted — only .map-frame-cta below opts back into pointer    #}
+        {# events for its own buttons.                                      #}
+        <div id="map-frame-rect" class="map-frame-rect" aria-hidden="true"></div>
+        {# Docked CTA bar: the live size readout plus Cancel/Download.       #}
+        {# Cancel uses the shared data-action="dismiss" idiom (static/js/    #}
+        {# overlays.js) — map.js listens for the resulting overlay:dismissed #}
+        {# to tear down its 'move' listener and clear the pending framed     #}
+        {# area. Download is NOT a dismiss trigger: map.js closes the        #}
+        {# overlay itself once the run settles, so the roundel behind it     #}
+        {# (like its per-region sibling) is what carries the outcome.        #}
+        <div class="map-frame-cta" id="map-frame-cta">
+            <span id="map-frame-readout" class="map-frame-readout" aria-live="polite"></span>
+            <div class="map-frame-cta-actions">
+                <button
+                    type="button"
+                    id="map-frame-cancel"
+                    class="map-frame-btn map-frame-btn--text"
+                    data-action="dismiss"
+                >
+                    {% trans "Cancel" %}
+                </button>
+                <button
+                    type="button"
+                    id="map-frame-confirm"
+                    class="map-frame-btn map-frame-btn--primary"
+                >
+                    {% trans "Download" %}
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {# SNOW-492: per-overlay "unavailable offline" toasts. Hidden by default;   #}
 {# map.js reveals the matching id (remove `hidden`, add `flex` — see        #}
