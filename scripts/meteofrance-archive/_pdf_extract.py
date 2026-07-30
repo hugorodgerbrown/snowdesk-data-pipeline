@@ -297,6 +297,54 @@ def extract_text_strip(region: "pdfplumber.page.Page") -> str:
     return text.strip() if text else ""
 
 
+def find_heading_y(
+    page: "pdfplumber.page.Page",
+    needle: str,
+    *,
+    after: float = 0.0,
+) -> float | None:
+    """Return the top y-coordinate of the first line containing ``needle``.
+
+    The BRA layout is **not** vertically fixed: the stability section grows with
+    the volume of prose, so the "Qualité de la neige" heading that follows it
+    has been observed at y=364, y=399 and y=401 across three bulletins.  Fixed
+    y-bands therefore truncate long bulletins, which is half of why 63% of
+    archived comment lines were cut (SNOW-559 — the other half was the
+    ``crop_left`` column clip).  Callers use this to derive section bounds from
+    the headings themselves.
+
+    Args:
+        page: The pdfplumber page object.
+        needle: Case-insensitive text to look for within a line.
+        after: Ignore matches at or above this y-coordinate.  Lets a caller
+            skip an earlier occurrence of a repeated phrase.
+
+    Returns:
+        The ``top`` coordinate of the matching line, or ``None`` if no line
+        below ``after`` contains ``needle``.
+
+    """
+    lowered = needle.lower()
+    # Group words onto lines by rounded y — pdfplumber reports per-word
+    # coordinates that vary by a fraction of a point within a line — but keep
+    # the exact minimum top per line, because callers use the returned value as
+    # a crop boundary.  Rounding 398.9 up to 399.0 leaves the heading inside a
+    # crop that ends there, leaking it into the extracted prose.
+    lines: dict[int, list[str]] = {}
+    tops: dict[int, float] = {}
+    for word in page.extract_words():
+        top = float(word["top"])
+        if top <= after:
+            continue
+        key = round(top)
+        lines.setdefault(key, []).append(str(word["text"]))
+        tops[key] = min(tops.get(key, top), top)
+    for key in sorted(lines):
+        if lowered in " ".join(lines[key]).lower():
+            return tops[key]
+    return None
+
+
 def extract_words_in_region(
     page: "pdfplumber.page.Page",
     x0: float,
