@@ -354,6 +354,7 @@ class TestGoldenWeekLoad:
                 if source is None:
                     continue
                 assert target_day_for_valid_from(source.valid_from) == day
+                assert source.target_date == day
                 assert (
                     source.valid_from.date() == day and source.valid_from.hour < 12
                 ), (

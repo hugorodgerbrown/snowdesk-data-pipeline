@@ -260,12 +260,12 @@ class Command(BaseCommand):
         """
         from datetime import date
 
-        from apps.bulletins.services.day_rating import _target_day
+        from apps.bulletins.services.day_rating import target_day_for_valid_from
 
         pairs: set[tuple[Any, date]] = set()
         for bulletin in bulletins:
             regions = list(bulletin.regions.all())
-            day = _target_day(bulletin)
+            day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
             for region in regions:
                 pairs.add((region, day))
 

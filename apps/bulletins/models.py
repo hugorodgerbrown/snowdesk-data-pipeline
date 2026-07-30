@@ -271,6 +271,19 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
             return None
         return timezone.localtime(earliest).date()
 
+    def for_target_date(self, day: _date) -> "BulletinQuerySet":
+        """
+        Return all bulletins whose ``target_date`` equals the supplied date.
+
+        Args:
+            day: The calendar date to filter by.
+
+        Returns:
+            A filtered queryset of Bulletin rows targeting that date.
+
+        """
+        return self.filter(target_date=day)
+
 
 class Bulletin(BaseModel):
     """
@@ -312,6 +325,17 @@ class Bulletin(BaseModel):
     issued_at = models.DateTimeField(db_index=True)
     valid_from = models.DateTimeField()
     valid_to = models.DateTimeField()
+    target_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Calendar date this bulletin is forecasting, as determined by "
+            "target_day_for_valid_from() from valid_from. Populated by "
+            "upsert_bulletin at ingest time and back-filled by the "
+            "backfill_bulletin_target_dates management command."
+        ),
+    )
     next_update = models.DateTimeField(null=True, blank=True)
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
@@ -346,9 +370,16 @@ class Bulletin(BaseModel):
 
         ordering = ["-issued_at"]
 
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this bulletin.
+
+        Format: ``Bulletin(<bulletin_id>, <issued_at date>)``
+        """
+        return f"Bulletin({self.bulletin_id}, {self.issued_at:%Y-%m-%d})"
+
     def __str__(self) -> str:
         """Return a human-readable representation."""
-        return f"Bulletin({self.bulletin_id}, {self.issued_at:%Y-%m-%d})"
+        return self.to_string()
 
     @property
     def _properties(self) -> dict:

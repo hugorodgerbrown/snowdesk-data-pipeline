@@ -29,6 +29,7 @@ from apps.bulletins.models import (
     RegionBulletin,
     RegionDayRating,
 )
+from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -1147,3 +1148,88 @@ class TestUpsertBulletinGroupingHook:
 
         assert Bulletin.objects.count() == 1
         assert BulletinGrouping.objects.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# upsert_bulletin: target_date (SNOW-560)
+# ---------------------------------------------------------------------------
+
+SENTINELS_DIR = Path(__file__).resolve().parent.parent.parent / "sentinels"
+
+# One evening-issue sentinel per provider — each has an hour >= 12 UTC
+# validTime.startTime, so each targets the *following* calendar day.
+_TARGET_DATE_SENTINELS = [
+    SENTINELS_DIR / "slf" / "A-single-level" / "source.json",
+    SENTINELS_DIR / "albina" / "A-single-level" / "source.json",
+    SENTINELS_DIR / "meteofrance" / "A-single-level" / "source.json",
+]
+
+
+def _sentinel_id(path: Path) -> str:
+    """Return a short human-readable test ID from a sentinel file path."""
+    return str(path.relative_to(SENTINELS_DIR).parent)
+
+
+@pytest.mark.django_db
+class TestUpsertBulletinTargetDate:
+    """Tests for upsert_bulletin's target_date assignment (SNOW-560)."""
+
+    @pytest.mark.parametrize("source_path", _TARGET_DATE_SENTINELS, ids=_sentinel_id)
+    def test_evening_sentinel_targets_the_following_day(
+        self, source_path: Path
+    ) -> None:
+        """Every provider's evening-issue sentinel targets valid_from's next day.
+
+        Each committed sentinel here is an evening issue (validTime.startTime
+        hour >= 12 UTC). Only the first region in the payload is seeded —
+        upsert_bulletin only requires at least one resolvable region, and the
+        rest are skipped as "unknown but well-formed" without affecting
+        target_date derivation.
+        """
+        raw: dict[str, Any] = json.loads(source_path.read_text(encoding="utf-8"))
+        first_region = raw["regions"][0]
+        MicroRegionFactory.create(
+            region_id=first_region["regionID"], name=first_region["name"]
+        )
+
+        run = PipelineRunFactory.create()
+        upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id=raw["bulletinID"])
+        valid_from = _parse_dt(raw["validTime"]["startTime"])
+        assert valid_from.hour >= 12, "sentinel is expected to be an evening issue"
+        expected = target_day_for_valid_from(valid_from)
+        assert bulletin.target_date == expected
+
+    def test_morning_and_previous_evening_issue_share_a_target_date(
+        self, _seed_test_regions: None
+    ) -> None:
+        """A morning issue and the prior evening's issue target the same day."""
+        run = PipelineRunFactory.create()
+
+        evening_raw = _make_raw_bulletin(
+            bulletin_id="evening-issue",
+            publication_time="2025-03-14T16:00:00Z",
+            validTime={
+                "startTime": "2025-03-14T16:00:00Z",
+                "endTime": "2025-03-15T08:00:00Z",
+            },
+        )
+        morning_raw = _make_raw_bulletin(
+            bulletin_id="morning-issue",
+            publication_time="2025-03-15T08:00:00Z",
+            validTime={
+                "startTime": "2025-03-15T07:00:00Z",
+                "endTime": "2025-03-15T17:00:00Z",
+            },
+        )
+
+        upsert_bulletin(evening_raw, run)
+        upsert_bulletin(morning_raw, run)
+
+        evening_bulletin = Bulletin.objects.get(bulletin_id="evening-issue")
+        morning_bulletin = Bulletin.objects.get(bulletin_id="morning-issue")
+
+        assert evening_bulletin.target_date == date(2025, 3, 15)
+        assert morning_bulletin.target_date == date(2025, 3, 15)
+        assert evening_bulletin.target_date == morning_bulletin.target_date

@@ -186,6 +186,7 @@ class BulletinAdmin(admin.ModelAdmin):
         "issued_at",
         "valid_from",
         "valid_to",
+        "target_date",
         "lang",
         "region_count",
         "highest_danger_rating",
@@ -193,7 +194,7 @@ class BulletinAdmin(admin.ModelAdmin):
         "pdf_url",
         "updated_at",
     ]
-    list_filter = ["lang", "unscheduled", "issued_at"]
+    list_filter = ["lang", "unscheduled", "issued_at", "target_date"]
     search_fields = ["bulletin_id"]
     ordering = ["-issued_at"]
     readonly_fields = [
@@ -201,6 +202,7 @@ class BulletinAdmin(admin.ModelAdmin):
         "issued_at",
         "valid_from",
         "valid_to",
+        "target_date",
         "next_update",
         "lang",
         "unscheduled",

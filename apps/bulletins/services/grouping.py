@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from apps.bulletins.services.day_rating import _target_day
+from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.regions.fixture_utils import boundary_from_children
 
 if TYPE_CHECKING:
@@ -82,7 +82,7 @@ def compute_bulletin_grouping_boundary(
     dissolved = boundary_from_children(children)
 
     countries = sorted({r.subregion.major.country for r in regions})
-    target_date = _target_day(bulletin)
+    target_date = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
 
     grouping, created = BulletinGrouping.objects.update_or_create(
         bulletin=bulletin,

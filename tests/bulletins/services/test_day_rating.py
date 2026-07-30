@@ -2,7 +2,7 @@
 tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
 Covers (v8 elevation-band split + AM/PM split + ALBINA bands policy):
-  - _target_day: morning/evening/boundary rules.
+  - target_day_for_valid_from: morning/evening/boundary rules.
   - Single bulletin, two traits (dry=1, wet=3) → min=max=headline_key (considerable).
   - Single bulletin, single trait (dry=3) → min=max=considerable (stable).
   - Single bulletin with empty traits but danger.key="low" → min=max=low (fallback).
@@ -54,9 +54,9 @@ from apps.bulletins.services.day_rating import (
     _elevation_to_band_id,
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
-    _target_day,
     apply_bulletin_day_ratings,
     recompute_region_day,
+    target_day_for_valid_from,
 )
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import MicroRegion
@@ -259,45 +259,33 @@ class TestResolveMinMaxKeys:
 
 
 # ---------------------------------------------------------------------------
-# _target_day
+# target_day_for_valid_from
 # ---------------------------------------------------------------------------
 
 
 class TestTargetDay:
-    """Unit tests for _target_day() — no DB required."""
+    """Unit tests for target_day_for_valid_from() — no DB required."""
 
     def test_morning_bulletin_targets_same_day(self) -> None:
         """valid_from.hour < 12 → target day is valid_from.date()."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 7, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 25, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 25)
+        valid_from = datetime.datetime(2026, 3, 25, 7, 0, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 25)
 
     def test_evening_bulletin_targets_next_day(self) -> None:
         """valid_from.hour >= 12 → target day is valid_from.date() + 1."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 16, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 26, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 26)
+        valid_from = datetime.datetime(2026, 3, 25, 16, 0, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 26)
 
     def test_noon_boundary_is_evening(self) -> None:
         """valid_from.hour == 12 (exactly noon) is treated as evening (>= 12)."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 12, 0, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 26, 17, 0, tzinfo=UTC),
-        )
+        valid_from = datetime.datetime(2026, 3, 25, 12, 0, tzinfo=UTC)
         # noon is >= 12 so target is the NEXT day
-        assert _target_day(b) == datetime.date(2026, 3, 26)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 26)
 
     def test_morning_boundary_11_59_targets_same_day(self) -> None:
         """valid_from.hour == 11 (just before noon) is treated as morning."""
-        b = BulletinFactory.build(
-            valid_from=datetime.datetime(2026, 3, 25, 11, 59, tzinfo=UTC),
-            valid_to=datetime.datetime(2026, 3, 25, 17, 0, tzinfo=UTC),
-        )
-        assert _target_day(b) == datetime.date(2026, 3, 25)
+        valid_from = datetime.datetime(2026, 3, 25, 11, 59, tzinfo=UTC)
+        assert target_day_for_valid_from(valid_from) == datetime.date(2026, 3, 25)
 
 
 # ---------------------------------------------------------------------------
