@@ -497,6 +497,32 @@ ALBINA_ARCHIVE_PATH = (
 # and Trentino (IT-32-TN).
 ALBINA_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
 
+# Open-Meteo weather / elevation API (SNOW-577).
+# Live endpoints:
+#   GET {OPEN_METEO_API_BASE_URL}/elevation
+#   GET {OPEN_METEO_API_BASE_URL}/forecast
+#   GET {OPEN_METEO_ARCHIVE_BASE_URL}/archive
+# The defaults are the free public hosts, which need no key and enforce a
+# shared per-IP quota (600/min, 5,000/hour, 10,000/day) across all three.
+# A paid subscription is served from its own hostnames and authenticates
+# with an ``apikey`` query parameter, so cutting over is an environment
+# change on Render — set all three variables, no deploy required. The
+# documented customer hosts are https://customer-api.open-meteo.com/v1 and
+# https://customer-archive-api.open-meteo.com/v1; confirm them against the
+# subscription confirmation before setting them.
+OPEN_METEO_API_BASE_URL = config(
+    "OPEN_METEO_API_BASE_URL",
+    default="https://api.open-meteo.com/v1",
+)
+
+OPEN_METEO_ARCHIVE_BASE_URL = config(
+    "OPEN_METEO_ARCHIVE_BASE_URL",
+    default="https://archive-api.open-meteo.com/v1",
+)
+
+# Empty means the free tier: no ``apikey`` parameter is sent at all.
+OPEN_METEO_API_KEY = config("OPEN_METEO_API_KEY", default="")
+
 # MeteoFrance / DPBRA bulletin API.
 # Live endpoint:
 #   GET {METEOFRANCE_API_BASE_URL}/massif/{id}/BRA

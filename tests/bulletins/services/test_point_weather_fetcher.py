@@ -44,6 +44,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from django.db import IntegrityError
+from django.test import override_settings
 
 from apps.bulletins.models import ForecastPointWeather
 from apps.bulletins.services.weather_fetcher import (
@@ -530,6 +531,28 @@ class TestFetchWeatherForPoint:
 
         called_url = mock.call_args[0][0]
         assert called_url == "http://localhost:8000/dev/openmeteo-mirror/v1/forecast"
+
+    @override_settings(OPEN_METEO_API_BASE_URL="https://api.example/v1")
+    def test_falls_back_to_configured_host_when_base_url_none(self) -> None:
+        """When base_url=None, the configured forecast host is used."""
+        point = ForecastPointFactory.create()
+        mock = _mock_get(_make_full_point_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_args[0][0] == "https://api.example/v1/forecast"
+
+    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    def test_sends_apikey_when_configured(self) -> None:
+        """A configured key is appended to the point forecast params (SNOW-577)."""
+        point = ForecastPointFactory.create()
+        mock = _mock_get(_make_full_point_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_args.kwargs["params"]["apikey"] == "sk-test"
 
     def test_on_fetched_callback(self) -> None:
         """on_fetched is called once with the expected shape, for day 0."""

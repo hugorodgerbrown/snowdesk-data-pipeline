@@ -7,7 +7,7 @@ dispatcher used by the bulletin page render:
   resolve_weather_source(source)
       Map a ``--source`` choice string (``"live"`` or ``"local-mirror"``) to a
       ``base_url`` suitable for passing to the fetch functions. Returns ``None``
-      for the live source (falls back to the module-level URL constants). Raises
+      for the live source (falls back to the configured host). Raises
       ``CommandError`` for ``"local-mirror"`` when
       ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` is not configured. Imported
       by the ``fetch_weather`` command to resolve the upstream URL.
@@ -16,7 +16,7 @@ dispatcher used by the bulletin page render:
       Fetches today's (or any single day's) weather for one region from the
       Open-Meteo forecast endpoint. Returns ``(WeatherSnapshot, created)`` when
       ``commit=True``, or ``None`` when ``commit=False``. ``base_url`` overrides
-      the module-level ``FORECAST_URL``; ``on_fetched`` is called once per
+      the configured forecast host; ``on_fetched`` is called once per
       fetched record (for ``--stash`` capture).
 
   fetch_all_regions(target_date, *, commit, base_url, on_fetched)
@@ -28,7 +28,7 @@ dispatcher used by the bulletin page render:
       Fetches historical weather for a date range from the Open-Meteo archive
       endpoint. Returns a list of ``(WeatherSnapshot, created)`` tuples when
       ``commit=True``, or an empty list when ``commit=False``. ``base_url``
-      overrides the module-level ``ARCHIVE_URL``; ``on_fetched`` is called once
+      overrides the configured archive host; ``on_fetched`` is called once
       per fetched record.
 
   backfill_all_regions(start_date, end_date, *, commit, delay, base_url, on_fetched)
@@ -72,7 +72,9 @@ When ``commit=False``, the HTTP requests still execute (real API probe) but no
 rows are written.
 
 ``base_url`` defaults to ``None`` in every function; when ``None``, the function
-falls back to the module-level URL constants so existing callers keep working
+falls back to the configured Open-Meteo host (``OPEN_METEO_API_BASE_URL`` /
+``OPEN_METEO_ARCHIVE_BASE_URL``) resolved by
+``apps.bulletins.services.open_meteo``, so existing callers keep working
 without change.
 """
 
@@ -92,12 +94,11 @@ from django.db import transaction
 from django.utils import timezone as django_timezone
 
 from apps.bulletins.models import ForecastPoint, ForecastPointWeather, WeatherSnapshot
+from apps.bulletins.services import open_meteo
 from apps.regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)
 
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_TIMEOUT = 30  # seconds
 
 SOURCE_LIVE = "live"
@@ -177,8 +178,8 @@ def resolve_weather_source(source: str) -> str | None:
     Map a ``--source`` choice to a base URL (or ``None`` for live).
 
     Returning ``None`` for the live source lets callers fall back to the
-    module-level ``FORECAST_URL`` / ``ARCHIVE_URL`` constants, keeping the
-    live path identical to its pre-flag behaviour.
+    configured Open-Meteo host, keeping the live path identical to its
+    pre-flag behaviour.
 
     Imported by the ``fetch_weather`` command to resolve the upstream URL.
 
@@ -392,9 +393,10 @@ def fetch_weather_for_region(
         commit: If True, write the snapshot to the database. If False, the
             HTTP request still executes (real API probe) but no rows are
             written and None is returned.
-        base_url: When set, overrides ``FORECAST_URL`` as the endpoint base.
-            The actual request goes to ``f"{base_url}/forecast"``. Defaults to
-            ``None``, which falls back to the module-level ``FORECAST_URL``.
+        base_url: When set, overrides ``OPEN_METEO_API_BASE_URL`` as the
+            endpoint base. The actual request goes to
+            ``f"{base_url}/forecast"``. Defaults to ``None``, which falls
+            back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once after the response is parsed,
             with a NDJSON-shape dict ``{region_id, date, weather_code, sunrise,
             sunset, captured_at}``. Used by ``--stash`` to collect records for
@@ -411,7 +413,7 @@ def fetch_weather_for_region(
 
     """
     centre: Centre = cast(Centre, region.centre)
-    url = f"{base_url}/forecast" if base_url else FORECAST_URL
+    url = open_meteo.request_url(open_meteo.FORECAST, base_url)
     logger.debug(
         "Fetching forecast weather for region=%s date=%s commit=%s url=%s",
         region.region_id,
@@ -420,16 +422,19 @@ def fetch_weather_for_region(
         url,
     )
 
-    params: dict[str, str] = {
-        "latitude": str(centre["lat"]),
-        "longitude": str(centre["lon"]),
-        "daily": "weather_code,sunrise,sunset",
-        "timezone": "auto",
-        # HRB: forecast_days cannot be used with start/end dates.
-        # "forecast_days": "1",
-        "start_date": target_date.isoformat(),
-        "end_date": target_date.isoformat(),
-    }
+    params: dict[str, str] = open_meteo.with_api_key(
+        {
+            "latitude": str(centre["lat"]),
+            "longitude": str(centre["lon"]),
+            "daily": "weather_code,sunrise,sunset",
+            "timezone": "auto",
+            # HRB: forecast_days cannot be used with start/end dates.
+            # "forecast_days": "1",
+            "start_date": target_date.isoformat(),
+            "end_date": target_date.isoformat(),
+        },
+        base_url,
+    )
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
@@ -497,8 +502,8 @@ def fetch_all_regions(
     Args:
         target_date: The calendar date to fetch weather for.
         commit: If True, write snapshots to the database.
-        base_url: When set, overrides ``FORECAST_URL`` for all per-region
-            calls. Defaults to ``None`` (fall back to ``FORECAST_URL``).
+        base_url: When set, overrides the configured host for all
+            per-region calls. Defaults to ``None``.
         on_fetched: Optional callback forwarded to each per-region call.
             Called once per fetched ``(region, date)`` record. Defaults to
             ``None`` (no-op).
@@ -782,10 +787,10 @@ def fetch_weather_for_point(
         commit: If True, write the rows to the database. If False, the
             HTTP request still executes (real API probe) but no rows are
             written and an empty list is returned.
-        base_url: When set, overrides ``FORECAST_URL`` as the endpoint base.
-            The actual request goes to ``f"{base_url}/forecast"``. Defaults
-            to ``None``, which falls back to the module-level
-            ``FORECAST_URL``.
+        base_url: When set, overrides ``OPEN_METEO_API_BASE_URL`` as the
+            endpoint base. The actual request goes to
+            ``f"{base_url}/forecast"``. Defaults to ``None``, which falls
+            back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once after the response is
             parsed, with a dict for ``target_date`` (day 0) —
             ``{forecast_point_id, date, weather_code, sunrise, sunset,
@@ -806,7 +811,7 @@ def fetch_weather_for_point(
             stored under invented dates (SNOW-466).
 
     """
-    url = f"{base_url}/forecast" if base_url else FORECAST_URL
+    url = open_meteo.request_url(open_meteo.FORECAST, base_url)
     end_date = target_date + timedelta(days=POINT_FORECAST_DAYS - 1)
     logger.debug(
         "Fetching forecast weather for point=%s start=%s end=%s commit=%s url=%s",
@@ -817,16 +822,19 @@ def fetch_weather_for_point(
         url,
     )
 
-    params: dict[str, str] = {
-        "latitude": str(point.latitude),
-        "longitude": str(point.longitude),
-        "elevation": str(point.elevation),
-        "daily": POINT_DAILY_VARIABLES,
-        "hourly": POINT_HOURLY_VARIABLES,
-        "timezone": "auto",
-        "start_date": target_date.isoformat(),
-        "end_date": end_date.isoformat(),
-    }
+    params: dict[str, str] = open_meteo.with_api_key(
+        {
+            "latitude": str(point.latitude),
+            "longitude": str(point.longitude),
+            "elevation": str(point.elevation),
+            "daily": POINT_DAILY_VARIABLES,
+            "hourly": POINT_HOURLY_VARIABLES,
+            "timezone": "auto",
+            "start_date": target_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        base_url,
+    )
 
     data = _fetch_point_payload(url, params, point)
 
@@ -924,8 +932,8 @@ def fetch_all_points(
     Args:
         target_date: The first calendar date of the forecast window.
         commit: If True, write rows to the database.
-        base_url: When set, overrides ``FORECAST_URL`` for all per-point
-            calls. Defaults to ``None`` (fall back to ``FORECAST_URL``).
+        base_url: When set, overrides the configured host for all
+            per-point calls. Defaults to ``None``.
         on_fetched: Optional callback forwarded to each per-point call.
             Called once per fetched point, for day 0 of its window. Defaults
             to ``None`` (no-op).
@@ -1072,9 +1080,10 @@ def fetch_archive_for_region(
         start_date: First date in the range (inclusive).
         end_date: Last date in the range (inclusive).
         commit: If True, persist snapshots to the database.
-        base_url: When set, overrides ``ARCHIVE_URL`` as the endpoint base.
-            The actual request goes to ``f"{base_url}/archive"``. Defaults to
-            ``None``, which falls back to the module-level ``ARCHIVE_URL``.
+        base_url: When set, overrides ``OPEN_METEO_ARCHIVE_BASE_URL`` as
+            the endpoint base. The actual request goes to
+            ``f"{base_url}/archive"``. Defaults to ``None``, which falls
+            back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once per ``(region, date)`` record
             in the response, with a NDJSON-shape dict ``{region_id, date,
             weather_code, sunrise, sunset, captured_at}``. Used by ``--stash``.
@@ -1094,7 +1103,7 @@ def fetch_archive_for_region(
 
     """
     centre: Centre = cast(Centre, region.centre)
-    url = f"{base_url}/archive" if base_url else ARCHIVE_URL
+    url = open_meteo.request_url(open_meteo.ARCHIVE, base_url)
     logger.debug(
         "Fetching archive weather for region=%s start=%s end=%s commit=%s url=%s",
         region.region_id,
@@ -1104,14 +1113,17 @@ def fetch_archive_for_region(
         url,
     )
 
-    archive_params: dict[str, str] = {
-        "latitude": str(centre["lat"]),
-        "longitude": str(centre["lon"]),
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "daily": "weather_code,sunrise,sunset",
-        "timezone": "auto",
-    }
+    archive_params: dict[str, str] = open_meteo.with_api_key(
+        {
+            "latitude": str(centre["lat"]),
+            "longitude": str(centre["lon"]),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "daily": "weather_code,sunrise,sunset",
+            "timezone": "auto",
+        },
+        base_url,
+    )
     response = requests.get(url, params=archive_params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
@@ -1210,8 +1222,8 @@ def backfill_all_regions(
             API to stay inside Open-Meteo's free-tier rate limit. The
             sleep happens between regions only — never before the first
             or after the last.
-        base_url: When set, overrides ``ARCHIVE_URL`` for all per-region
-            calls. Defaults to ``None`` (fall back to ``ARCHIVE_URL``).
+        base_url: When set, overrides the configured host for all
+            per-region calls. Defaults to ``None``.
         on_fetched: Optional callback forwarded to each per-region call.
             Called once per ``(region, date)`` record. Defaults to ``None``
             (no-op).

@@ -14,6 +14,8 @@ Follows the same idiom as ``weather_fetcher.py``: plain ``requests.get``
 with a module-level timeout, ``raise_for_status()`` so HTTP failures
 bubble to the caller, and a ``base_url`` override parameter so tests (and
 a future local mirror) can point at something other than the live API.
+The host and the customer-API key are resolved by
+``apps.bulletins.services.open_meteo``.
 """
 
 from __future__ import annotations
@@ -23,9 +25,10 @@ from typing import Any
 
 import requests
 
+from apps.bulletins.services import open_meteo
+
 logger = logging.getLogger(__name__)
 
-ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 REQUEST_TIMEOUT = 30  # seconds
 
 
@@ -44,8 +47,11 @@ def fetch_elevation(
     Args:
         latitude: Latitude in degrees.
         longitude: Longitude in degrees.
-        base_url: When set, overrides ``ELEVATION_URL`` as the request URL.
-            Defaults to ``None``, which uses the module-level constant.
+        base_url: When set, overrides the configured host as the endpoint
+            base. The actual request goes to ``f"{base_url}/elevation"``.
+            Defaults to ``None``, which uses
+            ``settings.OPEN_METEO_API_BASE_URL``. An override also
+            suppresses the ``apikey`` parameter.
 
     Returns:
         The elevation in metres above sea level.
@@ -56,7 +62,7 @@ def fetch_elevation(
         IndexError: If the ``elevation`` array in the response is empty.
 
     """
-    url = base_url or ELEVATION_URL
+    url = open_meteo.request_url(open_meteo.ELEVATION, base_url)
     logger.debug(
         "Fetching elevation for latitude=%s longitude=%s url=%s",
         latitude,
@@ -64,10 +70,13 @@ def fetch_elevation(
         url,
     )
 
-    params: dict[str, str] = {
-        "latitude": str(latitude),
-        "longitude": str(longitude),
-    }
+    params: dict[str, str] = open_meteo.with_api_key(
+        {
+            "latitude": str(latitude),
+            "longitude": str(longitude),
+        },
+        base_url,
+    )
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()

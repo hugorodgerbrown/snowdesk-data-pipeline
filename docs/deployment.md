@@ -80,6 +80,27 @@ inherits production's hardening but overrides the task backend to
 Under production's `DatabaseBackend`, staging would enqueue email that no
 worker ever sends — persisted silently, with no error in the logs.
 
+## Open-Meteo: free tier by default, paid tier by env var
+
+`OPEN_METEO_API_BASE_URL`, `OPEN_METEO_ARCHIVE_BASE_URL`, and
+`OPEN_METEO_API_KEY` (SNOW-577) default to the free public hosts, which need
+no key. The free per-IP quota (600/minute, 5,000/hour, 10,000/day) is shared
+across the elevation, forecast, and archive endpoints, so the scheduled
+`fetch_weather` passes at 00/06/12/18 UTC and any ad-hoc backfill run from the
+same service compete for one allowance.
+
+Cutting over to a paid subscription is an env-group edit, not a deploy: set
+all three variables on the `Production` group (web, scheduler, and worker all
+read it via `fromGroup`) and on `Staging`. Set them **together** — pointing at
+the customer hosts without a key makes every call fail auth, and a key without
+the customer hosts is ignored by the free hosts. The documented customer hosts
+are `https://customer-api.open-meteo.com/v1` and
+`https://customer-archive-api.open-meteo.com/v1`; confirm both against the
+subscription confirmation rather than assuming the prefix.
+
+A paid plan is metered monthly rather than unlimited, so an exhausted
+allowance still returns `429`. Nothing in the pipeline backs off on that yet.
+
 ## `SITE_BASE_URL` is checked at deploy time
 
 Every service must set `SITE_BASE_URL` to its own public origin. It has a
