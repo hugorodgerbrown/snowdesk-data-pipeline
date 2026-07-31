@@ -783,14 +783,24 @@ paint-driven-visibility trick `regions-line-selected` uses, because
 MapLibre rejects feature-state inside a layer filter — and
 `downloaded-area-line` over its own one-feature `downloaded-area` source.
 
-**Probed, never stored.** `refreshDownloadedOverlay` (`static/js/map.js`)
-re-derives the answer from real `BASEMAP_PINNED_CACHE` contents every
-time, the same invariant the roundels and the sync dots hold. A flag
-written at download time would be exactly the divergence the cache-state
-dashboard exists to prevent: eviction, a basemap swap and Clear Site Data
-all change the answer without passing through the download path.
+**What you downloaded, verified against the cache.** The overlay draws
+from a stored record of each download — `basemap.regions` for regions,
+`basemap.customArea` for the framed area — and then probes real
+`BASEMAP_PINNED_CACHE` contents before drawing any of it.
 
-**Full coverage, not the centre tile.** The roundel's done-probe checks a
+Both halves are load-bearing. The cache alone cannot answer the question:
+it records tiles, not which download fetched them, and both download
+shapes share one zoom band and one URL template, so a framed area that
+merely crossed a region was indistinguishable from a download *of* that
+region — and duly outlined it. Intent is the only thing that separates
+them. The record alone cannot answer it either: it says the user asked
+for this region, never that the tiles survived eviction, a basemap swap
+or Clear Site Data. Record for the *what*, probe for the *whether* — the
+same split `basemap.customArea` has always used, where the row records
+where the frame was and the done state is probed. The region download
+simply never had the first half.
+
+**Full coverage, not the centre tile**, for the download it is checking. The roundel's done-probe checks a
 download's centre tile, which is fair for the roundel: it only ever asks
 about a region the user downloaded *as a region*, so that tile witnesses
 that run. It is not fair here. Both download shapes write to one pinned
@@ -812,11 +822,11 @@ The region's tile set is derived client-side from its boundary geometry
 API call.
 
 **One `cache.keys()` pass.** The roundel probes one region and can afford
-`cache.match()`; this asks about every loaded region, so it takes a single
-pass over the cache's URLs and answers the whole map from that set. Every
-tile after the first is then a Set lookup, which is why checking all of
-them rather than sampling costs single-digit milliseconds. Never call it
-per frame — the pinned cache holds thousands of entries. It refreshes when the overlay
+`cache.match()`; this checks every recorded download at once, so it takes
+a single pass over the cache's URLs and answers from that set. Every tile
+after the first is then a Set lookup, which is why checking all of them
+rather than sampling is free. Never call it per frame — the pinned cache
+holds thousands of entries. It refreshes when the overlay
 is switched on, on `snowdesk:basemap-changed`, on
 `snowdesk:regions-loaded`, when a download settles (both controls call
 `window.pwaDownloadedOverlay?.refresh()` beside their existing

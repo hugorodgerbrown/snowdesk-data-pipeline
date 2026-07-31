@@ -108,6 +108,8 @@ def _pick_region(page: Page) -> dict[str, Any]:
                             regionId,
                             featureId: feature.id,
                             count,
+                            bbox,
+                            band: [minZ, maxZ],
                             urls: core.rangesToTileURLs(
                                 'https://tiles.example.invalid/{z}/{x}/{y}.pbf',
                                 { z: ranges },
@@ -122,6 +124,34 @@ def _pick_region(page: Page) -> dict[str, Any]:
                 return best;
             }"""
         ),
+    )
+
+
+def _record_download(page: Page, region: dict[str, Any]) -> None:
+    """Record `region` in meta:app as the download path does on success.
+
+    The overlay draws what you DOWNLOADED, verified against the cache — so
+    a test that only fills the cache proves nothing, and one that only
+    records proves nothing either. Both halves are needed, which is the
+    point: neither alone can put a ring on the map.
+    """
+    page.evaluate(
+        """async ({ regionId, bbox, band }) => {
+            await window.pwaDb.put('meta:app', {
+                key: 'basemap.regions',
+                value: [{
+                    region_id: regionId,
+                    bbox,
+                    band,
+                    savedAt: '2026-01-01T00:00:00.000Z',
+                }],
+            });
+        }""",
+        {
+            "regionId": region["regionId"],
+            "bbox": region["bbox"],
+            "band": region["band"],
+        },
     )
 
 
@@ -228,6 +258,7 @@ def test_a_fully_cached_region_is_outlined(page: Page, live_server: LiveServer) 
     """Every tile present means the region really is available offline."""
     _boot(page, live_server)
     region = _pick_region(page)
+    _record_download(page, region)
     _cache_urls(page, region["urls"])
     _toggle_overlay(page, on=True)
 
@@ -249,6 +280,7 @@ def test_centre_tile_alone_is_not_downloaded(
     # tile could not distinguish the two rules, so this test would pass
     # vacuously against the very bug it exists to catch.
     assert region["count"] > 1, "need a multi-tile region to tell the rules apart"
+    _record_download(page, region)
     _cache_urls(page, [region["centreUrl"]])
     _toggle_overlay(page, on=True)
 
@@ -262,9 +294,62 @@ def test_one_missing_tile_is_not_downloaded(
     _boot(page, live_server)
     region = _pick_region(page)
     assert region["count"] > 1, "need a multi-tile region for a partial cache"
+    _record_download(page, region)
     _cache_urls(page, region["urls"][1:])
     _toggle_overlay(page, on=True)
 
+    assert not _is_outlined(page, region["featureId"])
+
+
+def test_an_uncached_record_is_not_outlined(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Intent alone is not enough — the tiles have to be there.
+
+    The stored record says the user asked for this region; it never says
+    the tiles survived. Recording without caching must draw nothing, or
+    the record would be exactly the stale flag this design avoids.
+    """
+    _boot(page, live_server)
+    region = _pick_region(page)
+    _record_download(page, region)
+    _toggle_overlay(page, on=True)
+
+    assert not _is_outlined(page, region["featureId"])
+
+
+def test_a_crossing_area_download_does_not_ring_the_region(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The reported bug: a framed area must not outline regions it crosses.
+
+    Caches every tile of the region — which a generous area download over
+    the same ground would do — but records only a custom-area download.
+    The region was never chosen, so it must not be ringed, however much of
+    it happens to be cached. Before intent-and-verify this drew a full
+    region outline around someone's rectangle.
+    """
+    _boot(page, live_server)
+    region = _pick_region(page)
+    _cache_urls(page, region["urls"])
+    page.evaluate(
+        """async ({ bbox, band }) => {
+            await window.pwaDb.put('meta:app', {
+                key: 'basemap.customArea',
+                value: { bbox, band, savedAt: '2026-01-01T00:00:00.000Z' },
+            });
+        }""",
+        {"bbox": region["bbox"], "band": region["band"]},
+    )
+    _toggle_overlay(page, on=True)
+
+    # The area itself is drawn — it was downloaded and its tiles are there.
+    data = cast(
+        dict[str, Any],
+        page.evaluate("() => MAP.getSource('downloaded-area').serialize().data"),
+    )
+    assert data.get("geometry"), "the framed area itself should be outlined"
+    # The region underneath it is not.
     assert not _is_outlined(page, region["featureId"])
 
 
@@ -279,6 +364,7 @@ def test_outline_follows_the_cache_not_a_flag(
     """
     _boot(page, live_server)
     region = _pick_region(page)
+    _record_download(page, region)
     _cache_urls(page, region["urls"])
     _toggle_overlay(page, on=True)
     assert _is_outlined(page, region["featureId"])
@@ -299,6 +385,7 @@ def test_outline_is_per_basemap(page: Page, live_server: LiveServer) -> None:
     """Tiles cached for one basemap say nothing about another."""
     _boot(page, live_server)
     region = _pick_region(page)
+    _record_download(page, region)
     _cache_urls(page, region["urls"])
     _toggle_overlay(page, on=True)
     assert _is_outlined(page, region["featureId"])

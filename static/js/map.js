@@ -2980,6 +2980,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   };
 
+  /**
+   * The regions the user has downloaded (``basemap.regions`` in meta:app),
+   * as ``[{region_id, bbox, band, savedAt}]``. Written by
+   * mapDownloadControlInit on every successful run. Best-effort: a failed
+   * read is "none", never an error.
+   *
+   * @returns {Promise<Array<Object>>}
+   */
+  const _savedRegionDownloads = async () => {
+    try {
+      const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+      const value = row && row.value;
+      return Array.isArray(value) ? value : [];
+    } catch (_e) {
+      return [];
+    }
+  };
+
+  // The source feature ids currently carrying a `downloaded` state, so a
+  // refresh can clear the ones that no longer qualify. Tracked rather than
+  // recomputed because the overlay now only knows about the regions the
+  // user downloaded — it never walks the whole source, so it has no other
+  // way to find a ring it painted earlier and must now take away.
+  const paintedDownloadedIds = new Set();
+
   // Coalesces overlapping refreshes: several of the signals below can land
   // together (a download settling also refreshes the sync dashboard, which
   // can coincide with a basemap swap), and each one is a cache scan.
@@ -3034,34 +3059,43 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       const cached = await _pinnedCacheURLs();
 
-      // Regions: one feature-state write per loaded region, both ways —
-      // an area that has been evicted since the last refresh has to lose
-      // its ring, not merely fail to gain one.
+      // Regions the user DOWNLOADED, not regions that happen to be covered.
       //
-      // The bbox comes from the region's own boundary, which is how the
-      // server defines its download too (compute_basemap_download runs
-      // build_blob(bbox_from_boundary(boundary), *MICRO_BAND)) — so the
-      // tile set checked is exactly the one a download of this region
-      // fetches, with no per-region API call to fetch the stored ranges.
-      // properties.download is still required: a region with no computed
-      // blob is not downloadable, so it can't be downloaded.
-      const entries = [];
-      for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
-        if (!feature?.properties?.download || !feature.geometry) continue;
-        const bbox = core.geometryBounds(feature.geometry);
-        if (bbox) entries.push({ id: regionID, bbox });
-      }
+      // Deriving this from the cache alone cannot work: the pinned cache
+      // records tiles, not which download fetched them, and both download
+      // shapes share one band and one URL template. So a framed area that
+      // merely crossed a region made that whole region read as downloaded
+      // — the bug this replaced. Intent is the only thing that
+      // distinguishes them, so the stored record is what the overlay draws
+      // from, and the cache probe below is what keeps it honest.
+      //
+      // That is the same two-part shape the custom area has always used
+      // (`basemap.customArea` records WHERE the frame was; the done state
+      // is probed) — the region download simply never had the first half.
+      const saved = await _savedRegionDownloads();
+      const entries = saved
+        .filter((entry) => entry && entry.region_id && entry.bbox)
+        .map((entry) => ({ id: entry.region_id, bbox: entry.bbox, band: entry.band }));
       const downloaded = new Set(core.downloadedIds(template, entries, cached));
-      for (const entry of entries) {
+
+      // Clear rings that no longer qualify before painting the new set —
+      // a download the user deleted, or one the cache has since evicted,
+      // has to lose its ring rather than merely fail to gain one.
+      for (const featureId of paintedDownloadedIds) {
+        map.setFeatureState({ source: 'regions', id: featureId }, { downloaded: false });
+      }
+      paintedDownloadedIds.clear();
+      for (const regionID of downloaded) {
         // ``feature.id`` — the source's own id, which is what every other
         // feature-state write on this source keys on (repaintRegionsForDate,
-        // the selection handlers). Not properties.id.
-        const feature = FEATURE_BY_REGION_ID[entry.id];
+        // the selection handlers). Not properties.id. A downloaded region
+        // whose country is currently toggled off simply isn't loaded, so it
+        // is skipped here and picked up by the snowdesk:regions-loaded
+        // refresh when it comes back.
+        const feature = FEATURE_BY_REGION_ID[regionID];
         if (!feature || feature.id === undefined || feature.id === null) continue;
-        map.setFeatureState(
-          { source: 'regions', id: feature.id },
-          { downloaded: downloaded.has(entry.id) },
-        );
+        map.setFeatureState({ source: 'regions', id: feature.id }, { downloaded: true });
+        paintedDownloadedIds.add(feature.id);
       }
 
       // The custom area: one feature, or none. Its bbox and band are both
@@ -5694,6 +5728,56 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // region was deliberately downloaded".
   const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
+  // SNOW-570: the regions the user has downloaded, in meta:app under
+  // 'basemap.regions' as [{region_id, bbox, band, savedAt}].
+  //
+  // The "Downloaded areas" overlay draws from this rather than from the
+  // cache alone, because the cache records tiles and not which download
+  // fetched them: with both download shapes sharing one zoom band and one
+  // URL template, a framed area that merely crossed a region was
+  // indistinguishable from a download OF that region. Intent is the only
+  // thing that separates the two.
+  //
+  // This is the record half only — it says the user asked for this region,
+  // never that the tiles are still there. The overlay still probes real
+  // cache contents before drawing anything, so an evicted download loses
+  // its ring. That is exactly the split the custom area has always had,
+  // where 'basemap.customArea' records WHERE the frame was and the done
+  // state is probed; the region download simply never had the first half.
+  const DOWNLOADED_REGIONS_KEY = 'basemap.regions';
+
+  /**
+   * Record `regionId` as downloaded, replacing any earlier entry for it.
+   *
+   * Best-effort throughout: this runs inside a download's finish handler,
+   * where a failed IndexedDB write must never surface as an error. The
+   * cost of losing it is a missing ring, not a wrong one.
+   *
+   * @param {string} regionId
+   * @param {number[] | null} bbox The region's own bounds, or null when its
+   *   geometry isn't loaded — in which case nothing is recorded, since an
+   *   entry with no bbox could never be verified against the cache.
+   * @param {number[]} band The zoom band the run actually fetched.
+   * @returns {Promise<void>}
+   */
+  async function _recordRegionDownload(regionId, bbox, band) {
+    if (!bbox || !window.pwaDb) return;
+    try {
+      const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
+      const existing = Array.isArray(row && row.value) ? row.value : [];
+      const next = existing.filter((entry) => entry && entry.region_id !== regionId);
+      next.push({
+        region_id: regionId,
+        bbox: bbox,
+        band: band,
+        savedAt: new Date().toISOString(),
+      });
+      await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
+    } catch (_e) {
+      // Non-fatal — see the docstring.
+    }
+  }
+
   // { regionId, summary } for the currently-focused region, or null
   // when it has no computed data. `summary` is the small {count, mb,
   // over_ceiling, centre_tile} shape carried on regions.geojson's
@@ -5984,6 +6068,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // shared toast, rather than reverting to 'idle' — which was
       // indistinguishable from never having clicked.
       const ok = !!(result && result.ok > 0 && result.failed === 0);
+      // SNOW-570: record what was downloaded before anything is painted —
+      // the overlay refresh at the end of this handler reads that row.
+      if (ok) {
+        await _recordRegionDownload(
+          data.regionId,
+          core.geometryBounds((feature && feature.geometry) || null),
+          blob.band || core.MICRO_BAND,
+        );
+      }
       // SNOW-569: await the on-map pulse before flipping the roundel — the
       // two are one gesture, the region finishes filling, pulses, and only
       // then does the icon go green. The control stays 'busy' throughout,
