@@ -562,6 +562,80 @@ def test_a_real_wheel_zoom_never_moves_the_estimate(pwa_page: PwaPage) -> None:
     )
 
 
+def test_the_frame_never_lags_the_canvas_mid_zoom(pwa_page: PwaPage) -> None:
+    """The frame must track the map on every frame, not just when it settles.
+
+    Every other test here samples after the map has come to rest, and a
+    settled frame was correct all along — the judder was purely transient.
+    The DOM rect was updated from a ``requestAnimationFrame`` scheduled off
+    MapLibre's ``move`` event, so it landed one frame after the canvas it
+    was chasing: measured at up to 12px of positional lag and 15px of size
+    lag mid-gesture, against 0.2px once stopped. A whole class of "it still
+    judders" survives a suite that only ever looks at the end state.
+
+    So this samples on MapLibre's own ``render`` event, every frame of a
+    900ms eased zoom, and compares where the frame IS against where the map
+    says its locked bbox should be. The tolerance is a pixel: the frame is
+    positioned in sub-pixel CSS precisely so it cannot snap against a
+    canvas that moves in sub-pixel steps.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+    _settle_readout(page)
+
+    result = page.evaluate(
+        """async () => {
+            const el = document.getElementById('map-frame-rect');
+            const m0 = MAP.getContainer().getBoundingClientRect();
+            const r0 = el.getBoundingClientRect();
+            const nw0 = MAP.unproject([r0.left - m0.left, r0.top - m0.top]);
+            const se0 = MAP.unproject([r0.right - m0.left, r0.bottom - m0.top]);
+            const bbox = [nw0.lng, se0.lat, se0.lng, nw0.lat];
+
+            const samples = [];
+            const sample = () => {
+                const m = MAP.getContainer().getBoundingClientRect();
+                const r = el.getBoundingClientRect();
+                const nw = MAP.project([bbox[0], bbox[3]]);
+                const se = MAP.project([bbox[2], bbox[1]]);
+                samples.push({
+                    dx: (r.left - m.left) - nw.x,
+                    dw: r.width - (se.x - nw.x),
+                });
+            };
+            MAP.on('render', sample);
+            const c = MAP.getContainer().getBoundingClientRect();
+            MAP.easeTo({
+                zoom: MAP.getZoom() - 2,
+                around: MAP.unproject([c.width * 0.25, c.height * 0.7]),
+                duration: 900,
+            });
+            await new Promise((r) => MAP.once('moveend', r));
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            MAP.off('render', sample);
+
+            // Drop the first and last: the first samples the frame before
+            // the ease has moved anything, the last can land after the
+            // final render but before the settle rAF.
+            const mid = samples.slice(1, -1);
+            const maxAbs = (k) => Math.max(...mid.map((s) => Math.abs(s[k])));
+            return {
+                frames: mid.length,
+                offsetLag: maxAbs('dx'),
+                sizeLag: maxAbs('dw'),
+            };
+        }"""
+    )
+
+    assert result["frames"] > 20, (
+        f"only {result['frames']} frames sampled — the eased zoom did not "
+        "run, so this test would pass vacuously"
+    )
+    assert result["offsetLag"] <= 1, f"the frame lagged the canvas: {result}"
+    assert result["sizeLag"] <= 1, f"the frame's size lagged the canvas: {result}"
+
+
 def test_zooming_back_in_releases_the_ground_lock(pwa_page: PwaPage) -> None:
     """Zooming in until the natural frame fits hands sizing back to the stylesheet.
 

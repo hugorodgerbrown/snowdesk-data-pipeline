@@ -5544,9 +5544,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let pendingBbox = null;
   let pendingBlob = null;
 
-  // The 'move' listener registered while framing, so it can be removed on
-  // close. Null when not framing.
+  // The 'move' and 'resize' listeners registered while framing, so they can
+  // be removed on close. Null when not framing.
   let moveHandler = null;
+  let resizeHandler = null;
 
   /**
    * Open the (single) Cache Storage cache whose name starts with
@@ -5742,23 +5743,27 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * The bbox a `width`x`height` box centred on viewport point (cx, cy)
-   * would cover. Pure projection maths — reads no DOM beyond the map's own
-   * offset and writes none, so the ceiling search below can evaluate a
-   * dozen candidate frame sizes without a single reflow.
+   * The bbox a `width`x`height` box centred on (cx, cy) would cover.
    *
-   * @param {number} cx - Centre x, in viewport pixels.
-   * @param {number} cy - Centre y, in viewport pixels.
+   * Coordinates are MAP-CONTAINER-relative, the space MapLibre's own
+   * project/unproject work in — never viewport-relative. Mixing the two
+   * is a live bug source: anything that shifts the map within the page
+   * (a scroll, furniture appearing) moves a viewport coordinate without
+   * moving a container one, and a cached value in the wrong space then
+   * offsets the frame by the difference.
+   *
+   * Pure projection maths — reads no DOM and writes none, so the caller
+   * can evaluate several candidate boxes without a single reflow.
+   *
+   * @param {number} cx - Centre x, in map-container pixels.
+   * @param {number} cy - Centre y, in map-container pixels.
    * @param {number} width - Box width in pixels.
    * @param {number} height - Box height in pixels.
    * @returns {[number, number, number, number] | null} [west, south, east,
    *   north] in degrees, or null before the map is ready.
    */
   function _bboxForBox(cx, cy, width, height) {
-    if (!MAP || typeof MAP.getContainer !== 'function') return null;
-    const container = MAP.getContainer();
-    if (!container) return null;
-    const mapRect = container.getBoundingClientRect();
+    if (!MAP || typeof MAP.unproject !== 'function') return null;
     const halfW = width / 2;
     const halfH = height / 2;
     const corners = [
@@ -5772,7 +5777,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     let east = -Infinity;
     let north = -Infinity;
     for (const [vx, vy] of corners) {
-      const point = MAP.unproject([vx - mapRect.left, vy - mapRect.top]);
+      const point = MAP.unproject([vx, vy]);
       if (point.lng < west) west = point.lng;
       if (point.lng > east) east = point.lng;
       if (point.lat < south) south = point.lat;
@@ -5791,16 +5796,58 @@ const repaintRegionsForDate = (dateKey, cache) => {
    */
   function _naturalFrameBox() {
     if (!frameAreaEl) return null;
+    // Cached for the framing session. This is the only DOM *read* on the
+    // per-frame path, and it forces a synchronous layout — which is what
+    // pushed the geometry write onto a later animation frame, leaving the
+    // frame trailing the canvas it is supposed to be glued to. The gutter
+    // box only changes when the viewport does, so it is measured on open
+    // and on resize (see _invalidateNaturalFrameBox) and read from here
+    // otherwise.
+    if (naturalBoxCache) return naturalBoxCache;
+    if (!MAP || typeof MAP.getContainer !== 'function') return null;
+    const container = MAP.getContainer();
+    if (!container) return null;
+    // Both rects are viewport-relative; the difference converts the gutter
+    // box into the map-container space every other function here works in.
+    // Cached in THAT space deliberately — a viewport-space cache silently
+    // desyncs the moment anything shifts the map within the page.
+    const mapRect = container.getBoundingClientRect();
     const rect = frameAreaEl.getBoundingClientRect();
     const style = getComputedStyle(frameAreaEl);
-    const left = rect.left + parseFloat(style.paddingLeft || '0');
-    const right = rect.right - parseFloat(style.paddingRight || '0');
-    const top = rect.top + parseFloat(style.paddingTop || '0');
-    const bottom = rect.bottom - parseFloat(style.paddingBottom || '0');
+    const left = rect.left + parseFloat(style.paddingLeft || '0') - mapRect.left;
+    const right = rect.right - parseFloat(style.paddingRight || '0') - mapRect.left;
+    const top = rect.top + parseFloat(style.paddingTop || '0') - mapRect.top;
+    const bottom = rect.bottom - parseFloat(style.paddingBottom || '0') - mapRect.top;
     const width = Math.max(0, right - left);
     const height = Math.max(0, bottom - top);
     if (!width || !height) return null;
-    return { cx: (left + right) / 2, cy: (top + bottom) / 2, width, height };
+    naturalBoxCache = { cx: (left + right) / 2, cy: (top + bottom) / 2, width, height };
+    return naturalBoxCache;
+  }
+
+  // The memoised _naturalFrameBox measurement, or null when it needs
+  // re-taking.
+  let naturalBoxCache = null;
+
+  // Watches .map-frame-area for any size change and drops the cache.
+  //
+  // A ResizeObserver rather than a list of known causes: the area is a
+  // flex child sized by what is left over after the instruction bar and
+  // the CTA sheet, so it moves whenever THEY reflow — and the readout
+  // inside the sheet changes text as the user pans, which is enough to
+  // change the sheet's height and shift the area's centre. That produced a
+  // frame offset vertically by ~18px against an otherwise perfectly
+  // tracked selection. Enumerating the causes is how that bug happens
+  // again; observing the element is not.
+  let frameAreaObserver = null;
+
+  /**
+   * Drop the cached gutter box so the next read re-measures it.
+   *
+   * @returns {void}
+   */
+  function _invalidateNaturalFrameBox() {
+    naturalBoxCache = null;
   }
 
   // Never shrink the frame below this fraction of its natural size. A
@@ -5851,10 +5898,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * @returns {{cx: number, cy: number, width: number, height: number} | null}
    */
   function _screenBoxForBBox(bbox) {
-    if (!MAP || typeof MAP.getContainer !== 'function') return null;
-    const container = MAP.getContainer();
-    if (!container) return null;
-    const mapRect = container.getBoundingClientRect();
+    if (!MAP || typeof MAP.project !== 'function') return null;
     const [west, south, east, north] = bbox;
     let left = Infinity;
     let top = Infinity;
@@ -5868,8 +5912,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
       bottom = Math.max(bottom, point.y);
     }
     return {
-      cx: mapRect.left + (left + right) / 2,
-      cy: mapRect.top + (top + bottom) / 2,
+      cx: (left + right) / 2,
+      cy: (top + bottom) / 2,
       width: right - left,
       height: bottom - top,
     };
@@ -5890,13 +5934,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * @returns {void}
    */
   function _placeFrame(screenBox, natural) {
-    // Whole pixels: the frame is a bordered box on screen, and a
-    // fractional size would leave the browser resolving the same rounding
-    // every frame anyway.
-    const width = `${Math.round(screenBox.width)}px`;
-    const height = `${Math.round(screenBox.height)}px`;
-    const dx = Math.round(screenBox.cx - natural.cx);
-    const dy = Math.round(screenBox.cy - natural.cy);
+    // Sub-pixel, deliberately. The canvas underneath moves at sub-pixel
+    // precision, so rounding the frame to whole pixels makes it snap
+    // against a smoothly-moving map — a stutter of up to a pixel per frame
+    // that reads as judder however well the geometry itself tracks.
+    const width = `${screenBox.width}px`;
+    const height = `${screenBox.height}px`;
+    const dx = screenBox.cx - natural.cx;
+    const dy = screenBox.cy - natural.cy;
     const transform = dx === 0 && dy === 0 ? '' : `translate3d(${dx}px, ${dy}px, 0)`;
     if (frameRectEl.style.width !== width) frameRectEl.style.width = width;
     if (frameRectEl.style.height !== height) frameRectEl.style.height = height;
@@ -6056,31 +6101,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     confirmBtn.disabled = overCeiling || !navigator.onLine;
   }
 
-  // Handle for a scheduled _updateReadout, or 0 when none is pending.
-  let readoutFrame = 0;
-
-  /**
-   * Run _updateReadout on the next animation frame, collapsing a burst of
-   * 'move' events into a single recompute.
-   *
-   * MapLibre fires 'move' once per input event, not once per rendered
-   * frame — a wheel zoom or a pinch emits several between paints, and
-   * every one of them re-measures the frame and can rewrite its size,
-   * forcing a synchronous layout mid-gesture to produce intermediate
-   * sizes that are never painted. One update per frame is all the display
-   * can show.
-   *
-   * @returns {void}
-   */
-  function _scheduleReadout() {
-    if (readoutFrame) return;
-    readoutFrame = requestAnimationFrame(() => {
-      readoutFrame = 0;
-      // Framing may have closed between the schedule and the callback.
-      if (moveHandler) _updateReadout();
-    });
-  }
-
   /**
    * Convert a bbox [west, south, east, north] to MapLibre's fitBounds
    * shape [[west, south], [east, north]].
@@ -6119,6 +6139,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // the last one happened to leave locked.
     lockedBbox = null;
     lastView = null;
+    _invalidateNaturalFrameBox();
     _releaseFrame();
     if (savedArea && Array.isArray(savedArea.bbox)) {
       const options = { animate: false };
@@ -6127,8 +6148,43 @@ const repaintRegionsForDate = (dateKey, cache) => {
       MAP.fitBounds(_boundsFromBBox(savedArea.bbox), options);
     }
     _updateReadout();
-    moveHandler = () => _scheduleReadout();
+    // Synchronously, on every 'move' — NOT deferred to the next animation
+    // frame. MapLibre fires 'move' from inside its own render loop, so a
+    // style write made here is composited with the very frame that moved
+    // the canvas; scheduling it instead put the frame one frame behind the
+    // map, which measured up to 12px of positional lag and 15px of size lag
+    // mid-gesture and read as judder (SNOW-567). Settled state was correct
+    // throughout, which is why only a test that samples DURING the
+    // animation catches it.
+    //
+    // Deferring was originally there to avoid re-measuring the DOM on every
+    // event; that cost is gone now the gutter box is cached, leaving this
+    // path a handful of projections and a style write with no layout read
+    // at all.
+    moveHandler = () => _updateReadout();
     MAP.on('move', moveHandler);
+    if (typeof ResizeObserver === 'function') {
+      frameAreaObserver = new ResizeObserver(() => {
+        _invalidateNaturalFrameBox();
+        // Dropping the cache is not enough: the frame is only ever placed
+        // in response to a map 'move', so after a reflow with no movement
+        // it would keep the offset it was given against the OLD gutter box
+        // until the user next touched the map. Re-place it here — geometry
+        // only, deliberately not the estimate, so this cannot feed back
+        // into the readout that changed the sheet's height in the first
+        // place.
+        if (!moveHandler || !lockedBbox) return;
+        const natural = _naturalFrameBox();
+        const screenBox = natural ? _screenBoxForBBox(lockedBbox) : null;
+        if (natural && screenBox) _placeFrame(screenBox, natural);
+      });
+      frameAreaObserver.observe(frameAreaEl);
+    } else {
+      // No ResizeObserver: fall back to the map's own resize event, which
+      // covers the viewport case but not a sheet reflow.
+      resizeHandler = () => _invalidateNaturalFrameBox();
+      MAP.on('resize', resizeHandler);
+    }
   }
 
   /**
@@ -6149,11 +6205,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (moveHandler && MAP) {
       MAP.off('move', moveHandler);
     }
-    moveHandler = null;
-    if (readoutFrame) {
-      cancelAnimationFrame(readoutFrame);
-      readoutFrame = 0;
+    if (resizeHandler && MAP) {
+      MAP.off('resize', resizeHandler);
     }
+    if (frameAreaObserver) {
+      frameAreaObserver.disconnect();
+      frameAreaObserver = null;
+    }
+    moveHandler = null;
+    resizeHandler = null;
+    _invalidateNaturalFrameBox();
     lockedBbox = null;
     lastView = null;
     pendingBbox = null;
