@@ -34,7 +34,9 @@ screenshot would depend on frame timing this harness deliberately avoids.
 
 Covers: opening framing dims the map and shows the frame; the readout
 tracks the frame as the map moves; a ceiling-capped frame holds its size
-while the map pans beneath it (SNOW-566); a confirmed download warms with
+while the map pans beneath it (SNOW-566) and stays locked to the same
+ground while it zooms, releasing again on the way back in (SNOW-567); a
+confirmed download warms with
 ``pinned: true``, reaches ``done``, and notifies the layers sync
 dashboard; reload + click the (probed) green roundel re-opens framing at
 the saved area; moving the frame then Cancelling leaves the saved area
@@ -396,6 +398,122 @@ def test_the_capped_frame_holds_its_size_while_the_map_pans(
         widths.add(_frame_width(page))
 
     assert len(widths) == 1, f"the frame resized while panning: {sorted(widths)}"
+
+
+def test_zooming_a_locked_frame_leaves_it_on_the_same_ground(
+    pwa_page: PwaPage,
+) -> None:
+    """A ceiling-capped selection is locked to the ground, so zoom cannot move it.
+
+    SNOW-566 stopped the frame resizing as the map *pans*. Zoom was still
+    moving it, for a reason no amount of smoothing fixes: a
+    viewport-anchored frame holding a fixed maximum ground area has a
+    screen size proportional to 2**zoom, and MapLibre's wheel zoom is
+    anchored at the cursor rather than the viewport centre, so re-deriving
+    the box from the viewport each frame also walked the selection across
+    the terrain.
+
+    SNOW-567 locks the bbox instead. The assertion is therefore not "the
+    frame did not move" — it must move, in step with the map — but "it is
+    still over the same ground": unproject the frame before the zoom, and
+    afterwards the frame must sit exactly where the map now projects that
+    same bbox to.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+
+    # The ground the frame covers right now, in map coordinates.
+    locked_bbox = page.evaluate(
+        """() => {
+            const r = document.getElementById('map-frame-rect').getBoundingClientRect();
+            const m = MAP.getContainer().getBoundingClientRect();
+            const nw = MAP.unproject([r.left - m.left, r.top - m.top]);
+            const se = MAP.unproject([r.right - m.left, r.bottom - m.top]);
+            return [nw.lng, se.lat, se.lng, nw.lat];
+        }"""
+    )
+    readout_before = _readout_text(page)
+
+    for delta in (-0.4, -0.9, -1.3, 0.6):
+        # Anchored off-centre, because that is what a wheel zoom is: the
+        # ground under the cursor stays put and the map centre moves. A
+        # centre-anchored MAP.setZoom would leave the viewport centre over
+        # the same ground and so could not tell a locked selection apart
+        # from a viewport-derived one at all.
+        page.evaluate(
+            """(d) => {
+                const c = MAP.getContainer().getBoundingClientRect();
+                MAP.easeTo({
+                    zoom: MAP.getZoom() + d,
+                    around: MAP.unproject([c.width * 0.22, c.height * 0.7]),
+                    duration: 0,
+                });
+            }""",
+            delta,
+        )
+        _settle_readout(page)
+        drift = page.evaluate(
+            """(bbox) => {
+                const [west, south, east, north] = bbox;
+                const m = MAP.getContainer().getBoundingClientRect();
+                const nw = MAP.project([west, north]);
+                const se = MAP.project([east, south]);
+                const r = document.getElementById('map-frame-rect').getBoundingClientRect();
+                return {
+                    left: Math.abs((r.left - m.left) - nw.x),
+                    top: Math.abs((r.top - m.top) - nw.y),
+                    right: Math.abs((r.right - m.left) - se.x),
+                    bottom: Math.abs((r.bottom - m.top) - se.y),
+                };
+            }""",
+            locked_bbox,
+        )
+        # Two pixels of slack for the whole-pixel rounding the frame's
+        # width/height and offset are written at, plus its 2px border.
+        assert max(drift.values()) <= 3, (
+            f"the locked selection drifted at zoom delta {delta}: {drift}"
+        )
+
+    # A fixed bbox covers a fixed set of tiles, so the estimate must not
+    # have so much as flickered — this is the readout the user watches
+    # while zooming.
+    assert _readout_text(page) == readout_before
+
+
+def test_zooming_back_in_releases_the_ground_lock(pwa_page: PwaPage) -> None:
+    """Zooming in until the natural frame fits hands sizing back to the stylesheet.
+
+    Lock and release share one threshold — the point at which the
+    gutter-inset frame's own footprint equals the ceiling — so the frame
+    grows continuously back to filling its area rather than jumping. The
+    observable is the inline geometry map.js writes only while capped.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+
+    for _ in range(8):
+        page.evaluate("() => MAP.setZoom(Math.min(MAP.getZoom() + 1, 16))")
+        _settle_readout(page)
+        if not page.evaluate(
+            "() => document.getElementById('map-frame-rect').style.width"
+        ):
+            break
+    else:
+        raise AssertionError("the ground lock never released on zooming back in")
+
+    # Released means all three inline properties are gone, not just width —
+    # a stale transform would leave the frame offset from its own area.
+    assert (
+        page.evaluate(
+            """() => {
+                const s = document.getElementById('map-frame-rect').style;
+                return [s.width, s.height, s.transform].join('|');
+            }"""
+        )
+        == "||"
+    )
 
 
 def test_framing_strips_the_map_furniture_and_cancel_restores_it(

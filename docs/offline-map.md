@@ -579,20 +579,46 @@ every pixel the sheet does not, so the two are physically adjacent rather
 than two objects floating apart, and the full-bleed sheet covers the season
 scrubber beneath it.
 
-**The frame shrinks to hold the area at the ceiling.** Rather than letting
-the estimate run past `DOWNLOAD_CEILING_MB` and turning the readout red,
-`_fitFrameToCeiling` caps the frame's *pixel* size so its ground footprint
-sticks at the maximum. Ground area per pixel quadruples with every zoom
-level out, so the capped frame halves in size per level — zooming out
-visibly contracts the frame around a fixed maximum area (the Google Maps
-behaviour). The first guess is analytic (`sqrt(ceiling / mb)`, since cost is
-very nearly proportional to area) and a short loop mops up the error from
-tile quantisation, which makes the true boundary a step function.
+**Two regimes, decided by the ceiling.** `_updateSelection` runs once per
+animation frame while the map moves, and which of two regimes it is in
+explains everything about how the frame behaves.
 
-Below the ceiling nothing is written and `.map-frame-rect` fills
-`.map-frame-area` (which owns the gutter) under stylesheet control; the cap
-is applied and cleared as inline `width`/`height`, so a viewport resize
-keeps working. `MIN_FRAME_SCALE` (0.08) stops the frame shrinking to an
+*Under the ceiling*, the frame is a viewport-anchored reticle:
+`.map-frame-rect` fills `.map-frame-area` (which owns the gutter) under
+stylesheet control, no geometry is written, and the selection is whatever
+ground is beneath it — so both pan and zoom change the selection.
+
+*Once the ceiling caps the area*, the selection **locks to the ground**
+(`lockedBbox`) and the frame becomes a projection of it. Zooming then
+recomputes nothing at all: the same bbox covers the same tiles, so the
+frame merely tracks its own terrain — scaling with the map, as any map
+feature does — while the estimate holds still. Panning is what re-aims a
+locked selection, moving it back under the frame at the size it already
+has. A pan is told from a zoom by comparing **both** zoom and centre
+against the previous frame: a wheel zoom is anchored at the cursor, so it
+moves the centre too, and a zoom-only check reads the settled gesture as a
+pan and yanks the selection back (SNOW-567).
+
+Locking is what stops zoom moving the selection, and nothing short of it
+would. A viewport-anchored frame holding a fixed maximum ground area has a
+screen size proportional to `2**zoom` — the same reason a scale bar changes
+length — so it *must* resize as you zoom; and because the wheel zoom is
+cursor-anchored, re-deriving the box from the viewport each frame also
+walked the selection across the ground.
+
+The cap threshold is `budgetScaleForBBox`
+(`static/js/basemap_download_core.js`), which solves for the largest scale
+that fits the ceiling in closed form. It replaced an analytic guess plus a
+shrink loop against `buildBlob`, whose floored tile indices make its count a
+*step* function of the box — so the size that search returned moved with the
+box's alignment to the tile grid, and the frame shimmered as the map panned
+(SNOW-566). Lock and release share this one threshold, and at it the locked
+bbox and the natural frame coincide, so crossing it is continuous.
+
+Geometry is applied and cleared as inline `width`/`height` plus a
+`transform` offset (a transform so moving the frame costs no layout — it
+carries the dim mask as a 9999px box-shadow spread), so a viewport resize
+keeps working. `MIN_FRAME_SCALE` (0.08) stops the frame locking to an
 unaimable dot; it only binds at the map's own minimum zoom, and past it the
 original `over_ceiling` backstop — red readout, disabled Download — still
 applies.

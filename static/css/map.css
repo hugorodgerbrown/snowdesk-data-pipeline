@@ -2136,8 +2136,14 @@
 }
 
 .map-frame-rect {
-    /* Default: fill the area. map.js overrides width/height inline when
-       the ceiling bites, and clears them again when it does not. */
+    /* Default: fill the area. Once the ceiling bites, map.js overrides
+       width/height inline and offsets the box with an inline `transform`,
+       clearing all three again when it does not (SNOW-567). The offset is
+       a transform rather than a position change for two reasons: the box
+       stays flex-centred here, so the offset is measured from a stable
+       origin; and moving it costs no layout, which matters because the dim
+       mask below is this element's own box-shadow — relaying it out would
+       repaint a 9999px spread on every frame of a zoom. */
     width: 100%;
     height: 100%;
     border: 2px solid var(--on-ink);
