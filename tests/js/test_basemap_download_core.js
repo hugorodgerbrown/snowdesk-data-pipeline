@@ -32,6 +32,15 @@
  * name, is how a re-port with no compiler/typechecker link between the
  * two languages stays honest against drift.
  *
+ * SNOW-569 adds the geometry helpers behind the on-map download progress
+ * fill — ``geometryBounds``/``bboxPolygon``/``fillLevelLatitude``/
+ * ``clipPolygonBelow``. Like ``budgetScaleForBBox`` these are client-only
+ * with no Python twin, and their tests are likewise property-shaped: what
+ * has to hold is that the level rises monotonically and lands exactly on
+ * the box's edges at 0 and 1, and that the clip keeps everything below the
+ * line, drops everything above it, and always hands back rings a fill
+ * layer can render.
+ *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is
  * also `self` in a window context, so importing it for side effects is
@@ -385,5 +394,213 @@ describe('hasStorageHeadroom', () => {
   it('allows a download with no meaningful size', () => {
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, 0)).toBe(true);
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, NaN)).toBe(true);
+  });
+});
+
+describe('geometryBounds', () => {
+  it('bounds a simple polygon', () => {
+    const polygon = {
+      type: 'Polygon',
+      coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
+    };
+    expect(core.geometryBounds(polygon)).toEqual([7, 46, 8, 47]);
+  });
+
+  it('spans every part of a multipolygon', () => {
+    const geometry = {
+      type: 'MultiPolygon',
+      coordinates: [
+        [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
+        [[[9, 44], [10, 44], [10, 45], [9, 45], [9, 44]]],
+      ],
+    };
+    expect(core.geometryBounds(geometry)).toEqual([7, 44, 10, 47]);
+  });
+
+  it('ignores holes, which are inside the outer ring by definition', () => {
+    const geometry = {
+      type: 'Polygon',
+      coordinates: [
+        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
+        [[7.4, 46.4], [7.6, 46.4], [7.6, 46.6], [7.4, 46.6], [7.4, 46.4]],
+      ],
+    };
+    expect(core.geometryBounds(geometry)).toEqual([7, 46, 8, 47]);
+  });
+
+  it('returns null for a non-polygon or empty geometry', () => {
+    expect(core.geometryBounds(null)).toBeNull();
+    expect(core.geometryBounds({ type: 'Point', coordinates: [7, 46] })).toBeNull();
+    expect(core.geometryBounds({ type: 'Polygon', coordinates: [] })).toBeNull();
+  });
+});
+
+describe('bboxPolygon', () => {
+  it('closes the ring on the south-west corner', () => {
+    const polygon = core.bboxPolygon([7, 46, 8, 47]);
+    expect(polygon.type).toBe('Polygon');
+    expect(polygon.coordinates[0]).toEqual([
+      [7, 46],
+      [8, 46],
+      [8, 47],
+      [7, 47],
+      [7, 46],
+    ]);
+  });
+
+  it('round-trips through geometryBounds', () => {
+    expect(core.geometryBounds(core.bboxPolygon([7, 46, 8, 47]))).toEqual([7, 46, 8, 47]);
+  });
+});
+
+describe('fillLevelLatitude', () => {
+  const BBOX = [7.0, 46.0, 8.0, 47.0];
+
+  it('pins the ends to the box edges', () => {
+    expect(core.fillLevelLatitude(BBOX, 0)).toBeCloseTo(46.0, 9);
+    expect(core.fillLevelLatitude(BBOX, 1)).toBeCloseTo(47.0, 9);
+  });
+
+  it('clamps a fraction outside [0, 1] to those edges', () => {
+    expect(core.fillLevelLatitude(BBOX, -0.5)).toBeCloseTo(46.0, 9);
+    expect(core.fillLevelLatitude(BBOX, 3)).toBeCloseTo(47.0, 9);
+  });
+
+  it('rises monotonically with progress', () => {
+    let previous = -Infinity;
+    for (let pct = 0; pct <= 100; pct++) {
+      const lat = core.fillLevelLatitude(BBOX, pct / 100);
+      expect(lat).toBeGreaterThan(previous);
+      previous = lat;
+    }
+  });
+
+  it('interpolates in Mercator, not in degrees', () => {
+    // The projection stretches northward, so the box's northern half
+    // occupies more SCREEN height than its southern half — and half the
+    // screen height is therefore reached slightly NORTH of the degree
+    // midpoint. The gap is small (hundredths of a degree over a 1° box);
+    // asserting its sign and rough size is what distinguishes this from a
+    // linear-in-degrees implementation, which would land exactly on 46.5.
+    const half = core.fillLevelLatitude(BBOX, 0.5);
+    expect(half).toBeGreaterThan(46.5);
+    expect(half - 46.5).toBeLessThan(0.01);
+  });
+
+  it('is linear in degrees for a degenerate box', () => {
+    expect(core.fillLevelLatitude([7, 46, 8, 46], 0.5)).toBeCloseTo(46.0, 9);
+  });
+});
+
+describe('clipPolygonBelow', () => {
+  // A unit square from (7, 46) to (8, 47).
+  const SQUARE = {
+    type: 'Polygon',
+    coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
+  };
+
+  /**
+   * The latitude range spanned by every position in `geometry`.
+   *
+   * @param {Object} geometry
+   * @returns {[number, number]} ``[south, north]``.
+   */
+  function latSpan(geometry) {
+    const bounds = core.geometryBounds(geometry);
+    return [bounds[1], bounds[3]];
+  }
+
+  it('keeps nothing above the clip line', () => {
+    const clipped = core.clipPolygonBelow(SQUARE, 46.25);
+    expect(latSpan(clipped)).toEqual([46, 46.25]);
+  });
+
+  it('returns a MultiPolygon whatever the input type', () => {
+    expect(core.clipPolygonBelow(SQUARE, 46.5).type).toBe('MultiPolygon');
+    const multi = { type: 'MultiPolygon', coordinates: [SQUARE.coordinates] };
+    expect(core.clipPolygonBelow(multi, 46.5).type).toBe('MultiPolygon');
+  });
+
+  it('returns the whole geometry when the line is above it', () => {
+    const clipped = core.clipPolygonBelow(SQUARE, 99);
+    expect(latSpan(clipped)).toEqual([46, 47]);
+    expect(core.geometryBounds(clipped)).toEqual([7, 46, 8, 47]);
+  });
+
+  it('returns null when the line is below everything', () => {
+    expect(core.clipPolygonBelow(SQUARE, 45)).toBeNull();
+  });
+
+  it('closes every ring it produces', () => {
+    const clipped = core.clipPolygonBelow(SQUARE, 46.5);
+    for (const polygon of clipped.coordinates) {
+      for (const ring of polygon) {
+        expect(ring.length).toBeGreaterThanOrEqual(4);
+        expect(ring[0]).toEqual(ring[ring.length - 1]);
+      }
+    }
+  });
+
+  it('handles a concave ring, keeping both surviving lobes', () => {
+    // A "U": two legs rising from a shared base, with a notch between
+    // them. Clipping above the notch floor leaves both legs, which
+    // Sutherland–Hodgman returns as one ring joined along the clip line
+    // — so what matters is that the full x-extent survives, not the ring
+    // count.
+    const u = {
+      type: 'Polygon',
+      coordinates: [[
+        [0, 0], [3, 0], [3, 3], [2, 3], [2, 1], [1, 1], [1, 3], [0, 3], [0, 0],
+      ]],
+    };
+    const clipped = core.clipPolygonBelow(u, 2);
+    expect(core.geometryBounds(clipped)).toEqual([0, 0, 3, 2]);
+  });
+
+  it('drops a polygon whose outer ring is entirely above the line', () => {
+    const geometry = {
+      type: 'MultiPolygon',
+      coordinates: [
+        [[[7, 46], [8, 46], [8, 46.5], [7, 46.5], [7, 46]]],
+        [[[7, 48], [8, 48], [8, 49], [7, 49], [7, 48]]],
+      ],
+    };
+    const clipped = core.clipPolygonBelow(geometry, 47);
+    expect(clipped.coordinates).toHaveLength(1);
+    expect(core.geometryBounds(clipped)).toEqual([7, 46, 8, 46.5]);
+  });
+
+  it('keeps a hole that is wholly below the line', () => {
+    const withHole = {
+      type: 'Polygon',
+      coordinates: [
+        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
+        [[7.2, 46.2], [7.4, 46.2], [7.4, 46.4], [7.2, 46.4], [7.2, 46.2]],
+      ],
+    };
+    expect(core.clipPolygonBelow(withHole, 46.8).coordinates[0]).toHaveLength(2);
+  });
+
+  it('drops a hole that is wholly above the line', () => {
+    // The hole is gone, so the outer ring below the line is solid —
+    // which is right: every point of that hole is above the fill level.
+    const withHole = {
+      type: 'Polygon',
+      coordinates: [
+        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
+        [[7.2, 46.8], [7.4, 46.8], [7.4, 46.9], [7.2, 46.9], [7.2, 46.8]],
+      ],
+    };
+    expect(core.clipPolygonBelow(withHole, 46.5).coordinates[0]).toHaveLength(1);
+  });
+
+  it('clips an unclosed ring identically to a closed one', () => {
+    const open = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47]]] };
+    expect(core.clipPolygonBelow(open, 46.5)).toEqual(core.clipPolygonBelow(SQUARE, 46.5));
+  });
+
+  it('returns null for a non-polygon geometry', () => {
+    expect(core.clipPolygonBelow(null, 46)).toBeNull();
+    expect(core.clipPolygonBelow({ type: 'LineString', coordinates: [[7, 46]] }, 46)).toBeNull();
   });
 });

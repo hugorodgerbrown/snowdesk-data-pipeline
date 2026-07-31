@@ -319,6 +319,288 @@ async function basemapDownloadFitsQuota(mb) {
   }
 }
 
+// SNOW-569: ids for the on-map download progress fill. One source and one
+// layer, created on demand and torn down when the run settles — there is
+// never more than one download in flight (both controls refuse a click
+// while their own state is 'busy', and they can't both be running because
+// the custom-area control's framing overlay covers the region control).
+const DOWNLOAD_PROGRESS_SOURCE_ID = 'download-progress';
+const DOWNLOAD_PROGRESS_FILL_LAYER_ID = 'download-progress-fill';
+const DOWNLOAD_PROGRESS_LINE_LAYER_ID = 'download-progress-line';
+
+// Fallback for --color-sync-ok (src/css/main.css @theme) — the SAME green
+// the layers-menu "available offline" dot and the download roundel's own
+// fill use, so the map, the roundel, and the cache dashboard speak one
+// visual language. MapLibre paint values can't reference a CSS variable, so
+// the live value is read off the document at the start of each run (the
+// theme has a lighter green in dark mode) and this is only the floor.
+const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
+
+// Opacity the rising fill sits at, and the peak of the completion pulse.
+// The fill lands ABOVE the choropleth, so it has to stay translucent
+// enough to read the region's danger colour through it while a download
+// runs; the pulse then swells past that for one beat before fading out.
+const DOWNLOAD_PROGRESS_OPACITY = 0.45;
+const DOWNLOAD_PROGRESS_PULSE_OPACITY = 0.85;
+const DOWNLOAD_PROGRESS_PULSE_RISE_MS = 180;
+const DOWNLOAD_PROGRESS_PULSE_FADE_MS = 440;
+
+/**
+ * A download's on-map progress fill: the geometry being downloaded fills
+ * from its southern edge upwards as the run progresses, pulses once on
+ * success, and is removed.
+ *
+ * Why the level is real geometry rather than a paint trick: MapLibre has
+ * no clip-path and no per-pixel gradient on a ``fill`` layer, so "half a
+ * polygon" can only be expressed as half a polygon. Each tick clips the
+ * geometry against the half-plane below the current level
+ * (``pwaBasemapDownloadCore.clipPolygonBelow``) and pushes the result
+ * through ``setData``.
+ *
+ * The level is a line of constant LATITUDE — the fill is anchored to the
+ * ground, so it stays put as the map is panned and zoomed under it. Under
+ * a bearing rotation it therefore no longer runs along the bottom of the
+ * screen, which is the deliberate trade: this map is used north-up, and a
+ * screen-space level would slide across the region every time the user
+ * dragged the map.
+ *
+ * Ticks arrive once per cached URL — thousands of them for a region — so
+ * repaints are coalesced onto an animation frame and skipped entirely
+ * when the rounded percentage hasn't moved.
+ *
+ * @param {{type?: string, coordinates?: any}} geometry The Polygon or
+ *   MultiPolygon being downloaded.
+ * @returns {{update: function(number): void, finish: function(boolean):
+ *   Promise<void>}} ``update`` takes a percentage (0-100); ``finish``
+ *   takes whether the run succeeded and resolves once the pulse (success
+ *   only) has played and the layer is gone. Both are no-ops on a map or
+ *   geometry the fill can't be built for, so callers never have to
+ *   branch.
+ */
+function createDownloadProgressFill(geometry) {
+  const core = self.pwaBasemapDownloadCore;
+  const bounds = core && geometry ? core.geometryBounds(geometry) : null;
+  // No map, no geometry, or a degenerate one (a bbox with no height can
+  // never show a level): hand back the same shape doing nothing, so the
+  // download path itself stays branch-free.
+  if (!MAP || !bounds || bounds[3] <= bounds[1]) {
+    return { update: () => {}, finish: () => Promise.resolve() };
+  }
+
+  const colour =
+    getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
+    DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
+  const reducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const EMPTY = { type: 'FeatureCollection', features: [] };
+
+  let lastPct = -1;
+  let pendingPct = 0;
+  let frame = 0;
+  let removed = false;
+
+  /**
+   * Add the source and layers if they aren't on the style, and return
+   * the source. Called before every paint rather than once at the start
+   * because a basemap swap mid-run replaces the whole style, taking every
+   * custom source with it — this quietly rebuilds on the next tick
+   * instead of throwing for the rest of the run.
+   *
+   * @returns {Object | null} The geojson source, or null while the style
+   *   is in no state to take one.
+   */
+  function _ensure() {
+    if (removed) return null;
+    try {
+      const existing = MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID);
+      if (existing) return existing;
+      // Deliberately NOT gated on map.isStyleLoaded(). That reports
+      // Style.loaded(), which additionally requires every SOURCE to have
+      // loaded — so a basemap whose tiles are slow, or whose origin is
+      // unreachable, holds it false indefinitely and would suppress the
+      // fill for the whole run. addSource needs only a parsed style, and
+      // the catch below already covers a style that can't take one.
+      MAP.addSource(DOWNLOAD_PROGRESS_SOURCE_ID, { type: 'geojson', data: EMPTY });
+      // Sits directly above the choropleth so it reads as that region
+      // filling up, and below every outline and label so the selection
+      // ring and region name stay legible through it. With the regions
+      // overlay (L4) switched off there is no regions-line to anchor to,
+      // and the fill goes on top — it's transient, deliberate feedback,
+      // so it shows either way rather than silently doing nothing.
+      const beforeId = MAP.getLayer('regions-line') ? 'regions-line' : undefined;
+      MAP.addLayer(
+        {
+          id: DOWNLOAD_PROGRESS_FILL_LAYER_ID,
+          type: 'fill',
+          source: DOWNLOAD_PROGRESS_SOURCE_ID,
+          paint: { 'fill-color': colour, 'fill-opacity': DOWNLOAD_PROGRESS_OPACITY },
+        },
+        beforeId,
+      );
+      // A crisp line along the top of the fill — the level itself. Without
+      // it a translucent fill over a mid-tone choropleth has no visible
+      // leading edge, and the whole point is watching it rise.
+      MAP.addLayer(
+        {
+          id: DOWNLOAD_PROGRESS_LINE_LAYER_ID,
+          type: 'line',
+          source: DOWNLOAD_PROGRESS_SOURCE_ID,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': colour, 'line-width': 1.5, 'line-opacity': 0.9 },
+        },
+        beforeId,
+      );
+      return MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID);
+    } catch (_e) {
+      // Style mid-reload. The next tick tries again.
+      return null;
+    }
+  }
+
+  /**
+   * Push the clipped geometry for `pct` into the source.
+   *
+   * @param {number} pct
+   * @returns {void}
+   */
+  function _paint(pct) {
+    const source = _ensure();
+    if (!source) return;
+    const lat = core.fillLevelLatitude(bounds, pct / 100);
+    const clipped = core.clipPolygonBelow(geometry, lat);
+    try {
+      source.setData(
+        clipped
+          ? { type: 'Feature', geometry: clipped, properties: {} }
+          : EMPTY,
+      );
+    } catch (_e) {
+      // Source went away with a style reload between _ensure and here.
+    }
+  }
+
+  /**
+   * Take down the source and its layers. Idempotent, and safe against a
+   * style that has already dropped them.
+   *
+   * @returns {void}
+   */
+  function _remove() {
+    removed = true;
+    if (frame) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    }
+    try {
+      for (const id of [DOWNLOAD_PROGRESS_FILL_LAYER_ID, DOWNLOAD_PROGRESS_LINE_LAYER_ID]) {
+        if (MAP.getLayer(id)) MAP.removeLayer(id);
+      }
+      if (MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID)) {
+        MAP.removeSource(DOWNLOAD_PROGRESS_SOURCE_ID);
+      }
+    } catch (_e) {
+      // Already gone with the style. Nothing to do.
+    }
+  }
+
+  /**
+   * One swell and fade of the completed fill — the "this is finished"
+   * beat before the roundel flips to its green done state.
+   *
+   * @returns {Promise<void>} Resolves when the pulse has played out.
+   */
+  function _pulse() {
+    return new Promise((resolve) => {
+      if (removed || !MAP.getLayer(DOWNLOAD_PROGRESS_FILL_LAYER_ID)) {
+        resolve();
+        return;
+      }
+      const total = DOWNLOAD_PROGRESS_PULSE_RISE_MS + DOWNLOAD_PROGRESS_PULSE_FADE_MS;
+      const started = performance.now();
+      const step = (now) => {
+        const elapsed = now - started;
+        // Rise from the working opacity to the pulse peak, then fade the
+        // whole thing out — one beat, not a repeating throb.
+        let opacity;
+        if (elapsed < DOWNLOAD_PROGRESS_PULSE_RISE_MS) {
+          const t = elapsed / DOWNLOAD_PROGRESS_PULSE_RISE_MS;
+          opacity =
+            DOWNLOAD_PROGRESS_OPACITY +
+            (DOWNLOAD_PROGRESS_PULSE_OPACITY - DOWNLOAD_PROGRESS_OPACITY) * t;
+        } else {
+          const t = Math.min(
+            1,
+            (elapsed - DOWNLOAD_PROGRESS_PULSE_RISE_MS) / DOWNLOAD_PROGRESS_PULSE_FADE_MS,
+          );
+          opacity = DOWNLOAD_PROGRESS_PULSE_OPACITY * (1 - t);
+        }
+        try {
+          MAP.setPaintProperty(DOWNLOAD_PROGRESS_FILL_LAYER_ID, 'fill-opacity', opacity);
+          MAP.setPaintProperty(DOWNLOAD_PROGRESS_LINE_LAYER_ID, 'line-opacity', opacity);
+        } catch (_e) {
+          resolve();
+          return;
+        }
+        if (elapsed >= total) {
+          resolve();
+          return;
+        }
+        frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+    });
+  }
+
+  return {
+    /**
+     * Raise the fill to `pct`, coalescing repeat ticks onto one frame.
+     *
+     * @param {number} pct Percentage complete, 0-100.
+     * @returns {void}
+     */
+    update(pct) {
+      if (removed) return;
+      pendingPct = pct;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const rounded = Math.round(pendingPct);
+        if (rounded === lastPct) return;
+        lastPct = rounded;
+        _paint(rounded);
+      });
+    },
+
+    /**
+     * Settle the fill: a full-region pulse on success, an immediate
+     * removal otherwise (a failed run must not leave a green region
+     * behind, however briefly).
+     *
+     * @param {boolean} ok Whether the run succeeded.
+     * @returns {Promise<void>}
+     */
+    async finish(ok) {
+      if (removed) return;
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      if (!ok) {
+        _remove();
+        return;
+      }
+      // Whatever the last tick painted, a success means the whole thing
+      // is downloaded — pulse the complete geometry, not a 99% one.
+      lastPct = 100;
+      _paint(100);
+      if (!reducedMotion) await _pulse();
+      _remove();
+    },
+  };
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -5375,12 +5657,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const tileUrls = core.rangesToTileURLs(template, blob);
     const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
 
+    // SNOW-569: the region itself fills from its southern edge as the run
+    // progresses. The roundel's own fill stays — it's the part that
+    // survives the user panning the region off screen.
+    const feature = FEATURE_BY_REGION_ID[data.regionId];
+    const progressFill = createDownloadProgressFill(feature && feature.geometry);
+
     const onProgress = (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       setState('busy', data.summary.mb, pct);
+      progressFill.update(pct);
     };
 
-    const finish = (result) => {
+    const finish = async (result) => {
       // "done" (the green offline circle) requires at least one success
       // and no failures; a partial, vacuous, or absent result must not
       // claim the region is downloaded.
@@ -5388,7 +5677,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // SNOW-568: a run that didn't succeed paints 'error' and raises the
       // shared toast, rather than reverting to 'idle' — which was
       // indistinguishable from never having clicked.
-      if (result && result.ok > 0 && result.failed === 0) {
+      const ok = !!(result && result.ok > 0 && result.failed === 0);
+      // SNOW-569: await the on-map pulse before flipping the roundel — the
+      // two are one gesture, the region finishes filling, pulses, and only
+      // then does the icon go green. The control stays 'busy' throughout,
+      // which also keeps renderControl from repainting underneath the
+      // pulse. A failed run clears the fill without pulsing, so the error
+      // state and its toast arrive with no delay.
+      await progressFill.finish(ok);
+      if (ok) {
         setState('done', data.summary.mb);
       } else {
         setState('error', data.summary.mb);
@@ -6411,12 +6708,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const tileUrls = core.rangesToTileURLs(template, blob);
     const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
 
+    // SNOW-569: the framed area fills from its southern edge as the run
+    // progresses, exactly as a region does — same helper, with the bbox
+    // as its geometry.
+    const progressFill = createDownloadProgressFill(core.bboxPolygon(bbox));
+
     const onProgress = (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       setState('busy', pct);
+      progressFill.update(pct);
     };
 
-    const finish = (result) => {
+    const finish = async (result) => {
       // "done" requires at least one success and no failures; a partial,
       // vacuous, or absent result must not claim the area is downloaded.
       //
@@ -6426,7 +6729,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // download looked like from the outside. The overlay stays open on
       // failure so the framed area (and the Download button) survive for
       // a retry; only success closes it.
-      if (result && result.ok > 0 && result.failed === 0) {
+      const ok = !!(result && result.ok > 0 && result.failed === 0);
+      if (ok) {
         savedArea = {
           bbox: bbox,
           band: blob.band,
@@ -6434,9 +6738,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
           savedAt: new Date().toISOString(),
         };
         _persistSavedArea(savedArea);
-        setState('done');
+        // SNOW-569: close the framing overlay BEFORE the pulse — the CTA
+        // bar and the dimmed surround are the framing UI, and the pulse is
+        // the map's own confirmation, so it should play on a clean map
+        // rather than behind the furniture that set it up. Only on
+        // success: SNOW-568 deliberately keeps the overlay open after a
+        // failure, and the fill is cleared without a pulse there anyway.
         _closeFramingAfterRun();
+        await progressFill.finish(true);
+        setState('done');
       } else {
+        await progressFill.finish(false);
         setState('error');
         // A null result means there was no active worker at all — nothing
         // ran and nothing was cached, which is still a failed download

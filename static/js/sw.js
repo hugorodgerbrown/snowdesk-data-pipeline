@@ -320,7 +320,13 @@ try {
 // (sw.js, sw_register.js, map.js, basemap_cache_core.js,
 // basemap_download_core.js, map.css, _map_embed.html, both
 // _map_*download_control.html partials).
-const CACHE_VERSION = 'snowdesk-shell-v87';
+// SNOW-569: a download now fills its own geometry on the map as it runs
+// (region boundary or framed area), pulses it once, and only then flips the
+// roundel — which keeps the download glyph on the green disc rather than
+// swapping to a tick. Shell JS/CSS bytes changed (map.js,
+// basemap_download_core.js, map.css, both _map_*download_control.html
+// partials).
+const CACHE_VERSION = 'snowdesk-shell-v89';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

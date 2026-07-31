@@ -470,7 +470,10 @@ which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
 **State** — `data-download-state` on the control: `no-region` (nothing
 focused), `idle` (arrow, size in the tooltip), `busy` (bottom-up fill of
 the roundel, driven by a `--download-progress` CSS custom property —
-`static/css/map.css`), `done` (solid green circle + tick), `disabled`
+`static/css/map.css`), `done` (solid green circle, the same download glyph
+in white — SNOW-569 dropped the tick: the glyph is the control's identity,
+and swapping it made a completed download read as a different control,
+where the colour inversion already carries "finished"), `disabled`
 (over-ceiling), and `offline` (no downloading of layers while offline; see
 gating below). The three non-runnable states (`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
@@ -528,13 +531,43 @@ region painted `idle` until the user reselected the region.
    aborts the rest.
 6. `sw.js` posts a `warm-cache-progress` message (n/total) on every
    throttled batch. `sw_register.js` forwards these to `map.js` (which
-   updates the icon's live bottom-up fill) and rearms the 30-second
-   silence timeout on each tick, so a large download spanning more than
-   30 seconds is never cut short as long as it keeps making progress.
+   updates the icon's live bottom-up fill, and the region's own on-map
+   fill — below) and rearms the 30-second silence timeout on each tick,
+   so a large download spanning more than 30 seconds is never cut short
+   as long as it keeps making progress.
 7. On completion, the icon flips to `done` (a clean, non-vacuous
    success — at least one URL cached and none failed) or reverts to
    `idle` (partial/failed/vacuous — the user can retry). No toast is
    shown either way; the icon's own state is the only feedback.
+
+**On-map progress fill** (SNOW-569) — alongside the roundel's own fill,
+the thing being downloaded fills on the map: the region's boundary for
+the per-region control, the framed rectangle for the custom-area one.
+`createDownloadProgressFill` (`static/js/map.js`) owns a single
+`download-progress` geojson source with a fill and a line layer, added
+above `regions-fill` for the run and removed after it.
+
+The level is real geometry, not a paint trick — MapLibre has no
+clip-path and no per-pixel gradient on a `fill` layer, so each tick clips
+the geometry against the half-plane below the current level
+(`basemap_download_core.js`'s `clipPolygonBelow`, a Sutherland–Hodgman
+pass per ring, no dependency) and `setData`s the result. The level is a
+line of constant **latitude**, chosen in Web Mercator
+(`fillLevelLatitude`) so it climbs at a constant rate on screen: the fill
+is anchored to the ground and stays put as the map is panned under it,
+at the cost of no longer running along the bottom of the screen under a
+bearing rotation. Ticks arrive once per URL — thousands for a region —
+so repaints are coalesced onto an animation frame and skipped when the
+rounded percentage hasn't moved, and `_ensure` re-adds the source if a
+basemap swap mid-run takes the whole style with it.
+
+On success the fill pulses once and is removed, and only then does the
+roundel flip to `done` — the two are one gesture, and the control stays
+`busy` throughout so nothing repaints underneath the pulse. A failed run
+removes the fill immediately: a failure must never read as a downloaded
+region, however briefly. `prefers-reduced-motion` skips the pulse. A
+geometry-less download (nothing to clip) degrades to the roundel-only
+behaviour rather than erroring.
 
 `_basemapStaleWhileRevalidate` (ordinary passive browsing) reads
 `BASEMAP_PINNED_CACHE` as a read-only fallback on a `BASEMAP_CACHE` miss, so
