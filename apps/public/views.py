@@ -1844,7 +1844,8 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
     paths are disallowed: the Django admin, the signed-token subscription
     flow (whose links perform account actions), the staff-only resort-edit
     API, the HTMX partial fragments (which 400 on a plain GET anyway), the
-    ephemeral share-redirect tokens, and the CSP report endpoint. The public
+    ephemeral share-redirect tokens, the CSP report endpoint, and the
+    ``/livez`` + ``/healthz`` infrastructure probes (SNOW-565). The public
     GeoJSON / ratings endpoints under ``/api/`` stay crawlable on purpose so
     agents can find the structured data.
 
@@ -1879,6 +1880,9 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
         "Disallow: /partials/",
         "Disallow: /s/",
         "Disallow: /csp/",
+        # Infrastructure probes, not content (SNOW-565).
+        "Disallow: /livez",
+        "Disallow: /healthz",
         "",
         f"Sitemap: {base}/sitemap.xml",
         "",

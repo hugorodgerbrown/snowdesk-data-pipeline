@@ -336,6 +336,13 @@ POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
 # GET endpoints declared in ``apps/public/api_urls.py``.
 # SNOW-338: also keep in sync with the ``Cache-Control: public`` static
 # routes declared in ``config/urls.py``.
+# Health-check probe paths (SNOW-565), named once because four places have
+# to agree on them: the URLconf, ``_POSTHOG_EXEMPT_PATHS`` below,
+# ``SECURE_REDIRECT_EXEMPT`` in production.py, and ``healthCheckPath`` in
+# render.yaml. The first three derive from this tuple; render.yaml is
+# outside Python and is covered by a test instead.
+HEALTH_CHECK_PATHS: tuple[str, ...] = ("/livez", "/healthz")
+
 _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
     {
         # Map-data JSON/GeoJSON API endpoints (apps/public/api_urls.py) — SNOW-299.
@@ -356,6 +363,18 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # Cache-Control: public for Vary: Cookie to defeat — exempting it here
         # would be dead config. It returns to this set only if the gate
         # becomes global and public caching is restored (SNOW-469).
+        # Health checks (config/urls.py) — SNOW-565, spliced in from
+        # HEALTH_CHECK_PATHS above. These are exempt for a DIFFERENT reason
+        # from every other entry in this set: the rest are here so
+        # ``Vary: Cookie`` cannot defeat CDN caching, and the health checks
+        # are ``no-store``, so that rationale does not apply to them. They
+        # are listed because PosthogContextMiddleware reads ``request.user``
+        # for identity tagging, and that access triggers a session lookup —
+        # a database query on every probe. On ``/livez`` that would silently
+        # reintroduce the database dependency the endpoint exists to avoid;
+        # on both it is per-probe work and per-probe analytics noise from an
+        # unattended prober.
+        *HEALTH_CHECK_PATHS,
         # Static public-good documents (config/urls.py) — SNOW-338.
         "/robots.txt",
         "/llms.txt",

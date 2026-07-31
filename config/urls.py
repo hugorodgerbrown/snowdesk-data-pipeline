@@ -6,6 +6,12 @@ redirect from the legacy /subscribe/ prefix), the JSON API under /api/, the
 django-csp-plus report endpoint under /csp/, and the public-facing bulletin
 site at the root.
 
+``/livez`` and ``/healthz`` (SNOW-565) are the infrastructure health checks,
+registered ahead of everything else so ``APPEND_SLASH`` cannot hand a probe
+to the ``<region_id:region_id>/`` catch-all. ``/livez`` is the path wired to
+Render's ``healthCheckPath``; see ``apps/core/views.py`` for why the two are
+separate.
+
 The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``
 and ``/favicon.ico`` routes are registered before ``apps.public.urls`` so the
 generic ``<str:region_id>/`` pattern in apps.public.urls does not swallow them.
@@ -34,6 +40,7 @@ from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
+from apps.core.views import healthz, livez
 from apps.public.sitemaps import BulletinSitemap
 from apps.public.views import (
     serve_favicon,
@@ -46,6 +53,12 @@ from apps.public.views import (
 )
 
 urlpatterns = [
+    # Health checks (SNOW-565). Registered first, ahead of every other
+    # pattern: ``APPEND_SLASH`` would otherwise redirect a probe of
+    # ``/healthz`` to ``/healthz/`` and hand it to the generic
+    # ``<region_id:region_id>/`` catch-all in apps.public.urls.
+    path("livez", livez, name="livez"),
+    path("healthz", healthz, name="healthz"),
     path("admin/", admin.site.urls),
     path("account/", include("apps.accounts.urls")),
     # SNOW-430: the accounts app moved from /subscribe/ to /account/. Redirect

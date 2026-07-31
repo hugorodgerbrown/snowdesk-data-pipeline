@@ -38,7 +38,7 @@ def test_robots_allows_all_by_default() -> None:
 
 
 def test_robots_disallows_functional_paths() -> None:
-    """Admin, subscription, edit-API, partials, share, and CSP paths are excluded."""
+    """Admin, subscription, edit-API, partials, share, CSP, and health paths are excluded."""
     body = _body()
     for path in (
         "Disallow: /admin/",
@@ -48,6 +48,9 @@ def test_robots_disallows_functional_paths() -> None:
         "Disallow: /partials/",
         "Disallow: /s/",
         "Disallow: /csp/",
+        # SNOW-565: infrastructure probes, not content.
+        "Disallow: /livez",
+        "Disallow: /healthz",
     ):
         assert path in body, f"missing directive: {path!r}"
 

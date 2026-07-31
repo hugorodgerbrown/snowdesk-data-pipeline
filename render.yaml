@@ -29,6 +29,15 @@
 #
 # Env vars marked `sync: false` must be set manually in the Render
 # dashboard — they are not auto-populated from a Blueprint import.
+#
+# `healthCheckPath` (SNOW-565) points at `/livez`, NOT `/healthz`. Render
+# uses this path to gate deploy promotion and instance health, so it must
+# answer the question "should this instance be replaced?" — `/livez` touches
+# no database. `/healthz` additionally reads `auth_user`, which is the right
+# check for an external monitor (it alerts a human) and the wrong one here
+# (a transient Postgres blip would block a good deploy or restart an
+# instance that was still serving). Neither worker declares a health check:
+# Render background workers cannot take an HTTP probe.
 
 version: "1"
 projects:
@@ -71,6 +80,7 @@ projects:
             branch: release
             buildCommand: ./bin/build.sh
             startCommand: uv run --no-sync gunicorn config.wsgi
+            healthCheckPath: /livez
             domains:
               - www.snowdesk.info
               - snowdesk.info
@@ -107,6 +117,7 @@ projects:
             branch: main
             buildCommand: ./bin/build.sh
             startCommand: uv run --no-sync gunicorn config.wsgi
+            healthCheckPath: /livez
             autoDeployTrigger: checksPass
             envVars:
               # Staging inherits production hardening but sends email inline

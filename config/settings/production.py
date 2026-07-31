@@ -82,6 +82,15 @@ CSRF_COOKIE_SECURE = True
 # SECURE_SSL_REDIRECT redirect loops and http:// absolute URLs in emails.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# The health checks (SNOW-565) must answer the platform's prober, which
+# reaches the instance directly rather than through the TLS-terminating
+# proxy — so it does not set X-Forwarded-Proto, and SECURE_SSL_REDIRECT
+# above would answer the probe with a 301 that Render scores as a failed
+# check. Exempting the two paths keeps the redirect in force everywhere a
+# browser can reach. Django matches these patterns against the path with
+# the leading slash already stripped, hence the lstrip.
+SECURE_REDIRECT_EXEMPT = [rf"^{path.lstrip('/')}$" for path in HEALTH_CHECK_PATHS]
+
 # Trusted origins for CSRF — must match the production hostname(s).
 # Comma-separated, e.g. "https://snowdesk.info,https://www.snowdesk.info".
 CSRF_TRUSTED_ORIGINS = config(
