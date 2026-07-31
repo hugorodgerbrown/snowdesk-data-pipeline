@@ -97,6 +97,35 @@
  *     Constants mirroring ``basemap_tiles.py``'s module-level constants
  *     of the same name (see there for the sizing rationale) — except
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
+ *
+ * SNOW-569 adds a second client-only group — the geometry a download's
+ * on-map progress fill needs (``geometryBounds``, ``bboxPolygon``,
+ * ``fillLevelLatitude``, ``clipPolygonBelow``). Like
+ * ``budgetScaleForBBox`` these have no ``basemap_tiles.py`` counterpart
+ * and need none: the server never draws anything. They live here rather
+ * than in ``map.js`` because they are pure functions of geometry, which
+ * makes them unit-testable without a MapLibre instance — everything in
+ * ``map.js`` that touches them is a side effect on a live map.
+ *
+ *   geometryBounds(geometry)
+ *     ``[west, south, east, north]`` of a Polygon/MultiPolygon, or
+ *     ``null`` for anything else. Antimeridian-naive, which is safe for
+ *     every geometry this project downloads (Alpine regions and a
+ *     user-framed rectangle).
+ *   bboxPolygon(bbox)
+ *     A ``bbox`` as a GeoJSON Polygon — the custom-area download's
+ *     equivalent of a region's own boundary, so both download shapes
+ *     feed the same fill code.
+ *   fillLevelLatitude(bbox, fraction)
+ *     The latitude of the fill line when a download is ``fraction`` (0..1)
+ *     complete: the level rises from ``bbox``'s south edge to its north
+ *     edge. Interpolated in Web Mercator, not in degrees, so the fill
+ *     climbs at a constant rate ON SCREEN — over a single region the two
+ *     differ by well under a pixel, but the Mercator form is the one that
+ *     stays right if this is ever pointed at a taller box.
+ *   clipPolygonBelow(geometry, lat)
+ *     ``geometry`` clipped to the half-plane at or south of ``lat``, as a
+ *     MultiPolygon, or ``null`` when nothing survives.
  */
 
 (function () {
@@ -423,6 +452,189 @@
     return needed <= (quota - usage) * STORAGE_HEADROOM_FACTOR;
   }
 
+  /**
+   * The polygon rings of ``geometry``, as a flat list — one entry per
+   * ring, outer and inner alike. ``[]`` for anything that isn't a
+   * Polygon or MultiPolygon.
+   *
+   * @param {{type?: string, coordinates?: any}} geometry
+   * @returns {number[][][]}
+   */
+  function _rings(geometry) {
+    if (!geometry || !geometry.coordinates) return [];
+    if (geometry.type === 'Polygon') return geometry.coordinates;
+    if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat();
+    return [];
+  }
+
+  /**
+   * ``[west, south, east, north]`` of a Polygon/MultiPolygon.
+   *
+   * Antimeridian-naive: a geometry straddling ±180° would get a bounds
+   * spanning the whole globe. Nothing this project downloads does — a
+   * region boundary and a user-framed rectangle are both small and
+   * Alpine — and the fill only needs the north/south edges anyway.
+   *
+   * @param {{type?: string, coordinates?: any}} geometry
+   * @returns {[number, number, number, number] | null} ``null`` for a
+   *   non-polygon geometry or one with no positions.
+   */
+  function geometryBounds(geometry) {
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const ring of _rings(geometry)) {
+      for (const [lon, lat] of ring) {
+        if (lon < west) west = lon;
+        if (lon > east) east = lon;
+        if (lat < south) south = lat;
+        if (lat > north) north = lat;
+      }
+    }
+    if (!Number.isFinite(west) || !Number.isFinite(south)) return null;
+    return [west, south, east, north];
+  }
+
+  /**
+   * ``bbox`` as a GeoJSON Polygon, wound anticlockwise from its
+   * south-west corner and explicitly closed.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @returns {{type: string, coordinates: number[][][]}}
+   */
+  function bboxPolygon(bbox) {
+    const [west, south, east, north] = bbox;
+    return {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [west, south],
+          [east, south],
+          [east, north],
+          [west, north],
+          [west, south],
+        ],
+      ],
+    };
+  }
+
+  /**
+   * The latitude of the fill line when a download of ``bbox`` is
+   * ``fraction`` complete — ``bbox``'s south edge at 0, its north edge
+   * at 1.
+   *
+   * Interpolated in Web Mercator y rather than in degrees so the line
+   * climbs at a constant rate on screen. Over one region the two agree
+   * to well under a pixel; doing it in the projection is simply the form
+   * that stays correct for a taller box, and ``lonLatToWorld`` is
+   * already here.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @param {number} fraction Progress in ``[0, 1]``; clamped.
+   * @returns {number} A latitude in degrees.
+   */
+  function fillLevelLatitude(bbox, fraction) {
+    const [, south, , north] = bbox;
+    const f = Math.max(0, Math.min(1, fraction));
+    const ySouth = lonLatToWorld(0, south)[1];
+    const yNorth = lonLatToWorld(0, north)[1];
+    // Mercator y runs southward, so the level's y DEcreases as it rises.
+    const y = ySouth + (yNorth - ySouth) * f;
+    if (!Number.isFinite(y)) return south + (north - south) * f;
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+    return Number.isFinite(lat) ? lat : south + (north - south) * f;
+  }
+
+  /**
+   * One ring clipped to the half-plane at or south of ``lat`` —
+   * Sutherland–Hodgman against a single edge.
+   *
+   * Walks the ring's edges keeping every inside vertex and inserting the
+   * crossing point wherever an edge straddles the line. Closure is
+   * handled by wrapping the last vertex to the first, so a ring given
+   * either closed (GeoJSON's own convention) or open clips identically.
+   *
+   * For a concave ring the result is a single ring whose separate pieces
+   * are joined by zero-area edges lying along the clip line. That is the
+   * well-known artefact of clipping against one half-plane rather than
+   * splitting into components — and it is invisible in a fill render,
+   * which is the only thing this feeds. Don't "fix" it by reaching for a
+   * general polygon-clipping dependency; nothing here needs one.
+   *
+   * @param {number[][]} ring ``[[lon, lat], …]``.
+   * @param {number} lat The clip latitude.
+   * @returns {number[][]} A closed ring, or ``[]`` when the ring lies
+   *   entirely north of ``lat``.
+   */
+  function _clipRingBelow(ring, lat) {
+    const out = [];
+    const n = ring.length;
+    if (n < 3) return out;
+    // A GeoJSON ring repeats its first position last; iterating modulo n
+    // would then emit that duplicate edge as a degenerate one. Dropping
+    // the repeat and wrapping explicitly handles closed and open rings
+    // with the same loop.
+    const last = ring[n - 1];
+    const first = ring[0];
+    const count = last[0] === first[0] && last[1] === first[1] ? n - 1 : n;
+    for (let i = 0; i < count; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % count];
+      const aIn = a[1] <= lat;
+      const bIn = b[1] <= lat;
+      if (aIn) out.push([a[0], a[1]]);
+      if (aIn !== bIn) {
+        const t = (lat - a[1]) / (b[1] - a[1]);
+        out.push([a[0] + t * (b[0] - a[0]), lat]);
+      }
+    }
+    if (out.length) out.push([out[0][0], out[0][1]]);
+    return out;
+  }
+
+  /**
+   * ``geometry`` clipped to the half-plane at or south of ``lat``.
+   *
+   * Always returns a MultiPolygon (or ``null``) whatever the input type,
+   * so a caller can hand the result straight to a MapLibre geojson
+   * source without branching. A polygon whose outer ring is entirely
+   * north of ``lat`` is dropped along with its holes; a hole that is
+   * itself clipped away just leaves the outer ring solid, which is the
+   * right answer — that part of the hole is below the line and so is
+   * filled.
+   *
+   * @param {{type?: string, coordinates?: any}} geometry A Polygon or
+   *   MultiPolygon.
+   * @param {number} lat The clip latitude.
+   * @returns {{type: string, coordinates: number[][][][]} | null}
+   *   ``null`` when nothing survives, or for a non-polygon geometry.
+   */
+  function clipPolygonBelow(geometry, lat) {
+    if (!geometry) return null;
+    let polygons;
+    if (geometry.type === 'Polygon') polygons = [geometry.coordinates];
+    else if (geometry.type === 'MultiPolygon') polygons = geometry.coordinates;
+    else return null;
+    const clipped = [];
+    for (const polygon of polygons) {
+      if (!polygon || !polygon.length) continue;
+      // A closed ring needs four positions (three distinct plus the
+      // repeat); anything shorter has no area to fill.
+      const outer = _clipRingBelow(polygon[0], lat);
+      if (outer.length < 4) continue;
+      const rings = [outer];
+      for (let i = 1; i < polygon.length; i++) {
+        const hole = _clipRingBelow(polygon[i], lat);
+        if (hole.length >= 4) rings.push(hole);
+      }
+      clipped.push(rings);
+    }
+    return clipped.length ? { type: 'MultiPolygon', coordinates: clipped } : null;
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
@@ -433,6 +645,10 @@
     buildBlob: buildBlob,
     budgetScaleForBBox: budgetScaleForBBox,
     hasStorageHeadroom: hasStorageHeadroom,
+    geometryBounds: geometryBounds,
+    bboxPolygon: bboxPolygon,
+    fillLevelLatitude: fillLevelLatitude,
+    clipPolygonBelow: clipPolygonBelow,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
