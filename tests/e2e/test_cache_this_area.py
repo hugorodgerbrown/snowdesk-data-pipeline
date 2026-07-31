@@ -12,8 +12,11 @@ containment (an L1 region could read smaller than an L2 it contains),
 which read as a bug. The shipped shape is a single control
 (``#map-download-control``, rendered by ``_map_download_control.html``) for
 the focused MICRO region only, with no completion toast — the control
-itself carries the outcome (a green "available offline" circle on success,
-reverting to idle otherwise).
+itself carries a success (a green "available offline" circle). SNOW-568
+split failure back out: a run that doesn't succeed paints an ``error``
+state AND raises a toast saying what to do, because the pre-SNOW-568
+fallback (revert to ``idle``) was indistinguishable from never having
+clicked.
 
 SNOW-521 rendered it into the bottom-right stack ``#map-controls-br`` and
 made it permanently present, holding the inert ``no-region`` state with
@@ -35,8 +38,10 @@ region with no computed download summary — the CSS now only hides it while
 NOTHING is focused at all. This file covers: the
 idle→busy→done flow, a reselected region reading ``done`` from real cache
 state rather than in-page memory, a probe that couldn't resolve the
-active basemap's tile template re-running once the style settles, and
-the disabled/over_ceiling and partial/failed-run branches.
+active basemap's tile template re-running once the style settles, the
+disabled/over_ceiling branch, and (SNOW-568) the partial/failed-run
+branches: the ``error`` state, the reason-specific toast, and a retry
+from ``error`` reaching ``done``.
 
 Every test requests ``_load_test_data`` (``pytestmark`` below) for its
 ratings/bulletin rows — needed for two reasons now. First, ``_select_region``
@@ -102,7 +107,7 @@ import json
 from typing import Any, cast
 
 import pytest
-from playwright.sync_api import Page, Route, Worker as SWWorker
+from playwright.sync_api import Page, Route, Worker as SWWorker, expect
 
 from tests.e2e.conftest import PwaPage
 
@@ -176,6 +181,7 @@ def _stub_warm_cache(
     *,
     ok: int,
     failed: int,
+    reason: str | None = None,
     progress_steps: list[tuple[int, int]] | None = None,
     step_delay_ms: int = 0,
 ) -> None:
@@ -193,9 +199,13 @@ def _stub_warm_cache(
     total)`` once per tuple, spaced ``step_delay_ms`` apart so a test can
     reliably observe an intermediate ``busy`` state via
     ``page.wait_for_function`` before the run resolves.
+
+    SNOW-568: ``reason`` rides back with the summary exactly as the real
+    ``_warmCache`` reports it (``'quota'`` / ``'network'`` / ``'other'``),
+    so a test can drive the specific failure message the page shows.
     """
     worker.evaluate(
-        """({ ok, failed, progressSteps, stepDelayMs }) => {
+        """({ ok, failed, reason, progressSteps, stepDelayMs }) => {
             self._warmCache = async (urls, options) => {
                 self.__snow521Urls = urls;
                 self.__snow521Pinned = !!(options && options.pinned);
@@ -212,12 +222,13 @@ def _stub_warm_cache(
                         await cache.put(url, new Response('stub-tile'));
                     }
                 }
-                return { ok, failed };
+                return { ok, failed, reason };
             };
         }""",
         {
             "ok": ok,
             "failed": failed,
+            "reason": reason,
             "progressSteps": progress_steps or [],
             "stepDelayMs": step_delay_ms,
         },
@@ -398,15 +409,20 @@ def test_icon_disabled_when_over_ceiling(
     assert "too large" in (icon.get_attribute("aria-label") or "")
 
 
-def test_icon_reverts_to_idle_when_some_urls_fail(
+def test_icon_reports_error_when_some_urls_fail(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """``ok > 0 and failed > 0`` reverts the icon to idle, not done."""
+    """``ok > 0 and failed > 0`` paints error, not done.
+
+    SNOW-568: this used to revert to ``idle`` — indistinguishable from
+    never having clicked, which is what made a failing download look like
+    nothing at all.
+    """
     _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=3, failed=2)
+    _stub_warm_cache(worker, ok=3, failed=2, reason="network")
 
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
@@ -417,18 +433,21 @@ def test_icon_reverts_to_idle_when_some_urls_fail(
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
-    _wait_for_state(page, "idle", timeout=10000)
+    _wait_for_state(page, "error", timeout=10000)
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
+    # The error state is a retry affordance, not an inert one.
+    assert icon.get_attribute("aria-disabled") == "false"
 
 
-def test_icon_reverts_to_idle_when_ok_is_zero(
+def test_icon_reports_error_when_ok_is_zero(
     pwa_page: PwaPage, _load_test_data: None
 ) -> None:
-    """``ok === 0`` reverts the icon to idle, never claims done."""
+    """``ok === 0`` paints error, never claims done."""
     _reload_home(pwa_page)
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
     worker = page.context.service_workers[0]
-    _stub_warm_cache(worker, ok=0, failed=4)
+    _stub_warm_cache(worker, ok=0, failed=4, reason="network")
 
     _wait_for_map_ready(page)
     _stub_active_basemap_template(page)
@@ -439,7 +458,8 @@ def test_icon_reverts_to_idle_when_ok_is_zero(
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
-    _wait_for_state(page, "idle", timeout=10000)
+    _wait_for_state(page, "error", timeout=10000)
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
 
 
 def test_icon_never_claims_done_for_vacuous_run(
@@ -461,7 +481,66 @@ def test_icon_never_claims_done_for_vacuous_run(
     icon.wait_for(state="visible")
     _wait_for_state(page, "idle")
     icon.click()
-    _wait_for_state(page, "idle", timeout=10000)
+    _wait_for_state(page, "error", timeout=10000)
+
+
+def test_quota_failure_shows_the_storage_message(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """SNOW-568: a ``quota`` reason gets the "free up space" toast, not the generic one.
+
+    The distinction is the whole point of classifying the failure: retrying
+    a download that didn't fit will not make it fit, so telling the user to
+    check their connection would send them round the same loop.
+    """
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+    _stub_warm_cache(worker, ok=0, failed=4, reason="quota")
+
+    _wait_for_map_ready(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+
+    icon = page.locator("#map-download-control")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "error", timeout=10000)
+
+    expect(page.locator("#map-download-error-toast-quota")).to_be_visible()
+    expect(page.locator("#map-download-error-toast")).to_be_hidden()
+
+
+def test_retry_after_a_failure_reaches_done(
+    pwa_page: PwaPage, _load_test_data: None
+) -> None:
+    """SNOW-568: the error state is clickable, and a succeeding retry clears it."""
+    _reload_home(pwa_page)
+    page = pwa_page.page
+    assert page.context.service_workers, "expected a registered service worker"
+    worker = page.context.service_workers[0]
+    _stub_warm_cache(worker, ok=0, failed=4, reason="network")
+
+    _wait_for_map_ready(page)
+    _stub_active_basemap_template(page)
+    _stub_region_basemap_tiles(page)
+    _select_region(page, "CH-4115", _MICRO_SUMMARY)
+
+    icon = page.locator("#map-download-control")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+    icon.click()
+    _wait_for_state(page, "error", timeout=10000)
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
+
+    _stub_warm_cache(worker, ok=5, failed=0)
+    icon.click()
+    _wait_for_state(page, "done", timeout=10000)
+    # The failure message must not outlive the failure.
+    expect(page.locator("#map-download-error-toast")).to_be_hidden()
 
 
 def test_done_state_resolves_once_the_style_settles(

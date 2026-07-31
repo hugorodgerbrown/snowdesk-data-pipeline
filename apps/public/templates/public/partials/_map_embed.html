@@ -1060,6 +1060,24 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-521: the "Download basemap" outcome is carried by the region-readout #}
-{# download icon itself (green offline circle on success, reverting to idle  #}
-{# otherwise) — no completion toast. #}
+{# SNOW-521: a SUCCESSFUL "Download basemap" run is carried by the download #}
+{# roundel itself (a green offline circle) — there is no completion toast,  #}
+{# because a success needs no words and no action.                         #}
+{#                                                                         #}
+{# SNOW-568: a FAILED run does need both. The roundel's error state says    #}
+{# that it failed; these say why, and what to do about it. Two toasts       #}
+{# rather than one whose text map.js rewrites, so the copy stays in the     #}
+{# template where {% trans %} can reach it — a message assembled in JS      #}
+{# would be permanently English. Both are shared by the per-region and      #}
+{# custom-area controls (map.js's revealBasemapDownloadError), which cannot #}
+{# be running at the same time.                                            #}
+{#                                                                         #}
+{# No auto-dismiss timeout on either: unlike the "not available offline"    #}
+{# toasts above, these report an action the user asked for and did not get, #}
+{# and the remedy (free up space; retry) may take longer than six seconds   #}
+{# to read and act on. They close on "×", or when the next attempt          #}
+{# succeeds. #}
+{% trans "Not enough storage to save this area. Free up space on your device, or frame a smaller area." as basemap_download_quota_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-quota" kind="error" body=basemap_download_quota_body dismissible=True %}
+{% trans "Download failed. Check your connection and try again." as basemap_download_failed_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast" kind="error" body=basemap_download_failed_body dismissible=True %}

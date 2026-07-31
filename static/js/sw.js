@@ -310,7 +310,17 @@ try {
 // zoom, which is what a mouse-driven desktop tool wants. Shell JS bytes
 // changed (map_edit_resorts.js); the panel template itself is not part of
 // the cached shell.
-const CACHE_VERSION = 'snowdesk-shell-v83';
+// SNOW-568: basemap downloads no longer fail silently. _warmCache's fan-out
+// is bounded to WARM_CACHE_CONCURRENCY (it used to issue every URL in one
+// tick — up to 2048 for a full-ceiling area — and Chrome answered
+// ERR_INSUFFICIENT_RESOURCES to all of them), each failure is classified
+// and reported to the page as a `reason`, the page pre-flights the storage
+// quota before starting, and both download roundels gained an 'error'
+// state plus a toast saying what to do. Shell JS/HTML/CSS bytes changed
+// (sw.js, sw_register.js, map.js, basemap_cache_core.js,
+// basemap_download_core.js, map.css, _map_embed.html, both
+// _map_*download_control.html partials).
+const CACHE_VERSION = 'snowdesk-shell-v86';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -840,6 +850,64 @@ async function _trimCache(cache, max) {
   await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
 }
 
+// SNOW-568: how many warm-cache fetches may be in flight at once. Six
+// matches the per-host connection limit every major browser applies to
+// HTTP/1.1, so the pool keeps the pipe full without queueing work the
+// network stack would only stall on. The previous unbounded fan-out
+// issued the whole list in one tick — up to 2048 fetches for a
+// full-ceiling area download — and Chrome answered with
+// ERR_INSUFFICIENT_RESOURCES on every one of them.
+const WARM_CACHE_CONCURRENCY = 6;
+
+/**
+ * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
+ * The inline fallback (used only if that importScripts 404s) runs the
+ * list sequentially: slower than the pool, but never the unbounded
+ * fan-out this ticket exists to remove.
+ *
+ * @param {Array<*>} items
+ * @param {number} limit
+ * @param {(item: *, index: number) => Promise<*>} worker
+ * @returns {Promise<void>}
+ */
+async function _warmCacheRunPool(items, limit, worker) {
+  if (self.pwaBasemapCacheCore && self.pwaBasemapCacheCore.runPool) {
+    return self.pwaBasemapCacheCore.runPool(items, limit, worker);
+  }
+  for (let i = 0; i < items.length; i++) {
+    await worker(items[i], i);
+  }
+}
+
+/**
+ * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
+ *
+ * @param {*} err
+ * @returns {'quota'|'network'|'other'}
+ */
+function _warmCacheClassifyFailure(err) {
+  if (self.pwaBasemapCacheCore && self.pwaBasemapCacheCore.classifyFailure) {
+    return self.pwaBasemapCacheCore.classifyFailure(err);
+  }
+  if (err && err.name === 'QuotaExceededError') return 'quota';
+  if (err && err.name === 'TypeError') return 'network';
+  return 'other';
+}
+
+/**
+ * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
+ *
+ * @param {string|null} a
+ * @param {string|null} b
+ * @returns {string|null}
+ */
+function _warmCacheWorseReason(a, b) {
+  if (self.pwaBasemapCacheCore && self.pwaBasemapCacheCore.worseReason) {
+    return self.pwaBasemapCacheCore.worseReason(a, b);
+  }
+  return a || b || null;
+}
+
 /**
  * SNOW-492: eagerly fetch + cache a caller-supplied list of URLs — the
  * "Download basemap" control map.js wires into the map's Options menu.
@@ -865,9 +933,17 @@ async function _trimCache(cache, max) {
  * always on the final URL) so a caller can drive a live n/total readout
  * without a flood of calls for a large run.
  *
+ * SNOW-568: the fan-out is bounded to ``WARM_CACHE_CONCURRENCY`` in-flight
+ * fetches (see that constant), and the returned summary carries a
+ * ``reason`` — the most actionable failure classification seen across the
+ * run, or ``null`` when nothing failed. Previously every error was
+ * collapsed into the ``failed`` count with the error object discarded, so
+ * a caller could not tell a full disk from a flaky network and had
+ * nothing to tell the user.
+ *
  * @param {string[]} urls
  * @param {{pinned?: boolean, onProgress?: (done: number, total: number) => void}} [options]
- * @returns {Promise<{ok: number, failed: number}>}
+ * @returns {Promise<{ok: number, failed: number, reason: string|null}>}
  */
 async function _warmCache(urls, options) {
   const opts = options || {};
@@ -888,33 +964,74 @@ async function _warmCache(urls, options) {
     lastReportedBucket = bucket;
     onProgress(done, total);
   };
-  await Promise.all(
-    list.map(async (rawUrl) => {
-      try {
-        const url = new URL(rawUrl, self.location.origin);
-        const sameOrigin = url.origin === self.location.origin;
-        const response = await fetch(url.toString());
-        const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
-        if (response && response.ok && validType) {
-          const cache = sameOrigin ? shellCache : basemapCache;
-          await cache.put(url.toString(), response.clone());
-          ok += 1;
-        } else {
-          failed += 1;
-        }
-      } catch (_err) {
-        failed += 1;
-      } finally {
-        done += 1;
-        reportProgress();
+  // SNOW-568: the most actionable failure seen so far, or null.
+  let reason = null;
+  const noteFailure = (why) => {
+    reason = _warmCacheWorseReason(reason, why);
+  };
+
+  /**
+   * Fetch one URL and write it to the cache its origin belongs to.
+   * Returns the failure reason, or null on success. Never throws — a
+   * rejection here would abandon every URL still queued behind it in the
+   * pool.
+   *
+   * @param {string} rawUrl
+   * @returns {Promise<string|null>}
+   */
+  const warmOne = async (rawUrl) => {
+    let url;
+    try {
+      url = new URL(rawUrl, self.location.origin);
+    } catch (_err) {
+      // A malformed entry in the caller's list, not a runtime condition
+      // the user can act on — classified directly rather than through
+      // _warmCacheClassifyFailure, whose TypeError branch means "the
+      // network was unreachable", which this is not.
+      return 'other';
+    }
+    const sameOrigin = url.origin === self.location.origin;
+    try {
+      const response = await fetch(url.toString());
+      const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
+      if (!response || !response.ok || !validType) {
+        // A reachable server that answered with the wrong thing (404,
+        // 5xx, an opaque redirect). Retrying is pointless, but it is
+        // also not a quota problem — 'other' keeps it out of the
+        // "free up space" message.
+        return 'other';
       }
-    }),
-  );
+      const cache = sameOrigin ? shellCache : basemapCache;
+      await cache.put(url.toString(), response.clone());
+      return null;
+    } catch (err) {
+      return _warmCacheClassifyFailure(err);
+    }
+  };
+
+  await _warmCacheRunPool(list, WARM_CACHE_CONCURRENCY, async (rawUrl) => {
+    let why = await warmOne(rawUrl);
+    // One retry for a transient failure. A quota failure is never
+    // retried — the disk will not have grown between the two attempts,
+    // and a second full run of retries against a full disk just doubles
+    // the time the user waits for the same answer.
+    if (why && why !== 'quota') {
+      why = await warmOne(rawUrl);
+    }
+    if (why) {
+      failed += 1;
+      noteFailure(why);
+    } else {
+      ok += 1;
+    }
+    done += 1;
+    reportProgress();
+  });
   await _trimCache(
     basemapCache,
     pinned ? BASEMAP_PINNED_CACHE_MAX_ENTRIES : BASEMAP_CACHE_MAX_ENTRIES,
   ).catch(() => {});
-  return { ok, failed };
+  return { ok, failed, reason };
 }
 
 /**
@@ -1179,6 +1296,10 @@ self.addEventListener('message', (event) => {
         type: 'warm-cache-done',
         ok: result.ok,
         failed: result.failed,
+        // SNOW-568: the run's most actionable failure classification, or
+        // null when nothing failed — map.js turns this into the message
+        // the user actually reads.
+        reason: result.reason,
         requestId,
       });
     });

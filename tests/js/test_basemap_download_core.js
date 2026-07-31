@@ -329,3 +329,61 @@ describe('MICRO_BAND / WORST_CASE_BYTES_PER_TILE / DOWNLOAD_CEILING_MB', () => {
     expect(core.DOWNLOAD_CEILING_MB).toBe(200);
   });
 });
+
+/*
+ * SNOW-568 — the storage pre-flight. Also client-only (no Python twin);
+ * its job is to refuse a download that cannot fit BEFORE the run spends
+ * a few hundred fetches finding out.
+ */
+describe('hasStorageHeadroom', () => {
+  const MB = 1024 * 1024;
+
+  it('allows a download that fits well inside the remaining quota', () => {
+    // 1 GB free, half of it claimable, 200 MB wanted.
+    expect(core.hasStorageHeadroom({ quota: 1000 * MB, usage: 0 }, 200)).toBe(true);
+  });
+
+  it('refuses a download larger than the remaining quota', () => {
+    expect(core.hasStorageHeadroom({ quota: 1000 * MB, usage: 900 * MB }, 200)).toBe(false);
+  });
+
+  it('refuses a download that would fit only by claiming ALL the headroom', () => {
+    // 300 MB free and 200 MB wanted: it would "fit", but only by leaving
+    // the origin at its quota, where the browser starts evicting — and
+    // the freshly-downloaded area is the first thing to go.
+    expect(core.hasStorageHeadroom({ quota: 1000 * MB, usage: 700 * MB }, 200)).toBe(false);
+  });
+
+  it('is exact at the headroom boundary', () => {
+    const free = 400 * MB; // 200 MB claimable at STORAGE_HEADROOM_FACTOR 0.5
+    expect(core.hasStorageHeadroom({ quota: free, usage: 0 }, 200)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: free, usage: 0 }, 201)).toBe(false);
+  });
+
+  it('claims exactly STORAGE_HEADROOM_FACTOR of what is left', () => {
+    // Stated against the constant rather than the 0.5 baked into the
+    // cases above, so retuning the factor fails here (where it is a
+    // deliberate change) and not in five unrelated assertions.
+    const free = 1000 * MB;
+    const claimable = (free * core.STORAGE_HEADROOM_FACTOR) / MB;
+    expect(core.hasStorageHeadroom({ quota: free, usage: 0 }, claimable)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: free, usage: 0 }, claimable + 1)).toBe(false);
+  });
+
+  it('allows the download when the estimate is unusable', () => {
+    // An unknown quota must never block a download that would have
+    // worked — _warmCache's own QuotaExceededError handling is the
+    // backstop for the case where it in fact would not have.
+    expect(core.hasStorageHeadroom(null, 200)).toBe(true);
+    expect(core.hasStorageHeadroom(undefined, 200)).toBe(true);
+    expect(core.hasStorageHeadroom({}, 200)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: 0, usage: 0 }, 200)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: NaN, usage: 0 }, 200)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: 1000 * MB }, 200)).toBe(true);
+  });
+
+  it('allows a download with no meaningful size', () => {
+    expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, 0)).toBe(true);
+    expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, NaN)).toBe(true);
+  });
+});

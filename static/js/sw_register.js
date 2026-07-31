@@ -211,7 +211,15 @@
       // timed out (and whose slot was replaced or cleared) must not
       // resolve a different, later call.
       if (_warmCacheSlot && data.requestId === _warmCacheSlot.requestId) {
-        _warmCacheSlot.resolve({ ok: data.ok, failed: data.failed });
+        // SNOW-568: ``reason`` rides along so the caller can tell a full
+        // disk from a flaky network. An older worker still serving a
+        // cached shell won't send it — ``null`` then reads as "failed,
+        // cause unknown", which is what callers already assumed.
+        _warmCacheSlot.resolve({
+          ok: data.ok,
+          failed: data.failed,
+          reason: data.reason || null,
+        });
         _warmCacheSlot = null;
       }
     }
@@ -236,10 +244,14 @@
    * once the worker posts ``warm-cache-done`` back. Resolves ``null``
    * immediately when there's no active worker (unsupported browser, or the
    * kill switch has unregistered every SW) — the caller degrades to
-   * "nothing to warm". Also resolves ``null`` if the worker goes
-   * ``WARM_CACHE_TIMEOUT_MS`` without a reply OR a progress message (see
-   * that constant's comment) — callers already treat ``null`` as "nothing
-   * to report" via the same no-active-worker branch.
+   * "nothing to warm".
+   *
+   * SNOW-568: if the worker goes ``WARM_CACHE_TIMEOUT_MS`` without a reply
+   * OR a progress message (see that constant's comment), this resolves
+   * ``{ok: 0, failed: 0, reason: 'timeout'}`` rather than ``null``. The two
+   * used to be conflated, which meant a worker that died mid-download was
+   * indistinguishable from a browser that never had one — and both were
+   * silently swallowed by the caller's "nothing to report" branch.
    *
    * SNOW-493 finding 9: mints a ``requestId`` for this call and posts it
    * alongside the URL list; ``sw.js`` echoes it back in both
@@ -259,7 +271,7 @@
    *
    * @param {string[]} urls
    * @param {{pinned?: boolean, onProgress?: (done: number, total: number) => void}} [opts]
-   * @returns {Promise<{ok: number, failed: number} | null>}
+   * @returns {Promise<{ok: number, failed: number, reason: string|null} | null>}
    */
   function warmCache(urls, opts) {
     const active = navigator.serviceWorker.controller;
@@ -287,7 +299,12 @@
           if (_warmCacheSlot && _warmCacheSlot.requestId === requestId) {
             _warmCacheSlot = null;
           }
-          settle(null);
+          // SNOW-568: a summary with reason 'timeout', not ``null``.
+          // ``null`` keeps its single pre-existing meaning — "there is no
+          // active worker, so there was nothing to warm" — which callers
+          // treat as a non-event; a worker that went silent mid-run IS an
+          // event, and the user needs telling.
+          settle({ ok: 0, failed: 0, reason: 'timeout' });
         }, WARM_CACHE_TIMEOUT_MS);
       };
 
