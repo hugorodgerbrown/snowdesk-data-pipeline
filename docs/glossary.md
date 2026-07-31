@@ -21,7 +21,7 @@ a code symbol.
 | ALBINA | EUREGIO (Tyrol/South Tyrol/Trentino) avalanche service | `apps/bulletins/services/albina_fetcher.py` |
 | Météo-France | French provider; serves DPBRA XML, not CAAML | `apps/bulletins/services/meteofrance_fetcher.py` |
 | DPBRA | Météo-France's public avalanche-risk-bulletin product (XML, one document per massif) at `public-api.meteofrance.fr/public/DPBRA/v1/` | translated to CAAML v6 JSON by `apps/bulletins/services/meteofrance_translator.py` |
-| Source | How a bulletin's provider is recorded: `Bulletin.Source` TextChoices — `"slf"`, `"albina"`, `"meteofrance"` | `apps/bulletins/models.py` |
+| Source | The provider a bulletin was ingested from, stored on the indexed `Bulletin.source` column and named by the `Bulletin.Source` TextChoices — `"slf"`, `"albina"`, `"meteofrance"`. Set at ingest by `upsert_bulletin` from `detect_source`, never read back out of `render_model["source"]` | `apps/bulletins/models.py`; backfilled by `backfill_bulletin_source` |
 | GeoJSON Feature envelope | Raw bulletins are stored wrapped as `{type: "Feature", geometry: null, properties: <raw CAAML>}` | `upsert_bulletin()` in `apps/bulletins/services/slf_fetcher.py` (shared by all fetchers) |
 | EAWS | European Avalanche Warning Services — defines the region hierarchy and the 1–5 danger scale | `apps/regions/fixtures/eaws_{CH,AT,FR,IT}.json` |
 | Massif | Météo-France's mountain-region unit (e.g. `CHABLAIS`); slug → `FR-NN` region id | `apps/bulletins/services/meteofrance_massifs.py` (`SLUG_TO_CODE`, `slug_to_region_id()`) |
