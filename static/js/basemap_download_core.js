@@ -81,6 +81,13 @@
  *     — mirror of ``basemap_tiles.build_blob`` — produced in the SAME
  *     shape ``rangesToTileURLs``/``centreTileURL`` already consume, so a
  *     locally-built blob and a server-fetched one are interchangeable.
+ *   budgetScaleForBBox(bbox, minZ, maxZ)
+ *     The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
+ *     about its centre while its download still fits under
+ *     ``DOWNLOAD_CEILING_MB``. Client-only — it has no
+ *     ``basemap_tiles.py`` counterpart and needs none: the server never
+ *     sizes a framing rectangle. Do NOT go looking for a Python twin to
+ *     keep it honest against.
  *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_CEILING_MB
  *     Constants mirroring ``basemap_tiles.py``'s module-level constants
  *     of the same name (see there for the sizing rationale).
@@ -162,11 +169,31 @@
    */
   function lonLatToTile(lon, lat, z) {
     const n = Math.pow(2, z);
-    const x = Math.floor(((lon + 180.0) / 360.0) * n);
+    const [wx, wy] = lonLatToWorld(lon, lat);
+    return [Math.floor(wx * n), Math.floor(wy * n)];
+  }
+
+  /**
+   * ``(lon, lat)`` as UNFLOORED Web Mercator world coordinates — the same
+   * projection ``lonLatToTile`` floors, expressed as fractions of the
+   * whole world in ``[0, 1]`` (x eastward from the antimeridian, y
+   * southward from the north pole). Multiply by ``2**z`` for fractional
+   * tile indices at zoom ``z``.
+   *
+   * Factored out of ``lonLatToTile`` (whose arithmetic it reproduces
+   * operation-for-operation, so the golden vector is unaffected) because
+   * ``budgetScaleForBBox`` below needs the projection WITHOUT the floor:
+   * a rectangle's tile cost has to vary continuously with its size for
+   * the frame to resize smoothly.
+   *
+   * @param {number} lon Longitude in degrees.
+   * @param {number} lat Latitude in degrees.
+   * @returns {[number, number]}
+   */
+  function lonLatToWorld(lon, lat) {
+    const x = (lon + 180.0) / 360.0;
     const latRad = (lat * Math.PI) / 180.0;
-    const y = Math.floor(
-      ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0) * n,
-    );
+    const y = (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0;
     return [x, y];
   }
 
@@ -271,6 +298,80 @@
     };
   }
 
+  /**
+   * The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
+   * about its centre while a ``[minZ, maxZ]`` download of the result
+   * still fits under ``DOWNLOAD_CEILING_MB``. ``1`` when ``bbox`` already
+   * fits, so a caller can treat "1" as "no cap needed".
+   *
+   * Why closed-form rather than shrinking until ``buildBlob`` comes in
+   * under the ceiling: ``buildBlob``'s count is a STEP function of the
+   * box, because the tile indices are floored. Two boxes of identical
+   * size sitting a few metres apart on the tile grid can differ by a
+   * whole row and column of tiles, so inverting that count by search
+   * returns a size that depends on where the box is, not just how big it
+   * is — the framing rectangle then shimmers as the map pans beneath it
+   * and stutters as it zooms (SNOW-566). This models the cost with the
+   * floors removed, which makes the answer a smooth, monotone function of
+   * the box alone.
+   *
+   * The model is a strict UPPER bound on the true count, so the box it
+   * sizes never exceeds the ceiling. Per axis, a span of ``t`` fractional
+   * tiles covers ``floor(a + t) - floor(a) + 1 < t + 2`` whole ones — so
+   * summing ``(sx*2**z + 2) * (sy*2**z + 2)`` over the band bounds the
+   * blob's count for scale ``s``, and setting that equal to the budget
+   * leaves a quadratic in ``s`` to solve directly. Being an upper bound it
+   * leaves roughly a tile's worth of headroom per axis (a few percent of
+   * the ceiling) unspent, which is the price of a frame that resizes
+   * smoothly — and cheap against a per-tile byte estimate that is itself
+   * a worst case.
+   *
+   * Scaling is assumed to scale the ground footprint linearly, which is
+   * exact for the un-pitched view this map is used in. Under pitch the
+   * footprint grows faster than the frame does, so the linear model
+   * OVER-states the cost of a shrunken frame — the answer stays under the
+   * ceiling, it just leaves more headroom.
+   *
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees, at scale 1.
+   * @param {number} minZ Shallowest zoom level (inclusive).
+   * @param {number} maxZ Deepest zoom level (inclusive).
+   * @returns {number} A factor in ``(0, 1]``.
+   */
+  function budgetScaleForBBox(bbox, minZ, maxZ) {
+    const [west, south, east, north] = bbox;
+    // Whole tiles, not MB: buildBlob rounds bytes UP to the next MB, so a
+    // count at exactly this budget is the largest that still reports
+    // ``mb <= DOWNLOAD_CEILING_MB``.
+    const budget = (DOWNLOAD_CEILING_MB * 1024 * 1024) / WORST_CASE_BYTES_PER_TILE;
+    // World-fraction spans. Longitude is linear in the projection and
+    // latitude is not, hence the Mercator y difference rather than a
+    // degree one.
+    const spanX = Math.abs(east - west) / 360.0;
+    const spanY = Math.abs(lonLatToWorld(west, south)[1] - lonLatToWorld(west, north)[1]);
+    // Coefficients of the cost quadratic a*s^2 + b*s + c, summed over the
+    // band: a from the two spans together, b from each span against the
+    // per-axis slack, c from the slack alone (the cost of a box small
+    // enough to be a point — one to four tiles at every level).
+    let a = 0;
+    let b = 0;
+    let c = 0;
+    for (let z = minZ; z <= maxZ; z++) {
+      const n = Math.pow(2, z);
+      a += spanX * n * spanY * n;
+      b += 2 * (spanX * n + spanY * n);
+      c += 4;
+    }
+    if (a + b + c <= budget) return 1;
+    if (a <= 0) {
+      // A degenerate (zero-area) box can only exceed the budget through
+      // its slack term, which no amount of scaling removes.
+      return b > 0 ? Math.max(0, Math.min(1, (budget - c) / b)) : 0;
+    }
+    const scale = (-b + Math.sqrt(b * b + 4 * a * (budget - c))) / (2 * a);
+    return Math.max(0, Math.min(1, scale));
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
@@ -279,6 +380,7 @@
     tileCount: tileCount,
     centreTile: centreTile,
     buildBlob: buildBlob,
+    budgetScaleForBBox: budgetScaleForBBox,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,

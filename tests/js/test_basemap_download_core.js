@@ -15,6 +15,15 @@
  * ID to precompute against server-side — see the JS module's header for
  * the full rationale).
  *
+ * SNOW-566 adds ``budgetScaleForBBox`` — the frame-sizing solve, which
+ * unlike everything else here is client-only and has no Python twin to
+ * stay honest against. Its tests are property-shaped rather than
+ * golden-vector-shaped, because the properties ARE the fix: the frame
+ * juddered because the size it was given moved with the box's alignment
+ * to the tile grid, so what has to be asserted is that the answer now
+ * depends on the box's SIZE alone, changes smoothly with it, and still
+ * never buys more tiles than the ceiling allows.
+ *
  * The ``describe('buildBlob (golden vector)', ...)`` block below is the
  * JS twin of ``tests/regions/services/test_basemap_tiles.py``'s
  * ``test_build_blob_golden_vector_matches_js_twin`` — same bbox, same
@@ -191,6 +200,125 @@ describe('buildBlob (golden vector)', () => {
     const blob = core.buildBlob(hugeBbox, minZ, maxZ);
     expect(blob.over_ceiling).toBe(true);
     expect(blob.mb).toBeGreaterThan(core.DOWNLOAD_CEILING_MB);
+  });
+});
+
+describe('budgetScaleForBBox', () => {
+  const [minZ, maxZ] = core.MICRO_BAND;
+  const scaleFor = (bbox) => core.budgetScaleForBBox(bbox, minZ, maxZ);
+  const mbFor = (bbox) => core.buildBlob(bbox, minZ, maxZ).mb;
+
+  // Web Mercator y (a fraction of the world, 0 at the north pole) for a
+  // latitude, and its inverse. The map's framing rectangle is a fixed box
+  // of SCREEN pixels, so shrinking or moving it scales/translates its
+  // footprint in these units, not in degrees of latitude — the helpers
+  // below let the tests model that faithfully. ``worldYToLat`` is checked
+  // against the module's own projection in the first test rather than
+  // taken on trust.
+  const latToWorldY = (lat) => {
+    const rad = (lat * Math.PI) / 180;
+    return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2;
+  };
+  const worldYToLat = (y) => {
+    const n = Math.PI * (1 - 2 * y);
+    return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  };
+
+  /**
+   * ``bbox`` scaled about its centre by ``scale`` — the footprint the
+   * framing rectangle covers once map.js has shrunk it by that factor.
+   */
+  const scaled = (bbox, scale) => {
+    const [west, south, east, north] = bbox;
+    const midLon = (west + east) / 2;
+    const halfLon = ((east - west) / 2) * scale;
+    const midY = (latToWorldY(south) + latToWorldY(north)) / 2;
+    const halfY = ((latToWorldY(south) - latToWorldY(north)) / 2) * scale;
+    return [
+      midLon - halfLon,
+      worldYToLat(midY + halfY),
+      midLon + halfLon,
+      worldYToLat(midY - halfY),
+    ];
+  };
+
+  /** A box ``spanLon`` x ``spanY`` (world units) centred on (lon, lat). */
+  const boxAt = (lon, lat, spanLon, spanY) => [
+    lon - spanLon / 2,
+    worldYToLat(latToWorldY(lat) + spanY / 2),
+    lon + spanLon / 2,
+    worldYToLat(latToWorldY(lat) - spanY / 2),
+  ];
+
+  it('models the same projection the tile math floors', () => {
+    // Guards the local helpers above: a latitude round-tripped through
+    // worldYToLat must land in the tile the module itself computes.
+    for (const y of [0.2, 0.33, 0.5, 0.67]) {
+      const [, tileY] = core.lonLatToTile(0, worldYToLat(y), 14);
+      expect(tileY).toBe(Math.floor(y * 2 ** 14));
+    }
+  });
+
+  it('leaves a box that already fits alone', () => {
+    const bbox = [7.0, 46.0, 7.2, 46.2];
+    expect(mbFor(bbox)).toBeLessThan(core.DOWNLOAD_CEILING_MB);
+    expect(scaleFor(bbox)).toBe(1);
+  });
+
+  it('keeps an oversized box under the ceiling once scaled', () => {
+    const bbox = [-10.0, 30.0, 20.0, 60.0];
+    const scale = scaleFor(bbox);
+    expect(scale).toBeLessThan(1);
+    expect(mbFor(scaled(bbox, scale))).toBeLessThanOrEqual(core.DOWNLOAD_CEILING_MB);
+  });
+
+  it('spends most of the budget rather than shrinking to nothing', () => {
+    // The model bounds the tile count from above, so the box it sizes
+    // leaves a little headroom unspent — a few percent, not a third.
+    const bbox = [-10.0, 30.0, 20.0, 60.0];
+    expect(mbFor(scaled(bbox, scaleFor(bbox)))).toBeGreaterThan(
+      0.85 * core.DOWNLOAD_CEILING_MB,
+    );
+  });
+
+  it('gives the same answer wherever an identically-sized box sits', () => {
+    // The judder regression (SNOW-566): buildBlob's floored tile indices
+    // make its count jump by a whole row or column as a box crosses the
+    // grid, so a size derived by searching against that count wobbled as
+    // the user panned. Same box, 40 positions, one answer.
+    // Asserted as the width the frame is actually given — the answer is
+    // only ever consumed as a pixel size, and comparing it that way keeps
+    // the round-trip noise of building 40 test boxes out of the assertion.
+    const widths = new Set();
+    for (let i = 0; i < 40; i++) {
+      const bbox = boxAt(6.0 + i * 0.017, 46.5 + i * 0.011, 6.0, 0.02);
+      widths.add(Math.round(1000 * scaleFor(bbox)));
+    }
+    expect(widths.size).toBe(1);
+    expect([...widths][0]).toBeLessThan(1000);
+  });
+
+  it('shrinks smoothly and monotonically as the box grows', () => {
+    // The other half of the judder: zooming out grows the footprint
+    // continuously, so the scale must fall continuously with it. A step
+    // function would show up here as a jump between neighbouring spans.
+    let previous = null;
+    for (let i = 0; i < 200; i++) {
+      // ~1% growth per step, from comfortably under the ceiling to far over.
+      const spanLon = 0.5 * 1.01 ** i;
+      const scale = scaleFor(boxAt(8.0, 46.5, spanLon, spanLon / 250));
+      if (previous !== null) {
+        expect(scale).toBeLessThanOrEqual(previous);
+        // A 1% bigger box is never more than 1% more capped.
+        expect(previous - scale).toBeLessThan(0.011 * previous);
+      }
+      previous = scale;
+    }
+    expect(previous).toBeLessThan(0.2);
+  });
+
+  it('returns a usable factor for a degenerate box', () => {
+    expect(scaleFor([7.0, 46.0, 7.0, 46.0])).toBe(1);
   });
 });
 
