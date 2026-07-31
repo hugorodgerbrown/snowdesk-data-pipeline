@@ -41,6 +41,14 @@
  * line, drops everything above it, and always hands back rings a fill
  * layer can render.
  *
+ * SNOW-570 adds ``downloadedIds`` — the pure half of the "Downloaded
+ * areas" overlay. Its load-bearing property is that it requires an area's
+ * WHOLE tile set, not just its centre tile: the two download shapes share
+ * one cache, one band and one URL template, so a download that merely
+ * crosses a region caches some of that region's tiles (its centre one
+ * included) without covering it. It is also per-template, which is what
+ * makes the overlay change when the basemap does.
+ *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is
  * also `self` in a window context, so importing it for side effects is
@@ -394,6 +402,142 @@ describe('hasStorageHeadroom', () => {
   it('allows a download with no meaningful size', () => {
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, 0)).toBe(true);
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, NaN)).toBe(true);
+  });
+});
+
+/*
+ * SNOW-570 — the "which areas are downloaded?" overlay's pure half. The
+ * caller does one cache.keys() pass; this turns that URL set into an answer
+ * for every area at once.
+ *
+ * The load-bearing property is FULL coverage, not the centre-tile proxy the
+ * roundel's done-probe uses. Both download shapes write to one pinned cache
+ * over the same band with the same template, so their tiles are
+ * indistinguishable strings: a custom-area download whose frame merely
+ * crosses a region caches some of that region's tiles — including,
+ * often, its centre one. A centre-tile probe rings the whole region on the
+ * strength of a tile the download never meant to cover. Hence
+ * ``does not report an area whose tiles are only partly cached`` and
+ * ``a crossing download does not count as covering the region`` below,
+ * which are the regression tests for exactly that.
+ */
+describe('downloadedIds', () => {
+  const BAND = [10, 11];
+  // Small enough that a whole download is a handful of tiles, so a test can
+  // hold the entire cached set and remove one tile from it by hand.
+  const BBOX = [7.0, 46.0, 7.2, 46.2];
+
+  /**
+   * Every tile URL a ``band`` download of ``bbox`` fetches.
+   *
+   * Built with the module's own tile math rather than hand-listed indices:
+   * that math is pinned by its own golden vector against the Python twin,
+   * and what these tests are about is the membership logic on top of it.
+   *
+   * @param {number[]} bbox
+   * @param {number[]} band
+   * @returns {string[]}
+   */
+  function urlsFor(bbox, band = BAND) {
+    return core.rangesToTileURLs(TEMPLATE, {
+      z: core.tileRangesForBBox(bbox, band[0], band[1]),
+    });
+  }
+
+  const ENTRY = (id, bbox = BBOX, band = BAND) => ({ id, bbox, band });
+
+  it('reports an area whose every tile is cached', () => {
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
+  });
+
+  it('does not report an area whose tiles are only partly cached', () => {
+    // One tile short is not downloaded. This is the whole point: the area
+    // cannot be used offline, so it must not be ringed.
+    const partial = urlsFor(BBOX).slice(1);
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], partial)).toEqual([]);
+  });
+
+  it('a crossing download does not count as covering the region', () => {
+    // A neighbouring area that overlaps this one — the reported bug: its
+    // download caches some of this region's tiles (its centre tile among
+    // them, since the overlap straddles the middle) without covering it.
+    const crossing = [7.1, 46.1, 7.4, 46.4];
+    const cached = new Set(urlsFor(crossing));
+    // Precondition: the overlap really does cache this region's centre
+    // tile, so a centre-tile probe WOULD have reported it. Without this the
+    // test could pass for the wrong reason.
+    const centre = core.centreTileURL(TEMPLATE, {
+      centre_tile: core.centreTile(BBOX, BAND[1]),
+    });
+    expect(cached.has(centre)).toBe(true);
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], cached)).toEqual([]);
+  });
+
+  it('reports an area wholly contained in a larger download', () => {
+    // The other half of the same rule: whoever cached the tiles, if all of
+    // them are there the area genuinely IS available offline.
+    const containing = [6.5, 45.5, 8.0, 47.0];
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(containing))).toEqual(['a']);
+  });
+
+  it('preserves input order', () => {
+    const other = [8.0, 46.0, 8.2, 46.2];
+    const cached = [...urlsFor(BBOX), ...urlsFor(other)];
+    const entries = [ENTRY('a'), ENTRY('b', other), ENTRY('c', [9.0, 46.0, 9.2, 46.2])];
+    expect(core.downloadedIds(TEMPLATE, entries, cached)).toEqual(['a', 'b']);
+  });
+
+  it('accepts an array as well as a Set', () => {
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], new Set(urlsFor(BBOX)))).toEqual(['a']);
+  });
+
+  it('honours each entry own band', () => {
+    // An area saved over a different band must be checked against the tiles
+    // it actually fetched, not against MICRO_BAND's.
+    const narrow = [10, 10];
+    expect(
+      core.downloadedIds(TEMPLATE, [ENTRY('a', BBOX, narrow)], urlsFor(BBOX, narrow)),
+    ).toEqual(['a']);
+    // Those z10 tiles alone do not satisfy the wider default band.
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX, narrow))).toEqual([]);
+  });
+
+  it('defaults a bandless entry to MICRO_BAND', () => {
+    const entry = { id: 'a', bbox: BBOX };
+    expect(core.downloadedIds(TEMPLATE, [entry], urlsFor(BBOX, core.MICRO_BAND)))
+      .toEqual(['a']);
+  });
+
+  it('skips an entry with no bbox rather than claiming it', () => {
+    // A region whose blob was never computed has nothing to check. It is
+    // not downloaded — and an empty tile set must never vacuously pass.
+    expect(core.downloadedIds(TEMPLATE, [{ id: 'no-bbox' }], urlsFor(BBOX))).toEqual([]);
+  });
+
+  it('is empty when nothing is cached', () => {
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], new Set())).toEqual([]);
+  });
+
+  it('is per-basemap: the same cache answers differently per template', () => {
+    // The whole reason the overlay changes when you switch basemap. Tiles
+    // cached from one origin say nothing about another.
+    const cached = urlsFor(BBOX);
+    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], cached)).toEqual(['a']);
+    expect(
+      core.downloadedIds('https://other.example.com/{z}/{x}/{y}.pbf', [ENTRY('a')], cached),
+    ).toEqual([]);
+  });
+
+  it('returns [] for a falsy template or entries', () => {
+    const cached = urlsFor(BBOX);
+    expect(core.downloadedIds('', [ENTRY('a')], cached)).toEqual([]);
+    expect(core.downloadedIds(null, [ENTRY('a')], cached)).toEqual([]);
+    expect(core.downloadedIds(TEMPLATE, null, cached)).toEqual([]);
+  });
+
+  it('tolerates a null entry in the list', () => {
+    expect(core.downloadedIds(TEMPLATE, [null, ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
   });
 });
 
