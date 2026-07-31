@@ -916,9 +916,12 @@ class TestBaseUrlThreading:
 class TestApiKeyThreading:
     """The apikey parameter is sent only for live requests with a key set."""
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_forecast_sends_apikey_when_configured(self) -> None:
-        """A configured key is appended to the region forecast params."""
+        """A configured key is appended when the host is a customer host."""
         region = MicroRegionFactory.create()
         mock = _mock_get(_make_forecast_response())
 
@@ -938,7 +941,10 @@ class TestApiKeyThreading:
 
         assert "apikey" not in mock.call_args.kwargs["params"]
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_forecast_omits_apikey_for_base_url_override(self) -> None:
         """A mirror override is not the key's host, so no key is sent."""
         region = MicroRegionFactory.create()
@@ -954,7 +960,10 @@ class TestApiKeyThreading:
 
         assert "apikey" not in mock.call_args.kwargs["params"]
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_ARCHIVE_BASE_URL="https://customer-archive.example/v1",
+    )
     def test_archive_sends_apikey_when_configured(self) -> None:
         """A configured key is appended to the archive params too."""
         region = MicroRegionFactory.create()
@@ -973,7 +982,24 @@ class TestApiKeyThreading:
 
         assert mock.call_args.kwargs["params"]["apikey"] == "sk-test"
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_ARCHIVE_BASE_URL="https://customer-archive.example/v1",
+    )
+    def test_mixed_tier_leaves_the_free_forecast_host_unkeyed(self) -> None:
+        """Archive on the paid tier must not key the free forecast host."""
+        region = MicroRegionFactory.create()
+        mock = _mock_get(_make_forecast_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(region, datetime.date(2026, 5, 1), commit=False)
+
+        assert "apikey" not in mock.call_args.kwargs["params"]
+
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_key_is_never_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """The debug log records the URL, which must not carry the key."""
         region = MicroRegionFactory.create()

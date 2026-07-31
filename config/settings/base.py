@@ -506,10 +506,14 @@ ALBINA_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
 # shared per-IP quota (600/min, 5,000/hour, 10,000/day) across all three.
 # A paid subscription is served from its own hostnames and authenticates
 # with an ``apikey`` query parameter, so cutting over is an environment
-# change on Render — set all three variables, no deploy required. The
-# documented customer hosts are https://customer-api.open-meteo.com/v1 and
+# change on Render — no deploy required. The documented customer hosts are
+# https://customer-api.open-meteo.com/v1 and
 # https://customer-archive-api.open-meteo.com/v1; confirm them against the
 # subscription confirmation before setting them.
+#
+# The two hosts may sit on different tiers: the key is sent only to a host
+# that has been moved off its free default (SNOW-579), so setting the
+# archive host alone keeps forecast and elevation free and unkeyed.
 OPEN_METEO_API_BASE_URL = config(
     "OPEN_METEO_API_BASE_URL",
     default="https://api.open-meteo.com/v1",
