@@ -1,8 +1,8 @@
 ---
 name: deployment
-description: Path-to-live: main→staging and release→production split, Render topology, cut a release by fast-forwarding release to main, CalVer tags
+description: Path-to-live: main→staging, release→production, Render topology, fast-forward release to main, CalVer tags, /livez + /healthz health checks
 status: current
-last-reviewed: 2026-06-22
+last-reviewed: 2026-07-31
 ---
 
 # Deployment / path-to-live
@@ -101,6 +101,51 @@ The check is host-shape-only — it never asks whether the origin is the *right*
 domain, because staging and production legitimately differ.
 `config/settings/perf.py` is the one environment that runs `DEBUG=False`
 against localhost on purpose (Lighthouse), and silences the check by id.
+
+## Health checks: `/livez` and `/healthz`
+
+Two endpoints (SNOW-565, [`apps/core/views.py`](../apps/core/views.py)), because
+the two questions they answer have different consequences when the answer is
+"no". Both return a one-word `text/plain` body and are `no-store`.
+
+| Path | Asserts | Consumer |
+|------|---------|----------|
+| `/livez` | The WSGI process is alive. No database, no session, no cache. | Render `healthCheckPath` |
+| `/healthz` | `/livez` plus one read of `auth_user`. 503 when the database is unreachable. | External monitoring |
+
+Render's `healthCheckPath` points at **`/livez`, not `/healthz`**. Render uses
+that path to gate deploy promotion and instance health, so it has to answer
+"should this instance be replaced?" — a database-coupled probe there turns a
+transient Postgres blip into a blocked deploy or a restart of an instance that
+was still serving. `/healthz` is the right check for a monitor, which alerts a
+human instead of taking action.
+
+`/healthz` reads a real table rather than issuing `SELECT 1`: a bare ping only
+proves the socket answers, while reading `auth_user` also proves migrations have
+run and the connected role can read the application schema. An empty table is
+still healthy — the assertion is that the query completes.
+
+Neither worker declares a health check. Render background workers cannot take an
+HTTP probe; scheduler and `db_worker` liveness needs a heartbeat mechanism and is
+not built.
+
+Two settings exist only to keep the probes answerable, both derived from
+`settings.HEALTH_CHECK_PATHS` so they cannot drift from the URLconf:
+
+- `SECURE_REDIRECT_EXEMPT` ([`production.py`](../config/settings/production.py))
+  — the prober reaches the instance behind the TLS-terminating proxy, so it
+  sends no `X-Forwarded-Proto` and `SECURE_SSL_REDIRECT` would answer it with a
+  301 that Render scores as a failure.
+- `_POSTHOG_EXEMPT_PATHS` ([`base.py`](../config/settings/base.py)) — unlike
+  every other entry in that set, this one is not about `Vary: Cookie`. It stops
+  `PosthogContextMiddleware` reading `request.user`, whose session lookup would
+  put a database query on every probe of the endpoint designed not to need one.
+
+**Verify on staging before the first release.** `ALLOWED_HOSTS` is read from an
+env var, so if Render's prober sends a `Host` that isn't listed, Django answers
+400 and every later deploy fails its health check. Staging auto-deploys from
+`main`, which gives a free gate: confirm the staging deploy goes healthy and
+both paths answer 200, then fast-forward `release`.
 
 ## Renaming or moving an authentication backend logs everyone out
 
