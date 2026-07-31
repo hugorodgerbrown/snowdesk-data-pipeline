@@ -2060,8 +2060,8 @@
    (#map-frame-overlay, public/partials/_map_embed.html)
    A Google-Maps-style dim mask with a fixed, centred frame: the user
    pans/zooms the map underneath it, static/js/map.js's
-   mapCustomDownloadControlInit recomputes the "up to N MB" readout on
-   every MapLibre 'move'. z-index 8 on the map-scoped band above (the
+   mapCustomDownloadControlInit recomputes the "up to N MB" readout once
+   per animation frame. z-index 8 on the map-scoped band above (the
    comment block above .home-intro further up this file) — deliberately
    above the coachmark tour (6/7).
    ————————————————————————————————————————————————————————— */

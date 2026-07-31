@@ -33,7 +33,8 @@ rather than diffing a screenshot — matching this suite's established
 screenshot would depend on frame timing this harness deliberately avoids.
 
 Covers: opening framing dims the map and shows the frame; the readout
-tracks the frame as the map moves; a confirmed download warms with
+tracks the frame as the map moves; a ceiling-capped frame holds its size
+while the map pans beneath it (SNOW-566); a confirmed download warms with
 ``pinned: true``, reaches ``done``, and notifies the layers sync
 dashboard; reload + click the (probed) green roundel re-opens framing at
 the saved area; moving the frame then Cancelling leaves the saved area
@@ -98,6 +99,21 @@ def _readout_text(page: Page) -> str:
     # tox mypy env's `type` dependency group deliberately excludes
     # playwright — see pyproject.toml). str() satisfies both consistently.
     return str(page.locator("#map-frame-readout").inner_text())
+
+
+def _settle_readout(page: Page) -> None:
+    """Wait for the frame's size and readout to catch up with the map.
+
+    The ``move`` handler coalesces onto ``requestAnimationFrame`` (SNOW-566
+    — MapLibre fires ``move`` several times per painted frame, and each one
+    could otherwise re-measure and rewrite the frame mid-gesture), so the
+    update lands on the frame *after* whichever move triggered it. Two
+    nested rAFs therefore guarantee it has run: the first shares the frame
+    the scheduled callback runs on, the second is strictly later.
+    """
+    page.evaluate(
+        "() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))"
+    )
 
 
 _SYNC_SENTINEL = "__snow522_not_refreshed__"
@@ -176,11 +192,7 @@ def _frame_a_downloadable_area(page: Page) -> None:
         if not confirm.is_disabled():
             return
         page.evaluate("() => MAP.setZoom(Math.min(MAP.getZoom() + 1, 16))")
-        # The 'move' handler recomputes the readout synchronously; poll for
-        # a non-empty readout as a settle signal rather than a fixed sleep.
-        page.wait_for_function(
-            "() => document.getElementById('map-frame-readout').innerText.length > 0"
-        )
+        _settle_readout(page)
     raise AssertionError(
         "the framed area never dropped under the download ceiling — "
         f"readout still reads {_readout_text(page)!r}"
@@ -211,11 +223,32 @@ def _move_the_frame(page: Page) -> None:
             MAP.setCenter(MAP.unproject([centre.x + rect.width, centre.y]));
         }"""
     )
-    # The 'move' handler recomputes the readout synchronously; poll for a
-    # non-empty readout as a settle signal rather than a fixed sleep.
-    page.wait_for_function(
-        "() => document.getElementById('map-frame-readout').innerText.length > 0"
+    _settle_readout(page)
+
+
+def _frame_width(page: Page) -> float:
+    """The frame's on-screen width in CSS pixels."""
+    return float(
+        page.evaluate(
+            "() => document.getElementById('map-frame-rect').getBoundingClientRect().width"
+        )
     )
+
+
+def _zoom_out_until_capped(page: Page) -> None:
+    """Zoom out until the download ceiling caps the frame's size.
+
+    The cap is engaged exactly when map.js has written an inline width onto
+    the frame (below the ceiling it clears both dimensions and lets the
+    stylesheet size the box), so that — rather than a hardcoded zoom — is
+    what this waits for.
+    """
+    for _ in range(8):
+        if page.evaluate("() => document.getElementById('map-frame-rect').style.width"):
+            return
+        page.evaluate("() => MAP.setZoom(Math.max(MAP.getZoom() - 1, 4))")
+        _settle_readout(page)
+    raise AssertionError("the download ceiling never capped the frame's size")
 
 
 def _confirm_download(
@@ -310,6 +343,41 @@ def test_opening_framing_dims_the_map_and_shows_the_frame(pwa_page: PwaPage) -> 
         )
         != "auto"
     )
+
+
+def test_the_capped_frame_holds_its_size_while_the_map_pans(
+    pwa_page: PwaPage,
+) -> None:
+    """Panning must not resize a ceiling-capped frame (SNOW-566).
+
+    The frame shrinks once the framed ground area would exceed the download
+    ceiling. That size was originally found by shrinking until
+    ``buildBlob`` came in under the ceiling — but ``buildBlob``'s tile
+    indices are floored, so its count steps by a whole row or column as a
+    box crosses the tile grid, and the size it yielded moved with the
+    frame's ALIGNMENT to that grid rather than with its footprint. Panning
+    a few pixels at a time made the frame visibly shimmer.
+
+    Eight small pans, one width. Guarded by the cap actually being engaged
+    first, so it cannot pass vacuously against an uncapped frame that the
+    stylesheet is holding at a fixed size anyway.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+
+    widths = {_frame_width(page)}
+    for _ in range(8):
+        page.evaluate(
+            """() => {
+                const centre = MAP.project(MAP.getCenter());
+                MAP.setCenter(MAP.unproject([centre.x + 13, centre.y + 7]));
+            }"""
+        )
+        _settle_readout(page)
+        widths.add(_frame_width(page))
+
+    assert len(widths) == 1, f"the frame resized while panning: {sorted(widths)}"
 
 
 def test_framing_strips_the_map_furniture_and_cancel_restores_it(

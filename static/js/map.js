@@ -5297,10 +5297,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // ahead of time: clicking the roundel opens a framing overlay
 // (#map-frame-overlay, _map_embed.html) — a Google-Maps-style dim mask
 // with a fixed, centred frame. The user pans/zooms the map underneath it;
-// the live "up to N MB" readout is recomputed on every MapLibre 'move',
-// entirely client-side, via pwaBasemapDownloadCore.buildBlob
-// (static/js/basemap_download_core.js — see its header for why this tile
-// math is a deliberate re-port of the server-side module, not drift).
+// the live "up to N MB" readout is recomputed once per animation frame
+// for as long as the map is moving, entirely client-side, via
+// pwaBasemapDownloadCore.buildBlob (static/js/basemap_download_core.js —
+// see its header for why this tile math is a deliberate re-port of the
+// server-side module, not drift).
 //
 // Frame geometry — the frame's four corners (read from its own
 // getBoundingClientRect(), never a hardcoded size: the dimensions live in
@@ -5559,24 +5560,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * The bbox currently under the frame: unproject all FOUR of its
-   * corners and take the min/max over the lot (see this IIFE's header
-   * comment for why two corners would under-cover a rotated view).
-   *
-   * @returns {[number, number, number, number] | null} [west, south,
-   *   east, north] in degrees, or null before the map is ready.
-   */
-  function _bboxFromFrame() {
-    const frameRect = frameRectEl.getBoundingClientRect();
-    return _bboxForBox(
-      frameRect.left + frameRect.width / 2,
-      frameRect.top + frameRect.height / 2,
-      frameRect.width,
-      frameRect.height,
-    );
-  }
-
-  /**
    * The bbox a `width`x`height` box centred on viewport point (cx, cy)
    * would cover. Pure projection maths — reads no DOM beyond the map's own
    * offset and writes none, so the ceiling search below can evaluate a
@@ -5656,10 +5639,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * frame around a fixed maximum area rather than letting the estimate run
    * away and the readout go red.
    *
-   * The first guess is analytic — cost is very nearly proportional to
-   * area, so `sqrt(ceiling / mb)` lands on or just under the cap — and the
-   * loop only mops up the error from tile quantisation, which makes the
-   * true boundary a step function rather than a smooth one.
+   * The scale itself comes from pwaBasemapDownloadCore.budgetScaleForBBox
+   * in one step — see that function for why a search against buildBlob's
+   * own (floored, hence step-shaped) tile count made the frame shimmer
+   * while panning and stutter while zooming (SNOW-566).
    *
    * @returns {{bbox: [number, number, number, number], blob: Object} | null}
    */
@@ -5668,77 +5651,99 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const natural = _naturalFrameBox();
     if (!core || !natural) return null;
 
-    const evaluate = (scale) => {
-      const bbox = _bboxForBox(
-        natural.cx,
-        natural.cy,
-        natural.width * scale,
-        natural.height * scale,
-      );
-      if (!bbox) return null;
-      return { bbox, blob: core.buildBlob(bbox, core.MICRO_BAND[0], core.MICRO_BAND[1]) };
-    };
-
-    let scale = 1;
-    let result = evaluate(scale);
-    if (!result) return null;
-
-    if (result.blob.mb > core.DOWNLOAD_CEILING_MB) {
-      scale = Math.max(
-        MIN_FRAME_SCALE,
-        Math.sqrt(core.DOWNLOAD_CEILING_MB / result.blob.mb),
-      );
-      for (let i = 0; i < 8; i++) {
-        const candidate = evaluate(scale);
-        if (!candidate) break;
-        result = candidate;
-        if (candidate.blob.mb <= core.DOWNLOAD_CEILING_MB) break;
-        if (scale <= MIN_FRAME_SCALE) break;
-        scale = Math.max(MIN_FRAME_SCALE, scale * 0.94);
-      }
-    }
+    const naturalBbox = _bboxForBox(natural.cx, natural.cy, natural.width, natural.height);
+    if (!naturalBbox) return null;
+    const scale = Math.max(
+      MIN_FRAME_SCALE,
+      core.budgetScaleForBBox(naturalBbox, core.MICRO_BAND[0], core.MICRO_BAND[1]),
+    );
 
     if (scale < 1) {
-      frameRectEl.style.width = `${Math.round(natural.width * scale)}px`;
-      frameRectEl.style.height = `${Math.round(natural.height * scale)}px`;
-    } else {
-      // Back under the ceiling — hand sizing back to the stylesheet rather
-      // than pinning the frame at its natural pixel size, so a viewport
-      // resize keeps working.
-      frameRectEl.style.removeProperty('width');
-      frameRectEl.style.removeProperty('height');
+      // Whole pixels: the frame is a bordered box on screen, and a
+      // fractional width would leave the browser resolving the same
+      // rounding every frame anyway.
+      const width = Math.round(natural.width * scale);
+      const height = Math.round(natural.height * scale);
+      // Only touch the DOM when the size actually changes. While panning
+      // at a capped zoom the scale now holds steady frame to frame, so
+      // this skips a layout and a repaint of the frame's 9999px mask
+      // shadow on almost every 'move'.
+      if (frameRectEl.style.width !== `${width}px`) {
+        frameRectEl.style.width = `${width}px`;
+        frameRectEl.style.height = `${height}px`;
+      }
+      const bbox = _bboxForBox(natural.cx, natural.cy, width, height);
+      if (!bbox) return null;
+      return { bbox, blob: core.buildBlob(bbox, core.MICRO_BAND[0], core.MICRO_BAND[1]) };
     }
-    return result;
+    // Back under the ceiling — hand sizing back to the stylesheet rather
+    // than pinning the frame at its natural pixel size, so a viewport
+    // resize keeps working.
+    frameRectEl.style.removeProperty('width');
+    frameRectEl.style.removeProperty('height');
+    return {
+      bbox: naturalBbox,
+      blob: core.buildBlob(naturalBbox, core.MICRO_BAND[0], core.MICRO_BAND[1]),
+    };
   }
 
   /**
    * Recompute pendingBbox/pendingBlob from the frame's current on-screen
    * position and paint the readout. Cheap, local arithmetic
-   * (pwaBasemapDownloadCore.buildBlob) — called on every MapLibre 'move'
-   * with no debounce, which is the whole point of computing this
-   * client-side rather than round-tripping to the server on every pan.
+   * (pwaBasemapDownloadCore.buildBlob) — no network round-trip on any
+   * frame of a pan or zoom, which is the whole point of computing this
+   * client-side.
    *
    * @returns {void}
    */
   function _updateReadout() {
     const core = self.pwaBasemapDownloadCore;
-    // Sizing the frame and measuring it are the same step: the ceiling
-    // search already evaluated the box it settled on, so reuse its result
-    // rather than re-measuring the DOM it just wrote to (which would read
-    // back the pre-layout size on the same frame).
+    // Sizing the frame and measuring it are the same step: the fit above
+    // already produced the box it settled on, so reuse its result rather
+    // than re-measuring the DOM it just wrote to (which would read back
+    // the pre-layout size on the same frame).
     const fitted = core ? _fitFrameToCeiling() : null;
     if (!core || !fitted) return;
     pendingBbox = fitted.bbox;
     pendingBlob = fitted.blob;
     const overCeiling = pendingBlob.over_ceiling;
-    readoutEl.textContent = overCeiling
+    const text = overCeiling
       ? `Area too large to download (over ${core.DOWNLOAD_CEILING_MB} MB)`
       : `Up to ${pendingBlob.mb} MB`;
+    // Same no-op guard as the frame's own size write above: the estimate
+    // holds still across most 'move's, and rewriting identical text still
+    // costs a layout of the CTA bar.
+    if (readoutEl.textContent !== text) readoutEl.textContent = text;
     readoutEl.classList.toggle('map-frame-readout--over-ceiling', overCeiling);
     // Offline-integrity: never let the CTA's own Download button start a
     // run while offline, even if the roundel that opened framing read
     // idle at the time (a connectivity change mid-session).
     confirmBtn.disabled = overCeiling || !navigator.onLine;
+  }
+
+  // Handle for a scheduled _updateReadout, or 0 when none is pending.
+  let readoutFrame = 0;
+
+  /**
+   * Run _updateReadout on the next animation frame, collapsing a burst of
+   * 'move' events into a single recompute.
+   *
+   * MapLibre fires 'move' once per input event, not once per rendered
+   * frame — a wheel zoom or a pinch emits several between paints, and
+   * every one of them re-measures the frame and can rewrite its size,
+   * forcing a synchronous layout mid-gesture to produce intermediate
+   * sizes that are never painted. One update per frame is all the display
+   * can show.
+   *
+   * @returns {void}
+   */
+  function _scheduleReadout() {
+    if (readoutFrame) return;
+    readoutFrame = requestAnimationFrame(() => {
+      readoutFrame = 0;
+      // Framing may have closed between the schedule and the callback.
+      if (moveHandler) _updateReadout();
+    });
   }
 
   /**
@@ -5784,7 +5789,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       MAP.fitBounds(_boundsFromBBox(savedArea.bbox), options);
     }
     _updateReadout();
-    moveHandler = () => _updateReadout();
+    moveHandler = () => _scheduleReadout();
     MAP.on('move', moveHandler);
   }
 
@@ -5807,6 +5812,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       MAP.off('move', moveHandler);
     }
     moveHandler = null;
+    if (readoutFrame) {
+      cancelAnimationFrame(readoutFrame);
+      readoutFrame = 0;
+    }
     pendingBbox = null;
     pendingBlob = null;
   }
