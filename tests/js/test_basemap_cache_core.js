@@ -213,3 +213,143 @@ describe('trimCache', () => {
     expect(cache._remaining()).toEqual([]);
   });
 });
+
+/*
+ * SNOW-568 — the bounded-concurrency pool and failure classification that
+ * replaced _warmCache's unbounded Promise.all fan-out.
+ */
+
+describe('runPool', () => {
+  /**
+   * A worker that records the peak number of concurrent calls, resolving
+   * each after a macrotask so overlapping calls actually overlap.
+   */
+  function trackingWorker() {
+    const seen = [];
+    let inFlight = 0;
+    let peak = 0;
+    const worker = async (item) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      seen.push(item);
+      inFlight -= 1;
+    };
+    return {
+      worker,
+      seen,
+      peak: () => peak,
+    };
+  }
+
+  it('visits every item exactly once', async () => {
+    const items = Array.from({ length: 50 }, (_, i) => i);
+    const tracker = trackingWorker();
+    await core.runPool(items, 6, tracker.worker);
+    expect(tracker.seen.slice().sort((a, b) => a - b)).toEqual(items);
+  });
+
+  it('never exceeds the concurrency limit', async () => {
+    const items = Array.from({ length: 50 }, (_, i) => i);
+    const tracker = trackingWorker();
+    await core.runPool(items, 6, tracker.worker);
+    expect(tracker.peak()).toBeLessThanOrEqual(6);
+  });
+
+  it('actually runs concurrently up to the limit', async () => {
+    // The regression guard in the other direction: a pool that silently
+    // degraded to sequential would pass every assertion above.
+    const items = Array.from({ length: 50 }, (_, i) => i);
+    const tracker = trackingWorker();
+    await core.runPool(items, 6, tracker.worker);
+    expect(tracker.peak()).toBe(6);
+  });
+
+  it('caps concurrency at the list length for a short list', async () => {
+    const tracker = trackingWorker();
+    await core.runPool([1, 2], 16, tracker.worker);
+    expect(tracker.peak()).toBe(2);
+    expect(tracker.seen.slice().sort()).toEqual([1, 2]);
+  });
+
+  it('runs one at a time for a limit below 1 rather than hanging', async () => {
+    const tracker = trackingWorker();
+    await core.runPool([1, 2, 3], 0, tracker.worker);
+    expect(tracker.peak()).toBe(1);
+    expect(tracker.seen).toEqual([1, 2, 3]);
+  });
+
+  it('passes the index alongside the item', async () => {
+    const pairs = [];
+    await core.runPool(['a', 'b', 'c'], 1, async (item, index) => {
+      pairs.push([item, index]);
+    });
+    expect(pairs).toEqual([
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+    ]);
+  });
+
+  it('resolves immediately for an empty or non-array list', async () => {
+    let calls = 0;
+    const count = async () => {
+      calls += 1;
+    };
+    await core.runPool([], 6, count);
+    await core.runPool(null, 6, count);
+    await core.runPool(undefined, 6, count);
+    expect(calls).toBe(0);
+  });
+});
+
+describe('classifyFailure', () => {
+  it('classifies a QuotaExceededError as quota', () => {
+    const err = new Error('no room');
+    err.name = 'QuotaExceededError';
+    expect(core.classifyFailure(err)).toBe('quota');
+  });
+
+  it('classifies a fetch TypeError as network', () => {
+    // What a fetch() rejects with when it cannot reach the network at all
+    // — including the ERR_INSUFFICIENT_RESOURCES burst this ticket fixes.
+    expect(core.classifyFailure(new TypeError('Failed to fetch'))).toBe('network');
+  });
+
+  it('classifies anything else as other', () => {
+    expect(core.classifyFailure(new Error('boom'))).toBe('other');
+    expect(core.classifyFailure(null)).toBe('other');
+    expect(core.classifyFailure(undefined)).toBe('other');
+  });
+});
+
+describe('worseReason', () => {
+  it('keeps quota over every other reason, in either argument order', () => {
+    expect(core.worseReason('quota', 'network')).toBe('quota');
+    expect(core.worseReason('network', 'quota')).toBe('quota');
+    expect(core.worseReason('quota', 'other')).toBe('quota');
+    expect(core.worseReason('other', 'quota')).toBe('quota');
+  });
+
+  it('keeps network over other', () => {
+    expect(core.worseReason('network', 'other')).toBe('network');
+    expect(core.worseReason('other', 'network')).toBe('network');
+  });
+
+  it('takes whichever side is a known reason when the other is null', () => {
+    expect(core.worseReason(null, 'network')).toBe('network');
+    expect(core.worseReason('network', null)).toBe('network');
+  });
+
+  it('returns null when neither side is a known reason', () => {
+    expect(core.worseReason(null, null)).toBeNull();
+    expect(core.worseReason(undefined, 'nonsense')).toBeNull();
+  });
+
+  it('accumulates a run down to its most actionable failure', () => {
+    // One quota failure among a thousand network ones is still the thing
+    // worth telling the user about.
+    const run = ['network', 'other', 'network', 'quota', 'network'];
+    expect(run.reduce((acc, r) => core.worseReason(acc, r), null)).toBe('quota');
+  });
+});

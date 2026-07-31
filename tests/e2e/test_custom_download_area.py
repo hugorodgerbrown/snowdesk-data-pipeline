@@ -40,6 +40,14 @@ dashboard; reload + click the (probed) green roundel re-opens framing at
 the saved area; moving the frame then Cancelling leaves the saved area
 untouched; moving the frame then confirming evicts the old area's tiles
 from the pinned cache before warming the new set.
+
+SNOW-568 adds the failure path, which had no coverage because it had no
+behaviour: every failed run reverted the roundel to ``idle`` and closed
+the overlay, indistinguishable from a Cancel. A failed run now holds the
+frame up, paints ``error``, and raises a toast (lifted clear of the CTA
+sheet it shares the foot of the viewport with) whose copy depends on
+whether the cause was the storage quota or anything else — covered here
+along with retrying and cancelling out of that state.
 """
 
 from __future__ import annotations
@@ -47,7 +55,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from playwright.sync_api import Page, Worker as SWWorker
+from playwright.sync_api import Page, Worker as SWWorker, expect
 
 from tests.e2e.conftest import PwaPage
 from tests.e2e.test_cache_this_area import (
@@ -252,13 +260,23 @@ def _zoom_out_until_capped(page: Page) -> None:
 
 
 def _confirm_download(
-    page: Page, worker: SWWorker, *, ok: int = 1, failed: int = 0
+    page: Page,
+    worker: SWWorker,
+    *,
+    ok: int = 1,
+    failed: int = 0,
+    reason: str | None = None,
 ) -> None:
-    """Stub a warm-cache outcome and click Download, waiting for it to settle."""
-    _stub_warm_cache(worker, ok=ok, failed=failed)
+    """Stub a warm-cache outcome and click Download, waiting for it to settle.
+
+    SNOW-568: a run that doesn't cleanly succeed settles on ``error``
+    (with a toast and the framing overlay still open), not the ``idle``
+    it used to revert to.
+    """
+    _stub_warm_cache(worker, ok=ok, failed=failed, reason=reason)
     page.click("#map-frame-confirm")
     _wait_for_state(page, "busy", selector=_CONTROL)
-    expected = "done" if (ok > 0 and failed == 0) else "idle"
+    expected = "done" if (ok > 0 and failed == 0) else "error"
     _wait_for_state(page, expected, selector=_CONTROL, timeout=10000)
 
 
@@ -596,3 +614,88 @@ def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None
         "the old area's tiles should have been evicted before the new set warmed"
     )
     assert _pinned_cache_has(page, url_after)
+
+
+def test_failed_download_keeps_the_frame_up_and_says_why(pwa_page: PwaPage) -> None:
+    """SNOW-568: a failed run reports itself and leaves the framed area alone.
+
+    The bug this covers: every failure reverted the roundel to ``idle``
+    and closed the framing overlay, which is exactly what a Cancel looks
+    like — so a download that fetched nothing was indistinguishable from
+    one the user never started. The framed bbox has to survive too, or the
+    "try again" the message offers means re-framing from scratch.
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _confirm_download(page, worker, ok=0, failed=9, reason="network")
+
+    assert page.locator("#map-frame-overlay").is_visible()
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
+    expect(page.locator("#map-download-error-toast-quota")).to_be_hidden()
+    # Retrying is one click on the still-live CTA bar, not a re-frame.
+    assert page.locator("#map-frame-confirm").is_enabled()
+    # Nothing was downloaded, so nothing may claim to have been saved.
+    assert _saved_area(page) is None
+
+
+def test_failed_download_toast_clears_the_cta_bar(pwa_page: PwaPage) -> None:
+    """SNOW-568: the toast is lifted above the CTA sheet it would otherwise cover.
+
+    Both dock at the foot of the viewport. A toast telling the user to
+    retry, sitting on top of the Download button, would be self-defeating.
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _confirm_download(page, worker, ok=0, failed=9, reason="network")
+
+    toast = page.locator("#map-download-error-toast").bounding_box()
+    cta = page.locator("#map-frame-cta").bounding_box()
+    assert toast is not None and cta is not None
+    assert toast["y"] + toast["height"] <= cta["y"], (
+        "the failure toast must sit clear of the CTA bar's Cancel/Download buttons"
+    )
+
+
+def test_quota_failure_shows_the_storage_message(pwa_page: PwaPage) -> None:
+    """SNOW-568: a ``quota`` reason gets the "free up space" copy instead."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _confirm_download(page, worker, ok=0, failed=9, reason="quota")
+
+    expect(page.locator("#map-download-error-toast-quota")).to_be_visible()
+    expect(page.locator("#map-download-error-toast")).to_be_hidden()
+
+
+def test_retry_after_a_failure_completes_the_download(pwa_page: PwaPage) -> None:
+    """SNOW-568: a second Download click on the surviving frame succeeds."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _confirm_download(page, worker, ok=0, failed=9, reason="network")
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
+
+    _confirm_download(page, worker, ok=1, failed=0)
+
+    _wait_for_overlay_closed(page)
+    expect(page.locator("#map-download-error-toast")).to_be_hidden()
+    assert _saved_area(page) is not None
+
+
+def test_cancelling_after_a_failure_clears_the_message(pwa_page: PwaPage) -> None:
+    """SNOW-568: dismissing framing abandons the attempt, and its toast with it."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _confirm_download(page, worker, ok=0, failed=9, reason="network")
+    expect(page.locator("#map-download-error-toast")).to_be_visible()
+
+    page.click("#map-frame-cancel")
+
+    _wait_for_overlay_closed(page)
+    expect(page.locator("#map-download-error-toast")).to_be_hidden()

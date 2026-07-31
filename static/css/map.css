@@ -1552,14 +1552,25 @@
     opacity: 0.45;
 }
 
-/* 'idle' is the only clickable state — handleClick returns for every other
-   one. 'busy' (already running) and 'done' (an informational success state)
-   are not failures, so they keep their normal colour and take the neutral
-   default cursor rather than the not-allowed above; without this the pointer
-   contradicted the aria-disabled="true" map.js sets for them. */
+/* 'idle' and (SNOW-568) 'error' are the clickable states — handleClick
+   returns for every other one. 'busy' (already running) and 'done' (an
+   informational success state) are not failures, so they keep their normal
+   colour and take the neutral default cursor rather than the not-allowed
+   above; without this the pointer contradicted the aria-disabled="true"
+   map.js sets for them. */
 .map-download-control[data-download-state="busy"],
 .map-download-control[data-download-state="done"] {
     cursor: default;
+}
+
+/* SNOW-568: the run failed and the layer is NOT available offline — the
+   same condition the layers menu paints with --color-sync-blocked, so the
+   roundel and the cache dashboard keep saying the same thing in the same
+   colour. Unlike the three unavailable states above it stays a pointer:
+   clicking retries. */
+.map-download-control[data-download-state="error"] {
+    color: var(--color-sync-blocked);
+    cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1582,7 +1593,8 @@
 .map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="offline"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
-.map-download-control[data-download-state="done"] .map-download-control-icon--done {
+.map-download-control[data-download-state="done"] .map-download-control-icon--done,
+.map-download-control[data-download-state="error"] .map-download-control-icon--error {
     display: block;
 }
 

@@ -190,6 +190,135 @@ function assembleBasemapDownloadFeedURLs() {
   return urls;
 }
 
+// SNOW-568: the two basemap-download failure toasts in _map_embed.html.
+// Only 'quota' has a remedy of its own (free space, or frame a smaller
+// area); every other cause — an unreachable network, a worker that went
+// silent, a server answering 4xx/5xx — leads to the same instruction, so
+// they share the generic toast rather than leaking a classification the
+// user can do nothing with.
+const BASEMAP_DOWNLOAD_ERROR_TOAST_IDS = {
+  quota: 'map-download-error-toast-quota',
+};
+const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
+
+// SNOW-568: reveal the basemap-download failure toast matching ``reason``,
+// and hide the other one.
+//
+// The copy lives in the templates (where {% trans %} can reach it), not
+// here — hence two elements rather than one whose text this rewrites.
+// Both download controls (per-region and custom-area) share them: the two
+// runs are mutually exclusive in practice, and hiding the sibling means a
+// second failure of a different kind replaces the first message rather
+// than stacking a contradictory one beside it.
+//
+// Uses the same hidden/flex toggle idiom as the map's own
+// revealOfflineToast — see its comment for why ``flex`` is added rather
+// than baked into the partial's class list. Best-effort throughout: a
+// missing element (an older cached shell that predates the partials) is a
+// silent no-op, never a thrown error inside a download's finish handler.
+//
+// @param {string|null} reason
+// @returns {void}
+function revealBasemapDownloadError(reason) {
+  try {
+    const showId =
+      BASEMAP_DOWNLOAD_ERROR_TOAST_IDS[reason] || BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID;
+    const ids = [
+      ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_IDS),
+      BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID,
+    ];
+    // The toasts dock at the foot of the viewport, which is exactly where
+    // the framing overlay's CTA sheet sits — and a custom-area failure
+    // leaves that overlay open, so the default position would cover the
+    // Cancel/Download buttons the message is telling the user to use.
+    // Measured rather than assumed: the sheet wraps to two rows on a
+    // narrow viewport, and a hardcoded offset would be wrong there.
+    const offset = _framingToastOffset();
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const show = id === showId;
+      el.classList.toggle('hidden', !show);
+      el.classList.toggle('flex', show);
+      if (offset === null) {
+        el.style.removeProperty('bottom');
+      } else {
+        el.style.bottom = `${offset}px`;
+      }
+    }
+  } catch (_e) {
+    // Non-fatal — the roundel's error state still carries the outcome.
+  }
+}
+
+// SNOW-568: the `bottom` a download toast needs to clear the framing
+// overlay's CTA sheet, or null when framing isn't open (leave the
+// stylesheet's own docking alone).
+//
+// Derived from the sheet's distance to the viewport's bottom edge, NOT
+// from its height: the toast is position:fixed against the viewport while
+// the overlay is positioned inside #map, and the map does not run to the
+// bottom of the window. Offsetting by the sheet's height alone left the
+// toast overlapping it by exactly the gap below the map.
+//
+// @returns {number|null}
+function _framingToastOffset() {
+  const overlay = document.getElementById('map-frame-overlay');
+  const cta = document.getElementById('map-frame-cta');
+  if (!overlay || !cta || overlay.hasAttribute('hidden')) return null;
+  const rect = cta.getBoundingClientRect();
+  if (!rect.height) return null;
+  return Math.round(window.innerHeight - rect.top) + 16;
+}
+
+// SNOW-568: hide both basemap-download failure toasts — called when a run
+// starts, so a previous failure's message can't sit next to a download
+// that is now succeeding.
+//
+// @returns {void}
+function clearBasemapDownloadError() {
+  try {
+    const ids = [
+      ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_IDS),
+      BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID,
+    ];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.classList.add('hidden');
+      el.classList.remove('flex');
+      // Drop the framing-aware offset with the toast itself, so a later
+      // reveal with the overlay closed docks where the stylesheet says.
+      el.style.removeProperty('bottom');
+    }
+  } catch (_e) {
+    // Non-fatal — a stale toast is still dismissible by its own "×".
+  }
+}
+
+// SNOW-568: pre-flight a download of ``mb`` megabytes against the origin's
+// remaining storage quota.
+//
+// Resolves true when the download should go ahead, including every case
+// where the answer is unknowable (no Storage API, an estimate() that
+// rejects) — an unknown quota must not block a download that would have
+// worked, and _warmCache's own QuotaExceededError handling is the backstop.
+//
+// @param {number} mb
+// @returns {Promise<boolean>}
+async function basemapDownloadFitsQuota(mb) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.hasStorageHeadroom !== 'function') return true;
+  if (!('storage' in navigator) || typeof navigator.storage.estimate !== 'function') {
+    return true;
+  }
+  try {
+    return core.hasStorageHeadroom(await navigator.storage.estimate(), mb);
+  } catch (_e) {
+    return true;
+  }
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -5036,7 +5165,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * fill percentage, and an aria-label/title carrying the region's size.
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
-   *   'disabled' | 'offline'.
+   *   'error' | 'disabled' | 'offline'.
    * @param {number} mb
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @returns {void}
@@ -5044,11 +5173,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   function setState(state, mb, pct) {
     btn.dataset.downloadState = state;
     // Non-runnable states are announced as disabled rather than removed, so
-    // the control keeps its place in the stack (see renderControl). 'idle' is
-    // the only actionable state — handleClick returns immediately for every
-    // other one, including 'busy' (a run is already going) and 'done' (an
-    // informational success state), so those are announced as disabled too.
-    btn.setAttribute('aria-disabled', state === 'idle' ? 'false' : 'true');
+    // the control keeps its place in the stack (see renderControl). 'idle'
+    // and (SNOW-568) 'error' are the actionable states — handleClick
+    // returns immediately for every other one, including 'busy' (a run is
+    // already going) and 'done' (an informational success state), so those
+    // are announced as disabled too.
+    btn.setAttribute(
+      'aria-disabled',
+      state === 'idle' || state === 'error' ? 'false' : 'true',
+    );
     // Busy progress renders as a bottom-up fill of the roundel (map.css),
     // driven by --download-progress rather than a numeric readout.
     if (state === 'busy') {
@@ -5074,6 +5207,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       idle: `Download this region's basemap — up to ${mb} MB`,
       busy: `Downloading this region's basemap — ${pct || 0}%`,
       done: `This region's basemap is downloaded — available offline`,
+      // SNOW-568: the toast carries the reason; the roundel just has to
+      // say the run failed and is retryable.
+      error: `This region's basemap download failed — tap to try again`,
       disabled: `This region's basemap is too large to download`,
       // Offline-integrity: no downloading of layers while offline.
       offline: `Basemap download unavailable while offline`,
@@ -5181,11 +5317,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
    */
   async function handleClick() {
     const data = regionData;
-    if (!data || btn.dataset.downloadState !== 'idle') return;
+    // SNOW-568: 'error' is retryable, so it starts a run like 'idle'.
+    const state = btn.dataset.downloadState;
+    if (!data || (state !== 'idle' && state !== 'error')) return;
     // Offline-integrity: never start a download offline, even if a race left
     // the icon on 'idle' at the moment of the click.
     if (!navigator.onLine) {
       setState('offline', data.summary.mb);
+      return;
+    }
+    // SNOW-568: a new attempt clears the previous one's message before it
+    // can raise its own.
+    clearBasemapDownloadError();
+    // SNOW-568: refuse a download that cannot fit in the origin's storage
+    // quota before spending a single fetch on it — see the custom-area
+    // control's identical pre-flight for the rationale.
+    if (!(await basemapDownloadFitsQuota(data.summary.mb))) {
+      setState('error', data.summary.mb);
+      revealBasemapDownloadError('quota');
       return;
     }
     setState('busy', data.summary.mb, 0);
@@ -5198,10 +5347,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
       blob = await response.json();
     } catch (_e) {
-      // Never got as far as a warm-cache attempt — nothing to report,
-      // so revert silently (matches the pre-rework "no active worker"
-      // silent-degrade behaviour) rather than claim a failed download.
-      setState('idle', data.summary.mb);
+      // SNOW-568: this never got as far as a warm-cache attempt, but from
+      // the user's side a click that quietly returns to idle is the same
+      // silent failure this ticket exists to remove — the download they
+      // asked for did not happen.
+      setState('error', data.summary.mb);
+      revealBasemapDownloadError(null);
       return;
     }
 
@@ -5209,9 +5360,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const template = activeBasemapTileTemplate(MAP);
     // No tile template (style still settling) means no tiles to warm, and a
     // feeds-only run must never paint 'done' — the region's basemap would
-    // not in fact be available offline. Revert to idle so the user can retry.
+    // not in fact be available offline. SNOW-568: reads as a failed
+    // download so the user knows to retry (by which point the style will
+    // have settled), rather than silently reverting.
     if (!core || !template) {
-      setState('idle', data.summary.mb);
+      setState('error', data.summary.mb);
+      revealBasemapDownloadError(null);
       return;
     }
     const tileUrls = core.rangesToTileURLs(template, blob);
@@ -5223,14 +5377,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     };
 
     const finish = (result) => {
-      // The icon itself carries the outcome — no toast. "done" (the
-      // green offline circle) requires at least one success and no
-      // failures; a partial, vacuous, or absent result reverts to idle so
-      // the user can retry, rather than claiming the region is downloaded.
+      // "done" (the green offline circle) requires at least one success
+      // and no failures; a partial, vacuous, or absent result must not
+      // claim the region is downloaded.
+      //
+      // SNOW-568: a run that didn't succeed paints 'error' and raises the
+      // shared toast, rather than reverting to 'idle' — which was
+      // indistinguishable from never having clicked.
       if (result && result.ok > 0 && result.failed === 0) {
         setState('done', data.summary.mb);
       } else {
-        setState('idle', data.summary.mb);
+        setState('error', data.summary.mb);
+        revealBasemapDownloadError(result ? result.reason : null);
       }
       // SNOW-505: the warm-cache run has just warmed the shell + pinned
       // basemap caches (the SW's warm-cache handler awaits its
@@ -5418,15 +5576,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * Paint `state` onto the roundel: data-download-state, the busy fill
    * percentage, and an aria-label/title.
    *
-   * @param {string} state - 'idle' | 'busy' | 'done' | 'offline'.
+   * @param {string} state - 'idle' | 'busy' | 'done' | 'error' | 'offline'.
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @returns {void}
    */
   function setState(state, pct) {
     btn.dataset.downloadState = state;
-    // 'idle' and 'done' both reopen framing on click (see the click
-    // handler below) — only 'busy' (a run is already going) and
-    // 'offline' are non-actionable.
+    // 'idle', 'done' and 'error' all reopen framing on click (see the
+    // click handler below) — only 'busy' (a run is already going) and
+    // 'offline' are non-actionable. SNOW-568: 'error' is deliberately
+    // actionable; a failed download's whole point is that the user can
+    // try it again.
     btn.setAttribute(
       'aria-disabled',
       state === 'busy' || state === 'offline' ? 'true' : 'false',
@@ -5440,6 +5600,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       idle: `Download a custom area's basemap`,
       busy: `Downloading a custom area's basemap — ${pct || 0}%`,
       done: `Custom area basemap downloaded — available offline`,
+      // SNOW-568: the toast carries the reason; the roundel just has to
+      // say the run failed and is retryable.
+      error: `Custom area basemap download failed — tap to try again`,
       // Offline-integrity: no downloading of layers while offline.
       offline: `Basemap download unavailable while offline`,
     }[state];
@@ -5884,6 +6047,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
    */
   async function handleConfirm() {
     if (!pendingBbox || !pendingBlob || pendingBlob.over_ceiling) return;
+    // SNOW-568: the overlay now stays open across a failed run (so the
+    // framed area survives for a retry), and it was always open during a
+    // running one — so the Download button, unlike the roundel, needs its
+    // own re-entrancy guard.
+    if (btn.dataset.downloadState === 'busy') return;
     // Offline-integrity: never start a download offline, even if a race
     // left the button enabled at the moment of the click.
     if (!navigator.onLine) {
@@ -5892,16 +6060,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     const blob = pendingBlob;
     const bbox = pendingBbox;
+    // SNOW-568: a new attempt clears the previous one's message before it
+    // can raise its own.
+    clearBasemapDownloadError();
+    // SNOW-568: refuse a download that cannot fit in the origin's storage
+    // quota before spending a single fetch on it. Without this the run
+    // gets most of the way through, starts collecting QuotaExceededErrors
+    // from cache.put, and the user waits out a long download to be told
+    // it failed.
+    if (!(await basemapDownloadFitsQuota(blob.mb))) {
+      setState('error');
+      revealBasemapDownloadError('quota');
+      return;
+    }
     setState('busy', 0);
 
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     // No tile template (style still settling) means no tiles to warm, and
     // a feeds-only run must never claim done — the area would not in fact
-    // be available offline. Revert to idle so the user can retry.
+    // be available offline. SNOW-568: this is a failed download like any
+    // other, so it reads as one and leaves the frame up for a retry
+    // (which, the style having settled by then, will find a template).
     if (!core || !template) {
-      setState('idle');
-      _closeFramingAfterRun();
+      setState('error');
+      revealBasemapDownloadError(null);
       return;
     }
 
@@ -5918,11 +6101,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     };
 
     const finish = (result) => {
-      // The roundel carries the outcome — no toast, mirroring
-      // mapDownloadControlInit. "done" requires at least one success and
-      // no failures; a partial, vacuous, or absent result reverts to
-      // idle so the user can retry, rather than claiming the area is
-      // downloaded.
+      // "done" requires at least one success and no failures; a partial,
+      // vacuous, or absent result must not claim the area is downloaded.
+      //
+      // SNOW-568: a run that didn't succeed now says so. It used to fall
+      // back to 'idle' and close the overlay — indistinguishable from
+      // never having clicked Download, which is exactly what a failing
+      // download looked like from the outside. The overlay stays open on
+      // failure so the framed area (and the Download button) survive for
+      // a retry; only success closes it.
       if (result && result.ok > 0 && result.failed === 0) {
         savedArea = {
           bbox: bbox,
@@ -5932,10 +6119,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
         };
         _persistSavedArea(savedArea);
         setState('done');
+        _closeFramingAfterRun();
       } else {
-        setState('idle');
+        setState('error');
+        // A null result means there was no active worker at all — nothing
+        // ran and nothing was cached, which is still a failed download
+        // from the user's point of view, just one with no reason to
+        // report beyond the generic line.
+        revealBasemapDownloadError(result ? result.reason : null);
       }
-      _closeFramingAfterRun();
       // SNOW-505/522: the warm-cache run has just warmed the shell +
       // pinned basemap caches; re-probe every sync dot against real
       // cache state, mirroring mapDownloadControlInit's own post-run
@@ -5970,6 +6162,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('overlay:dismissed', (e) => {
     if (e.detail && e.detail.overlay === overlayEl) {
       _teardownFraming();
+      // SNOW-568: cancelling framing abandons the attempt the toast was
+      // reporting on. Leaving it up would also strand it at the offset
+      // that cleared the CTA sheet which has just gone away.
+      clearBasemapDownloadError();
     }
   });
 

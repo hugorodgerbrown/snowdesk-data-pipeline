@@ -46,6 +46,13 @@
  *     ``bulletin_groupings_geojson``), so the worker just reads the response
  *     rather than re-deriving the date arithmetic (see
  *     docs/decisions/date-aware-cache-policy.md).
+ *   runPool(items, limit, worker)
+ *     SNOW-568: bounded-concurrency replacement for ``Promise.all(items.map(…))``
+ *     — at most ``limit`` calls to ``worker`` are ever in flight.
+ *   classifyFailure(err)
+ *     SNOW-568: ``'quota' | 'network' | 'other'`` for a caught warm-cache error.
+ *   worseReason(a, b)
+ *     SNOW-568: the more actionable of two failure reasons.
  */
 
 (function () {
@@ -136,10 +143,105 @@
       .includes('immutable');
   }
 
+  /**
+   * SNOW-568: run ``worker`` over every entry of ``items`` with at most
+   * ``limit`` calls in flight at once.
+   *
+   * The unbounded ``Promise.all(items.map(worker))`` this replaces issued
+   * every fetch of a warm-cache run in a single tick. A full-ceiling
+   * custom-area download is up to 2048 tiles (``DOWNLOAD_CEILING_MB`` /
+   * ``WORST_CASE_BYTES_PER_TILE``), and Chrome's net stack starts
+   * rejecting requests with ``ERR_INSUFFICIENT_RESOURCES`` well below
+   * that — a request-budget exhaustion, not a storage-quota failure, so
+   * every tile failed and nothing was cached.
+   *
+   * ``limit`` workers share one cursor rather than the list being sliced
+   * into ``limit`` fixed chunks: a chunk containing several slow tiles
+   * would otherwise leave the other workers idle once they had finished
+   * their own. Ordering is not preserved and callers must not rely on it
+   * (``_warmCache``'s only ordered output is its progress counter, which
+   * counts settled URLs, not positions).
+   *
+   * ``worker`` is expected to handle its own failures — a rejection
+   * propagates out of ``runPool`` and abandons the remaining items, which
+   * is why ``_warmCache``'s worker catches everything itself.
+   *
+   * @param {Array<*>} items
+   * @param {number} limit Maximum concurrent ``worker`` calls. Values
+   *   below 1 are treated as 1 (never zero workers, which would hang).
+   * @param {(item: *, index: number) => Promise<*>} worker
+   * @returns {Promise<void>}
+   */
+  async function runPool(items, limit, worker) {
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) return;
+    const width = Math.max(1, Math.min(Math.floor(limit) || 1, list.length));
+    let cursor = 0;
+    const drain = async () => {
+      while (cursor < list.length) {
+        const index = cursor;
+        cursor += 1;
+        await worker(list[index], index);
+      }
+    };
+    await Promise.all(Array.from({ length: width }, drain));
+  }
+
+  /**
+   * SNOW-568: classify a caught warm-cache error into the reason the user
+   * is shown.
+   *
+   * ``quota`` is the only one with a distinct remedy (free space, or pick
+   * a smaller area) and the only one that will not succeed on retry, so
+   * it is separated from every other failure. ``QuotaExceededError`` is
+   * matched by ``name`` rather than ``instanceof DOMException`` — the
+   * error crosses no realm boundary here, but matching the name also
+   * catches the (spec-sanctioned) plain-object shape some engines throw,
+   * and keeps this function testable without a DOMException constructor.
+   *
+   * A ``fetch`` that cannot reach the network rejects with a ``TypeError``
+   * — that covers offline, DNS failure, CORS rejection, and the
+   * ``ERR_INSUFFICIENT_RESOURCES`` burst this ticket fixes.
+   *
+   * @param {*} err
+   * @returns {'quota'|'network'|'other'}
+   */
+  function classifyFailure(err) {
+    if (!err) return 'other';
+    if (err.name === 'QuotaExceededError') return 'quota';
+    if (err.name === 'TypeError') return 'network';
+    return 'other';
+  }
+
+  // Most actionable first — worseReason keeps whichever of two reasons
+  // appears earlier here, so a run that hit one quota failure among a
+  // thousand network failures still tells the user about the quota.
+  const REASON_PRECEDENCE = ['quota', 'network', 'other'];
+
+  /**
+   * SNOW-568: the more actionable of two failure reasons, for accumulating
+   * a single reason across a whole warm-cache run.
+   *
+   * @param {string|null|undefined} a
+   * @param {string|null|undefined} b
+   * @returns {string|null} ``null`` when neither is a known reason.
+   */
+  function worseReason(a, b) {
+    const rankA = REASON_PRECEDENCE.indexOf(a);
+    const rankB = REASON_PRECEDENCE.indexOf(b);
+    if (rankA === -1 && rankB === -1) return null;
+    if (rankA === -1) return b;
+    if (rankB === -1) return a;
+    return rankA <= rankB ? a : b;
+  }
+
   self.pwaBasemapCacheCore = Object.freeze({
     classifySync: classifySync,
     isBasemapOrigin: isBasemapOrigin,
     trimCache: trimCache,
     shouldPersist: shouldPersist,
+    runPool: runPool,
+    classifyFailure: classifyFailure,
+    worseReason: worseReason,
   });
 })();

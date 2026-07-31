@@ -88,9 +88,15 @@
  *     ``basemap_tiles.py`` counterpart and needs none: the server never
  *     sizes a framing rectangle. Do NOT go looking for a Python twin to
  *     keep it honest against.
- *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_CEILING_MB
+ *   hasStorageHeadroom(estimate, mb)
+ *     SNOW-568: whether a download of ``mb`` megabytes fits in the
+ *     origin's remaining storage quota, with a safety margin. Client-only,
+ *     like ``budgetScaleForBBox`` — no ``basemap_tiles.py`` counterpart.
+ *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_CEILING_MB,
+ *   STORAGE_HEADROOM_FACTOR
  *     Constants mirroring ``basemap_tiles.py``'s module-level constants
- *     of the same name (see there for the sizing rationale).
+ *     of the same name (see there for the sizing rationale) — except
+ *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
  */
 
 (function () {
@@ -106,6 +112,13 @@
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;
+
+  // SNOW-568: the fraction of the origin's REMAINING storage quota a
+  // single download may claim. Client-only — no basemap_tiles.py twin.
+  // Half leaves room for the shell cache, the passive basemap cache the
+  // user's ordinary browsing keeps filling, IndexedDB, and the mutation
+  // queue, none of which stop growing because a download is in flight.
+  var STORAGE_HEADROOM_FACTOR = 0.5;
 
   /**
    * Expand a full basemap_download blob's ``z`` ranges into tile URLs.
@@ -372,6 +385,44 @@
     return Math.max(0, Math.min(1, scale));
   }
 
+  /**
+   * SNOW-568: whether a download of ``mb`` megabytes fits in the origin's
+   * remaining storage quota.
+   *
+   * Takes the already-resolved ``navigator.storage.estimate()`` result
+   * rather than calling it, so this stays a pure function of its
+   * arguments (and unit-testable without a Storage API).
+   *
+   * The estimate is deliberately conservative on both sides. ``mb`` is the
+   * download's own worst case (``WORST_CASE_BYTES_PER_TILE`` per tile —
+   * real vector tiles are far smaller), and it is required to fit inside
+   * ``STORAGE_HEADROOM_FACTOR`` of what's left rather than all of it: a
+   * browser starts evicting an origin's storage as it approaches the
+   * quota, and an area download that lands exactly at the limit would be
+   * the first thing evicted. Refusing early costs the user a smaller
+   * frame; not refusing costs them a download that appears to succeed and
+   * is gone by the time they are offline and need it.
+   *
+   * Returns true when the estimate is unusable (Storage API absent, or a
+   * browser reporting no quota) — an unknown quota must not block a
+   * download that would have worked. The run's own ``QuotaExceededError``
+   * handling is the backstop for that case.
+   *
+   * @param {{quota?: number, usage?: number}|null|undefined} estimate
+   * @param {number} mb Estimated download size in megabytes.
+   * @returns {boolean}
+   */
+  function hasStorageHeadroom(estimate, mb) {
+    if (!estimate) return true;
+    const quota = Number(estimate.quota);
+    const usage = Number(estimate.usage);
+    if (!Number.isFinite(quota) || quota <= 0) return true;
+    if (!Number.isFinite(usage) || usage < 0) return true;
+    const needed = Number(mb) * 1024 * 1024;
+    if (!Number.isFinite(needed) || needed <= 0) return true;
+    return needed <= (quota - usage) * STORAGE_HEADROOM_FACTOR;
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
@@ -381,8 +432,10 @@
     centreTile: centreTile,
     buildBlob: buildBlob,
     budgetScaleForBBox: budgetScaleForBBox,
+    hasStorageHeadroom: hasStorageHeadroom,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
+    STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
   });
 })();
