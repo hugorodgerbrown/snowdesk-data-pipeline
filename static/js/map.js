@@ -3037,10 +3037,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // Regions: one feature-state write per loaded region, both ways —
       // an area that has been evicted since the last refresh has to lose
       // its ring, not merely fail to gain one.
+      //
+      // The bbox comes from the region's own boundary, which is how the
+      // server defines its download too (compute_basemap_download runs
+      // build_blob(bbox_from_boundary(boundary), *MICRO_BAND)) — so the
+      // tile set checked is exactly the one a download of this region
+      // fetches, with no per-region API call to fetch the stored ranges.
+      // properties.download is still required: a region with no computed
+      // blob is not downloadable, so it can't be downloaded.
       const entries = [];
       for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
-        const summary = feature?.properties?.download;
-        if (summary?.centre_tile) entries.push({ id: regionID, ...summary });
+        if (!feature?.properties?.download || !feature.geometry) continue;
+        const bbox = core.geometryBounds(feature.geometry);
+        if (bbox) entries.push({ id: regionID, bbox });
       }
       const downloaded = new Set(core.downloadedIds(template, entries, cached));
       for (const entry of entries) {
@@ -3055,11 +3064,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
         );
       }
 
-      // The custom area: one feature, or none.
+      // The custom area: one feature, or none. Its bbox and band are both
+      // stored on the meta:app row, so this needs no derivation — and the
+      // band matters, since a future area saved over a different band must
+      // be checked against the tiles it actually fetched.
       const area = await _savedCustomArea();
       const areaDownloaded =
-        area?.centre_tile &&
-        core.downloadedIds(template, [{ id: 'custom', ...area }], cached).length > 0;
+        !!area?.bbox &&
+        core.downloadedIds(
+          template,
+          [{ id: 'custom', bbox: area.bbox, band: area.band }],
+          cached,
+        ).length > 0;
       const source = map.getSource('downloaded-area');
       if (source) {
         source.setData(

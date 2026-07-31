@@ -790,11 +790,33 @@ written at download time would be exactly the divergence the cache-state
 dashboard exists to prevent: eviction, a basemap swap and Clear Site Data
 all change the answer without passing through the download path.
 
+**Full coverage, not the centre tile.** The roundel's done-probe checks a
+download's centre tile, which is fair for the roundel: it only ever asks
+about a region the user downloaded *as a region*, so that tile witnesses
+that run. It is not fair here. Both download shapes write to one pinned
+cache over the same zoom band with the same URL template, so their tiles
+are indistinguishable strings — a custom-area download whose frame merely
+crosses a region caches that region's centre tile, and a centre-tile probe
+would ring the whole region on the strength of one tile the download never
+covered (and would equally miss a region almost entirely covered whose
+centre falls outside the frame). `downloadedIds` therefore requires an
+area's **whole** tile set. That is also the right answer whoever cached the
+tiles: a region wholly inside a custom-area download genuinely is available
+offline. The remaining imprecision is the download's own — tile ranges
+cover a bbox, not the exact polygon — so the two agree by construction.
+
+The region's tile set is derived client-side from its boundary geometry
+(`geometryBounds` + `tileRangesForBBox`), which reproduces exactly what
+`compute_basemap_download` stored for it
+(`build_blob(bbox_from_boundary(boundary), *MICRO_BAND)`) — no per-region
+API call.
+
 **One `cache.keys()` pass.** The roundel probes one region and can afford
 `cache.match()`; this asks about every loaded region, so it takes a single
-pass over the cache's URLs and answers the whole map from that set
-(`basemap_download_core.js`'s `downloadedIds`). Never call it per frame —
-the pinned cache holds thousands of entries. It refreshes when the overlay
+pass over the cache's URLs and answers the whole map from that set. Every
+tile after the first is then a Set lookup, which is why checking all of
+them rather than sampling costs single-digit milliseconds. Never call it
+per frame — the pinned cache holds thousands of entries. It refreshes when the overlay
 is switched on, on `snowdesk:basemap-changed`, on
 `snowdesk:regions-loaded`, when a download settles (both controls call
 `window.pwaDownloadedOverlay?.refresh()` beside their existing
@@ -812,12 +834,6 @@ data — it is derived from the cache the dots describe, so a dot would
 either sit permanently green (saying nothing) or make a second, subtly
 different claim about the same cache. `.basemap-menu-item--no-sync`
 (`static/css/map.css`) holds the dot's space so the row still lines up.
-
-Fidelity limit, inherited deliberately from the roundel's done-probe: the
-centre tile is a proxy for the whole download, so an area whose download
-partly failed or has been partly evicted still reads as downloaded while
-that one tile survives. The two answers must agree, and an honest
-full-coverage check would mean probing every tile of every region.
 
 ## Offline gating of the layers menu
 

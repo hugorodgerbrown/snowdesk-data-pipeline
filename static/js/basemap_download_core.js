@@ -641,8 +641,70 @@
   }
 
   /**
-   * Which of ``entries`` are present in ``cachedURLs`` — the set-membership
-   * half of the "which areas are downloaded?" question (SNOW-570).
+   * Whether EVERY tile of a ``[minZ, maxZ]`` download of ``bbox`` is in
+   * ``cachedURLs`` — "is this area actually available offline?" (SNOW-570).
+   *
+   * Deliberately not the centre-tile proxy the roundel's done-probe uses.
+   * That proxy is fair for the roundel, which only ever asks about a region
+   * the user downloaded AS A REGION: the centre tile is then a witness that
+   * that particular run completed. It is NOT fair here, because both
+   * download shapes write to one pinned cache over the same zoom band with
+   * the same URL template, so their tiles are indistinguishable strings. A
+   * custom-area download whose frame merely crosses a region's centre
+   * caches that region's centre tile, and a centre-tile probe would then
+   * ring the whole region on the strength of one tile it never covered —
+   * and would equally MISS a region almost entirely covered whose centre
+   * happens to fall outside the frame.
+   *
+   * Full coverage is the honest question and it is nearly free: the caller
+   * has already paid for the answer with one ``cache.keys()`` pass, and
+   * every tile after the first is a Set lookup. A region is a few hundred
+   * tiles across the micro band, so the whole map costs single-digit
+   * milliseconds — which is why this checks all of them rather than
+   * sampling. It is also the RIGHT answer whoever cached the tiles: a
+   * region wholly inside a custom-area download genuinely is available
+   * offline, and should say so.
+   *
+   * The remaining imprecision is the download's own: tile ranges cover a
+   * bbox, not the exact polygon, so a region reads as covered when the
+   * tiles over its bounding box are present. That is what its download
+   * fetches, so the two agree by construction.
+   *
+   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
+   *   the ACTIVE basemap's, which is what makes the answer per-basemap.
+   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   *   north]`` in degrees.
+   * @param {number} minZ Shallowest zoom level (inclusive).
+   * @param {number} maxZ Deepest zoom level (inclusive).
+   * @param {Set<string>} cached The pinned cache's URLs.
+   * @returns {boolean} ``false`` for a falsy template or bbox, and for an
+   *   empty tile set — "nothing is cached" must never read as "all of
+   *   nothing is cached, so yes".
+   */
+  function _bboxFullyCached(template, bbox, minZ, maxZ, cached) {
+    if (!template || !bbox) return false;
+    const ranges = tileRangesForBBox(bbox, minZ, maxZ);
+    let seen = 0;
+    for (const z of Object.keys(ranges)) {
+      const [xmin, xmax, ymin, ymax] = ranges[z];
+      for (let x = xmin; x <= xmax; x++) {
+        for (let y = ymin; y <= ymax; y++) {
+          const url = template
+            .replace('{z}', z)
+            .replace('{x}', String(x))
+            .replace('{y}', String(y));
+          if (!cached.has(url)) return false;
+          seen++;
+        }
+      }
+    }
+    return seen > 0;
+  }
+
+  /**
+   * Which of ``entries`` are fully present in ``cachedURLs`` — the
+   * set-membership half of the "which areas are downloaded?" question
+   * (SNOW-570).
    *
    * Split out as a pure function because the expensive, impure half is a
    * single ``cache.keys()`` pass the caller does once: probing N regions
@@ -651,30 +713,32 @@
    * screen. Hand that one pass's URLs in here and the answer for the whole
    * map falls out with no further I/O.
    *
-   * Membership of the download's CENTRE tile is the same proxy the
-   * roundel's done-probe uses, and carries the same fidelity limit: an
-   * area whose download partly failed, or has been partly evicted, still
-   * reads as downloaded while that one tile survives. Deliberate — the two
-   * answers must agree, and an honest full-coverage check would mean
-   * probing every tile of every region.
+   * Each entry carries its own ``bbox`` — a region's derived from its
+   * boundary geometry, a custom area's stored with it. That mirrors how
+   * the download itself is defined server-side
+   * (``basemap_tiles.build_blob(bbox_from_boundary(boundary), *MICRO_BAND)``),
+   * so the tile set checked here is exactly the tile set a download of that
+   * area fetches. See ``_bboxFullyCached`` for why every tile is checked
+   * rather than just the centre one.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
    *   the ACTIVE basemap's, which is what makes the answer per-basemap.
-   * @param {Array<{id: string, centre_tile?: {z: number, x: number,
-   *   y: number}}>} entries One per candidate area. An entry with no
-   *   ``centre_tile`` is skipped, never reported as downloaded.
+   * @param {Array<{id: string, bbox?: number[], band?: number[]}>} entries
+   *   One per candidate area. An entry with no ``bbox`` is skipped, never
+   *   reported as downloaded. ``band`` defaults to ``MICRO_BAND``, which is
+   *   what both download shapes use.
    * @param {Set<string> | string[]} cachedURLs The pinned cache's URLs.
-   * @returns {string[]} The ``id`` of every entry whose centre tile is
-   *   cached, in input order. ``[]`` for a falsy template.
+   * @returns {string[]} The ``id`` of every fully-cached entry, in input
+   *   order. ``[]`` for a falsy template.
    */
   function downloadedIds(template, entries, cachedURLs) {
     if (!template || !entries) return [];
     const cached = cachedURLs instanceof Set ? cachedURLs : new Set(cachedURLs || []);
     const ids = [];
     for (const entry of entries) {
-      if (!entry) continue;
-      const url = centreTileURL(template, entry);
-      if (url && cached.has(url)) ids.push(entry.id);
+      if (!entry || !entry.bbox) continue;
+      const [minZ, maxZ] = entry.band || MICRO_BAND;
+      if (_bboxFullyCached(template, entry.bbox, minZ, maxZ, cached)) ids.push(entry.id);
     }
     return ids;
   }
