@@ -481,6 +481,87 @@ def test_zooming_a_locked_frame_leaves_it_on_the_same_ground(
     assert _readout_text(page) == readout_before
 
 
+def test_a_real_wheel_zoom_never_moves_the_estimate(pwa_page: PwaPage) -> None:
+    """The same guarantee, driven by genuine wheel input rather than the API.
+
+    The companion test above drives the zoom with ``MAP.easeTo``, which
+    gives precise control over the anchor but is a single synthetic step.
+    A real wheel gesture is not that: MapLibre runs it as an inertial ease
+    whose tail has frames where the zoom value has plateaued while the
+    centre is still settling — and a pan/zoom check that watched only the
+    zoom read those frames as a pan and re-aimed the selection. That
+    shipped once (the estimate visibly stepping 189 → 182 → 186 MB while
+    zooming) precisely because every test drove the map through its API
+    instead of its input handlers.
+
+    Both halves of the guarantee are asserted. The readout must not so much
+    as flicker — a locked bbox covers a fixed set of tiles, and the number
+    is what the user watches — and the frame must still be over the same
+    ground at the end. The readout alone is too weak a guard: its value only
+    moves when the tile count crosses a grid boundary, so a viewport-derived
+    frame can drift a long way while the estimate happens to hold.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+
+    locked_bbox = page.evaluate(
+        """() => {
+            const r = document.getElementById('map-frame-rect').getBoundingClientRect();
+            const m = MAP.getContainer().getBoundingClientRect();
+            const nw = MAP.unproject([r.left - m.left, r.top - m.top]);
+            const se = MAP.unproject([r.right - m.left, r.bottom - m.top]);
+            return [nw.lng, se.lat, se.lng, nw.lat];
+        }"""
+    )
+    box = page.locator("#map").bounding_box()
+    assert box is not None
+    # Well off the frame's centre, as a hand on a trackpad would be — a
+    # cursor-anchored zoom is what moves the map centre, and a
+    # centre-anchored one cannot reproduce the defect at all.
+    page.mouse.move(box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.65)
+
+    zoom_before = float(page.evaluate("() => MAP.getZoom()"))
+    seen = {_readout_text(page)}
+    for _ in range(6):
+        page.mouse.wheel(0, 120)
+        page.wait_for_timeout(120)
+        _settle_readout(page)
+        seen.add(_readout_text(page))
+    # Let the inertial tail land: the frames after the zoom value settles
+    # are exactly the ones that used to be misread as a pan.
+    page.wait_for_timeout(600)
+    _settle_readout(page)
+    seen.add(_readout_text(page))
+    zoom_after = float(page.evaluate("() => MAP.getZoom()"))
+
+    assert abs(zoom_after - zoom_before) > 0.2, (
+        f"the wheel never zoomed the map ({zoom_before} → {zoom_after}), "
+        "so this test would pass vacuously"
+    )
+    assert len(seen) == 1, f"the estimate moved during a wheel zoom: {sorted(seen)}"
+
+    drift = page.evaluate(
+        """(bbox) => {
+            const [west, south, east, north] = bbox;
+            const m = MAP.getContainer().getBoundingClientRect();
+            const nw = MAP.project([west, north]);
+            const se = MAP.project([east, south]);
+            const r = document.getElementById('map-frame-rect').getBoundingClientRect();
+            return {
+                left: Math.abs((r.left - m.left) - nw.x),
+                top: Math.abs((r.top - m.top) - nw.y),
+                right: Math.abs((r.right - m.left) - se.x),
+                bottom: Math.abs((r.bottom - m.top) - se.y),
+            };
+        }""",
+        locked_bbox,
+    )
+    assert max(drift.values()) <= 3, (
+        f"the locked selection drifted across the wheel gesture: {drift}"
+    )
+
+
 def test_zooming_back_in_releases_the_ground_lock(pwa_page: PwaPage) -> None:
     """Zooming in until the natural frame fits hands sizing back to the stylesheet.
 
