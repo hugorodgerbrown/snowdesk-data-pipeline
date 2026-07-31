@@ -21,7 +21,9 @@ database without needing SSH access.
 
 Also includes the ForecastPointWeatherAdmin (SNOW-416), the point analogue
 of WeatherSnapshotAdmin without the one-click fetch button — the point
-pass runs from ``fetch_weather`` only, not the admin UI.
+pass runs from ``fetch_weather`` only, not the admin UI, and the
+ForecastPointWeatherHistoryAdmin (SNOW-575) beside it, which is the only
+read surface on the forecast-convergence series.
 """
 
 import io
@@ -45,6 +47,7 @@ from apps.bulletins.models import (
     BulletinShareClick,
     ForecastPoint,
     ForecastPointWeather,
+    ForecastPointWeatherHistory,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -868,3 +871,29 @@ class ForecastPointWeatherAdmin(admin.ModelAdmin):
     raw_id_fields = ("forecast_point",)
     readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
     ordering = ["-valid_for_date", "forecast_point__id"]
+
+
+@admin.register(ForecastPointWeatherHistory)
+class ForecastPointWeatherHistoryAdmin(admin.ModelAdmin):
+    """Admin view for ForecastPointWeatherHistory.
+
+    Ordered so that one forecast day's rows read oldest-issue-first —
+    the direction a convergence series is read in.
+    """
+
+    list_display = [
+        "id",
+        "forecast_point",
+        "valid_for_date",
+        "issued_date",
+        "lead_days",
+        "weather_code",
+        "temperature_2m_max",
+        "snowfall_sum",
+        "freezing_level_height",
+    ]
+    list_filter = ["valid_for_date", "lead_days"]
+    list_select_related = ("forecast_point",)
+    raw_id_fields = ("forecast_point",)
+    readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
+    ordering = ["-valid_for_date", "issued_date"]

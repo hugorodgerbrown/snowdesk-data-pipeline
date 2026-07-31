@@ -763,6 +763,22 @@ into the same `failed` total that triggers the command's non-zero exit;
 `created`/`updated` counters sum across every day of every point's window,
 not one count per point.
 
+**Forecast history (SNOW-575)** — each day of the point pass also writes a
+`ForecastPointWeatherHistory` row keyed on `(forecast_point,
+valid_for_date, issued_date)`, in the same transaction as its
+`ForecastPointWeather` twin. Because `ForecastPointWeather` is upserted on
+`(point, date)`, a forecast day is overwritten on every run and only the
+final day-of view survives; the history table retains the earlier ones, so
+how a forecast moved as its day approached can be read back
+(`ForecastPointWeatherHistory.objects.convergence_for(point, day)`).
+`issued_date` is the run's anchor date, so the four scheduled runs in a day
+collapse to one row and a forecast day accrues one row per day of its
+window. The payload is a narrow subset — the scalars whose movement is the
+signal — with `hourly_series` and sunrise/sunset excluded. The table starts
+empty and cannot be backfilled: a past forecast no longer exists to fetch.
+The counters above are unaffected; they still count `ForecastPointWeather`
+rows only.
+
 Read-only by default; the API is always called even without `--commit`,
 making a bare invocation a useful connectivity probe.
 

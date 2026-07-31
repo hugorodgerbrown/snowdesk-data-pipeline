@@ -30,6 +30,7 @@ from apps.bulletins.models import (
     BulletinShareClick,
     ForecastPoint,
     ForecastPointWeather,
+    ForecastPointWeatherHistory,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -373,6 +374,39 @@ class ForecastPointWeatherFactory(
             },
         ]
     )
+
+
+class ForecastPointWeatherHistoryFactory(
+    factory.django.DjangoModelFactory[ForecastPointWeatherHistory]
+):
+    """
+    Factory for ForecastPointWeatherHistory instances.
+
+    Defaults to a three-day-out view of a day, since a lead of zero is the
+    degenerate case (the day-of forecast, which is what the accompanying
+    ForecastPointWeather row already holds). ``lead_days`` is set
+    explicitly rather than derived, so a test can construct a deliberately
+    inconsistent row when that is the thing under test.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ForecastPointWeatherHistory
+
+    forecast_point = factory.SubFactory(ForecastPointFactory)
+    valid_for_date = factory.LazyFunction(django_timezone.localdate)
+    issued_date = factory.LazyFunction(
+        lambda: django_timezone.localdate() - datetime.timedelta(days=3)
+    )
+    lead_days = 3
+    weather_code = 0  # clear sky
+    temperature_2m_max = 4.0
+    temperature_2m_min = -3.0
+    precipitation_sum = 0.0
+    snowfall_sum = 0.0
+    wind_speed_10m_max = 12.0
+    freezing_level_height = 1800.0
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):

@@ -21,6 +21,7 @@ def test_bulletins_app_owns_the_expected_models() -> None:
     SNOW-323 adds BulletinGrouping.
     SNOW-412 adds ForecastPoint.
     SNOW-416 adds ForecastPointWeather.
+    SNOW-575 adds ForecastPointWeatherHistory.
     """
     config = apps.get_app_config("bulletins")
     model_names = {m.__name__ for m in config.get_models()}
@@ -35,4 +36,5 @@ def test_bulletins_app_owns_the_expected_models() -> None:
         "BulletinShareClick",
         "ForecastPoint",
         "ForecastPointWeather",
+        "ForecastPointWeatherHistory",
     }

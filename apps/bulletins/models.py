@@ -1,7 +1,7 @@
 """
 apps/bulletins/models.py — Bulletin-derived database models.
 
-Owns the eight bulletin-driven models:
+Owns the eleven bulletin-driven models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
@@ -38,6 +38,11 @@ Owns the eight bulletin-driven models:
     personal detail card rather than a bulletin-page header. Fetched by
     the ``fetch_weather`` management command's active-ForecastPoint pass
     (SNOW-416).
+  - ForecastPointWeatherHistory: one row per (ForecastPoint, valid date,
+    issue date) retaining how a forecast for a given day evolved as that
+    day approached. ForecastPointWeather is upserted on (point, date) and
+    so keeps only the final, day-of view; this table keeps the earlier
+    ones, which are otherwise destroyed on every run (SNOW-575).
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``apps.regions.models`` — those are stable lookup tables shared across the
@@ -1350,6 +1355,171 @@ class ForecastPointWeather(BaseModel):
         return (
             f"{self.forecast_point.to_string()} "
             f"{self.valid_for_date} wmo={self.weather_code}"
+        )
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# ForecastPointWeatherHistory
+# ---------------------------------------------------------------------------
+
+
+class ForecastPointWeatherHistoryQuerySet(
+    models.QuerySet["ForecastPointWeatherHistory"]
+):
+    """Custom queryset for ForecastPointWeatherHistory."""
+
+    def convergence_for(
+        self, point: "ForecastPoint", valid_for_date: _date
+    ) -> "ForecastPointWeatherHistoryQuerySet":
+        """
+        Return how the forecast for one date evolved, oldest issue first.
+
+        Unlike the model's default ordering, this is ascending by
+        ``issued_date`` — a convergence series wants to read from the
+        earliest view of the day through to the day-of one, the same way
+        ``ForecastPointWeather.objects.forecast_for_point`` inverts its
+        model's default ordering for a forward-looking panel.
+
+        Args:
+            point: The ForecastPoint to filter by.
+            valid_for_date: The forecast day whose history is wanted.
+
+        Returns:
+            A queryset of ForecastPointWeatherHistory rows for that
+            (point, day), ordered by issued_date ascending.
+
+        """
+        return self.filter(
+            forecast_point=point, valid_for_date=valid_for_date
+        ).order_by("issued_date")
+
+
+class ForecastPointWeatherHistory(BaseModel):
+    """
+    How the forecast for one ForecastPoint-day evolved as the day approached.
+
+    ``ForecastPointWeather`` is upserted on ``(forecast_point,
+    valid_for_date)``, so a given day is overwritten on every run and only
+    the final, day-of forecast survives. That final row is the most
+    accurate one, but the earlier views of the same day — issued three or
+    six days out — are what show whether a forecast was stable or swung
+    late, and they are destroyed as a side effect of the upsert.
+
+    This table retains them: one row per ``(forecast_point,
+    valid_for_date, issued_date)``. Because ``issued_date`` is part of the
+    key, the four runs within a single day collapse to one row (the last
+    run of that day wins), so a forecast day accrues one row per day of
+    its window rather than one per run.
+
+    Deliberately narrower than ``ForecastPointWeather``. ``hourly_series``
+    is excluded — it is the bulk of the payload and is populated for only
+    the first ``POINT_HOURLY_DAYS`` days of a window, so it cannot form a
+    series across lead times. ``sunrise``/``sunset`` are excluded because
+    they are astronomical: identical on every run for a given day, so they
+    carry no convergence signal.
+
+    Written by ``fetch_weather_for_point`` alongside its
+    ``ForecastPointWeather`` upsert, inside the same transaction, so the
+    pair lands together or not at all (SNOW-575).
+
+    Rows accrue only from the moment this shipped — a past forecast cannot
+    be reconstructed after the fact.
+    """
+
+    forecast_point = models.ForeignKey(
+        "bulletins.ForecastPoint",
+        on_delete=CASCADE,
+        related_name="forecast_history",
+    )
+    fetched_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="When this row was last written (updated on every upsert).",
+    )
+    valid_for_date = models.DateField(
+        db_index=True,
+        help_text="The calendar date this forecast applies to.",
+    )
+    issued_date = models.DateField(
+        help_text=(
+            "The date this view of valid_for_date was fetched — the anchor "
+            "date of the run that produced it."
+        ),
+    )
+    lead_days = models.SmallIntegerField(
+        help_text=(
+            "valid_for_date - issued_date, in days. Denormalised from the "
+            "two dates so that querying one lead time across many days "
+            "(e.g. every three-day-out forecast) is indexable. Signed: a "
+            "response whose first day precedes the run anchor yields a "
+            "negative value, which is recorded rather than clamped."
+        ),
+    )
+
+    # Payload — the scalars worth watching converge. weather_code is
+    # required, mirroring ForecastPointWeather; the rest are nullable
+    # because Open-Meteo omits some variables depending on the backing
+    # weather model.
+    weather_code = models.PositiveSmallIntegerField(
+        help_text="WMO weather interpretation code (0–99).",
+    )
+    temperature_2m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily air temperature at 2m, in °C.",
+    )
+    temperature_2m_min = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Minimum daily air temperature at 2m, in °C.",
+    )
+    precipitation_sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daily precipitation (rain + showers + snow), in mm.",
+    )
+    snowfall_sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daily snowfall, in cm.",
+    )
+    wind_speed_10m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily wind speed at 10m, in km/h.",
+    )
+    freezing_level_height = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Daily maximum freezing level height, in metres.",
+    )
+
+    objects = ForecastPointWeatherHistoryQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        verbose_name_plural = "forecast point weather history"
+        unique_together = [("forecast_point", "valid_for_date", "issued_date")]
+        ordering = ["-valid_for_date", "issued_date"]
+        indexes = [
+            models.Index(fields=["forecast_point", "valid_for_date"]),
+            models.Index(fields=["valid_for_date", "lead_days"]),
+        ]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this row.
+
+        Format: ``46.80000,7.50000 @1500m 2026-05-01 issued 2026-04-28
+        (+3d) wmo=1``
+        """
+        return (
+            f"{self.forecast_point.to_string()} "
+            f"{self.valid_for_date} issued {self.issued_date} "
+            f"({self.lead_days:+d}d) wmo={self.weather_code}"
         )
 
     def __str__(self) -> str:
