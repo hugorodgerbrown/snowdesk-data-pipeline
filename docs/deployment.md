@@ -90,13 +90,22 @@ across the elevation, forecast, and archive endpoints, so the scheduled
 same service compete for one allowance.
 
 Cutting over to a paid subscription is an env-group edit, not a deploy: set
-all three variables on the `Production` group (web, scheduler, and worker all
-read it via `fromGroup`) and on `Staging`. Set them **together** — pointing at
-the customer hosts without a key makes every call fail auth, and a key without
-the customer hosts is ignored by the free hosts. The documented customer hosts
-are `https://customer-api.open-meteo.com/v1` and
+the variables on the `Production` group (web, scheduler, and worker all read
+it via `fromGroup`) and on `Staging`. The documented customer hosts are
+`https://customer-api.open-meteo.com/v1` and
 `https://customer-archive-api.open-meteo.com/v1`; confirm both against the
 subscription confirmation rather than assuming the prefix.
+
+**The two hosts can be on different tiers.** The `apikey` parameter is sent
+only to a host that has been moved off its free default (SNOW-579), so
+setting `OPEN_METEO_ARCHIVE_BASE_URL` and `OPEN_METEO_API_KEY` while leaving
+`OPEN_METEO_API_BASE_URL` free puts historical requests on the paid plan and
+keeps the daily forecast and elevation traffic on the free tier, unkeyed.
+That is the configuration for a one-off history pull: subscribe, set those
+two, run the backfill, then unset them again.
+
+Whichever hosts you move, set the key at the same time — a customer host
+without a key fails auth on every call.
 
 A paid plan is metered monthly rather than unlimited, so an exhausted
 allowance still returns `429`. Nothing in the pipeline backs off on that yet.

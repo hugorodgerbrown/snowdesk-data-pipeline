@@ -433,7 +433,7 @@ def fetch_weather_for_region(
             "start_date": target_date.isoformat(),
             "end_date": target_date.isoformat(),
         },
-        base_url,
+        url,
     )
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
@@ -833,7 +833,7 @@ def fetch_weather_for_point(
             "start_date": target_date.isoformat(),
             "end_date": end_date.isoformat(),
         },
-        base_url,
+        url,
     )
 
     data = _fetch_point_payload(url, params, point)
@@ -1122,7 +1122,7 @@ def fetch_archive_for_region(
             "daily": "weather_code,sunrise,sunset",
             "timezone": "auto",
         },
-        base_url,
+        url,
     )
     response = requests.get(url, params=archive_params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()

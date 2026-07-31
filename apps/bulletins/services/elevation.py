@@ -50,8 +50,8 @@ def fetch_elevation(
         base_url: When set, overrides the configured host as the endpoint
             base. The actual request goes to ``f"{base_url}/elevation"``.
             Defaults to ``None``, which uses
-            ``settings.OPEN_METEO_API_BASE_URL``. An override also
-            suppresses the ``apikey`` parameter.
+            ``settings.OPEN_METEO_API_BASE_URL``. An override points at a
+            host outside the customer set, so no ``apikey`` is sent.
 
     Returns:
         The elevation in metres above sea level.
@@ -75,7 +75,7 @@ def fetch_elevation(
             "latitude": str(latitude),
             "longitude": str(longitude),
         },
-        base_url,
+        url,
     )
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()

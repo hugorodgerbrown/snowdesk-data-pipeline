@@ -80,15 +80,21 @@ class TestFetchElevationApiKey:
             fetch_elevation(46.0, 7.0)
         assert "apikey" not in mock_get.call_args.kwargs["params"]
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_apikey_param_sent_when_key_set(self) -> None:
-        """A configured key is appended to the request params."""
+        """A configured key is appended when the host is a customer host."""
         mock_get = _mock_get({"elevation": [500.0]})
         with patch("apps.bulletins.services.elevation.requests.get", mock_get):
             fetch_elevation(46.0, 7.0)
         assert mock_get.call_args.kwargs["params"]["apikey"] == "sk-test"
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_no_apikey_param_for_base_url_override(self) -> None:
         """A mirror override is not the key's host, so no key is sent."""
         mock_get = _mock_get({"elevation": [500.0]})
@@ -96,7 +102,10 @@ class TestFetchElevationApiKey:
             fetch_elevation(46.0, 7.0, base_url="https://mirror.example/v1")
         assert "apikey" not in mock_get.call_args.kwargs["params"]
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_key_is_never_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """The debug log records the URL, which must not carry the key."""
         mock_get = _mock_get({"elevation": [500.0]})

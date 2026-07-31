@@ -543,7 +543,10 @@ class TestFetchWeatherForPoint:
 
         assert mock.call_args[0][0] == "https://api.example/v1/forecast"
 
-    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    @override_settings(
+        OPEN_METEO_API_KEY="sk-test",
+        OPEN_METEO_API_BASE_URL="https://customer-api.example/v1",
+    )
     def test_sends_apikey_when_configured(self) -> None:
         """A configured key is appended to the point forecast params (SNOW-577)."""
         point = ForecastPointFactory.create()
