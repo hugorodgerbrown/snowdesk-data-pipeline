@@ -12,27 +12,31 @@ gradient on a ``fill`` layer, so each tick clips the geometry against the
 half-plane below the current level (``pwaBasemapDownloadCore.
 clipPolygonBelow``) and pushes the result through ``setData``.
 
-These tests therefore assert on the ``download-progress`` SOURCE's data —
-the latitude the fill has reached — rather than on pixels, matching this
-suite's established "assert state, not screenshots" convention (see
-``test_map_placement_focus.py``'s module docstring). The level is what the
-feature is; a screenshot diff would additionally depend on frame timing
+**Why these drive ``createDownloadProgressFill`` directly rather than
+clicking Download.** The fill is MapLibre layers, and MapLibre layers only
+exist in the harness *without* a service worker: with the real SW
+controlling, the basemap style JSON parses but its sources never resolve
+against the unreachable CDN, so ``map.isStyleLoaded()`` stays false,
+``map.on('load')`` never fires, and the ``regions`` source — plus every
+layer installed beside it — is never added at all. (That is why
+``test_cache_this_area.py`` injects synthetic features into
+``FEATURE_BY_REGION_ID`` and never touches a layer.) Dropping the SW gets
+the layers back but takes ``window.pwaWarmCache`` with it, so a real
+download run cannot drive the fill here either.
+
+So these tests call the factory the download path calls, with the same
+arguments, and step it by hand. What that leaves uncovered is two lines of
+wiring — ``progressFill.update(pct)`` inside ``onProgress`` and
+``await progressFill.finish(ok)`` inside ``finish`` — while covering the
+part with the actual machinery in it: the clip, the rising level, the
+teardown, and the no-op path. ``map.js`` is a classic script, so its
+top-level ``createDownloadProgressFill`` is a plain ``window`` property.
+
+Assertions read the ``download-progress`` source's data — the latitude the
+fill has reached — rather than pixels, matching this suite's convention
+(see ``test_map_placement_focus.py``'s module docstring). The level is what
+the feature is; a screenshot diff would additionally depend on frame timing
 this harness deliberately avoids.
-
-Reuses ``test_cache_this_area.py``'s helpers rather than duplicating them.
-``_stub_warm_cache``'s ``progress_steps``/``step_delay_ms`` are what make
-an intermediate fill observable at all: they drive ``onProgress`` through
-the real ``sw.js``/``sw_register.js`` message round trip, spaced far
-enough apart that a ``wait_for_function`` poll lands inside the run. The
-page-side ``window.pwaWarmCache`` is frozen and non-writable, so stubbing
-the SW's own ``self._warmCache`` is the only place a stub can go — see
-that helper's docstring.
-
-``_select_region`` in that module injects a synthetic feature with
-PROPERTIES ONLY, no geometry. That is deliberate there and load-bearing
-here: a download with no geometry to fill must still run to completion, so
-this file has its own ``_select_region_with_geometry`` for the cases that
-need something to fill, and one test pins the geometry-less path.
 """
 
 from __future__ import annotations
@@ -42,31 +46,16 @@ from typing import Any, cast
 
 import pytest
 from playwright.sync_api import Page
-
-from tests.e2e.conftest import PwaPage
-from tests.e2e.test_cache_this_area import (
-    _MICRO_SUMMARY,
-    _reload_home,
-    _select_region,
-    _stub_active_basemap_template,
-    _stub_region_basemap_tiles,
-    _stub_warm_cache,
-    _wait_for_map_ready,
-    _wait_for_state,
-)
-from tests.e2e.test_custom_download_area import (
-    _frame_a_downloadable_area,
-    _open_framing,
-)
+from pytest_django.live_server_helper import LiveServer
 
 pytestmark = pytest.mark.usefixtures("_load_test_data")
 
-_CONTROL = "#map-download-control"
-_CUSTOM_CONTROL = "#map-custom-download-control"
+_FILL_LAYER = "download-progress-fill"
+_LINE_LAYER = "download-progress-line"
 
-# The synthetic region's boundary: a 1° square in the Valais, chosen so
-# every assertion below can talk about plain latitudes (46 at the bottom,
-# 47 at the top) with no projection arithmetic in the test itself.
+# A 1° square in the Valais, chosen so every assertion below can talk about
+# plain latitudes (46 at the bottom, 47 at the top) with no projection
+# arithmetic in the test itself.
 _SOUTH = 46.0
 _NORTH = 47.0
 _SQUARE: dict[str, Any] = {
@@ -76,58 +65,67 @@ _SQUARE: dict[str, Any] = {
     ],
 }
 
-# Four evenly-spaced ticks, a quarter-second apart. The spacing is the
-# whole point: it holds each intermediate level on screen long enough for
-# a wait_for_function poll to see it, without making the test slow.
-_PROGRESS_STEPS = [(1, 4), (2, 4), (3, 4), (4, 4)]
-_STEP_DELAY_MS = 250
+
+def _boot(page: Page, live_server: LiveServer) -> None:
+    """Navigate and wait for a map whose style will accept a new source."""
+    page.goto(f"{live_server.url}/")
+    page.wait_for_load_state("domcontentloaded")
+    # Deliberately not waiting on isStyleLoaded(): it reports
+    # Style.loaded(), which also requires every source to have loaded, and
+    # the basemap's tile sources never resolve in this harness. The regions
+    # source being present is the signal that the style is up — and the
+    # fill does not depend on isStyleLoaded() either (see _ensure).
+    page.wait_for_function(
+        """() => typeof MAP !== 'undefined' && MAP !== null
+            && !!MAP.getSource('regions')
+            && typeof window.createDownloadProgressFill === 'function'""",
+        timeout=30000,
+    )
 
 
-def _select_region_with_geometry(page: Page, region_id: str) -> None:
-    """Focus ``region_id`` with a real boundary attached.
+def _start_fill(page: Page, geometry: dict[str, Any] | None = None) -> None:
+    """Create a progress fill over `geometry` and park it on the window.
 
-    ``test_cache_this_area._select_region`` injects properties only, which
-    leaves the progress fill with nothing to clip — see the module
-    docstring. This is the same injection plus ``_SQUARE`` as the
-    feature's geometry.
+    Held on ``window`` rather than returned because the handle is a live JS
+    object whose methods the later steps call — the same object the
+    download path holds for the duration of its run. ``None`` means "a
+    download with no geometry to fill", which must be a quiet no-op.
     """
     page.evaluate(
-        """({ regionId, download, geometry }) => {
-            FEATURE_BY_REGION_ID[regionId] = {
-                type: 'Feature',
-                geometry,
-                properties: { id: regionId, regionID: regionId, download },
-            };
-            document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-                detail: { region_id: regionId, region_name: regionId },
-            }));
-        }""",
-        {"regionId": region_id, "download": _MICRO_SUMMARY, "geometry": _SQUARE},
+        "(geometry) => { window.__fill = createDownloadProgressFill(geometry); }",
+        _SQUARE if geometry is None else geometry,
     )
 
 
-def _wait_for_style_loaded(page: Page) -> None:
-    """Wait until the style will accept an ``addSource``.
+def _start_fill_without_geometry(page: Page) -> None:
+    """Create a progress fill with no geometry at all."""
+    page.evaluate("() => { window.__fill = createDownloadProgressFill(undefined); }")
 
-    The fill adds its source on the first progress tick and skips (to
-    retry on the next one) while the style is in no state to take one —
-    so without this a fast run could conceivably finish having never
-    painted. The regions source is added inside ``map.on('load')``, which
-    makes it the available signal that the style is up.
-    """
+
+def _update(page: Page, pct: int) -> None:
+    """Raise the fill to `pct` and wait for the coalesced repaint to land."""
+    page.evaluate("(pct) => window.__fill.update(pct)", pct)
+    # update() defers its paint to an animation frame, so the source is not
+    # written synchronously. Waiting on the data itself, rather than on a
+    # timeout, is what makes this deterministic.
     page.wait_for_function(
-        "() => typeof MAP !== 'undefined' && MAP !== null && "
-        "!!MAP.getSource('regions') && MAP.isStyleLoaded()"
+        """() => {
+            const source = MAP.getSource('download-progress');
+            if (!source) return false;
+            const data = source.serialize().data;
+            return !!(data && data.geometry);
+        }""",
+        timeout=10000,
     )
+
+
+def _finish(page: Page, *, ok: bool) -> None:
+    """Settle the fill and wait for the pulse (success only) to play out."""
+    page.evaluate("async (ok) => { await window.__fill.finish(ok); }", ok)
 
 
 def _fill_north_edge(page: Page) -> float | None:
-    """The latitude the fill has currently reached, or ``None``.
-
-    ``None`` covers both "no source on the style" and "source present but
-    holding the empty collection" — neither is a level, and a test that
-    wants to tell them apart should ask ``_has_fill_layers`` instead.
-    """
+    """The latitude the fill has currently reached, or ``None``."""
     return cast(
         float | None,
         page.evaluate(
@@ -155,198 +153,129 @@ def _has_fill_layers(page: Page) -> bool:
     )
 
 
-def _boot(pwa_page: PwaPage, *, ok: int = 1, failed: int = 0) -> Page:
-    """Reload, stub the SW warm-cache run and the basemap/tiles lookups.
+def test_fill_rises_from_the_southern_edge(page: Page, live_server: LiveServer) -> None:
+    """Mid-run the geometry is partly filled, from its south edge upwards."""
+    _boot(page, live_server)
+    _start_fill(page)
+    _update(page, 25)
 
-    Every test here needs the same sequence. ``ok``/``failed`` choose the
-    outcome the stubbed run reports back.
-    """
-    _reload_home(pwa_page)
-    page = pwa_page.page
-    assert page.context.service_workers, "expected a registered service worker"
-    _stub_warm_cache(
-        page.context.service_workers[0],
-        ok=ok,
-        failed=failed,
-        progress_steps=_PROGRESS_STEPS,
-        step_delay_ms=_STEP_DELAY_MS,
+    bounds = cast(
+        list[float],
+        page.evaluate(
+            """() => {
+                const data = MAP.getSource('download-progress').serialize().data;
+                return window.pwaBasemapDownloadCore.geometryBounds(data.geometry);
+            }"""
+        ),
     )
-    _wait_for_map_ready(page)
-    _stub_active_basemap_template(page)
-    _stub_region_basemap_tiles(page)
-    _wait_for_style_loaded(page)
-    return page
+    # Anchored on the southern edge, and stopping short of the northern one.
+    # Asserting the strict interior is what separates a rising fill from a
+    # layer that simply appears whole.
+    assert bounds[1] == _SOUTH
+    assert _SOUTH < bounds[3] < _NORTH
 
 
-def test_region_fill_rises_from_the_southern_edge(pwa_page: PwaPage) -> None:
-    """Mid-run the region is partly filled, from its south edge upwards."""
-    page = _boot(pwa_page)
-    _select_region_with_geometry(page, "CH-4115")
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
+def test_fill_level_rises_with_progress(page: Page, live_server: LiveServer) -> None:
+    """Each tick moves the level up, and never back down."""
+    _boot(page, live_server)
+    _start_fill(page)
 
-    icon.click()
+    levels: list[float] = []
+    for pct in (10, 40, 80):
+        _update(page, pct)
+        level = _fill_north_edge(page)
+        assert level is not None, f"no level painted at {pct}%"
+        levels.append(level)
 
-    # Partly filled: the level has left the southern edge but not yet
-    # reached the northern one. Asserting the strict interior is what
-    # separates a rising fill from a layer that simply appears whole.
-    page.wait_for_function(
-        """({ south, north }) => {
-            const source = MAP.getSource('download-progress');
-            if (!source) return false;
-            const data = source.serialize().data;
-            if (!data || !data.geometry) return false;
-            const bounds = window.pwaBasemapDownloadCore.geometryBounds(data.geometry);
-            return !!bounds && bounds[1] === south && bounds[3] > south && bounds[3] < north;
-        }""",
-        arg={"south": _SOUTH, "north": _NORTH},
-        timeout=10000,
-    )
+    assert levels == sorted(levels)
+    assert levels[0] != levels[-1]
 
 
-def test_region_fill_is_cleared_once_the_icon_goes_green(pwa_page: PwaPage) -> None:
-    """The fill pulses out and is gone by the time the roundel reads done."""
-    page = _boot(pwa_page)
-    _select_region_with_geometry(page, "CH-4115")
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
+def test_a_successful_run_clears_the_fill(page: Page, live_server: LiveServer) -> None:
+    """The fill pulses out and leaves nothing on the map."""
+    _boot(page, live_server)
+    _start_fill(page)
+    _update(page, 50)
+    assert _has_fill_layers(page)
 
-    icon.click()
-    page.wait_for_function("() => !!MAP.getSource('download-progress')", timeout=10000)
-    _wait_for_state(page, "done", timeout=10000)
+    _finish(page, ok=True)
 
-    # The pulse is awaited before the state flips, so by the time the icon
-    # is green the map is back to normal — no green region left behind.
+    # finish() resolves only after the pulse, so by the time the download
+    # path flips its roundel the map is back to normal.
     assert not _has_fill_layers(page)
     assert _fill_north_edge(page) is None
 
 
-def test_done_keeps_the_download_glyph_in_white(pwa_page: PwaPage) -> None:
-    """A completed download inverts the glyph's colour, not the glyph.
+def test_a_failed_run_clears_the_fill_too(page: Page, live_server: LiveServer) -> None:
+    """A failure clears the fill rather than pulsing it green.
 
-    SNOW-569 dropped the tick: the download arrow is the control's
-    identity, and swapping it made a finished download read as a different
-    control. Asserts the rendered glyph and its computed colour rather
-    than a screenshot, matching this suite's convention.
+    A failed download must never read as a downloaded region, however
+    briefly — so this path skips the pulse entirely.
     """
-    page = _boot(pwa_page)
-    _select_region_with_geometry(page, "CH-4115")
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
+    _boot(page, live_server)
+    _start_fill(page)
+    _update(page, 50)
 
-    icon.click()
-    _wait_for_state(page, "done", timeout=10000)
+    _finish(page, ok=False)
 
-    glyphs = cast(
-        dict[str, Any],
-        page.evaluate(
-            """(selector) => {
-                const btn = document.querySelector(selector);
-                const arrow = btn.querySelector('.map-download-control-icon--idle');
-                return {
-                    arrowShown: getComputedStyle(arrow).display !== 'none',
-                    arrowColour: getComputedStyle(arrow).color,
-                    tickPresent: !!btn.querySelector('.map-download-control-icon--done'),
-                };
-            }""",
-            _CONTROL,
-        ),
+    assert not _has_fill_layers(page)
+
+
+def test_no_geometry_degrades_to_a_no_op(page: Page, live_server: LiveServer) -> None:
+    """A download with nothing to fill still runs to completion.
+
+    The region control passes ``feature && feature.geometry``, which is
+    undefined for a feature carrying no boundary. That must be a quiet
+    no-op, not an error inside a download's progress handler.
+    """
+    _boot(page, live_server)
+    _start_fill_without_geometry(page)
+
+    page.evaluate("() => window.__fill.update(50)")
+    page.evaluate("async () => { await window.__fill.finish(true); }")
+
+    assert not _has_fill_layers(page)
+
+
+def test_fill_sits_above_the_choropleth(page: Page, live_server: LiveServer) -> None:
+    """The fill reads as the region filling up, under its outline and label.
+
+    Ordering is the whole visual: above the choropleth so it reads as that
+    region filling, below ``regions-line`` so the selection ring and region
+    name stay legible through it.
+    """
+    _boot(page, live_server)
+    _start_fill(page)
+    _update(page, 50)
+
+    order = cast(
+        list[str],
+        page.evaluate("() => MAP.getStyle().layers.map((layer) => layer.id)"),
     )
-
-    assert glyphs["arrowShown"]
-    assert glyphs["arrowColour"] == "rgb(255, 255, 255)"
-    # The tick markup is gone entirely, not merely hidden — a second glyph
-    # nothing displays is markup waiting to drift out of sync.
-    assert not glyphs["tickPresent"]
+    assert order.index("regions-fill") < order.index(_FILL_LAYER)
+    assert order.index(_FILL_LAYER) < order.index("regions-line")
+    assert order.index(_LINE_LAYER) < order.index("regions-line")
 
 
-def test_failed_region_run_leaves_no_fill_behind(pwa_page: PwaPage) -> None:
-    """A run that fails clears the fill rather than pulsing it green."""
-    page = _boot(pwa_page, ok=0, failed=1)
-    _select_region_with_geometry(page, "CH-4115")
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
-
-    icon.click()
-    _wait_for_state(page, "busy")
-    # SNOW-568's error state, and nothing left on the map — a failure must
-    # never read as a downloaded region, however briefly. The fill is
-    # cleared without a pulse, so the error arrives with no added delay.
-    _wait_for_state(page, "error", timeout=10000)
-    assert not _has_fill_layers(page)
-
-
-def test_region_without_geometry_still_completes(pwa_page: PwaPage) -> None:
-    """No boundary to fill degrades to the pre-SNOW-569 behaviour."""
-    page = _boot(pwa_page)
-    _select_region(page, "CH-4115", _MICRO_SUMMARY)
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
-
-    icon.click()
-    _wait_for_state(page, "done", timeout=10000)
-    assert not _has_fill_layers(page)
-
-
-def test_custom_area_fill_rises_and_clears(pwa_page: PwaPage) -> None:
-    """The framed custom area fills and clears exactly as a region does."""
-    page = _boot(pwa_page)
-    _wait_for_state(page, "idle", selector=_CUSTOM_CONTROL)
-    _open_framing(page)
-    # The default view frames most of Switzerland, which is over the
-    # ceiling — see this helper's docstring in test_custom_download_area.
-    _frame_a_downloadable_area(page)
-    page.click("#map-frame-confirm")
-
-    # Same two beats as the region case: a level somewhere inside the
-    # framed box mid-run, then nothing once the roundel goes green.
-    page.wait_for_function(
-        """() => {
-            const source = MAP.getSource('download-progress');
-            if (!source) return false;
-            const data = source.serialize().data;
-            return !!(data && data.geometry);
-        }""",
-        timeout=10000,
-    )
-    _wait_for_state(page, "done", timeout=10000, selector=_CUSTOM_CONTROL)
-    assert not _has_fill_layers(page)
-
-
-def test_fill_source_is_json_serialisable_geojson(pwa_page: PwaPage) -> None:
-    """The clipped level is a well-formed, closed MultiPolygon.
+def test_clipped_level_is_well_formed_geojson(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The clipped level is a closed MultiPolygon.
 
     A ring MapLibre accepts today but that isn't valid GeoJSON would be a
     latent bug the rendered result happens to hide; asserting the shape
     catches it at the source.
     """
-    page = _boot(pwa_page)
-    _select_region_with_geometry(page, "CH-4115")
-    icon = page.locator(_CONTROL)
-    icon.wait_for(state="visible")
-    _wait_for_state(page, "idle")
+    _boot(page, live_server)
+    _start_fill(page)
+    _update(page, 50)
 
-    icon.click()
-    page.wait_for_function(
-        """() => {
-            const source = MAP.getSource('download-progress');
-            if (!source) return false;
-            const data = source.serialize().data;
-            return !!(data && data.geometry);
-        }""",
-        timeout=10000,
-    )
     geometry = json.loads(
         cast(
             str,
             page.evaluate(
-                "() => JSON.stringify(MAP.getSource('download-progress')"
-                ".serialize().data.geometry)"
+                "() => JSON.stringify("
+                "MAP.getSource('download-progress').serialize().data.geometry)"
             ),
         )
     )

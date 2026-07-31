@@ -326,7 +326,7 @@ try {
 // swapping to a tick. Shell JS/CSS bytes changed (map.js,
 // basemap_download_core.js, map.css, both _map_*download_control.html
 // partials).
-const CACHE_VERSION = 'snowdesk-shell-v88';
+const CACHE_VERSION = 'snowdesk-shell-v89';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

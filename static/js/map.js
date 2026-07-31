@@ -416,7 +416,12 @@ function createDownloadProgressFill(geometry) {
     try {
       const existing = MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID);
       if (existing) return existing;
-      if (!MAP.isStyleLoaded()) return null;
+      // Deliberately NOT gated on map.isStyleLoaded(). That reports
+      // Style.loaded(), which additionally requires every SOURCE to have
+      // loaded — so a basemap whose tiles are slow, or whose origin is
+      // unreachable, holds it false indefinitely and would suppress the
+      // fill for the whole run. addSource needs only a parsed style, and
+      // the catch below already covers a style that can't take one.
       MAP.addSource(DOWNLOAD_PROGRESS_SOURCE_ID, { type: 'geojson', data: EMPTY });
       // Sits directly above the choropleth so it reads as that region
       // filling up, and below every outline and label so the selection
