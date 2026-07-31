@@ -417,6 +417,18 @@
     display: none;
 }
 
+/* SNOW-570: an overlay row that carries no sync dot at all (the
+   "Downloaded areas" layer — see _map_embed.html for why it has none) still
+   has to line up with the rows that do. An empty box the dot's own size,
+   not a dot: it makes no claim about anything, it just holds the space. */
+.basemap-menu-item--no-sync::before {
+    content: "";
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+}
+
 /* SNOW-505: basemap sync-status caption row — a non-interactive li carrying
    its own dot plus honest "browsed areas only" copy, distinct from the
    clickable .basemap-menu-item rows above/below it. */

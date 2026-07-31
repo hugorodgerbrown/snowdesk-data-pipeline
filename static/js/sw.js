@@ -326,6 +326,10 @@ try {
 // swapping to a tick. Shell JS/CSS bytes changed (map.js,
 // basemap_download_core.js, map.css, both _map_*download_control.html
 // partials).
+// SNOW-570: a "Downloaded areas" layers-menu overlay (off by default) rings
+// every area held in the pinned basemap cache, probed from real Cache
+// Storage rather than a stored flag. Shell JS/HTML/CSS bytes changed
+// (map.js, basemap_download_core.js, map.css, _map_embed.html).
 const CACHE_VERSION = 'snowdesk-shell-v89';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin

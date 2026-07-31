@@ -41,6 +41,12 @@
  * line, drops everything above it, and always hands back rings a fill
  * layer can render.
  *
+ * SNOW-570 adds ``downloadedIds`` — the pure half of the "Downloaded
+ * areas" overlay. Its load-bearing properties are that it agrees with
+ * ``centreTileURL`` (the roundel's own probe key, so the overlay and the
+ * roundel can never disagree about one region) and that it is per-template,
+ * which is what makes the overlay change when the basemap does.
+ *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is
  * also `self` in a window context, so importing it for side effects is
@@ -394,6 +400,78 @@ describe('hasStorageHeadroom', () => {
   it('allows a download with no meaningful size', () => {
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, 0)).toBe(true);
     expect(core.hasStorageHeadroom({ quota: 100 * MB, usage: 99 * MB }, NaN)).toBe(true);
+  });
+});
+
+/*
+ * SNOW-570 — the "which areas are downloaded?" overlay's pure half. The
+ * caller does one cache.keys() pass; this turns that URL set into an answer
+ * for every area at once.
+ */
+describe('downloadedIds', () => {
+  const TILE = (z, x, y) => `https://tiles.example.com/${z}/${x}/${y}.pbf`;
+  const ENTRY = (id, z, x, y) => ({ id, centre_tile: { z, x, y } });
+
+  it('reports only the entries whose centre tile is cached', () => {
+    const entries = [ENTRY('CH-1', 14, 1, 1), ENTRY('CH-2', 14, 2, 2)];
+    const cached = new Set([TILE(14, 1, 1)]);
+    expect(core.downloadedIds(TEMPLATE, entries, cached)).toEqual(['CH-1']);
+  });
+
+  it('preserves input order', () => {
+    const entries = [ENTRY('a', 14, 1, 1), ENTRY('b', 14, 2, 2), ENTRY('c', 14, 3, 3)];
+    const cached = new Set([TILE(14, 3, 3), TILE(14, 1, 1)]);
+    expect(core.downloadedIds(TEMPLATE, entries, cached)).toEqual(['a', 'c']);
+  });
+
+  it('accepts an array as well as a Set', () => {
+    const entries = [ENTRY('a', 14, 1, 1)];
+    expect(core.downloadedIds(TEMPLATE, entries, [TILE(14, 1, 1)])).toEqual(['a']);
+  });
+
+  it('skips an entry with no centre_tile rather than claiming it', () => {
+    // A region whose blob was never computed carries no centre_tile. It is
+    // not downloaded — but it must also never be reported as downloaded by
+    // accident, which a URL built from an undefined tile could do.
+    const entries = [{ id: 'no-blob' }, ENTRY('a', 14, 1, 1)];
+    expect(core.downloadedIds(TEMPLATE, entries, [TILE(14, 1, 1)])).toEqual(['a']);
+  });
+
+  it('is empty when nothing is cached', () => {
+    const entries = [ENTRY('a', 14, 1, 1), ENTRY('b', 14, 2, 2)];
+    expect(core.downloadedIds(TEMPLATE, entries, new Set())).toEqual([]);
+  });
+
+  it('is per-basemap: the same cache answers differently per template', () => {
+    // The whole reason the overlay changes when you switch basemap. Tiles
+    // cached from one origin say nothing about another's.
+    const entries = [ENTRY('a', 14, 1, 1)];
+    const cached = new Set([TILE(14, 1, 1)]);
+    expect(core.downloadedIds(TEMPLATE, entries, cached)).toEqual(['a']);
+    expect(
+      core.downloadedIds('https://other.example.com/{z}/{x}/{y}.pbf', entries, cached),
+    ).toEqual([]);
+  });
+
+  it('returns [] for a falsy template or entries', () => {
+    const entries = [ENTRY('a', 14, 1, 1)];
+    expect(core.downloadedIds('', entries, [TILE(14, 1, 1)])).toEqual([]);
+    expect(core.downloadedIds(null, entries, [TILE(14, 1, 1)])).toEqual([]);
+    expect(core.downloadedIds(TEMPLATE, null, [TILE(14, 1, 1)])).toEqual([]);
+  });
+
+  it('tolerates a null entry in the list', () => {
+    expect(core.downloadedIds(TEMPLATE, [null, ENTRY('a', 14, 1, 1)], [TILE(14, 1, 1)]))
+      .toEqual(['a']);
+  });
+
+  it('agrees with centreTileURL, which is the roundel probe key', () => {
+    // The overlay and the per-region roundel must never disagree about
+    // whether one region is downloaded. Both derive the key the same way;
+    // asserting it here is what keeps that true if either moves.
+    const entry = ENTRY('a', 14, 8501, 5820);
+    const url = core.centreTileURL(TEMPLATE, entry);
+    expect(core.downloadedIds(TEMPLATE, [entry], [url])).toEqual(['a']);
   });
 });
 

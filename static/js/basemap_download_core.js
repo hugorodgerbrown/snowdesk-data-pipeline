@@ -126,6 +126,11 @@
  *   clipPolygonBelow(geometry, lat)
  *     ``geometry`` clipped to the half-plane at or south of ``lat``, as a
  *     MultiPolygon, or ``null`` when nothing survives.
+ *   downloadedIds(template, entries, cachedURLs)
+ *     SNOW-570: which of ``entries`` (``{id, centre_tile}``) have their
+ *     centre tile in ``cachedURLs`` — the pure half of the "which areas
+ *     are downloaded?" overlay, so the caller does ONE ``cache.keys()``
+ *     pass rather than a ``cache.match()`` per region.
  */
 
 (function () {
@@ -635,6 +640,45 @@
     return clipped.length ? { type: 'MultiPolygon', coordinates: clipped } : null;
   }
 
+  /**
+   * Which of ``entries`` are present in ``cachedURLs`` — the set-membership
+   * half of the "which areas are downloaded?" question (SNOW-570).
+   *
+   * Split out as a pure function because the expensive, impure half is a
+   * single ``cache.keys()`` pass the caller does once: probing N regions
+   * with N ``cache.match()`` calls (the per-region roundel's approach,
+   * which only ever asks about one) does not scale to every region on
+   * screen. Hand that one pass's URLs in here and the answer for the whole
+   * map falls out with no further I/O.
+   *
+   * Membership of the download's CENTRE tile is the same proxy the
+   * roundel's done-probe uses, and carries the same fidelity limit: an
+   * area whose download partly failed, or has been partly evicted, still
+   * reads as downloaded while that one tile survives. Deliberate — the two
+   * answers must agree, and an honest full-coverage check would mean
+   * probing every tile of every region.
+   *
+   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
+   *   the ACTIVE basemap's, which is what makes the answer per-basemap.
+   * @param {Array<{id: string, centre_tile?: {z: number, x: number,
+   *   y: number}}>} entries One per candidate area. An entry with no
+   *   ``centre_tile`` is skipped, never reported as downloaded.
+   * @param {Set<string> | string[]} cachedURLs The pinned cache's URLs.
+   * @returns {string[]} The ``id`` of every entry whose centre tile is
+   *   cached, in input order. ``[]`` for a falsy template.
+   */
+  function downloadedIds(template, entries, cachedURLs) {
+    if (!template || !entries) return [];
+    const cached = cachedURLs instanceof Set ? cachedURLs : new Set(cachedURLs || []);
+    const ids = [];
+    for (const entry of entries) {
+      if (!entry) continue;
+      const url = centreTileURL(template, entry);
+      if (url && cached.has(url)) ids.push(entry.id);
+    }
+    return ids;
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
@@ -649,6 +693,7 @@
     bboxPolygon: bboxPolygon,
     fillLevelLatitude: fillLevelLatitude,
     clipPolygonBelow: clipPolygonBelow,
+    downloadedIds: downloadedIds,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,

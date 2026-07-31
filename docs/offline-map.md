@@ -764,6 +764,61 @@ overlay closes: the roundel itself carries the outcome, no toast.
 Offline-integrity mirrors the per-region control exactly: neither opening
 framing nor confirming a download is allowed while offline.
 
+### "Downloaded areas" overlay (SNOW-570)
+
+The two roundels answer "is *this* area downloaded?" one area at a time.
+The **Downloaded areas** overlay answers it for the whole map: a dashed
+green ring — the sync dots' green, because it is a view onto the same
+cache — around every loaded micro-region whose download is present, plus
+the saved custom area. It is a layers-menu row (`data-overlay-key=
+"downloaded"`), **off by default**: the map already carries the
+choropleth, the selection ring, the region tiers and the pins, and a
+permanent extra outline over all of that is crowding for an answer most
+sessions never ask.
+
+Two layers, both installed with the regions source (not lazy) so a basemap
+swap rebuilds them with everything else: `regions-line-downloaded`, whose
+`line-opacity` keys off a `downloaded` feature-state — the same
+paint-driven-visibility trick `regions-line-selected` uses, because
+MapLibre rejects feature-state inside a layer filter — and
+`downloaded-area-line` over its own one-feature `downloaded-area` source.
+
+**Probed, never stored.** `refreshDownloadedOverlay` (`static/js/map.js`)
+re-derives the answer from real `BASEMAP_PINNED_CACHE` contents every
+time, the same invariant the roundels and the sync dots hold. A flag
+written at download time would be exactly the divergence the cache-state
+dashboard exists to prevent: eviction, a basemap swap and Clear Site Data
+all change the answer without passing through the download path.
+
+**One `cache.keys()` pass.** The roundel probes one region and can afford
+`cache.match()`; this asks about every loaded region, so it takes a single
+pass over the cache's URLs and answers the whole map from that set
+(`basemap_download_core.js`'s `downloadedIds`). Never call it per frame —
+the pinned cache holds thousands of entries. It refreshes when the overlay
+is switched on, on `snowdesk:basemap-changed`, on
+`snowdesk:regions-loaded`, when a download settles (both controls call
+`window.pwaDownloadedOverlay?.refresh()` beside their existing
+`pwaLayerSyncStatus.refresh()`), and on `visibilitychange` — tiles can be
+evicted while the tab is backgrounded, and a ring around an area that is
+no longer cached is worse than no ring.
+
+**Per-basemap**, like the roundels: the probe keys off the active
+basemap's tile template, so downloading on Standard and switching to
+Swisstopo empties the overlay. Those tiles genuinely are not cached.
+
+The row deliberately carries **no sync dot**. Every other row's dot says
+whether that row's own feed is available offline; this row has no fetched
+data — it is derived from the cache the dots describe, so a dot would
+either sit permanently green (saying nothing) or make a second, subtly
+different claim about the same cache. `.basemap-menu-item--no-sync`
+(`static/css/map.css`) holds the dot's space so the row still lines up.
+
+Fidelity limit, inherited deliberately from the roundel's done-probe: the
+centre tile is a proxy for the whole download, so an area whose download
+partly failed or has been partly evicted still reads as downloaded while
+that one tile survives. The two answers must agree, and an honest
+full-coverage check would mean probing every tile of every region.
+
 ## Offline gating of the layers menu
 
 The layers popover (`#basemap-menu`) is a live cache-state dashboard:

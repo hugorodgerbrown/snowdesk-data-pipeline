@@ -351,6 +351,31 @@ Optional context:
                         {% trans "Community reports" %}
                     </button>
                 </li>
+                {# SNOW-570: outlines every area held in the pinned basemap  #}
+                {# cache — the regions and the one custom area you have      #}
+                {# downloaded. Off by default: the map already carries the   #}
+                {# choropleth, the selection ring, the region tiers and the  #}
+                {# pins, and a permanent extra outline over all of that is   #}
+                {# crowding for an answer most sessions don't need.          #}
+                {#                                                           #}
+                {# Deliberately NO sync dot. Every other row's dot says      #}
+                {# whether THAT row's data is available offline; this row    #}
+                {# has no fetched data of its own — it is derived from the   #}
+                {# cache the dots describe, so a dot here would either be    #}
+                {# permanently green (saying nothing) or a second, subtly    #}
+                {# different claim about the same cache. The --no-sync class #}
+                {# keeps it aligned with rows whose dot has resolved.        #}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay basemap-menu-item--no-sync"
+                        data-overlay-key="downloaded"
+                        aria-checked="false"
+                    >
+                        {% trans "Downloaded areas" %}
+                    </button>
+                </li>
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
