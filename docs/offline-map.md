@@ -579,32 +579,49 @@ every pixel the sheet does not, so the two are physically adjacent rather
 than two objects floating apart, and the full-bleed sheet covers the season
 scrubber beneath it.
 
-**Two regimes, decided by the ceiling.** `_updateSelection` runs once per
-animation frame while the map moves, and which of two regimes it is in
-explains everything about how the frame behaves.
+**Zoom pivots on the frame, not the pointer.** For as long as framing is
+open, `_anchorZoomOnTheFrame` does two things: `setPadding` tells the map
+its centre is the *frame's* centre (the frame area is only the space left
+between the instruction bar and the CTA sheet, so the two differ), and the
+zoom handlers are re-enabled with `around: 'center'`. Note that
+`scrollZoom.enable` no-ops when the handler is already enabled — it must be
+disabled first or the option is accepted and silently ignored. Double-click
+zoom has no centre-anchored mode and is disabled for the duration.
+
+Without this, MapLibre pivots a wheel or pinch zoom on the cursor. With a
+ground-held selection that is visibly wrong: zoom out with the pointer off
+to one side and the frame, still correctly glued to its terrain, sails
+towards that corner and has to travel back on the way in (SNOW-567).
+
+**Two regimes, decided by the ceiling.** `_updateSelection` runs on every
+`move`, and which regime it is in explains how the frame behaves.
 
 *Under the ceiling*, the frame is a viewport-anchored reticle:
 `.map-frame-rect` fills `.map-frame-area` (which owns the gutter) under
 stylesheet control, no geometry is written, and the selection is whatever
-ground is beneath it — so both pan and zoom change the selection.
+ground is beneath it.
 
-*Once the ceiling caps the area*, the selection **locks to the ground**
-(`lockedBbox`) and the frame becomes a projection of it. Zooming then
-recomputes nothing at all: the same bbox covers the same tiles, so the
-frame merely tracks its own terrain — scaling with the map, as any map
-feature does — while the estimate holds still. Panning is what re-aims a
-locked selection, moving it back under the frame at the size it already
-has. A pan is told from a zoom by comparing **both** zoom and centre
-against the previous frame: a wheel zoom is anchored at the cursor, so it
-moves the centre too, and a zoom-only check reads the settled gesture as a
-pan and yanks the selection back (SNOW-567).
+*Once the ceiling caps the area*, the selection holds a fixed ground
+**size** (`lockedSize` — a longitude span and a Web Mercator y span, not
+degrees of latitude, which are not linear in the projection) and is
+re-centred on whatever the frame is over. The frame is then drawn where
+that box projects to.
 
-Locking is what stops zoom moving the selection, and nothing short of it
-would. A viewport-anchored frame holding a fixed maximum ground area has a
-screen size proportional to `2**zoom` — the same reason a scale bar changes
-length — so it *must* resize as you zoom; and because the wheel zoom is
-cursor-anchored, re-deriving the box from the viewport each frame also
-walked the selection across the ground.
+There is deliberately **no pan-versus-zoom branch**. Because zoom pivots on
+the frame, a zoom cannot change the ground beneath it, so re-deriving the
+selection from that centre every update is a no-op through a whole zoom
+gesture — same box, same tiles, an estimate that does not so much as
+flicker — and moves the selection only when a pan (or the map clamping
+against its `maxBounds`) genuinely puts different ground under the frame.
+Earlier attempts to tell the two gestures apart by comparing zoom and
+centre against the previous frame did not survive contact with a real
+inertial gesture: its tail has frames where the zoom has plateaued while
+the centre is still settling, which read as a pan and yanked the selection
+back mid-zoom.
+
+Holding the *size* rather than the box also matters: re-deriving from a
+stored footprint has no project/unproject round trip whose rounding could
+accumulate over the hundreds of updates a long gesture produces.
 
 The cap threshold is `budgetScaleForBBox`
 (`static/js/basemap_download_core.js`), which solves for the largest scale
@@ -613,7 +630,26 @@ shrink loop against `buildBlob`, whose floored tile indices make its count a
 *step* function of the box — so the size that search returned moved with the
 box's alignment to the tile grid, and the frame shimmered as the map panned
 (SNOW-566). Lock and release share this one threshold, and at it the locked
-bbox and the natural frame coincide, so crossing it is continuous.
+box and the natural frame coincide, so crossing it is continuous.
+
+**Drawn in the same frame the canvas moves in.** The geometry write happens
+synchronously inside the `move` handler, which MapLibre fires from its own
+render loop, so it composites with the very frame that moved the map.
+Deferring it to a `requestAnimationFrame` instead — the obvious way to
+coalesce a burst of events — put the frame one frame behind the canvas:
+measured at up to 12px of positional lag and 15px of size lag mid-gesture,
+against 0.2px once settled. Only a test that samples *during* the animation
+catches that; every test that waited for the map to stop passed throughout.
+For the same reason the geometry is written in **sub-pixel** CSS, so it
+cannot snap against a canvas that moves in sub-pixel steps.
+
+That synchronous path must stay free of layout *reads*. The gutter box is
+measured once and cached — in map-container coordinates, not viewport ones,
+so nothing that shifts the map within the page can desync it — and a
+`ResizeObserver` on `.map-frame-area` both drops the cache and re-places the
+frame when the area reflows (the readout inside the CTA sheet changes text
+as the user pans, which changes the sheet's height; dropping the cache
+alone left the frame offset by ~18px until the next map move).
 
 Geometry is applied and cleared as inline `width`/`height` plus a
 `transform` offset (a transform so moving the frame costs no layout — it

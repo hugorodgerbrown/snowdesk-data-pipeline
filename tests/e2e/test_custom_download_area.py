@@ -34,9 +34,10 @@ screenshot would depend on frame timing this harness deliberately avoids.
 
 Covers: opening framing dims the map and shows the frame; the readout
 tracks the frame as the map moves; a ceiling-capped frame holds its size
-while the map pans beneath it (SNOW-566) and stays locked to the same
-ground while it zooms, releasing again on the way back in (SNOW-567); a
-confirmed download warms with
+while the map pans beneath it (SNOW-566); and, from SNOW-567, that a
+capped frame stays over the same ground while zooming, never lags the
+canvas mid-gesture, stays centred however far off the pointer is, and
+releases again on the way back in. A confirmed download warms with
 ``pinned: true``, reaches ``done``, and notifies the layers sync
 dashboard; reload + click the (probed) green roundel re-opens framing at
 the saved area; moving the frame then Cancelling leaves the saved area
@@ -114,12 +115,11 @@ def _readout_text(page: Page) -> str:
 def _settle_readout(page: Page) -> None:
     """Wait for the frame's size and readout to catch up with the map.
 
-    The ``move`` handler coalesces onto ``requestAnimationFrame`` (SNOW-566
-    — MapLibre fires ``move`` several times per painted frame, and each one
-    could otherwise re-measure and rewrite the frame mid-gesture), so the
-    update lands on the frame *after* whichever move triggered it. Two
-    nested rAFs therefore guarantee it has run: the first shares the frame
-    the scheduled callback runs on, the second is strictly later.
+    The ``move`` handler runs synchronously now (SNOW-567 — deferring it a
+    frame is what left the frame lagging the canvas), so this is really
+    waiting for the map's own animation to reach the frame it is on. Two
+    nested rAFs cover that: the first shares the frame MapLibre is
+    rendering, the second is strictly later.
     """
     page.evaluate(
         "() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))"
@@ -234,6 +234,22 @@ def _move_the_frame(page: Page) -> None:
         }"""
     )
     _settle_readout(page)
+
+
+def _ground_under_frame(page: Page) -> tuple[float, float]:
+    """The (lng, lat) the centre of the framing rectangle sits over."""
+    point = page.evaluate(
+        """() => {
+            const a = document.getElementById('map-frame-area').getBoundingClientRect();
+            const m = MAP.getContainer().getBoundingClientRect();
+            const p = MAP.unproject([
+                a.left + a.width / 2 - m.left,
+                a.top + a.height / 2 - m.top,
+            ]);
+            return [p.lng, p.lat];
+        }"""
+    )
+    return (float(point[0]), float(point[1]))
 
 
 def _frame_width(page: Page) -> float:
@@ -435,22 +451,19 @@ def test_zooming_a_locked_frame_leaves_it_on_the_same_ground(
     )
     readout_before = _readout_text(page)
 
-    for delta in (-0.4, -0.9, -1.3, 0.6):
-        # Anchored off-centre, because that is what a wheel zoom is: the
-        # ground under the cursor stays put and the map centre moves. A
-        # centre-anchored MAP.setZoom would leave the viewport centre over
-        # the same ground and so could not tell a locked selection apart
-        # from a viewport-derived one at all.
+    # Kept inside the range where the map is not clamped by its own
+    # maxBounds. Past roughly z5.9 the visible longitude span exceeds those
+    # bounds, the map slides east or west to stay inside them, and the
+    # ground under the frame genuinely changes — at which point the
+    # selection follows the frame by design and "same ground" is the wrong
+    # assertion. That case has its own test.
+    for delta in (-0.3, -0.5, 0.4):
+        # Centre-anchored, which is what framing makes every zoom: the map's
+        # centre is the frame's centre for the duration
+        # (_anchorZoomOnTheFrame), so this is the gesture the user actually
+        # produces, pointer position notwithstanding.
         page.evaluate(
-            """(d) => {
-                const c = MAP.getContainer().getBoundingClientRect();
-                MAP.easeTo({
-                    zoom: MAP.getZoom() + d,
-                    around: MAP.unproject([c.width * 0.22, c.height * 0.7]),
-                    duration: 0,
-                });
-            }""",
-            delta,
+            "(d) => MAP.easeTo({zoom: MAP.getZoom() + d, duration: 0})", delta
         )
         _settle_readout(page)
         drift = page.evaluate(
@@ -521,9 +534,16 @@ def test_a_real_wheel_zoom_never_moves_the_estimate(pwa_page: PwaPage) -> None:
     # centre-anchored one cannot reproduce the defect at all.
     page.mouse.move(box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.65)
 
+    ground_before = _ground_under_frame(page)
     zoom_before = float(page.evaluate("() => MAP.getZoom()"))
     seen = {_readout_text(page)}
-    for _ in range(6):
+    # Four steps, not more: past roughly z5.9 the map clamps against its own
+    # maxBounds, which genuinely puts different ground under the frame — the
+    # selection then follows the frame, as it should, and the estimate moves
+    # with it. That case is covered by
+    # test_the_frame_stays_centred_however_far_off_the_pointer_is; this test
+    # is about the ordinary range where the ground does not move.
+    for _ in range(4):
         page.mouse.wheel(0, 120)
         page.wait_for_timeout(120)
         _settle_readout(page)
@@ -534,10 +554,17 @@ def test_a_real_wheel_zoom_never_moves_the_estimate(pwa_page: PwaPage) -> None:
     _settle_readout(page)
     seen.add(_readout_text(page))
     zoom_after = float(page.evaluate("() => MAP.getZoom()"))
+    ground_after = _ground_under_frame(page)
 
     assert abs(zoom_after - zoom_before) > 0.2, (
         f"the wheel never zoomed the map ({zoom_before} → {zoom_after}), "
         "so this test would pass vacuously"
+    )
+    # State the premise rather than assuming it: a constant estimate only
+    # means anything while the frame is over the same ground.
+    assert max(abs(a - b) for a, b in zip(ground_before, ground_after)) < 1e-6, (
+        f"the ground under the frame moved ({ground_before} → {ground_after}), "
+        "so a constant estimate would prove nothing"
     )
     assert len(seen) == 1, f"the estimate moved during a wheel zoom: {sorted(seen)}"
 
@@ -605,12 +632,11 @@ def test_the_frame_never_lags_the_canvas_mid_zoom(pwa_page: PwaPage) -> None:
                 });
             };
             MAP.on('render', sample);
-            const c = MAP.getContainer().getBoundingClientRect();
-            MAP.easeTo({
-                zoom: MAP.getZoom() - 2,
-                around: MAP.unproject([c.width * 0.25, c.height * 0.7]),
-                duration: 900,
-            });
+            // One level, not two: two reaches the zoom at which the map
+            // clamps against its own maxBounds, which slides the ground
+            // under the frame and re-aims the selection — real behaviour,
+            // but it would show up here as "lag" it is not.
+            MAP.easeTo({ zoom: MAP.getZoom() - 1, duration: 900 });
             await new Promise((r) => MAP.once('moveend', r));
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             MAP.off('render', sample);
@@ -628,12 +654,68 @@ def test_the_frame_never_lags_the_canvas_mid_zoom(pwa_page: PwaPage) -> None:
         }"""
     )
 
-    assert result["frames"] > 20, (
+    # Low bar on purpose: this only has to prove the ease actually animated
+    # rather than jumping. A loaded CI runner renders the same 900ms ease in
+    # far fewer frames than a desktop does — 14 of them once, against a
+    # threshold of 20 tuned on a laptop, which failed the build for no
+    # defect at all.
+    assert result["frames"] >= 6, (
         f"only {result['frames']} frames sampled — the eased zoom did not "
-        "run, so this test would pass vacuously"
+        "animate, so this test would pass vacuously"
     )
     assert result["offsetLag"] <= 1, f"the frame lagged the canvas: {result}"
     assert result["sizeLag"] <= 1, f"the frame's size lagged the canvas: {result}"
+
+
+def test_the_frame_stays_centred_however_far_off_the_pointer_is(
+    pwa_page: PwaPage,
+) -> None:
+    """Framing pivots every zoom on the frame, not on the mouse pointer.
+
+    MapLibre anchors a wheel zoom at the cursor. With a ground-locked
+    selection that reads as a defect: zoom out with the pointer off to one
+    side and the frame, still correctly glued to its terrain, sails towards
+    that corner and then has to travel back on the way in. Framing
+    therefore re-anchors zoom to the frame's own centre for its duration
+    (``setPadding`` plus ``around: 'center'``).
+
+    The pointer is parked in a corner precisely so a pointer-anchored zoom
+    would fail this loudly.
+    """
+    page, _worker = _boot(pwa_page)
+    _open_framing(page)
+    _zoom_out_until_capped(page)
+    _settle_readout(page)
+
+    area = page.locator("#map-frame-area").bounding_box()
+    box = page.locator("#map").bounding_box()
+    assert area is not None and box is not None
+    page.mouse.move(box["x"] + box["width"] * 0.12, box["y"] + box["height"] * 0.85)
+
+    offsets = []
+    for _ in range(6):
+        page.mouse.wheel(0, 120)
+        page.wait_for_timeout(120)
+        _settle_readout(page)
+        frame = page.locator("#map-frame-rect").bounding_box()
+        assert frame is not None
+        offsets.append(
+            (
+                abs(
+                    (frame["x"] + frame["width"] / 2) - (area["x"] + area["width"] / 2)
+                ),
+                abs(
+                    (frame["y"] + frame["height"] / 2)
+                    - (area["y"] + area["height"] / 2)
+                ),
+            )
+        )
+
+    worst = max(max(pair) for pair in offsets)
+    assert worst <= 2, (
+        f"the frame drifted {worst:.1f}px off the centre of its area while "
+        f"zooming with the pointer in a corner: {offsets}"
+    )
 
 
 def test_zooming_back_in_releases_the_ground_lock(pwa_page: PwaPage) -> None:

@@ -320,7 +320,7 @@ try {
 // (sw.js, sw_register.js, map.js, basemap_cache_core.js,
 // basemap_download_core.js, map.css, _map_embed.html, both
 // _map_*download_control.html partials).
-const CACHE_VERSION = 'snowdesk-shell-v86';
+const CACHE_VERSION = 'snowdesk-shell-v87';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

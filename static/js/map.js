@@ -5857,34 +5857,25 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // it did before the frame could shrink.
   const MIN_FRAME_SCALE = 0.08;
 
-  // SNOW-567: the ground-locked selection while the ceiling is capping the
-  // area — [west, south, east, north], or null when the natural frame fits
-  // under the ceiling and no cap is needed.
+  // SNOW-567: while the ceiling caps the area, the selection holds a fixed
+  // ground SIZE — {lon, merc}, a longitude span and a Web Mercator y span —
+  // and is re-centred on whatever the frame is over. Null when the natural
+  // frame fits under the ceiling and no cap is needed.
   //
-  // Locking is what stops zoom moving the selection. A viewport-anchored
-  // frame holding a fixed maximum ground area has a screen size
-  // proportional to 2**zoom (the same reason a scale bar changes length),
-  // so it MUST resize as you zoom — and because MapLibre's wheel zoom is
-  // anchored at the cursor rather than the viewport centre, re-deriving it
-  // from the viewport each frame also walked the selection across the
-  // ground. Locking the bbox instead makes the frame a projection of a
-  // fixed piece of ground: it sits still over the terrain, scales with the
-  // map like any map feature, and needs no recomputation at all while
-  // zooming — the tile count of an unchanged bbox is unchanged, so even
-  // the MB readout holds still.
-  let lockedBbox = null;
+  // Holding the size rather than the whole box is what makes the frame
+  // behave like a layer on the map. A viewport-anchored frame holding a
+  // fixed maximum ground area has a screen size proportional to 2**zoom
+  // (the same reason a scale bar changes length), so it MUST resize as you
+  // zoom; deriving it from a fixed footprint instead makes the frame a
+  // projection of a fixed piece of ground, so it tracks the terrain and
+  // needs no recomputation at all while zooming — an unchanged box covers
+  // an unchanged set of tiles, so even the MB readout holds still.
+  let lockedSize = null;
 
-  // The view as of the previous update — {zoom, lng, lat} — or null when
-  // framing is closed. Used only to tell a pan from a zoom: a pan re-aims
-  // the locked selection, a zoom leaves it alone.
-  //
-  // BOTH axes are needed, not just the zoom. A wheel zoom is anchored at
-  // the cursor, so it moves the map's centre as well as its zoom; once it
-  // settles, any further 'move' carrying the same zoom would look exactly
-  // like a pan against a zoom-only check, and re-aiming there yanks the
-  // selection back under the frame — the very drift this feature exists to
-  // stop (caught by test_zooming_a_locked_frame_leaves_it_on_the_same_ground).
-  let lastView = null;
+  // The last box that produced a readout, so an unchanged one can skip the
+  // tile math. Purely a memo of lockedSize projected onto the current
+  // frame centre — never the source of truth for the selection's size.
+  let lockedBbox = null;
 
   /**
    * The on-screen box (viewport pixels) that `bbox` currently projects to.
@@ -5961,20 +5952,48 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Move `bbox` so its centre sits at `centre`, keeping its size in
-   * projected (screen) terms exactly. Used to re-aim the locked selection
-   * on a pan: the caller has established that the zoom is unchanged, so
-   * re-deriving the box from its own current screen size leaves that size
-   * bit-identical while putting it back under the frame.
+   * `bbox`'s size as a ground footprint that is independent of zoom: a
+   * longitude span, and a span in Web Mercator y (NOT degrees of latitude,
+   * which are not linear in the projection).
    *
    * @param {[number, number, number, number]} bbox
-   * @param {{cx: number, cy: number}} centre - Viewport pixels.
+   * @returns {{lon: number, merc: number}}
+   */
+  function _groundSizeOf(bbox) {
+    const [west, south, east, north] = bbox;
+    return {
+      lon: east - west,
+      merc:
+        maplibregl.MercatorCoordinate.fromLngLat({ lng: west, lat: south }).y -
+        maplibregl.MercatorCoordinate.fromLngLat({ lng: west, lat: north }).y,
+    };
+  }
+
+  /**
+   * The bbox of ground size `size` centred on whatever the frame is over
+   * right now.
+   *
+   * Holding the SIZE and re-deriving the centre each time — rather than
+   * translating the previous bbox — is what keeps this stable: there is no
+   * project/unproject round trip whose rounding could accumulate over the
+   * hundreds of updates a long gesture produces.
+   *
+   * @param {{lon: number, merc: number}} size
+   * @param {{cx: number, cy: number}} frameCentre - Map-container pixels.
    * @returns {[number, number, number, number] | null}
    */
-  function _recentreBBox(bbox, centre) {
-    const screenBox = _screenBoxForBBox(bbox);
-    if (!screenBox) return null;
-    return _bboxForBox(centre.cx, centre.cy, screenBox.width, screenBox.height);
+  function _bboxOfSizeUnderFrame(size, frameCentre) {
+    if (!MAP || typeof MAP.unproject !== 'function') return null;
+    const centre = MAP.unproject([frameCentre.cx, frameCentre.cy]);
+    const centreMerc = maplibregl.MercatorCoordinate.fromLngLat(centre);
+    const halfMerc = size.merc / 2;
+    // Clamp to the projection's valid range: a box hanging off the top or
+    // bottom of the Mercator world has no latitude to convert back to.
+    const northY = Math.max(0, centreMerc.y - halfMerc);
+    const southY = Math.min(1, centreMerc.y + halfMerc);
+    const north = new maplibregl.MercatorCoordinate(centreMerc.x, northY, 0).toLngLat().lat;
+    const south = new maplibregl.MercatorCoordinate(centreMerc.x, southY, 0).toLngLat().lat;
+    return [centre.lng - size.lon / 2, south, centre.lng + size.lon / 2, north];
   }
 
   /**
@@ -5982,32 +6001,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * the selection — or null when it is unchanged and there is nothing for
    * the caller to repaint.
    *
-   * Three cases, and which one applies is the whole of this feature:
+   * Two cases:
    *
-   * - **Under the ceiling.** No cap is needed. The frame fills its area,
-   *   the selection is whatever the frame covers, and any previous lock is
-   *   dropped.
-   * - **Capped, and the map zoomed.** The selection is locked to the
-   *   ground (see lockedBbox), so the zoom changed nothing about it. The
-   *   frame is redrawn where that fixed bbox now projects to — it stays
-   *   over the same terrain and scales with the map — and NOTHING is
-   *   recomputed: no tile math, no readout, no estimate. This is the case
-   *   that used to resize the frame under the user (SNOW-567).
-   * - **Capped, and the map panned.** A pan is how the selection is
-   *   re-aimed, so the locked bbox is moved back under the frame, keeping
-   *   its size in screen terms exactly (the zoom is unchanged, so that
-   *   also keeps its ground size). The bbox genuinely moved, so the
-   *   estimate is recomputed — but the frame's size still does not change.
+   * - **Under the ceiling.** No cap is needed. The frame fills its area
+   *   under stylesheet control, and the selection is whatever ground it
+   *   covers.
+   * - **Capped.** The selection holds a fixed ground SIZE — the largest
+   *   that fits the ceiling — centred on whatever the frame is over. The
+   *   frame is then drawn where that box projects to.
+   *
+   * There is deliberately no pan-versus-zoom branch. Framing re-anchors
+   * zoom to the frame's own centre (_anchorZoomOnTheFrame), so a zoom
+   * cannot change the ground under the frame: re-deriving the selection
+   * from that centre every update is a no-op through a whole zoom
+   * gesture — same box, same tiles, an estimate that does not so much as
+   * flicker — and moves it only when a pan (or the map clamping against
+   * maxBounds) genuinely puts different ground under the frame. Trying to
+   * tell the two gestures apart instead is what previously left the
+   * selection yanked back mid-zoom, and no float comparison of zoom and
+   * centre survived contact with a real inertial gesture.
    *
    * The cap threshold comes from pwaBasemapDownloadCore.budgetScaleForBBox
    * in one step — see that function for why a search against buildBlob's
    * own (floored, hence step-shaped) tile count made the frame shimmer
-   * while panning (SNOW-566). Locking and unlocking share that one
-   * threshold, and at it the locked bbox and the natural frame coincide,
-   * so crossing it is continuous rather than a jump.
+   * while panning (SNOW-566). Locking and releasing share that one
+   * threshold, and at it the locked box and the natural frame coincide, so
+   * crossing it is continuous rather than a jump.
    *
    * @returns {{bbox: [number, number, number, number], blob: Object} | null}
-   *   The selection, or null when nothing changed (or the map is not ready).
+   *   The selection, or null when it is unchanged (or the map is not ready)
+   *   and there is nothing for the caller to repaint.
    */
   function _updateSelection() {
     const core = self.pwaBasemapDownloadCore;
@@ -6017,52 +6040,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const naturalBbox = _bboxForBox(natural.cx, natural.cy, natural.width, natural.height);
     if (!naturalBbox) return null;
     const [minZ, maxZ] = core.MICRO_BAND;
-    const centre = MAP.getCenter();
-    const view = { zoom: MAP.getZoom(), lng: centre.lng, lat: centre.lat };
-    const previous = lastView;
-    lastView = view;
-    const zoomed = previous !== null && view.zoom !== previous.zoom;
-    const panned =
-      previous !== null && (view.lng !== previous.lng || view.lat !== previous.lat);
+    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ);
 
-    if (core.budgetScaleForBBox(naturalBbox, minZ, maxZ) >= 1) {
+    if (scale >= 1) {
+      lockedSize = null;
       lockedBbox = null;
       _releaseFrame();
       return { bbox: naturalBbox, blob: core.buildBlob(naturalBbox, minZ, maxZ) };
     }
 
-    if (lockedBbox === null) {
-      // Engaging the cap: lock the largest box that fits the ceiling,
-      // centred where the frame is now.
-      const scale = Math.max(
-        MIN_FRAME_SCALE,
-        core.budgetScaleForBBox(naturalBbox, minZ, maxZ),
-      );
-      lockedBbox = _bboxForBox(
+    if (lockedSize === null) {
+      // Engaging the cap: adopt the largest ground footprint that fits.
+      const capped = _bboxForBox(
         natural.cx,
         natural.cy,
-        natural.width * scale,
-        natural.height * scale,
+        natural.width * Math.max(MIN_FRAME_SCALE, scale),
+        natural.height * Math.max(MIN_FRAME_SCALE, scale),
       );
-      if (!lockedBbox) return null;
-    } else if (zoomed || !panned) {
-      // Locked, and either zooming or standing still: the selection did
-      // not change, so only the frame's geometry is refreshed. Returning
-      // null tells the caller there is no readout to repaint.
-      const screenBox = _screenBoxForBBox(lockedBbox);
-      if (screenBox) _placeFrame(screenBox, natural);
-      return null;
-    } else {
-      // Panning is how a locked selection is re-aimed: put it back under
-      // the frame, at the size it already has.
-      const recentred = _recentreBBox(lockedBbox, natural);
-      if (!recentred) return null;
-      lockedBbox = recentred;
+      if (!capped) return null;
+      lockedSize = _groundSizeOf(capped);
     }
 
-    const screenBox = _screenBoxForBBox(lockedBbox);
+    const bbox = _bboxOfSizeUnderFrame(lockedSize, natural);
+    if (!bbox) return null;
+    const screenBox = _screenBoxForBBox(bbox);
     if (screenBox) _placeFrame(screenBox, natural);
-    return { bbox: lockedBbox, blob: core.buildBlob(lockedBbox, minZ, maxZ) };
+    // Unchanged through a zoom, which is the common case — say so, and the
+    // caller skips the tile math and leaves the readout alone.
+    if (_bboxesEqual(bbox, lockedBbox)) return null;
+    lockedBbox = bbox;
+    return { bbox, blob: core.buildBlob(bbox, minZ, maxZ) };
   }
 
   /**
@@ -6114,6 +6121,70 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
+   * Make every zoom gesture pivot on the frame instead of the pointer, for
+   * as long as framing is open.
+   *
+   * MapLibre anchors a wheel or pinch zoom at the cursor: the ground under
+   * the pointer stays put and everything else moves around it. With a
+   * ground-locked selection that is visibly wrong — zoom out with the
+   * pointer off to one side and the frame, still correctly glued to its
+   * terrain, sails off towards that corner, then has to travel back when
+   * you zoom in again.
+   *
+   * Two steps, because "the frame" is not "the map centre": the frame area
+   * is the space left between the instruction bar and the CTA sheet, so
+   * its centre sits above the viewport's.
+   *
+   *   1. ``setPadding`` tells the map that its centre is the frame's
+   *      centre. Everything downstream — ``getCenter``, ``fitBounds``, and
+   *      the centre-anchored zoom below — then works to the frame.
+   *   2. The zoom handlers are re-enabled with ``around: 'center'``.
+   *      ``scrollZoom.enable`` no-ops when the handler is already enabled
+   *      (which it is, by default), hence the disable first — without it
+   *      the option is accepted and silently ignored.
+   *
+   * The pay-off is more than cosmetic: a centre-anchored zoom leaves
+   * ``getCenter()`` untouched, so "the centre moved" now means a pan and
+   * nothing else, and the locked bbox stays centred under the frame with
+   * no offset to apply.
+   *
+   * @returns {void}
+   */
+  function _anchorZoomOnTheFrame() {
+    const natural = _naturalFrameBox();
+    const container = MAP.getContainer();
+    if (natural && container) {
+      MAP.setPadding({
+        top: Math.max(0, natural.cy - natural.height / 2),
+        bottom: Math.max(0, container.clientHeight - (natural.cy + natural.height / 2)),
+        left: Math.max(0, natural.cx - natural.width / 2),
+        right: Math.max(0, container.clientWidth - (natural.cx + natural.width / 2)),
+      });
+    }
+    MAP.scrollZoom.disable();
+    MAP.scrollZoom.enable({ around: 'center' });
+    MAP.touchZoomRotate.enable({ around: 'center' });
+    // Double-click zoom has no centre-anchored mode, and it pivots on the
+    // click point — the same defect by another route.
+    MAP.doubleClickZoom.disable();
+  }
+
+  /**
+   * Undo _anchorZoomOnTheFrame: hand the map back its own centre and its
+   * default, pointer-anchored zoom handlers.
+   *
+   * @returns {void}
+   */
+  function _releaseZoomAnchor() {
+    if (!MAP) return;
+    MAP.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+    MAP.scrollZoom.disable();
+    MAP.scrollZoom.enable();
+    MAP.touchZoomRotate.enable();
+    MAP.doubleClickZoom.enable();
+  }
+
+  /**
    * Open the framing overlay: reveal it, move the map so the saved area
    * (if one exists) lands under the frame, and start tracking the live
    * readout on every 'move'.
@@ -6137,15 +6208,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // for the view we actually land on. The ground lock goes with it: a
     // fresh open aims from wherever the map is now, never from the area
     // the last one happened to leave locked.
+    lockedSize = null;
     lockedBbox = null;
-    lastView = null;
     _invalidateNaturalFrameBox();
     _releaseFrame();
+    _anchorZoomOnTheFrame();
     if (savedArea && Array.isArray(savedArea.bbox)) {
-      const options = { animate: false };
-      const padding = _framePadding();
-      if (padding) options.padding = padding;
-      MAP.fitBounds(_boundsFromBBox(savedArea.bbox), options);
+      // No explicit padding: _anchorZoomOnTheFrame has just told the map
+      // that the frame IS its centre, so fitBounds already lands the saved
+      // area under the frame rather than in the middle of the viewport.
+      MAP.fitBounds(_boundsFromBBox(savedArea.bbox), { animate: false });
     }
     _updateReadout();
     // Synchronously, on every 'move' — NOT deferred to the next animation
@@ -6214,9 +6286,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     moveHandler = null;
     resizeHandler = null;
+    _releaseZoomAnchor();
     _invalidateNaturalFrameBox();
+    lockedSize = null;
     lockedBbox = null;
-    lastView = null;
     pendingBbox = null;
     pendingBlob = null;
   }
