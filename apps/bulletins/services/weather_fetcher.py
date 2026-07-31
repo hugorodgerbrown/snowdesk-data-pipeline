@@ -93,7 +93,12 @@ from django.core.management.base import CommandError
 from django.db import transaction
 from django.utils import timezone as django_timezone
 
-from apps.bulletins.models import ForecastPoint, ForecastPointWeather, WeatherSnapshot
+from apps.bulletins.models import (
+    ForecastPoint,
+    ForecastPointWeather,
+    ForecastPointWeatherHistory,
+    WeatherSnapshot,
+)
 from apps.bulletins.services import open_meteo
 from apps.regions.models import Centre, MicroRegion
 
@@ -305,6 +310,46 @@ def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
         "daylight_duration": _extended("daylight_duration"),
         "sunshine_duration": _extended("sunshine_duration"),
         "fetched_at": django_timezone.now(),
+    }
+
+
+def _build_history_defaults(point_defaults: dict[str, Any]) -> dict[str, Any]:
+    """
+    Project a ForecastPointWeather defaults dict onto its history counterpart.
+
+    ``ForecastPointWeatherHistory`` retains a deliberate subset of the
+    daily payload: the scalars whose movement between issue dates is the
+    convergence signal. ``hourly_series`` is dropped (it exists for only
+    the first ``POINT_HOURLY_DAYS`` days of a window, so it cannot form a
+    series across lead times) as are ``sunrise``/``sunset`` (astronomical,
+    identical on every run for a given day). See SNOW-575.
+
+    Reads from the dict ``_build_point_defaults`` already produced rather
+    than re-reading the response, so the history row cannot disagree with
+    the row it accompanies.
+
+    Args:
+        point_defaults: The defaults dict built for the accompanying
+            ForecastPointWeather upsert, after the caller has layered on
+            ``freezing_level_height``.
+
+    Returns:
+        A dict suitable for passing as ``defaults=`` to update_or_create
+        on ForecastPointWeatherHistory.
+
+    """
+    return {
+        key: point_defaults.get(key)
+        for key in (
+            "weather_code",
+            "temperature_2m_max",
+            "temperature_2m_min",
+            "precipitation_sum",
+            "snowfall_sum",
+            "wind_speed_10m_max",
+            "freezing_level_height",
+            "fetched_at",
+        )
     }
 
 
@@ -781,9 +826,16 @@ def fetch_weather_for_point(
     Points are forecast-only — there is no archive/backfill equivalent of
     this function.
 
+    Each day also writes a ``ForecastPointWeatherHistory`` row keyed on
+    ``(point, day, target_date)``, inside the same transaction, retaining
+    this issue's view of the day before a later run overwrites the row
+    above (SNOW-575).
+
     Args:
         point: The ForecastPoint to fetch weather for.
-        target_date: The first calendar date of the forecast window.
+        target_date: The first calendar date of the forecast window, and
+            the ``issued_date`` recorded against every history row written
+            by this call.
         commit: If True, write the rows to the database. If False, the
             HTTP request still executes (real API probe) but no rows are
             written and an empty list is returned.
@@ -903,6 +955,21 @@ def fetch_weather_for_point(
                 day,
                 defaults["weather_code"],
             )
+
+            # Retain this issue's view of the day before the next run
+            # overwrites the row above (SNOW-575). Keyed on issued_date, so
+            # the four runs within a day collapse to one row and a forecast
+            # day accrues one row per day of its window.
+            ForecastPointWeatherHistory.objects.update_or_create(
+                forecast_point=point,
+                valid_for_date=day,
+                issued_date=target_date,
+                defaults={
+                    **_build_history_defaults(defaults),
+                    "lead_days": (day - target_date).days,
+                },
+            )
+
             results.append((weather, created))
 
     return results

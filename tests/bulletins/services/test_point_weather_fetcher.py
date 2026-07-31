@@ -46,7 +46,7 @@ import requests
 from django.db import IntegrityError
 from django.test import override_settings
 
-from apps.bulletins.models import ForecastPointWeather
+from apps.bulletins.models import ForecastPointWeather, ForecastPointWeatherHistory
 from apps.bulletins.services.weather_fetcher import (
     ICON_CH_BOUNDS,
     ICON_CH_MODEL,
@@ -964,3 +964,174 @@ class TestIsAlpinePoint:
     def test_southern_hemisphere_is_out_of_domain(self) -> None:
         """Coordinates are (lat, lon) — a swapped pair must not read as Alpine."""
         assert _is_alpine_point(-41.3, 174.8) is False
+
+
+# ---------------------------------------------------------------------------
+# ForecastPointWeatherHistory (SNOW-575)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestForecastHistoryCapture:
+    """fetch_weather_for_point retains each issue's view of a forecast day."""
+
+    def test_one_history_row_per_day_of_the_window(self) -> None:
+        """A single run writes one history row per day, stamped with the run date."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        assert rows.count() == POINT_FORECAST_DAYS
+        assert {row.issued_date for row in rows} == {target}
+
+    def test_lead_days_span_the_window_from_zero(self) -> None:
+        """lead_days runs 0..N-1 across the window, day 0 being the day-of view."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        leads = sorted(
+            ForecastPointWeatherHistory.objects.filter(
+                forecast_point=point
+            ).values_list("lead_days", flat=True)
+        )
+        assert leads == list(range(POINT_FORECAST_DAYS))
+
+    def test_later_issue_appends_rather_than_overwrites(self) -> None:
+        """A run on a later date adds a second view of an overlapping day.
+
+        This is the behaviour the model exists for: ForecastPointWeather
+        keeps only the newer forecast for the shared day, while the history
+        table keeps both.
+        """
+        point = ForecastPointFactory.create()
+        first_run = datetime.date(2026, 5, 1)
+        second_run = datetime.date(2026, 5, 2)
+        shared_day = datetime.date(2026, 5, 2)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response(start_date="2026-05-01")),
+        ):
+            fetch_weather_for_point(point, first_run, commit=True)
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response(start_date="2026-05-02")),
+        ):
+            fetch_weather_for_point(point, second_run, commit=True)
+
+        series = ForecastPointWeatherHistory.objects.convergence_for(point, shared_day)
+        assert [(row.issued_date, row.lead_days) for row in series] == [
+            (first_run, 1),
+            (second_run, 0),
+        ]
+        # The live table still holds exactly one row for that day.
+        assert (
+            ForecastPointWeather.objects.filter(
+                forecast_point=point, valid_for_date=shared_day
+            ).count()
+            == 1
+        )
+
+    def test_same_day_rerun_updates_rather_than_appends(self) -> None:
+        """The four runs within one day collapse to a single history row."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+        first = _make_full_point_response()
+        second = _make_full_point_response(weather_codes=[73] * POINT_FORECAST_DAYS)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(first)
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(second)
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        assert rows.count() == POINT_FORECAST_DAYS
+        # Last run of the day wins.
+        assert {row.weather_code for row in rows} == {73}
+
+    def test_payload_is_the_retained_subset(self) -> None:
+        """History carries the convergence scalars and omits the rest."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        row = ForecastPointWeatherHistory.objects.get(
+            forecast_point=point, valid_for_date=target
+        )
+        assert row.temperature_2m_max == 4.2
+        assert row.temperature_2m_min == -3.1
+        assert row.precipitation_sum == 1.5
+        assert row.snowfall_sum == 12.0
+        assert row.wind_speed_10m_max == 18.0
+        # Derived from the hourly block, same as its ForecastPointWeather twin.
+        assert row.freezing_level_height == 1680.0
+        assert not hasattr(row, "hourly_series")
+        assert not hasattr(row, "sunrise")
+
+    def test_partial_payload_degrades_to_none(self) -> None:
+        """A response omitting extended variables still writes history rows."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_partial_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        row = ForecastPointWeatherHistory.objects.get(
+            forecast_point=point, valid_for_date=target
+        )
+        assert row.weather_code == 2
+        assert row.snowfall_sum is None
+        assert row.freezing_level_height is None
+
+    def test_commit_false_writes_no_history(self) -> None:
+        """A dry run calls the API but persists nothing."""
+        point = ForecastPointFactory.create()
+        mock = _mock_get(_make_full_point_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_count == 1
+        assert not ForecastPointWeatherHistory.objects.exists()
+
+    def test_history_rolls_back_with_its_partner_row(self) -> None:
+        """A mid-window failure leaves no history rows behind (SNOW-546)."""
+        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        degraded = _make_full_point_response()
+        degraded["daily"]["weather_code"][3] = None
+
+        with (
+            patch(
+                "apps.bulletins.services.weather_fetcher.requests.get",
+                _mock_get(degraded),
+            ),
+            pytest.raises((TypeError, IntegrityError)),
+        ):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+
+        assert not ForecastPointWeatherHistory.objects.exists()
+        assert not ForecastPointWeather.objects.exists()
