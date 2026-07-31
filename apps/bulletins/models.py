@@ -300,13 +300,26 @@ class Bulletin(BaseModel):
     """
 
     class Source(models.TextChoices):
-        """Possible originating sources for a bulletin's render model."""
+        """The provider a bulletin was ingested from."""
 
         SLF = "slf", "SLF (Switzerland)"
         ALBINA = "albina", "ALBINA (Austria/South Tyrol/Trentino)"
         METEOFRANCE = "meteofrance", "Météo-France (France)"
 
     bulletin_id = models.CharField(max_length=255, unique=True, db_index=True)
+    source = models.CharField(
+        max_length=16,
+        choices=Source.choices,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Provider this bulletin was ingested from, detected from "
+            "raw_data.customData by detect_source. Blank only for rows "
+            "predating the field and not yet covered by "
+            "backfill_bulletin_source, or whose customData carries no known "
+            "source marker."
+        ),
+    )
     raw_data = models.JSONField(
         default=dict,
         blank=True,

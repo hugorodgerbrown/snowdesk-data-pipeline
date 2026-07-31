@@ -410,6 +410,30 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
+- `backfill_bulletin_source --commit` — one-off post-deploy step after
+  SNOW-581: populates `Bulletin.source` for rows that predate the field.
+  The provider is normally set inline by `upsert_bulletin` at ingest time.
+  Detection reads `raw_data.properties.customData` via `detect_source` —
+  deliberately **not** `render_model["source"]`, which can hold a stale
+  legacy value (`"euregio"`), is absent when the render model failed to
+  build, and is rewritten wholesale by `rebuild_render_models`. Provenance
+  is an ingest fact, so it is derived from the raw payload every time.
+  Read-only by default; the dry-run prints a per-provider breakdown of what
+  would be written. The queryset (`source=""`) is the idempotency
+  mechanism — a second run selects only rows whose payload carries no known
+  marker. Raises `CommandError` and exits non-zero if any row fails to
+  detect, after writing the ones that succeeded.
+
+  ```bash
+  # Dry-run — per-provider breakdown of what would be populated.
+  uv run python manage.py backfill_bulletin_source
+
+  # Persist (run on Render after deploying SNOW-581).
+  uv run python manage.py backfill_bulletin_source --commit
+  ```
+
+  Flags: `--commit`.
+
 - `fetch_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).

@@ -662,6 +662,62 @@ class TestUpsertBulletin:
             region__region_id="CH-7111",
         ).exists()
 
+    # ------------------------------------------------------------------
+    # source (SNOW-581)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        ("custom_data", "expected"),
+        [
+            ({"CH": {}}, Bulletin.Source.SLF),
+            ({"ALBINA": {}}, Bulletin.Source.ALBINA),
+            ({"LWD_Tirol": {}}, Bulletin.Source.ALBINA),
+            ({"MF": {}}, Bulletin.Source.METEOFRANCE),
+        ],
+    )
+    def test_upsert_sets_source_from_custom_data(
+        self, custom_data: dict[str, Any], expected: str
+    ) -> None:
+        """Each provider's customData marker lands in Bulletin.source."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(bulletin_id="src-001", customData=custom_data)
+
+        upsert_bulletin(raw, run)
+
+        assert Bulletin.objects.get(bulletin_id="src-001").source == expected
+
+    def test_source_is_set_even_when_the_render_model_fails_to_build(self) -> None:
+        """Provenance survives a render-model build failure.
+
+        The source column exists precisely so it does not depend on the
+        derived artefact — a bulletin whose render model errored must still
+        record which provider it came from.
+        """
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(bulletin_id="src-fail-001")
+
+        with patch(
+            "apps.bulletins.services.slf_fetcher.build_render_model",
+            side_effect=RenderModelBuildError("boom"),
+        ):
+            upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="src-fail-001")
+        assert bulletin.render_model_version == 0
+        assert bulletin.source == Bulletin.Source.SLF
+
+    def test_unknown_custom_data_leaves_source_blank_without_raising(self) -> None:
+        """An unrecognised payload degrades to a blank source, not an error."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(
+            bulletin_id="src-unknown-001",
+            customData={"SOMETHING_ELSE": {}},
+        )
+
+        upsert_bulletin(raw, run)
+
+        assert Bulletin.objects.get(bulletin_id="src-unknown-001").source == ""
+
 
 # ---------------------------------------------------------------------------
 # fetch_bulletin_page

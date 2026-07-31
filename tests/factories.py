@@ -205,6 +205,7 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
         model = Bulletin
 
     bulletin_id = factory.Sequence(lambda n: f"bulletin-{n:04d}")
+    source = Bulletin.Source.SLF
     raw_data = factory.LazyFunction(dict)
     render_model = factory.LazyFunction(lambda: {"version": 0, "traits": []})
     render_model_version = 0

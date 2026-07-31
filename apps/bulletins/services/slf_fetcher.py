@@ -57,6 +57,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
+    detect_source,
 )
 from apps.regions.models import MicroRegion
 
@@ -345,6 +346,35 @@ def _assert_any_region_resolved(
     )
 
 
+def _resolve_source(raw: dict[str, Any], bulletin_id: str) -> str:
+    """
+    Detect the provider a raw bulletin came from, degrading to blank.
+
+    Provenance is detected from the raw payload rather than read back out of
+    ``render_model["source"]``: it is an ingest fact, so it must survive a
+    render-model build failure and must not be rewritten by
+    ``rebuild_render_models``.
+
+    Args:
+        raw: The raw CAAML properties dict.
+        bulletin_id: The bulletin identifier, for the warning log line.
+
+    Returns:
+        A ``Bulletin.Source`` value, or ``""`` when the payload carries no
+        known source marker.
+
+    """
+    try:
+        return detect_source(raw)
+    except RenderModelBuildError:
+        logger.warning(
+            "No known source marker in customData for bulletin %s — "
+            "leaving source blank",
+            bulletin_id,
+        )
+        return ""
+
+
 def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
@@ -397,6 +427,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
 
     defaults: dict[str, Any] = {
         "raw_data": raw_data,
+        "source": _resolve_source(raw, bulletin_id),
         "render_model": computed_render_model,
         "render_model_version": computed_render_model_version,
         "issued_at": _resolve_issued_at(raw),
