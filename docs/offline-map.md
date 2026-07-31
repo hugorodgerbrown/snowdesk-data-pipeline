@@ -470,7 +470,10 @@ which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
 **State** — `data-download-state` on the control: `no-region` (nothing
 focused), `idle` (arrow, size in the tooltip), `busy` (bottom-up fill of
 the roundel, driven by a `--download-progress` CSS custom property —
-`static/css/map.css`), `done` (solid green circle + tick), `disabled`
+`static/css/map.css`), `done` (solid green circle, the same download glyph
+in white — SNOW-569 dropped the tick: the glyph is the control's identity,
+and swapping it made a completed download read as a different control,
+where the colour inversion already carries "finished"), `disabled`
 (over-ceiling), and `offline` (no downloading of layers while offline; see
 gating below). The three non-runnable states (`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and

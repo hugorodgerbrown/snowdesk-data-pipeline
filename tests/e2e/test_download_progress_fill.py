@@ -223,6 +223,46 @@ def test_region_fill_is_cleared_once_the_icon_goes_green(pwa_page: PwaPage) -> N
     assert _fill_north_edge(page) is None
 
 
+def test_done_keeps_the_download_glyph_in_white(pwa_page: PwaPage) -> None:
+    """A completed download inverts the glyph's colour, not the glyph.
+
+    SNOW-569 dropped the tick: the download arrow is the control's
+    identity, and swapping it made a finished download read as a different
+    control. Asserts the rendered glyph and its computed colour rather
+    than a screenshot, matching this suite's convention.
+    """
+    page = _boot(pwa_page)
+    _select_region_with_geometry(page, "CH-4115")
+    icon = page.locator(_CONTROL)
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+
+    icon.click()
+    _wait_for_state(page, "done", timeout=10000)
+
+    glyphs = cast(
+        dict[str, Any],
+        page.evaluate(
+            """(selector) => {
+                const btn = document.querySelector(selector);
+                const arrow = btn.querySelector('.map-download-control-icon--idle');
+                return {
+                    arrowShown: getComputedStyle(arrow).display !== 'none',
+                    arrowColour: getComputedStyle(arrow).color,
+                    tickPresent: !!btn.querySelector('.map-download-control-icon--done'),
+                };
+            }""",
+            _CONTROL,
+        ),
+    )
+
+    assert glyphs["arrowShown"]
+    assert glyphs["arrowColour"] == "rgb(255, 255, 255)"
+    # The tick markup is gone entirely, not merely hidden — a second glyph
+    # nothing displays is markup waiting to drift out of sync.
+    assert not glyphs["tickPresent"]
+
+
 def test_failed_region_run_leaves_no_fill_behind(pwa_page: PwaPage) -> None:
     """A run that fails clears the fill rather than pulsing it green."""
     page = _boot(pwa_page, ok=0, failed=1)

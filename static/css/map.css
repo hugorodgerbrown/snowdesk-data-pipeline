@@ -1581,7 +1581,13 @@
 
 /* Only the active state's icon renders; it sits above the busy fill. The
    busy state keeps the download glyph (static) and shows progress as a
-   bottom-up fill of the roundel (below), not a numeric percentage. */
+   bottom-up fill of the roundel (below), not a numeric percentage.
+
+   SNOW-569: 'done' keeps the download glyph too, white on the green disc,
+   rather than swapping to a tick. The glyph is the control's identity —
+   swapping it made a completed download read as a different control, and
+   the colour inversion already carries "finished" on its own. Only 'error'
+   changes the glyph, because that one genuinely is a different message. */
 .map-download-control-icon {
     display: none;
     position: relative;
@@ -1593,7 +1599,7 @@
 .map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="offline"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
-.map-download-control[data-download-state="done"] .map-download-control-icon--done,
+.map-download-control[data-download-state="done"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="error"] .map-download-control-icon--error {
     display: block;
 }
@@ -1603,8 +1609,9 @@
    download speaks one visual language with the cache dashboard. During a
    run the fill rises to --download-progress (set by map.js on each
    warm-cache tick), replacing the numeric percentage; a completed download
-   is a full green circle (below) with the check glyph on top, mirroring the
-   green dot. Clipped to the circle by the host's overflow:hidden. */
+   is a full green circle (below) with the download glyph on top in white,
+   mirroring the green dot. Clipped to the circle by the host's
+   overflow:hidden. */
 .map-download-control[data-download-state="busy"]::before,
 .map-download-control[data-download-state="done"]::before {
     content: "";
@@ -1623,8 +1630,9 @@
     height: 100%;
 }
 
-/* White tick on the green fill (the glyph strokes currentColor). */
-.map-download-control[data-download-state="done"] .map-download-control-icon--done {
+/* White download glyph on the green fill (the glyph strokes currentColor).
+   Same icon as every other state — see the display rules above for why. */
+.map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
 }
 
