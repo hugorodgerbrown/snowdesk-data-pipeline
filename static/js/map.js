@@ -5329,6 +5329,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-568: a new attempt clears the previous one's message before it
     // can raise its own.
     clearBasemapDownloadError();
+    // Claimed synchronously, before the first await — see the custom-area
+    // control's identical ordering note. The guard at the top of this
+    // function reads this state, so an await ahead of it would leave a
+    // window for a second click to start a second run.
+    setState('busy', data.summary.mb, 0);
     // SNOW-568: refuse a download that cannot fit in the origin's storage
     // quota before spending a single fetch on it — see the custom-area
     // control's identical pre-flight for the rationale.
@@ -5337,7 +5342,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       revealBasemapDownloadError('quota');
       return;
     }
-    setState('busy', data.summary.mb, 0);
 
     let blob;
     try {
@@ -6063,6 +6067,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-568: a new attempt clears the previous one's message before it
     // can raise its own.
     clearBasemapDownloadError();
+    // 'busy' is claimed SYNCHRONOUSLY, before the first await below — the
+    // re-entrancy guard above reads this same state, so any await ahead of
+    // it leaves a window in which a second click starts a second run. It
+    // also means the roundel acknowledges the click immediately rather
+    // than after the quota round trip.
+    setState('busy', 0);
     // SNOW-568: refuse a download that cannot fit in the origin's storage
     // quota before spending a single fetch on it. Without this the run
     // gets most of the way through, starts collecting QuotaExceededErrors
@@ -6073,7 +6083,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       revealBasemapDownloadError('quota');
       return;
     }
-    setState('busy', 0);
 
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
