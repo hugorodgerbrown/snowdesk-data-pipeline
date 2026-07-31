@@ -20,12 +20,14 @@ traffic is required. The mocking pattern mirrors test_data_fetcher.py.
 from __future__ import annotations
 
 import datetime
+import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 from django.db import IntegrityError
+from django.test import override_settings
 
 from apps.bulletins.models import WeatherSnapshot
 from apps.bulletins.services.weather_fetcher import (
@@ -842,12 +844,11 @@ class TestBaseUrlThreading:
         called_url = mock.call_args[0][0]
         assert called_url == "http://localhost:8000/dev/openmeteo-mirror/v1/forecast"
 
-    def test_fetch_weather_for_region_falls_back_to_forecast_url_when_none(
+    @override_settings(OPEN_METEO_API_BASE_URL="https://api.example/v1")
+    def test_fetch_weather_for_region_falls_back_to_configured_host_when_none(
         self,
     ) -> None:
-        """When base_url=None, the module-level FORECAST_URL is used."""
-        from apps.bulletins.services.weather_fetcher import FORECAST_URL
-
+        """When base_url=None, the configured forecast host is used."""
         region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
@@ -857,7 +858,7 @@ class TestBaseUrlThreading:
             fetch_weather_for_region(region, target, commit=False)
 
         called_url = mock.call_args[0][0]
-        assert called_url == FORECAST_URL
+        assert called_url == "https://api.example/v1/forecast"
 
     def test_fetch_archive_for_region_uses_base_url_for_archive(self) -> None:
         """When base_url is set, the archive request goes to {base_url}/archive."""
@@ -884,12 +885,11 @@ class TestBaseUrlThreading:
         called_url = mock.call_args[0][0]
         assert called_url == "http://localhost:8000/dev/openmeteo-mirror/v1/archive"
 
-    def test_fetch_archive_for_region_falls_back_to_archive_url_when_none(
+    @override_settings(OPEN_METEO_ARCHIVE_BASE_URL="https://archive.example/v1")
+    def test_fetch_archive_for_region_falls_back_to_configured_host_when_none(
         self,
     ) -> None:
-        """When base_url=None, the module-level ARCHIVE_URL is used."""
-        from apps.bulletins.services.weather_fetcher import ARCHIVE_URL
-
+        """When base_url=None, the configured archive host is used."""
         region = MicroRegionFactory.create()
         start = end = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
@@ -904,7 +904,90 @@ class TestBaseUrlThreading:
             fetch_archive_for_region(region, start, end, commit=False)
 
         called_url = mock.call_args[0][0]
-        assert called_url == ARCHIVE_URL
+        assert called_url == "https://archive.example/v1/archive"
+
+
+# ---------------------------------------------------------------------------
+# Customer-API key (SNOW-577)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestApiKeyThreading:
+    """The apikey parameter is sent only for live requests with a key set."""
+
+    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    def test_forecast_sends_apikey_when_configured(self) -> None:
+        """A configured key is appended to the region forecast params."""
+        region = MicroRegionFactory.create()
+        mock = _mock_get(_make_forecast_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(region, datetime.date(2026, 5, 1), commit=False)
+
+        assert mock.call_args.kwargs["params"]["apikey"] == "sk-test"
+
+    @override_settings(OPEN_METEO_API_KEY="")
+    def test_forecast_omits_apikey_on_free_tier(self) -> None:
+        """With no key configured, no apikey parameter is sent."""
+        region = MicroRegionFactory.create()
+        mock = _mock_get(_make_forecast_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(region, datetime.date(2026, 5, 1), commit=False)
+
+        assert "apikey" not in mock.call_args.kwargs["params"]
+
+    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    def test_forecast_omits_apikey_for_base_url_override(self) -> None:
+        """A mirror override is not the key's host, so no key is sent."""
+        region = MicroRegionFactory.create()
+        mock = _mock_get(_make_forecast_response())
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(
+                region,
+                datetime.date(2026, 5, 1),
+                commit=False,
+                base_url="http://localhost:8000/dev/openmeteo-mirror/v1",
+            )
+
+        assert "apikey" not in mock.call_args.kwargs["params"]
+
+    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    def test_archive_sends_apikey_when_configured(self) -> None:
+        """A configured key is appended to the archive params too."""
+        region = MicroRegionFactory.create()
+        day = datetime.date(2026, 4, 28)
+        mock = _mock_get(
+            _make_archive_response(
+                dates=["2026-04-28"],
+                weather_codes=[0],
+                sunrises=["2026-04-28T05:40+02:00"],
+                sunsets=["2026-04-28T20:30+02:00"],
+            )
+        )
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_archive_for_region(region, day, day, commit=False)
+
+        assert mock.call_args.kwargs["params"]["apikey"] == "sk-test"
+
+    @override_settings(OPEN_METEO_API_KEY="sk-test")
+    def test_key_is_never_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The debug log records the URL, which must not carry the key."""
+        region = MicroRegionFactory.create()
+        mock = _mock_get(_make_forecast_response())
+
+        logger_name = "apps.bulletins.services.weather_fetcher"
+        with caplog.at_level(logging.DEBUG, logger=logger_name):
+            with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+                fetch_weather_for_region(
+                    region, datetime.date(2026, 5, 1), commit=False
+                )
+
+        assert caplog.text
+        assert "sk-test" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -1029,14 +1112,12 @@ class TestResolveWeatherSource:
     """Tests for resolve_weather_source."""
 
     def test_live_source_returns_none(self) -> None:
-        """'live' source returns None so callers fall back to the module URL constants."""
+        """'live' source returns None so callers fall back to the configured host."""
         result = resolve_weather_source("live")
         assert result is None
 
     def test_local_mirror_returns_configured_url(self) -> None:
         """'local-mirror' returns WEATHER_API_LOCAL_MIRROR_BASE_URL when configured."""
-        from django.test import override_settings
-
         with override_settings(
             WEATHER_API_LOCAL_MIRROR_BASE_URL="http://localhost:8000/dev/openmeteo-mirror/v1"
         ):
@@ -1047,7 +1128,6 @@ class TestResolveWeatherSource:
     def test_local_mirror_raises_when_setting_missing(self) -> None:
         """'local-mirror' raises CommandError when the setting is not configured."""
         from django.core.management.base import CommandError
-        from django.test import override_settings
 
         with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=None):
             with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
@@ -1060,9 +1140,6 @@ class TestResolveWeatherSource:
         from apps.bulletins.services import weather_fetcher
 
         original = getattr(weather_fetcher, "resolve_weather_source", None)
-        # Simulate missing attribute by deleting the setting entirely.
-        from django.test import override_settings  # noqa: F811
-
         # Remove the attribute from settings entirely (not just set to None).
         with override_settings():
             from django.conf import settings as djsettings
