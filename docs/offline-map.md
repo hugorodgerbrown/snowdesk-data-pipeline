@@ -557,7 +557,7 @@ land. `createDownloadProgressGrid` (`static/js/map.js`) owns a single
 `download-progress` geojson source with a fill and a line layer, added
 above `regions-fill` for the run and removed after it. The line layer
 draws every cell (the empty grid); the fill layer carries a
-`['==', ['get', 'done'], true]` filter, so one source serves both.
+feature-state-driven `fill-opacity`, so one source serves both.
 
 The squares are real Web Mercator tile footprints (`tileBounds`), which
 is the point: what the user watches is the actual unit of work
@@ -569,10 +569,14 @@ Three pieces make it work:
 
 - **One zoom, not five.** A download spans z10–14 and every level covers
   the same ground, so painting a square per tile would repaint the area
-  five times. `gridZoomFor` picks a single level per download — the
-  shallowest whose grid reaches `GRID_MIN_CELLS` (12), or the deepest
-  available for a tiny area — since cell count quadruples per level and
-  z14 would be thousands of squares.
+  five times. `gridZoomFor` picks the band's **deepest** level, so a
+  square is a real z14 tile (~1.7 km in the Alps) and mostly one tile per
+  square. Deepest rather than a "at least N squares" threshold: cell count
+  quadruples per level, so any such threshold lands on a different level
+  for different-sized areas — a big region drew 27 km blocks while a small
+  one drew 3 km ones, which reads as an inconsistent animation rather than
+  a scale. It also needs no tuning constant. A region runs 36–4,347
+  squares (median 144 across the 149 Swiss micro-regions).
 - **Fetch order.** `rangesToTileURLs` emits zoom-major, so no cell would
   complete until the final pass reached it. `tileGridPlan` groups each
   cell's URLs together instead; the set is identical, so the download is
@@ -582,14 +586,27 @@ Three pieces make it work:
   `update` decrements on each reported index (offset past the feed URLs)
   and fills the square at zero. A tile shallower than the grid is
   assigned to one cell only (`_cellForTile`), so the totals partition the
-  run exactly. Only *successes* are reported, so a square never lights up
-  over ground that isn't cached.
+  run exactly — and clamped into the grid zoom's own tile range, because a
+  coarse tile floors to a wider grid and its north-westmost fine cell can
+  otherwise fall outside the download's footprint (which drew a lattice of
+  stray squares off the edge of the area). Only *successes* are reported,
+  so a square never lights up over ground that isn't cached.
 
-Reports arrive batched (~8/s), so repaints are coalesced onto an
-animation frame and skipped when no new cell completed, and `_ensure`
-re-adds the source if a basemap swap mid-run takes the whole style with
-it. A worker old enough not to send `settled` falls back to filling cells
-in plan order at the reported percentage.
+Reports arrive batched (~8/s). A completed square is lit with
+`setFeatureState`, never by rewriting the source — a large region is
+several thousand cells, and re-serialising that collection per batch would
+be megabytes of JSON a second. Feature state does not survive a source
+being replaced, so `_ensure` replays the completed set when a basemap swap
+mid-run takes the whole style with it. A worker old enough not to send
+`settled` falls back to filling cells in plan order at the reported
+percentage.
+
+Two details keep it legible at every scale. A pending square is washed in
+at `DOWNLOAD_PROGRESS_PENDING_OPACITY` rather than left transparent, so
+the download's extent reads as a block even when the squares are only a
+few pixels; and the gridline layer fades out by map zoom
+(`DOWNLOAD_PROGRESS_GRID_FADE_START`/`_END`, offsets from the grid's own
+zoom) so sub-pixel outlines never turn into a mesh.
 
 On success the grid completes, pulses once, and is removed, and only then
 does the roundel flip to `done` — the two are one gesture, and the

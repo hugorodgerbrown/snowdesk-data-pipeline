@@ -32,17 +32,20 @@
  * name, is how a re-port with no compiler/typechecker link between the
  * two languages stays honest against drift.
  *
- * SNOW-569/571 add the geometry helpers behind the on-map download
- * progress grid — ``geometryBounds``/``bboxPolygon``/``tileBounds``/
- * ``gridZoomFor``/``tileGridPlan``. Like ``budgetScaleForBBox`` these are
- * client-only with no Python twin, and their tests are likewise
- * property-shaped. The load-bearing properties: ``tileBounds`` inverts
- * ``lonLatToTile`` and tiles a zoom level seamlessly; a plan's per-cell
- * totals partition the run exactly (so a cell's countdown hits zero when
- * its tiles land, and not before); each cell's URLs are contiguous (the
- * ordering is the whole reason the grid fills one square at a time); and
- * the plan's URL SET matches ``rangesToTileURLs`` — the grid reorders the
- * download without changing what it caches.
+ * SNOW-569 and the tile-grid rework that followed it add the geometry
+ * helpers behind the on-map download progress grid —
+ * ``geometryBounds``/``bboxPolygon``/``tileBounds``/``gridZoomFor``/
+ * ``tileGridPlan``. Like ``budgetScaleForBBox`` these are client-only
+ * with no Python twin, and their tests are likewise property-shaped. The
+ * load-bearing properties: ``tileBounds`` inverts ``lonLatToTile`` and
+ * tiles a zoom level seamlessly; the grid is drawn at the band's DEEPEST
+ * zoom, so a square is a real tile and the scale is the same whatever the
+ * area's size; a plan's per-cell totals partition the run exactly (so a
+ * cell's countdown hits zero when its tiles land, and not before); each
+ * cell's URLs are contiguous (the ordering is the whole reason the grid
+ * fills one square at a time); and the plan's URL SET matches
+ * ``rangesToTileURLs`` — the grid reorders the download without changing
+ * what it caches.
  *
  * SNOW-570 adds ``downloadedIds`` — the pure half of the "Downloaded
  * areas" overlay. Its load-bearing property is that it requires an area's
@@ -644,37 +647,17 @@ describe('tileBounds', () => {
 });
 
 describe('gridZoomFor', () => {
-  /**
-   * A blob whose every zoom level is a `span` x `span` square of tiles.
-   *
-   * @param {number[]} zooms Zoom levels to include.
-   * @param {function(number): number} span Tiles per side at a zoom.
-   * @returns {{z: Object<string, number[]>}}
-   */
-  function blobWith(zooms, span) {
-    const z = {};
-    for (const level of zooms) z[String(level)] = [0, span(level) - 1, 0, span(level) - 1];
-    return { z: z };
-  }
-
-  it('picks the shallowest level that reaches the cell floor', () => {
-    // 1, 4, 16, 64, 256 cells at z10..z14 — z12's 16 is the first to
-    // clear the default floor of 12.
-    const blob = blobWith([10, 11, 12, 13, 14], (z) => Math.pow(2, z - 10));
-    expect(core.gridZoomFor(blob)).toBe(12);
+  it('picks the deepest level in the blob', () => {
+    // The band's detail floor, so a grid square is a real tile rather
+    // than an arbitrary aggregate of them.
+    expect(core.gridZoomFor({ z: { 10: [0, 1, 0, 1], 14: [0, 15, 0, 15] } })).toBe(14);
+    expect(core.gridZoomFor({ z: { 11: [0, 1, 0, 1], 12: [0, 3, 0, 3] } })).toBe(12);
   });
 
-  it('honours an explicit floor', () => {
-    const blob = blobWith([10, 11, 12, 13, 14], (z) => Math.pow(2, z - 10));
-    expect(core.gridZoomFor(blob, 1)).toBe(10);
-    expect(core.gridZoomFor(blob, 100)).toBe(14);
-  });
-
-  it('falls back to the deepest level when nothing reaches the floor', () => {
-    // A tiny area: even its finest level is only a handful of tiles, and
-    // a grid of 9 squares beats no grid at all.
-    const blob = blobWith([10, 11, 12], () => 3);
-    expect(core.gridZoomFor(blob)).toBe(12);
+  it('does not depend on how many tiles a level holds', () => {
+    // A one-tile deepest level still wins: consistency of SCALE across
+    // downloads is the property, not a target square count.
+    expect(core.gridZoomFor({ z: { 10: [0, 9, 0, 9], 14: [7, 7, 7, 7] } })).toBe(14);
   });
 
   it('returns null for a blob with nothing to draw', () => {
@@ -687,13 +670,14 @@ describe('gridZoomFor', () => {
 describe('tileGridPlan', () => {
   const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
 
-  // z10 is one tile; z11 is the 2x2 beneath it. Small enough to reason
-  // about position by position, and it exercises both cell-assignment
-  // directions: at a z11 grid the z10 tile is SHALLOWER than the grid.
+  // z10 is one tile; z11 is the 2x2 beneath it — so the grid is drawn at
+  // z11 (the deepest) and the z10 tile is SHALLOWER than the grid, which
+  // is the interesting cell-assignment case. Small enough to reason about
+  // position by position.
   const BLOB = { z: { 10: [536, 536, 358, 358], 11: [1072, 1073, 716, 717] } };
 
   it('accounts for every tile exactly once', () => {
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     expect(plan.gridZ).toBe(11);
     expect(plan.urls).toHaveLength(core.tileCount(BLOB.z));
     expect(new Set(plan.urls).size).toBe(plan.urls.length);
@@ -707,7 +691,7 @@ describe('tileGridPlan', () => {
     // The ordering IS the feature: a cell whose tiles were scattered
     // through the run could not light up until the run had nearly
     // finished. Every cell's indices must form one contiguous block.
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     const firstSeen = new Map();
     let previous = null;
     plan.cellOfURL.forEach((cellIndex, i) => {
@@ -725,7 +709,7 @@ describe('tileGridPlan', () => {
     // the north-westmost — is what keeps the totals a partition; letting
     // it credit all four would light squares over ground whose own z11
     // tile had not been fetched.
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     expect(plan.cells).toHaveLength(4);
     const totals = plan.cells.map((cell) => cell.total);
     expect(totals.filter((t) => t === 2)).toHaveLength(1);
@@ -734,8 +718,28 @@ describe('tileGridPlan', () => {
     expect(plan.cells[0].total).toBe(2);
   });
 
+  it('keeps every cell inside the grid zoom’s own tile range', () => {
+    // A coarse tile floors to a wider grid, so it starts west and north of
+    // the area it was fetched for and its north-westmost fine cell can sit
+    // outside the download's footprint. Unclamped, that drew a lattice of
+    // stray squares off the edge of the area — squares over ground the run
+    // does not cover.
+    const blob = { z: { 10: [536, 536, 358, 358], 14: [8580, 8590, 5740, 5750] } };
+    const plan = core.tileGridPlan(TEMPLATE, blob);
+    const [xmin, xmax, ymin, ymax] = blob.z[14];
+    for (const cell of plan.cells) {
+      expect(cell.x).toBeGreaterThanOrEqual(xmin);
+      expect(cell.x).toBeLessThanOrEqual(xmax);
+      expect(cell.y).toBeGreaterThanOrEqual(ymin);
+      expect(cell.y).toBeLessThanOrEqual(ymax);
+    }
+    // Still a partition — clamping folds the coarse tile onto an edge
+    // cell rather than dropping it.
+    expect(plan.cells.reduce((a, c) => a + c.total, 0)).toBe(core.tileCount(blob.z));
+  });
+
   it('orders cells north-west to south-east', () => {
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     const keys = plan.cells.map((cell) => [cell.y, cell.x]);
     const sorted = [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     expect(keys).toEqual(sorted);
@@ -748,7 +752,7 @@ describe('tileGridPlan', () => {
   });
 
   it('gives each cell the bbox of its own tile', () => {
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     for (const cell of plan.cells) {
       expect(cell.bbox).toEqual(core.tileBounds(plan.gridZ, cell.x, cell.y));
     }
@@ -757,7 +761,7 @@ describe('tileGridPlan', () => {
   it('emits the same URL set as rangesToTileURLs, reordered', () => {
     // The download must be unaffected by the grid: same tiles, different
     // order. Anything else would mean the grid changed what gets cached.
-    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const plan = core.tileGridPlan(TEMPLATE, BLOB);
     const flat = core.rangesToTileURLs(TEMPLATE, BLOB);
     expect([...plan.urls].sort()).toEqual([...flat].sort());
   });

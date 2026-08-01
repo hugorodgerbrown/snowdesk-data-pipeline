@@ -37,10 +37,12 @@ worker, the teardown, and the no-op path. ``map.js`` is a classic script,
 so its top-level ``createDownloadProgressGrid`` is a plain ``window``
 property.
 
-Assertions read the ``download-progress`` source's data — which cells
-carry ``done`` — rather than pixels, matching this suite's convention (see
-``test_map_placement_focus.py``'s module docstring). The flags are what the
-feature is; a screenshot diff would additionally depend on frame timing
+Assertions read each cell's MapLibre **feature state** — the grid lights a
+square with ``setFeatureState`` rather than rewriting the source, since at
+the band's detail floor a large region is several thousand cells. Reading
+state rather than pixels matches this suite's convention (see
+``test_map_placement_focus.py``'s module docstring): the flags are what the
+feature is, and a screenshot diff would additionally depend on frame timing
 this harness deliberately avoids.
 """
 
@@ -102,7 +104,7 @@ def _start_grid(page: Page, *, offset: int = 0) -> None:
     """
     page.evaluate(
         """({template, blob, offset}) => {
-            window.__plan = window.pwaBasemapDownloadCore.tileGridPlan(template, blob, 4);
+            window.__plan = window.pwaBasemapDownloadCore.tileGridPlan(template, blob);
             window.__grid = window.createDownloadProgressGrid(window.__plan, offset);
         }""",
         {"template": _TEMPLATE, "blob": _BLOB, "offset": offset},
@@ -134,18 +136,17 @@ def _url_indices_for_cell(page: Page, cell: int, *, offset: int = 0) -> list[int
 
 
 def _update(page: Page, done: int, total: int, settled: list[int] | None) -> None:
-    """Feed one progress report in and wait for the coalesced repaint."""
+    """Feed one progress report in.
+
+    ``setFeatureState`` applies synchronously, so unlike the setData version
+    this needed no frame to settle — but a frame is still awaited so the
+    assertions that follow describe a state MapLibre has actually rendered
+    rather than merely accepted.
+    """
     page.evaluate(
         "({done, total, settled}) => window.__grid.update(done, total, settled)",
         {"done": done, "total": total, "settled": settled},
     )
-    # update() defers its paint to an animation frame, so the source is not
-    # written synchronously. Waiting for a frame to have elapsed — rather
-    # than for the data to reach some expected value — is what makes this
-    # deterministic in BOTH directions: it lets a report that completes no
-    # cell be asserted as having painted nothing, which a
-    # wait-for-the-value helper could never distinguish from "not yet".
-    # Two frames, because the update is scheduled from inside the first.
     page.evaluate(
         "() => new Promise((r) => requestAnimationFrame("
         "() => requestAnimationFrame(() => r(null))))"
@@ -153,7 +154,12 @@ def _update(page: Page, done: int, total: int, settled: list[int] | None) -> Non
 
 
 def _done_flags(page: Page) -> list[bool]:
-    """Which cells are currently filled, in plan order."""
+    """Which cells are currently filled, in plan order.
+
+    Read from MapLibre feature state rather than the source data: the grid
+    lights a square with ``setFeatureState`` and never rewrites the
+    collection, so the features themselves carry no done flag.
+    """
     return cast(
         list[bool],
         page.evaluate(
@@ -162,7 +168,11 @@ def _done_flags(page: Page) -> list[bool]:
                 if (!source) return [];
                 const data = source.serialize().data;
                 if (!data || !data.features) return [];
-                return data.features.map((f) => !!f.properties.done);
+                return data.features.map((f) => {
+                    const state = MAP.getFeatureState(
+                        {source: 'download-progress', id: f.id});
+                    return !!(state && state.done);
+                });
             }"""
         ),
     )

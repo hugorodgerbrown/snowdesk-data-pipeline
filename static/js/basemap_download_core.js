@@ -99,7 +99,8 @@
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
  *
  * SNOW-569 and the tile-grid rework that followed it add a second
- * client-only group — the geometry a download's on-map progress grid needs (``geometryBounds``, ``bboxPolygon``,
+ * client-only group — the geometry a download's on-map progress grid
+ * needs (``geometryBounds``, ``bboxPolygon``,
  * ``tileBounds``, ``gridZoomFor``, ``tileGridPlan``). Like
  * ``budgetScaleForBBox`` these have no ``basemap_tiles.py`` counterpart
  * and need none: the server never draws anything. They live here rather
@@ -119,9 +120,10 @@
  *     The ground one tile covers, as ``[west, south, east, north]`` —
  *     the inverse of ``lonLatToTile``, and the only place the grid's
  *     squares get their geometry.
- *   gridZoomFor(blob, minCells)
- *     Which single zoom level of a download's band to draw the grid at.
- *   tileGridPlan(template, blob, minCells)
+ *   gridZoomFor(blob)
+ *     Which single zoom level of a download's band to draw the grid at
+ *     — the deepest, so a square is a real tile.
+ *   tileGridPlan(template, blob)
  *     The grid's cells AND the run's tile URLs ordered to fill them one
  *     at a time — see its docstring for why the ordering is the feature.
  *   downloadedIds(template, entries, cachedURLs)
@@ -144,12 +146,6 @@
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;
-
-  // Tile-grid rework: fewest squares a progress grid is worth drawing at. Cell
-  // count quadruples with each zoom level, so this floor picks the
-  // shallowest level that still reads as a grid rather than a handful of
-  // big blocks — see ``gridZoomFor``. Client-only.
-  var GRID_MIN_CELLS = 12;
 
   // SNOW-568: the fraction of the origin's REMAINING storage quota a
   // single download may claim. Client-only — no basemap_tiles.py twin.
@@ -571,66 +567,85 @@
   }
 
   /**
-   * The zoom level to draw a download's progress grid at.
+   * The zoom level to draw a download's progress grid at: the deepest in
+   * the blob.
    *
-   * The download itself spans a whole band (z10-14 — see ``MICRO_BAND``),
-   * and every level of it covers the SAME ground, so painting one square
-   * per downloaded tile would repaint the same area five times over.
-   * The grid is therefore drawn at a single zoom, chosen per download so
-   * the user sees a decent number of squares whatever the area's size:
-   * the shallowest level in the blob whose grid reaches ``minCells``, or
-   * the deepest level available when even that falls short (a tiny area).
+   * The download spans a whole band (z10-14 — see ``MICRO_BAND``) and
+   * every level covers the SAME ground, so the grid has to pick one zoom
+   * or it would paint the same area five times over. It picks the band's
+   * detail floor, which makes each square a REAL tile — the finest unit
+   * the run actually fetches (~1.7 km across in the Alps at z14), and
+   * mostly one tile per square.
    *
-   * Shallowest-that-qualifies rather than deepest-that-fits because cell
-   * count quadruples per level: at z14 a region is thousands of squares,
-   * far too fine to read as a grid filling in.
+   * Deepest rather than a "give me at least N squares" rule: cell count
+   * quadruples per level, so any such threshold lands on a different
+   * level for different-sized areas — a big region drew 27 km blocks
+   * while a small one drew 3 km ones, which read as an inconsistent
+   * animation rather than a scale. Deepest is both the finest grid
+   * available and the only choice that needs no tuning constant.
    *
    * @param {{z?: Object<string, number[]>}} blob A full download blob.
-   * @param {number} [minCells] Fewest cells worth drawing; default
-   *   ``GRID_MIN_CELLS``.
    * @returns {number | null} A zoom level, or ``null`` for a blob with no
    *   ranges to draw.
    */
-  function gridZoomFor(blob, minCells) {
+  function gridZoomFor(blob) {
     if (!blob || !blob.z) return null;
-    const floor = typeof minCells === 'number' ? minCells : GRID_MIN_CELLS;
     const zooms = Object.keys(blob.z)
       .map(Number)
-      .filter((z) => Number.isFinite(z))
-      .sort((a, b) => a - b);
+      .filter((z) => Number.isFinite(z));
     if (!zooms.length) return null;
-    for (const z of zooms) {
-      const [xmin, xmax, ymin, ymax] = blob.z[String(z)];
-      if ((xmax - xmin + 1) * (ymax - ymin + 1) >= floor) return z;
-    }
-    return zooms[zooms.length - 1];
+    return Math.max.apply(null, zooms);
   }
 
   /**
    * The grid cell a tile belongs to, in cell-index space at ``gridZ``.
    *
    * A tile deeper than the grid sits inside exactly one cell, found by
-   * shifting its indices right. A tile SHALLOWER than the grid (the
-   * band's z10/z11 levels against a z12 grid) spans many cells; it is
-   * assigned to the north-westmost one it covers, so every tile lands in
-   * exactly one cell and the per-cell totals sum to the run's tile count.
+   * shifting its indices right. A tile SHALLOWER than the grid (every
+   * level above the band's floor, which is where the grid is drawn) spans
+   * many cells; it is assigned to the north-westmost one it covers, so
+   * every tile lands in exactly one cell and the per-cell totals sum to
+   * the run's tile count.
    *
    * That assignment is deliberately not "the cells this tile covers".
    * The grid is a progress indicator, not a coverage map — one tile
    * completing several cells would let squares light up for ground whose
    * own detail tiles have not been fetched yet.
    *
+   * ``range`` clamps the result into the grid's own footprint. A coarse
+   * tile starts WEST and NORTH of the area it was fetched for (its
+   * indices floor to a wider grid), so its north-westmost fine cell can
+   * fall outside the range the grid draws — which showed up as a lattice
+   * of stray squares scattered off the edge of the download area, over
+   * ground the run does not cover. Clamping folds those onto the edge
+   * cell the tile actually overlaps.
+   *
    * @param {number} z The tile's zoom level.
    * @param {number} x The tile's x index.
    * @param {number} y The tile's y index.
    * @param {number} gridZ The grid's zoom level.
+   * @param {number[]} range The grid zoom's own ``[xmin, xmax, ymin,
+   *   ymax]`` tile range.
    * @returns {[number, number]} ``[cellX, cellY]``.
    */
-  function _cellForTile(z, x, y, gridZ) {
+  function _cellForTile(z, x, y, gridZ, range) {
     const shift = z - gridZ;
-    if (shift >= 0) return [Math.floor(x / Math.pow(2, shift)), Math.floor(y / Math.pow(2, shift))];
-    const scale = Math.pow(2, -shift);
-    return [x * scale, y * scale];
+    let cx;
+    let cy;
+    if (shift >= 0) {
+      const step = Math.pow(2, shift);
+      cx = Math.floor(x / step);
+      cy = Math.floor(y / step);
+    } else {
+      const scale = Math.pow(2, -shift);
+      cx = x * scale;
+      cy = y * scale;
+    }
+    const [xmin, xmax, ymin, ymax] = range;
+    return [
+      Math.max(xmin, Math.min(cx, xmax)),
+      Math.max(ymin, Math.min(cy, ymax)),
+    ];
   }
 
   /**
@@ -658,17 +673,17 @@
    * @param {{z?: Object<string, number[]>}} blob A full download blob —
    *   fetched from ``/api/region-basemap-tiles/?id=...`` or built by
    *   ``buildBlob``.
-   * @param {number} [minCells] Passed through to ``gridZoomFor``.
    * @returns {{gridZ: number, cells: Array<{x: number, y: number, bbox:
    *   [number, number, number, number], total: number}>, urls: string[],
    *   cellOfURL: number[]} | null} ``null`` when there is nothing to draw.
    */
-  function tileGridPlan(template, blob, minCells) {
-    const gridZ = gridZoomFor(blob, minCells);
+  function tileGridPlan(template, blob) {
+    const gridZ = gridZoomFor(blob);
     if (!template || gridZ === null) return null;
 
     // Bucket every tile in the blob by the cell it lands in, keyed on the
     // cell's own indices so the two loops below agree on identity.
+    const gridRange = blob.z[String(gridZ)];
     const buckets = new Map();
     for (const key of Object.keys(blob.z)) {
       const z = Number(key);
@@ -676,7 +691,7 @@
       const [xmin, xmax, ymin, ymax] = blob.z[key];
       for (let x = xmin; x <= xmax; x++) {
         for (let y = ymin; y <= ymax; y++) {
-          const [cx, cy] = _cellForTile(z, x, y, gridZ);
+          const [cx, cy] = _cellForTile(z, x, y, gridZ, gridRange);
           const cellKey = cx + ':' + cy;
           let bucket = buckets.get(cellKey);
           if (!bucket) {
@@ -832,7 +847,6 @@
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,
     downloadedIds: downloadedIds,
-    GRID_MIN_CELLS: GRID_MIN_CELLS,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,

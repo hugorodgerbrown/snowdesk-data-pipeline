@@ -345,13 +345,27 @@ const DOWNLOAD_PROGRESS_PULSE_OPACITY = 0.85;
 const DOWNLOAD_PROGRESS_PULSE_RISE_MS = 180;
 const DOWNLOAD_PROGRESS_PULSE_FADE_MS = 440;
 
-// Tile-grid rework: the empty grid's outline — every square is drawn from the
-// first frame, so the user sees the shape of what they asked for and then
-// watches it fill. Fainter and thinner than the old single boundary line:
-// there are now dozens of these and they are the backdrop, not the
-// subject.
+// The empty grid — every square is drawn from the first frame, so the user
+// sees the shape of what they asked for and then watches it fill.
+//
+// A square that hasn't landed is washed in at PENDING opacity rather than
+// left fully transparent. The grid is drawn at the band's detail floor, so
+// a large region is several thousand squares; at that density the outlines
+// alone read as a mesh, and zoomed out far enough they stop resolving as
+// squares at all. The wash keeps the download's extent legible as a block
+// whatever the scale, with the landed squares reading against it.
+const DOWNLOAD_PROGRESS_PENDING_OPACITY = 0.12;
 const DOWNLOAD_PROGRESS_GRID_OPACITY = 0.5;
 const DOWNLOAD_PROGRESS_GRID_WIDTH = 0.75;
+
+// Gridlines fade out as the squares shrink on screen. A tile spans roughly
+// the whole viewport-tile width when the map sits at its own zoom, halving
+// with every level out — so a few levels below the grid's zoom the
+// outlines are sub-pixel and turn into noise. These are offsets FROM the
+// grid's zoom: invisible at gridZ + FADE_START, full strength by
+// gridZ + FADE_END.
+const DOWNLOAD_PROGRESS_GRID_FADE_START = -4;
+const DOWNLOAD_PROGRESS_GRID_FADE_END = -2;
 
 /**
  * A download's on-map progress grid: the tiles being fetched are drawn as
@@ -375,8 +389,10 @@ const DOWNLOAD_PROGRESS_GRID_WIDTH = 0.75;
  * decoration.
  *
  * Ticks arrive in batches from the service worker (~8 a second for a fast
- * run, roughly per-tile for a slow one), so repaints are coalesced onto an
- * animation frame and skipped entirely when no new square has completed.
+ * run, roughly per-tile for a slow one). A completed square is lit with
+ * `setFeatureState` rather than by rewriting the source: at the band's
+ * detail floor a large region is several thousand cells, and re-serialising
+ * that collection on every batch would be megabytes of JSON a second.
  *
  * @param {{gridZ: number, cells: Array<{bbox: number[], total: number}>,
  *   cellOfURL: number[]} | null} plan The grid plan from
@@ -408,13 +424,17 @@ function createDownloadProgressGrid(plan, urlOffset) {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // One Feature per cell, built once — only the `done` flag ever changes,
-  // so a repaint is a flag flip plus one setData rather than a rebuild.
-  const features = cells.map((cell) => {
+  // One Feature per cell, built once and pushed to the source once. The
+  // `id` is what lets a completed square be lit with `setFeatureState`
+  // instead of re-serialising the whole collection — at the band's detail
+  // floor a large region is several thousand cells, so a per-tick setData
+  // would be megabytes of JSON several times a second.
+  const features = cells.map((cell, index) => {
     const [west, south, east, north] = cell.bbox;
     return {
       type: 'Feature',
-      properties: { done: false },
+      id: index,
+      properties: {},
       geometry: {
         type: 'Polygon',
         coordinates: [
@@ -434,8 +454,11 @@ function createDownloadProgressGrid(plan, urlOffset) {
   // worker reports successes only): a square must not light up over
   // ground that isn't cached.
   const outstanding = cells.map((cell) => cell.total);
-  let completed = 0;
-  let painted = -1;
+  // Which cells have completed. Kept alongside the feature states because
+  // a mid-run basemap swap takes the source with it, and feature state
+  // does not survive that — `_ensure` replays this set onto the rebuilt
+  // source so the grid picks up where it left off rather than emptying.
+  const doneCells = new Set();
   let frame = 0;
   let removed = false;
 
@@ -462,7 +485,7 @@ function createDownloadProgressGrid(plan, urlOffset) {
       // the catch below already covers a style that can't take one.
       MAP.addSource(DOWNLOAD_PROGRESS_SOURCE_ID, {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
+        data: { type: 'FeatureCollection', features: features },
       });
       // Sits directly above the choropleth so it reads as that region
       // filling up, and below every outline and label so the selection
@@ -471,16 +494,26 @@ function createDownloadProgressGrid(plan, urlOffset) {
       // and the grid goes on top — it's transient, deliberate feedback,
       // so it shows either way rather than silently doing nothing.
       const beforeId = MAP.getLayer('regions-line') ? 'regions-line' : undefined;
-      // Only the squares that have landed are filled. The filter is what
-      // makes one source serve both layers: the outline draws every cell,
-      // the fill draws the done ones.
+      // Every cell is in the fill layer from the start; only the ones
+      // whose feature state says `done` are actually painted. Opacity
+      // rather than a filter, because a filter is re-evaluated against
+      // the source data (which never changes here) while feature state is
+      // designed for exactly this — cheap per-feature updates on a source
+      // that stays put.
       MAP.addLayer(
         {
           id: DOWNLOAD_PROGRESS_FILL_LAYER_ID,
           type: 'fill',
           source: DOWNLOAD_PROGRESS_SOURCE_ID,
-          filter: ['==', ['get', 'done'], true],
-          paint: { 'fill-color': colour, 'fill-opacity': DOWNLOAD_PROGRESS_OPACITY },
+          paint: {
+            'fill-color': colour,
+            'fill-opacity': [
+              'case',
+              ['boolean', ['feature-state', 'done'], false],
+              DOWNLOAD_PROGRESS_OPACITY,
+              DOWNLOAD_PROGRESS_PENDING_OPACITY,
+            ],
+          },
         },
         beforeId,
       );
@@ -496,11 +529,23 @@ function createDownloadProgressGrid(plan, urlOffset) {
           paint: {
             'line-color': colour,
             'line-width': DOWNLOAD_PROGRESS_GRID_WIDTH,
-            'line-opacity': DOWNLOAD_PROGRESS_GRID_OPACITY,
+            'line-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              plan.gridZ + DOWNLOAD_PROGRESS_GRID_FADE_START,
+              0,
+              plan.gridZ + DOWNLOAD_PROGRESS_GRID_FADE_END,
+              DOWNLOAD_PROGRESS_GRID_OPACITY,
+            ],
           },
         },
         beforeId,
       );
+      // A freshly-built source has no feature state, so anything already
+      // completed has to be replayed onto it — otherwise a basemap swap
+      // mid-run would empty a half-filled grid.
+      for (const index of doneCells) _light(index);
       return MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID);
     } catch (_e) {
       // Style mid-reload. The next tick tries again.
@@ -509,23 +554,20 @@ function createDownloadProgressGrid(plan, urlOffset) {
   }
 
   /**
-   * Push the current done-flags into the source.
+   * Set cell `index`'s feature state to done, so its square paints.
    *
+   * @param {number} index Index into `cells`.
    * @returns {void}
    */
-  function _paint() {
-    const source = _ensure();
-    if (!source) return;
+  function _light(index) {
     try {
-      source.setData({ type: 'FeatureCollection', features: features });
-      // Only after the write lands — a source that vanished with a style
-      // reload between _ensure and here has painted nothing, and marking
-      // it painted would strand the grid at that count for the rest of
-      // the run (the next tick's `completed === painted` guard would
-      // suppress the repaint that recovers it).
-      painted = completed;
+      MAP.setFeatureState(
+        { source: DOWNLOAD_PROGRESS_SOURCE_ID, id: index },
+        { done: true },
+      );
     } catch (_e) {
-      // Source went away with a style reload between _ensure and here.
+      // Source went away with a style reload. `_ensure` replays
+      // `doneCells` onto its replacement.
     }
   }
 
@@ -537,9 +579,9 @@ function createDownloadProgressGrid(plan, urlOffset) {
    */
   function _complete(index) {
     if (index < 0 || index >= features.length) return;
-    if (features[index].properties.done) return;
-    features[index].properties.done = true;
-    completed += 1;
+    if (doneCells.has(index)) return;
+    doneCells.add(index);
+    _light(index);
   }
 
   /**
@@ -598,6 +640,9 @@ function createDownloadProgressGrid(plan, urlOffset) {
           opacity = DOWNLOAD_PROGRESS_PULSE_OPACITY * (1 - t);
         }
         try {
+          // A flat opacity, replacing the feature-state expression — safe
+          // only because `finish` completes every cell before pulsing, so
+          // there is no longer a dark square for it to reveal.
           MAP.setPaintProperty(DOWNLOAD_PROGRESS_FILL_LAYER_ID, 'fill-opacity', opacity);
           // The gridlines fade with the fill rather than at their own
           // fainter level, so the whole grid leaves as one object.
@@ -619,12 +664,12 @@ function createDownloadProgressGrid(plan, urlOffset) {
   // Draw the empty grid straight away: the squares are up before the first
   // tile lands, so the user sees the extent of what they asked for and
   // then watches it fill.
-  _paint();
+  _ensure();
 
   return {
     /**
      * Take one progress report from the worker and light up any square it
-     * completed, coalescing repeat ticks onto one frame.
+     * completed.
      *
      * @param {number} done Tiles settled so far.
      * @param {number} total Tiles in the run.
@@ -652,11 +697,9 @@ function createDownloadProgressGrid(plan, urlOffset) {
         const target = Math.floor(cells.length * (done / total));
         for (let i = 0; i < target; i++) _complete(i);
       }
-      if (completed === painted || frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (completed !== painted) _paint();
-      });
+      // No repaint to schedule: `_complete` already lit each new square
+      // through feature state, and MapLibre coalesces those onto its own
+      // next frame.
     },
 
     /**
@@ -677,13 +720,11 @@ function createDownloadProgressGrid(plan, urlOffset) {
         _remove();
         return;
       }
-      // Whatever the last tick painted, a success means every tile landed
-      // — pulse a complete grid, not a 99% one. (The last few squares can
-      // legitimately be unpainted here: the worker's final report and its
-      // done reply arrive together, and the run is over before that
-      // report's animation frame would have fired.)
+      // A success means every tile landed — pulse a complete grid, not a
+      // 99% one. Cells can legitimately still be dark here: a tile that
+      // succeeded in the worker's final batch is reported alongside the
+      // done reply, and `finish` can win that race.
       for (let i = 0; i < features.length; i++) _complete(i);
-      _paint();
       if (!reducedMotion) await _pulse();
       _remove();
     },
