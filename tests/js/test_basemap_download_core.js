@@ -774,8 +774,14 @@ describe('tileGridPlan', () => {
     const totals = plan.cells.map((cell) => cell.total);
     expect(totals.filter((t) => t === 2)).toHaveLength(1);
     expect(totals.filter((t) => t === 1)).toHaveLength(3);
-    // North-westmost cell = lowest x and y = first in the sweep.
-    expect(plan.cells[0].total).toBe(2);
+    // Located by its indices rather than its position in the list — the
+    // sweep order is a separate decision (see the ordering test) and this
+    // assertion is about WHICH cell owns the coarse tile, not when it is
+    // reached.
+    const minX = Math.min(...plan.cells.map((c) => c.x));
+    const minY = Math.min(...plan.cells.map((c) => c.y));
+    const northWest = plan.cells.find((c) => c.x === minX && c.y === minY);
+    expect(northWest.total).toBe(2);
   });
 
   it('keeps every cell inside the grid zoom’s own tile range', () => {
@@ -798,17 +804,50 @@ describe('tileGridPlan', () => {
     expect(plan.cells.reduce((a, c) => a + c.total, 0)).toBe(core.tileCount(blob.z));
   });
 
-  it('orders cells north-west to south-east', () => {
+  it('fills bottom-up, starting at the south-west corner', () => {
+    // Bottom-up to match the download roundel's own fill. Tile y grows
+    // southward, so "bottom row first" is DESCENDING y — getting that
+    // backwards is the easy mistake, and it inverts the animation.
     const plan = core.tileGridPlan(TEMPLATE, BLOB);
-    const keys = plan.cells.map((cell) => [cell.y, cell.x]);
-    const sorted = [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    expect(keys).toEqual(sorted);
-    // North-west first means the first cell's bbox is the northern and
-    // western one of the set.
-    const norths = plan.cells.map((cell) => cell.bbox[3]);
-    const wests = plan.cells.map((cell) => cell.bbox[0]);
-    expect(plan.cells[0].bbox[3]).toBe(Math.max(...norths));
-    expect(plan.cells[0].bbox[0]).toBe(Math.min(...wests));
+    const ys = plan.cells.map((cell) => cell.y);
+    expect(ys).toEqual([...ys].sort((a, b) => b - a));
+    // Asserted in degrees too, so the test still means "south-west first"
+    // even if the tile-index convention is ever revisited.
+    expect(plan.cells[0].bbox[1]).toBe(Math.min(...plan.cells.map((c) => c.bbox[1])));
+    expect(plan.cells[0].bbox[0]).toBe(Math.min(...plan.cells.map((c) => c.bbox[0])));
+  });
+
+  it('alternates row direction, so the sweep never jumps back', () => {
+    // Boustrophedon: west-to-east, then east-to-west, and so on. A plain
+    // raster scan restarts each row at the west edge, jumping the width of
+    // the area — which reads as a repeating wipe rather than one rising
+    // fill. Needs a grid wider than two columns to be meaningful, so this
+    // builds its own 4x3 blob rather than using BLOB.
+    const blob = { z: { 12: [2140, 2143, 1440, 1442] } };
+    const plan = core.tileGridPlan(TEMPLATE, blob);
+    expect(plan.cells).toHaveLength(12);
+
+    const rows = [];
+    for (const cell of plan.cells) {
+      if (!rows.length || rows[rows.length - 1].y !== cell.y) {
+        rows.push({ y: cell.y, xs: [] });
+      }
+      rows[rows.length - 1].xs.push(cell.x);
+    }
+    // Each row is visited exactly once — a row appearing twice would mean
+    // the sweep left and came back.
+    expect(rows).toHaveLength(3);
+    expect(rows[0].xs).toEqual([2140, 2141, 2142, 2143]);
+    expect(rows[1].xs).toEqual([2143, 2142, 2141, 2140]);
+    expect(rows[2].xs).toEqual([2140, 2141, 2142, 2143]);
+
+    // The property the alternation exists for: consecutive cells are
+    // always neighbours, never a jump across the area.
+    for (let i = 1; i < plan.cells.length; i++) {
+      const dx = Math.abs(plan.cells[i].x - plan.cells[i - 1].x);
+      const dy = Math.abs(plan.cells[i].y - plan.cells[i - 1].y);
+      expect(dx + dy).toBe(1);
+    }
   });
 
   it('gives each cell the bbox of its own tile', () => {

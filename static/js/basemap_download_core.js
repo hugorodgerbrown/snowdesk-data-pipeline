@@ -724,9 +724,22 @@
    * cell. The SET of URLs is identical either way, so ordering costs the
    * download nothing; it is purely what makes the progress legible.
    *
-   * Cells are ordered north-west to south-east (row-major, by cell y then
-   * cell x) — an arbitrary but stable sweep, so a re-run of the same area
-   * fills in the same order.
+   * Cells are ordered **bottom-up in a boustrophedon**: rows from the
+   * south northwards, and each row runs the opposite way to the one below
+   * it — west to east, then east to west, and so on. That matches the
+   * download roundel, which fills from its bottom edge upwards; the map
+   * and the icon are two readouts of one run, so they fill in the same
+   * direction.
+   *
+   * Alternating rather than restarting every row at the west edge because
+   * a plain raster scan jumps the length of the area at each row end,
+   * which reads as a repeating wipe. Serpentine keeps consecutive cells
+   * adjacent, so the filled area grows like something pouring in.
+   *
+   * Note rows are ordered by DESCENDING cell y: Web Mercator tile y
+   * increases southward, so the southernmost row is the highest y and has
+   * to come first. Deterministic, so a re-run of the same area fills in
+   * the same order.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
    * @param {{z?: Object<string, number[]>}} blob A full download blob —
@@ -763,7 +776,21 @@
     }
     if (!buckets.size) return null;
 
-    const ordered = Array.from(buckets.values()).sort((a, b) => a.y - b.y || a.x - b.x);
+    // Group into rows, then walk them south to north, reversing every
+    // other row so the sweep never jumps back across the area.
+    const byRow = new Map();
+    for (const bucket of buckets.values()) {
+      if (!byRow.has(bucket.y)) byRow.set(bucket.y, []);
+      byRow.get(bucket.y).push(bucket);
+    }
+    // Descending y: the southernmost row is the highest tile index.
+    const rowKeys = Array.from(byRow.keys()).sort((a, b) => b - a);
+    const ordered = [];
+    rowKeys.forEach((y, rowIndex) => {
+      const row = byRow.get(y).sort((a, b) => a.x - b.x);
+      if (rowIndex % 2 === 1) row.reverse();
+      for (const bucket of row) ordered.push(bucket);
+    });
     const cells = [];
     const urls = [];
     const cellOfURL = [];

@@ -64,16 +64,19 @@ _TEMPLATE = "https://tiles.example/{z}/{x}/{y}.pbf"
 
 # A z10 tile over the Valais plus the 2x2 of z11 tiles beneath it — the
 # same shape ``tests/js/test_basemap_download_core.js`` reasons about, so
-# the grid is four cells and the z10 tile belongs to the first of them.
-# Small enough that a test can settle a whole cell by hand.
+# the grid is four cells and the z10 tile is assigned to the
+# north-westmost of them. Small enough that a test can settle a whole cell
+# by hand.
 _BLOB: dict[str, Any] = {
     "z": {"10": [536, 536, 358, 358], "11": [1072, 1073, 716, 717]},
 }
 
-# How many cells that blob produces, and how many tiles the first (north-
-# westmost) cell owns: its own z11 tile plus the shallower z10 tile.
+# How many cells that blob produces, and how many tiles the north-westmost
+# one owns: its own z11 tile plus the shallower z10 tile, which is assigned
+# there. Located by index rather than by position in the sweep — the sweep
+# runs south-west to north-east, so it is not the first cell.
 _CELLS = 4
-_FIRST_CELL_TILES = 2
+_MULTI_TILE_CELL_TILES = 2
 
 
 def _boot(page: Page, live_server: LiveServer) -> None:
@@ -115,6 +118,28 @@ def _start_grid_without_plan(page: Page) -> None:
     """Create a grid with no plan at all."""
     page.evaluate(
         "() => { window.__grid = window.createDownloadProgressGrid(null, 0); }"
+    )
+
+
+def _multi_tile_cell(page: Page) -> int:
+    """Index of the cell that owns more than one tile.
+
+    The z10 tile is assigned to the north-westmost cell, which the
+    south-west-to-north-east sweep does not reach first. Finding it by
+    tile count keeps these tests independent of the sweep order, which is
+    a separate decision with its own test.
+    """
+    return cast(
+        int,
+        page.evaluate(
+            """() => {
+                const cells = window.__plan.cells;
+                for (let i = 0; i < cells.length; i++) {
+                    if (cells[i].total > 1) return i;
+                }
+                return 0;
+            }"""
+        ),
     )
 
 
@@ -219,18 +244,19 @@ def test_a_cell_fills_only_once_all_its_tiles_land(
     _boot(page, live_server)
     _start_grid(page)
 
-    indices = _url_indices_for_cell(page, 0)
-    assert len(indices) == _FIRST_CELL_TILES
+    cell = _multi_tile_cell(page)
+    indices = _url_indices_for_cell(page, cell)
+    assert len(indices) == _MULTI_TILE_CELL_TILES
 
-    # All but the last tile of cell 0.
+    # All but the last tile of that cell.
     _update(page, len(indices) - 1, 8, indices[:-1])
     assert not any(_done_flags(page))
 
     # The last one completes it, and only it.
     _update(page, len(indices), 8, indices[-1:])
     flags = _done_flags(page)
-    assert flags[0] is True
-    assert not any(flags[1:])
+    assert flags[cell] is True
+    assert sum(flags) == 1
 
 
 def test_cells_fill_one_at_a_time(page: Page, live_server: LiveServer) -> None:
@@ -245,15 +271,30 @@ def test_cells_fill_one_at_a_time(page: Page, live_server: LiveServer) -> None:
 
     total = cast(int, page.evaluate("() => window.__plan.urls.length"))
     filled: list[int] = []
+    order: list[int] = []
     for i in range(total):
         _update(page, i + 1, total, [i])
-        filled.append(sum(_done_flags(page)))
+        flags = _done_flags(page)
+        filled.append(sum(flags))
+        for index, done in enumerate(flags):
+            if done and index not in order:
+                order.append(index)
 
     # Monotonic, ends complete, and gets there in steps rather than all at
     # the end.
     assert filled == sorted(filled)
     assert filled[-1] == _CELLS
     assert 0 < filled[len(filled) // 2] < _CELLS
+
+    # And it fills BOTTOM-UP, to match the download roundel — the map and
+    # the icon are two readouts of one run, so a map sweeping downwards
+    # against an icon filling upwards reads as two different things
+    # happening. Latitude is the assertion, not tile y, because tile y runs
+    # the other way and would hide an inverted sweep.
+    cells = cast(list[dict[str, Any]], page.evaluate("() => window.__plan.cells"))
+    souths = [cells[index]["bbox"][1] for index in order]
+    assert souths == sorted(souths)
+    assert souths[0] < souths[-1]
 
 
 def test_feed_urls_are_ignored(page: Page, live_server: LiveServer) -> None:

@@ -608,7 +608,14 @@ Three pieces make it work:
   complete until the final pass reached it. `tileGridPlan` groups each
   cell's URLs together instead; the set is identical, so the download is
   unaffected and the ordering is purely what makes progress legible.
-  Cells sweep north-west to south-east.
+  Cells sweep bottom-up in a **boustrophedon** — rows from the south
+  northwards, each row running the opposite way to the one below it — so
+  the map fills in the same direction as the download roundel, which
+  fills from its bottom edge up. Alternating rather than restarting every
+  row at the west edge keeps consecutive cells adjacent; a plain raster
+  scan jumps the width of the area at each row end and reads as a
+  repeating wipe. Note rows go by DESCENDING tile y, since Web Mercator y
+  grows southward.
 - **Per-cell countdown.** Each cell knows how many tiles it owns;
   `update` decrements on each reported index (offset past the feed URLs)
   and fills the square at zero. A tile shallower than the grid is

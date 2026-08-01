@@ -12,7 +12,10 @@ tiles beneath them. The grid and the overlay are exactly what ships.
 
 The grid is up before the first tile lands, so the extent of the download
 is visible from the start. Squares complete one at a time because
-`tileGridPlan` hands the service worker its URLs grouped cell by cell.
+`tileGridPlan` hands the service worker its URLs grouped cell by cell, and
+they fill **bottom-up in a boustrophedon** — rows from the south upwards,
+each running the opposite way to the one below it — the same direction the
+download roundel fills, so the map and the icon read as one gesture.
 
 | Empty — nothing fetched yet | Part way through |
 | --- | --- |
