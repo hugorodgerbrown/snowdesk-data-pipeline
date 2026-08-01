@@ -555,7 +555,17 @@ the roundel's own fill, the tiles being fetched are drawn over the map as
 an **empty grid of squares**, and each square fills in as its own tiles
 land. `createDownloadProgressGrid` (`static/js/map.js`) owns a single
 `download-progress` geojson source with a fill and a line layer, added
-above `regions-fill` for the run and removed after it. The line layer
+**above every region layer** (before the style's first `symbol` layer, so
+labels stay readable) for the run and removed after it.
+
+That ordering is load-bearing. The grid used to sit between the choropleth
+and the region outline, to read as "this region filling up" — but it is
+translucent, so the danger colour beneath tinted the part of each square
+inside the region's boundary and left the part outside untinted. One
+square rendered as two shades, which reads as the square being **cut** at
+the boundary. Nothing is ever clipped: the whole tile is fetched and the
+whole tile is cached. What fills up is the tile cache, and a cache does
+not stop at a region edge. The line layer
 draws every cell (the empty grid); the fill layer carries a
 feature-state-driven `fill-opacity`, so one source serves both.
 

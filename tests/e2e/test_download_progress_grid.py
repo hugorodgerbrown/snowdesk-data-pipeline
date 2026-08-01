@@ -343,12 +343,17 @@ def test_no_plan_degrades_to_a_no_op(page: Page, live_server: LiveServer) -> Non
     assert not _has_grid_layers(page)
 
 
-def test_grid_sits_above_the_choropleth(page: Page, live_server: LiveServer) -> None:
-    """The grid reads as the region filling up, under its outline and label.
+def test_grid_sits_above_every_region_layer(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The grid is its own overlay, not a wash over one region.
 
-    Ordering is the whole visual: above the choropleth so it reads as that
-    region filling, below ``regions-line`` so the selection ring and region
-    name stay legible through it.
+    Ordering is the whole visual. Under ``regions-line`` the grid picked up
+    the danger colour through its own translucency, so a square straddling
+    the boundary rendered as two shades and read as CUT — when in truth the
+    whole tile is cached. Above every region layer it reads uniform,
+    whatever is beneath it. Still below the labels, so region names and the
+    selection ring survive a run.
     """
     _boot(page, live_server)
     _start_grid(page)
@@ -358,9 +363,24 @@ def test_grid_sits_above_the_choropleth(page: Page, live_server: LiveServer) -> 
         list[str],
         page.evaluate("() => MAP.getStyle().layers.map((layer) => layer.id)"),
     )
-    assert order.index("regions-fill") < order.index(_FILL_LAYER)
-    assert order.index(_FILL_LAYER) < order.index("regions-line")
-    assert order.index(_LINE_LAYER) < order.index("regions-line")
+    for region_layer in ("regions-fill", "regions-line"):
+        assert order.index(region_layer) < order.index(_FILL_LAYER)
+        assert order.index(region_layer) < order.index(_LINE_LAYER)
+
+    first_symbol = cast(
+        int | None,
+        page.evaluate(
+            """() => {
+                const layers = MAP.getStyle().layers;
+                for (let i = 0; i < layers.length; i++) {
+                    if (layers[i].type === 'symbol') return i;
+                }
+                return null;
+            }"""
+        ),
+    )
+    if first_symbol is not None:
+        assert order.index(_FILL_LAYER) < first_symbol
 
 
 def test_cells_are_well_formed_closed_polygons(

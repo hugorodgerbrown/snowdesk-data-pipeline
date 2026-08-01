@@ -368,6 +368,29 @@ const DOWNLOAD_PROGRESS_GRID_FADE_START = -4;
 const DOWNLOAD_PROGRESS_GRID_FADE_END = -2;
 
 /**
+ * The id of the style's first ``symbol`` layer, or undefined.
+ *
+ * The insertion point for an overlay that should sit above every fill and
+ * line the basemap and the region tiers draw, but below their labels —
+ * MapLibre's usual idiom for "on top, but don't bury the text".
+ *
+ * @returns {string | undefined} A layer id, or undefined for a style with
+ *   no symbol layers (the offline fallback), where the caller's layer
+ *   goes on top.
+ */
+function _firstSymbolLayerId() {
+  try {
+    const layers = (MAP.getStyle() || {}).layers || [];
+    for (const layer of layers) {
+      if (layer.type === 'symbol') return layer.id;
+    }
+  } catch (_e) {
+    // Style mid-reload — the caller falls back to adding on top.
+  }
+  return undefined;
+}
+
+/**
  * A download's on-map progress grid: the tiles being fetched are drawn as
  * an empty grid of squares over the area, and each square fills in as its
  * own tiles land. The whole grid pulses once on success, then is removed.
@@ -386,7 +409,9 @@ const DOWNLOAD_PROGRESS_GRID_FADE_END = -2;
  *
  * The grid is anchored to the ground, so it stays put as the map is
  * panned and zoomed under it — the squares are geometry, not screen-space
- * decoration.
+ * decoration. It draws above every region layer (see ``_ensure``): what is
+ * filling up is the tile cache, not a region, and a tile is cached whole
+ * whether or not a boundary happens to cross it.
  *
  * Ticks arrive in batches from the service worker (~8 a second for a fast
  * run, roughly per-tile for a slow one). A completed square is lit with
@@ -487,13 +512,22 @@ function createDownloadProgressGrid(plan, urlOffset) {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: features },
       });
-      // Sits directly above the choropleth so it reads as that region
-      // filling up, and below every outline and label so the selection
-      // ring and region name stay legible through it. With the regions
-      // overlay (L4) switched off there is no regions-line to anchor to,
-      // and the grid goes on top — it's transient, deliberate feedback,
-      // so it shows either way rather than silently doing nothing.
-      const beforeId = MAP.getLayer('regions-line') ? 'regions-line' : undefined;
+      // Above every region layer, below the labels.
+      //
+      // It used to sit between the choropleth and the region outline, to
+      // read as "this region filling up". That was the wrong model and it
+      // showed: the grid is translucent, so the danger colour beneath it
+      // tinted the part of each square inside the region's boundary and
+      // left the part outside untinted — one square rendered as two
+      // shades, which reads as the square being CUT along the boundary.
+      // Nothing was ever clipped; the whole tile is fetched and the whole
+      // tile is cached. What the user is watching is the tile cache
+      // filling, and a cache does not stop at a region edge, so the grid
+      // is drawn as its own overlay: uniform, whatever is underneath.
+      //
+      // Below the labels rather than flat on top, so region names and the
+      // selection ring stay readable through a run.
+      const beforeId = _firstSymbolLayerId();
       // Every cell is in the fill layer from the start; only the ones
       // whose feature state says `done` are actually painted. Opacity
       // rather than a filter, because a filter is re-evaluated against
