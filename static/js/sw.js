@@ -1066,9 +1066,10 @@ async function _warmCache(urls, options) {
       noteFailure(why);
     } else {
       ok += 1;
-      // Tile-grid rework: successes only. A failed tile must not light up its
-      // square — the grid's job is to show what is actually cached.
-      settledSince.push(index);
+      // Successes only. A failed tile must not light up its square — the
+      // grid's job is to show what is actually cached. Skipped entirely
+      // when there is no onProgress: nothing would ever drain the array.
+      if (onProgress) settledSince.push(index);
     }
     done += 1;
     reportProgress();

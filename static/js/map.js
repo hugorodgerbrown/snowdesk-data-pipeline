@@ -516,9 +516,14 @@ function createDownloadProgressGrid(plan, urlOffset) {
   function _paint() {
     const source = _ensure();
     if (!source) return;
-    painted = completed;
     try {
       source.setData({ type: 'FeatureCollection', features: features });
+      // Only after the write lands — a source that vanished with a style
+      // reload between _ensure and here has painted nothing, and marking
+      // it painted would strand the grid at that count for the rest of
+      // the run (the next tick's `completed === painted` guard would
+      // suppress the repaint that recovers it).
+      painted = completed;
     } catch (_e) {
       // Source went away with a style reload between _ensure and here.
     }
