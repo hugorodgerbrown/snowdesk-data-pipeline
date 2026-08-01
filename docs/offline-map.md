@@ -505,10 +505,14 @@ region painted `idle` until the user reselected the region.
 
 1. `map.js` fetches the region's full blob from
    `/api/region-basemap-tiles/?id=<region_id>`.
-2. `static/js/basemap_download_core.js`'s `rangesToTileURLs` expands the
+2. `static/js/basemap_download_core.js`'s `tileGridPlan` expands the
    blob's `z` tile-index ranges into `{z}/{x}/{y}` URLs against the
    active basemap's resolved tile template
-   (`activeBasemapTileTemplate(MAP)`).
+   (`activeBasemapTileTemplate(MAP)`), **grouped by progress-grid cell**
+   (tile-grid rework) — the same URL set `rangesToTileURLs` would produce, in the
+   order that makes the on-map grid fill one square at a time. It returns
+   the grid's cells alongside the URLs; `rangesToTileURLs` itself is still
+   used for the flat list (custom-area eviction).
 3. `map.js` assembles the rest of the URL list: same-origin data feeds
    in sw.js's `STATIC_PATHS` (regions/major-regions/sub-regions/
    resorts/ratings, one per currently-enabled country), the active
@@ -529,45 +533,72 @@ region painted `idle` until the user reselected the region.
    LRU trim. Same-origin data feeds still go into the shell
    `CACHE_VERSION` cache. Every URL is independent; one failure never
    aborts the rest.
-6. `sw.js` posts a `warm-cache-progress` message (n/total) on every
-   throttled batch. `sw_register.js` forwards these to `map.js` (which
-   updates the icon's live bottom-up fill, and the region's own on-map
-   fill — below) and rearms the 30-second silence timeout on each tick,
-   so a large download spanning more than 30 seconds is never cut short
-   as long as it keeps making progress.
+6. `sw.js` posts a `warm-cache-progress` message on every throttled
+   batch, carrying `done`/`total` **and `settled`** — the indices into
+   the posted URL list that succeeded since the last message (tile-grid rework),
+   so the page knows which tiles landed and not merely how many. Failed
+   URLs are omitted: they count toward `done`, but nothing was cached.
+   Because those indices are what drives the grid, reports also go out on
+   a `PROGRESS_FLUSH_MS` (120 ms) timer rather than on the 5% buckets
+   alone. `sw_register.js` forwards these to `map.js` (which updates the
+   icon's live bottom-up fill, and the on-map grid — below) and rearms the
+   30-second silence timeout on each tick, so a large download spanning
+   more than 30 seconds is never cut short as long as it keeps making
+   progress.
 7. On completion, the icon flips to `done` (a clean, non-vacuous
    success — at least one URL cached and none failed) or reverts to
    `idle` (partial/failed/vacuous — the user can retry). No toast is
    shown either way; the icon's own state is the only feedback.
 
-**On-map progress fill** (SNOW-569) — alongside the roundel's own fill,
-the thing being downloaded fills on the map: the region's boundary for
-the per-region control, the framed rectangle for the custom-area one.
-`createDownloadProgressFill` (`static/js/map.js`) owns a single
+**On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
+the roundel's own fill, the tiles being fetched are drawn over the map as
+an **empty grid of squares**, and each square fills in as its own tiles
+land. `createDownloadProgressGrid` (`static/js/map.js`) owns a single
 `download-progress` geojson source with a fill and a line layer, added
-above `regions-fill` for the run and removed after it.
+above `regions-fill` for the run and removed after it. The line layer
+draws every cell (the empty grid); the fill layer carries a
+`['==', ['get', 'done'], true]` filter, so one source serves both.
 
-The level is real geometry, not a paint trick — MapLibre has no
-clip-path and no per-pixel gradient on a `fill` layer, so each tick clips
-the geometry against the half-plane below the current level
-(`basemap_download_core.js`'s `clipPolygonBelow`, a Sutherland–Hodgman
-pass per ring, no dependency) and `setData`s the result. The level is a
-line of constant **latitude**, chosen in Web Mercator
-(`fillLevelLatitude`) so it climbs at a constant rate on screen: the fill
-is anchored to the ground and stays put as the map is panned under it,
-at the cost of no longer running along the bottom of the screen under a
-bearing rotation. Ticks arrive once per URL — thousands for a region —
-so repaints are coalesced onto an animation frame and skipped when the
-rounded percentage hasn't moved, and `_ensure` re-adds the source if a
-basemap swap mid-run takes the whole style with it.
+The squares are real Web Mercator tile footprints (`tileBounds`), which
+is the point: what the user watches is the actual unit of work
+completing. That also drops the previous version's one dishonesty — a
+region *boundary* filling up, when what a run fetches is the tiles
+covering its bounding **box**.
 
-On success the fill pulses once and is removed, and only then does the
-roundel flip to `done` — the two are one gesture, and the control stays
-`busy` throughout so nothing repaints underneath the pulse. A failed run
-removes the fill immediately: a failure must never read as a downloaded
-region, however briefly. `prefers-reduced-motion` skips the pulse. A
-geometry-less download (nothing to clip) degrades to the roundel-only
-behaviour rather than erroring.
+Three pieces make it work:
+
+- **One zoom, not five.** A download spans z10–14 and every level covers
+  the same ground, so painting a square per tile would repaint the area
+  five times. `gridZoomFor` picks a single level per download — the
+  shallowest whose grid reaches `GRID_MIN_CELLS` (12), or the deepest
+  available for a tiny area — since cell count quadruples per level and
+  z14 would be thousands of squares.
+- **Fetch order.** `rangesToTileURLs` emits zoom-major, so no cell would
+  complete until the final pass reached it. `tileGridPlan` groups each
+  cell's URLs together instead; the set is identical, so the download is
+  unaffected and the ordering is purely what makes progress legible.
+  Cells sweep north-west to south-east.
+- **Per-cell countdown.** Each cell knows how many tiles it owns;
+  `update` decrements on each reported index (offset past the feed URLs)
+  and fills the square at zero. A tile shallower than the grid is
+  assigned to one cell only (`_cellForTile`), so the totals partition the
+  run exactly. Only *successes* are reported, so a square never lights up
+  over ground that isn't cached.
+
+Reports arrive batched (~8/s), so repaints are coalesced onto an
+animation frame and skipped when no new cell completed, and `_ensure`
+re-adds the source if a basemap swap mid-run takes the whole style with
+it. A worker old enough not to send `settled` falls back to filling cells
+in plan order at the reported percentage.
+
+On success the grid completes, pulses once, and is removed, and only then
+does the roundel flip to `done` — the two are one gesture, and the
+control stays `busy` throughout so nothing repaints underneath the pulse.
+A failed run removes the grid immediately without completing it: a
+failure must never read as a downloaded region, however briefly.
+`prefers-reduced-motion` skips the pulse. A download with no plan
+(a blob carrying no tile ranges) degrades to the roundel-only behaviour
+rather than erroring.
 
 `_basemapStaleWhileRevalidate` (ordinary passive browsing) reads
 `BASEMAP_PINNED_CACHE` as a read-only fallback on a `BASEMAP_CACHE` miss, so

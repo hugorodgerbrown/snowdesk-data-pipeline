@@ -32,14 +32,17 @@
  * name, is how a re-port with no compiler/typechecker link between the
  * two languages stays honest against drift.
  *
- * SNOW-569 adds the geometry helpers behind the on-map download progress
- * fill — ``geometryBounds``/``bboxPolygon``/``fillLevelLatitude``/
- * ``clipPolygonBelow``. Like ``budgetScaleForBBox`` these are client-only
- * with no Python twin, and their tests are likewise property-shaped: what
- * has to hold is that the level rises monotonically and lands exactly on
- * the box's edges at 0 and 1, and that the clip keeps everything below the
- * line, drops everything above it, and always hands back rings a fill
- * layer can render.
+ * SNOW-569/571 add the geometry helpers behind the on-map download
+ * progress grid — ``geometryBounds``/``bboxPolygon``/``tileBounds``/
+ * ``gridZoomFor``/``tileGridPlan``. Like ``budgetScaleForBBox`` these are
+ * client-only with no Python twin, and their tests are likewise
+ * property-shaped. The load-bearing properties: ``tileBounds`` inverts
+ * ``lonLatToTile`` and tiles a zoom level seamlessly; a plan's per-cell
+ * totals partition the run exactly (so a cell's countdown hits zero when
+ * its tiles land, and not before); each cell's URLs are contiguous (the
+ * ordering is the whole reason the grid fills one square at a time); and
+ * the plan's URL SET matches ``rangesToTileURLs`` — the grid reorders the
+ * download without changing what it caches.
  *
  * SNOW-570 adds ``downloadedIds`` — the pure half of the "Downloaded
  * areas" overlay. Its load-bearing property is that it requires an area's
@@ -597,154 +600,171 @@ describe('bboxPolygon', () => {
   });
 });
 
-describe('fillLevelLatitude', () => {
-  const BBOX = [7.0, 46.0, 8.0, 47.0];
-
-  it('pins the ends to the box edges', () => {
-    expect(core.fillLevelLatitude(BBOX, 0)).toBeCloseTo(46.0, 9);
-    expect(core.fillLevelLatitude(BBOX, 1)).toBeCloseTo(47.0, 9);
+describe('tileBounds', () => {
+  it('covers the whole world at zoom 0', () => {
+    const [west, south, east, north] = core.tileBounds(0, 0, 0);
+    expect(west).toBeCloseTo(-180, 9);
+    expect(east).toBeCloseTo(180, 9);
+    // Web Mercator's own latitude limit, not the poles.
+    expect(north).toBeCloseTo(85.0511287798066, 6);
+    expect(south).toBeCloseTo(-85.0511287798066, 6);
   });
 
-  it('clamps a fraction outside [0, 1] to those edges', () => {
-    expect(core.fillLevelLatitude(BBOX, -0.5)).toBeCloseTo(46.0, 9);
-    expect(core.fillLevelLatitude(BBOX, 3)).toBeCloseTo(47.0, 9);
+  it('puts north above south and east above west', () => {
+    const [west, south, east, north] = core.tileBounds(14, 8501, 5820);
+    expect(east).toBeGreaterThan(west);
+    expect(north).toBeGreaterThan(south);
   });
 
-  it('rises monotonically with progress', () => {
-    let previous = -Infinity;
-    for (let pct = 0; pct <= 100; pct++) {
-      const lat = core.fillLevelLatitude(BBOX, pct / 100);
-      expect(lat).toBeGreaterThan(previous);
-      previous = lat;
+  it('inverts lonLatToTile — the tile containing a point covers it', () => {
+    // The Valais point the rest of this suite uses. Projecting it forward
+    // and the resulting index back must bracket the original position;
+    // that round trip is the whole contract between the two functions.
+    const lon = 7.5;
+    const lat = 46.25;
+    for (const z of [10, 12, 14]) {
+      const [x, y] = core.lonLatToTile(lon, lat, z);
+      const [west, south, east, north] = core.tileBounds(z, x, y);
+      expect(lon).toBeGreaterThanOrEqual(west);
+      expect(lon).toBeLessThan(east);
+      expect(lat).toBeGreaterThan(south);
+      expect(lat).toBeLessThanOrEqual(north);
     }
   });
 
-  it('interpolates in Mercator, not in degrees', () => {
-    // The projection stretches northward, so the box's northern half
-    // occupies more SCREEN height than its southern half — and half the
-    // screen height is therefore reached slightly NORTH of the degree
-    // midpoint. The gap is small (hundredths of a degree over a 1° box);
-    // asserting its sign and rough size is what distinguishes this from a
-    // linear-in-degrees implementation, which would land exactly on 46.5.
-    const half = core.fillLevelLatitude(BBOX, 0.5);
-    expect(half).toBeGreaterThan(46.5);
-    expect(half - 46.5).toBeLessThan(0.01);
-  });
-
-  it('is linear in degrees for a degenerate box', () => {
-    expect(core.fillLevelLatitude([7, 46, 8, 46], 0.5)).toBeCloseTo(46.0, 9);
+  it('tiles a zoom level edge to edge with no gap or overlap', () => {
+    // Neighbouring tiles must share an edge exactly, or the grid would
+    // render hairline seams between its squares.
+    const left = core.tileBounds(12, 2140, 1440);
+    const right = core.tileBounds(12, 2141, 1440);
+    const below = core.tileBounds(12, 2140, 1441);
+    expect(right[0]).toBeCloseTo(left[2], 12);
+    expect(below[3]).toBeCloseTo(left[1], 12);
   });
 });
 
-describe('clipPolygonBelow', () => {
-  // A unit square from (7, 46) to (8, 47).
-  const SQUARE = {
-    type: 'Polygon',
-    coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
-  };
-
+describe('gridZoomFor', () => {
   /**
-   * The latitude range spanned by every position in `geometry`.
+   * A blob whose every zoom level is a `span` x `span` square of tiles.
    *
-   * @param {Object} geometry
-   * @returns {[number, number]} ``[south, north]``.
+   * @param {number[]} zooms Zoom levels to include.
+   * @param {function(number): number} span Tiles per side at a zoom.
+   * @returns {{z: Object<string, number[]>}}
    */
-  function latSpan(geometry) {
-    const bounds = core.geometryBounds(geometry);
-    return [bounds[1], bounds[3]];
+  function blobWith(zooms, span) {
+    const z = {};
+    for (const level of zooms) z[String(level)] = [0, span(level) - 1, 0, span(level) - 1];
+    return { z: z };
   }
 
-  it('keeps nothing above the clip line', () => {
-    const clipped = core.clipPolygonBelow(SQUARE, 46.25);
-    expect(latSpan(clipped)).toEqual([46, 46.25]);
+  it('picks the shallowest level that reaches the cell floor', () => {
+    // 1, 4, 16, 64, 256 cells at z10..z14 — z12's 16 is the first to
+    // clear the default floor of 12.
+    const blob = blobWith([10, 11, 12, 13, 14], (z) => Math.pow(2, z - 10));
+    expect(core.gridZoomFor(blob)).toBe(12);
   });
 
-  it('returns a MultiPolygon whatever the input type', () => {
-    expect(core.clipPolygonBelow(SQUARE, 46.5).type).toBe('MultiPolygon');
-    const multi = { type: 'MultiPolygon', coordinates: [SQUARE.coordinates] };
-    expect(core.clipPolygonBelow(multi, 46.5).type).toBe('MultiPolygon');
+  it('honours an explicit floor', () => {
+    const blob = blobWith([10, 11, 12, 13, 14], (z) => Math.pow(2, z - 10));
+    expect(core.gridZoomFor(blob, 1)).toBe(10);
+    expect(core.gridZoomFor(blob, 100)).toBe(14);
   });
 
-  it('returns the whole geometry when the line is above it', () => {
-    const clipped = core.clipPolygonBelow(SQUARE, 99);
-    expect(latSpan(clipped)).toEqual([46, 47]);
-    expect(core.geometryBounds(clipped)).toEqual([7, 46, 8, 47]);
+  it('falls back to the deepest level when nothing reaches the floor', () => {
+    // A tiny area: even its finest level is only a handful of tiles, and
+    // a grid of 9 squares beats no grid at all.
+    const blob = blobWith([10, 11, 12], () => 3);
+    expect(core.gridZoomFor(blob)).toBe(12);
   });
 
-  it('returns null when the line is below everything', () => {
-    expect(core.clipPolygonBelow(SQUARE, 45)).toBeNull();
+  it('returns null for a blob with nothing to draw', () => {
+    expect(core.gridZoomFor(null)).toBeNull();
+    expect(core.gridZoomFor({})).toBeNull();
+    expect(core.gridZoomFor({ z: {} })).toBeNull();
+  });
+});
+
+describe('tileGridPlan', () => {
+  const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
+
+  // z10 is one tile; z11 is the 2x2 beneath it. Small enough to reason
+  // about position by position, and it exercises both cell-assignment
+  // directions: at a z11 grid the z10 tile is SHALLOWER than the grid.
+  const BLOB = { z: { 10: [536, 536, 358, 358], 11: [1072, 1073, 716, 717] } };
+
+  it('accounts for every tile exactly once', () => {
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    expect(plan.gridZ).toBe(11);
+    expect(plan.urls).toHaveLength(core.tileCount(BLOB.z));
+    expect(new Set(plan.urls).size).toBe(plan.urls.length);
+    // Per-cell totals are a partition of the run, which is what lets a
+    // cell's countdown reach zero exactly when its tiles have landed.
+    const summed = plan.cells.reduce((acc, cell) => acc + cell.total, 0);
+    expect(summed).toBe(plan.urls.length);
   });
 
-  it('closes every ring it produces', () => {
-    const clipped = core.clipPolygonBelow(SQUARE, 46.5);
-    for (const polygon of clipped.coordinates) {
-      for (const ring of polygon) {
-        expect(ring.length).toBeGreaterThanOrEqual(4);
-        expect(ring[0]).toEqual(ring[ring.length - 1]);
+  it('groups each cell’s URLs together', () => {
+    // The ordering IS the feature: a cell whose tiles were scattered
+    // through the run could not light up until the run had nearly
+    // finished. Every cell's indices must form one contiguous block.
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const firstSeen = new Map();
+    let previous = null;
+    plan.cellOfURL.forEach((cellIndex, i) => {
+      if (previous !== null && cellIndex !== previous) {
+        expect(firstSeen.has(cellIndex)).toBe(false);
       }
+      if (!firstSeen.has(cellIndex)) firstSeen.set(cellIndex, i);
+      previous = cellIndex;
+    });
+    expect(firstSeen.size).toBe(plan.cells.length);
+  });
+
+  it('assigns a tile shallower than the grid to one cell only', () => {
+    // The z10 tile spans all four z11 cells. Counting it once — against
+    // the north-westmost — is what keeps the totals a partition; letting
+    // it credit all four would light squares over ground whose own z11
+    // tile had not been fetched.
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    expect(plan.cells).toHaveLength(4);
+    const totals = plan.cells.map((cell) => cell.total);
+    expect(totals.filter((t) => t === 2)).toHaveLength(1);
+    expect(totals.filter((t) => t === 1)).toHaveLength(3);
+    // North-westmost cell = lowest x and y = first in the sweep.
+    expect(plan.cells[0].total).toBe(2);
+  });
+
+  it('orders cells north-west to south-east', () => {
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const keys = plan.cells.map((cell) => [cell.y, cell.x]);
+    const sorted = [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    expect(keys).toEqual(sorted);
+    // North-west first means the first cell's bbox is the northern and
+    // western one of the set.
+    const norths = plan.cells.map((cell) => cell.bbox[3]);
+    const wests = plan.cells.map((cell) => cell.bbox[0]);
+    expect(plan.cells[0].bbox[3]).toBe(Math.max(...norths));
+    expect(plan.cells[0].bbox[0]).toBe(Math.min(...wests));
+  });
+
+  it('gives each cell the bbox of its own tile', () => {
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    for (const cell of plan.cells) {
+      expect(cell.bbox).toEqual(core.tileBounds(plan.gridZ, cell.x, cell.y));
     }
   });
 
-  it('handles a concave ring, keeping both surviving lobes', () => {
-    // A "U": two legs rising from a shared base, with a notch between
-    // them. Clipping above the notch floor leaves both legs, which
-    // Sutherland–Hodgman returns as one ring joined along the clip line
-    // — so what matters is that the full x-extent survives, not the ring
-    // count.
-    const u = {
-      type: 'Polygon',
-      coordinates: [[
-        [0, 0], [3, 0], [3, 3], [2, 3], [2, 1], [1, 1], [1, 3], [0, 3], [0, 0],
-      ]],
-    };
-    const clipped = core.clipPolygonBelow(u, 2);
-    expect(core.geometryBounds(clipped)).toEqual([0, 0, 3, 2]);
+  it('emits the same URL set as rangesToTileURLs, reordered', () => {
+    // The download must be unaffected by the grid: same tiles, different
+    // order. Anything else would mean the grid changed what gets cached.
+    const plan = core.tileGridPlan(TEMPLATE, BLOB, 4);
+    const flat = core.rangesToTileURLs(TEMPLATE, BLOB);
+    expect([...plan.urls].sort()).toEqual([...flat].sort());
   });
 
-  it('drops a polygon whose outer ring is entirely above the line', () => {
-    const geometry = {
-      type: 'MultiPolygon',
-      coordinates: [
-        [[[7, 46], [8, 46], [8, 46.5], [7, 46.5], [7, 46]]],
-        [[[7, 48], [8, 48], [8, 49], [7, 49], [7, 48]]],
-      ],
-    };
-    const clipped = core.clipPolygonBelow(geometry, 47);
-    expect(clipped.coordinates).toHaveLength(1);
-    expect(core.geometryBounds(clipped)).toEqual([7, 46, 8, 46.5]);
-  });
-
-  it('keeps a hole that is wholly below the line', () => {
-    const withHole = {
-      type: 'Polygon',
-      coordinates: [
-        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
-        [[7.2, 46.2], [7.4, 46.2], [7.4, 46.4], [7.2, 46.4], [7.2, 46.2]],
-      ],
-    };
-    expect(core.clipPolygonBelow(withHole, 46.8).coordinates[0]).toHaveLength(2);
-  });
-
-  it('drops a hole that is wholly above the line', () => {
-    // The hole is gone, so the outer ring below the line is solid —
-    // which is right: every point of that hole is above the fill level.
-    const withHole = {
-      type: 'Polygon',
-      coordinates: [
-        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
-        [[7.2, 46.8], [7.4, 46.8], [7.4, 46.9], [7.2, 46.9], [7.2, 46.8]],
-      ],
-    };
-    expect(core.clipPolygonBelow(withHole, 46.5).coordinates[0]).toHaveLength(1);
-  });
-
-  it('clips an unclosed ring identically to a closed one', () => {
-    const open = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47]]] };
-    expect(core.clipPolygonBelow(open, 46.5)).toEqual(core.clipPolygonBelow(SQUARE, 46.5));
-  });
-
-  it('returns null for a non-polygon geometry', () => {
-    expect(core.clipPolygonBelow(null, 46)).toBeNull();
-    expect(core.clipPolygonBelow({ type: 'LineString', coordinates: [[7, 46]] }, 46)).toBeNull();
+  it('returns null when there is nothing to draw', () => {
+    expect(core.tileGridPlan(TEMPLATE, null)).toBeNull();
+    expect(core.tileGridPlan(TEMPLATE, { z: {} })).toBeNull();
+    expect(core.tileGridPlan('', BLOB)).toBeNull();
   });
 });

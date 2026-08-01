@@ -98,9 +98,9 @@
  *     of the same name (see there for the sizing rationale) — except
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
  *
- * SNOW-569 adds a second client-only group — the geometry a download's
- * on-map progress fill needs (``geometryBounds``, ``bboxPolygon``,
- * ``fillLevelLatitude``, ``clipPolygonBelow``). Like
+ * SNOW-569 and the tile-grid rework that followed it add a second
+ * client-only group — the geometry a download's on-map progress grid needs (``geometryBounds``, ``bboxPolygon``,
+ * ``tileBounds``, ``gridZoomFor``, ``tileGridPlan``). Like
  * ``budgetScaleForBBox`` these have no ``basemap_tiles.py`` counterpart
  * and need none: the server never draws anything. They live here rather
  * than in ``map.js`` because they are pure functions of geometry, which
@@ -114,18 +114,16 @@
  *     user-framed rectangle).
  *   bboxPolygon(bbox)
  *     A ``bbox`` as a GeoJSON Polygon — the custom-area download's
- *     equivalent of a region's own boundary, so both download shapes
- *     feed the same fill code.
- *   fillLevelLatitude(bbox, fraction)
- *     The latitude of the fill line when a download is ``fraction`` (0..1)
- *     complete: the level rises from ``bbox``'s south edge to its north
- *     edge. Interpolated in Web Mercator, not in degrees, so the fill
- *     climbs at a constant rate ON SCREEN — over a single region the two
- *     differ by well under a pixel, but the Mercator form is the one that
- *     stays right if this is ever pointed at a taller box.
- *   clipPolygonBelow(geometry, lat)
- *     ``geometry`` clipped to the half-plane at or south of ``lat``, as a
- *     MultiPolygon, or ``null`` when nothing survives.
+ *     equivalent of a region's own boundary.
+ *   tileBounds(z, x, y)
+ *     The ground one tile covers, as ``[west, south, east, north]`` —
+ *     the inverse of ``lonLatToTile``, and the only place the grid's
+ *     squares get their geometry.
+ *   gridZoomFor(blob, minCells)
+ *     Which single zoom level of a download's band to draw the grid at.
+ *   tileGridPlan(template, blob, minCells)
+ *     The grid's cells AND the run's tile URLs ordered to fill them one
+ *     at a time — see its docstring for why the ordering is the feature.
  *   downloadedIds(template, entries, cachedURLs)
  *     SNOW-570: which of ``entries`` (``{id, centre_tile}``) have their
  *     centre tile in ``cachedURLs`` — the pure half of the "which areas
@@ -146,6 +144,12 @@
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;
+
+  // Tile-grid rework: fewest squares a progress grid is worth drawing at. Cell
+  // count quadruples with each zoom level, so this floor picks the
+  // shallowest level that still reads as a grid rather than a handful of
+  // big blocks — see ``gridZoomFor``. Client-only.
+  var GRID_MIN_CELLS = 12;
 
   // SNOW-568: the fraction of the origin's REMAINING storage quota a
   // single download may claim. Client-only — no basemap_tiles.py twin.
@@ -526,118 +530,187 @@
   }
 
   /**
-   * The latitude of the fill line when a download of ``bbox`` is
-   * ``fraction`` complete — ``bbox``'s south edge at 0, its north edge
-   * at 1.
+   * The ``[west, south, east, north]`` bounds of one Web Mercator tile.
    *
-   * Interpolated in Web Mercator y rather than in degrees so the line
-   * climbs at a constant rate on screen. Over one region the two agree
-   * to well under a pixel; doing it in the projection is simply the form
-   * that stays correct for a taller box, and ``lonLatToWorld`` is
-   * already here.
+   * The inverse of ``lonLatToTile``: that floors a projected position to
+   * a tile index, this returns the ground the whole index covers. Round
+   * tripping is therefore one-way-exact — ``lonLatToTile`` of any point
+   * inside these bounds gives back ``(x, y)``, but the bounds are the
+   * tile's full extent, not the point that produced it.
    *
-   * @param {[number, number, number, number]} bbox ``[west, south, east,
+   * Client-only, like the rest of the tile-grid group: the server
+   * enumerates tile INDICES and never needs to know where they sit.
+   *
+   * @param {number} z Zoom level.
+   * @param {number} x Tile x index.
+   * @param {number} y Tile y index.
+   * @returns {[number, number, number, number]} ``[west, south, east,
    *   north]`` in degrees.
-   * @param {number} fraction Progress in ``[0, 1]``; clamped.
+   */
+  function tileBounds(z, x, y) {
+    const n = Math.pow(2, z);
+    const west = (x / n) * 360.0 - 180.0;
+    const east = ((x + 1) / n) * 360.0 - 180.0;
+    // Mercator y runs southward, so y+1 is the SOUTHERN edge.
+    const north = _mercatorYToLat(y / n);
+    const south = _mercatorYToLat((y + 1) / n);
+    return [west, south, east, north];
+  }
+
+  /**
+   * A Web Mercator world y (``[0, 1]``, southward) back to a latitude.
+   *
+   * The inverse of ``lonLatToWorld``'s y term, factored out because
+   * ``tileBounds`` needs it for both of a tile's horizontal edges.
+   *
+   * @param {number} y World y in ``[0, 1]``.
    * @returns {number} A latitude in degrees.
    */
-  function fillLevelLatitude(bbox, fraction) {
-    const [, south, , north] = bbox;
-    const f = Math.max(0, Math.min(1, fraction));
-    const ySouth = lonLatToWorld(0, south)[1];
-    const yNorth = lonLatToWorld(0, north)[1];
-    // Mercator y runs southward, so the level's y DEcreases as it rises.
-    const y = ySouth + (yNorth - ySouth) * f;
-    if (!Number.isFinite(y)) return south + (north - south) * f;
-    const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
-    return Number.isFinite(lat) ? lat : south + (north - south) * f;
+  function _mercatorYToLat(y) {
+    return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
   }
 
   /**
-   * One ring clipped to the half-plane at or south of ``lat`` —
-   * Sutherland–Hodgman against a single edge.
+   * The zoom level to draw a download's progress grid at.
    *
-   * Walks the ring's edges keeping every inside vertex and inserting the
-   * crossing point wherever an edge straddles the line. Closure is
-   * handled by wrapping the last vertex to the first, so a ring given
-   * either closed (GeoJSON's own convention) or open clips identically.
+   * The download itself spans a whole band (z10-14 — see ``MICRO_BAND``),
+   * and every level of it covers the SAME ground, so painting one square
+   * per downloaded tile would repaint the same area five times over.
+   * The grid is therefore drawn at a single zoom, chosen per download so
+   * the user sees a decent number of squares whatever the area's size:
+   * the shallowest level in the blob whose grid reaches ``minCells``, or
+   * the deepest level available when even that falls short (a tiny area).
    *
-   * For a concave ring the result is a single ring whose separate pieces
-   * are joined by zero-area edges lying along the clip line. That is the
-   * well-known artefact of clipping against one half-plane rather than
-   * splitting into components — and it is invisible in a fill render,
-   * which is the only thing this feeds. Don't "fix" it by reaching for a
-   * general polygon-clipping dependency; nothing here needs one.
+   * Shallowest-that-qualifies rather than deepest-that-fits because cell
+   * count quadruples per level: at z14 a region is thousands of squares,
+   * far too fine to read as a grid filling in.
    *
-   * @param {number[][]} ring ``[[lon, lat], …]``.
-   * @param {number} lat The clip latitude.
-   * @returns {number[][]} A closed ring, or ``[]`` when the ring lies
-   *   entirely north of ``lat``.
+   * @param {{z?: Object<string, number[]>}} blob A full download blob.
+   * @param {number} [minCells] Fewest cells worth drawing; default
+   *   ``GRID_MIN_CELLS``.
+   * @returns {number | null} A zoom level, or ``null`` for a blob with no
+   *   ranges to draw.
    */
-  function _clipRingBelow(ring, lat) {
-    const out = [];
-    const n = ring.length;
-    if (n < 3) return out;
-    // A GeoJSON ring repeats its first position last; iterating modulo n
-    // would then emit that duplicate edge as a degenerate one. Dropping
-    // the repeat and wrapping explicitly handles closed and open rings
-    // with the same loop.
-    const last = ring[n - 1];
-    const first = ring[0];
-    const count = last[0] === first[0] && last[1] === first[1] ? n - 1 : n;
-    for (let i = 0; i < count; i++) {
-      const a = ring[i];
-      const b = ring[(i + 1) % count];
-      const aIn = a[1] <= lat;
-      const bIn = b[1] <= lat;
-      if (aIn) out.push([a[0], a[1]]);
-      if (aIn !== bIn) {
-        const t = (lat - a[1]) / (b[1] - a[1]);
-        out.push([a[0] + t * (b[0] - a[0]), lat]);
-      }
+  function gridZoomFor(blob, minCells) {
+    if (!blob || !blob.z) return null;
+    const floor = typeof minCells === 'number' ? minCells : GRID_MIN_CELLS;
+    const zooms = Object.keys(blob.z)
+      .map(Number)
+      .filter((z) => Number.isFinite(z))
+      .sort((a, b) => a - b);
+    if (!zooms.length) return null;
+    for (const z of zooms) {
+      const [xmin, xmax, ymin, ymax] = blob.z[String(z)];
+      if ((xmax - xmin + 1) * (ymax - ymin + 1) >= floor) return z;
     }
-    if (out.length) out.push([out[0][0], out[0][1]]);
-    return out;
+    return zooms[zooms.length - 1];
   }
 
   /**
-   * ``geometry`` clipped to the half-plane at or south of ``lat``.
+   * The grid cell a tile belongs to, in cell-index space at ``gridZ``.
    *
-   * Always returns a MultiPolygon (or ``null``) whatever the input type,
-   * so a caller can hand the result straight to a MapLibre geojson
-   * source without branching. A polygon whose outer ring is entirely
-   * north of ``lat`` is dropped along with its holes; a hole that is
-   * itself clipped away just leaves the outer ring solid, which is the
-   * right answer — that part of the hole is below the line and so is
-   * filled.
+   * A tile deeper than the grid sits inside exactly one cell, found by
+   * shifting its indices right. A tile SHALLOWER than the grid (the
+   * band's z10/z11 levels against a z12 grid) spans many cells; it is
+   * assigned to the north-westmost one it covers, so every tile lands in
+   * exactly one cell and the per-cell totals sum to the run's tile count.
    *
-   * @param {{type?: string, coordinates?: any}} geometry A Polygon or
-   *   MultiPolygon.
-   * @param {number} lat The clip latitude.
-   * @returns {{type: string, coordinates: number[][][][]} | null}
-   *   ``null`` when nothing survives, or for a non-polygon geometry.
+   * That assignment is deliberately not "the cells this tile covers".
+   * The grid is a progress indicator, not a coverage map — one tile
+   * completing several cells would let squares light up for ground whose
+   * own detail tiles have not been fetched yet.
+   *
+   * @param {number} z The tile's zoom level.
+   * @param {number} x The tile's x index.
+   * @param {number} y The tile's y index.
+   * @param {number} gridZ The grid's zoom level.
+   * @returns {[number, number]} ``[cellX, cellY]``.
    */
-  function clipPolygonBelow(geometry, lat) {
-    if (!geometry) return null;
-    let polygons;
-    if (geometry.type === 'Polygon') polygons = [geometry.coordinates];
-    else if (geometry.type === 'MultiPolygon') polygons = geometry.coordinates;
-    else return null;
-    const clipped = [];
-    for (const polygon of polygons) {
-      if (!polygon || !polygon.length) continue;
-      // A closed ring needs four positions (three distinct plus the
-      // repeat); anything shorter has no area to fill.
-      const outer = _clipRingBelow(polygon[0], lat);
-      if (outer.length < 4) continue;
-      const rings = [outer];
-      for (let i = 1; i < polygon.length; i++) {
-        const hole = _clipRingBelow(polygon[i], lat);
-        if (hole.length >= 4) rings.push(hole);
+  function _cellForTile(z, x, y, gridZ) {
+    const shift = z - gridZ;
+    if (shift >= 0) return [Math.floor(x / Math.pow(2, shift)), Math.floor(y / Math.pow(2, shift))];
+    const scale = Math.pow(2, -shift);
+    return [x * scale, y * scale];
+  }
+
+  /**
+   * Plan a download as a grid of cells plus the tile URLs that fill them.
+   *
+   * Returns the URL list to hand to the service worker AND the squares
+   * the map draws, with the two tied together: ``urls[i]`` belongs to
+   * ``cells[cellOfURL[i]]``, and a cell is complete once all ``total`` of
+   * its tiles have settled.
+   *
+   * **The URLs come back grouped by cell**, which is the whole point.
+   * ``rangesToTileURLs`` emits them zoom-major, so a run works through
+   * every z10 tile, then every z11, and so on — five passes over the same
+   * ground, with no cell finishing until the last pass reaches it.
+   * Grouping instead means a cell's tiles are fetched consecutively and
+   * the square lights up when they land, so the grid fills in cell by
+   * cell. The SET of URLs is identical either way, so ordering costs the
+   * download nothing; it is purely what makes the progress legible.
+   *
+   * Cells are ordered north-west to south-east (row-major, by cell y then
+   * cell x) — an arbitrary but stable sweep, so a re-run of the same area
+   * fills in the same order.
+   *
+   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
+   * @param {{z?: Object<string, number[]>}} blob A full download blob —
+   *   fetched from ``/api/region-basemap-tiles/?id=...`` or built by
+   *   ``buildBlob``.
+   * @param {number} [minCells] Passed through to ``gridZoomFor``.
+   * @returns {{gridZ: number, cells: Array<{x: number, y: number, bbox:
+   *   [number, number, number, number], total: number}>, urls: string[],
+   *   cellOfURL: number[]} | null} ``null`` when there is nothing to draw.
+   */
+  function tileGridPlan(template, blob, minCells) {
+    const gridZ = gridZoomFor(blob, minCells);
+    if (!template || gridZ === null) return null;
+
+    // Bucket every tile in the blob by the cell it lands in, keyed on the
+    // cell's own indices so the two loops below agree on identity.
+    const buckets = new Map();
+    for (const key of Object.keys(blob.z)) {
+      const z = Number(key);
+      if (!Number.isFinite(z)) continue;
+      const [xmin, xmax, ymin, ymax] = blob.z[key];
+      for (let x = xmin; x <= xmax; x++) {
+        for (let y = ymin; y <= ymax; y++) {
+          const [cx, cy] = _cellForTile(z, x, y, gridZ);
+          const cellKey = cx + ':' + cy;
+          let bucket = buckets.get(cellKey);
+          if (!bucket) {
+            bucket = { x: cx, y: cy, tiles: [] };
+            buckets.set(cellKey, bucket);
+          }
+          bucket.tiles.push([z, x, y]);
+        }
       }
-      clipped.push(rings);
     }
-    return clipped.length ? { type: 'MultiPolygon', coordinates: clipped } : null;
+    if (!buckets.size) return null;
+
+    const ordered = Array.from(buckets.values()).sort((a, b) => a.y - b.y || a.x - b.x);
+    const cells = [];
+    const urls = [];
+    const cellOfURL = [];
+    ordered.forEach((bucket, index) => {
+      for (const [z, x, y] of bucket.tiles) {
+        urls.push(
+          template
+            .replace('{z}', String(z))
+            .replace('{x}', String(x))
+            .replace('{y}', String(y)),
+        );
+        cellOfURL.push(index);
+      }
+      cells.push({
+        x: bucket.x,
+        y: bucket.y,
+        bbox: tileBounds(gridZ, bucket.x, bucket.y),
+        total: bucket.tiles.length,
+      });
+    });
+    return { gridZ: gridZ, cells: cells, urls: urls, cellOfURL: cellOfURL };
   }
 
   /**
@@ -755,9 +828,11 @@
     hasStorageHeadroom: hasStorageHeadroom,
     geometryBounds: geometryBounds,
     bboxPolygon: bboxPolygon,
-    fillLevelLatitude: fillLevelLatitude,
-    clipPolygonBelow: clipPolygonBelow,
+    tileBounds: tileBounds,
+    gridZoomFor: gridZoomFor,
+    tileGridPlan: tileGridPlan,
     downloadedIds: downloadedIds,
+    GRID_MIN_CELLS: GRID_MIN_CELLS,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
