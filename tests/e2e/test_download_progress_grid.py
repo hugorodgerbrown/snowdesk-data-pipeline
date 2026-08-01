@@ -367,20 +367,12 @@ def test_grid_sits_above_every_region_layer(
         assert order.index(region_layer) < order.index(_FILL_LAYER)
         assert order.index(region_layer) < order.index(_LINE_LAYER)
 
-    first_symbol = cast(
-        int | None,
-        page.evaluate(
-            """() => {
-                const layers = MAP.getStyle().layers;
-                for (let i = 0; i < layers.length; i++) {
-                    if (layers[i].type === 'symbol') return i;
-                }
-                return null;
-            }"""
-        ),
-    )
-    if first_symbol is not None:
-        assert order.index(_FILL_LAYER) < first_symbol
+    # And below the region labels, so names stay readable through a run.
+    # Anchored on ``regions-label`` by name: an earlier version aimed at
+    # "the style's first symbol layer", which reads whatever the basemap
+    # supplies and can sit UNDER the region tiers.
+    assert order.index(_FILL_LAYER) < order.index("regions-label")
+    assert order.index(_LINE_LAYER) < order.index("regions-label")
 
 
 def test_cells_are_well_formed_closed_polygons(

@@ -550,6 +550,23 @@ region painted `idle` until the user reselected the region.
    `idle` (partial/failed/vacuous — the user can retry). No toast is
    shown either way; the icon's own state is the only feedback.
 
+**Cached-tiles overlay** — the "Downloaded areas" layer draws two things.
+The dashed rings say WHICH downloads the user made, derived from the
+stored `basemap.regions` / `basemap.customArea` records and validated
+against the cache. The `cached-tiles` source draws what is actually on
+disk: one square per tile in the pinned cache at `CACHED_TILES_ZOOM`
+(z14), read straight back out of the cache's own URLs by
+`cachedTilesFromURLs` — the inverse of the substitution
+`rangesToTileURLs` performs.
+
+The tiles need no stored record to stay honest, and cannot drift from the
+cache: eviction, a basemap swap and Clear Site Data all change the answer
+and all show up for free. The rings can't be derived that way (tiles carry
+no record of which run fetched them, so a custom-area download crossing a
+region would make that whole region read as downloaded) — but drawing the
+tiles themselves attributes nothing, so the problem does not arise. Both
+halves are per-template, so switching basemap empties them.
+
 **On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
 the roundel's own fill, the tiles being fetched are drawn over the map as
 an **empty grid of squares**, and each square fills in as its own tiles

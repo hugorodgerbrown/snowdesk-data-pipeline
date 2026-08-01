@@ -120,6 +120,9 @@
  *     The ground one tile covers, as ``[west, south, east, north]`` —
  *     the inverse of ``lonLatToTile``, and the only place the grid's
  *     squares get their geometry.
+ *   cachedTilesFromURLs(template, cachedURLs, zoom)
+ *     The tiles a cache actually holds, read back out of its URLs — the
+ *     pure half of the "cached tiles" overlay.
  *   gridZoomFor(blob)
  *     Which single zoom level of a download's band to draw the grid at
  *     — the deepest, so a square is a real tile.
@@ -526,6 +529,62 @@
   }
 
   /**
+   * Which tiles of ``cachedURLs`` belong to ``template``, as ``{z, x, y}``.
+   *
+   * The inverse of the substitution ``rangesToTileURLs`` performs: the
+   * cache stores URLs, and the "cached tiles" overlay needs the tile
+   * indices back so it can draw each one's footprint. Reading them out of
+   * the URL is what makes the overlay honest — it renders what Cache
+   * Storage actually holds, not what a download record claims.
+   *
+   * Matching is per-template, so switching basemap changes the answer:
+   * tiles cached for one basemap's origin are genuinely not cached for
+   * another's.
+   *
+   * The placeholder ORDER is read from the template rather than assumed.
+   * Most templates are ``{z}/{x}/{y}``, but an ESRI VectorTileServer
+   * source is ``{z}/{y}/{x}`` (see ``map.js``'s style normalisation), and
+   * reading those transposed would draw every square in the wrong place.
+   *
+   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
+   * @param {Iterable<string>} cachedURLs URLs present in the cache.
+   * @param {number} [zoom] Keep only tiles at this zoom. Omit for all of
+   *   them — but note a download spans a whole band, so an unfiltered
+   *   result overlaps itself five deep.
+   * @returns {Array<{z: number, x: number, y: number}>}
+   */
+  function cachedTilesFromURLs(template, cachedURLs, zoom) {
+    const out = [];
+    if (!template || !cachedURLs) return out;
+    const order = [];
+    template.replace(/\{(z|x|y)\}/g, (match, key) => {
+      order.push(key);
+      return match;
+    });
+    if (order.length !== 3) return out;
+    const pattern = template
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\\\{(z|x|y)\\\}/g, '(\\d+)');
+    let re;
+    try {
+      re = new RegExp('^' + pattern + '$');
+    } catch (_e) {
+      // A template that can't be made into a pattern matches nothing,
+      // which is the same answer as "no tiles cached for this basemap".
+      return out;
+    }
+    for (const url of cachedURLs) {
+      const match = re.exec(url);
+      if (!match) continue;
+      const tile = {};
+      for (let i = 0; i < order.length; i++) tile[order[i]] = Number(match[i + 1]);
+      if (typeof zoom === 'number' && tile.z !== zoom) continue;
+      out.push(tile);
+    }
+    return out;
+  }
+
+  /**
    * The ``[west, south, east, north]`` bounds of one Web Mercator tile.
    *
    * The inverse of ``lonLatToTile``: that floors a projected position to
@@ -844,6 +903,7 @@
     geometryBounds: geometryBounds,
     bboxPolygon: bboxPolygon,
     tileBounds: tileBounds,
+    cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,
     downloadedIds: downloadedIds,

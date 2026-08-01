@@ -646,6 +646,66 @@ describe('tileBounds', () => {
   });
 });
 
+describe('cachedTilesFromURLs', () => {
+  const T = 'https://tiles.example.com/{z}/{x}/{y}.pbf';
+
+  it('reads tile indices back out of cached URLs', () => {
+    const urls = [
+      'https://tiles.example.com/14/8501/5820.pbf',
+      'https://tiles.example.com/14/8502/5820.pbf',
+    ];
+    expect(core.cachedTilesFromURLs(T, urls)).toEqual([
+      { z: 14, x: 8501, y: 5820 },
+      { z: 14, x: 8502, y: 5820 },
+    ]);
+  });
+
+  it('round-trips whatever rangesToTileURLs produced', () => {
+    // The overlay's honesty rests on this pair being exact inverses: the
+    // cache holds the URLs one wrote, and the overlay draws what the other
+    // reads back.
+    const blob = { z: { 12: [2140, 2142, 1440, 1441] } };
+    const urls = core.rangesToTileURLs(T, blob);
+    const tiles = core.cachedTilesFromURLs(T, urls);
+    expect(tiles).toHaveLength(urls.length);
+    expect(new Set(tiles.map((t) => `${t.z}/${t.x}/${t.y}`))).toEqual(
+      new Set(urls.map((u) => u.replace('https://tiles.example.com/', '').replace('.pbf', ''))),
+    );
+  });
+
+  it('keeps only the requested zoom', () => {
+    const urls = core.rangesToTileURLs(T, { z: { 10: [5, 5, 3, 3], 14: [80, 81, 48, 48] } });
+    expect(core.cachedTilesFromURLs(T, urls, 14)).toHaveLength(2);
+    expect(core.cachedTilesFromURLs(T, urls, 10)).toEqual([{ z: 10, x: 5, y: 3 }]);
+  });
+
+  it('ignores URLs from another basemap', () => {
+    // Per-template is the point: tiles cached for one origin genuinely are
+    // not cached for another, so the overlay must empty on a basemap swap.
+    const urls = [
+      'https://tiles.example.com/14/8501/5820.pbf',
+      'https://other.example.net/14/8501/5820.pbf',
+      'https://tiles.example.com/style.json',
+    ];
+    expect(core.cachedTilesFromURLs(T, urls)).toEqual([{ z: 14, x: 8501, y: 5820 }]);
+  });
+
+  it('honours the template’s own placeholder order', () => {
+    // An ESRI VectorTileServer source is {z}/{y}/{x}; reading that as
+    // {z}/{x}/{y} would draw every square transposed.
+    const esri = 'https://esri.example.com/tile/{z}/{y}/{x}.pbf';
+    expect(core.cachedTilesFromURLs(esri, ['https://esri.example.com/tile/14/5820/8501.pbf']))
+      .toEqual([{ z: 14, x: 8501, y: 5820 }]);
+  });
+
+  it('is empty for a falsy or malformed template', () => {
+    expect(core.cachedTilesFromURLs('', ['https://tiles.example.com/14/1/1.pbf'])).toEqual([]);
+    expect(core.cachedTilesFromURLs(T, null)).toEqual([]);
+    // No placeholders at all — nothing to read back.
+    expect(core.cachedTilesFromURLs('https://tiles.example.com/a.pbf', ['x'])).toEqual([]);
+  });
+});
+
 describe('gridZoomFor', () => {
   it('picks the deepest level in the blob', () => {
     // The band's detail floor, so a grid square is a real tile rather

@@ -330,7 +330,7 @@ try {
 // every area held in the pinned basemap cache, probed from real Cache
 // Storage rather than a stored flag. Shell JS/HTML/CSS bytes changed
 // (map.js, basemap_download_core.js, map.css, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v93';
+const CACHE_VERSION = 'snowdesk-shell-v96';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell

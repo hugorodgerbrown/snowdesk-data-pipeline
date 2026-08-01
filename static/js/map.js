@@ -368,26 +368,28 @@ const DOWNLOAD_PROGRESS_GRID_FADE_START = -4;
 const DOWNLOAD_PROGRESS_GRID_FADE_END = -2;
 
 /**
- * The id of the style's first ``symbol`` layer, or undefined.
+ * The insertion point for an overlay that belongs above every region
+ * layer but below the region labels: ``regions-label``, or undefined.
  *
- * The insertion point for an overlay that should sit above every fill and
- * line the basemap and the region tiers draw, but below their labels —
- * MapLibre's usual idiom for "on top, but don't bury the text".
+ * Deliberately this one named layer rather than "the style's first
+ * ``symbol`` layer". That generic rule reads whatever the BASEMAP happens
+ * to provide, and a basemap's own labels sit below the region tiers — so
+ * it could return an anchor UNDER ``regions-fill`` and push the overlay
+ * below the very layers it is supposed to cover. It also varied with how
+ * far the style had parsed when the overlay was built, which made the
+ * ordering depend on timing.
  *
- * @returns {string | undefined} A layer id, or undefined for a style with
- *   no symbol layers (the offline fallback), where the caller's layer
- *   goes on top.
+ * @returns {string | undefined} ``'regions-label'`` when it is installed,
+ *   otherwise undefined — the caller then adds on top, which is the right
+ *   answer for a style with no region labels to protect.
  */
-function _firstSymbolLayerId() {
+function _aboveRegionsBeforeId() {
   try {
-    const layers = (MAP.getStyle() || {}).layers || [];
-    for (const layer of layers) {
-      if (layer.type === 'symbol') return layer.id;
-    }
+    return MAP.getLayer('regions-label') ? 'regions-label' : undefined;
   } catch (_e) {
     // Style mid-reload — the caller falls back to adding on top.
+    return undefined;
   }
-  return undefined;
 }
 
 /**
@@ -525,9 +527,9 @@ function createDownloadProgressGrid(plan, urlOffset) {
       // filling, and a cache does not stop at a region edge, so the grid
       // is drawn as its own overlay: uniform, whatever is underneath.
       //
-      // Below the labels rather than flat on top, so region names and the
-      // selection ring stay readable through a run.
-      const beforeId = _firstSymbolLayerId();
+      // Below ``regions-label`` rather than flat on top, so region names
+      // stay readable through a run.
+      const beforeId = _aboveRegionsBeforeId();
       // Every cell is in the fill layer from the start; only the ones
       // whose feature state says `done` are actually painted. Opacity
       // rather than a filter, because a filter is re-evaluated against
@@ -1420,7 +1422,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // cache they report on. Resolved from the stylesheet rather than
   // hardcoded (the theme carries a lighter green in dark mode); MapLibre
   // paint values can't reference a CSS variable, hence the read here.
-  const DOWNLOADED_OUTLINE_COLOUR =
+  // The cached-tiles overlay: one square per tile actually in the pinned
+// cache. Fainter than a download's live grid — this is ambient state the
+// user can leave switched on, not transient feedback demanding attention.
+// Drawn at the band's detail floor, the same zoom the download grid uses,
+// so the two describe the same squares.
+const CACHED_TILES_OPACITY = 0.22;
+const CACHED_TILES_LINE_OPACITY = 0.4;
+const CACHED_TILES_ZOOM = 14;
+
+const DOWNLOADED_OUTLINE_COLOUR =
     getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
     '#16a34a';
 
@@ -1514,6 +1525,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // installed below, so both have to come off here — a re-install
         // over a surviving layer throws.
         'regions-line-downloaded', 'downloaded-area-line',
+        'cached-tiles-fill', 'cached-tiles-line',
         'regions-label',
       ]) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -1710,6 +1722,60 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'line-color': DOWNLOADED_OUTLINE_COLOUR,
         'line-width': 2.5,
         'line-dasharray': [2, 1.5],
+      },
+    });
+
+    // The tiles themselves. The rings above say WHICH downloads the user
+    // made; this says what is actually on disk — one square per tile in
+    // the pinned cache, at the band's detail floor.
+    //
+    // Unlike the rings, this is derived from the cache ALONE and needs no
+    // stored record to stay honest. The reason the rings can't be (see
+    // refreshDownloadedOverlay) is that tiles carry no record of which run
+    // fetched them, so attributing them to a region misreports a
+    // custom-area download that merely crossed it. Drawing the tiles
+    // themselves attributes nothing: every square shown is a tile Cache
+    // Storage holds, whichever run put it there.
+    if (!map.getSource('cached-tiles')) {
+      map.addSource('cached-tiles', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    map.addLayer({
+      id: 'cached-tiles-fill',
+      type: 'fill',
+      source: 'cached-tiles',
+      layout: { visibility: overlayState.downloaded ? 'visible' : 'none' },
+      paint: {
+        'fill-color': DOWNLOADED_OUTLINE_COLOUR,
+        'fill-opacity': CACHED_TILES_OPACITY,
+      },
+    });
+    map.addLayer({
+      id: 'cached-tiles-line',
+      type: 'line',
+      source: 'cached-tiles',
+      layout: {
+        visibility: overlayState.downloaded ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': DOWNLOADED_OUTLINE_COLOUR,
+        'line-width': 0.75,
+        // Same reasoning as the download grid's own gridlines: a few
+        // thousand sub-pixel outlines read as a mesh, so they fade out as
+        // the squares shrink on screen.
+        'line-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          CACHED_TILES_ZOOM + DOWNLOAD_PROGRESS_GRID_FADE_START,
+          0,
+          CACHED_TILES_ZOOM + DOWNLOAD_PROGRESS_GRID_FADE_END,
+          CACHED_TILES_LINE_OPACITY,
+        ],
       },
     });
 
@@ -3281,6 +3347,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
             ? { type: 'Feature', geometry: core.bboxPolygon(area.bbox), properties: {} }
             : { type: 'FeatureCollection', features: [] },
         );
+      }
+
+      // The tiles themselves, read straight back out of the cache's own
+      // URLs — no stored record involved, so this cannot drift from what
+      // is on disk. Eviction, a basemap swap and Clear Site Data all
+      // change the answer, and all of them show up here for free.
+      const tileSource = map.getSource('cached-tiles');
+      if (tileSource) {
+        const tiles = core.cachedTilesFromURLs(template, cached, CACHED_TILES_ZOOM);
+        tileSource.setData({
+          type: 'FeatureCollection',
+          features: tiles.map((tile) => ({
+            type: 'Feature',
+            properties: {},
+            geometry: core.bboxPolygon(core.tileBounds(tile.z, tile.x, tile.y)),
+          })),
+        });
       }
     })().catch(() => {}).finally(() => {
       downloadedRefreshInFlight = null;
@@ -5664,7 +5747,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // source itself, so this is a plain visibility flip. The refresh that
     // decides WHICH areas are outlined is driven from the main IIFE's
     // snowdesk:overlays-changed handler.
-    downloaded: ['regions-line-downloaded', 'downloaded-area-line'],
+    downloaded: [
+      'regions-line-downloaded', 'downloaded-area-line',
+      'cached-tiles-fill', 'cached-tiles-line',
+    ],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
