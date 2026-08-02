@@ -896,9 +896,11 @@ is saved to IndexedDB's `meta:app` store under the key
 shape) — the same `{key, value}` shape as `basemap.origins` and
 `mutations.principal`. The roundel's `done` state is still **probed**,
 never read off that row directly: exactly like the per-region control,
-real `BASEMAP_PINNED_CACHE` contents (via the saved `centre_tile`) are
-the source of truth for whether the area is actually downloaded — the
-`meta:app` row only records *where* the frame was. Clicking a `done`
+real `BASEMAP_PINNED_CACHE` contents are the source of truth for whether
+the area is actually downloaded — every tile of the area's blob is
+checked (`blobFullyCached`), not just its `centre_tile`, because a
+neighbouring download can cache that one tile without covering the area.
+The `meta:app` row only records *where* the frame was. Clicking a `done`
 roundel re-opens framing at the saved area (`MAP.fitBounds`, padded to
 land the saved bbox under the frame) rather than re-downloading outright.
 
