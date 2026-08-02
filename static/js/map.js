@@ -1417,21 +1417,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // the regions-fill paint below, keyed on the static ``covered`` property.
   const UNCOVERED_FILL_COLOUR = '#b5b5b5';
 
-  // SNOW-570: the "Downloaded areas" outline. Green, matching the sync dots
-  // and the download roundel's fill — the overlay is a view onto the same
-  // cache they report on. Resolved from the stylesheet rather than
-  // hardcoded (the theme carries a lighter green in dark mode); MapLibre
-  // paint values can't reference a CSS variable, hence the read here.
-  // The cached-tiles overlay: one square per tile actually in the pinned
-// cache. Fainter than a download's live grid — this is ambient state the
-// user can leave switched on, not transient feedback demanding attention.
-// Drawn at the band's detail floor, the same zoom the download grid uses,
-// so the two describe the same squares.
-const CACHED_TILES_OPACITY = 0.22;
-const CACHED_TILES_LINE_OPACITY = 0.4;
-const CACHED_TILES_ZOOM = 14;
+  // SNOW-570/SNOW-587: the cached-tiles overlay — one square per tile
+  // actually in the pinned cache. Fainter than a download's live grid —
+  // this is ambient state the user can leave switched on, not transient
+  // feedback demanding attention. Drawn at the band's detail floor, the
+  // same zoom the download grid uses, so the two describe the same
+  // squares.
+  const CACHED_TILES_OPACITY = 0.22;
+  const CACHED_TILES_LINE_OPACITY = 0.4;
+  const CACHED_TILES_ZOOM = 14;
 
-const DOWNLOADED_OUTLINE_COLOUR =
+  // Green, matching the sync dots and the download roundel's fill — the
+  // overlay is a view onto the same cache they report on. Resolved from
+  // the stylesheet rather than hardcoded (the theme carries a lighter
+  // green in dark mode); MapLibre paint values can't reference a CSS
+  // variable, hence the read here.
+  const DOWNLOADED_OUTLINE_COLOUR =
     getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
     '#16a34a';
 
@@ -1521,10 +1522,9 @@ const DOWNLOADED_OUTLINE_COLOUR =
     if (map.getSource('regions')) {
       for (const id of [
         'regions-fill', 'regions-line', 'regions-line-selected',
-        // SNOW-570: both halves of the "Downloaded areas" overlay are
-        // installed below, so both have to come off here — a re-install
-        // over a surviving layer throws.
-        'regions-line-downloaded', 'downloaded-area-line',
+        // SNOW-570/SNOW-587: the cached-tiles overlay is installed below,
+        // so it has to come off here — a re-install over a surviving
+        // layer throws.
         'cached-tiles-fill', 'cached-tiles-line',
         'regions-label',
       ]) {
@@ -1659,83 +1659,16 @@ const DOWNLOADED_OUTLINE_COLOUR =
     // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
     // (selection is paint-driven), so applyCountryFilters skips it entirely.
 
-    // SNOW-570: "Downloaded areas" — a dashed ring around every region whose
-    // basemap is in the pinned cache. Same paint-driven-visibility trick as
-    // regions-line-selected directly above (MapLibre rejects feature-state
-    // inside a filter), keyed on a ``downloaded`` feature-state that
-    // refreshDownloadedOverlay writes from a real Cache Storage read.
-    //
-    // Dashed rather than solid, and in the cache dashboard's green: it has to
-    // be distinguishable at a glance from the black selection ring and from
-    // the L1/L2 tier outlines, none of which mean anything about caching.
+    // SNOW-570/SNOW-587: "Available offline" — one square per tile actually
+    // in the pinned cache, at the band's detail floor. Derived from the
+    // cache ALONE — no stored record involved — so it cannot drift from
+    // what is on disk: eviction, a basemap swap and Clear Site Data all
+    // change the answer, and all of them show up here for free.
     //
     // The layer is installed whether or not the overlay is on — its
     // visibility is a layout property the picker flips, and building it
     // eagerly here means a style swap reinstalls it with everything else
     // rather than leaving the toggle pointing at a layer that isn't there.
-    map.addLayer({
-      id: 'regions-line-downloaded',
-      type: 'line',
-      source: 'regions',
-      layout: {
-        visibility: overlayState.downloaded ? 'visible' : 'none',
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-      paint: {
-        'line-color': DOWNLOADED_OUTLINE_COLOUR,
-        'line-width': 2.5,
-        'line-dasharray': [2, 1.5],
-        'line-opacity': [
-          'case', ['boolean', ['feature-state', 'downloaded'], false], 1, 0,
-        ],
-      },
-    });
-    // No BASE_LAYER_FILTERS entry, for the same reason as
-    // regions-line-selected: no filter to restore.
-
-    // SNOW-570: the custom area's half of the same overlay. A separate
-    // source because it isn't a region — it's the one user-framed bbox in
-    // meta:app — but the same dashed green ring, because to the user the
-    // two are one answer: "this is what I have offline".
-    //
-    // Installed empty and filled by refreshDownloadedOverlay. Riding here,
-    // inside the regions install, means a basemap swap rebuilds it with
-    // everything else rather than leaving the picker's visibility flip
-    // pointing at a layer that no longer exists.
-    if (!map.getSource('downloaded-area')) {
-      map.addSource('downloaded-area', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-    }
-    map.addLayer({
-      id: 'downloaded-area-line',
-      type: 'line',
-      source: 'downloaded-area',
-      layout: {
-        visibility: overlayState.downloaded ? 'visible' : 'none',
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-      paint: {
-        'line-color': DOWNLOADED_OUTLINE_COLOUR,
-        'line-width': 2.5,
-        'line-dasharray': [2, 1.5],
-      },
-    });
-
-    // The tiles themselves. The rings above say WHICH downloads the user
-    // made; this says what is actually on disk — one square per tile in
-    // the pinned cache, at the band's detail floor.
-    //
-    // Unlike the rings, this is derived from the cache ALONE and needs no
-    // stored record to stay honest. The reason the rings can't be (see
-    // refreshDownloadedOverlay) is that tiles carry no record of which run
-    // fetched them, so attributing them to a region misreports a
-    // custom-area download that merely crossed it. Drawing the tiles
-    // themselves attributes nothing: every square shown is a tile Cache
-    // Storage holds, whichever run put it there.
     if (!map.getSource('cached-tiles')) {
       map.addSource('cached-tiles', {
         type: 'geojson',
@@ -3133,9 +3066,9 @@ const DOWNLOADED_OUTLINE_COLOUR =
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       window.pwaLayerSyncStatus?.refresh();
-      // SNOW-570: same rationale for the downloaded-areas overlay — tiles
-      // can be evicted while we're backgrounded, and an outline around an
-      // area that is no longer cached is worse than no outline.
+      // SNOW-570/SNOW-587: same rationale for the cached-tiles overlay —
+      // tiles can be evicted while we're backgrounded, and a square for a
+      // tile that is no longer cached is worse than no square.
       window.pwaDownloadedOverlay?.refresh();
     }
   });
@@ -3149,25 +3082,23 @@ const DOWNLOADED_OUTLINE_COLOUR =
     applyResortsFavouritedFilter();
   });
 
-  // ==== SNOW-570: the "Downloaded areas" overlay ====
+  // ==== SNOW-570/SNOW-587: the "Available offline" overlay ====
   //
   // Answers "where is the basemap I already have?" for the whole map at
   // once, where the download roundels only ever answer it for the one
   // region you have selected.
   //
-  // PROBED, NEVER STORED. Which areas are downloaded is re-derived from
-  // real BASEMAP_PINNED_CACHE contents on every refresh — the same
-  // invariant the roundels and the layers-menu sync dots hold. A "user
-  // downloaded this" flag written at download time would be exactly the
-  // divergence the cache-state dashboard exists to prevent: eviction, a
-  // basemap swap, and Clear Site Data all change the answer without ever
-  // passing through the download path.
+  // PROBED, NEVER STORED — literally true: every tile square is read
+  // straight back out of real BASEMAP_PINNED_CACHE contents on every
+  // refresh, with no stored record involved anywhere in the path.
+  // Eviction, a basemap swap and Clear Site Data all change the answer,
+  // and all of them show up here for free.
   //
   // ONE cache.keys() PASS. The roundel probes a single region and can
-  // afford cache.match(); this asks about every loaded region, so it takes
-  // one pass over the cache's URLs and answers the whole map from that set
-  // (pwaBasemapDownloadCore.downloadedIds). Never call it per frame — the
-  // pinned cache holds thousands of entries.
+  // afford cache.match(); this asks about every tile in the pinned cache,
+  // so it takes one pass over the cache's URLs and answers the whole map
+  // from that set (pwaBasemapDownloadCore.cachedTilesFromURLs). Never call
+  // it per frame — the pinned cache holds thousands of entries.
   //
   // PER-BASEMAP, like the roundels: the probe keys off the ACTIVE
   // basemap's tile template, so downloading on Standard and switching to
@@ -3194,47 +3125,6 @@ const DOWNLOADED_OUTLINE_COLOUR =
     }
   };
 
-  /**
-   * The saved custom area (``basemap.customArea`` in meta:app), or null.
-   * Exactly one exists at a time — see mapCustomDownloadControlInit's
-   * header. Best-effort: a failed read is "no saved area", never an error.
-   *
-   * @returns {Promise<{bbox: number[], centre_tile: Object} | null>}
-   */
-  const _savedCustomArea = async () => {
-    try {
-      const row = await window.pwaDb?.get('meta:app', 'basemap.customArea');
-      return (row && row.value) || null;
-    } catch (_e) {
-      return null;
-    }
-  };
-
-  /**
-   * The regions the user has downloaded (``basemap.regions`` in meta:app),
-   * as ``[{region_id, bbox, band, savedAt}]``. Written by
-   * mapDownloadControlInit on every successful run. Best-effort: a failed
-   * read is "none", never an error.
-   *
-   * @returns {Promise<Array<Object>>}
-   */
-  const _savedRegionDownloads = async () => {
-    try {
-      const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
-      const value = row && row.value;
-      return Array.isArray(value) ? value : [];
-    } catch (_e) {
-      return [];
-    }
-  };
-
-  // The source feature ids currently carrying a `downloaded` state, so a
-  // refresh can clear the ones that no longer qualify. Tracked rather than
-  // recomputed because the overlay now only knows about the regions the
-  // user downloaded — it never walks the whole source, so it has no other
-  // way to find a ring it painted earlier and must now take away.
-  const paintedDownloadedIds = new Set();
-
   // Coalesces overlapping refreshes: several of the signals below can land
   // together (a download settling also refreshes the sync dashboard, which
   // can coincide with a basemap swap), and each one is a cache scan.
@@ -3260,7 +3150,7 @@ const DOWNLOADED_OUTLINE_COLOUR =
   };
 
   /**
-   * Re-derive which areas are downloaded and paint the overlay.
+   * Re-derive which tiles are cached and paint the overlay.
    *
    * A no-op while the overlay is switched off: nothing is on screen to be
    * wrong, and the work is a cache scan. Every path that turns it back on
@@ -3281,73 +3171,13 @@ const DOWNLOADED_OUTLINE_COLOUR =
       // map.on('load'), so the style is still dirty for the whole of the
       // sequence that first installs these layers, and a session that left
       // the overlay switched on would otherwise show nothing until the user
-      // touched the basemap. Same "can't tell yet ≠ not downloaded"
-      // distinction the download roundels' own probe makes.
+      // touched the basemap. Same "can't tell yet ≠ not cached" distinction
+      // the download roundels' own probe makes.
       if (!core || !template) {
         _refreshDownloadedWhenStyleSettles();
         return;
       }
       const cached = await _pinnedCacheURLs();
-
-      // Regions the user DOWNLOADED, not regions that happen to be covered.
-      //
-      // Deriving this from the cache alone cannot work: the pinned cache
-      // records tiles, not which download fetched them, and both download
-      // shapes share one band and one URL template. So a framed area that
-      // merely crossed a region made that whole region read as downloaded
-      // — the bug this replaced. Intent is the only thing that
-      // distinguishes them, so the stored record is what the overlay draws
-      // from, and the cache probe below is what keeps it honest.
-      //
-      // That is the same two-part shape the custom area has always used
-      // (`basemap.customArea` records WHERE the frame was; the done state
-      // is probed) — the region download simply never had the first half.
-      const saved = await _savedRegionDownloads();
-      const entries = saved
-        .filter((entry) => entry && entry.region_id && entry.bbox)
-        .map((entry) => ({ id: entry.region_id, bbox: entry.bbox, band: entry.band }));
-      const downloaded = new Set(core.downloadedIds(template, entries, cached));
-
-      // Clear rings that no longer qualify before painting the new set —
-      // a download the user deleted, or one the cache has since evicted,
-      // has to lose its ring rather than merely fail to gain one.
-      for (const featureId of paintedDownloadedIds) {
-        map.setFeatureState({ source: 'regions', id: featureId }, { downloaded: false });
-      }
-      paintedDownloadedIds.clear();
-      for (const regionID of downloaded) {
-        // ``feature.id`` — the source's own id, which is what every other
-        // feature-state write on this source keys on (repaintRegionsForDate,
-        // the selection handlers). Not properties.id. A downloaded region
-        // whose country is currently toggled off simply isn't loaded, so it
-        // is skipped here and picked up by the snowdesk:regions-loaded
-        // refresh when it comes back.
-        const feature = FEATURE_BY_REGION_ID[regionID];
-        if (!feature || feature.id === undefined || feature.id === null) continue;
-        map.setFeatureState({ source: 'regions', id: feature.id }, { downloaded: true });
-        paintedDownloadedIds.add(feature.id);
-      }
-
-      // The custom area: one feature, or none. Its bbox and band are both
-      // stored on the meta:app row, so this needs no derivation — and the
-      // band matters, since a future area saved over a different band must
-      // be checked against the tiles it actually fetched.
-      const area = await _savedCustomArea();
-      const areaDownloaded =
-        !!area?.bbox &&
-        core.downloadedIds(
-          template,
-          [{ id: 'custom', bbox: area.bbox, band: area.band }],
-          cached,
-        ).length > 0;
-      const source = map.getSource('downloaded-area');
-      if (source) {
-        source.setData(
-          areaDownloaded && area.bbox
-            ? { type: 'Feature', geometry: core.bboxPolygon(area.bbox), properties: {} }
-            : { type: 'FeatureCollection', features: [] },
-        );
-      }
 
       // The tiles themselves, read straight back out of the cache's own
       // URLs — no stored record involved, so this cannot drift from what
@@ -3385,8 +3215,8 @@ const DOWNLOADED_OUTLINE_COLOUR =
   document.addEventListener('snowdesk:regions-loaded', () => refreshDownloadedOverlay());
 
   // The download controls call this when a run settles, alongside their
-  // pwaLayerSyncStatus.refresh() — the region they just downloaded should
-  // gain its ring without the user reopening the menu. Exposed the same way
+  // pwaLayerSyncStatus.refresh() — the tiles it just fetched should appear
+  // without the user reopening the menu. Exposed the same way
   // pwaLayerSyncStatus is, because those controls live in sibling IIFEs.
   window.pwaDownloadedOverlay = Object.freeze({ refresh: refreshDownloadedOverlay });
 
@@ -5743,14 +5573,11 @@ const DOWNLOADED_OUTLINE_COLOUR =
       'community-reports-cluster-count',
       'community-reports-point',
     ],
-    // SNOW-570: not lazy — both layers are installed with the regions
-    // source itself, so this is a plain visibility flip. The refresh that
-    // decides WHICH areas are outlined is driven from the main IIFE's
-    // snowdesk:overlays-changed handler.
-    downloaded: [
-      'regions-line-downloaded', 'downloaded-area-line',
-      'cached-tiles-fill', 'cached-tiles-line',
-    ],
+    // SNOW-570/SNOW-587: not lazy — both layers are installed with the
+    // regions source itself, so this is a plain visibility flip. The
+    // refresh that decides WHICH tiles are drawn is driven from the main
+    // IIFE's snowdesk:downloaded-overlay-changed handler.
+    downloaded: ['cached-tiles-fill', 'cached-tiles-line'],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
@@ -5806,9 +5633,9 @@ const DOWNLOADED_OUTLINE_COLOUR =
         if (overlayKey === 'community_reports') {
           window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', { visible: next });
         }
-        // SNOW-570: the downloaded-areas layers are already installed, so
-        // the direct visibility path below handles showing them — but WHICH
-        // areas they outline is a cache probe only the main IIFE can run.
+        // SNOW-570/SNOW-587: the cached-tiles layers are already installed,
+        // so the direct visibility path below handles showing them — but
+        // WHICH tiles they draw is a cache probe only the main IIFE can run.
         // Tell it, so the overlay is freshly derived at the moment it is
         // revealed rather than showing whatever the last probe left.
         if (overlayKey === 'downloaded') {
@@ -5981,32 +5808,24 @@ const DOWNLOADED_OUTLINE_COLOUR =
   // SNOW-570: the regions the user has downloaded, in meta:app under
   // 'basemap.regions' as [{region_id, bbox, band, savedAt}].
   //
-  // The "Downloaded areas" overlay draws from this rather than from the
-  // cache alone, because the cache records tiles and not which download
-  // fetched them: with both download shapes sharing one zoom band and one
-  // URL template, a framed area that merely crossed a region was
-  // indistinguishable from a download OF that region. Intent is the only
-  // thing that separates the two.
-  //
-  // This is the record half only — it says the user asked for this region,
-  // never that the tiles are still there. The overlay still probes real
-  // cache contents before drawing anything, so an evicted download loses
-  // its ring. That is exactly the split the custom area has always had,
-  // where 'basemap.customArea' records WHERE the frame was and the done
-  // state is probed; the region download simply never had the first half.
+  // SNOW-587 removed the "Downloaded areas" rings this fed — the overlay
+  // that used to distinguish "the user asked for this region" from "the
+  // cache merely holds tiles that happen to cover it" is gone, and the
+  // cached-tiles overlay that replaced it draws from Cache Storage alone.
+  // Nothing reads this key any more except this function's own
+  // read-modify-write below. The write stays in place pending a follow-up
+  // ticket to decide what, if anything, replaces it.
   const DOWNLOADED_REGIONS_KEY = 'basemap.regions';
 
   /**
    * Record `regionId` as downloaded, replacing any earlier entry for it.
    *
    * Best-effort throughout: this runs inside a download's finish handler,
-   * where a failed IndexedDB write must never surface as an error. The
-   * cost of losing it is a missing ring, not a wrong one.
+   * where a failed IndexedDB write must never surface as an error.
    *
    * @param {string} regionId
    * @param {number[] | null} bbox The region's own bounds, or null when its
-   *   geometry isn't loaded — in which case nothing is recorded, since an
-   *   entry with no bbox could never be verified against the cache.
+   *   geometry isn't loaded — in which case nothing is recorded.
    * @param {number[]} band The zoom band the run actually fetched.
    * @returns {Promise<void>}
    */
@@ -6362,8 +6181,10 @@ const DOWNLOADED_OUTLINE_COLOUR =
       // shared toast, rather than reverting to 'idle' — which was
       // indistinguishable from never having clicked.
       const ok = !!(result && result.ok > 0 && result.failed === 0);
-      // SNOW-570: record what was downloaded before anything is painted —
-      // the overlay refresh at the end of this handler reads that row.
+      // SNOW-570: record what was downloaded. SNOW-587 removed the overlay
+      // that used to read this row back — nothing renders from it any more
+      // (see _recordRegionDownload's own header) — but the write stays
+      // pending a follow-up ticket to decide what replaces it.
       if (ok) {
         await _recordRegionDownload(
           data.regionId,
@@ -6390,8 +6211,8 @@ const DOWNLOADED_OUTLINE_COLOUR =
       // nothing). Re-probe every sync dot against real cache state so
       // the layers popover reflects the newly-warmed feeds/tiles.
       window.pwaLayerSyncStatus?.refresh();
-      // SNOW-570: and the downloaded-areas overlay, so an area that just
-      // finished downloading gains its ring immediately rather than at the
+      // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
+      // just finished downloading appear immediately rather than at the
       // next basemap swap or reload.
       window.pwaDownloadedOverlay?.refresh();
     };
@@ -7483,8 +7304,8 @@ const DOWNLOADED_OUTLINE_COLOUR =
       // cache state, mirroring mapDownloadControlInit's own post-run
       // refresh — the layers menu is a live cache-state dashboard.
       window.pwaLayerSyncStatus?.refresh();
-      // SNOW-570: and the downloaded-areas overlay, so an area that just
-      // finished downloading gains its ring immediately rather than at the
+      // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
+      // just finished downloading appear immediately rather than at the
       // next basemap swap or reload.
       window.pwaDownloadedOverlay?.refresh();
     };
