@@ -5805,48 +5805,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // region was deliberately downloaded".
   const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
-  // SNOW-570: the regions the user has downloaded, in meta:app under
-  // 'basemap.regions' as [{region_id, bbox, band, savedAt}].
-  //
-  // SNOW-587 removed the "Downloaded areas" rings this fed — the overlay
-  // that used to distinguish "the user asked for this region" from "the
-  // cache merely holds tiles that happen to cover it" is gone, and the
-  // cached-tiles overlay that replaced it draws from Cache Storage alone.
-  // Nothing reads this key any more except this function's own
-  // read-modify-write below. The write stays in place pending a follow-up
-  // ticket to decide what, if anything, replaces it.
-  const DOWNLOADED_REGIONS_KEY = 'basemap.regions';
-
-  /**
-   * Record `regionId` as downloaded, replacing any earlier entry for it.
-   *
-   * Best-effort throughout: this runs inside a download's finish handler,
-   * where a failed IndexedDB write must never surface as an error.
-   *
-   * @param {string} regionId
-   * @param {number[] | null} bbox The region's own bounds, or null when its
-   *   geometry isn't loaded — in which case nothing is recorded.
-   * @param {number[]} band The zoom band the run actually fetched.
-   * @returns {Promise<void>}
-   */
-  async function _recordRegionDownload(regionId, bbox, band) {
-    if (!bbox || !window.pwaDb) return;
-    try {
-      const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
-      const existing = Array.isArray(row && row.value) ? row.value : [];
-      const next = existing.filter((entry) => entry && entry.region_id !== regionId);
-      next.push({
-        region_id: regionId,
-        bbox: bbox,
-        band: band,
-        savedAt: new Date().toISOString(),
-      });
-      await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
-    } catch (_e) {
-      // Non-fatal — see the docstring.
-    }
-  }
-
   // { regionId, summary } for the currently-focused region, or null
   // when it has no computed data. `summary` is the small {count, mb,
   // over_ceiling, centre_tile} shape carried on regions.geojson's
@@ -6163,7 +6121,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-569, reworked as a tile grid: the area's tiles are drawn as an
     // empty grid that fills in as they land. The roundel's own fill stays — it's the part that
     // survives the user panning the region off screen.
-    const feature = FEATURE_BY_REGION_ID[data.regionId];
     const progressFill = createDownloadProgressGrid(gridPlan, feedUrls.length);
 
     const onProgress = (done, total, settled) => {
@@ -6181,17 +6138,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // shared toast, rather than reverting to 'idle' — which was
       // indistinguishable from never having clicked.
       const ok = !!(result && result.ok > 0 && result.failed === 0);
-      // SNOW-570: record what was downloaded. SNOW-587 removed the overlay
-      // that used to read this row back — nothing renders from it any more
-      // (see _recordRegionDownload's own header) — but the write stays
-      // pending a follow-up ticket to decide what replaces it.
-      if (ok) {
-        await _recordRegionDownload(
-          data.regionId,
-          core.geometryBounds((feature && feature.geometry) || null),
-          blob.band || core.MICRO_BAND,
-        );
-      }
       // SNOW-569: await the on-map pulse before flipping the roundel — the
       // two are one gesture, the region finishes filling, pulses, and only
       // then does the icon go green. The control stays 'busy' throughout,
