@@ -328,7 +328,17 @@ def test_run_larger_than_the_whole_budget_is_refused_up_front(
 
     No amount of evicting other areas could ever make this fit, so it must
     be refused outright — `error` state plus the budget-specific toast —
-    without ever fetching the region's blob or writing a single tile.
+    without the CLICK fetching the region's blob or writing a single tile.
+
+    The steps `_select_and_click_region` normally bundles are inlined here
+    so the fetch count can be snapshotted at the moment of the click.
+    SNOW-583 made `_probeDone` fall back to fetching the blob when no
+    `basemap.regions` record exists, which is exactly this test's starting
+    state — so the roundel legitimately fetches once while settling to
+    `idle`, before any click. Asserting "never fetched" would now be
+    asserting against SNOW-583's probe rather than against this ticket's
+    refuse-up-front path; the honest invariant is that the click itself
+    adds no fetch.
     """
     page, worker = _boot(pwa_page)
     _set_budget_mb(page, 1)
@@ -342,14 +352,37 @@ def test_run_larger_than_the_whole_budget_is_refused_up_front(
 
     page.route("**/api/region-basemap-tiles/**", _handle_route)
 
-    _select_and_click_region(
-        page, worker, _REGION_A, oversized_summary, _GEOMETRY, bytes_total=1 * _MB
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=1 * _MB)
+    page.evaluate(
+        """({ regionId, download, geometry }) => {
+            FEATURE_BY_REGION_ID[regionId] = {
+                type: 'Feature',
+                properties: { id: regionId, regionID: regionId, download },
+                geometry: geometry,
+            };
+            document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+                detail: { region_id: regionId, region_name: regionId },
+            }));
+        }""",
+        {
+            "regionId": _REGION_A,
+            "download": oversized_summary,
+            "geometry": _GEOMETRY,
+        },
     )
+    icon = page.locator("#map-download-control")
+    icon.wait_for(state="visible")
+    _wait_for_state(page, "idle")
+
+    fetched_before_click = len(fetched)
+    icon.click()
     _wait_for_state(page, "error", timeout=10000)
 
     toast = page.locator("#map-download-error-toast-budget")
     toast.wait_for(state="visible", timeout=10000)
-    assert not fetched, "the blob must never be fetched for a refused-outright run"
+    assert len(fetched) == fetched_before_click, (
+        "a refused-outright run must bail before fetching the blob"
+    )
     assert not any(_REGION_A in n for n in _cache_names(page))
 
 
