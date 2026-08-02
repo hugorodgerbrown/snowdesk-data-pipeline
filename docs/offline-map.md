@@ -42,7 +42,10 @@ the currently-open tab, and `sw_register.js` listens for the resulting
 
 The one-and-only reload is gated on a `userTriggeredUpdate` flag set at
 click-time, so a first-install `clients.claim()` never causes a reload
-on someone's very first visit — and there is no dev reload loop.
+on someone's very first visit — and there is no dev reload loop. (This is a
+different concern from the SNOW-585 dev shell-cache bypass below, which
+exists because the *previous* worker can stay in control across a `git
+pull` — see "Dev shell-cache bypass".)
 
 To surface the pending update to the user, `sw_register.js` reveals a
 fixed bottom banner (`#sw-update-banner`, rendered by
@@ -121,8 +124,13 @@ Concretely, on a tab that was registered against the pre-banner SW:
    But there is no pending update, so nothing is shown.
 3. Bump `CACHE_VERSION` and **Reload 3** — banner appears.
 
-To skip steps 1 and 2 in dev (or to test the banner deliberately), unregister
-the SW once and reload:
+**This is the old procedure**, from before SNOW-585's dev shell-cache bypass
+existed. It is still the right tool for deliberately exercising the banner
+itself (the bypass suppresses it — see "Dev shell-cache bypass" below), but
+it is no longer needed just to see an ordinary code change take effect in
+local dev — the bypass already fixes that. To skip steps 1 and 2 (or to
+test the banner deliberately, e.g. against a checkout with
+`SW_DEV_SHELL_BYPASS=false`), unregister the SW once and reload:
 
 ```js
 // DevTools console, on any page of the site:
@@ -142,6 +150,29 @@ In production this bootstrap happens transparently — every browser
 eventually picks up the new register script via stale-while-revalidate, and
 from then on every shell update fires the banner. The first roll-out of the
 banner itself is a one-deploy burn-in.
+
+### Dev shell-cache bypass (SNOW-585)
+
+The chicken-and-egg quirk above is about testing the banner; a separate,
+everyday problem is that after a `git pull` the **previous** worker stays in
+control (it never called `skipWaiting()`) and keeps serving the old shell —
+including the previous `map.js` and friends — out of its own `CACHE_VERSION`
+cache. The page looks up to date; the code running it is not.
+
+`settings.SW_DEV_SHELL_BYPASS` (default `True` in `config/settings/development.py`,
+always `False` in production; enforced by a system check in
+`apps.core.checks`) fixes this by making `_staleWhileRevalidate` skip the
+shell cache entirely — no read, no write — so even a still-in-control old
+worker serves current bytes on the very next reload. The update banner is
+suppressed while the bypass is active (a `<meta name="pwa-dev-shell-bypass">`
+tag, read by both `sw_register.js` and `pwa_version_check.js`), since it
+would otherwise tell the developer to do something the bypass has already
+done. An opt-in checkbox on `/_sw-version/` (`static/js/pwa_dev_shell_toggle.js`)
+restores ordinary stale-while-revalidate for anyone who deliberately wants
+to exercise the production cache path locally. `tox -e e2e` pins
+`SW_DEV_SHELL_BYPASS=false` so `tests/e2e/test_pwa_lifecycle_update.py` keeps
+testing production semantics. Full rationale:
+[`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
 
 ---
 
@@ -292,7 +323,10 @@ The SW classifies every fetch into one of four buckets:
   (`/api/ratings/`, `/api/regions.geojson`, `/api/major-regions.geojson`,
   `/api/sub-regions.geojson`, `/api/resorts.geojson`,
   `/api/bulletin-groupings.geojson`). Strategy:
-  **stale-while-revalidate**. The cache is served immediately if hit; a
+  **stale-while-revalidate** — except when `settings.SW_DEV_SHELL_BYPASS`
+  is on (dev default), in which case `_staleWhileRevalidate` skips the
+  cache entirely and goes straight to the network; see "Dev shell-cache
+  bypass" above. In production the cache is served immediately if hit; a
   background fetch refreshes the entry for next time. `/api/ratings/` is
   safe to cache this way because its URL encodes the data window via
   `?d=YYYY-MM-DD` and `?country=` — each variant cache-keys separately, so
