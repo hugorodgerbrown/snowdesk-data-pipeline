@@ -237,7 +237,94 @@ describe('schema upgrades', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. appendSyncLog / getSyncLog (SNOW-482).
+// 5. Legacy meta:app key purge (SNOW-589).
+//
+// SNOW-570 wrote a `basemap.regions` row to `meta:app` on every successful
+// per-region basemap download; SNOW-587 removed the "downloaded areas"
+// rings overlay that was its only reader. SNOW-589 removed the write and
+// added `_purgeLegacyKeys`, which deletes any row keyed by a name in
+// `LEGACY_META_APP_KEYS` the moment the DB is opened, so a row written
+// before SNOW-589 doesn't linger in a device's IndexedDB forever.
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a raw (not-via-db.js) connection at version 4 with every v4 store
+ * created, put each of ``rows`` into `meta:app`, then close the connection.
+ * Mirrors `seedLegacyDb` above, but at the current schema version — the
+ * purge runs on every open, not just an upgrading one, so the row must
+ * exist BEFORE db.js's own `open()` call for these tests to be meaningful.
+ */
+function seedMetaAppRows(rows) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 4);
+    req.onupgradeneeded = (evt) => {
+      const d = evt.target.result;
+      d.createObjectStore('queue:mutations', { keyPath: 'id', autoIncrement: true });
+      d.createObjectStore('queue:events', { keyPath: 'id', autoIncrement: true });
+      d.createObjectStore('meta:sync', { keyPath: 'resource' });
+      d.createObjectStore('meta:app', { keyPath: 'key' });
+      d.createObjectStore('data:favourites', { keyPath: 'uuid' });
+      d.createObjectStore('log:sync', { keyPath: 'id', autoIncrement: true });
+      d.createObjectStore('data:map_overlays', { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }).then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction('meta:app', 'readwrite');
+        for (const row of rows) {
+          tx.objectStore('meta:app').put(row);
+        }
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
+
+describe('legacy meta:app key purge', () => {
+  it('purges an existing basemap.regions row on open', async () => {
+    await seedMetaAppRows([{ key: 'basemap.regions', value: [{ region_id: 'ch-vs' }] }]);
+
+    await window.pwaDb.open();
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(row).toBeUndefined();
+  });
+
+  it('is a no-op on a clean DB with no legacy row', async () => {
+    await window.pwaDb.open();
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(row).toBeUndefined();
+
+    // Other meta:app reads/writes still work — the purge doesn't wedge the
+    // store or the connection.
+    await window.pwaDb.put('meta:app', { key: 'some.other.key', value: 'still works' });
+    const other = await window.pwaDb.get('meta:app', 'some.other.key');
+    expect(other).toEqual({ key: 'some.other.key', value: 'still works' });
+  });
+
+  it('leaves unrelated meta:app rows alone', async () => {
+    await seedMetaAppRows([
+      { key: 'basemap.regions', value: [{ region_id: 'ch-vs' }] },
+      { key: 'basemap.customArea', value: { bbox: [1, 2, 3, 4] } },
+    ]);
+
+    await window.pwaDb.open();
+
+    const legacy = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const unrelated = await window.pwaDb.get('meta:app', 'basemap.customArea');
+    expect(legacy).toBeUndefined();
+    expect(unrelated).toEqual({ key: 'basemap.customArea', value: { bbox: [1, 2, 3, 4] } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. appendSyncLog / getSyncLog (SNOW-482).
 // ---------------------------------------------------------------------------
 
 describe('log:sync helpers', () => {
