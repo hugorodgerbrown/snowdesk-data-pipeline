@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree worktree seed strategy, dev credentials, seed_test_data dataset coverage, reseed procedure
+description: init-worktree worktree seed strategy, dev credentials, seed_test_data dataset coverage, reseed procedure, dev shell-cache bypass toggle
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-08-02
 ---
 
 # Worktrees and DB seeding
@@ -70,6 +70,22 @@ missing CSS.
 To rebuild after editing `src/css/main.css`, either re-run the command above
 or use the Tailwind watcher under "Running locally" in
 [`CLAUDE.md`](../CLAUDE.md).
+
+## Dev shell-cache bypass
+
+A fresh worktree behaves oddly after a later `git pull` if the browser's
+service worker is left to its own devices: the PWA shell (`static/js/sw.js`)
+deliberately never calls `skipWaiting()`, so the previous worker stays in
+control and keeps serving the previous `map.js` and friends out of its own
+shell cache — the page looks up to date; the code running it is not.
+
+Worktrees run `config.settings.development`, whose `SW_DEV_SHELL_BYPASS`
+defaults to `True` (SNOW-585) — the service worker skips its shell cache
+entirely in that case, so every reload serves current bytes off disk with no
+manual DevTools step. Set `SW_DEV_SHELL_BYPASS=False` in `.env` to opt back
+into ordinary caching for the whole worktree, or use the checkbox on
+`/_sw-version/` (staff-only) to toggle it per-browser without touching
+`.env`. Full rationale: [`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
 
 ## Dev credentials
 

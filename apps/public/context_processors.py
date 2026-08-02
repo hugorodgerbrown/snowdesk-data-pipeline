@@ -95,6 +95,31 @@ def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:
     }
 
 
+def pwa_dev_shell_bypass(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the dev-only shell-cache bypass flag into every template context (SNOW-585).
+
+    Exposes ``SW_DEV_SHELL_BYPASS`` (from ``settings``, default False) so
+    ``base.html`` can bake it into a ``<meta name="pwa-dev-shell-bypass">``
+    tag, read synchronously at startup by ``static/js/sw_register.js`` and
+    ``static/js/pwa_version_check.js`` to suppress the update banner (and
+    its ``pwa.sw.update_available`` telemetry) whenever the bypass is
+    active — a stale-shell reload is fixed on the first try, so a banner
+    telling the developer to reload would be actively misleading. See
+    ``docs/decisions/dev-bypasses-the-shell-cache.md``.
+
+    Args:
+        request: The incoming HTTP request (unused — value comes from settings).
+
+    Returns:
+        ``{"SW_DEV_SHELL_BYPASS": bool}``.
+
+    """
+    return {
+        "SW_DEV_SHELL_BYPASS": bool(getattr(settings, "SW_DEV_SHELL_BYPASS", False)),
+    }
+
+
 def site_environment(request: HttpRequest) -> dict[str, Any]:
     """
     Inject PWA environment identity into every template context (SNOW-399).

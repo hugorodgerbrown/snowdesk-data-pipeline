@@ -157,6 +157,12 @@
    * sw_register.js uses in ``showUpdateBanner``.
    */
   function showSoftBanner() {
+    // SNOW-585: only present when settings.SW_DEV_SHELL_BYPASS is on (base.html;
+    // always false in production). The bypass already serves fresh shell
+    // assets on the very next reload, so a banner asking the developer to
+    // reload would be misleading. See
+    // docs/decisions/dev-bypasses-the-shell-cache.md.
+    if (readMeta('pwa-dev-shell-bypass') === '1') return;
     const banner = document.getElementById('sw-update-banner');
     if (!banner) return;
     if (banner.dataset.fallback === '1') {

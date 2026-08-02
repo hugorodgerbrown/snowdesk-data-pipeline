@@ -1693,6 +1693,16 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     ``Cache-Control: no-cache`` ensures the browser re-validates on every
     page load so SW updates take effect promptly.
 
+    SNOW-585: when ``settings.SW_DEV_SHELL_BYPASS`` is on, the on-disk
+    ``const DEV_SHELL_BYPASS = false;`` literal is rewritten to ``true`` in
+    the response body returned by ``_serve_sw_file`` — deliberately done
+    here rather than inside that shared helper, so ``/sw-kill.js`` (served
+    by ``serve_sw_kill``, which never runs this substitution) can't be
+    affected by this dev-only concern even structurally, not merely by
+    convention. A key not found in the body is a silent no-op — the
+    on-disk default (``false``) is production-safe, so a failed
+    substitution fails safe rather than raising.
+
     Args:
         request: The incoming HTTP request.
 
@@ -1704,7 +1714,14 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
 
     """
-    return _serve_sw_file("js/sw.js")
+    response = _serve_sw_file("js/sw.js")
+    if settings.SW_DEV_SHELL_BYPASS:
+        body = response.content.decode("utf-8").replace(
+            "const DEV_SHELL_BYPASS = false;",
+            "const DEV_SHELL_BYPASS = true;",
+        )
+        response.content = body.encode("utf-8")
+    return response
 
 
 def serve_sw_kill(request: HttpRequest) -> HttpResponse:

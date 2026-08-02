@@ -66,6 +66,33 @@
  * reproduce the dev reload-loop the previous design hit — that loop
  * required auto-skipWaiting on install, which we no longer do.
  *
+ * Dev shell-cache bypass (SNOW-585)
+ * ----------------------------------
+ * The contract above still leaves one gap in local development: right
+ * after a ``git pull`` the OLD worker is still in control (it never
+ * skipped waiting), and it is the old worker's ``fetch`` handler that
+ * decides what ``static``-classified requests get served — out of ITS
+ * ``CACHE_VERSION`` cache, carrying the previous ``map.js`` and friends.
+ * The page looks current; the code running it is not. Rejected fix:
+ * ``skipWaiting()`` in dev — the page that triggered the install already
+ * ran with the old assets, so that trades one stale reload for a second
+ * unnecessary one.
+ *
+ * ``DEV_SHELL_BYPASS`` (declared just below ``CACHE_VERSION``) is a
+ * literal ``false`` on disk, rewritten to ``true`` at request time by
+ * ``apps.public.views.serve_sw`` when ``settings.SW_DEV_SHELL_BYPASS`` is
+ * on (development default; always off in production, enforced by
+ * ``apps.core.checks``). When true, ``_staleWhileRevalidate`` skips the
+ * cache read AND the cache write and calls ``fetch(request)`` directly —
+ * so even a still-in-control old worker serves current bytes on the very
+ * next reload, no second reload required. An opt-in escape hatch (a
+ * checkbox on ``/_sw-version/``, `static/js/pwa_dev_shell_toggle.js`)
+ * restores ordinary stale-while-revalidate behaviour for anyone who
+ * deliberately wants to exercise the production cache path locally — see
+ * the ``dev-shell-cache`` ``message`` handler below. Production never sets
+ * ``SW_DEV_SHELL_BYPASS``, so none of this changes production behaviour.
+ * Full rationale: ``docs/decisions/dev-bypasses-the-shell-cache.md``.
+ *
  * Cache version
  * -------------
  * Bump ``CACHE_VERSION`` whenever the shell changes — a new version
@@ -334,7 +361,23 @@ try {
 // (regions-line-downloaded, downloaded-area-line) are removed; the
 // cached-tiles squares are the only thing it draws now. Shell JS/HTML
 // bytes changed (map.js, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v101';
+// SNOW-585: dev-only shell-cache bypass. When DEV_SHELL_BYPASS is on
+// (development default, always off in production),
+// _staleWhileRevalidate skips the shell cache entirely so a still-in-
+// control old worker can't keep serving pre-pull assets after a git
+// pull. Shell JS/HTML bytes changed (sw.js, sw_register.js,
+// pwa_version_check.js, sw_version.html) plus a new
+// pwa_dev_shell_toggle.js.
+const CACHE_VERSION = 'snowdesk-shell-v103';
+
+// SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
+// (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS
+// is on — the exact string 'const DEV_SHELL_BYPASS = false;' is replaced with
+// '... = true;' before the response is returned. The on-disk default stays
+// 'false', so a failed substitution (a typo in either copy of the literal)
+// fails safe: production semantics, not an accidental bypass. See "Dev
+// shell-cache bypass" below and docs/decisions/dev-bypasses-the-shell-cache.md.
+const DEV_SHELL_BYPASS = false;
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -411,6 +454,21 @@ let _basemapOrigins = new Set();
 // ``_basemapOrigins``, so a later explicit registration is never
 // shadowed by a stale memoised promise.
 let _basemapHydration = null;
+
+// SNOW-585: whether the page has opted BACK IN to ordinary
+// stale-while-revalidate behaviour while DEV_SHELL_BYPASS is on (the
+// checkbox on /_sw-version/, static/js/pwa_dev_shell_toggle.js). Ignored
+// entirely when DEV_SHELL_BYPASS is false (production). Defaults to
+// opted-out (false) — the whole point of the bypass is "off means off"
+// until a developer deliberately asks for the cache back.
+let _devShellCacheOptIn = false;
+
+// Memoises the in-flight (or completed) opt-in hydration read, mirroring
+// ``_basemapHydration`` exactly — see ``_hydrateDevShellCacheOptIn()``.
+// Reset to null by the ``dev-shell-cache`` message handler whenever it
+// replaces ``_devShellCacheOptIn``, so a later toggle is never shadowed by
+// a stale memoised promise.
+let _devShellCacheHydration = null;
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -688,6 +746,50 @@ function _hydrateBasemapOrigins() {
 }
 
 /**
+ * SNOW-585: lazily rehydrate ``_devShellCacheOptIn`` from the durable
+ * ``meta:app`` IndexedDB row (key ``sw.devShellCache``) that
+ * ``static/js/pwa_dev_shell_toggle.js`` writes alongside its
+ * ``dev-shell-cache`` postMessage. Mirrors ``_hydrateBasemapOrigins()``
+ * exactly, including tolerating a missing ``meta:app`` store (a
+ * worker-created DB only has ``queue:mutations`` — see
+ * ``_openMutationsDb()``'s docstring): a read failure just leaves the
+ * default (opted-out), which is the safe direction for a bypass whose
+ * whole point is "off means off" unless a developer deliberately asks for
+ * the cache back. Memoised in ``_devShellCacheHydration`` so a burst of
+ * ``static``-classified requests on a freshly (re)started worker triggers
+ * one DB read, not one per request. Only called when ``DEV_SHELL_BYPASS``
+ * is true — this never runs in production.
+ *
+ * @returns {Promise<void>}
+ */
+function _hydrateDevShellCacheOptIn() {
+  if (_devShellCacheHydration) return _devShellCacheHydration;
+  _devShellCacheHydration = (async () => {
+    let db;
+    try {
+      db = await _openMutationsDb();
+      const meta = await _idbGetAll(db, 'meta:app');
+      const row = meta.find((r) => r.key === 'sw.devShellCache');
+      if (row) _devShellCacheOptIn = !!row.value;
+    } catch (_err) {
+      // meta:app missing (fresh worker-created DB), or a transient DB
+      // open/read failure — leave _devShellCacheOptIn at its default
+      // (opted-out). Recovery comes from the next live page's
+      // dev-shell-cache message, which resets _devShellCacheHydration.
+    } finally {
+      if (db) {
+        try {
+          db.close();
+        } catch (_e) {
+          // Non-fatal.
+        }
+      }
+    }
+  })();
+  return _devShellCacheHydration;
+}
+
+/**
  * Synchronous portion of strategy classification: the ``method !== GET``
  * short-circuit, and every same-origin case. Returns ``null`` for a
  * cross-origin GET request because deciding that case may require the
@@ -798,8 +900,18 @@ function _stampCacheHit(response) {
  * Stale-while-revalidate: serve the cached response immediately if
  * present, kick off a background re-fetch to refresh the cache for
  * the next call. Falls through to network-only on cache miss.
+ *
+ * SNOW-585: when ``DEV_SHELL_BYPASS`` is on and the page hasn't opted
+ * back in (see ``_hydrateDevShellCacheOptIn()``), this bypasses the
+ * cache entirely — no read, no write — and goes straight to
+ * ``fetch(request)``. That decision has to run before any cache
+ * interaction, which is why it sits first, ahead of ``caches.open()``.
  */
 async function _staleWhileRevalidate(request) {
+  if (DEV_SHELL_BYPASS) {
+    await _hydrateDevShellCacheOptIn();
+    if (!_devShellCacheOptIn) return fetch(request);
+  }
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
   const url = new URL(request.url);
@@ -1305,6 +1417,16 @@ self.addEventListener('message', (event) => {
     // doesn't await a stale (already-resolved, pre-registration) promise
     // instead of using the Set we just replaced.
     _basemapHydration = null;
+  }
+  // SNOW-585: static/js/pwa_dev_shell_toggle.js posts this when the
+  // dev-only "restore shell cache" checkbox on /_sw-version/ changes.
+  // Mirrors 'register-basemap-origins' exactly: replaces the in-memory
+  // value and clears the memoised hydration read, so the toggle takes
+  // effect on the very next fetch rather than waiting for a worker
+  // restart. Ignored (but harmless) if DEV_SHELL_BYPASS is false.
+  if (event.data && event.data.type === 'dev-shell-cache') {
+    _devShellCacheOptIn = !!event.data.enabled;
+    _devShellCacheHydration = null;
   }
   // SNOW-492: "Download basemap" — map.js posts this with the current
   // view's URL list (see its docstring for how that list is assembled).

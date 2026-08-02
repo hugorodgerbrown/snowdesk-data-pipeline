@@ -124,6 +124,16 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# PWA_TELEMETRY_ENABLED=False in .env to silence telemetry when    #}
         {# running locally (docs/telemetry-pipeline.md).                    #}
         <meta name="pwa-telemetry-enabled" content="{{ PWA_TELEMETRY_ENABLED|yesno:'1,0' }}">
+        {% if SW_DEV_SHELL_BYPASS %}
+            {# SNOW-585: only rendered when settings.SW_DEV_SHELL_BYPASS is on   #}
+            {# (development default; always off in production — see            #}
+            {# docs/decisions/dev-bypasses-the-shell-cache.md). Read            #}
+            {# synchronously at startup by sw_register.js and                  #}
+            {# pwa_version_check.js to suppress the update banner, which would #}
+            {# otherwise be misleading — the bypass already serves fresh shell #}
+            {# assets on the very next reload.                                 #}
+            <meta name="pwa-dev-shell-bypass" content="1">
+        {% endif %}
 
         {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
         {# Screen" on iPhone produces a screenshot icon and a non-         #}

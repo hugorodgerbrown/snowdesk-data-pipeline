@@ -105,6 +105,11 @@ def sw_version(request: HttpRequest) -> HttpResponse:
     progressive enhancement: it posts ``'version'`` to
     ``navigator.serviceWorker.controller`` and writes the reply into the
     page (see ``sw.js``'s ``message`` handler).
+
+    SNOW-585: also passes ``settings.SW_DEV_SHELL_BYPASS`` so the template
+    can render the dev-only "restore shell cache" opt-in toggle only when
+    the bypass is active — the toggle is meaningless in production, where
+    the bypass is never on.
     """
     return render(
         request,
@@ -112,5 +117,6 @@ def sw_version(request: HttpRequest) -> HttpResponse:
         {
             "cache_version": read_cache_version(),
             "app_version": settings.APP_VERSION,
+            "sw_dev_shell_bypass": settings.SW_DEV_SHELL_BYPASS,
         },
     )
