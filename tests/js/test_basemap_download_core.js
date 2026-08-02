@@ -47,13 +47,23 @@
  * ``rangesToTileURLs`` — the grid reorders the download without changing
  * what it caches.
  *
- * SNOW-570 adds ``downloadedIds`` — the pure half of the "Downloaded
- * areas" overlay. Its load-bearing property is that it requires an area's
- * WHOLE tile set, not just its centre tile: the two download shapes share
- * one cache, one band and one URL template, so a download that merely
- * crosses a region caches some of that region's tiles (its centre one
- * included) without covering it. It is also per-template, which is what
- * makes the overlay change when the basemap does.
+ * SNOW-570 adds ``blobFullyCached`` (originally ``downloadedIds``, a
+ * multi-entry form dropped in SNOW-583 once its only callers each check
+ * one blob at a time) — the pure half of "is this download actually
+ * available offline?". Its load-bearing property is that it requires a
+ * blob's WHOLE tile set, not just its centre tile: the two download
+ * shapes share one cache, one band and one URL template, so a download
+ * that merely crosses an area caches some of that area's tiles (its
+ * centre one included) without covering it. It is also per-template,
+ * which is what makes the answer change when the basemap does.
+ *
+ * SNOW-583 adds ``zoomRows`` — the accessor that lets every consumer of a
+ * blob's ``z`` (``rangesToTileURLs``, ``tileCount``, ``tileGridPlan``,
+ * ``blobFullyCached``) handle both shapes a zoom level's entry can now be:
+ * ``buildBlob``'s 4-int rectangle (custom area; also what a stale
+ * `max-age=86400` region response can still be for up to 24h after a
+ * deploy) or a clipped region blob's ``{"<y>": [xmin, xmax]}`` row-span
+ * map (``apps.regions.services.basemap_tiles.build_region_blob``).
  *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is
@@ -104,6 +114,18 @@ describe('rangesToTileURLs', () => {
   it('returns [] for a falsy blob or a blob with no z key', () => {
     expect(core.rangesToTileURLs(TEMPLATE, null)).toEqual([]);
     expect(core.rangesToTileURLs(TEMPLATE, {})).toEqual([]);
+  });
+
+  it('expands a clipped region blob row-map, not just a rectangle', () => {
+    // SNOW-583: a region blob's z entry is {"<y>": [xmin, xmax]}, not the
+    // 4-int rectangle a custom-area blob uses — this is the shape
+    // /api/region-basemap-tiles/ now serves for a region.
+    const blob = { z: { 14: { 5815: [8510, 8511], 5820: [8515, 8515] } } };
+    expect(rangesToTileURLs_sorted(blob)).toEqual([
+      'https://tiles.example.com/14/8510/5815.pbf',
+      'https://tiles.example.com/14/8511/5815.pbf',
+      'https://tiles.example.com/14/8515/5820.pbf',
+    ]);
   });
 
   // Sorted for deterministic assertion order — object key iteration order
@@ -180,6 +202,15 @@ describe('tileCount', () => {
     // z=8: (12-10+1) * (6-5+1) = 3 * 2 = 6
     // z=9: (20-20+1) * (10-10+1) = 1 * 1 = 1
     expect(core.tileCount(ranges)).toBe(7);
+  });
+
+  it('sums row spans for a clipped region blob z map too', () => {
+    // SNOW-583: row_tile_count's JS counterpart — via zoomRows, the same
+    // function serves both shapes.
+    const z = { 10: { 5: [1, 3], 6: [2, 2] }, 11: { 10: [0, 0] } };
+    // z=10: (3-1+1) + (2-2+1) = 3 + 1 = 4
+    // z=11: (0-0+1) = 1
+    expect(core.tileCount(z)).toBe(5);
   });
 });
 
@@ -412,138 +443,138 @@ describe('hasStorageHeadroom', () => {
 });
 
 /*
- * SNOW-570 — the "which areas are downloaded?" overlay's pure half. The
- * caller does one cache.keys() pass; this turns that URL set into an answer
- * for every area at once.
- *
- * The load-bearing property is FULL coverage, not the centre-tile proxy the
- * roundel's done-probe uses. Both download shapes write to one pinned cache
- * over the same band with the same template, so their tiles are
- * indistinguishable strings: a custom-area download whose frame merely
- * crosses a region caches some of that region's tiles — including,
- * often, its centre one. A centre-tile probe rings the whole region on the
- * strength of a tile the download never meant to cover. Hence
- * ``does not report an area whose tiles are only partly cached`` and
- * ``a crossing download does not count as covering the region`` below,
- * which are the regression tests for exactly that.
+ * SNOW-583: one accessor for a blob's z, whichever shape it arrived in.
+ * A custom-area blob's z is still buildBlob's 4-int rectangle; a region
+ * blob fetched from /api/region-basemap-tiles/ is now a row-span map
+ * (apps.regions.services.basemap_tiles.build_region_blob), and a stale
+ * `max-age=86400` response can still hand back the old rectangle for up
+ * to 24h after a deploy — zoomRows is what makes every consumer below
+ * (rangesToTileURLs, tileCount, tileGridPlan, blobFullyCached) handle
+ * both without knowing which one it got.
  */
-describe('downloadedIds', () => {
+describe('zoomRows', () => {
+  it('expands a 4-int rectangle into one identical span per row', () => {
+    expect(core.zoomRows([5, 7, 3, 4])).toEqual({
+      '3': [5, 7],
+      '4': [5, 7],
+    });
+  });
+
+  it('collapses a single-row rectangle to one row', () => {
+    expect(core.zoomRows([5, 5, 3, 3])).toEqual({ '3': [5, 5] });
+  });
+
+  it('returns a row-map object exactly as given', () => {
+    const rows = { '3': [5, 6], '5': [5, 5] };
+    expect(core.zoomRows(rows)).toBe(rows);
+  });
+
+  it('returns {} for a falsy entry', () => {
+    expect(core.zoomRows(undefined)).toEqual({});
+    expect(core.zoomRows(null)).toEqual({});
+  });
+});
+
+/*
+ * SNOW-570 — the "is this download actually available offline?" question,
+ * widened by SNOW-583 (blobFullyCached replaces the old downloadedIds/
+ * _bboxFullyCached pair now that its only two callers — the per-region and
+ * custom-area done-probes — each check ONE blob rather than a list of
+ * regions; the "Downloaded areas" overlay's per-region ring that needed
+ * the list form is gone).
+ *
+ * The load-bearing property is FULL coverage, not a centre-tile proxy:
+ * both download shapes write to one pinned cache over the same band with
+ * the same template, so their tiles are indistinguishable strings, and a
+ * download whose frame merely crosses an area caches some of that area's
+ * tiles — including, often, its centre one — without covering it.
+ */
+describe('blobFullyCached', () => {
   const BAND = [10, 11];
   // Small enough that a whole download is a handful of tiles, so a test can
   // hold the entire cached set and remove one tile from it by hand.
   const BBOX = [7.0, 46.0, 7.2, 46.2];
 
   /**
-   * Every tile URL a ``band`` download of ``bbox`` fetches.
-   *
-   * Built with the module's own tile math rather than hand-listed indices:
-   * that math is pinned by its own golden vector against the Python twin,
-   * and what these tests are about is the membership logic on top of it.
+   * A ``build_blob``-shaped blob for ``bbox``/``band`` — built with the
+   * module's own tile math rather than hand-listed indices, so what these
+   * tests are about is the membership logic on top of it.
    *
    * @param {number[]} bbox
    * @param {number[]} band
-   * @returns {string[]}
+   * @returns {Object}
    */
-  function urlsFor(bbox, band = BAND) {
-    return core.rangesToTileURLs(TEMPLATE, {
-      z: core.tileRangesForBBox(bbox, band[0], band[1]),
-    });
+  function blobFor(bbox, band = BAND) {
+    return core.buildBlob(bbox, band[0], band[1]);
   }
 
-  const ENTRY = (id, bbox = BBOX, band = BAND) => ({ id, bbox, band });
+  /** Every tile URL ``blobFor(bbox, band)`` fetches. */
+  function urlsFor(bbox, band = BAND) {
+    return core.rangesToTileURLs(TEMPLATE, blobFor(bbox, band));
+  }
 
-  it('reports an area whose every tile is cached', () => {
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
+  it('reports true when every tile is cached', () => {
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), urlsFor(BBOX))).toBe(true);
   });
 
-  it('does not report an area whose tiles are only partly cached', () => {
+  it('reports false when tiles are only partly cached', () => {
     // One tile short is not downloaded. This is the whole point: the area
-    // cannot be used offline, so it must not be ringed.
+    // cannot be used offline, so it must not read as available.
     const partial = urlsFor(BBOX).slice(1);
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], partial)).toEqual([]);
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), partial)).toBe(false);
   });
 
-  it('a crossing download does not count as covering the region', () => {
-    // A neighbouring area that overlaps this one — the reported bug: its
-    // download caches some of this region's tiles (its centre tile among
-    // them, since the overlap straddles the middle) without covering it.
-    const crossing = [7.1, 46.1, 7.4, 46.4];
-    const cached = new Set(urlsFor(crossing));
-    // Precondition: the overlap really does cache this region's centre
-    // tile, so a centre-tile probe WOULD have reported it. Without this the
-    // test could pass for the wrong reason.
-    const centre = core.centreTileURL(TEMPLATE, {
-      centre_tile: core.centreTile(BBOX, BAND[1]),
-    });
-    expect(cached.has(centre)).toBe(true);
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], cached)).toEqual([]);
-  });
-
-  it('reports an area wholly contained in a larger download', () => {
-    // The other half of the same rule: whoever cached the tiles, if all of
-    // them are there the area genuinely IS available offline.
+  it('reports true for a blob wholly contained in a larger cached set', () => {
+    // Whoever cached the tiles, if all of them are there the area
+    // genuinely IS available offline.
     const containing = [6.5, 45.5, 8.0, 47.0];
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(containing))).toEqual(['a']);
-  });
-
-  it('preserves input order', () => {
-    const other = [8.0, 46.0, 8.2, 46.2];
-    const cached = [...urlsFor(BBOX), ...urlsFor(other)];
-    const entries = [ENTRY('a'), ENTRY('b', other), ENTRY('c', [9.0, 46.0, 9.2, 46.2])];
-    expect(core.downloadedIds(TEMPLATE, entries, cached)).toEqual(['a', 'b']);
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), urlsFor(containing))).toBe(true);
   });
 
   it('accepts an array as well as a Set', () => {
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], new Set(urlsFor(BBOX)))).toEqual(['a']);
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), urlsFor(BBOX))).toBe(true);
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), new Set(urlsFor(BBOX)))).toBe(true);
   });
 
-  it('honours each entry own band', () => {
-    // An area saved over a different band must be checked against the tiles
-    // it actually fetched, not against MICRO_BAND's.
-    const narrow = [10, 10];
-    expect(
-      core.downloadedIds(TEMPLATE, [ENTRY('a', BBOX, narrow)], urlsFor(BBOX, narrow)),
-    ).toEqual(['a']);
-    // Those z10 tiles alone do not satisfy the wider default band.
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], urlsFor(BBOX, narrow))).toEqual([]);
+  it("checks the blob's OWN tiles, not a wider default band", () => {
+    // There is no separate band argument to get wrong — a blob built over
+    // a narrow band is checked against exactly its own z.
+    const narrow = blobFor(BBOX, [10, 10]);
+    expect(core.blobFullyCached(TEMPLATE, narrow, urlsFor(BBOX, [10, 10]))).toBe(true);
+    // Only the z10 tiles cached does not satisfy the wider micro band.
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), urlsFor(BBOX, [10, 10]))).toBe(false);
   });
 
-  it('defaults a bandless entry to MICRO_BAND', () => {
-    const entry = { id: 'a', bbox: BBOX };
-    expect(core.downloadedIds(TEMPLATE, [entry], urlsFor(BBOX, core.MICRO_BAND)))
-      .toEqual(['a']);
+  it('is false for a falsy template, blob, or a blob with no z', () => {
+    const cached = urlsFor(BBOX);
+    expect(core.blobFullyCached('', blobFor(BBOX), cached)).toBe(false);
+    expect(core.blobFullyCached(null, blobFor(BBOX), cached)).toBe(false);
+    expect(core.blobFullyCached(TEMPLATE, null, cached)).toBe(false);
+    expect(core.blobFullyCached(TEMPLATE, {}, cached)).toBe(false);
   });
 
-  it('skips an entry with no bbox rather than claiming it', () => {
-    // A region whose blob was never computed has nothing to check. It is
-    // not downloaded — and an empty tile set must never vacuously pass.
-    expect(core.downloadedIds(TEMPLATE, [{ id: 'no-bbox' }], urlsFor(BBOX))).toEqual([]);
-  });
-
-  it('is empty when nothing is cached', () => {
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], new Set())).toEqual([]);
+  it('is false when nothing is cached', () => {
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), new Set())).toBe(false);
   });
 
   it('is per-basemap: the same cache answers differently per template', () => {
     // The whole reason the overlay changes when you switch basemap. Tiles
     // cached from one origin say nothing about another.
     const cached = urlsFor(BBOX);
-    expect(core.downloadedIds(TEMPLATE, [ENTRY('a')], cached)).toEqual(['a']);
+    expect(core.blobFullyCached(TEMPLATE, blobFor(BBOX), cached)).toBe(true);
     expect(
-      core.downloadedIds('https://other.example.com/{z}/{x}/{y}.pbf', [ENTRY('a')], cached),
-    ).toEqual([]);
+      core.blobFullyCached('https://other.example.com/{z}/{x}/{y}.pbf', blobFor(BBOX), cached),
+    ).toBe(false);
   });
 
-  it('returns [] for a falsy template or entries', () => {
-    const cached = urlsFor(BBOX);
-    expect(core.downloadedIds('', [ENTRY('a')], cached)).toEqual([]);
-    expect(core.downloadedIds(null, [ENTRY('a')], cached)).toEqual([]);
-    expect(core.downloadedIds(TEMPLATE, null, cached)).toEqual([]);
-  });
-
-  it('tolerates a null entry in the list', () => {
-    expect(core.downloadedIds(TEMPLATE, [null, ENTRY('a')], urlsFor(BBOX))).toEqual(['a']);
+  it('accepts a clipped row-map z, not just a rectangle', () => {
+    // SNOW-583: a region blob's z is {"<y>": [xmin, xmax]}, not the 4-int
+    // rectangle buildBlob produces — the dual-shape contract this function
+    // has to honour via zoomRows.
+    const blob = { z: { 10: { 363: [531, 532] } } };
+    const urls = core.rangesToTileURLs(TEMPLATE, blob);
+    expect(core.blobFullyCached(TEMPLATE, blob, urls)).toBe(true);
+    expect(core.blobFullyCached(TEMPLATE, blob, urls.slice(1))).toBe(false);
   });
 });
 
@@ -869,5 +900,34 @@ describe('tileGridPlan', () => {
     expect(core.tileGridPlan(TEMPLATE, null)).toBeNull();
     expect(core.tileGridPlan(TEMPLATE, { z: {} })).toBeNull();
     expect(core.tileGridPlan('', BLOB)).toBeNull();
+  });
+
+  it('snaps a coarse tile to the nearest PRESENT grid row (SNOW-583)', () => {
+    // A clipped region blob's grid rows are no longer necessarily
+    // contiguous in y (a concave boundary can leave a gap between two
+    // present rows) — the old single rectangular clamp would leave a
+    // coarse tile's cy unclamped whenever it fell inside the OLD min/max
+    // range but on a row that is, in a clipped blob, simply absent, and
+    // crash looking up that row's span. Rows present at y=0 and y=10
+    // (gap 1-9); the z10 tile's NW corner floors/scales to y=4 — closer
+    // to 0 (distance 4) than to 10 (distance 6) — and to x=200, west of
+    // row 0's own [201, 205] span, so BOTH steps of the clamp are
+    // exercised: row first, then x within that row.
+    const blob = {
+      z: {
+        10: [50, 50, 1, 1],
+        12: { 0: [201, 205], 10: [201, 205] },
+      },
+    };
+    const plan = core.tileGridPlan(TEMPLATE, blob);
+    expect(plan.gridZ).toBe(12);
+    // The coarse tile lands on row 0 (nearest), clamped to x=201 (row 0's
+    // own western edge) — not the unclamped (200, 4) a single rectangular
+    // clamp would have produced, which is not one of this grid's cells.
+    expect(plan.cells.some((c) => c.x === 201 && c.y === 0)).toBe(true);
+    expect(plan.cells.every((c) => c.y === 0 || c.y === 10)).toBe(true);
+    // Still a partition — every tile in the blob is accounted for exactly
+    // once, the coarse one included.
+    expect(plan.cells.reduce((a, c) => a + c.total, 0)).toBe(core.tileCount(blob.z));
   });
 });

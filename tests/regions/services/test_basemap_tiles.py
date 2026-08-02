@@ -11,14 +11,23 @@ Covers:
   centre_tile       — centre point of a symmetric bbox.
   build_blob        — full blob shape, arithmetic consistency, and the
                       over_ceiling flag for a small vs. a pathologically
-                      large bbox.
+                      large bbox. RECTANGULAR — the custom-area download's
+                      shape; unmoved by SNOW-583 (see the module docstring).
+  clip_ranges / row_tile_count / build_region_blob — SNOW-583's clip to a
+                      region's real boundary: the ⊆-candidates invariant
+                      over every real CH region boundary, that clipping
+                      only ever shrinks the tile count, and the clipped
+                      blob's own shape/arithmetic.
   blob_summary      — drops the "z" (and "band") keys.
   MICRO_BAND        — the single micro-region zoom-band constant.
 """
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
+from typing import Any
 
 from apps.regions.services.basemap_tiles import (
     DOWNLOAD_CEILING_MB,
@@ -27,11 +36,32 @@ from apps.regions.services.basemap_tiles import (
     bbox_from_boundary,
     blob_summary,
     build_blob,
+    build_region_blob,
     centre_tile,
+    clip_ranges,
     lon_lat_to_tile,
+    row_tile_count,
     tile_count,
     tile_ranges,
 )
+
+_FIXTURE_DIR = (
+    Path(__file__).resolve().parent.parent.parent.parent
+    / "apps"
+    / "regions"
+    / "fixtures"
+)
+
+
+def _ch_region_boundaries() -> list[dict[str, Any]]:
+    """Return every real ``regions.microregion`` boundary in the CH fixture."""
+    entries = json.loads((_FIXTURE_DIR / "eaws_CH.json").read_text())
+    return [
+        entry["fields"]["boundary"]
+        for entry in entries
+        if entry["model"] == "regions.microregion" and entry["fields"].get("boundary")
+    ]
+
 
 # ---------------------------------------------------------------------------
 # lon_lat_to_tile
@@ -225,6 +255,112 @@ def test_build_blob_golden_vector_matches_js_twin() -> None:
             "14": [8510, 8519, 5815, 5828],
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# clip_ranges / row_tile_count / build_region_blob (SNOW-583)
+# ---------------------------------------------------------------------------
+
+
+def test_clip_ranges_is_a_subset_of_the_candidate_rectangle() -> None:
+    """The load-bearing invariant: clipping only ever DROPS candidate tiles.
+
+    Candidates always come from tile_ranges() over the UNDILATED bbox, so
+    every clipped tile's x/y must fall inside that same rectangle at its
+    zoom level — never outside it. Checked over every real CH region
+    boundary, not a hand-built one: this is the property SNOW-583's
+    whole approach rests on (an already-downloaded region must stay fully
+    cached once regions clip).
+    """
+    min_z, max_z = MICRO_BAND
+    for boundary in _ch_region_boundaries():
+        bbox = bbox_from_boundary(boundary)
+        candidates = tile_ranges(bbox, min_z, max_z)
+        clipped = clip_ranges(boundary, candidates, max_z)
+        for z_str, rows in clipped.items():
+            cand_xmin, cand_xmax, cand_ymin, cand_ymax = candidates[z_str]
+            for y_str, (row_xmin, row_xmax) in rows.items():
+                y = int(y_str)
+                assert cand_ymin <= y <= cand_ymax
+                assert cand_xmin <= row_xmin <= row_xmax <= cand_xmax
+
+
+def test_clip_ranges_shrinks_the_tile_count_for_a_real_boundary() -> None:
+    """Clipping to a real (non-rectangular) region boundary drops tiles.
+
+    Uses the whole CH fixture rather than one hand-picked region, and
+    asserts on the total — a handful of near-rectangular regions may clip
+    to nothing, but the aggregate must shrink, matching the ~28.5%
+    measured saving across all 149 CH regions (see the module docstring).
+    """
+    min_z, max_z = MICRO_BAND
+    total_candidates = 0
+    total_clipped = 0
+    for boundary in _ch_region_boundaries():
+        bbox = bbox_from_boundary(boundary)
+        candidates = tile_ranges(bbox, min_z, max_z)
+        total_candidates += tile_count(candidates)
+        total_clipped += row_tile_count(clip_ranges(boundary, candidates, max_z))
+    assert total_clipped < total_candidates
+    saving = 1 - (total_clipped / total_candidates)
+    assert 0.2 < saving < 0.35
+
+
+def test_clip_ranges_row_span_shape() -> None:
+    """Each present row is a single [xmin, xmax] span, keyed by row (y)."""
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]]
+        ],
+    }
+    min_z, max_z = MICRO_BAND
+    bbox = bbox_from_boundary(boundary)
+    candidates = tile_ranges(bbox, min_z, max_z)
+    clipped = clip_ranges(boundary, candidates, max_z)
+    assert set(clipped.keys()) <= {str(z) for z in range(min_z, max_z + 1)}
+    for rows in clipped.values():
+        for xmin, xmax in rows.values():
+            assert xmin <= xmax
+
+
+def test_row_tile_count_sums_row_spans() -> None:
+    """row_tile_count sums (xmax - xmin + 1) over every row and zoom."""
+    z_map = {"10": {"5": [1, 3], "6": [2, 2]}, "11": {"10": [0, 0]}}
+    # z=10: (3-1+1) + (2-2+1) = 3 + 1 = 4
+    # z=11: (0-0+1) = 1
+    assert row_tile_count(z_map) == 5
+
+
+def test_build_region_blob_shape_and_arithmetic() -> None:
+    """build_region_blob carries the same key set as build_blob, clipped."""
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]]
+        ],
+    }
+    min_z, max_z = MICRO_BAND
+    blob = build_region_blob(boundary, min_z, max_z)
+
+    assert blob["band"] == [min_z, max_z]
+    assert set(blob["z"].keys()) <= {str(z) for z in range(min_z, max_z + 1)}
+    assert blob["count"] == row_tile_count(blob["z"])
+    assert blob["mb"] == math.ceil(
+        blob["count"] * WORST_CASE_BYTES_PER_TILE / (1024 * 1024)
+    )
+    assert blob["over_ceiling"] is (blob["mb"] > DOWNLOAD_CEILING_MB)
+    assert blob["centre_tile"] == centre_tile(bbox_from_boundary(boundary), max_z)
+
+
+def test_build_region_blob_count_is_less_than_or_equal_to_build_blob() -> None:
+    """A region's clipped count never exceeds its bbox's rectangular count."""
+    min_z, max_z = MICRO_BAND
+    for boundary in _ch_region_boundaries():
+        bbox = bbox_from_boundary(boundary)
+        rect = build_blob(bbox, min_z, max_z)
+        region = build_region_blob(boundary, min_z, max_z)
+        assert region["count"] <= rect["count"]
 
 
 # ---------------------------------------------------------------------------

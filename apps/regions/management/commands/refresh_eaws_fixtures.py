@@ -2,7 +2,8 @@
 
 Regenerates the ``centre``, ``bbox`` and ``boundary`` fields on the
 L1/L2 EAWS entries in ``apps/regions/fixtures/eaws_CH.json`` from the union of
-their L4 children in the same file.
+their L4 children in the same file, and (SNOW-583) the ``basemap_download``
+field on every L4 entry itself.
 
 The L4 (``regions.microregion``) data is the authoritative geographic
 source — one polygon per SLF warning region. L1/L2 don't have
@@ -13,11 +14,15 @@ preference).
 
 Boundary computation uses ``shapely.ops.unary_union`` to merge L4
 polygons into a single Polygon (or MultiPolygon if disjoint). Shapely
-is a **dev-only** dependency — fixtures are always rebuilt locally and
-committed, so the runtime never imports it. The import lives inside
-the helper that needs it; running this command in an environment that
-lacks shapely raises a friendly RuntimeError pointing at
-``uv sync``.
+is a **dev-only** dependency for this L1/L2 helper — fixtures are always
+rebuilt locally and committed, so the runtime never imports it via this
+command. The import lives inside the helper that needs it; running this
+command in an environment that lacks shapely raises a friendly
+RuntimeError pointing at ``uv sync``. (The L4 ``basemap_download`` pass
+below uses ``apps.regions.services.basemap_tiles.build_region_blob``,
+which imports shapely the same lazy way — but that module's caller,
+``compute_basemap_download``, DOES run at runtime, where shapely is an
+ordinary top-level project dependency; see that module's docstring.)
 
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
@@ -34,7 +39,7 @@ Usage:
     # Preview what would change (default — no writes).
     uv run python manage.py refresh_eaws_fixtures
 
-    # Actually write the updated L1/L2 fixtures.
+    # Actually write the updated L1/L2 (+ L4 basemap_download) fixtures.
     uv run python manage.py refresh_eaws_fixtures --commit
 """
 
@@ -50,6 +55,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 
 from apps.regions.fixture_utils import load_fixture, write_fixture
+from apps.regions.services.basemap_tiles import MICRO_BAND, build_region_blob
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +106,17 @@ class Command(BaseCommand):
 
         sub_changes = _update_geometry_inplace(subs, l4_by_sub, key="prefix")
         major_changes = _update_geometry_inplace(majors, l4_by_major, key="prefix")
+        # SNOW-583: L4's own basemap_download, clipped to its real boundary
+        # rather than its bbox — mechanised here rather than a prose
+        # "run compute_basemap_download against a scratch DB" recipe, since
+        # this command already rewrites centre/bbox/boundary in place on
+        # this same file.
+        region_changes = _update_basemap_download_inplace(regions)
 
         if verbosity >= 1:
             self.stdout.write(
-                f"L1 major: {major_changes} change(s), L2 sub: {sub_changes} change(s)."
+                f"L1 major: {major_changes} change(s), L2 sub: {sub_changes} "
+                f"change(s), L4 basemap_download: {region_changes} change(s)."
             )
 
         if not commit:
@@ -113,7 +126,7 @@ class Command(BaseCommand):
                 )
             return
 
-        if major_changes or sub_changes:
+        if major_changes or sub_changes or region_changes:
             combined = majors + subs + regions
             write_fixture(_EAWS_FIXTURE, combined)
 
@@ -121,6 +134,41 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS("Fixtures refreshed. Run tox to verify.")
             )
+
+
+def _update_basemap_download_inplace(regions: list[dict[str, Any]]) -> int:
+    """Recompute ``basemap_download`` on every L4 entry; return change count.
+
+    Mirrors ``compute_basemap_download``'s own per-``MicroRegion`` loop
+    (``apps.regions.management.commands.compute_basemap_download``), but
+    against the fixture's plain dicts rather than a live queryset — the
+    same ``build_region_blob(boundary, *MICRO_BAND)`` call, so the
+    committed fixture and a freshly-migrated database agree on every
+    region's clipped tile coverage without a scratch-DB round trip.
+
+    Args:
+        regions: The ``regions.microregion`` fixture entries.
+
+    Returns:
+        The number of entries whose ``basemap_download`` changed.
+
+    """
+    min_z, max_z = MICRO_BAND
+    changes = 0
+    for entry in regions:
+        fields = entry["fields"]
+        boundary = fields.get("boundary")
+        if not boundary:
+            logger.warning(
+                "refresh_eaws_fixtures: %s has no boundary — skipping basemap_download",
+                fields.get("region_id"),
+            )
+            continue
+        blob = build_region_blob(boundary, min_z, max_z)
+        if fields.get("basemap_download") != blob:
+            fields["basemap_download"] = blob
+            changes += 1
+    return changes
 
 
 def _update_geometry_inplace(

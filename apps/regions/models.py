@@ -342,12 +342,16 @@ class MicroRegion(BaseModel):
         help_text=(
             "Precomputed offline-basemap tile coverage for this region "
             "(regions.services.basemap_tiles.MICRO_BAND), populated by "
-            "`manage.py compute_basemap_download --commit` from a bbox "
-            "derived from `boundary` (MicroRegion has no stored bbox "
-            "field). {band, count, mb, over_ceiling, centre_tile, z} — "
-            "see regions/services/basemap_tiles.py for the shape. Never "
-            "computed at request time; region geometry is static "
-            "reference data so this never changes once computed."
+            "`manage.py compute_basemap_download --commit` via "
+            "basemap_tiles.build_region_blob, which clips the bbox derived "
+            "from `boundary` (MicroRegion has no stored bbox field) down to "
+            "the tiles within one margin tile of the real boundary "
+            "(SNOW-583). {band, count, mb, over_ceiling, centre_tile, z} — "
+            '`z` is {"<z>": {"<y>": [xmin, xmax]}}, not the rectangular '
+            '{"<z>": [xmin, xmax, ymin, ymax]} the custom-area download '
+            "still uses — see regions/services/basemap_tiles.py for the "
+            "shape. Never computed at request time; region geometry is "
+            "static reference data so this never changes once computed."
         ),
     )
     neighbours: models.ManyToManyField[MicroRegion, MicroRegionNeighbour] = (
