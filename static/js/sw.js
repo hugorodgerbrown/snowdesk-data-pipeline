@@ -330,7 +330,11 @@ try {
 // every area held in the pinned basemap cache, probed from real Cache
 // Storage rather than a stored flag. Shell JS/HTML/CSS bytes changed
 // (map.js, basemap_download_core.js, map.css, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v100';
+// SNOW-587: the overlay's dashed downloaded-areas rings
+// (regions-line-downloaded, downloaded-area-line) are removed; the
+// cached-tiles squares are the only thing it draws now. Shell JS/HTML
+// bytes changed (map.js, _map_embed.html).
+const CACHE_VERSION = 'snowdesk-shell-v101';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
