@@ -368,16 +368,15 @@ try {
 // pull. Shell JS/HTML bytes changed (sw.js, sw_register.js,
 // pwa_version_check.js, sw_version.html) plus a new
 // pwa_dev_shell_toggle.js.
-const CACHE_VERSION = 'snowdesk-shell-v101';
+const CACHE_VERSION = 'snowdesk-shell-v102';
 
-// SNOW-585: literal placeholder substituted by
-// apps.public.views._serve_sw_file (called from serve_sw only, never
-// serve_sw_kill) when settings.SW_DEV_SHELL_BYPASS is on — the exact
-// string 'const DEV_SHELL_BYPASS = false;' is replaced with '... = true;'
-// before the response body is built. The on-disk default stays 'false',
-// so a failed substitution (a typo in either copy of the literal) fails
-// safe: production semantics, not an accidental bypass. See "Dev shell-
-// cache bypass" below and docs/decisions/dev-bypasses-the-shell-cache.md.
+// SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
+// (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS
+// is on — the exact string 'const DEV_SHELL_BYPASS = false;' is replaced with
+// '... = true;' before the response is returned. The on-disk default stays
+// 'false', so a failed substitution (a typo in either copy of the literal)
+// fails safe: production semantics, not an accidental bypass. See "Dev
+// shell-cache bypass" below and docs/decisions/dev-bypasses-the-shell-cache.md.
 const DEV_SHELL_BYPASS = false;
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin

@@ -52,10 +52,8 @@ def test_dev_shell_bypass_serves_fresh_bytes_without_touching_the_cache(
     page = pwa_page.page
     original_serve = public_views._serve_sw_file
 
-    def _serve_bypass_on(
-        static_relative_path: str, replacements: dict[str, str] | None = None
-    ) -> HttpResponse:
-        response = original_serve(static_relative_path, replacements)
+    def _serve_bypass_on(static_relative_path: str) -> HttpResponse:
+        response = original_serve(static_relative_path)
         if static_relative_path == "js/sw.js":
             response.content = response.content.replace(
                 b"const DEV_SHELL_BYPASS = false;",
@@ -138,10 +136,8 @@ def test_dev_shell_bypass_suppresses_the_update_banner(
 
     original_serve = public_views._serve_sw_file
 
-    def _serve_modified(
-        static_relative_path: str, replacements: dict[str, str] | None = None
-    ) -> HttpResponse:
-        response = original_serve(static_relative_path, replacements)
+    def _serve_modified(static_relative_path: str) -> HttpResponse:
+        response = original_serve(static_relative_path)
         if static_relative_path == "js/sw.js":
             response.content = response.content + b"\n// dev-shell-bypass-test-marker\n"
         return response

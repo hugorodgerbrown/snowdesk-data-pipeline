@@ -173,8 +173,11 @@ def test_serve_sw_keeps_dev_shell_bypass_false_when_setting_is_off() -> None:
 def test_serve_sw_kill_is_never_rewritten() -> None:
     """``/sw-kill.js`` is never substituted, even when the setting is on.
 
-    ``_serve_sw_file``'s ``replacements`` parameter is only ever passed by
-    ``serve_sw`` — ``serve_sw_kill`` must keep serving the file byte-for-byte.
+    ``serve_sw`` performs the ``DEV_SHELL_BYPASS`` substitution on its own
+    response, after calling the shared ``_serve_sw_file`` helper —
+    ``serve_sw_kill`` calls that same helper but never runs the
+    substitution, so ``/sw-kill.js`` must keep serving the file
+    byte-for-byte.
     """
     client = Client()
     response = client.get("/sw-kill.js")
