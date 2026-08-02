@@ -351,11 +351,12 @@ Optional context:
                         {% trans "Community reports" %}
                     </button>
                 </li>
-                {# SNOW-570: outlines every area held in the pinned basemap  #}
-                {# cache — the regions and the one custom area you have      #}
-                {# downloaded. Off by default: the map already carries the   #}
+                {# SNOW-570/SNOW-587: draws one translucent square per tile   #}
+                {# actually held in the pinned basemap cache — nothing more, #}
+                {# read straight from Cache Storage with no stored record    #}
+                {# involved. Off by default: the map already carries the     #}
                 {# choropleth, the selection ring, the region tiers and the  #}
-                {# pins, and a permanent extra outline over all of that is   #}
+                {# pins, and a permanent extra layer over all of that is     #}
                 {# crowding for an answer most sessions don't need.          #}
                 {#                                                           #}
                 {# Carries a sync dot like every other overlay row. It used  #}
