@@ -81,6 +81,17 @@
     'data:map_overlays': { keyPath: 'key' },
   });
 
+  // Retired meta:app keys, purged on every DB open (see _purgeLegacyKeys
+  // below). Not a general-purpose cleanup framework — just a hardcoded
+  // list of keys nothing writes any more.
+  //
+  //   'basemap.regions' — written by map.js's _recordRegionDownload
+  //   (SNOW-570) to back the "downloaded areas" rings overlay. SNOW-587
+  //   removed that overlay (the row's only reader), and SNOW-589 removed
+  //   the write itself and added this purge so the orphaned row doesn't
+  //   linger forever in devices that downloaded a region between the two.
+  const LEGACY_META_APP_KEYS = Object.freeze(['basemap.regions']);
+
   // Session state — single-page-load lifetime.
   let _dbPromise = null;
   let _resetRequired = false;
@@ -212,6 +223,32 @@
   }
 
   /**
+   * SNOW-589: delete any row in ``meta:app`` keyed by a retired name
+   * (``LEGACY_META_APP_KEYS``). Fire-and-forget, best-effort, run once
+   * per successful open() — mirrors ``_checkStorageEstimate`` above.
+   *
+   * Opens its own ``readwrite`` transaction directly against the
+   * ``IDBDatabase`` handle passed in, rather than going through
+   * ``del()`` (which calls ``_tx()`` which calls ``open()``) — that
+   * would re-enter ``open()`` from inside its own ``onsuccess`` handler.
+   * Deleting an absent key is a no-op in IndexedDB, so this needs no
+   * "already cleaned" flag — it's naturally idempotent.
+   *
+   * @param {IDBDatabase} db
+   */
+  function _purgeLegacyKeys(db) {
+    try {
+      const tx = db.transaction('meta:app', 'readwrite');
+      const store = tx.objectStore('meta:app');
+      for (const key of LEGACY_META_APP_KEYS) {
+        store.delete(key);
+      }
+    } catch (_e) {
+      // Non-fatal — this cleanup is best-effort only.
+    }
+  }
+
+  /**
    * Open the DB (memoised for the page's lifetime). Rejects immediately
    * if a prior open() failed and put the app in Reset Required state.
    *
@@ -282,6 +319,9 @@
         // once per indexedDB.open() call; _dbPromise memoisation means
         // open() itself is only actually invoked once per page load).
         _checkStorageEstimate();
+        // SNOW-589: purge retired meta:app keys — same fire-and-forget,
+        // once-per-successful-open shape.
+        _purgeLegacyKeys(req.result);
         resolve(req.result);
       };
       req.onerror = () => {
