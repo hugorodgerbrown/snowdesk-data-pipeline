@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-08-02
 ---
 
 # IndexedDB scaffolding
@@ -160,6 +160,22 @@ is a no-op because `createObjectStore` is guarded by
 `objectStoreNames.contains()`. Add a new store by adding it to `STORES`
 and bumping `DB_VERSION`; existing installations upgrade on next open.
 
+## Legacy key purge
+
+`db.js` also purges retired `meta:app` keys on every successful `open()`
+(`_purgeLegacyKeys`, alongside the existing `_checkStorageEstimate`
+storage-pressure check) — a hardcoded list (`LEGACY_META_APP_KEYS`), not a
+general cleanup framework. `store.delete(key)` on an absent key is a
+no-op, so this needs no "already cleaned" flag.
+
+- `basemap.regions` (SNOW-570 → SNOW-589) — written by
+  `static/js/map.js`'s `_recordRegionDownload` on every successful
+  per-region basemap download, to back the "downloaded areas" rings
+  overlay. SNOW-587 removed that overlay, leaving the row orphaned;
+  SNOW-589 removed the write and added the purge so devices that
+  downloaded a region between the two don't carry the row forever. See
+  [`offline-map.md`](offline-map.md) for the overlay history.
+
 ## Reset Required state
 
 A migration that throws is fatal for the session:
@@ -220,6 +236,9 @@ see [`client-side-tests.md`](client-side-tests.md)) covers:
    existing rows.
 5. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
    order.
+6. The legacy-key purge — an existing `basemap.regions` row is deleted on
+   open, a clean DB with no legacy row is a no-op, and an unrelated
+   `basemap.customArea` row is left alone.
 
 `tests/js/test_db_reset_required.js` covers the Reset Required state —
 arrange a pre-existing higher-version DB, assert `pwaDb.open()` rejects,

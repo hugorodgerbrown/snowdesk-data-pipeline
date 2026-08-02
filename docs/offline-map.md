@@ -900,8 +900,10 @@ and `downloaded-area-line`). SNOW-587 removed the rings: the tiles are
 strictly more honest for the same question, and the "which downloads did
 I make" distinction the rings drew did not justify a second rendering
 layer with a second, driftable derivation path.
-`basemap.regions` is now orphaned — nothing reads it back — but the write
-(`_recordRegionDownload`) is left in place pending a follow-up ticket;
+SNOW-589 removed the write (`_recordRegionDownload`) too, and added a
+one-off purge in `static/js/db.js` (`_purgeLegacyKeys`, run on every DB
+open) so the `basemap.regions` row left behind on devices that downloaded
+a region between SNOW-570 and SNOW-589 doesn't linger forever.
 `basemap.customArea` itself is unaffected, since `mapCustomDownloadControlInit`
 still reads it at boot to hydrate the saved-area lifecycle (framing,
 evict-on-confirm) independently of this overlay.

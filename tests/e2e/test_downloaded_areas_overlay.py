@@ -1,15 +1,18 @@
 """
 tests/e2e/test_downloaded_areas_overlay.py — Playwright regression tests for
-the "Available offline" layers-menu overlay (SNOW-570, SNOW-587).
+the "Available offline" layers-menu overlay (SNOW-570, SNOW-587, SNOW-589).
 
 The overlay draws one translucent square per tile actually present in
 ``BASEMAP_PINNED_CACHE`` — the ``cached-tiles`` source, fed straight from a
 Cache Storage read, with no stored record of any kind involved. It is off by
 default. SNOW-587 removed the overlay's earlier "downloaded areas" rings
-(``regions-line-downloaded`` / ``downloaded-area-line``, derived from the
-stored ``basemap.regions`` / ``basemap.customArea`` records and then
-validated against the cache) — the tiles alone answer "where is the basemap
-I already have?" without needing a second, driftable derivation path.
+(``regions-line-downloaded`` / ``downloaded-area-line``, which had been
+derived from the stored ``basemap.regions`` / ``basemap.customArea`` records
+and then validated against the cache) — the tiles alone answer "where is the
+basemap I already have?" without needing a second, driftable derivation
+path. SNOW-589 went on to remove the ``basemap.regions`` write itself
+(``basemap.customArea`` is unaffected — it still backs the separate
+custom-area download lifecycle).
 
 **Why these use the plain ``page``/``live_server`` fixtures rather than
 ``pwa_page``.** With the real service worker controlling, the basemap style
