@@ -368,6 +368,21 @@ try {
 // pull. Shell JS/HTML bytes changed (sw.js, sw_register.js,
 // pwa_version_check.js, sw_version.html) plus a new
 // pwa_dev_shell_toggle.js.
+// SNOW-586: the single shared BASEMAP_PINNED_CACHE is gone — every pinned
+// download now writes into its OWN Cache Storage bucket
+// (BASEMAP_PINNED_CACHE_PREFIX + areaId), so evicting one area can never
+// perforate another's tiles. _warmCache(urls, {pinned, areaId}) requires
+// areaId when pinned (a message with none is refused, not silently routed
+// to a shared bucket) and now sums each write's byte size
+// (basemap_cache_core.js's responseBytes) into the 'warm-cache-done'
+// reply's new `bytes` field, replacing the old entry-count FIFO trim with
+// the page's own byte-budget/whole-area-eviction plan (map.js,
+// basemap_download_core.js's planEviction). The activate sweep drops the
+// old shared bucket outright rather than migrating it (no migration —
+// nobody has a completed per-area download yet). Shell JS bytes changed
+// (sw.js, sw_register.js, map.js, basemap_download_core.js,
+// basemap_cache_core.js) plus the new confirm-banner/over-budget-toast
+// markup (_overlay_banner.html, _map_embed.html).
 const CACHE_VERSION = 'snowdesk-shell-v104';
 
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
@@ -396,40 +411,56 @@ const BASEMAP_CACHE = 'snowdesk-basemap-v1';
 // for SNOW-484).
 const BASEMAP_CACHE_MAX_ENTRIES = 600;
 
-// SNOW-521: a second, dedicated cache for tiles/sprites/style JSON warmed
-// by a deliberate "Download basemap" run (``_warmCache`` called with
-// ``pinned: true``) — kept separate from ``BASEMAP_CACHE`` so casual
-// panning elsewhere can never evict a download the user explicitly asked
-// for. Only ``_warmCache``'s pinned path and its own trim
-// (``BASEMAP_PINNED_CACHE_MAX_ENTRIES`` below) ever write to or evict from
-// this cache; the passive ``_basemapStaleWhileRevalidate`` path (ordinary
-// browsing) only ever reads/writes/trims ``BASEMAP_CACHE``. Prefixed
-// identically to ``BASEMAP_CACHE`` (``snowdesk-basemap-*``) so activate's
-// stale-cache sweep and map_layer_sync_status.js's cache-presence probe —
-// both of which discover basemap caches by prefix, not a hardcoded name —
-// cover it without any further change.
-const BASEMAP_PINNED_CACHE = 'snowdesk-basemap-pinned-v1';
-
-// SNOW-521: a deliberate download can legitimately want far more tiles in
-// one run than ordinary browsing accumulates (the z14 detail floor alone
-// is often a few hundred tiles for a single viewport). Sized off the same
-// MB-budget idea as the download ceiling in basemap_download_core.js
-// (BASEMAP_DOWNLOAD_CEILING_MB / BASEMAP_WORST_CASE_BYTES_PER_TILE) rather
-// than duplicating those constants here (this file has no access to that
-// module's closure) — a round number comfortably above one run's worth of
-// tiles, trimmed oldest-first same as BASEMAP_CACHE_MAX_ENTRIES. Entry-
-// count, not byte-exact, matching _trimCache's existing approximation.
+// SNOW-586: ONE Cache Storage bucket PER DOWNLOADED AREA
+// (``BASEMAP_PINNED_CACHE_PREFIX + areaId``), replacing the single shared
+// ``BASEMAP_PINNED_CACHE`` every pinned download used to write into. The
+// old design's own entry-count FIFO trim (``BASEMAP_PINNED_CACHE_MAX_ENTRIES``
+// below, now gone) deleted the oldest-INSERTED cache entries with no
+// record of which download they belonged to — so a new download's trim
+// could delete tiles from the MIDDLE of an earlier, unrelated area,
+// perforating it rather than removing it. A bucket per area makes
+// ``caches.delete(name)`` remove exactly one area, atomically, and
+// nothing else — see
+// docs/decisions/per-area-pinned-basemap-caches.md for the full
+// rationale, including why overlapping areas duplicating tiles on disk is
+// an accepted consequence, not a defect.
 //
-// SNOW-522: raised 2500 → 5000. This cache can now legitimately hold TWO
-// concurrent pinned downloads at once — a per-region download plus the
-// new custom-area download (static/js/map.js's
-// mapCustomDownloadControlInit) — each individually capable of running up
-// to DOWNLOAD_CEILING_MB (~2048 tiles at the 100 KB/tile worst case). The
-// original 2500 was sized for exactly one run; two runs near the ceiling
-// would have exceeded it and this trim would have silently evicted
-// whichever download was older, defeating the "exactly one custom area
-// coexists with the region download" contract.
-const BASEMAP_PINNED_CACHE_MAX_ENTRIES = 5000;
+// Still prefixed identically to ``BASEMAP_CACHE`` (``snowdesk-basemap-*``)
+// so activate's stale-cache sweep and map_layer_sync_status.js's
+// cache-presence probe — both of which discover basemap caches by prefix,
+// not a hardcoded name — cover it without further change. Only
+// ``_warmCache``'s pinned path ever writes to a pinned bucket; the
+// passive ``_basemapStaleWhileRevalidate`` path (ordinary browsing) only
+// ever reads/writes/trims ``BASEMAP_CACHE``.
+const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+
+// SNOW-586: the SNOW-521/522 single shared pinned cache's exact name.
+// Named explicitly (rather than left to fall out of the prefix filter) so
+// activate's cleanup sweep can single it out for deletion even though it
+// also matches ``BASEMAP_PINNED_CACHE_PREFIX`` — the scoping comment
+// settled "no migration": nobody has a completed per-area download yet,
+// so the old undifferentiated blob is simply dropped on upgrade rather
+// than split up.
+const LEGACY_BASEMAP_PINNED_CACHE = 'snowdesk-basemap-pinned-v1';
+
+/**
+ * SNOW-586: every live per-area pinned bucket currently in Cache Storage
+ * — i.e. every ``caches.keys()`` entry under ``BASEMAP_PINNED_CACHE_PREFIX``
+ * EXCLUDING the legacy shared name, which activate's sweep deletes rather
+ * than treats as a bucket.
+ *
+ * Deliberately re-derived from ``caches.keys()`` on every call rather than
+ * memoised: the page deletes buckets directly (a confirmed eviction), so a
+ * cached name list kept here would go stale with no invalidation path.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function _pinnedCacheNames() {
+  const names = await caches.keys();
+  return names.filter(
+    (name) => name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE,
+  );
+}
 
 // SNOW-484: the allowlist of cross-origin basemap origins it is safe to
 // cache. A service worker has no DOM, so it cannot itself read the
@@ -635,12 +666,21 @@ self.addEventListener('activate', (event) => {
         // SNOW-9 precache controller also get cleared on first install
         // of the SNOW-79 SW (see the catch-all sweep below). SNOW-484:
         // also reaps stale ``snowdesk-basemap-*`` versions the same way,
-        // but the second filter below excludes current-version caches
-        // (CACHE_VERSION, BASEMAP_CACHE, and — SNOW-521 — the pinned
-        // BASEMAP_PINNED_CACHE, same ``snowdesk-basemap-*`` prefix) from
-        // deletion — both basemap caches are versioned independently of
-        // the shell, so a shell-only CACHE_VERSION bump must never wipe
-        // either.
+        // but the second filter below excludes current caches
+        // (CACHE_VERSION, BASEMAP_CACHE, and — SNOW-586 — every LIVE
+        // per-area pinned bucket) from deletion — the shell and basemap
+        // caches are versioned independently, so a shell-only
+        // CACHE_VERSION bump must never wipe either, and a live pinned
+        // bucket must never be swept just because it isn't a name this
+        // worker recognises up front (there is no fixed list of area ids
+        // to check against).
+        //
+        // SNOW-586: this is also what implements the "no migration"
+        // decision — LEGACY_BASEMAP_PINNED_CACHE (the old single shared
+        // pinned cache, SNOW-521/522) matches the ``snowdesk-basemap-``
+        // prefix but is deliberately NOT treated as a live pinned bucket,
+        // so it is swept and dropped outright on upgrade rather than
+        // migrated into per-area buckets.
         const cacheNames = await caches.keys();
         const deletions = cacheNames
           .filter(
@@ -649,12 +689,13 @@ self.addEventListener('activate', (event) => {
               name.startsWith('map-shell-') ||
               name.startsWith('snowdesk-basemap-'),
           )
-          .filter(
-            (name) =>
-              name !== CACHE_VERSION &&
-              name !== BASEMAP_CACHE &&
-              name !== BASEMAP_PINNED_CACHE,
-          )
+          .filter((name) => {
+            if (name === CACHE_VERSION || name === BASEMAP_CACHE) return false;
+            if (name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE) {
+              return false; // a live per-area pinned bucket — keep it.
+            }
+            return true;
+          })
           .map((name) => caches.delete(name));
         await Promise.all(deletions);
         // Take control of every open client the moment we activate. This is
@@ -1043,6 +1084,38 @@ function _warmCacheWorseReason(a, b) {
 }
 
 /**
+ * SNOW-586: thin delegator — see basemap_cache_core.js's module header.
+ * The inline fallback mirrors ``responseBytes``'s own Content-Length-then-
+ * blob-then-zero fallback chain, so a transient importScripts 404 still
+ * gets a usable (if less exact on very old header-stripping proxies)
+ * answer rather than losing byte accounting for the whole run.
+ *
+ * @param {Response} response
+ * @returns {Promise<number>}
+ */
+async function _warmCacheResponseBytes(response) {
+  if (self.pwaBasemapCacheCore && self.pwaBasemapCacheCore.responseBytes) {
+    return self.pwaBasemapCacheCore.responseBytes(response);
+  }
+  if (!response) return 0;
+  try {
+    const header = response.headers && response.headers.get('Content-Length');
+    if (header !== null && header !== undefined) {
+      const n = Number(header);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+  } catch (_e) {
+    // Fall through to the blob fallback below.
+  }
+  try {
+    const blob = await response.clone().blob();
+    return blob.size;
+  } catch (_e) {
+    return 0;
+  }
+}
+
+/**
  * SNOW-492: eagerly fetch + cache a caller-supplied list of URLs — the
  * "Download basemap" control map.js wires into the map's Options menu.
  * Splits by origin into the same two cache *families* the fetch handler
@@ -1051,16 +1124,21 @@ function _warmCacheWorseReason(a, b) {
  * stale-while-revalidate having already run for every one of these URLs:
  * same-origin data feeds → the shell cache (``CACHE_VERSION``);
  * basemap-origin tiles/sprites/glyphs/style JSON → ``BASEMAP_CACHE`` (SNOW-521:
- * or, when ``options.pinned`` is true, the dedicated
- * ``BASEMAP_PINNED_CACHE`` a deliberate download uses instead, exempt from
- * the passive-browsing LRU trim). Only caches an ``ok`` response of the
- * expected ``type`` — ``'basic'`` same-origin, ``'cors'`` cross-origin —
- * mirroring the exact checks ``_staleWhileRevalidate`` /
+ * or, when ``options.pinned`` is true, SNOW-586's per-area pinned bucket
+ * — ``BASEMAP_PINNED_CACHE_PREFIX + options.areaId`` — a deliberate
+ * download uses instead, exempt from the passive-browsing LRU trim and
+ * from every OTHER area's own eviction). Only caches an ``ok`` response of
+ * the expected ``type`` — ``'basic'`` same-origin, ``'cors'`` cross-origin
+ * — mirroring the exact checks ``_staleWhileRevalidate`` /
  * ``_basemapStaleWhileRevalidate`` already apply, so a warmed entry is
  * guaranteed servable by those same read paths. Every URL is fetched
- * independently — one failure doesn't abort the rest — and the basemap
- * cache used is trimmed afterwards since a single run can add hundreds of
- * tile entries in one burst.
+ * independently — one failure doesn't abort the rest — and (SNOW-586: only
+ * for the non-pinned ``BASEMAP_CACHE`` path) the basemap cache used is
+ * trimmed afterwards since a single run can add hundreds of tile entries
+ * in one burst. A pinned run is never trimmed here — SNOW-586 replaced
+ * that entry-count cap with the page's own byte-budget/whole-area-eviction
+ * plan (map.js, basemap_download_core.js's ``planEviction``), which runs
+ * BEFORE this call rather than after it.
  *
  * SNOW-521: ``options.onProgress(done, total, settled)``, if supplied, is
  * called once per settled URL, throttled to roughly every 5% of ``total``
@@ -1083,21 +1161,38 @@ function _warmCacheWorseReason(a, b) {
  * a caller could not tell a full disk from a flaky network and had
  * nothing to tell the user.
  *
+ * SNOW-586: the summary also carries ``bytes`` — the sum of every
+ * successfully-cached response's size (``_warmCacheResponseBytes``),
+ * accumulated regardless of ``pinned`` (a caller only reading it for a
+ * pinned run costs a non-pinned caller nothing). The page records this
+ * against the area's standing budget entry once the run settles.
+ *
  * @param {string[]} urls
- * @param {{pinned?: boolean, onProgress?: (done: number, total: number) => void}} [options]
- * @returns {Promise<{ok: number, failed: number, reason: string|null}>}
+ * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
+ *   total: number) => void}} [options] ``areaId`` is REQUIRED when
+ *   ``pinned`` is true — the caller (the ``message`` handler below)
+ *   refuses the run rather than calling this with ``pinned`` and no
+ *   ``areaId``, so this function can assume the pair is already valid.
+ * @returns {Promise<{ok: number, failed: number, reason: string|null,
+ *   bytes: number}>}
  */
 async function _warmCache(urls, options) {
   const opts = options || {};
   const pinned = !!opts.pinned;
+  const areaId = opts.areaId;
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
   const shellCache = await caches.open(CACHE_VERSION);
-  const basemapCache = await caches.open(pinned ? BASEMAP_PINNED_CACHE : BASEMAP_CACHE);
+  const basemapCache = await caches.open(
+    pinned ? BASEMAP_PINNED_CACHE_PREFIX + areaId : BASEMAP_CACHE,
+  );
   const list = Array.isArray(urls) ? urls : [];
   const total = list.length;
   let ok = 0;
   let failed = 0;
   let done = 0;
+  // SNOW-586: summed across every successful write — see the docstring's
+  // ``bytes`` note.
+  let bytes = 0;
   let lastReportedBucket = -1;
   let lastReportedAt = 0;
   // Tile-grid rework: which list indices have settled since the last report. The
@@ -1162,6 +1257,10 @@ async function _warmCache(urls, options) {
       }
       const cache = sameOrigin ? shellCache : basemapCache;
       await cache.put(url.toString(), response.clone());
+      // SNOW-586: measured off the same (unconsumed) response the clone
+      // above was taken from — responseBytes clones again internally for
+      // its blob fallback, so this never races the cache.put write.
+      bytes += await _warmCacheResponseBytes(response);
       return null;
     } catch (err) {
       return _warmCacheClassifyFailure(err);
@@ -1190,11 +1289,14 @@ async function _warmCache(urls, options) {
     done += 1;
     reportProgress();
   });
-  await _trimCache(
-    basemapCache,
-    pinned ? BASEMAP_PINNED_CACHE_MAX_ENTRIES : BASEMAP_CACHE_MAX_ENTRIES,
-  ).catch(() => {});
-  return { ok, failed, reason };
+  // SNOW-586: a pinned run is never trimmed — its own bucket IS the unit
+  // of eviction now, decided by the page before this call ever runs (see
+  // the docstring). Only the passive BASEMAP_CACHE still gets the
+  // entry-count trim.
+  if (!pinned) {
+    await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+  }
+  return { ok, failed, reason, bytes };
 }
 
 /**
@@ -1214,17 +1316,25 @@ async function _warmCache(urls, options) {
  * in practice — the type check is defence-in-depth, not a workaround for
  * an observed MapLibre behaviour.
  *
- * SNOW-521: on a ``BASEMAP_CACHE`` miss, also checks ``BASEMAP_PINNED_CACHE``
+ * SNOW-521: on a ``BASEMAP_CACHE`` miss, also checks the pinned buckets
  * before falling to the network — a deliberate "Download basemap" run may
  * have already written this exact tile there. This path is READ-ONLY
- * against the pinned cache: it never writes to or trims it (that stays
- * ``_warmCache``'s pinned path's job alone), so ordinary browsing can
- * neither grow nor evict a deliberate download. The background
- * revalidation fetch (``fetchPromise`` below) still only ever writes/trims
- * ``BASEMAP_CACHE``, even when the response actually served came from the
- * pinned partition — an online revisit of a pinned tile opportunistically
- * promotes it into the passive cache too, which is the existing SNOW-484
- * behaviour, unchanged.
+ * against every pinned bucket: it never writes to or trims any of them
+ * (that stays ``_warmCache``'s pinned path's job alone), so ordinary
+ * browsing can neither grow nor evict a deliberate download. The
+ * background revalidation fetch (``fetchPromise`` below) still only ever
+ * writes/trims ``BASEMAP_CACHE``, even when the response actually served
+ * came from a pinned bucket — an online revisit of a pinned tile
+ * opportunistically promotes it into the passive cache too, which is the
+ * existing SNOW-484 behaviour, unchanged.
+ *
+ * SNOW-586: iterates every LIVE pinned bucket (``_pinnedCacheNames()``,
+ * re-derived per call — see its own docstring for why it is deliberately
+ * not memoised here), not one shared cache, since a tile from ANY
+ * deliberate download should still serve offline regardless of which
+ * area's bucket holds it. Stops at the first hit; a tile shared by two
+ * overlapping areas is identical bytes in either bucket, so which one
+ * answers first makes no difference to what is served.
  */
 async function _basemapStaleWhileRevalidate(request) {
   const cache = await caches.open(BASEMAP_CACHE);
@@ -1239,13 +1349,16 @@ async function _basemapStaleWhileRevalidate(request) {
     })
     .catch(() => null);
   if (cached) return cached;
-  // SNOW-521: BASEMAP_CACHE miss — check the pinned partition before
+  // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
   // falling through to the network. Defensive: a pinned-cache lookup
   // failure must not break the existing miss -> network -> 504 chain.
   try {
-    const pinnedCache = await caches.open(BASEMAP_PINNED_CACHE);
-    const pinnedHit = await pinnedCache.match(request);
-    if (pinnedHit) return pinnedHit;
+    const pinnedNames = await _pinnedCacheNames();
+    for (const name of pinnedNames) {
+      const pinnedCache = await caches.open(name);
+      const pinnedHit = await pinnedCache.match(request);
+      if (pinnedHit) return pinnedHit;
+    }
   } catch (_err) {
     // Fall through to the network/504 path below.
   }
@@ -1442,13 +1555,23 @@ self.addEventListener('message', (event) => {
   // has no other way to correlate — it's the only side that can echo an id
   // it never generated itself.
   //
-  // SNOW-521: ``event.data.pinned`` (set when map.js's cacheNowInit calls
-  // ``pwaWarmCache(urls, {pinned: true, ...})``) is forwarded straight
-  // into ``_warmCache`` so its basemap-origin writes land in
-  // ``BASEMAP_PINNED_CACHE`` rather than ``BASEMAP_CACHE``. ``onProgress``
-  // posts a ``warm-cache-progress`` message per throttled step so
+  // SNOW-521: ``event.data.pinned`` (set when map.js's download controls
+  // call ``pwaWarmCache(urls, {pinned: true, ...})``) is forwarded
+  // straight into ``_warmCache`` so its basemap-origin writes land in a
+  // pinned bucket rather than ``BASEMAP_CACHE``. ``onProgress`` posts a
+  // ``warm-cache-progress`` message per throttled step so
   // ``sw_register.js`` can drive a live n/total readout on the page —
   // distinct from the final ``warm-cache-done`` reply, which is unchanged.
+  //
+  // SNOW-586: ``event.data.areaId`` (the id of the area being downloaded
+  // — see ``basemap_download_core.js``'s ``areaIdForRegion``/
+  // ``CUSTOM_AREA_ID``) selects WHICH pinned bucket a pinned run writes
+  // into. ``pinned`` with no ``areaId`` is a programming error, not a
+  // runtime condition to route around silently: writing to some fallback
+  // shared bucket would resurrect exactly the perforation bug this ticket
+  // exists to fix, so the run is refused outright with the same shape
+  // ``_warmCache`` itself would return for a total failure — ``_warmCache``
+  // is never even called.
   if (
     event.data &&
     event.data.type === 'warm-cache' &&
@@ -1456,30 +1579,45 @@ self.addEventListener('message', (event) => {
   ) {
     const requestId = event.data.requestId;
     const pinned = !!event.data.pinned;
-    const onProgress = (done, total, settled) => {
-      event.source?.postMessage({
-        type: 'warm-cache-progress',
-        done,
-        total,
-        // Tile-grid rework: indices into the posted URL list that succeeded since
-        // the last message — the page turns them back into tiles.
-        settled,
-        requestId,
-      });
-    };
-    const warm = _warmCache(event.data.urls, { pinned, onProgress }).then((result) => {
+    const areaId = event.data.areaId;
+    if (pinned && !areaId) {
       event.source?.postMessage({
         type: 'warm-cache-done',
-        ok: result.ok,
-        failed: result.failed,
-        // SNOW-568: the run's most actionable failure classification, or
-        // null when nothing failed — map.js turns this into the message
-        // the user actually reads.
-        reason: result.reason,
+        ok: 0,
+        failed: event.data.urls.length,
+        reason: 'other',
+        bytes: 0,
         requestId,
       });
-    });
-    if (typeof event.waitUntil === 'function') event.waitUntil(warm);
+    } else {
+      const onProgress = (done, total, settled) => {
+        event.source?.postMessage({
+          type: 'warm-cache-progress',
+          done,
+          total,
+          // Tile-grid rework: indices into the posted URL list that succeeded since
+          // the last message — the page turns them back into tiles.
+          settled,
+          requestId,
+        });
+      };
+      const warm = _warmCache(event.data.urls, { pinned, areaId, onProgress }).then((result) => {
+        event.source?.postMessage({
+          type: 'warm-cache-done',
+          ok: result.ok,
+          failed: result.failed,
+          // SNOW-568: the run's most actionable failure classification, or
+          // null when nothing failed — map.js turns this into the message
+          // the user actually reads.
+          reason: result.reason,
+          // SNOW-586: the run's total on-disk bytes, so the page can
+          // record it against the area's standing budget entry.
+          bytes: result.bytes,
+          requestId,
+        });
+      });
+      if (typeof event.waitUntil === 'function') event.waitUntil(warm);
+    }
   }
 });
 

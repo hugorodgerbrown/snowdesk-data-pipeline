@@ -353,3 +353,45 @@ describe('worseReason', () => {
     expect(run.reduce((acc, r) => core.worseReason(acc, r), null)).toBe('quota');
   });
 });
+
+/*
+ * SNOW-586 — responseBytes, the byte-size accounting _warmCache sums as it
+ * writes a pinned download so the page can record the run's size against
+ * the new standing byte budget.
+ */
+
+describe('responseBytes', () => {
+  it('reads Content-Length without touching the body', async () => {
+    const response = new Response('ignored body', {
+      headers: { 'Content-Length': '12345' },
+    });
+    await expect(core.responseBytes(response)).resolves.toBe(12345);
+  });
+
+  it('falls back to the blob size when Content-Length is absent', async () => {
+    const body = 'x'.repeat(2000);
+    const response = new Response(body);
+    await expect(core.responseBytes(response)).resolves.toBe(body.length);
+  });
+
+  it('ignores a non-numeric Content-Length and falls back to the blob', async () => {
+    const body = 'abcdef';
+    const response = new Response(body, { headers: { 'Content-Length': 'not-a-number' } });
+    await expect(core.responseBytes(response)).resolves.toBe(body.length);
+  });
+
+  it('returns 0 for a falsy response', async () => {
+    await expect(core.responseBytes(null)).resolves.toBe(0);
+    await expect(core.responseBytes(undefined)).resolves.toBe(0);
+  });
+
+  it('returns 0 rather than throwing when the blob read itself fails', async () => {
+    const unusable = {
+      headers: null,
+      clone: () => {
+        throw new Error('already consumed');
+      },
+    };
+    await expect(core.responseBytes(unusable)).resolves.toBe(0);
+  });
+});

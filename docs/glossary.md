@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-08-02
 ---
 
 # Glossary — domain terms to code symbols
@@ -92,6 +92,13 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Term | Meaning | Code |
 |------|---------|------|
 | Overlay primitive | One of the four consolidated DS shapes — banner, toast, sheet, modal — sharing the `data-action="dismiss"` / `[data-overlay]` contract and the `--z-*` token scale | `templates/includes/_overlay_{banner,modal,sheet}.html`, `_toast.html`; `static/js/overlays.js`; [overlay-primitives.md](decisions/overlay-primitives.md) |
+
+## Offline basemap downloads (PWA)
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Area id | The unit a pinned basemap download's Cache Storage bucket and budget record are both keyed on — `region-<region_id>` for a region download, `custom` for the one custom-area download (SNOW-586) | `areaIdForRegion()`, `CUSTOM_AREA_ID` in `static/js/basemap_download_core.js` |
+| Download budget | The standing byte ceiling across every pinned area (`DOWNLOAD_BUDGET_MB`, 500 MB, device-local — overridable via `meta:app`'s `basemap.budgetMb`), distinct from `DOWNLOAD_CEILING_MB` (200 MB, per single run) (SNOW-586) | `planEviction()` in `static/js/basemap_download_core.js`; [per-area-pinned-basemap-caches.md](decisions/per-area-pinned-basemap-caches.md) |
 
 ## Testing
 

@@ -476,6 +476,24 @@
    * consistent with the overlay it sits beside, and honest, since tiles
    * pinned for one basemap genuinely are not available on another.
    *
+   * SNOW-586: every per-area pinned bucket is UNIONED (accumulated into
+   * one URL list), not just the first ``caches.keys()`` happens to
+   * return. Each deliberate download now writes into its OWN bucket
+   * (``PINNED_BASEMAP_CACHE_PREFIX + areaId``), so taking only the first
+   * match would answer "does the first bucket, by Cache Storage insertion
+   * order, hold a tile for the active basemap?" rather than "is ANY area
+   * available offline?" — concretely, an area downloaded under a
+   * DIFFERENT basemap than the one now active can sort first and hold
+   * none of the active template's tiles, which would read the whole dot
+   * as uncached even though a complete area sits in a later bucket.
+   *
+   * This re-implements the same union `static/js/map.js`'s
+   * ``pinnedBasemapCacheURLs()`` performs, as a local loop rather than a
+   * shared call: this module is deliberately self-contained (its own
+   * ``PINNED_BASEMAP_CACHE_PREFIX``, its own never-throws contract), and
+   * reaching across into another script's helper would make that
+   * contract depend on script load order instead.
+   *
    * Falls back to "any entry at all" when the template is unresolvable
    * (the style still settling) rather than reporting a bare no.
    *
@@ -484,10 +502,18 @@
   async function _probeAnyPinnedTile() {
     try {
       const names = await caches.keys();
-      const name = names.find((n) => n.startsWith(PINNED_BASEMAP_CACHE_PREFIX));
-      if (!name) return false;
-      const cache = await caches.open(name);
-      const urls = (await cache.keys()).map((request) => request.url);
+      const pinnedNames = names.filter((n) => n.startsWith(PINNED_BASEMAP_CACHE_PREFIX));
+      if (!pinnedNames.length) return false;
+      const urls = [];
+      for (const name of pinnedNames) {
+        try {
+          const cache = await caches.open(name);
+          const requests = await cache.keys();
+          for (const request of requests) urls.push(request.url);
+        } catch (_e) {
+          // One bucket failing to enumerate must not lose the others.
+        }
+      }
       if (!urls.length) return false;
       const core = self.pwaBasemapDownloadCore;
       const template =
@@ -507,9 +533,10 @@
    * The style JSON is cached both by passive browsing (sw.js's
    * ``_basemapStaleWhileRevalidate`` writes ``BASEMAP_CACHE``) and by a
    * deliberate "Download basemap" run (which pins the active basemap's
-   * style into ``BASEMAP_PINNED_CACHE``), so a globally-searched
-   * ``caches.match`` covers both partitions without hardcoding either
-   * versioned name.
+   * style into that download's OWN per-area bucket — SNOW-586, one of
+   * potentially several ``snowdesk-basemap-pinned-*`` caches now), so a
+   * globally-searched ``caches.match`` covers every partition without
+   * hardcoding any of their names.
    *
    * Limitation: a cached style proves the basemap has been loaded/downloaded
    * before, not that every tile for the current viewport is present. The

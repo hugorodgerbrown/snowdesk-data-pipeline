@@ -1108,5 +1108,30 @@ Optional context:
 {# succeeds. #}
 {% trans "Not enough storage to save this area. Free up space on your device, or frame a smaller area." as basemap_download_quota_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast-quota" kind="error" body=basemap_download_quota_body dismissible=True %}
+{# SNOW-586: refused outright — the run alone is larger than the whole    #}
+{# standing download budget, so no amount of evicting earlier downloads   #}
+{# could ever make it fit. Distinct from the quota toast above: quota is  #}
+{# the BROWSER's limit (unknowable in advance, varies by device), this is #}
+{# Snowdesk's OWN standing budget (a fixed, explainable number) — the     #}
+{# remedy differs (frame a smaller area; the budget itself isn't a device #}
+{# constraint to "free up"), so it gets its own copy. #}
+{% trans "This area is too large for the download budget. Frame a smaller area." as basemap_download_budget_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-budget" kind="error" body=basemap_download_budget_body dismissible=True %}
 {% trans "Download failed. Check your connection and try again." as basemap_download_failed_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast" kind="error" body=basemap_download_failed_body dismissible=True %}
+{# SNOW-586: whole-area-eviction confirm banner — reveals when a download #}
+{# would exceed the standing budget but CAN fit by removing one or more   #}
+{# earlier downloads first (map.js's confirmBasemapEviction). Reuses the  #}
+{# floating _overlay_banner primitive rather than a bespoke surface: its  #}
+{# existing title + body + CTA + dismiss shape already covers "the        #}
+{# question, the specifics, proceed, cancel" — see the plan's "surface    #}
+{# choice" note. title carries the static, translated question; body is  #}
+{# left EMPTY here and injected by JS (body_id) with the comma-joined     #}
+{# names of the areas that would be removed — those names are DATA (a    #}
+{# region's own name, or the custom area's translated data-area-label —  #}
+{# see _map_custom_download_control.html), never assembled English text. #}
+{# The "×" is Cancel (writes nothing); the CTA is Proceed (evicts the     #}
+{# named areas, then runs the download that triggered this).             #}
+{% trans "Downloading this area would remove earlier downloads to make room. Continue?" as basemap_download_evict_confirm_title %}
+{% trans "Remove and continue" as basemap_download_evict_confirm_cta_label %}
+{% include "includes/_overlay_banner.html" with id="map-download-evict-confirm" variant="floating" title=basemap_download_evict_confirm_title title_id="map-download-evict-confirm-title" body="" body_id="map-download-evict-confirm-body" cta_id="map-download-evict-confirm-cta" cta_label=basemap_download_evict_confirm_cta_label dismissible=True aria_live="assertive" %}

@@ -37,7 +37,7 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart), `basemap.customArea` (SNOW-522 — the one persisted custom-area basemap download, written/read by `static/js/map.js`'s `mapCustomDownloadControlInit`; see below) |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart), `basemap.customArea` (SNOW-522 — the one persisted custom-area basemap download, written/read by `static/js/map.js`'s `mapCustomDownloadControlInit`; see below), `basemap.regions` (SNOW-570 — one row per downloaded region, written/read by `static/js/map.js`'s `mapDownloadControlInit`; see below), `basemap.budgetMb` (SNOW-586 — device-local override of the standing pinned-download byte budget, `DOWNLOAD_BUDGET_MB` (500) if absent; read-only from this ticket, SNOW-588's managed-downloads UI is what will ever write it) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
@@ -63,7 +63,7 @@ consumer adds a store, bump `DB_VERSION` + add a migration branch in
 }
 ```
 
-### `meta:app` row shape — `basemap.customArea` (SNOW-522)
+### `meta:app` row shape — `basemap.customArea` (SNOW-522, SNOW-586)
 
 The one persisted custom-area basemap download — see
 [`offline-map.md`](offline-map.md#custom-area-download-snow-522) for the
@@ -79,6 +79,14 @@ confirmed re-download replaces it outright, never appends:
     centre_tile,  // {z, x, y} — stored, but no longer what the done-probe
                   // checks (see below); kept alongside bbox/band as the
                   // full basemap_tiles.py centre_tile shape
+    name,         // SNOW-586 — the translated display name (read off the
+                  // control's own data-area-label attribute at download
+                  // time), so the whole-area-eviction confirm banner
+                  // never depends on regions.geojson being loaded
+    bytes,        // SNOW-586 — this area's own on-disk size, accumulated
+                  // (not replaced) across repeat downloads at the SAME
+                  // bbox — see planEviction and the per-area-pinned-
+                  // basemap-caches decision doc for why
     savedAt,      // ISO 8601 timestamp of the confirmed download
   },
 }
@@ -86,14 +94,58 @@ confirmed re-download replaces it outright, never appends:
 
 This row only records *where* the frame was — whether it is actually
 downloaded is never read off it directly, always re-probed against real
-`BASEMAP_PINNED_CACHE` contents. The code has checked FULL coverage — every
-tile of `buildBlob(bbox, ...band)`, via
+pinned-cache contents — every per-area bucket, unioned (SNOW-586,
+`pinnedBasemapCacheURLs`). The code has checked FULL coverage — every tile
+of `buildBlob(bbox, ...band)`, via
 `static/js/basemap_download_core.js`'s `blobFullyCached` — since SNOW-570,
 not a `centre_tile` proxy: a single cached tile is not evidence the whole
 area is available offline (a neighbouring download can cache one tile of
 an area without covering it). This is the same "layers menu is a live
 cache-state dashboard" invariant every download control follows — see
-[`offline-map.md`](offline-map.md#downloaded-areas-overlay-snow-570).
+[`offline-map.md`](offline-map.md#available-offline-overlay-snow-570-rings-removed-snow-587).
+
+### `meta:app` row shape — `basemap.regions` (SNOW-570, SNOW-583, SNOW-586)
+
+One entry per region the user has deliberately downloaded — see
+[`offline-map.md`](offline-map.md) for the full "Download basemap"
+feature. Written/read by `static/js/map.js`'s `mapDownloadControlInit`;
+a re-download of the same region replaces only that region's own entry:
+
+```js
+{
+  key: 'basemap.regions',
+  value: [
+    {
+      region_id,  // e.g. 'CH-4115'
+      z,          // SNOW-583 — the blob's own clipped tile ranges
+                  // ({"<z>": [xmin, xmax, ymin, ymax]}), i.e. the tile set
+                  // the run ACTUALLY fetched (region plus a tile of
+                  // margin), not the region's bbox. `_probeDone` reads
+                  // this back directly and hands it to blobFullyCached,
+                  // so coverage is checked against what was downloaded
+      band,       // [minZ, maxZ] the run actually fetched
+      name,       // SNOW-586 — the region's display name
+                  // (FEATURE_BY_REGION_ID[region_id].properties.name),
+                  // recorded so eviction copy never depends on
+                  // regions.geojson still being loaded
+      bytes,      // SNOW-586 — accumulated, not replaced, across repeat
+                  // downloads: this region's pinned bucket is keyed on
+                  // region_id ALONE, not per-basemap, so a download under
+                  // a SECOND basemap adds genuinely new bytes to the one
+                  // shared bucket
+      savedAt,    // ISO 8601 timestamp of the confirmed download
+    },
+    // ...one entry per downloaded region
+  ],
+}
+```
+
+Like `basemap.customArea`, this only records *what was asked for*. The
+download roundel still re-probes real pinned-cache contents before reading
+`done` — `z` tells it *which* tiles to look for, never *whether* they are
+there. `bytes` is the one field read for its own sake rather than as a
+probe input: `planEviction` sums it to decide what a new download would
+displace (see [`offline-map.md`](offline-map.md)).
 
 ### `log:sync` row shape (SNOW-482)
 

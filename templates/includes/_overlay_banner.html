@@ -45,6 +45,13 @@ Optional context:
                 renders as a second, smaller line; when omitted, ``body``
                 is the only line.
   title_id    — id for the title <p>, referenced by aria-labelledby.
+  body_id     — id for the body <p>, mirroring ``title_id``. Only takes
+                effect when ``title`` is also supplied — with no title the
+                body IS the title (it already renders with ``title_id``);
+                ``body_id`` gives a caller a hook to rewrite the body text
+                at runtime (e.g. JS injecting a dynamic list of names into
+                a floating confirm banner) without touching the static
+                sentence that would otherwise sit in ``title``.
   cta_id      — DOM id for an optional primary CTA button (floating only).
   cta_label   — CTA button label, same translation convention as body.
   bottom_offset — Optional CSS ``bottom`` value overriding the default
@@ -147,7 +154,7 @@ Optional context:
             <div class="min-w-0 flex-1">
                 {% if title %}
                     <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ title }}</p>
-                    <p class="text-xs text-text-2 mt-0.5">{{ body }}</p>
+                    <p {% if body_id %}id="{{ body_id }}"{% endif %} class="text-xs text-text-2 mt-0.5">{{ body }}</p>
                 {% else %}
                     <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ body }}</p>
                 {% endif %}

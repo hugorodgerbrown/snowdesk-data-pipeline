@@ -25,7 +25,7 @@ hidden-until-focused controls; that was only right while it sat alone in
 the bottom-right stack. map.js's mapDownloadControlInit drives
 data-download-state (no-region/idle/busy/done/error/disabled/offline) and
 rewrites the title/aria-label to match — the done state is probed from real
-BASEMAP_PINNED_CACHE contents, never a stored flag. The "no-region" state
+pinned-cache contents (every per-area bucket, unioned — SNOW-586), never a stored flag. The "no-region" state
 stays in the machine for the focused-but-uncomputed case (properties.download
 is null) even though the CSS rule now also hides the control while nothing
 is focused at all.

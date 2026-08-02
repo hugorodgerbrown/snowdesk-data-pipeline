@@ -931,3 +931,121 @@ describe('tileGridPlan', () => {
     expect(plan.cells.reduce((a, c) => a + c.total, 0)).toBe(core.tileCount(blob.z));
   });
 });
+
+/*
+ * SNOW-586 — area identity and the standing byte-budget arithmetic that
+ * replaced the pinned cache's old entry-count FIFO trim. See the module
+ * header's "third client-only group" note.
+ */
+
+describe('areaIdForRegion / pinnedCacheName', () => {
+  it('prefixes a region id', () => {
+    expect(core.areaIdForRegion('CH-4115')).toBe('region-CH-4115');
+  });
+
+  it('round-trips through pinnedCacheName under the shared prefix', () => {
+    const areaId = core.areaIdForRegion('CH-4115');
+    expect(core.pinnedCacheName(areaId)).toBe(core.PINNED_CACHE_PREFIX + areaId);
+    expect(core.pinnedCacheName(areaId).startsWith(core.PINNED_CACHE_PREFIX)).toBe(true);
+  });
+
+  it('CUSTOM_AREA_ID also round-trips', () => {
+    expect(core.pinnedCacheName(core.CUSTOM_AREA_ID)).toBe(
+      core.PINNED_CACHE_PREFIX + 'custom',
+    );
+  });
+});
+
+describe('planEviction', () => {
+  const MB = 1024 * 1024;
+  const BUDGET = 500 * MB;
+
+  it('evicts nothing when the run already fits', () => {
+    const areas = [{ id: 'a', bytes: 100 * MB, savedAt: '2026-01-01T00:00:00Z' }];
+    const plan = core.planEviction(areas, { id: 'b', bytes: 50 * MB }, BUDGET);
+    expect(plan).toEqual({
+      fits: true,
+      impossible: false,
+      evict: [],
+      projectedBytes: 150 * MB,
+    });
+  });
+
+  it('evicts oldest areas first until the run fits', () => {
+    const areas = [
+      { id: 'a', bytes: 200 * MB, savedAt: '2026-01-03T00:00:00Z' },
+      { id: 'b', bytes: 200 * MB, savedAt: '2026-01-01T00:00:00Z' },
+      { id: 'c', bytes: 50 * MB, savedAt: '2026-01-02T00:00:00Z' },
+    ];
+    // Standing 450 MB + 100 MB incoming = 550 MB > 500 MB budget. Evicting
+    // 'b' (oldest) alone frees 200 MB, landing at 350 MB — under budget.
+    const plan = core.planEviction(areas, { id: 'd', bytes: 100 * MB }, BUDGET);
+    expect(plan.impossible).toBe(false);
+    expect(plan.fits).toBe(false);
+    expect(plan.evict).toEqual(['b']);
+    expect(plan.projectedBytes).toBe(350 * MB);
+  });
+
+  it('evicts more than one area, oldest first, when one is not enough', () => {
+    const areas = [
+      { id: 'a', bytes: 250 * MB, savedAt: '2026-01-01T00:00:00Z' },
+      { id: 'b', bytes: 250 * MB, savedAt: '2026-01-02T00:00:00Z' },
+    ];
+    // Standing 500 MB + 300 MB incoming = 800 MB. Evicting only 'a' (the
+    // oldest) leaves 550 MB, still over budget, so 'b' has to go too.
+    const plan = core.planEviction(areas, { id: 'c', bytes: 300 * MB }, BUDGET);
+    expect(plan.evict).toEqual(['a', 'b']);
+    expect(plan.projectedBytes).toBe(300 * MB);
+  });
+
+  it('a re-download of an existing area frees its own bytes first', () => {
+    // 'a' is being re-downloaded at a new size. Its OLD 400 MB must not
+    // count against the new run, or every re-download would evict itself.
+    const areas = [{ id: 'a', bytes: 400 * MB, savedAt: '2026-01-01T00:00:00Z' }];
+    const plan = core.planEviction(areas, { id: 'a', bytes: 450 * MB }, BUDGET);
+    expect(plan).toEqual({
+      fits: true,
+      impossible: false,
+      evict: [],
+      projectedBytes: 450 * MB,
+    });
+  });
+
+  it('reports impossible for a run larger than the whole budget, evicting nothing', () => {
+    const areas = [{ id: 'a', bytes: 10 * MB, savedAt: '2026-01-01T00:00:00Z' }];
+    const plan = core.planEviction(areas, { id: 'b', bytes: 600 * MB }, BUDGET);
+    expect(plan).toEqual({
+      fits: false,
+      impossible: true,
+      evict: [],
+      projectedBytes: 10 * MB,
+    });
+  });
+
+  it('breaks a savedAt tie by id, deterministically', () => {
+    const areas = [
+      { id: 'z', bytes: 300 * MB, savedAt: '2026-01-01T00:00:00Z' },
+      { id: 'a', bytes: 300 * MB, savedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const plan = core.planEviction(areas, { id: 'c', bytes: 100 * MB }, BUDGET);
+    // 'a' sorts before 'z' as the tiebreak, so it is evicted first.
+    expect(plan.evict).toEqual(['a']);
+  });
+
+  it('treats a missing bytes/savedAt as zero/unset rather than throwing', () => {
+    const areas = [{ id: 'a', savedAt: '2026-01-01T00:00:00Z' }];
+    const plan = core.planEviction(areas, { id: 'b', bytes: 10 * MB }, BUDGET);
+    expect(plan.fits).toBe(true);
+    expect(plan.projectedBytes).toBe(10 * MB);
+  });
+
+  it('treats an empty areas list as an empty standing total', () => {
+    const plan = core.planEviction([], { id: 'a', bytes: 10 * MB }, BUDGET);
+    expect(plan).toEqual({
+      fits: true,
+      impossible: false,
+      evict: [],
+      projectedBytes: 10 * MB,
+    });
+  });
+});
