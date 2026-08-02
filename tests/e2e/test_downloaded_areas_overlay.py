@@ -243,18 +243,66 @@ def test_overlay_is_off_by_default(page: Page, live_server: LiveServer) -> None:
     assert _layer_visibility(page, _AREA_LAYER) == "none"
 
 
-def test_row_carries_no_sync_dot(page: Page, live_server: LiveServer) -> None:
-    """The row has no dot — it has no data of its own to be cached.
+def test_row_is_shaped_like_every_other_overlay_row(
+    page: Page, live_server: LiveServer
+) -> None:
+    """It carries a sync dot, like its neighbours.
 
-    Every other overlay row's dot reports whether THAT row's feed is
-    available offline. This row is derived from the cache those dots
-    describe, so a dot here would be a second, subtly different claim about
-    the same thing.
+    It used to be deliberately dotless, on the reasoning that the row has
+    no feed of its own. That made it the only differently-shaped row in the
+    menu, which reads as a rendering fault rather than a distinction — and
+    the dot does have its own thing to say: whether any basemap tiles are
+    pinned at all.
     """
     _boot(page, live_server)
     _open_layers_menu(page)
 
-    assert page.locator(f"{_TOGGLE} .sync-dot").count() == 0
+    assert page.locator(f"{_TOGGLE} .sync-dot").count() == 1
+    # The same markup as a row that has always had one.
+    peer = '#basemap-menu [data-overlay-key="community_reports"] .sync-dot'
+    assert page.locator(peer).count() == 1
+
+
+def test_dot_goes_green_once_tiles_are_pinned(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The dot answers "is there an offline map at all?".
+
+    Not "did you download an area" — the question every other dot answers
+    for its own feed, asked of the basemap tiles.
+    """
+    _boot(page, live_server)
+    _open_layers_menu(page)
+    page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
+    assert _sync_state(page) != "cached"
+
+    _cache_urls(
+        page,
+        [_TEMPLATE.replace("{z}", "14").replace("{x}", "8501").replace("{y}", "5820")],
+    )
+    page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
+    page.wait_for_function(
+        """(sel) => {
+            const dot = document.querySelector(sel);
+            return !!dot && dot.dataset.syncState === 'cached';
+        }""",
+        arg=f"{_TOGGLE} .sync-dot",
+        timeout=10000,
+    )
+
+
+def _sync_state(page: Page) -> str:
+    """The row's current sync-dot state."""
+    return cast(
+        str,
+        page.evaluate(
+            """(sel) => {
+                const dot = document.querySelector(sel);
+                return dot ? (dot.dataset.syncState || '') : '';
+            }""",
+            f"{_TOGGLE} .sync-dot",
+        ),
+    )
 
 
 def test_a_fully_cached_region_is_outlined(page: Page, live_server: LiveServer) -> None:
