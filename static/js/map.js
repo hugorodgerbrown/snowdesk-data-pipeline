@@ -6056,30 +6056,67 @@ const DOWNLOADED_OUTLINE_COLOUR =
   }
 
   /**
-   * True when `summary`'s centre tile is present in the pinned cache —
-   * the done-probe proxy for "this region's download completed".
+   * Every URL in the pinned basemap cache, as a Set. Empty when Cache
+   * Storage is unavailable or nothing has been pinned. Never throws.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  async function _pinnedCacheURLs() {
+    const cache = await _openPinnedBasemapCache();
+    if (!cache) return new Set();
+    try {
+      return new Set((await cache.keys()).map((request) => request.url));
+    } catch (_e) {
+      return new Set();
+    }
+  }
+
+  /**
+   * True when EVERY tile of `data`'s region is present in the pinned
+   * cache — "is this region actually available offline?".
+   *
+   * This used to be a centre-tile probe: one `cache.match` on the tile at
+   * the region's centre, taken as a witness that the region's own
+   * download had completed. That reasoning only holds for a region the
+   * user downloaded AS A REGION, and the roundel does not get to assume
+   * that — it probes whatever region is selected. Both download shapes
+   * write to one pinned cache over the same band with the same URL
+   * template, so a neighbouring region's download, or a custom area that
+   * merely overlapped, caches this region's centre tile without covering
+   * it. The roundel then painted `done` for a region holding a handful of
+   * tiles, and because `handleClick` only acts on `idle`/`error`, the
+   * region could no longer be downloaded at all.
+   *
+   * Full coverage is the honest question and the overlay already asks it
+   * the same way (`downloadedIds`, SNOW-570). The cost is one
+   * `cache.keys()` pass per probe instead of one `cache.match`; a region
+   * is a few hundred tiles across the micro band and every tile after the
+   * first is a Set lookup, so this is single-digit milliseconds against a
+   * cache capped at a few thousand entries.
    *
    * Returns `null` for "can't tell yet" — the active basemap's tile
-   * template isn't resolvable, so the probe has no URL to look up. That
-   * is deliberately distinct from `false` ("looked, not there"): see
+   * template isn't resolvable, so there is nothing to look up. That is
+   * deliberately distinct from `false` ("looked, not there"): see
    * `_retryWhenStyleSettles`.
    *
-   * @param {Object} summary
+   * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<boolean | null>}
    */
-  async function _probeDone(summary) {
+  async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
-    const url = core.centreTileURL(template, summary);
-    if (!url) return false;
-    const cache = await _openPinnedBasemapCache();
-    if (!cache) return false;
-    try {
-      return !!(await cache.match(url));
-    } catch (_e) {
-      return false;
-    }
+    const feature = FEATURE_BY_REGION_ID[data.regionId];
+    const bbox = core.geometryBounds((feature && feature.geometry) || null);
+    // A region carrying no boundary can't be coverage-checked. It also
+    // can't be downloaded meaningfully, so "not downloaded" is right.
+    if (!bbox) return false;
+    const band = (data.summary && data.summary.band) || core.MICRO_BAND;
+    const cached = await _pinnedCacheURLs();
+    return (
+      core.downloadedIds(template, [{ id: data.regionId, bbox: bbox, band: band }], cached)
+        .length > 0
+    );
   }
 
   /**
@@ -6194,7 +6231,7 @@ const DOWNLOADED_OUTLINE_COLOUR =
       setState('disabled', data.summary.mb);
       return;
     }
-    const done = await _probeDone(data.summary);
+    const done = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
@@ -6526,26 +6563,49 @@ const DOWNLOADED_OUTLINE_COLOUR =
   }
 
   /**
-   * True when `centreTile` is present in the pinned cache — the
-   * done-probe proxy for "this custom area is downloaded". Returns `null`
-   * for "can't tell yet" (the active basemap's tile template isn't
-   * resolvable), exactly like mapDownloadControlInit's own probe.
+   * True when EVERY tile of the saved custom area is present in the
+   * pinned cache. Returns `null` for "can't tell yet" (the active
+   * basemap's tile template isn't resolvable), exactly like
+   * mapDownloadControlInit's own probe — which this now matches in
+   * substance too.
    *
-   * @param {{z: number, x: number, y: number}} centreTile
+   * Was a centre-tile probe, and carried the same flaw: one pinned cache
+   * shared by both download shapes means a region download that happened
+   * to cover this area's centre tile made the area read as downloaded.
+   * Eviction produced the same lie from the other direction — the area's
+   * centre tile can outlive most of the area, since the pinned cache
+   * trims by insertion order and not by which run owns what.
+   *
+   * @param {{bbox: number[], band?: number[]}} area The saved custom area.
    * @returns {Promise<boolean | null>}
    */
-  async function _probeDone(centreTile) {
+  async function _probeDone(area) {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
-    const url = core.centreTileURL(template, { centre_tile: centreTile });
-    if (!url) return false;
+    if (!area || !area.bbox) return false;
+    const cached = await _pinnedCacheURLs();
+    return (
+      core.downloadedIds(
+        template,
+        [{ id: 'custom', bbox: area.bbox, band: area.band || core.MICRO_BAND }],
+        cached,
+      ).length > 0
+    );
+  }
+
+  /**
+   * Every URL in the pinned basemap cache, as a Set. Never throws.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  async function _pinnedCacheURLs() {
     const cache = await _openPinnedBasemapCache();
-    if (!cache) return false;
+    if (!cache) return new Set();
     try {
-      return !!(await cache.match(url));
+      return new Set((await cache.keys()).map((request) => request.url));
     } catch (_e) {
-      return false;
+      return new Set();
     }
   }
 
@@ -6626,7 +6686,7 @@ const DOWNLOADED_OUTLINE_COLOUR =
       return;
     }
     const area = savedArea;
-    const done = await _probeDone(area.centre_tile);
+    const done = await _probeDone(area);
     if (savedArea !== area || btn.dataset.downloadState === 'busy') return;
     if (done === null) {
       setState(navigator.onLine ? 'idle' : 'offline');
