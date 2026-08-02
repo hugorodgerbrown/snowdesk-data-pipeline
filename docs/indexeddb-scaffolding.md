@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-08-02
 ---
 
 # IndexedDB scaffolding
@@ -76,8 +76,9 @@ confirmed re-download replaces it outright, never appends:
   value: {
     bbox,         // [west, south, east, north] in degrees — the framed area
     band,         // [minZ, maxZ], currently always [10, 14] (MICRO_BAND)
-    centre_tile,  // {z, x, y} — the done-probe key, matching the region
-                  // download's own centre_tile shape (basemap_tiles.py)
+    centre_tile,  // {z, x, y} — stored, but no longer what the done-probe
+                  // checks (see below); kept alongside bbox/band as the
+                  // full basemap_tiles.py centre_tile shape
     savedAt,      // ISO 8601 timestamp of the confirmed download
   },
 }
@@ -85,9 +86,14 @@ confirmed re-download replaces it outright, never appends:
 
 This row only records *where* the frame was — whether it is actually
 downloaded is never read off it directly, always re-probed against real
-`BASEMAP_PINNED_CACHE` contents via `centre_tile` (the same "layers menu
-is a live cache-state dashboard" invariant every download control
-follows).
+`BASEMAP_PINNED_CACHE` contents. The code has checked FULL coverage — every
+tile of `buildBlob(bbox, ...band)`, via
+`static/js/basemap_download_core.js`'s `blobFullyCached` — since SNOW-570,
+not a `centre_tile` proxy: a single cached tile is not evidence the whole
+area is available offline (a neighbouring download can cache one tile of
+an area without covering it). This is the same "layers menu is a live
+cache-state dashboard" invariant every download control follows — see
+[`offline-map.md`](offline-map.md#downloaded-areas-overlay-snow-570).
 
 ### `log:sync` row shape (SNOW-482)
 

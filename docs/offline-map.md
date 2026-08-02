@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, bin/sw-version, BASEMAP_CACHE, Download basemap, custom-area download, offline layers-menu gating
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-08-02
 ---
 
 # PWA shell
@@ -479,18 +479,46 @@ gating below). The three non-runnable states (`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
 a dimmed **glyph** — the glass shell stays at full strength, because the
 control now floats over open basemap where the old whole-roundel
-`opacity: 0.4` was close to invisible. `idle`/`done` are
-derived from a real `BASEMAP_PINNED_CACHE` probe
-(`static/js/basemap_download_core.js`'s `centreTileURL` against the
-region's `centre_tile`) every time the icon is (re)shown — never a
-stored flag, so a reselected region reads its true cache state, and a
-region that was downloaded in an earlier session still reads `done`
-after a reload. Because the probe keys off the **active** basemap's tile
-template, the state is **per-basemap**: download the region on Standard,
-switch to Swisstopo (online), and the icon reverts to `idle` — that
-basemap's tiles for the region aren't cached. The icon re-probes on
-`snowdesk:basemap-changed` (fired by the styledata reinstall once a new
-basemap's overlays are back) and on `snowdesk:connectivity-changed`.
+`opacity: 0.4` was close to invisible. `idle`/`done` are derived from a
+real `BASEMAP_PINNED_CACHE` probe every time the icon is (re)shown — never
+a stored flag, so a reselected region reads its true cache state, and a
+region that was downloaded in an earlier session still reads `done` after
+a reload.
+
+**The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
+check here since SNOW-570 — the code has never assumed "the centre tile is
+present" means "the whole region is" (both download shapes share one
+pinned cache, one band and one URL template, so a neighbouring download
+can cache a region's centre tile without covering it). What SNOW-583
+changes is WHICH tile set full coverage is checked against. A region's
+download is now clipped to its real boundary server-side
+(`build_region_blob`, above), so it can no longer be recomputed
+client-side from `FEATURE_BY_REGION_ID`'s geometry the way it briefly
+could when a region's download was simply its bbox. `_probeDone` instead
+reads the run's own stored `basemap.regions` record — `{region_id, band,
+z, savedAt}`, written by `_recordRegionDownload` on every successful run —
+and checks `blobFullyCached(template, {z: record.z}, cached)` against it.
+That works fully offline: no fetch involved, just the stored `z` and a
+real cache read. A record with no `z` (written before this ticket, when
+the row carried `bbox` instead) is treated as no record at all — its bbox
+is the old rectangle, not what the server would clip to today, so trusting
+it would claim tiles the run never fetched. A region with no record —
+never downloaded in this browser, or downloaded before this ticket —
+falls back to a fresh fetch of `/api/region-basemap-tiles/?id=...`,
+memoised per region for the rest of the session (successes and in-flight
+requests only; a failed fetch is not cached, so a retry is a fresh
+attempt, not a repeat of the same failure). That fallback preserves the
+"right answer whoever cached the tiles" property online — a region wholly
+covered by, say, an overlapping custom-area download reads `done` even
+though it was never itself the target of a region download — but cannot
+work offline, since there is nothing to fetch; a region in that state
+reads `offline` until back online. Because the probe keys off the
+**active** basemap's tile template, the state is also still **per-basemap**:
+download the region on Standard, switch to Swisstopo (online), and the
+icon reverts to `idle` — that basemap's tiles for the region aren't
+cached. The icon re-probes on `snowdesk:basemap-changed` (fired by the
+styledata reinstall once a new basemap's overlays are back) and on
+`snowdesk:connectivity-changed`.
 
 That template is only resolvable once MapLibre's style has settled
 (`map.isStyleLoaded()`), which is **not** true on the page load that
@@ -499,7 +527,12 @@ first paints the icon — the region/overlay sources are added inside
 probe runs. A probe that can't resolve the template therefore returns
 "don't know" rather than "not downloaded", and re-runs on the next
 MapLibre `idle`; without that retry a reload of an already-downloaded
-region painted `idle` until the user reselected the region.
+region painted `idle` until the user reselected the region. `renderControl`
+also pre-paints the actionable `idle`/`offline` state before awaiting the
+probe — the probe can now be a network round trip (the fallback fetch
+above), and without the pre-paint a slow probe would leave the
+PREVIOUSLY-focused region's `done` on screen for the whole of that round
+trip.
 
 **Download**, on clicking an `idle` icon:
 
@@ -545,27 +578,34 @@ region painted `idle` until the user reselected the region.
    30-second silence timeout on each tick, so a large download spanning
    more than 30 seconds is never cut short as long as it keeps making
    progress.
-7. On completion, the icon flips to `done` (a clean, non-vacuous
-   success — at least one URL cached and none failed) or reverts to
-   `idle` (partial/failed/vacuous — the user can retry). No toast is
-   shown either way; the icon's own state is the only feedback.
+7. On a clean, non-vacuous success (at least one URL cached and none
+   failed), `_recordRegionDownload` writes `{region_id, band, z, savedAt}`
+   — the downloaded blob's OWN `z` (SNOW-583; see above) — to
+   `basemap.regions` in `meta:app`, so a later `_probeDone` can check
+   real cache contents against exactly what this run fetched, with no
+   recomputation and no further network round trip. The icon then flips
+   to `done`; a partial/failed/vacuous run reverts to `idle` (the user can
+   retry) with nothing recorded. No toast either way; the icon's own state
+   is the only feedback.
 
-**Cached-tiles overlay** — the "Downloaded areas" layer draws two things.
-The dashed rings say WHICH downloads the user made, derived from the
-stored `basemap.regions` / `basemap.customArea` records and validated
-against the cache. The `cached-tiles` source draws what is actually on
-disk: one square per tile in the pinned cache at `CACHED_TILES_ZOOM`
-(z14), read straight back out of the cache's own URLs by
-`cachedTilesFromURLs` — the inverse of the substitution
-`rangesToTileURLs` performs.
+**Cached-tiles overlay** — the "Downloaded areas" layer draws two things:
+a dashed ring around the saved custom area (derived from the stored
+`basemap.customArea` record and validated against the cache) and the
+`cached-tiles` source, which draws what is actually on disk — one square
+per tile in the pinned cache at `CACHED_TILES_ZOOM` (z14), read straight
+back out of the cache's own URLs by `cachedTilesFromURLs` — the inverse of
+the substitution `rangesToTileURLs` performs. SNOW-583 removed this
+overlay's per-region ring; see
+[the "Downloaded areas" overlay section](#downloaded-areas-overlay-snow-570)
+below for why, and for what answers "is this region downloaded?" now.
 
 The tiles need no stored record to stay honest, and cannot drift from the
 cache: eviction, a basemap swap and Clear Site Data all change the answer
-and all show up for free. The rings can't be derived that way (tiles carry
-no record of which run fetched them, so a custom-area download crossing a
-region would make that whole region read as downloaded) — but drawing the
-tiles themselves attributes nothing, so the problem does not arise. Both
-halves are per-template, so switching basemap empties them.
+and all show up for free. The custom-area ring can't be derived that way
+(tiles carry no record of which run fetched them, so a region download
+crossing the framed area would make it read as downloaded) — but drawing
+the tiles themselves attributes nothing, so the problem does not arise.
+Both halves are per-template, so switching basemap empties them.
 
 **On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
 the roundel's own fill, the tiles being fetched are drawn over the map as
@@ -670,10 +710,48 @@ re-deriving the same numbers in every client on every viewport move. SNOW-522
 second reason entirely: a user-drawn bbox has no stable ID to precompute
 against server-side.
 
-**Known gap** — tile ranges cover each region's rectangular bbox, not
-its exact polygon; some tiles just outside the boundary are included
-(coarser tiers over-include more). Simple and compact; polygon-clipping
-at build time is a possible future refinement, not built.
+**Clipped to the real boundary (SNOW-583).** Tile ranges used to cover
+each region's rectangular bbox rather than its exact polygon — up to 44%
+of a region's tiles touched no part of it. `build_region_blob`
+(`apps/regions/services/basemap_tiles.py`) now clips the candidate
+rectangle (still `tile_ranges` over the UNDILATED
+`bbox_from_boundary(boundary)`) down to the tiles within one z14 margin
+tile (~1.7 km) of the boundary itself — `clip_ranges` dilates each
+candidate tile's own footprint by that margin and tests intersection
+against the boundary (the Minkowski equivalent of buffering the boundary
+by a rectangle, without shapely's uniform-radius `buffer()`), then
+`row_tile_count` sums what survives. A tile is only ever DROPPED from the
+candidate rectangle, never added, so the clipped set is a subset of what
+the old `build_blob` would have produced for the same bbox — this is what
+lets an already-downloaded region stay `done` across the change (see
+`docs/decisions/region-downloads-clip-custom-areas-dont.md`). Measured
+across the 149 Swiss micro-regions: **28.5%** fewer tiles.
+
+This changes the STORED blob's `z` shape from a rectangle
+(`{"<z>": [xmin, xmax, ymin, ymax]}`) to row spans
+(`{"<z>": {"<y>": [xmin, xmax]}}`) — one `[xmin, xmax]` span per row that
+survives the clip, not a run-length list of runs (a plain span
+over-includes only 0.4% more tiles than tracking exact runs would,
+measured across every region/zoom in the band — not worth the extra
+shape everywhere a blob's `z` is consumed). `static/js/
+basemap_download_core.js`'s `zoomRows(zEntry)` is the one accessor every
+consumer of a blob's `z` (`rangesToTileURLs`, `tileCount`, `tileGridPlan`,
+`blobFullyCached`) routes through, so both shapes — this one and the
+custom-area download's unchanged rectangle — are handled in exactly one
+place. Dual-shape support is required, not politeness:
+`/api/region-basemap-tiles/` is `Cache-Control: public, max-age=86400`
+with no ETag, so a returning user can still be handed an old rectangle
+blob for up to 24h after a deploy.
+
+The on-map progress grid's `_cellForTile` clamp (above) is correspondingly
+a **two-step** clamp since SNOW-583: a clipped region's grid rows are no
+longer necessarily contiguous in y (a concave boundary can leave a gap
+between two present rows), so a coarse tile's cell snaps to the nearest
+PRESENT row first, then clamps its x into that row's own span — the old
+single rectangular clamp could otherwise land a cell on a row the clipped
+blob simply has no tiles for. For a rectangle (every row present, one
+shared span) this reduces to exactly the old clamp, so the custom-area
+download's grid is unaffected in substance.
 
 ### Custom-area download (SNOW-522)
 
@@ -848,84 +926,87 @@ framing nor confirming a download is allowed while offline.
 
 ### "Downloaded areas" overlay (SNOW-570)
 
-The two roundels answer "is *this* area downloaded?" one area at a time.
-The **Downloaded areas** overlay answers it for the whole map: a dashed
-green ring — the sync dots' green, because it is a view onto the same
-cache — around every loaded micro-region whose download is present, plus
-the saved custom area. It is a layers-menu row (`data-overlay-key=
-"downloaded"`), **off by default**: the map already carries the
-choropleth, the selection ring, the region tiers and the pins, and a
-permanent extra outline over all of that is crowding for an answer most
-sessions never ask.
+The download roundels answer "is *this* area downloaded?" for one focused
+area at a time. The **Downloaded areas** overlay answers a narrower
+version of the same question for the whole map at once: a dashed green
+ring — the sync dots' green, because it is a view onto the same cache —
+around the saved custom area, plus a square over every tile Cache Storage
+actually holds. It is a layers-menu row (`data-overlay-key="downloaded"`),
+**off by default**: the map already carries the choropleth, the selection
+ring, the region tiers and the pins, and a permanent extra outline over
+all of that is crowding for an answer most sessions never ask.
 
-Two layers, both installed with the regions source (not lazy) so a basemap
-swap rebuilds them with everything else: `regions-line-downloaded`, whose
-`line-opacity` keys off a `downloaded` feature-state — the same
-paint-driven-visibility trick `regions-line-selected` uses, because
-MapLibre rejects feature-state inside a layer filter — and
-`downloaded-area-line` over its own one-feature `downloaded-area` source.
+**SNOW-583 removed this overlay's per-region ring.** It used to be drawn
+the same way as the custom-area ring — a `regions-line-downloaded` layer
+whose `line-opacity` keyed off a `downloaded` feature-state, itself derived
+by recomputing each loaded region's tile set CLIENT-SIDE from its own
+boundary geometry (`geometryBounds` + `tileRangesForBBox`, reproducing
+what `compute_basemap_download` had stored:
+`build_blob(bbox_from_boundary(boundary), *MICRO_BAND)`) and checking that
+against the cache. That recomputation only worked because a region's
+download WAS its bbox rectangle. Now that a region's tiles are CLIPPED to
+its real boundary server-side (`build_region_blob` — see "Offline overlay
+caches" above), the client can no longer reproduce the tile set a download
+actually fetched from geometry alone, so the ring could never again read
+"downloaded" for a real region. See
+[`docs/decisions/region-downloads-clip-custom-areas-dont.md`](decisions/region-downloads-clip-custom-areas-dont.md)
+for the full reasoning, including why the custom-area ring is unaffected
+(a user-drawn rectangle stays exactly enumerable client-side). The
+cached-tiles squares are now the whole per-region answer this overlay
+gives; whether a SPECIFIC region's own download is complete is still
+answered precisely by that region's roundel (above), which has its own
+stored record of the clipped tile set to check against.
 
-**What you downloaded, verified against the cache.** The overlay draws
-from a stored record of each download — `basemap.regions` for regions,
-`basemap.customArea` for the framed area — and then probes real
-`BASEMAP_PINNED_CACHE` contents before drawing any of it.
+One layer survives, installed with the regions source (not lazy) so a
+basemap swap rebuilds it with everything else: `downloaded-area-line` over
+its own one-feature `downloaded-area` source, plus `cached-tiles-fill`/
+`cached-tiles-line` over the `cached-tiles` source (see "Cached-tiles
+overlay" above).
 
-Both halves are load-bearing. The cache alone cannot answer the question:
-it records tiles, not which download fetched them, and both download
-shapes share one zoom band and one URL template, so a framed area that
-merely crossed a region was indistinguishable from a download *of* that
-region — and duly outlined it. Intent is the only thing that separates
-them. The record alone cannot answer it either: it says the user asked
-for this region, never that the tiles survived eviction, a basemap swap
-or Clear Site Data. Record for the *what*, probe for the *whether* — the
-same split `basemap.customArea` has always used, where the row records
-where the frame was and the done state is probed. The region download
-simply never had the first half.
+**What you downloaded, verified against the cache.** The custom-area ring
+draws from the stored `basemap.customArea` record and then probes real
+`BASEMAP_PINNED_CACHE` contents before drawing anything — both halves are
+load-bearing. The cache alone cannot answer the question: it records
+tiles, not which download fetched them, and both download shapes share
+one zoom band and one URL template, so a region download that merely
+crossed the framed area would be indistinguishable from a download of the
+area itself. The record alone cannot answer it either: it says the user
+asked for this area, never that the tiles survived eviction, a basemap
+swap or Clear Site Data. Record for the *what*, probe for the *whether*.
 
-**Full coverage, not the centre tile**, for the download it is checking. The roundel's done-probe checks a
-download's centre tile, which is fair for the roundel: it only ever asks
-about a region the user downloaded *as a region*, so that tile witnesses
-that run. It is not fair here. Both download shapes write to one pinned
-cache over the same zoom band with the same URL template, so their tiles
-are indistinguishable strings — a custom-area download whose frame merely
-crosses a region caches that region's centre tile, and a centre-tile probe
-would ring the whole region on the strength of one tile the download never
-covered (and would equally miss a region almost entirely covered whose
-centre falls outside the frame). `downloadedIds` therefore requires an
-area's **whole** tile set. That is also the right answer whoever cached the
-tiles: a region wholly inside a custom-area download genuinely is available
-offline. The remaining imprecision is the download's own — tile ranges
-cover a bbox, not the exact polygon — so the two agree by construction.
+**Full coverage, not the centre tile.** An earlier version of the region
+roundel's own done-probe checked a download's centre tile, which is fair
+only for a question that only ever asks about a download the user made AS
+THAT DOWNLOAD. It is not fair here (nor for the region roundel today):
+both download shapes write to one pinned cache over the same zoom band
+with the same URL template, so their tiles are indistinguishable strings —
+a download whose frame merely crosses an area caches that area's centre
+tile without covering it, and a centre-tile probe would read the whole
+area as downloaded on the strength of one tile the download never covered
+(and would equally miss an area almost entirely covered whose centre falls
+outside the frame). `blobFullyCached` therefore requires an area's
+**whole** tile set. That is also the right answer whoever cached the
+tiles: an area wholly inside a larger download genuinely is available
+offline.
 
-The region's tile set is derived client-side from its boundary geometry
-(`geometryBounds` + `tileRangesForBBox`), which reproduces exactly what
-`compute_basemap_download` stored for it
-(`build_blob(bbox_from_boundary(boundary), *MICRO_BAND)`) — no per-region
-API call.
-
-**One `cache.keys()` pass.** The roundel probes one region and can afford
-`cache.match()`; this checks every recorded download at once, so it takes
-a single pass over the cache's URLs and answers from that set. Every tile
-after the first is then a Set lookup, which is why checking all of them
-rather than sampling is free. Never call it per frame — the pinned cache
-holds thousands of entries. It refreshes when the overlay
-is switched on, on `snowdesk:basemap-changed`, on
-`snowdesk:regions-loaded`, when a download settles (both controls call
-`window.pwaDownloadedOverlay?.refresh()` beside their existing
-`pwaLayerSyncStatus.refresh()`), and on `visibilitychange` — tiles can be
-evicted while the tab is backgrounded, and a ring around an area that is
-no longer cached is worse than no ring.
+**One `cache.keys()` pass.** Both halves probe from a single pass over the
+cache's URLs; every tile after the first is then a Set lookup, which is
+why checking all of them rather than sampling is free. Never call it per
+frame — the pinned cache holds thousands of entries. It refreshes when the
+overlay is switched on, on `snowdesk:basemap-changed`, when a download
+settles (both controls call `window.pwaDownloadedOverlay?.refresh()`
+beside their existing `pwaLayerSyncStatus.refresh()`), and on
+`visibilitychange` — tiles can be evicted while the tab is backgrounded,
+and a ring around an area that is no longer cached is worse than no ring.
 
 **Per-basemap**, like the roundels: the probe keys off the active
 basemap's tile template, so downloading on Standard and switching to
 Swisstopo empties the overlay. Those tiles genuinely are not cached.
 
-The row deliberately carries **no sync dot**. Every other row's dot says
-whether that row's own feed is available offline; this row has no fetched
-data — it is derived from the cache the dots describe, so a dot would
-either sit permanently green (saying nothing) or make a second, subtly
-different claim about the same cache. `.basemap-menu-item--no-sync`
-(`static/css/map.css`) holds the dot's space so the row still lines up.
+The row carries a sync dot like every other overlay row (`_map_embed.html`)
+— not whether the row's OWN feed is cached (it has none), but whether ANY
+basemap tiles are pinned at all, the same question the other dots answer
+for their own feed.
 
 ## Offline gating of the layers menu
 

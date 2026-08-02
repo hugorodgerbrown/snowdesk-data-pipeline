@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, region-basemap-tiles)
 status: current
-last-reviewed: 2026-07-26
+last-reviewed: 2026-08-02
 ---
 
 # Map page and JSON API
@@ -230,11 +230,23 @@ tile grid are both static:
 ```
 
 The whole `download` key is omitted when the region has no computed
-blob yet. The full blob (incl. the `z` tile-index ranges the client
-expands into tile URLs) is only fetched — via `region-basemap-tiles`
-above — when the user clicks the region's download icon. See
-[`offline-map.md`](offline-map.md) for the full client-side download
-flow.
+blob yet. The full blob (incl. `z`, the client-expanded tile ranges) is
+only fetched — via `region-basemap-tiles` above — when the user clicks
+the region's download icon. **`z`'s shape changed in SNOW-583**: a
+region's tiles are now clipped to its real boundary plus a margin tile
+(`apps.regions.services.basemap_tiles.build_region_blob`) rather than the
+whole bbox rectangle, so `z` is
+`{"<zoom>": {"<y>": [xmin, xmax]}}` — one row span per surviving row —
+not the rectangular `{"<zoom>": [xmin, xmax, ymin, ymax]}` shape a
+custom-area download's locally-built blob still uses (a user-drawn
+rectangle genuinely is one; see
+[`docs/decisions/region-downloads-clip-custom-areas-dont.md`](decisions/region-downloads-clip-custom-areas-dont.md)).
+`static/js/basemap_download_core.js`'s `zoomRows` is the one accessor
+every consumer handles both shapes through — required, not optional: this
+endpoint is `Cache-Control: public, max-age=86400` with no ETag, so a
+returning client can still be served an old rectangle blob for up to 24h
+after a deploy. See [`offline-map.md`](offline-map.md) for the full
+client-side download flow.
 
 The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
 `regions.geojson?country=ch` in parallel. Once both resolve, it calls
