@@ -40,7 +40,7 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
   public/        Public-facing bulletin site
     api.py       Plain JsonResponse endpoints consumed by the map page
     api_urls.py  URL routing for /api/ (namespace: api:)
-    debug_views.py Staff-only design-debug pages (mounted at /debug/* when DEBUG=True)
+    debug_views.py Staff-only design-debug pages (mounted unconditionally, staff-gated — not a DEBUG gate)
 templates/       Project-level templates shared across apps
   includes/      Reusable partials (bulletin_header.html, nav.html, …)
 src/             Tailwind CSS source (main.css — not served directly)

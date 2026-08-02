@@ -89,6 +89,15 @@
 (function () {
   'use strict';
 
+  // SNOW-585: only present when settings.SW_DEV_SHELL_BYPASS is on (base.html;
+  // always false in production). The bypass already serves fresh shell assets
+  // on the very next reload — even from a worker that hasn't picked up the
+  // new one yet — so the update banner would be actively misleading; showing
+  // it, and its pwa.sw.update_available telemetry, is suppressed at the one
+  // call site below. See docs/decisions/dev-bypasses-the-shell-cache.md.
+  const DEV_SHELL_BYPASS_ACTIVE =
+    document.querySelector('meta[name="pwa-dev-shell-bypass"]')?.getAttribute('content') === '1';
+
   // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
   // e2e SW-stripping helpers define the property with ``value: undefined``
   // (key present, value nullish), and the ``navigator.serviceWorker``
@@ -411,6 +420,9 @@
    * so callers don't have to care which page they're on.
    */
   function showUpdateBanner(worker) {
+    // SNOW-585: suppress both the DOM reveal and the pwa.sw.update_available
+    // emit below — see DEV_SHELL_BYPASS_ACTIVE's comment above.
+    if (DEV_SHELL_BYPASS_ACTIVE) return;
     if (worker) waitingWorker = worker;
     // SNOW-384: emit once per distinct waiting worker, not once per call
     // site that happens to observe it (see announcedUpdateWorker above).

@@ -74,6 +74,16 @@ if config("E2E_TEST_DB", default=False, cast=bool):
 # (including the full test suite) are never throttled.
 RATELIMIT_ENABLE = False
 
+# ---------------------------------------------------------------------------
+# Dev-only shell-cache bypass (SNOW-585)
+# ---------------------------------------------------------------------------
+# base.py defaults this to False; development flips the default to True so a
+# fresh worktree gets the fix for stale-shell-after-git-pull with no .env
+# change. The env var still wins either way — the e2e tox env sets
+# SW_DEV_SHELL_BYPASS=false so tests/e2e/test_pwa_lifecycle_update.py keeps
+# exercising production semantics (banner + pwa.sw.update_available).
+SW_DEV_SHELL_BYPASS = config("SW_DEV_SHELL_BYPASS", default=True, cast=bool)
+
 # Use ImmediateBackend in development: tasks run inline so email lands in
 # Mailpit immediately without needing a separate db_worker process.
 TASKS = {

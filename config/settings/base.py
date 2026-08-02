@@ -77,6 +77,28 @@ SW_URL: str = config("SW_URL", default="/sw.js")
 SW_KILL: bool = config("SW_KILL", default=False, cast=bool)
 
 # ---------------------------------------------------------------------------
+# Dev-only shell-cache bypass (SNOW-585)
+# ---------------------------------------------------------------------------
+# After a ``git pull`, the previous service worker stays in control (it
+# deliberately never calls ``skipWaiting()`` — see the "Update contract" in
+# ``static/js/sw.js``) and keeps serving the old shell out of its
+# ``CACHE_VERSION`` cache, even though the page looks up to date. Turning
+# this on makes ``_staleWhileRevalidate`` skip the cache entirely — no read,
+# no write — so the very next reload always serves the current bytes off
+# disk, including from a worker that hasn't picked up the new one yet.
+#
+# ``DEBUG`` alone is the wrong key: ``tox -e e2e`` runs under
+# ``config.settings.development`` (``DEBUG = True``) and asserts the update
+# banner + ``pwa.sw.update_available`` fire, both of which this bypass
+# suppresses (see ``static/js/sw_register.js::showUpdateBanner`` and
+# ``static/js/pwa_version_check.js::showSoftBanner``). So this is a named
+# setting: defaults False here, development.py flips the default to True,
+# and the e2e tox env pins it back to False so that suite keeps testing
+# production semantics. ``apps.core.checks`` errors if this is ever True
+# with ``DEBUG`` off — see that module for the release gate.
+SW_DEV_SHELL_BYPASS: bool = config("SW_DEV_SHELL_BYPASS", default=False, cast=bool)
+
+# ---------------------------------------------------------------------------
 # Application definition
 # ---------------------------------------------------------------------------
 
@@ -195,6 +217,11 @@ TEMPLATES = [
                 # telemetry master switch into a <meta> tag read by
                 # static/js/telemetry.js (docs/telemetry-pipeline.md).
                 "apps.public.context_processors.pwa_telemetry",
+                # SNOW-585: injects SW_DEV_SHELL_BYPASS so base.html can bake
+                # the dev-only shell-cache bypass flag into a <meta> tag read
+                # synchronously at startup by sw_register.js and
+                # pwa_version_check.js (docs/decisions/dev-bypasses-the-shell-cache.md).
+                "apps.public.context_processors.pwa_dev_shell_bypass",
                 # SNOW-399: injects SITE_ENVIRONMENT and the derived
                 # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
                 # base.html can render a distinct app name, icon, and theme

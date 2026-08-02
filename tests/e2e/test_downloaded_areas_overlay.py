@@ -1,36 +1,22 @@
 """
 tests/e2e/test_downloaded_areas_overlay.py — Playwright regression tests for
-the "Downloaded areas" layers-menu overlay (SNOW-570).
+the "Available offline" layers-menu overlay (SNOW-570, SNOW-587).
 
-The overlay draws two things: a dashed ring around the saved custom area
-(``downloaded-area-line``, over its own one-feature ``downloaded-area``
-source) once its whole tile set is verified present in
-``BASEMAP_PINNED_CACHE``, and a square per tile Cache Storage actually
-holds (``cached-tiles-fill``/``cached-tiles-line``, over the
-``cached-tiles`` source) — read straight back out of the cache, no stored
-record involved. It is off by default.
-
-**SNOW-583 removed the per-region ring.** Region downloads are now clipped
-to each region's real boundary plus a margin tile
-(``apps.regions.services.basemap_tiles.build_region_blob``), so the tile
-set a download actually fetches is no longer recomputable client-side from
-the region's own geometry the way ``downloadedIds`` (SNOW-570) did — that
-recomputation is exactly what this overlay's old region half relied on.
-The cached-tiles squares are now the whole "what do I have offline" answer
-for a region; whether *a specific* region's own download is complete is
-still answered — precisely, via a stored ``basemap.regions`` record and
-the server-computed clipped tile set — by the per-region roundel, covered
-in ``tests/e2e/test_cache_this_area.py``. The custom-area ring survives
-unchanged: a user-drawn rectangle stays enumerable client-side
-(``core.tileRangesForBBox``), so its full-coverage check is unaffected by
-the clip.
+The overlay draws one translucent square per tile actually present in
+``BASEMAP_PINNED_CACHE`` — the ``cached-tiles`` source, fed straight from a
+Cache Storage read, with no stored record of any kind involved. It is off by
+default. SNOW-587 removed the overlay's earlier "downloaded areas" rings
+(``regions-line-downloaded`` / ``downloaded-area-line``, derived from the
+stored ``basemap.regions`` / ``basemap.customArea`` records and then
+validated against the cache) — the tiles alone answer "where is the basemap
+I already have?" without needing a second, driftable derivation path.
 
 **Why these use the plain ``page``/``live_server`` fixtures rather than
 ``pwa_page``.** With the real service worker controlling, the basemap style
 JSON parses but its sources never resolve against the unreachable CDN, so
 ``map.isStyleLoaded()`` stays false, ``map.on('load')`` never fires, and the
 ``regions`` source — along with every layer installed beside it, including
-this overlay's — is never added at all. That is precisely why
+the cached-tiles layers — is never added at all. That is precisely why
 ``test_cache_this_area.py`` injects synthetic features into
 ``FEATURE_BY_REGION_ID`` and never touches a MapLibre layer. This overlay
 *is* MapLibre layers, so it needs the harness where they exist: without the
@@ -41,9 +27,7 @@ Nothing is lost by dropping the SW, because the overlay never talks to one.
 It reads Cache Storage, which is available to the page directly — so these
 tests write tile URLs into the pinned cache by hand and call
 ``window.pwaDownloadedOverlay.refresh()``. That also makes them
-deterministic in a way a stubbed download never was: the exact tile set is
-chosen by the test, so "all of it" and "all but one of it" are both
-expressible.
+deterministic: the exact tile set is chosen by the test.
 """
 
 from __future__ import annotations
@@ -57,16 +41,10 @@ from pytest_django.live_server_helper import LiveServer
 pytestmark = pytest.mark.usefixtures("_load_test_data")
 
 _TOGGLE = '#basemap-menu [data-overlay-key="downloaded"]'
-_AREA_LAYER = "downloaded-area-line"
 _TILE_FILL_LAYER = "cached-tiles-fill"
 _TILE_LINE_LAYER = "cached-tiles-line"
 _TEMPLATE = "https://tiles.example.invalid/{z}/{x}/{y}.pbf"
 _PINNED_CACHE = "snowdesk-basemap-pinned-v1"
-
-# A small custom area — narrow band, so a full-coverage cache is a handful
-# of ``cache.put`` calls rather than a whole micro band's worth.
-_CUSTOM_BBOX = [7.5, 46.25, 7.6, 46.35]
-_CUSTOM_BAND = [10, 11]
 
 
 def _boot(page: Page, live_server: LiveServer) -> None:
@@ -83,8 +61,7 @@ def _boot(page: Page, live_server: LiveServer) -> None:
     page.wait_for_function(
         """() => typeof MAP !== 'undefined' && MAP !== null
             && !!MAP.getSource('regions')
-            && !!MAP.getLayer('downloaded-area-line')
-            && !!MAP.getSource('downloaded-area')
+            && !!MAP.getLayer('cached-tiles-fill')
             && !!MAP.getSource('cached-tiles')
             && typeof window.pwaDownloadedOverlay === 'object'""",
         timeout=30000,
@@ -95,48 +72,11 @@ def _boot(page: Page, live_server: LiveServer) -> None:
     )
 
 
-def _custom_area_tiles(page: Page, bbox: list[float], band: list[int]) -> list[str]:
-    """Every tile URL a ``band`` download of ``bbox`` fetches.
-
-    Built with the page's own tile math (the custom-area download's own
-    client-side re-port — see ``basemap_download_core.js``'s header), not
-    hand-listed indices, so the assertions below are about the overlay's
-    membership logic on top of it, not about hand-derived tile arithmetic
-    drifting from the real thing.
-    """
-    return cast(
-        list[str],
-        page.evaluate(
-            """({ bbox, band, template }) => {
-                const core = window.pwaBasemapDownloadCore;
-                const ranges = core.tileRangesForBBox(bbox, band[0], band[1]);
-                return core.rangesToTileURLs(template, { z: ranges });
-            }""",
-            {"bbox": bbox, "band": band, "template": _TEMPLATE},
-        ),
+def _tile_url(z: int, x: int, y: int) -> str:
+    """The pinned-cache URL for one tile, under the stubbed template."""
+    return (
+        _TEMPLATE.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
     )
-
-
-def _save_custom_area(page: Page, bbox: list[float], band: list[int]) -> None:
-    """Persist ``basemap.customArea`` exactly as a confirmed download would."""
-    page.evaluate(
-        """async ({ bbox, band }) => {
-            await window.pwaDb.put('meta:app', {
-                key: 'basemap.customArea',
-                value: { bbox, band, savedAt: '2026-01-01T00:00:00.000Z' },
-            });
-        }""",
-        {"bbox": bbox, "band": band},
-    )
-
-
-def _area_outline_geometry(page: Page) -> dict[str, Any] | None:
-    """The geometry currently drawn on the ``downloaded-area`` source, or None."""
-    data = cast(
-        dict[str, Any],
-        page.evaluate("() => MAP.getSource('downloaded-area').serialize().data"),
-    )
-    return cast("dict[str, Any] | None", data.get("geometry"))
 
 
 def _cache_urls(page: Page, urls: list[str]) -> None:
@@ -164,15 +104,15 @@ def _open_layers_menu(page: Page) -> None:
 
 
 def _toggle_overlay(page: Page, *, on: bool) -> None:
-    """Set the "Downloaded areas" checkbox to `on` and wait for it to settle.
+    """Set the "Available offline" checkbox to `on` and wait for it to settle.
 
     Two separate things have to land, and only the first is synchronous:
     the picker flips layer visibility on click, while the cache probe that
-    decides what is outlined is async. Waiting only for visibility would
-    let a "not outlined" assertion pass simply because the probe hadn't
-    finished — every negative test here would be vacuous. The trailing
-    refresh awaits that pass (it coalesces with the one the toggle already
-    kicked off rather than starting a second).
+    decides WHICH tiles are drawn is async. Waiting only for visibility
+    would let a "no tiles drawn" assertion pass simply because the probe
+    hadn't finished — every negative test here would be vacuous. The
+    trailing refresh awaits that pass (it coalesces with the one the toggle
+    already kicked off rather than starting a second).
     """
     _open_layers_menu(page)
     toggle = page.locator(_TOGGLE)
@@ -183,7 +123,7 @@ def _toggle_overlay(page: Page, *, on: bool) -> None:
             if (!MAP.getLayer(layer)) return false;
             return (MAP.getLayoutProperty(layer, 'visibility') !== 'none') === expected;
         }""",
-        arg={"layer": _AREA_LAYER, "expected": on},
+        arg={"layer": _TILE_FILL_LAYER, "expected": on},
     )
     if on:
         _refresh(page)
@@ -202,12 +142,11 @@ def _layer_visibility(page: Page, layer: str) -> str:
 
 
 def test_overlay_is_off_by_default(page: Page, live_server: LiveServer) -> None:
-    """The row is unchecked and every overlay layer hidden on a fresh session."""
+    """The row is unchecked and the cached-tiles layers hidden on a fresh session."""
     _boot(page, live_server)
     _open_layers_menu(page)
 
     assert page.locator(_TOGGLE).get_attribute("aria-checked") == "false"
-    assert _layer_visibility(page, _AREA_LAYER) == "none"
     assert _layer_visibility(page, _TILE_FILL_LAYER) == "none"
     assert _layer_visibility(page, _TILE_LINE_LAYER) == "none"
 
@@ -245,10 +184,7 @@ def test_dot_goes_green_once_tiles_are_pinned(
     page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
     assert _sync_state(page) != "cached"
 
-    _cache_urls(
-        page,
-        [_TEMPLATE.replace("{z}", "14").replace("{x}", "8501").replace("{y}", "5820")],
-    )
+    _cache_urls(page, [_tile_url(14, 8501, 5820)])
     page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
     page.wait_for_function(
         """(sel) => {
@@ -274,109 +210,6 @@ def _sync_state(page: Page) -> str:
     )
 
 
-def test_custom_area_source_starts_empty(page: Page, live_server: LiveServer) -> None:
-    """With no saved custom area the area source holds no features."""
-    _boot(page, live_server)
-    _toggle_overlay(page, on=True)
-
-    data = cast(
-        dict[str, Any],
-        page.evaluate("() => MAP.getSource('downloaded-area').serialize().data"),
-    )
-    assert data.get("features") == []
-
-
-def test_custom_area_is_outlined_once_its_tiles_are_cached(
-    page: Page, live_server: LiveServer
-) -> None:
-    """A saved custom area gets a ring once every one of its tiles is cached."""
-    _boot(page, live_server)
-    urls = _custom_area_tiles(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _cache_urls(page, urls)
-    _save_custom_area(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _toggle_overlay(page, on=True)
-
-    assert _area_outline_geometry(page), "the saved area should be outlined"
-
-
-def test_custom_area_record_without_cached_tiles_is_not_outlined(
-    page: Page, live_server: LiveServer
-) -> None:
-    """Intent alone is not enough — the tiles have to be there.
-
-    The stored record says the user asked for this area; it never says the
-    tiles survived. Recording without caching must draw nothing, or the
-    record would be exactly the stale flag this design avoids.
-    """
-    _boot(page, live_server)
-    _save_custom_area(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _toggle_overlay(page, on=True)
-
-    assert not _area_outline_geometry(page)
-
-
-def test_custom_area_outline_follows_the_cache_not_a_flag(
-    page: Page, live_server: LiveServer
-) -> None:
-    """An evicted tile drops the ring on the next refresh.
-
-    The load-bearing test for "probed, never stored": the tile is deleted
-    without the app being told, so only a real Cache Storage read gets this
-    right. A flag set when the user confirmed the download would still
-    claim it.
-    """
-    _boot(page, live_server)
-    urls = _custom_area_tiles(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _cache_urls(page, urls)
-    _save_custom_area(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _toggle_overlay(page, on=True)
-    assert _area_outline_geometry(page)
-
-    page.evaluate(
-        """async ({ cacheName, url }) => {
-            const cache = await caches.open(cacheName);
-            await cache.delete(url);
-        }""",
-        {"cacheName": _PINNED_CACHE, "url": urls[0]},
-    )
-    _refresh(page)
-
-    assert not _area_outline_geometry(page)
-
-
-def test_custom_area_outline_is_per_basemap(
-    page: Page, live_server: LiveServer
-) -> None:
-    """Tiles cached for one basemap say nothing about another."""
-    _boot(page, live_server)
-    urls = _custom_area_tiles(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _cache_urls(page, urls)
-    _save_custom_area(page, _CUSTOM_BBOX, _CUSTOM_BAND)
-    _toggle_overlay(page, on=True)
-    assert _area_outline_geometry(page)
-
-    page.evaluate(
-        "() => { window.activeBasemapTileTemplate = "
-        "() => 'https://other.example.invalid/{z}/{x}/{y}.pbf'; }"
-    )
-    _refresh(page)
-
-    assert not _area_outline_geometry(page)
-
-
-def test_toggling_off_hides_every_overlay_layer(
-    page: Page, live_server: LiveServer
-) -> None:
-    """Switching the overlay off hides the custom-area and cached-tiles layers."""
-    _boot(page, live_server)
-    _toggle_overlay(page, on=True)
-    _toggle_overlay(page, on=False)
-
-    assert _layer_visibility(page, _AREA_LAYER) == "none"
-    assert _layer_visibility(page, _TILE_FILL_LAYER) == "none"
-    assert _layer_visibility(page, _TILE_LINE_LAYER) == "none"
-
-
 def _cached_tile_features(page: Page) -> list[dict[str, Any]]:
     """The features currently drawn by the cached-tiles overlay."""
     return cast(
@@ -392,34 +225,70 @@ def _cached_tile_features(page: Page) -> list[dict[str, Any]]:
     )
 
 
+def test_cached_tiles_drop_a_tile_evicted_behind_the_apps_back(
+    page: Page, live_server: LiveServer
+) -> None:
+    """An evicted tile drops out of the overlay on the next refresh.
+
+    The load-bearing test for "probed, never stored": the tile is deleted
+    without the app being told, so only a real Cache Storage read gets this
+    right. A flag set when the user clicked Download would still claim it.
+    """
+    # Tiles at CACHED_TILES_ZOOM (z14) so each cached URL is one square. A
+    # whole band's worth would collapse: the overlay draws z14 only, so the
+    # deeper zooms of a real download fold into the z14 square containing
+    # them and the count would not be the number of URLs written.
+    tiles = [
+        _tile_url(14, 8501, 5820),
+        _tile_url(14, 8502, 5820),
+        _tile_url(14, 8503, 5820),
+    ]
+    _boot(page, live_server)
+    _toggle_overlay(page, on=True)
+    _cache_urls(page, tiles)
+    _refresh(page)
+    assert len(_cached_tile_features(page)) == 3
+
+    page.evaluate(
+        """async ({ cacheName, url }) => {
+            const cache = await caches.open(cacheName);
+            await cache.delete(url);
+        }""",
+        {"cacheName": _PINNED_CACHE, "url": tiles[0]},
+    )
+    _refresh(page)
+
+    assert len(_cached_tile_features(page)) == 2
+
+
+def test_toggling_off_hides_the_cached_tiles_layers(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Switching the overlay off hides both cached-tiles layers."""
+    _boot(page, live_server)
+    _toggle_overlay(page, on=True)
+    _toggle_overlay(page, on=False)
+
+    assert _layer_visibility(page, _TILE_FILL_LAYER) == "none"
+    assert _layer_visibility(page, _TILE_LINE_LAYER) == "none"
+
+
 def test_cached_tiles_overlay_draws_one_square_per_cached_tile(
     page: Page, live_server: LiveServer
 ) -> None:
     """Exactly the tiles Cache Storage holds, one square each.
 
-    This half of the overlay is derived from the cache ALONE — no stored
-    download record — which is what makes it unable to drift from what is
-    on disk. It is also why it can afford to: drawing the tiles attributes
-    them to nothing, so the mis-attribution the old region ring guarded
-    against (a custom-area download that merely crossed a region) cannot
-    arise — SNOW-583 removed that ring, but this half was never built on
-    the assumption it existed.
+    This overlay is derived from the cache ALONE — no stored download
+    record — which is what makes it unable to drift from what is on disk.
+    It is also why it can afford to: drawing the tiles attributes them to
+    nothing, so a custom-area download that merely crossed a region cannot
+    be mistaken for a download OF that region.
     """
     _boot(page, live_server)
     # The refresh is a no-op while the overlay is switched off — it is a
     # cache probe, and probing for something nobody is looking at is waste.
     _toggle_overlay(page, on=True)
-    _cache_urls(
-        page,
-        [
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8501")
-            .replace("{y}", "5820"),
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8502")
-            .replace("{y}", "5820"),
-        ],
-    )
+    _cache_urls(page, [_tile_url(14, 8501, 5820), _tile_url(14, 8502, 5820)])
     _refresh(page)
 
     features = _cached_tile_features(page)
@@ -453,12 +322,7 @@ def test_cached_tiles_overlay_ignores_another_basemaps_tiles(
     _toggle_overlay(page, on=True)
     _cache_urls(
         page,
-        [
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8501")
-            .replace("{y}", "5820"),
-            "https://other.example.invalid/14/8501/5820.pbf",
-        ],
+        [_tile_url(14, 8501, 5820), "https://other.example.invalid/14/8501/5820.pbf"],
     )
     _refresh(page)
 
@@ -468,7 +332,7 @@ def test_cached_tiles_overlay_ignores_another_basemaps_tiles(
 def test_cached_tiles_overlay_follows_the_downloaded_toggle(
     page: Page, live_server: LiveServer
 ) -> None:
-    """The squares are part of the "Downloaded areas" overlay, not always on."""
+    """The squares are part of the "Available offline" overlay, not always on."""
     _boot(page, live_server)
 
     assert _layer_visibility(page, _TILE_FILL_LAYER) == "none"

@@ -366,6 +366,15 @@ below the table.
 | `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 
+**SNOW-585 — suppressed in dev.** `pwa.sw.update_available` (and
+`.update_applied`) never fire while `settings.SW_DEV_SHELL_BYPASS` is
+active — `sw_register.js::showUpdateBanner` returns before reaching the
+`emit()` call, because the bypass already serves fresh shell assets on the
+very next reload, so the event would describe an update the developer
+never has to act on. Always off in production; see
+[`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
+No `ALLOWED_EVENTS` change — no new event name is introduced.
+
 **SW → page message bridge** (SNOW-384): `sw.js` and `sw-kill.js` run in
 a service-worker context with no `window`, so they cannot call
 `window.pwaTelemetry` directly. Both post

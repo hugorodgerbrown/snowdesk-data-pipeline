@@ -31,7 +31,7 @@ import pytest
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.staticfiles.finders import find as find_static
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import Account
@@ -597,3 +597,27 @@ class TestSwVersionPage:
         body = response.content.decode()
         assert "pwa_sw_version_probe.js" in body
         assert 'data-testid="sw-live-version"' in body
+
+    @override_settings(SW_DEV_SHELL_BYPASS=True)
+    def test_dev_shell_bypass_toggle_renders_when_setting_is_on(
+        self, staff_client: Client
+    ) -> None:
+        """The opt-in checkbox and its script render when the bypass is on (SNOW-585)."""
+        response = staff_client.get(_sw_version_url())
+        assert response.status_code == 200
+        assert response.context["sw_dev_shell_bypass"] is True
+        body = response.content.decode()
+        assert 'id="sw-dev-shell-cache-optin"' in body
+        assert "pwa_dev_shell_toggle.js" in body
+
+    @override_settings(SW_DEV_SHELL_BYPASS=False)
+    def test_dev_shell_bypass_toggle_absent_when_setting_is_off(
+        self, staff_client: Client
+    ) -> None:
+        """The opt-in checkbox and its script are absent when the bypass is off."""
+        response = staff_client.get(_sw_version_url())
+        assert response.status_code == 200
+        assert response.context["sw_dev_shell_bypass"] is False
+        body = response.content.decode()
+        assert 'id="sw-dev-shell-cache-optin"' not in body
+        assert "pwa_dev_shell_toggle.js" not in body

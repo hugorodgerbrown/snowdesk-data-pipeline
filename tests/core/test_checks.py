@@ -105,3 +105,41 @@ def test_check_is_registered() -> None:
     from django.core.checks import registry
 
     assert checks.check_site_base_url in registry.registry.get_checks()
+
+
+# ---------------------------------------------------------------------------
+# SW_DEV_SHELL_BYPASS release gate (SNOW-585)
+# ---------------------------------------------------------------------------
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=True, DEBUG=False)
+def test_dev_shell_bypass_on_with_debug_off_fails() -> None:
+    """The dev-only bypass reaching a non-debug deploy is an Error."""
+    errors = checks.check_sw_dev_shell_bypass(app_configs=None)
+    assert len(errors) == 1
+    assert errors[0].id == "core.sw_dev_shell_bypass.E001"
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=True, DEBUG=True)
+def test_dev_shell_bypass_on_with_debug_on_passes() -> None:
+    """Local development is exactly what the bypass is for."""
+    assert checks.check_sw_dev_shell_bypass(app_configs=None) == []
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=False, DEBUG=False)
+def test_dev_shell_bypass_off_with_debug_off_passes() -> None:
+    """The production default (off) never trips the check."""
+    assert checks.check_sw_dev_shell_bypass(app_configs=None) == []
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=False, DEBUG=True)
+def test_dev_shell_bypass_off_with_debug_on_passes() -> None:
+    """A dev checkout that has explicitly opted back out is also fine."""
+    assert checks.check_sw_dev_shell_bypass(app_configs=None) == []
+
+
+def test_dev_shell_bypass_check_is_registered() -> None:
+    """The check is wired into Django's registry, not just importable."""
+    from django.core.checks import registry
+
+    assert checks.check_sw_dev_shell_bypass in registry.registry.get_checks()
