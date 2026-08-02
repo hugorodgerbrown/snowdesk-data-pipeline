@@ -21,10 +21,10 @@
  *     clamped ``pct``. A total over budget is exactly the state the
  *     surface must be able to say out loud, and it is the state in which
  *     the percentage has run out of room to say it.
- *   - ``manageRows`` never drops a row whose name cannot be resolved. A
- *     download the user cannot see is the bug this ticket is fixing, so
- *     an unresolvable region id has to degrade to a listed, deletable row
- *     rather than to nothing.
+ *   - ``manageRows`` never drops a row whose record carries no name. A
+ *     download the user cannot see is the bug this ticket is fixing, so a
+ *     missing name has to degrade to a listed, deletable row rather than
+ *     to nothing.
  *
  * Both modules are plain IIFEs assigning a frozen global; jsdom's
  * `window` is also `self`, so importing for side effects is enough.
@@ -195,17 +195,19 @@ describe('budgetSummary', () => {
 });
 
 describe('manageRows', () => {
+  // Areas as map.js's basemapDownloadedAreas() hands them over: the union
+  // of the basemap.regions array and the optional basemap.customArea row,
+  // each already keyed by the id that names its Cache Storage bucket, with
+  // the name the download itself recorded.
   const areas = [
-    { id: 'region-CH-2101', kind: 'region', region_id: 'CH-2101', bytes: 40 * MB, savedAt: '2026-08-01T10:00:00.000Z' },
-    { id: 'custom', kind: 'custom', bytes: 120 * MB, savedAt: '2026-08-02T10:00:00.000Z' },
-    { id: 'region-CH-2102', kind: 'region', region_id: 'CH-2102', bytes: 80 * MB, savedAt: '2026-07-30T10:00:00.000Z' },
+    { id: 'region-CH-2101', name: 'Aletsch', bytes: 40 * MB, savedAt: '2026-08-01T10:00:00.000Z' },
+    { id: 'custom', name: 'custom', bytes: 120 * MB, savedAt: '2026-08-02T10:00:00.000Z' },
+    { id: 'region-CH-2102', name: 'Gotthard', bytes: 80 * MB, savedAt: '2026-07-30T10:00:00.000Z' },
   ];
-
-  const labelFor = (area) =>
-    ({ 'CH-2101': 'Aletsch', 'CH-2102': 'Gotthard' })[area.region_id] || '';
+  const options = { customAreaId: 'custom', customLabel: 'Custom area' };
 
   it('orders largest first — the axis the user is deciding along', () => {
-    const rows = core.manageRows(areas, labelFor);
+    const rows = core.manageRows(areas, options);
     expect(rows.map((r) => r.id)).toEqual([
       'custom',
       'region-CH-2102',
@@ -213,50 +215,54 @@ describe('manageRows', () => {
     ]);
   });
 
-  it('labels regions from the injected resolver and formats each size', () => {
-    const rows = core.manageRows(areas, labelFor);
+  it('labels a region from the name the download recorded', () => {
+    const rows = core.manageRows(areas, options);
     const aletsch = rows.find((r) => r.id === 'region-CH-2101');
     expect(aletsch.label).toBe('Aletsch');
     expect(aletsch.size).toBe('40.0 MB');
     expect(aletsch.kind).toBe('region');
   });
 
-  it('carries the custom area through as its own kind', () => {
-    const rows = core.manageRows(areas, labelFor);
-    expect(rows.find((r) => r.id === 'custom').kind).toBe('custom');
+  it('gives the custom area its translated label, not its stored id', () => {
+    // The record's own "name" for the framed area is the literal 'custom'
+    // — an id, not something to show a person.
+    const rows = core.manageRows(areas, options);
+    const custom = rows.find((r) => r.id === 'custom');
+    expect(custom.kind).toBe('custom');
+    expect(custom.label).toBe('Custom area');
   });
 
-  it('still lists a row whose name cannot be resolved', () => {
-    // Offline with an uncached regions.geojson, or a region retired
-    // upstream. A download the user cannot see is the bug being fixed
-    // here, so this must degrade to a listed, deletable row.
+  it('identifies the custom area by the shared constant, not the id shape', () => {
+    // A region whose id merely LOOKS custom-ish must not be mistaken for
+    // it; equality against CUSTOM_AREA_ID is the only test applied.
     const rows = core.manageRows(
-      [{ id: 'region-CH-9999', kind: 'region', region_id: 'CH-9999', bytes: MB }],
-      () => '',
+      [{ id: 'region-custom-valley', name: 'Custom Valley', bytes: MB }],
+      options,
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].label).toBe('CH-9999');
-    expect(rows[0].id).toBe('region-CH-9999');
+    expect(rows[0].kind).toBe('region');
+    expect(rows[0].label).toBe('Custom Valley');
   });
 
-  it('falls back to the area id when there is no region id either', () => {
-    const rows = core.manageRows([{ id: 'custom', kind: 'custom', bytes: MB }]);
+  it('still lists a row whose record stored no name', () => {
+    // A download the user cannot see is the bug this ticket is fixing, so
+    // a missing name degrades to the id rather than to nothing.
+    const rows = core.manageRows([{ id: 'region-CH-9999', bytes: MB }], options);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('region-CH-9999');
+  });
+
+  it('falls back to the id when no custom label is supplied', () => {
+    const rows = core.manageRows([{ id: 'custom', bytes: MB }], { customAreaId: 'custom' });
     expect(rows[0].label).toBe('custom');
   });
 
-  it('treats a throwing resolver as an unresolved name, not a dropped row', () => {
-    const rows = core.manageRows(
-      [{ id: 'region-CH-2101', region_id: 'CH-2101', bytes: MB }],
-      () => {
-        throw new Error('FEATURE_BY_REGION_ID not ready');
-      },
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].label).toBe('CH-2101');
+  it('treats every area as a region when no custom id is supplied', () => {
+    const rows = core.manageRows([{ id: 'custom', name: 'custom', bytes: MB }]);
+    expect(rows[0].kind).toBe('region');
   });
 
   it('skips entries with no id, which nothing could delete', () => {
-    const rows = core.manageRows([{ bytes: MB }, { id: 'custom', bytes: MB }]);
+    const rows = core.manageRows([{ bytes: MB }, { id: 'custom', bytes: MB }], options);
     expect(rows.map((r) => r.id)).toEqual(['custom']);
   });
 
@@ -266,15 +272,15 @@ describe('manageRows', () => {
       { id: 'region-a', bytes: MB, savedAt: '2026-08-01T00:00:00.000Z' },
       { id: 'region-c', bytes: MB, savedAt: '2026-08-02T00:00:00.000Z' },
     ];
-    const first = core.manageRows(equal).map((r) => r.id);
-    const second = core.manageRows([...equal].reverse()).map((r) => r.id);
+    const first = core.manageRows(equal, options).map((r) => r.id);
+    const second = core.manageRows([...equal].reverse(), options).map((r) => r.id);
     expect(first).toEqual(second);
     // Newest first, then id.
     expect(first).toEqual(['region-c', 'region-a', 'region-b']);
   });
 
   it('tolerates a non-array record', () => {
-    expect(core.manageRows(undefined)).toEqual([]);
-    expect(core.manageRows(null)).toEqual([]);
+    expect(core.manageRows(undefined, options)).toEqual([]);
+    expect(core.manageRows(null, options)).toEqual([]);
   });
 });

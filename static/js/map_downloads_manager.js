@@ -14,34 +14,56 @@
  *
  * ## What it reads and writes
  *
- * Two ``meta:app`` rows, both device-local by nature (Cache Storage is
- * per-browser, so the same account on a phone and a laptop has two
- * independent sets of downloads and two independent budgets):
+ * Everything here is device-local by nature: Cache Storage is per-browser,
+ * so the same account on a phone and a laptop has two independent sets of
+ * downloads and two independent budgets.
  *
- *   basemap.areas     SNOW-586's record — one entry per downloaded area,
- *                     carrying the ``id`` that also names its Cache
- *                     Storage bucket, plus the run's ``bytes``. Read here,
- *                     and rewritten (shortened) on delete. Never written
- *                     with a new area — that is the download controls' job.
- *   basemap.budgetMb  The standing budget, read by SNOW-586's eviction
- *                     planner. This surface is the only thing that writes
- *                     it.
+ * The downloads themselves live in TWO ``meta:app`` rows, and this module
+ * reads NEITHER directly — it goes through ``map.js``'s
+ * ``basemapDownloadedAreas()`` (see the bridges section below):
+ *
+ *   basemap.regions     An array, one entry per downloaded region, keyed
+ *                       by ``region_id``. Written by the per-region
+ *                       download control.
+ *   basemap.customArea  At most one row, for the user-framed area.
+ *                       Written by the custom-area control.
+ *
+ * Neither key is the Cache Storage bucket id — that is
+ * ``areaIdForRegion(region_id)`` or ``CUSTOM_AREA_ID`` — which is the
+ * single most important reason not to read them here. An earlier version
+ * of this module read a ``basemap.areas`` row that no writer has ever
+ * produced, and every test passed, because the tests seeded that row
+ * themselves. The area list and the delete now both go through the code
+ * the download controls and the eviction planner already use, so this
+ * surface cannot disagree with them about what is on disk.
+ *
+ *   basemap.budgetMb    The standing budget, read by SNOW-586's eviction
+ *                       planner. This surface is the only thing that ever
+ *                       writes it, and the one row it touches directly.
  *
  * ## Deleting is a bucket delete, not a tile sweep
  *
  * SNOW-586 gives every download its own cache
  * (``snowdesk-basemap-pinned-<areaId>``), so removing one is a single
- * ``caches.delete()`` that cannot leave a half-deleted area behind. That is
- * a real gain over what the custom-area control had to do before it
- * (re-derive the old URL set from ``buildBlob`` and delete entry by entry,
- * with a failure part-way through silently leaving orphan tiles), and it is
- * why this ticket depends on that one: an itemised list with a working
- * delete is only honest if deleting is atomic.
+ * ``caches.delete()`` plus the matching record entry — atomic per area,
+ * where the custom-area control previously had to re-derive the old URL
+ * set from ``buildBlob`` and delete entry by entry, silently leaving
+ * orphan tiles if it failed part-way. That is why this ticket depends on
+ * that one: an itemised list with a working delete is only honest if
+ * deleting cannot half-succeed.
  *
- * The record is rewritten only AFTER the bucket delete resolves. The other
- * order would let a failed delete leave tiles on disk with nothing left
- * pointing at them — bytes the user has been told are gone, which no
- * surface could then account for or remove.
+ * Both halves are ``map.js``'s ``evictBasemapAreas``, which this module
+ * calls rather than reimplements. Deleting an area means taking an area
+ * id back to the right half of the right record — the region array or the
+ * custom-area row — and the eviction path already does exactly that, for
+ * the budget planner. A second implementation here would be the same
+ * decision made twice, and the one that ran less often would be the one
+ * that rotted.
+ *
+ * ``evictBasemapAreas`` is best-effort per area and reports nothing, so
+ * the outcome is confirmed by re-reading the area list and checking the
+ * id is gone — which is a stronger check than a return value anyway: it
+ * verifies the state, not the attempt.
  *
  * ## Why it re-clones its body on every open
  *
@@ -54,15 +76,24 @@
  *
  * ## Its map.js dependencies are two narrow bridges
  *
- * This module stays out of static/js/map.js — SNOW-586 is editing that
- * file concurrently — and reaches it through two small frozen globals it
- * exposes instead: ``window.pwaLayersMenu.close()`` (the menu's open state
- * lives in the picker IIFE's closure, and mirroring its three DOM writes
- * here would be a duplicate that could drift) and
- * ``window.pwaRegionNames.get()`` (region names come from
- * ``FEATURE_BY_REGION_ID``, which is map.js module scope). Both are
- * optional: without them the sheet still opens, lists and deletes — it
- * just leaves the menu open and falls back to region ids for labels.
+ * Everything this module needs from static/js/map.js is module scope
+ * there, so it reaches it through two small frozen globals that file
+ * exposes:
+ *
+ *   window.pwaBasemapDownloads  ``areas()`` and ``evict(ids)`` — the read
+ *                               and the delete. Without it the sheet
+ *                               opens and honestly reports that it can
+ *                               see nothing, which is the truthful answer
+ *                               when the module that owns the records
+ *                               hasn't loaded.
+ *   window.pwaLayersMenu        ``close()``. Optional — without it the
+ *                               menu is simply left open behind the
+ *                               sheet. Mirroring its three DOM writes
+ *                               here would be a duplicate free to drift.
+ *
+ * The budget row (``basemap.budgetMb``) is the one piece of storage this
+ * module touches directly, because it is the only thing that ever writes
+ * it; ``map.js``'s ``basemapDownloadBudgetBytes()`` is the reader.
  */
 
 (function mapDownloadsManagerInit() {
@@ -73,7 +104,9 @@
   var ROW_TEMPLATE_ID = 'map-downloads-row-template';
   var STRINGS_TEMPLATE_ID = 'map-downloads-strings-template';
 
-  var AREAS_KEY = 'basemap.areas';
+  // The one storage row this module touches directly. The downloads
+  // themselves live in two records read through window.pwaBasemapDownloads
+  // (see the module header); this is the only one nothing else writes.
   var BUDGET_KEY = 'basemap.budgetMb';
 
   var sheet = document.getElementById(SHEET_ID);
@@ -141,13 +174,12 @@
   }
 
   /**
-   * Read a ``meta:app`` row's value.
+   * Read a ``meta:app`` row's value (the budget row — see ``BUDGET_KEY``).
    *
-   * Best-effort throughout: IndexedDB can be unavailable (private mode,
-   * a blocked upgrade — see db.js's ``reset_required``), and a manage
-   * surface that throws on open is worse than one that reports an empty
-   * device. The empty-state copy is honest in that case too: there is
-   * nothing this surface can see.
+   * Best-effort: IndexedDB can be unavailable (private mode, a blocked
+   * upgrade — see db.js's ``reset_required``), and a manage surface that
+   * throws on open is worse than one that falls back to the default
+   * budget.
    *
    * @param {string} key
    * @returns {Promise<any>} ``undefined`` when absent or unreadable.
@@ -180,51 +212,49 @@
   }
 
   /**
-   * The display name for an area record.
+   * Every recorded area, via map.js's normalising reader.
    *
-   * @param {Object} area
-   * @returns {string} Empty when unresolvable — ``manageRows`` then falls
-   *   back to the region id, and finally the area id, so the row is still
-   *   listed and still deletable.
+   * @returns {Promise<Array<Object>>} Empty when the bridge is absent or
+   *   the read fails — the sheet then honestly reports an empty device
+   *   rather than throwing on open.
    */
-  function labelForArea(area) {
-    if (area.kind === 'custom') return STRINGS['kind-custom'] || '';
-    if (!area.region_id) return '';
-    return window.pwaRegionNames?.get(area.region_id) || '';
+  async function readAreas() {
+    try {
+      const areas = await window.pwaBasemapDownloads?.areas();
+      return Array.isArray(areas) ? areas : [];
+    } catch (_err) {
+      return [];
+    }
   }
 
   /**
-   * Delete one area: its cache bucket first, then its record entry.
+   * Delete one area — bucket and record entry both.
+   *
+   * Delegates to map.js's ``evictBasemapAreas``, which already knows how
+   * to take an area id back to the right half of the right record (the
+   * ``basemap.regions`` array or the ``basemap.customArea`` row). It is
+   * best-effort and returns nothing, so the outcome is confirmed by
+   * re-reading the area list — verifying the state rather than trusting
+   * the attempt.
    *
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the area is now genuinely gone.
    */
   async function deleteArea(areaId) {
-    const core = downloadCore();
-    if (!core || typeof core.pinnedCacheName !== 'function') return false;
-    if (!('caches' in window)) return false;
-
+    if (!window.pwaBasemapDownloads) return false;
     try {
-      // Bucket first. A `false` return means the cache was already absent
-      // — the area's tiles are gone either way, so the record entry should
-      // still go; only a THROWN error means the delete genuinely failed
-      // and the record must be left alone to keep pointing at the bytes.
-      await caches.delete(core.pinnedCacheName(areaId));
+      await window.pwaBasemapDownloads.evict([areaId]);
     } catch (_err) {
       return false;
     }
 
-    const areas = await readMeta(AREAS_KEY);
-    const remaining = (Array.isArray(areas) ? areas : []).filter(
-      (area) => !area || area.id !== areaId,
-    );
-    await writeMeta(AREAS_KEY, remaining);
+    const remaining = await readAreas();
+    if (remaining.some((area) => area && area.id === areaId)) return false;
 
-    // The map's own views of the pinned cache are now wrong — the
-    // downloaded-areas overlay would keep outlining an area with no tiles
-    // behind it, and the layers menu's dots would keep claiming the
-    // basemap is available offline.
-    window.pwaDownloadedOverlay?.refresh();
+    // evictBasemapAreas already refreshes the downloaded-areas overlay.
+    // The layers-menu dots are this module's to refresh: they claim the
+    // basemap is available offline, which one fewer pinned bucket can
+    // change.
     window.pwaLayerSyncStatus?.refresh();
     return true;
   }
@@ -262,14 +292,16 @@
     const core = manageCore();
     if (!core) return;
 
-    const [areas, budgetMb] = await Promise.all([
-      readMeta(AREAS_KEY),
+    const [list, budgetMb] = await Promise.all([
+      readAreas(),
       readMeta(BUDGET_KEY),
     ]);
-    const list = Array.isArray(areas) ? areas : [];
     const chosenMb = core.clampBudgetMb(budgetMb);
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
-    const rows = core.manageRows(list, labelForArea);
+    const rows = core.manageRows(list, {
+      customAreaId: downloadCore()?.CUSTOM_AREA_ID,
+      customLabel: STRINGS['kind-custom'],
+    });
 
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';

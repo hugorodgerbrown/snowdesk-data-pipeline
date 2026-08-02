@@ -11,11 +11,18 @@
  * somewhere a test can reach it. ``static/js/map_downloads_manager.js`` is
  * the DOM half and does nothing this module could do instead.
  *
- * It reads the SNOW-586 ``meta:app`` row ``basemap.areas`` — one array of
- * area records, each with an ``id``, a ``kind``, a ``bytes`` figure and a
- * ``savedAt``, keyed by the same ``id`` that names its Cache Storage
- * bucket. That record is written by SNOW-586 and only read here; the shape
- * is documented on both tickets and in ``docs/offline-map.md``.
+ * It works on areas as ``static/js/map.js``'s ``basemapDownloadedAreas()``
+ * hands them over — ``{id, name, bytes, savedAt}``, keyed by the id that
+ * also names the area's Cache Storage bucket.
+ *
+ * That normalising step is SNOW-586's, and this surface consumes it rather
+ * than reading storage itself, because a download is recorded in **two**
+ * places: ``basemap.regions`` (an array, one entry per downloaded region,
+ * keyed by ``region_id``) and ``basemap.customArea`` (at most one row, for
+ * the user-framed area). Neither key is the bucket id — that is
+ * ``areaIdForRegion(region_id)`` or ``CUSTOM_AREA_ID`` — so a second
+ * reader here would have to re-derive the mapping and would be free to
+ * drift from the eviction path that already owns it.
  *
  * Sizes are the STORED byte figure, never a live measurement. An area is
  * thousands of cache entries, so summing them at render time would mean a
@@ -202,44 +209,50 @@
    * equal-sized areas renders in a stable order across re-opens rather
    * than reshuffling on every render.
    *
-   * @param {Array<Object>} areas The ``basemap.areas`` record.
-   * @param {function(Object): string} [labelFor] Resolves an area record
-   *   to its display name — on the map that reads ``FEATURE_BY_REGION_ID``,
-   *   which is why this is injected rather than looked up here. A missing
-   *   resolver, or one returning nothing, falls back to the area's own
-   *   ``region_id``, and finally its ``id``: a row whose name cannot be
-   *   resolved (a region retired upstream, or a ``regions.geojson`` that
-   *   is not cached) must still be listed and still be deletable — a
-   *   download the user cannot see is the bug this ticket is fixing.
+   * @param {Array<{id: string, name?: string, bytes?: number,
+   *   savedAt?: string}>} areas Areas as ``map.js``'s
+   *   ``basemapDownloadedAreas()`` normalises them — the union of the
+   *   ``basemap.regions`` array and the optional ``basemap.customArea``
+   *   row, each already keyed by the id that names its Cache Storage
+   *   bucket. The ``name`` is stored by the download itself, so no
+   *   name lookup is needed here (or anywhere in this surface).
+   * @param {{customAreaId?: string, customLabel?: string}} [options]
+   *   ``customAreaId`` is ``pwaBasemapDownloadCore.CUSTOM_AREA_ID``, and
+   *   an area whose id equals it is the user-framed download rather than
+   *   a region. Compared against the shared constant rather than parsed
+   *   out of the id's shape, so the ``region-<id>`` format stays private
+   *   to the module that defines it. ``customLabel`` is the translated
+   *   "Custom area" string — the stored name for that row is the literal
+   *   ``'custom'``, which is an id, not something to show a person.
    * @returns {Array<{id: string, kind: string, label: string,
    *   bytes: number, savedAt: string, size: string}>}
    */
-  function manageRows(areas, labelFor) {
+  function manageRows(areas, options) {
     var list = Array.isArray(areas) ? areas : [];
+    var opts = options || {};
     var rows = [];
 
     for (var i = 0; i < list.length; i += 1) {
       var area = list[i];
+      // No id means nothing could name its bucket, so nothing could
+      // delete it — a row that cannot be acted on is worse than absent.
       if (!area || !area.id) continue;
 
-      var label = '';
-      if (typeof labelFor === 'function') {
-        try {
-          label = labelFor(area) || '';
-        } catch (_err) {
-          // A throwing resolver is treated as an unresolved name, not as a
-          // reason to drop the row.
-          label = '';
-        }
-      }
-      if (!label) label = area.region_id || area.id;
+      var id = String(area.id);
+      var isCustom = !!opts.customAreaId && id === opts.customAreaId;
+
+      // Falls back to the id when the record carries no name: a region
+      // whose name was never stored must still be listed and still be
+      // deletable, since a download the user cannot see is the bug this
+      // ticket exists to fix.
+      var label = isCustom ? opts.customLabel || id : area.name || id;
 
       var bytes = Number(area.bytes);
       if (!Number.isFinite(bytes) || bytes < 0) bytes = 0;
 
       rows.push({
-        id: String(area.id),
-        kind: area.kind === 'custom' ? 'custom' : 'region',
+        id: id,
+        kind: isCustom ? 'custom' : 'region',
         label: String(label),
         bytes: bytes,
         savedAt: area.savedAt || '',

@@ -21,30 +21,6 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
-// SNOW-588: region-id → display-name bridge for modules OUTSIDE this file.
-// FEATURE_BY_REGION_ID is module scope, so map_downloads_manager.js (the
-// "Manage downloads" sheet) cannot reach it to name the areas it lists.
-// Exposing a one-function reader rather than the map itself keeps the
-// dictionary this file's own, and keeps the sheet's dependency to the one
-// thing it actually needs.
-//
-// Deliberately lazy: the sheet is opened by a user action, long after the
-// regions GeoJSON has populated this. It resolves offline for the same
-// reason the map's own labels do — that feed is stale-while-revalidate in
-// the SW's static bucket, so it is cached before any download exists to
-// list. An unresolved id is not an error: the sheet falls back to the id
-// itself, since a download the user cannot see is worse than one whose
-// name is a code.
-window.pwaRegionNames = Object.freeze({
-  /**
-   * @param {string} regionID
-   * @returns {string} '' when the region isn't loaded.
-   */
-  get(regionID) {
-    return FEATURE_BY_REGION_ID[regionID]?.properties?.name || '';
-  },
-});
-
 // SNOW-236: Country visibility state — which countries are currently shown.
 // Populated by the main IIFE from localStorage + the country-toggle
 // buttons; read by the scrubber IIFE for country-aware effective-last
@@ -414,6 +390,44 @@ async function evictBasemapAreas(areaIds) {
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
 }
+
+// SNOW-588: the two functions above, for modules OUTSIDE this file — the
+// "Manage downloads" sheet (static/js/map_downloads_manager.js), which
+// lists every downloaded area and deletes the ones the user picks.
+//
+// Both are module scope, so the sheet cannot reach them directly, and
+// both are exactly what it needs — which is why it delegates rather than
+// reading `basemap.regions` / `basemap.customArea` for itself. Downloads
+// live in TWO records (one array of regions, one optional custom area),
+// each keyed differently from the Cache Storage bucket it owns, and
+// `evictBasemapAreas` already knows how to take an area id back to the
+// right half of the right record. A second reader would have to
+// re-derive all of that and would be free to drift from the eviction
+// path, which is the same state seen from the other side: the budget
+// this sheet edits is spent by the planner these functions feed.
+//
+// Exposed as one frozen object beside pwaDownloadedOverlay, the bridge
+// this file already uses for its sibling IIFEs.
+window.pwaBasemapDownloads = Object.freeze({
+  /**
+   * Every recorded area, normalised to `{id, name, bytes, savedAt}` and
+   * keyed by the id that also names its pinned Cache Storage bucket.
+   *
+   * @returns {Promise<Array<Object>>} Empty when nothing is recorded or
+   *   the read fails — never rejects.
+   */
+  areas: () => basemapDownloadedAreas(),
+
+  /**
+   * Delete whole areas — bucket and record entry both.
+   *
+   * @param {string[]} areaIds
+   * @returns {Promise<void>} Resolves whether or not every area went;
+   *   it is best-effort per area, so callers that need to know verify by
+   *   re-reading `areas()` rather than trusting this to report.
+   */
+  evict: (areaIds) => evictBasemapAreas(areaIds),
+});
 
 /**
  * SNOW-586: reveal the whole-area-eviction confirm banner naming

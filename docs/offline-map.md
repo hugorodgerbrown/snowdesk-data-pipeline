@@ -1153,39 +1153,68 @@ layers menu and uses the shared sheet primitive
 `overlays.js`'s delegated dismiss handler closes it.
 
 **Why it lives on the map, not under account settings.** Downloading
-happens here, so managing downloads belongs here — but the deciding
-argument is names. A region download records only a `region_id`, and the
-list has to show something a person recognises. On the map,
-`FEATURE_BY_REGION_ID` already holds every region's name from the
-SW-cached `regions.geojson`, so names resolve **offline**, which is
-exactly when storage pressure is felt. `/account/manage/` would have
-needed a fetch that may not be cached at that moment — and, being an
-account page, would have implied the list follows the user between
-devices. It does not: Cache Storage is per-browser, so a signed-in user
-with a phone and a laptop has two independent sets of downloads and two
-independent budgets. Every string in the sheet is written to say so, and
+happens here, and the layers menu is already the cache-state dashboard, so
+managing downloads belongs beside it. It also has to be reachable
+**offline**, which is when storage pressure is actually felt, and the map
+is the one page guaranteed to be in the shell cache.
+
+The decisive argument, though, is that the budget is **device-local**.
+Cache Storage is per-browser, so a signed-in user with a phone and a
+laptop has two independent sets of downloads and two independent budgets.
+Putting that on `/account/manage/` would read as an account setting and
+imply the list follows the user between devices, which would simply be
+untrue. Every string in the sheet is written to say otherwise, and
 `tests/e2e/test_manage_downloads.py` asserts the copy does.
 
-**Sizes are read, not measured.** Each row's size is the `bytes` figure
-SNOW-586 stores per area, never a live sum over Cache Storage: an area is
+An earlier version of this section gave a fourth reason — that region
+downloads recorded only a `region_id`, so only the map could resolve a
+name to show. That is no longer true: SNOW-586 stores the display name in
+the record at download time, so the sheet needs no region lookup and would
+resolve names anywhere. The argument is recorded here as retired rather
+than deleted, because it was load-bearing in the original decision and
+someone revisiting that decision should know it has expired.
+
+**It reads no storage of its own.** A download is recorded in **two**
+places — `basemap.regions` (an array, one entry per downloaded region,
+keyed by `region_id`) and `basemap.customArea` (at most one row, the
+user-framed area) — and neither key is the Cache Storage bucket id, which
+is `areaIdForRegion(region_id)` or `CUSTOM_AREA_ID`. So the sheet does not
+read either. It calls `map.js`'s `basemapDownloadedAreas()`, the same
+normaliser the eviction planner uses, which returns the union as
+`{id, name, bytes, savedAt}` already keyed by bucket id.
+
+That is not merely tidiness. The first version of this surface read a
+`basemap.areas` row that no writer has ever produced, and its whole test
+suite passed, because every test seeded that row itself. Going through the
+shared reader means the sheet cannot disagree with the download controls
+about what is on disk, and
+`test_a_real_download_is_listed_and_can_be_removed` (which drives the real
+roundel and reads back whatever the real writer produced) is what keeps it
+that way.
+
+**Sizes are read, not measured.** Each row's size is the `bytes` figure the
+download itself recorded, never a live sum over Cache Storage: an area is
 thousands of entries, so measuring would mean a `cache.match()` per entry
 on every open. SNOW-586 already keeps that standing total for
 `planEviction`, so this consumes it rather than deriving a second, subtly
-different number for the same download.
+different number for the same download. Names come from the record too —
+stored at download time — which is why the sheet needs no region lookup and
+works offline without one.
 
 **Deleting is a bucket delete.** With one cache per area
 (`snowdesk-basemap-pinned-<areaId>`), removal is a single
-`caches.delete()` that cannot leave an area half-deleted. That is the
-first delete path a *region* download has ever had — and it retires the
-custom-area control's evict-on-confirm approach, which re-derived the old
-URL set from `buildBlob` and deleted entry by entry, silently leaving
-orphan tiles if it failed part-way. The order is load-bearing: the
-`basemap.areas` record is rewritten only **after** the bucket delete
-resolves, because the other order would leave tiles on disk with nothing
-pointing at them — bytes the user has been told are gone, which no
-surface could then account for or reclaim. A `caches.delete()` returning
-`false` (bucket already absent) still drops the record entry; only a
-thrown error leaves it alone.
+`caches.delete()` plus the matching record entry, which cannot leave an
+area half-deleted. That is the first delete path a *region* download has
+ever had — and it retires the custom-area control's evict-on-confirm
+approach, which re-derived the old URL set from `buildBlob` and deleted
+entry by entry, silently leaving orphan tiles if it failed part-way.
+
+Both halves are `map.js`'s `evictBasemapAreas`, called rather than
+reimplemented: deleting means taking an area id back to the right half of
+the right record, and the eviction path already does exactly that for the
+budget planner. It is best-effort and reports nothing, so the sheet
+confirms the outcome by re-reading the area list and checking the id is
+gone — verifying the state rather than trusting the attempt.
 
 **The budget** is `meta:app`'s `basemap.budgetMb`, the row SNOW-586's
 eviction planner reads. It is offered as a fixed set of presets
@@ -1207,13 +1236,18 @@ clamping it away (the bar's percentage is capped at 100 and cannot say
 it), and nothing is evicted at that moment: the next download is what
 reconciles it.
 
-**Two narrow bridges into `map.js`.** The module deliberately stays out of
-that file — it was written while SNOW-586 was editing it — and reaches it
-through `window.pwaLayersMenu.close()` (the menu's open state is three DOM
-writes held in the picker IIFE's closure; mirroring them would be a
-duplicate free to drift) and `window.pwaRegionNames.get()`
-(`FEATURE_BY_REGION_ID` is module scope). Both are optional: without them
-the sheet still opens, lists and deletes.
+**Two narrow bridges into `map.js`.** Everything the sheet needs from that
+file is module scope there, so it is reached through two frozen globals:
+
+- `window.pwaBasemapDownloads` — `areas()` and `evict(ids)`, i.e. the read
+  and the delete, both delegating to the functions described above.
+  Without it the sheet opens and honestly reports that it can see nothing,
+  which is the truthful answer when the module owning the records has not
+  loaded.
+- `window.pwaLayersMenu` — `close()`. Optional; without it the menu is
+  simply left open behind the sheet. Its open state is three DOM writes
+  held in the picker IIFE's closure, and mirroring them in the sheet would
+  be a duplicate free to drift.
 
 **The action row is the menu's first non-toggle.** It takes
 `role="menuitem"` and never sets `aria-checked`;
