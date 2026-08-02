@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 from django.conf import settings
-from django.test import Client
+from django.test import Client, override_settings
 
 
 def test_serve_sw_returns_200_with_correct_headers() -> None:
@@ -144,3 +144,52 @@ def test_sw_kill_file_exists_on_disk() -> None:
     """``static/js/sw-kill.js`` ships in the repo (not templated at request-time)."""
     path = Path(settings.BASE_DIR) / "static" / "js" / "sw-kill.js"
     assert path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Dev shell-cache bypass (SNOW-585)
+# ---------------------------------------------------------------------------
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=True)
+def test_serve_sw_flips_dev_shell_bypass_to_true_when_setting_is_on() -> None:
+    """``/sw.js`` carries ``DEV_SHELL_BYPASS = true`` when the setting is on."""
+    client = Client()
+    response = client.get("/sw.js")
+    assert b"const DEV_SHELL_BYPASS = true;" in response.content
+    assert b"const DEV_SHELL_BYPASS = false;" not in response.content
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=False)
+def test_serve_sw_keeps_dev_shell_bypass_false_when_setting_is_off() -> None:
+    """``/sw.js`` carries ``DEV_SHELL_BYPASS = false`` when the setting is off."""
+    client = Client()
+    response = client.get("/sw.js")
+    assert b"const DEV_SHELL_BYPASS = false;" in response.content
+    assert b"const DEV_SHELL_BYPASS = true;" not in response.content
+
+
+@override_settings(SW_DEV_SHELL_BYPASS=True)
+def test_serve_sw_kill_is_never_rewritten() -> None:
+    """``/sw-kill.js`` is never substituted, even when the setting is on.
+
+    ``_serve_sw_file``'s ``replacements`` parameter is only ever passed by
+    ``serve_sw`` — ``serve_sw_kill`` must keep serving the file byte-for-byte.
+    """
+    client = Client()
+    response = client.get("/sw-kill.js")
+    assert b"DEV_SHELL_BYPASS" not in response.content
+
+
+def test_sw_js_on_disk_still_carries_the_false_placeholder() -> None:
+    """The on-disk ``sw.js`` literal stays ``false`` so a failed substitution fails safe.
+
+    ``apps.public.views.serve_sw`` looks for the exact literal
+    ``const DEV_SHELL_BYPASS = false;`` and replaces it — if this literal
+    ever drifts (e.g. reformatted to different spacing), the substitution
+    silently no-ops rather than raising, which is the intended fail-safe
+    behaviour, but only as long as the on-disk default really is ``false``.
+    """
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
+    content = path.read_text(encoding="utf-8")
+    assert "const DEV_SHELL_BYPASS = false;" in content

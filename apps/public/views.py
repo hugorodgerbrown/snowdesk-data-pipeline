@@ -1651,7 +1651,9 @@ def _get_favourites_in_region(
     return list(Favourite.objects.for_user_region(request.user, region))
 
 
-def _serve_sw_file(static_relative_path: str) -> HttpResponse:
+def _serve_sw_file(
+    static_relative_path: str, replacements: dict[str, str] | None = None
+) -> HttpResponse:
     """Read a service-worker script off disk and wrap it in SW-required headers.
 
     Shared helper for ``serve_sw`` (the real PWA shell SW at ``/sw.js``)
@@ -1662,6 +1664,14 @@ def _serve_sw_file(static_relative_path: str) -> HttpResponse:
     Args:
         static_relative_path: Path relative to the ``static/`` root, e.g.
             ``"js/sw.js"`` or ``"js/sw-kill.js"``.
+        replacements: Optional literal-string substitutions applied to the
+            file body before it is returned (SNOW-585). ``serve_sw`` uses
+            this to flip ``sw.js``'s ``DEV_SHELL_BYPASS`` placeholder when
+            ``settings.SW_DEV_SHELL_BYPASS`` is on; ``serve_sw_kill`` never
+            passes this, so ``/sw-kill.js`` is never rewritten. A key not
+            found in the file body is a silent no-op — the on-disk default
+            (``false``) is production-safe, so a failed substitution fails
+            safe rather than raising.
 
     Returns:
         An ``HttpResponse`` with the SW body, ``Service-Worker-Allowed: /``,
@@ -1677,6 +1687,9 @@ def _serve_sw_file(static_relative_path: str) -> HttpResponse:
         raise Http404("Service worker script not found.")
     with open(path, encoding="utf-8") as fh:
         content = fh.read()
+    if replacements:
+        for old, new in replacements.items():
+            content = content.replace(old, new)
     response = HttpResponse(content, content_type="application/javascript")
     response["Service-Worker-Allowed"] = "/"
     response["Cache-Control"] = "no-cache"
@@ -1693,6 +1706,12 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     ``Cache-Control: no-cache`` ensures the browser re-validates on every
     page load so SW updates take effect promptly.
 
+    SNOW-585: when ``settings.SW_DEV_SHELL_BYPASS`` is on, the on-disk
+    ``const DEV_SHELL_BYPASS = false;`` placeholder is rewritten to
+    ``true`` before the response is built — this is the one substitution
+    ``_serve_sw_file`` is asked to make, and it applies only here, never to
+    ``/sw-kill.js``.
+
     Args:
         request: The incoming HTTP request.
 
@@ -1704,7 +1723,12 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
 
     """
-    return _serve_sw_file("js/sw.js")
+    replacements = None
+    if settings.SW_DEV_SHELL_BYPASS:
+        replacements = {
+            "const DEV_SHELL_BYPASS = false;": "const DEV_SHELL_BYPASS = true;"
+        }
+    return _serve_sw_file("js/sw.js", replacements)
 
 
 def serve_sw_kill(request: HttpRequest) -> HttpResponse:
