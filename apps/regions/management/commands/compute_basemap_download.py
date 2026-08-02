@@ -2,11 +2,14 @@
 compute_basemap_download — precompute per-region offline-basemap tile coverage.
 
 Populates ``basemap_download`` on every ``MicroRegion`` row via
-``apps.regions.services.basemap_tiles.build_blob``, at the download's single
-zoom band (``MICRO_BAND``). Region boundaries are static reference data
-and the basemap tile grid never changes, so this is a pure function of
-geometry the command can safely recompute in full on every run — there
-is no incremental/dirty-tracking state to maintain.
+``apps.regions.services.basemap_tiles.build_region_blob``, at the
+download's single zoom band (``MICRO_BAND``), clipped to the region's
+real boundary plus one margin tile (SNOW-583) rather than its whole
+bounding-box rectangle — see that function's module for the saving this
+buys. Region boundaries are static reference data and the basemap tile
+grid never changes, so this is a pure function of geometry the command
+can safely recompute in full on every run — there is no
+incremental/dirty-tracking state to maintain.
 
 ``MicroRegion`` has no stored ``bbox`` field, so its bbox is derived on
 the fly from ``boundary`` via
@@ -40,7 +43,7 @@ from apps.regions.models import MicroRegion
 from apps.regions.services.basemap_tiles import (
     MICRO_BAND,
     bbox_from_boundary,
-    build_blob,
+    build_region_blob,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,12 +134,22 @@ def _compute_micro_regions(commit: bool, verbosity: int) -> dict[str, int]:
     to_save: list[MicroRegion] = []
 
     for region in MicroRegion.objects.all().iterator():
-        bbox = _try_region_bbox(region)
-        if bbox is None:
+        # _try_region_bbox's return value is discarded here — it only
+        # validates that boundary is present and well-formed (the same
+        # bbox_from_boundary build_region_blob calls internally to derive
+        # its own candidate rectangle). Kept as a separate call so a
+        # malformed boundary is still counted as a failure up front,
+        # rather than surfacing from inside build_region_blob. The `not
+        # boundary` check is redundant with _try_region_bbox's own (it
+        # already returned non-None) — it's here purely so mypy narrows
+        # `region.boundary` from `Any | None` to a value build_region_blob
+        # accepts.
+        boundary = region.boundary
+        if _try_region_bbox(region) is None or not boundary:
             counts["failed"] += 1
             continue
 
-        blob = build_blob(bbox, min_z, max_z)
+        blob = build_region_blob(boundary, min_z, max_z)
         if region.basemap_download == blob:
             counts["unchanged"] += 1
             continue
