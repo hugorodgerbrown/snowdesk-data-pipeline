@@ -44,13 +44,13 @@ on the real, activated SW) and a reserved, never-resolving RFC 2606
   exercises the real ``fetch`` event -> ``_classify()`` ->
   ``_basemapStaleWhileRevalidate()`` pipeline from the page side while
   the browser context is offline.
-- ``test_pinned_basemap_tile_served_from_cache_while_offline`` (SNOW-521)
-  seeds ``_basemapOrigins`` + a ``BASEMAP_PINNED_CACHE`` entry — and
-  deliberately no ``BASEMAP_CACHE`` entry — proving
+- ``test_pinned_basemap_tile_served_from_cache_while_offline`` (SNOW-521,
+  SNOW-586) seeds ``_basemapOrigins`` + an entry in one per-area pinned
+  bucket — and deliberately no ``BASEMAP_CACHE`` entry — proving
   ``_basemapStaleWhileRevalidate()``'s passive-cache-miss fallback reads
-  the pinned partition a "Download basemap" run wrote into, rather than
-  only ever falling through to the network/504 the way it did before this
-  fix.
+  every live pinned bucket a "Download basemap" run wrote into, rather
+  than only ever falling through to the network/504 the way it did before
+  this fix.
 - ``test_hydrate_basemap_origins_repopulates_empty_set_from_meta_app``
   (SNOW-487) seeds only the durable ``meta:app`` row, resets
   ``_basemapOrigins`` to empty (simulating an idle-terminated-and-
@@ -236,20 +236,20 @@ def test_registered_basemap_origin_served_from_cache_while_offline(
 def test_pinned_basemap_tile_served_from_cache_while_offline(
     pwa_page: PwaPage,
 ) -> None:
-    """SNOW-521: a tile in BASEMAP_PINNED_CACHE (not BASEMAP_CACHE) still serves offline.
+    """SNOW-521/SNOW-586: a tile in a per-area pinned bucket (not BASEMAP_CACHE) still serves offline.
 
     Reviewer-flagged blocker: ``_basemapStaleWhileRevalidate`` used to open
     only ``BASEMAP_CACHE``, so a tile a "Download basemap" run had written
-    into the separate ``BASEMAP_PINNED_CACHE`` partition was invisible to
-    the fetch handler — every such tile fell through to the network while
-    offline and hit the synthesized 504, even though it was sitting in
-    Cache Storage the whole time. This seeds ONLY the pinned cache (the
-    same technique as
-    ``test_registered_basemap_origin_served_from_cache_while_offline``
+    into a separate pinned partition was invisible to the fetch handler —
+    every such tile fell through to the network while offline and hit the
+    synthesized 504, even though it was sitting in Cache Storage the whole
+    time. This seeds ONLY one per-area pinned bucket (the same technique
+    as ``test_registered_basemap_origin_served_from_cache_while_offline``
     above, minus any ``BASEMAP_CACHE`` entry) so a pass here can only mean
-    the real ``_basemapStaleWhileRevalidate`` actually checked the pinned
-    partition on its passive-cache miss, not that it happened to hit the
-    passive cache instead.
+    the real ``_basemapStaleWhileRevalidate`` actually checked THAT bucket
+    on its passive-cache miss (via ``_pinnedCacheNames()``, which unions
+    every live bucket — SNOW-586), not that it happened to hit the passive
+    cache instead.
     """
     page = pwa_page.page
     assert page.context.service_workers, "expected a registered service worker"
@@ -262,7 +262,7 @@ def test_pinned_basemap_tile_served_from_cache_while_offline(
     worker.evaluate(
         """async ({ origin, url, body }) => {
             _basemapOrigins = new Set([origin]);
-            const cache = await caches.open(BASEMAP_PINNED_CACHE);
+            const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + 'test-area');
             await cache.put(
               url,
               new Response(body, {

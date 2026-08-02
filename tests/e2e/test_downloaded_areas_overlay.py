@@ -2,14 +2,30 @@
 tests/e2e/test_downloaded_areas_overlay.py — Playwright regression tests for
 the "Available offline" layers-menu overlay (SNOW-570, SNOW-587).
 
-The overlay draws one translucent square per tile actually present in
-``BASEMAP_PINNED_CACHE`` — the ``cached-tiles`` source, fed straight from a
+The overlay draws one translucent square per tile actually present in the
+pinned basemap caches — the ``cached-tiles`` source, fed straight from a
 Cache Storage read, with no stored record of any kind involved. It is off by
 default. SNOW-587 removed the overlay's earlier "downloaded areas" rings
 (``regions-line-downloaded`` / ``downloaded-area-line``, derived from the
 stored ``basemap.regions`` / ``basemap.customArea`` records and then
 validated against the cache) — the tiles alone answer "where is the basemap
 I already have?" without needing a second, driftable derivation path.
+
+SNOW-586 gave each downloaded area its OWN Cache Storage bucket
+(``snowdesk-basemap-pinned-<areaId>``), so the read is a union across every
+bucket carrying that prefix rather than a lookup in one shared cache —
+``pwaDownloadedOverlay`` goes through ``pinnedBasemapCacheURLs()``; see that
+helper's own comment.
+
+Most tests below write every tile into ONE bucket
+(``_PINNED_CACHE_NAME``, an arbitrary name under the shared
+``snowdesk-basemap-pinned-`` prefix) — the union read doesn't care which
+bucket a tile lives in, only that its name carries the prefix, so this is
+a faithful enough stand-in for "some real download's bucket" everywhere
+the exact bucket identity isn't the point.
+``test_cached_tiles_overlay_unions_across_several_buckets`` is the one
+exception, writing into two DISTINCT bucket names to prove the union
+itself, which single-bucket tests can't.
 
 **Why these use the plain ``page``/``live_server`` fixtures rather than
 ``pwa_page``.** With the real service worker controlling, the basemap style
@@ -44,7 +60,10 @@ _TOGGLE = '#basemap-menu [data-overlay-key="downloaded"]'
 _TILE_FILL_LAYER = "cached-tiles-fill"
 _TILE_LINE_LAYER = "cached-tiles-line"
 _TEMPLATE = "https://tiles.example.invalid/{z}/{x}/{y}.pbf"
-_PINNED_CACHE = "snowdesk-basemap-pinned-v1"
+# SNOW-586: an arbitrary name under the shared prefix every per-area
+# pinned bucket carries — see the module docstring for why one shared
+# name is a faithful enough stand-in for most tests here.
+_PINNED_CACHE_NAME = "snowdesk-basemap-pinned-test-area"
 
 
 def _boot(page: Page, live_server: LiveServer) -> None:
@@ -79,8 +98,14 @@ def _tile_url(z: int, x: int, y: int) -> str:
     )
 
 
-def _cache_urls(page: Page, urls: list[str]) -> None:
-    """Write `urls` into the pinned basemap cache as the SW's warm-cache would."""
+def _cache_urls(
+    page: Page, urls: list[str], cache_name: str = _PINNED_CACHE_NAME
+) -> None:
+    """Write `urls` into a pinned basemap bucket as the SW's warm-cache would.
+
+    `cache_name` defaults to the module's one shared stand-in bucket;
+    pass a distinct name to prove the union read itself (SNOW-586).
+    """
     page.evaluate(
         """async ({ cacheName, urls }) => {
             const cache = await caches.open(cacheName);
@@ -88,7 +113,7 @@ def _cache_urls(page: Page, urls: list[str]) -> None:
                 await cache.put(url, new Response('stub-tile'));
             }
         }""",
-        {"cacheName": _PINNED_CACHE, "urls": urls},
+        {"cacheName": cache_name, "urls": urls},
     )
 
 
@@ -254,7 +279,7 @@ def test_cached_tiles_drop_a_tile_evicted_behind_the_apps_back(
             const cache = await caches.open(cacheName);
             await cache.delete(url);
         }""",
-        {"cacheName": _PINNED_CACHE, "url": tiles[0]},
+        {"cacheName": _PINNED_CACHE_NAME, "url": tiles[0]},
     )
     _refresh(page)
 
@@ -308,6 +333,35 @@ def test_cached_tiles_overlay_draws_one_square_per_cached_tile(
         [min(p[0] for p in f["geometry"]["coordinates"][0]) for f in features]
     )
     assert drawn == pytest.approx(sorted(bounds[0] for bounds in expected))
+
+
+def test_cached_tiles_overlay_unions_across_several_buckets(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-586: tiles split across per-area buckets are all drawn.
+
+    The single-bucket tests above cannot catch a read that only ever looks
+    at one bucket, because there only ever is one — and that is exactly the
+    bug SNOW-586's split introduces the opportunity for. `caches.keys()`
+    order is not specified, so a first-match read would drop whichever
+    bucket happened to sort second; writing one tile into each of two
+    distinct buckets fails against such a read regardless of which one wins.
+    """
+    _boot(page, live_server)
+    _toggle_overlay(page, on=True)
+    _cache_urls(
+        page,
+        [_tile_url(14, 8501, 5820)],
+        cache_name="snowdesk-basemap-pinned-region-CH-4115",
+    )
+    _cache_urls(
+        page,
+        [_tile_url(14, 8502, 5820)],
+        cache_name="snowdesk-basemap-pinned-custom",
+    )
+    _refresh(page)
+
+    assert len(_cached_tile_features(page)) == 2
 
 
 def test_cached_tiles_overlay_ignores_another_basemaps_tiles(

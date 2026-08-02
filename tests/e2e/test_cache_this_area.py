@@ -84,11 +84,12 @@ deterministic control:
   state) can directly reassign ``self._warmCache`` to a stub that
   returns a chosen ``{ok, failed}``, optionally drives
   ``opts.onProgress``, and — for a ``pinned: true`` call with ``ok >
-  0`` — actually writes the warmed URLs into the real
-  ``BASEMAP_PINNED_CACHE`` (referenced directly, the same way
-  ``test_offline_basemap_cache.py``'s pinned-cache test does — Playwright
-  evaluates in the SW's own realm, where sw.js's top-level ``const``
-  is in scope) so a later done-probe against real Cache Storage is a
+  0`` — actually writes the warmed URLs into the real per-area pinned
+  bucket (``BASEMAP_PINNED_CACHE_PREFIX + options.areaId``, referenced
+  directly — SNOW-586 replaced the single shared ``BASEMAP_PINNED_CACHE``
+  constant with one bucket per downloaded area, and Playwright evaluates
+  in the SW's own realm, where sw.js's top-level ``const`` declarations
+  are in scope) so a later done-probe against real Cache Storage is a
   genuine test of that probe, not just the ``{ok, failed}`` branching.
 * ``map.js`` is similarly a classic, non-module script, so its
   top-level ``function activeBasemapTileTemplate(...)`` declaration is
@@ -225,16 +226,19 @@ def _stub_warm_cache(
     reason: str | None = None,
     progress_steps: list[tuple[int, int]] | None = None,
     step_delay_ms: int = 0,
+    bytes_total: int | None = None,
 ) -> None:
     """Replace ``self._warmCache`` with a stub reporting a fixed outcome.
 
-    Records the URL list and the ``pinned`` flag on ``self.__snow521Urls``
-    / ``self.__snow521Pinned``, resolves with the caller-chosen ``{ok,
+    Records the URL list, the ``pinned`` flag, and (SNOW-586) the
+    ``areaId`` on ``self.__snow521Urls`` / ``self.__snow521Pinned`` /
+    ``self.__snow521AreaId``, resolves with the caller-chosen ``{ok,
     failed}`` — the real ``sw.js``/``sw_register.js`` message round trip
     still carries this back to the page exactly as a genuine
     ``_warmCache`` result would — and, for a ``pinned`` call with ``ok >
-    0``, writes every URL into the real ``BASEMAP_PINNED_CACHE`` so a
-    subsequent done-probe (real Cache Storage read) succeeds.
+    0``, writes every URL into that area's real per-area pinned bucket
+    (``BASEMAP_PINNED_CACHE_PREFIX + options.areaId``) so a subsequent
+    done-probe (real Cache Storage read) succeeds.
 
     ``progress_steps``, if given, drives ``options.onProgress(done,
     total)`` once per tuple, spaced ``step_delay_ms`` apart so a test can
@@ -244,12 +248,20 @@ def _stub_warm_cache(
     SNOW-568: ``reason`` rides back with the summary exactly as the real
     ``_warmCache`` reports it (``'quota'`` / ``'network'`` / ``'other'``),
     so a test can drive the specific failure message the page shows.
+
+    SNOW-586: the stub reports ``bytes_total`` (default 1024) as the run's
+    ``bytes`` on a successful pinned run, mirroring the real
+    ``_warmCache``'s new ``bytes`` field — 1024 is small enough that no
+    test's downloads approach the 500 MB default budget by accident;
+    ``tests/e2e/test_basemap_download_budget.py`` passes an explicit
+    value to drive the budget arithmetic deliberately.
     """
     worker.evaluate(
-        """({ ok, failed, reason, progressSteps, stepDelayMs }) => {
+        """({ ok, failed, reason, progressSteps, stepDelayMs, bytesTotal }) => {
             self._warmCache = async (urls, options) => {
                 self.__snow521Urls = urls;
                 self.__snow521Pinned = !!(options && options.pinned);
+                self.__snow521AreaId = options && options.areaId;
                 const onProgress = options && options.onProgress;
                 for (const [done, total] of progressSteps) {
                     if (typeof onProgress === 'function') onProgress(done, total);
@@ -258,12 +270,14 @@ def _stub_warm_cache(
                     }
                 }
                 if (options && options.pinned && ok > 0) {
-                    const cache = await caches.open(BASEMAP_PINNED_CACHE);
+                    const cache = await caches.open(
+                        BASEMAP_PINNED_CACHE_PREFIX + options.areaId,
+                    );
                     for (const url of urls) {
                         await cache.put(url, new Response('stub-tile'));
                     }
                 }
-                return { ok, failed, reason };
+                return { ok, failed, reason, bytes: ok > 0 ? bytesTotal : 0 };
             };
         }""",
         {
@@ -272,6 +286,7 @@ def _stub_warm_cache(
             "reason": reason,
             "progressSteps": progress_steps or [],
             "stepDelayMs": step_delay_ms,
+            "bytesTotal": 1024 if bytes_total is None else bytes_total,
         },
     )
 
@@ -401,7 +416,7 @@ def test_reselecting_a_downloaded_region_reads_done_from_real_cache(
     Downloads CH-4115, then focuses a different region with no computed
     summary (clearing the in-page microData for CH-4115 and hiding its
     icon), then reselects CH-4115 — the icon must read ``done`` again
-    purely from ``mapDownloadControlInit``'s real ``BASEMAP_PINNED_CACHE``
+    purely from ``mapDownloadControlInit``'s real per-area pinned-bucket
     probe, not a remembered JS flag (the "layers menu is a live
     cache-state dashboard" invariant).
     """

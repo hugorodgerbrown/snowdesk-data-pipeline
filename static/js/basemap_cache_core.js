@@ -53,6 +53,15 @@
  *     SNOW-568: ``'quota' | 'network' | 'other'`` for a caught warm-cache error.
  *   worseReason(a, b)
  *     SNOW-568: the more actionable of two failure reasons.
+ *   responseBytes(response)
+ *     SNOW-586: the byte size of a fetched ``Response`` — the
+ *     ``Content-Length`` header when present (fast path, no body read),
+ *     else the size of its cloned blob, else ``0`` for anything
+ *     unusable. ``_warmCache`` (sw.js) sums these as it writes a pinned
+ *     download so the page can record the run's on-disk size against the
+ *     new standing byte budget (``planEviction`` in
+ *     basemap_download_core.js) — replacing the old entry-COUNT cap,
+ *     which spoke a different unit to ``DOWNLOAD_CEILING_MB``.
  */
 
 (function () {
@@ -235,6 +244,47 @@
     return rankA <= rankB ? a : b;
   }
 
+  /**
+   * SNOW-586: the byte size of a fetched ``Response``.
+   *
+   * ``Content-Length`` is read first — a fast path with no body read,
+   * present on every tile/sprite/style response this project fetches —
+   * falling back to the size of a cloned blob when the header is absent
+   * (never the ORIGINAL response: reading its body would make it
+   * unreadable to the ``cache.put`` call the caller makes with its own
+   * clone). ``0`` for a falsy ``response`` or one whose blob read itself
+   * throws (an already-consumed/errored body) — a caller summing these
+   * across a run must never let one unreadable response poison the total
+   * with ``NaN``.
+   *
+   * Note the header is the response's COMPRESSED size for a gzipped
+   * tile, so a run's summed total slightly under-reads its true on-disk
+   * size — acceptable for a standing budget, and the blob fallback (which
+   * measures the decompressed bytes ``cache.put`` actually stores) is
+   * exact when the header is absent.
+   *
+   * @param {Response} response
+   * @returns {Promise<number>}
+   */
+  async function responseBytes(response) {
+    if (!response) return 0;
+    try {
+      const header = response.headers && response.headers.get && response.headers.get('Content-Length');
+      if (header !== null && header !== undefined) {
+        const n = Number(header);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+    } catch (_e) {
+      // Fall through to the blob fallback below.
+    }
+    try {
+      const blob = await response.clone().blob();
+      return blob.size;
+    } catch (_e) {
+      return 0;
+    }
+  }
+
   self.pwaBasemapCacheCore = Object.freeze({
     classifySync: classifySync,
     isBasemapOrigin: isBasemapOrigin,
@@ -243,5 +293,6 @@
     runPool: runPool,
     classifyFailure: classifyFailure,
     worseReason: worseReason,
+    responseBytes: responseBytes,
   });
 })();

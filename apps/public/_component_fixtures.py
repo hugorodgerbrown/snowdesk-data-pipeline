@@ -1119,6 +1119,10 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
             "title": "Update available",
             "body": "A new version of Snowdesk is ready.",
             "title_id": "component-library-banner-title-2",
+            # SNOW-586: body_id — a caller-writable hook for a body line JS
+            # rewrites at runtime (the basemap-download whole-area-eviction
+            # confirm banner injects a dynamic area-name list here).
+            "body_id": "component-library-banner-body-2",
             "cta_id": "component-library-banner-cta",
             "cta_label": "Reload",
             "dismissible": True,

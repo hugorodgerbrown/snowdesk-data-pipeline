@@ -31,8 +31,17 @@ framing overlay is left open behind it so the framed area survives for a
 retry.
 static/js/map.js's mapCustomDownloadControlInit drives the state and
 rewrites the title/aria-label to match — exactly like its per-region
-sibling, "done" is probed from real BASEMAP_PINNED_CACHE contents against
-the persisted saved-area's centre tile, never a stored flag.
+sibling, "done" is probed from real pinned-cache contents (every per-area
+bucket, unioned — SNOW-586) against the persisted saved-area's centre
+tile, never a stored flag.
+
+data-area-label (SNOW-586): the translated display name recorded onto the
+custom area's meta:app row (`basemap.customArea.name`) and shown in the
+whole-area-eviction confirm banner naming areas that would be removed to
+make room for a new download. A JS-assembled string would be permanently
+English (no JS i18n catalogue in this project — see
+docs/decisions/per-area-pinned-basemap-caches.md); this is a template
+attribute precisely so {% trans %} can reach it.
 
 Takes no context.
 {% endcomment %}
@@ -41,6 +50,7 @@ Takes no context.
     id="map-custom-download-control"
     class="map-custom-download-control map-download-control"
     data-download-state="idle"
+    data-area-label='{% trans "Custom area" %}'
     aria-haspopup="dialog"
     aria-controls="map-frame-overlay"
     aria-label="{% trans "Download a custom area's basemap" %}"

@@ -38,11 +38,13 @@ while the map pans beneath it (SNOW-566); and, from SNOW-567, that a
 capped frame stays over the same ground while zooming, never lags the
 canvas mid-gesture, stays centred however far off the pointer is, and
 releases again on the way back in. A confirmed download warms with
-``pinned: true``, reaches ``done``, and notifies the layers sync
-dashboard; reload + click the (probed) green roundel re-opens framing at
-the saved area; moving the frame then Cancelling leaves the saved area
-untouched; moving the frame then confirming evicts the old area's tiles
-from the pinned cache before warming the new set.
+``pinned: true`` and (SNOW-586) ``areaId: 'custom'``, reaches ``done``,
+and notifies the layers sync dashboard; reload + click the (probed) green
+roundel re-opens framing at the saved area; moving the frame then
+Cancelling leaves the saved area untouched; moving the frame then
+confirming deletes the custom area's OWN pinned bucket outright before
+warming the new set (SNOW-586's whole-bucket evict-on-confirm, replacing
+the old per-URL re-derivation).
 
 SNOW-568 adds the failure path, which had no coverage because it had no
 behaviour: every failed run reverted the roundel to ``idle`` and closed
@@ -332,7 +334,13 @@ def _centre_tile_url(page: Page, centre_tile: dict[str, Any]) -> str:
 
 
 def _pinned_cache_has(page: Page, url: str) -> bool:
-    """Whether `url` is present in the (single) prefix-matched pinned cache."""
+    """Whether `url` is present in a prefix-matched pinned bucket.
+
+    SNOW-586: there are potentially several per-area pinned buckets now,
+    but this file only ever downloads the custom area, so exactly one
+    (``snowdesk-basemap-pinned-custom``) exists at a time here — finding
+    the first prefix match is still correct for what these tests exercise.
+    """
     return bool(
         page.evaluate(
             """async ({ url, prefix }) => {

@@ -115,6 +115,50 @@
  *     of the same name (see there for the sizing rationale) — except
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
  *
+ * SNOW-586: a third client-only group — area identity and the standing
+ * download-budget arithmetic that replaced the pinned cache's old
+ * entry-count FIFO trim (``static/js/sw.js``) with one Cache Storage
+ * bucket per downloaded area (``snowdesk-basemap-pinned-<areaId>``) plus
+ * a byte budget, so evicting one area can never perforate another's tiles
+ * — see ``docs/decisions/per-area-pinned-basemap-caches.md`` for the full
+ * rationale.
+ *
+ *   DOWNLOAD_BUDGET_MB
+ *     The standing budget across every pinned area, in megabytes (500).
+ *     Client-only — unlike ``MICRO_BAND``/``WORST_CASE_BYTES_PER_TILE``/
+ *     ``DOWNLOAD_CEILING_MB`` above, this has NO ``basemap_tiles.py``
+ *     counterpart and must never gain one: Cache Storage is per-browser,
+ *     so a standing on-disk budget is a client concept the server has no
+ *     stake in (mirrors ``STORAGE_HEADROOM_FACTOR``'s same carve-out).
+ *     Overridable per device via the ``meta:app`` row
+ *     ``basemap.budgetMb`` (``static/js/map.js``'s
+ *     ``basemapDownloadBudgetBytes``) — SNOW-588's managed-downloads UI
+ *     changes that row, not this constant.
+ *   PINNED_CACHE_PREFIX
+ *     The Cache Storage name prefix every per-area pinned bucket shares
+ *     (``'snowdesk-basemap-pinned-'``) — mirrors
+ *     ``static/js/sw.js``'s ``BASEMAP_PINNED_CACHE_PREFIX`` exactly (the
+ *     two can't share a literal across a page/worker boundary, so this is
+ *     kept honest by ``tests/js/test_basemap_download_core.js``'s
+ *     round-trip assertion against ``pinnedCacheName``).
+ *   CUSTOM_AREA_ID
+ *     The fixed area id for the one custom-area download
+ *     (``'custom'``) — formalises the literal every custom-area call site
+ *     used to synthesise for itself.
+ *   areaIdForRegion(regionId)
+ *     The area id for a region download (``'region-' + regionId``) —
+ *     formalises the id a region-download area is keyed under; there was
+ *     no such concept before this ticket, region downloads were
+ *     identified only by ``region_id`` in the ``basemap.regions`` record.
+ *   pinnedCacheName(areaId)
+ *     The Cache Storage name for ``areaId``'s pinned bucket
+ *     (``PINNED_CACHE_PREFIX + areaId``).
+ *   planEviction(areas, incoming, budgetBytes)
+ *     Given the areas currently on disk and an incoming run, decides
+ *     whether it fits the standing budget and, if not, which areas to
+ *     evict (oldest ``savedAt`` first) to make it fit. See its own
+ *     docstring for the full contract.
+ *
  * SNOW-569 and the tile-grid rework that followed it add a second
  * client-only group — the geometry a download's on-map progress grid
  * needs (``geometryBounds``, ``bboxPolygon``,
@@ -179,6 +223,133 @@
   // user's ordinary browsing keeps filling, IndexedDB, and the mutation
   // queue, none of which stop growing because a download is in flight.
   var STORAGE_HEADROOM_FACTOR = 0.5;
+
+  // SNOW-586: the standing budget across every pinned area, in megabytes.
+  // Client-only — see the module header's "third client-only group" note
+  // for why this must never gain a basemap_tiles.py counterpart.
+  // Overridable per device via meta:app's basemap.budgetMb
+  // (static/js/map.js's basemapDownloadBudgetBytes); SNOW-588 changes
+  // that row, not this constant.
+  var DOWNLOAD_BUDGET_MB = 500;
+
+  // SNOW-586: the Cache Storage name prefix every per-area pinned bucket
+  // shares. Mirrored as FOUR separate literals — this one, static/js/sw.js's
+  // BASEMAP_PINNED_CACHE_PREFIX, static/js/map.js's own
+  // BASEMAP_PINNED_CACHE_PREFIX, and static/js/map_layer_sync_status.js's
+  // PINNED_BASEMAP_CACHE_PREFIX — because a page script, a worker script,
+  // and this dependency-free core can't share one constant across those
+  // load-context boundaries. tests/js/test_basemap_download_core.js's
+  // round-trip assertion (areaIdForRegion / pinnedCacheName) only checks
+  // THIS module's own internal consistency — that pinnedCacheName always
+  // returns PINNED_CACHE_PREFIX + areaId — it does not and cannot compare
+  // against the other three files' copies. Cross-file agreement is a
+  // review discipline, not an enforced mechanism, the same convention
+  // basemap_tiles.py's shared golden vector documents for the Python↔JS
+  // tile math (see that module's own comment): a reviewer changing one
+  // copy of this prefix is responsible for checking whether the other
+  // three need the same change.
+  var PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+
+  // SNOW-586: the fixed area id for the one custom-area download.
+  // Formalises the literal every custom-area call site used to
+  // synthesise for itself before this ticket.
+  var CUSTOM_AREA_ID = 'custom';
+
+  /**
+   * The area id for a region download.
+   *
+   * SNOW-586: formalises "area" as the unit a pinned cache bucket and a
+   * budget record are both keyed on — region downloads previously had no
+   * such id, only a bare ``region_id``.
+   *
+   * @param {string} regionId
+   * @returns {string}
+   */
+  function areaIdForRegion(regionId) {
+    return 'region-' + regionId;
+  }
+
+  /**
+   * The Cache Storage name for ``areaId``'s pinned bucket.
+   *
+   * @param {string} areaId
+   * @returns {string}
+   */
+  function pinnedCacheName(areaId) {
+    return PINNED_CACHE_PREFIX + areaId;
+  }
+
+  /**
+   * Decide whether an incoming download fits the standing budget and,
+   * when it doesn't, which areas to evict (oldest first) to make it fit.
+   *
+   * SNOW-586: replaces the old pinned cache's entry-count FIFO trim,
+   * which evicted individual cache ENTRIES with no notion of which
+   * download they belonged to — perforating whichever area happened to
+   * hold the oldest-inserted tiles. Evicting whole AREAS instead means a
+   * download can only ever be entirely present or entirely gone.
+   *
+   * A re-download of an area already in ``areas`` (``incoming.id``
+   * matches an existing entry) is treated as a REPLACEMENT: that entry's
+   * bytes leave the standing total before the incoming run's bytes are
+   * added back in, so re-downloading an area never counts its own old
+   * copy against itself.
+   *
+   * ``incoming.bytes`` exceeding ``budgetBytes`` on its own is refused
+   * outright (``impossible: true``, ``evict: []``) rather than evicting
+   * every other area and still failing — no amount of eviction could ever
+   * make it fit.
+   *
+   * @param {Array<{id: string, bytes: number, savedAt?: string}>} areas
+   *   Areas currently on disk, most fields best-effort (a record with no
+   *   usable ``bytes``/``savedAt`` is treated as ``0``/unset).
+   * @param {{id: string, bytes: number}} incoming The run being planned.
+   * @param {number} budgetBytes The standing budget, in bytes.
+   * @returns {{fits: boolean, impossible: boolean, evict: string[],
+   *   projectedBytes: number}} ``fits`` is true only when the incoming run
+   *   already sits under budget with NO eviction needed — the caller's
+   *   "run unchanged" case. ``evict`` lists area ids in the order they
+   *   should be removed; a caller only removing some of them (a
+   *   cancelled confirm, say) doesn't need to know that, since none of
+   *   this function's own state depends on it. ``projectedBytes`` is the
+   *   standing total once the plan runs (or, in the ``impossible`` case,
+   *   the standing total as it stands today, since nothing changes).
+   */
+  function planEviction(areas, incoming, budgetBytes) {
+    const budget = Number(budgetBytes) || 0;
+    const list = Array.isArray(areas) ? areas : [];
+    const incomingId = incoming && incoming.id;
+    const incomingBytes = Number((incoming && incoming.bytes) || 0);
+
+    if (incomingBytes > budget) {
+      const standing = list.reduce((sum, a) => sum + (Number(a && a.bytes) || 0), 0);
+      return { fits: false, impossible: true, evict: [], projectedBytes: standing };
+    }
+
+    const others = list.filter((a) => a && a.id !== incomingId);
+    let total = others.reduce((sum, a) => sum + (Number(a.bytes) || 0), 0) + incomingBytes;
+
+    if (total <= budget) {
+      return { fits: true, impossible: false, evict: [], projectedBytes: total };
+    }
+
+    // Oldest savedAt first; id is a deterministic tiebreak for equal or
+    // missing timestamps, so a re-run of the same standing set always
+    // proposes the same eviction order.
+    const sorted = others.slice().sort((a, b) => {
+      const ta = Date.parse(a.savedAt) || 0;
+      const tb = Date.parse(b.savedAt) || 0;
+      if (ta !== tb) return ta - tb;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    const evict = [];
+    for (const area of sorted) {
+      if (total <= budget) break;
+      total -= Number(area.bytes) || 0;
+      evict.push(area.id);
+    }
+    return { fits: false, impossible: false, evict: evict, projectedBytes: total };
+  }
 
   /**
    * Normalise one zoom level's ``z`` entry to ``{"<y>": [xmin, xmax]}``,
@@ -992,9 +1163,15 @@
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,
     blobFullyCached: blobFullyCached,
+    areaIdForRegion: areaIdForRegion,
+    pinnedCacheName: pinnedCacheName,
+    planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
+    DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
+    PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,
+    CUSTOM_AREA_ID: CUSTOM_AREA_ID,
   });
 })();

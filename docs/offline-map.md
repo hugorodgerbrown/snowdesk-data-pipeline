@@ -376,14 +376,16 @@ The SW classifies every fetch into one of four buckets:
   a single browsing session at typical zoom levels loads a few hundred
   vector-tile + sprite + glyph requests; 600 gives headroom while
   bounding on-disk growth) via a simple oldest-first LRU trim
-  (`Cache.keys()` returns insertion order — no byte-size accounting, and
-  none is planned; see "Out of scope" below). This is the passive,
-  opportunistic cache for whatever the user has actually browsed. On a
-  `BASEMAP_CACHE` miss, `_basemapStaleWhileRevalidate` also checks
-  `BASEMAP_PINNED_CACHE` (`snowdesk-basemap-pinned-v1`, SNOW-521) before
-  falling to the network, so tiles from a deliberate "Download basemap"
-  run serve offline without any write to the passive partition — see
-  "Download basemap" below.
+  (`Cache.keys()` returns insertion order — no byte-size accounting; see
+  "Out of scope" below). This is the passive, opportunistic cache for
+  whatever the user has actually browsed — distinct from the byte-budget
+  eviction the DELIBERATE "Download basemap" pinned buckets use (SNOW-586,
+  below), which this passive cache has no part in. On a `BASEMAP_CACHE`
+  miss, `_basemapStaleWhileRevalidate` also checks every live pinned
+  bucket (`snowdesk-basemap-pinned-*`, SNOW-521/SNOW-586) before falling
+  to the network, so tiles from a deliberate "Download basemap" run serve
+  offline without any write to the passive partition — see "Download
+  basemap" below.
 
 - **`network`** — everything else: bulletin JSON
   (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar
@@ -406,13 +408,19 @@ the data class is one users must always see fresh.
 
 ### Out of scope (SNOW-484)
 
-Deliberately not implemented: byte-based cache accounting for the
-basemap cache (the count-based LRU cap above is the only eviction
-mechanism). SNOW-492 (below) added a bounded, on-demand precache
-control — "a bounded/favourites precache" is no longer accurate as an
-"out of scope" item, but there is still no automatic/background
-precache; everything is either opportunistic (browse an area, it
-caches) or the explicit one-shot control.
+Deliberately not implemented: byte-based accounting for the PASSIVE
+`BASEMAP_CACHE` (the count-based LRU cap above is still its only eviction
+mechanism, and still count- not byte-based — this is genuinely
+out of scope, unlike the sentence this one replaces). SNOW-586 DID add
+byte-based accounting, but only for the pinned, deliberate-download
+buckets — see "Download budget and whole-area eviction" below; the
+passive cache's cheaper insertion-order trim is unaffected and still the
+right tool for a cache nothing has deliberately asked for. SNOW-492
+(below) added a bounded, on-demand precache control — "a
+bounded/favourites precache" is no longer accurate as an "out of scope"
+item, but there is still no automatic/background precache; everything is
+either opportunistic (browse an area, it caches) or the explicit one-shot
+control.
 
 ## Offline overlay caches + "Download basemap" (SNOW-492, SNOW-521)
 
@@ -514,10 +522,11 @@ gating below). The three non-runnable states (`no-region`, `disabled`,
 a dimmed **glyph** — the glass shell stays at full strength, because the
 control now floats over open basemap where the old whole-roundel
 `opacity: 0.4` was close to invisible. `idle`/`done` are derived from a
-real `BASEMAP_PINNED_CACHE` probe every time the icon is (re)shown — never
-a stored flag, so a reselected region reads its true cache state, and a
-region that was downloaded in an earlier session still reads `done` after
-a reload.
+real pinned-cache probe every time the icon is (re)shown — never a stored
+flag, so a reselected region reads its true cache state, and a region that
+was downloaded in an earlier session still reads `done` after a reload.
+Since SNOW-586 that probe reads across **every** per-area bucket, unioned
+(`pinnedBasemapCacheURLs`), rather than one shared cache.
 
 **The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
 check here since SNOW-570 — the code has never assumed "the centre tile is
@@ -578,8 +587,12 @@ trip.
    (`activeBasemapTileTemplate(MAP)`), **grouped by progress-grid cell**
    (tile-grid rework) — the same URL set `rangesToTileURLs` would produce, in the
    order that makes the on-map grid fill one square at a time. It returns
-   the grid's cells alongside the URLs; `rangesToTileURLs` itself is still
-   used for the flat list (custom-area eviction).
+   the grid's cells alongside the URLs. `rangesToTileURLs` remains a
+   tested, exported building block (`tileGridPlan`, `cachedTilesFromURLs`'s
+   round-trip tests, and any future flat-list caller build on it) — SNOW-586
+   removed its one direct app call site, the custom-area control's old
+   per-URL eviction, which is now a whole-bucket `caches.delete()` instead
+   (see "Download budget and whole-area eviction" below).
 3. `map.js` assembles the rest of the URL list: same-origin data feeds
    in sw.js's `STATIC_PATHS` (regions/major-regions/sub-regions/
    resorts/ratings, one per currently-enabled country), the active
@@ -591,16 +604,23 @@ trip.
    in sw.js, so the SW never reads back whatever this would write;
    their offline availability is handled by the `data:map_overlays`
    write-through above.
-4. `map.js` posts `{ type: 'warm-cache', urls, pinned: true }` to the SW
-   via `window.pwaWarmCache`.
-5. `sw.js`'s `_warmCache` handler writes basemap-origin resources into
-   `BASEMAP_PINNED_CACHE` (`snowdesk-basemap-pinned-v1`,
-   cap `BASEMAP_PINNED_CACHE_MAX_ENTRIES`) rather than the passive
-   `BASEMAP_CACHE`, shielding the deliberate download from the ordinary
-   LRU trim. Same-origin data feeds still go into the shell
-   `CACHE_VERSION` cache. Every URL is independent; one failure never
-   aborts the rest.
-6. `sw.js` posts a `warm-cache-progress` message on every throttled
+4. Before any of this, `map.js` pre-flights the run against the standing
+   download budget (`planBasemapDownloadBudget`) — see "Download budget
+   and whole-area eviction" below. A run that cannot possibly fit is
+   refused with a toast; a run that needs room asks first.
+5. `map.js` posts `{ type: 'warm-cache', urls, pinned: true, areaId }` to
+   the SW via `window.pwaWarmCache` — `areaId`
+   (`pwaBasemapDownloadCore.areaIdForRegion(regionId)`) selects which
+   per-area pinned bucket the run writes into (SNOW-586).
+6. `sw.js`'s `_warmCache` handler writes basemap-origin resources into
+   that area's OWN bucket (`snowdesk-basemap-pinned-<areaId>`) rather than
+   the passive `BASEMAP_CACHE`, shielding the deliberate download from the
+   ordinary LRU trim AND from every other area's own eviction. Same-origin
+   data feeds still go into the shell `CACHE_VERSION` cache. Every URL is
+   independent; one failure never aborts the rest. The handler also sums
+   each successful write's byte size (`basemap_cache_core.js`'s
+   `responseBytes`) into a `bytes` total, returned on `warm-cache-done`.
+7. `sw.js` posts a `warm-cache-progress` message on every throttled
    batch, carrying `done`/`total` **and `settled`** — the indices into
    the posted URL list that succeeded since the last message (tile-grid rework),
    so the page knows which tiles landed and not merely how many. Failed
@@ -613,11 +633,14 @@ trip.
    more than 30 seconds is never cut short as long as it keeps making
    progress.
 7. On a clean, non-vacuous success (at least one URL cached and none
-   failed), `_recordRegionDownload` writes `{region_id, band, z, savedAt}`
-   — the downloaded blob's OWN `z` (SNOW-583; see above) — to
+   failed), `_recordRegionDownload` writes
+   `{region_id, band, z, name, bytes, savedAt}` — the downloaded blob's
+   OWN `z` (SNOW-583; see above), plus the area's display `name` and its
+   accumulated `bytes` (SNOW-586, from the `warm-cache-done` reply) — to
    `basemap.regions` in `meta:app`, so a later `_probeDone` can check
    real cache contents against exactly what this run fetched, with no
-   recomputation and no further network round trip. The icon then flips
+   recomputation and no further network round trip, and `planEviction`
+   can size what a future download would displace. The icon then flips
    to `done`; a partial/failed/vacuous run reverts to `idle` (the user can
    retry) with nothing recorded. No toast either way; the icon's own state
    is the only feedback.
@@ -716,10 +739,12 @@ failure must never read as a downloaded region, however briefly.
 (a blob carrying no tile ranges) degrades to the roundel-only behaviour
 rather than erroring.
 
-`_basemapStaleWhileRevalidate` (ordinary passive browsing) reads
-`BASEMAP_PINNED_CACHE` as a read-only fallback on a `BASEMAP_CACHE` miss, so
-tiles from a deliberate download serve offline. The passive path never writes to
-or trims the pinned partition — that is exclusively `_warmCache`'s pinned path.
+`_basemapStaleWhileRevalidate` (ordinary passive browsing) reads every
+live pinned bucket (`_pinnedCacheNames()`) as a read-only fallback on a
+`BASEMAP_CACHE` miss, so tiles from a deliberate download serve offline
+regardless of which area's bucket holds them. The passive path never
+writes to or trims any pinned bucket — that is exclusively `_warmCache`'s
+pinned path.
 
 `static/js/basemap_download_core.js` holds `rangesToTileURLs(template,
 blob)` and `centreTileURL(template, summary)` — the two functions every
@@ -921,28 +946,31 @@ is saved to IndexedDB's `meta:app` store under the key
 shape) — the same `{key, value}` shape as `basemap.origins` and
 `mutations.principal`. The roundel's `done` state is still **probed**,
 never read off that row directly: exactly like the per-region control,
-real `BASEMAP_PINNED_CACHE` contents are the source of truth for whether
-the area is actually downloaded — every tile of the area's blob is
-checked (`blobFullyCached`), not just its `centre_tile`, because a
-neighbouring download can cache that one tile without covering the area.
-The `meta:app` row only records *where* the frame was. Clicking a `done`
+real pinned-cache contents — every per-area bucket, unioned (SNOW-586) —
+are the source of truth for whether the area is actually downloaded: every
+tile of the area's blob is checked (`blobFullyCached`), not just its
+`centre_tile`, because a neighbouring download can cache that one tile
+without covering the area. The `meta:app` row only records *where* the
+frame was. Clicking a `done`
 roundel re-opens framing at the saved area (`MAP.fitBounds`, padded to
 land the saved bbox under the frame) rather than re-downloading outright.
 
-**Evict-on-confirm.** Moving the frame and clicking Cancel touches
-nothing. Confirming a bbox that differs from the currently-saved one
-first deletes the *old* area's tiles from the pinned cache before
-warming the new set — expanding the saved blob's ranges the same pure
-way a download does (`buildBlob` is deterministic given `bbox` + `band`)
-and calling `cache.delete()` on each URL, since `sw.js` has no
-per-entry-deletion message (its `message` handler covers only
-`version`/`SKIP_WAITING`/`register-basemap-origins`/`warm-cache`) — a
-page-side `caches.open()` + `delete()` loop is the only option. Without
-this, a region download plus an abandoned custom area could together
-exceed `BASEMAP_PINNED_CACHE_MAX_ENTRIES` (raised 2500 → 5000 for
-exactly this reason — it is now sized for **two** concurrent pinned
-areas, one region and one custom, not one) and `_warmCache`'s own trim
-would silently evict whichever was older.
+**Evict-on-confirm (bbox replacement).** Moving the frame and clicking
+Cancel touches nothing. Confirming a bbox that differs from the
+currently-saved one deletes the custom area's OWN bucket outright
+(`caches.delete('snowdesk-basemap-pinned-custom')`, via
+`evictBasemapAreas` — see "Download budget and whole-area eviction"
+below) before warming the new set: the custom area's bucket is keyed on
+its area id (`custom`) alone, not its geometry, so the OLD bbox's tiles
+would otherwise sit in the same bucket as the new bbox's, bloating it and
+inflating its recorded size for ground the run no longer covers. This
+needs no confirmation — it is replacing the user's own prior choice with
+the one they just made, not touching another area. (Before SNOW-586 this
+was a per-URL re-derivation against `buildBlob` and the CURRENT tile
+template, which silently deleted nothing after a basemap switch — a
+whole-bucket delete has no such dependency.) This is entirely separate
+from the standing-budget eviction below, which can also run on confirm
+but targets OTHER areas and always asks first.
 
 On completion (success or failure), `window.pwaLayerSyncStatus?.refresh()`
 runs — same as the per-region control — so the layers-menu sync dots
@@ -950,6 +978,91 @@ reflect the newly-warmed (or unchanged) cache state, and the framing
 overlay closes: the roundel itself carries the outcome, no toast.
 Offline-integrity mirrors the per-region control exactly: neither opening
 framing nor confirming a download is allowed while offline.
+
+### Download budget and whole-area eviction (SNOW-586)
+
+Both download controls write into their own dedicated Cache Storage
+bucket per area — `snowdesk-basemap-pinned-<areaId>`
+(`pwaBasemapDownloadCore.pinnedCacheName`), where `areaId` is
+`region-<region_id>` for a region download or the fixed `custom` for the
+one custom-area download — **replacing** the single shared
+`snowdesk-basemap-pinned-v1` cache SNOW-521/522 used, and the
+`BASEMAP_PINNED_CACHE_MAX_ENTRIES` (5000) entry-count FIFO trim that
+capped it. Full rationale, including why this is a bucket per area
+rather than an index inside one cache, and the accepted
+overlapping-tile-duplication trade-off:
+[`decisions/per-area-pinned-basemap-caches.md`](decisions/per-area-pinned-basemap-caches.md).
+
+**Why the old trim was unsafe.** `Cache.keys()` returns insertion order,
+so the old trim deleted the oldest-inserted cache ENTRIES — with no
+record of which download each entry belonged to. A new download's trim
+could therefore delete tiles from the middle of an earlier, unrelated
+area: that area was not removed, it was **perforated**, silently. This
+was invisible while the roundel's done-probe checked a single centre tile
+as a proxy for "this download completed"; the "Downloaded areas"
+overlay's full-coverage check (SNOW-570, above) made a perforated region
+honestly revert to undownloaded, which is what surfaced the bug.
+
+**The standing budget.** `DOWNLOAD_BUDGET_MB` (`basemap_download_core.js`,
+500 MB) is the byte ceiling across every pinned area combined — device-
+local, overridable via `meta:app`'s `basemap.budgetMb`
+(`static/js/map.js`'s `basemapDownloadBudgetBytes`; nothing writes that
+row yet — SNOW-588's managed-downloads UI is what eventually will). This
+is the first time the standing cap and the per-run ceiling
+(`DOWNLOAD_CEILING_MB`, 200 MB) share a unit: the old entry-count cap
+spoke a different language entirely, which is how a run could pass the
+per-run ceiling check and still be impossible to keep.
+
+**Pre-flight, before either control spends a fetch.** Both `handleClick`
+(region) and `handleConfirm` (custom area), right after the existing
+storage-quota pre-flight (SNOW-568), call
+`planBasemapDownloadBudget(areaId, mb)` — which reads every recorded
+area (`basemapDownloadedAreas()`, the union of `basemap.regions` and
+`basemap.customArea`) and the current budget, then asks
+`basemap_download_core.js`'s `planEviction` for a plan:
+
+- **`impossible`** — the incoming run alone (at its worst-case `mb`
+  estimate) exceeds the WHOLE budget, so no amount of evicting other
+  areas could ever make it fit. Refused outright: `error` state plus a
+  new `map-download-error-toast-budget` toast (distinct from the quota
+  toast — this is Snowdesk's own explainable budget, not the browser's
+  unknowable-in-advance quota).
+- **`evict` non-empty** — the run fits ONLY if one or more other areas
+  (oldest `savedAt` first) are removed first. `confirmBasemapEviction`
+  reveals a floating `_overlay_banner` (`#map-download-evict-confirm`,
+  reused rather than a bespoke surface — its title/body/CTA/dismiss shape
+  already covers "the question, the specifics, proceed, cancel") naming
+  every area that would go, as **data** written into the banner's `body`
+  via `body_id` (never assembled English text — the sentence around the
+  names is static translated template copy, the names themselves are
+  each area's own recorded `name`). The CTA evicts and proceeds; the "×"
+  cancels and writes nothing — the run that triggered the prompt does not
+  start.
+- **Otherwise** — the run already fits; nothing is evicted, nothing is
+  asked.
+
+**Eviction itself.** `evictBasemapAreas(areaIds)` deletes each area's
+bucket (`caches.delete(pinnedCacheName(areaId))`) AND its `meta:app`
+record together, so an eviction can never leave a stale "downloaded" ring
+or a budget entry with nothing behind it — then refreshes the
+"Downloaded areas" overlay immediately rather than waiting for the next
+trigger.
+
+**Recording what a run actually cost.** `_warmCache` (`sw.js`) sums each
+successful write's byte size (`basemap_cache_core.js`'s `responseBytes` —
+`Content-Length` fast path, falling back to a cloned blob's size) into a
+`bytes` total on `warm-cache-done`, forwarded through `sw_register.js`'s
+`pwaWarmCache`. Both controls record it onto the area's `meta:app` entry
+on success, alongside its display `name` (a region's own name; the custom
+area's translated `data-area-label`) — so the confirm banner's copy never
+depends on `regions.geojson` still being loaded. Recorded `bytes`
+**accumulates rather than replaces** across repeat downloads of the SAME
+area at the SAME bbox: a region's (or the custom area's) bucket is keyed
+on area id alone, not per-basemap, so downloading it again under a
+DIFFERENT basemap adds genuinely new tiles to the one shared bucket, and
+the recorded total has to grow to stay honest against what `planEviction`
+budgets for. See the decision doc for the accepted trade-off this makes
+with a same-basemap RETRY (which re-counts bytes already on disk).
 
 ### "Available offline" overlay (SNOW-570, rings removed SNOW-587)
 
@@ -986,6 +1099,16 @@ back directly — `{region_id, band, z, savedAt}` — to check the run's own
 clipped tile set against the cache, offline-capable and with no
 recomputation. See
 [`docs/decisions/region-downloads-clip-custom-areas-dont.md`](decisions/region-downloads-clip-custom-areas-dont.md).
+
+SNOW-586 adds a second, independent reader of the same row, for a
+different question: `bytes` is the standing record of what each area cost
+on disk, which `basemapDownloadedAreas()` sums so `planEviction` can size
+what a new download would displace. Note the division of labour that
+preserves — `z` says *which* tiles to look for and `bytes` says *what they
+cost*, but neither is ever allowed to answer *whether the tiles are still
+there*. That stays a live cache probe, which is exactly what the removed
+rings got wrong.
+
 `basemap.customArea` itself is unaffected, since `mapCustomDownloadControlInit`
 still reads it at boot to hydrate the saved-area lifecycle (framing,
 evict-on-confirm) independently of this overlay.
@@ -1080,7 +1203,7 @@ GeoJSON cache — so toggling Micro regions on always restores them.
 ## Cache version bump
 
 `sw.js` declares a `CACHE_VERSION` constant near the top of the file
-(`snowdesk-shell-v38` at the time of writing — see the dated comment
+(`snowdesk-shell-v103` at the time of writing — see the dated comment
 block above it for the full history). On `activate`, the SW deletes any
 `snowdesk-shell-*` / `map-shell-*` cache whose name is not the current
 `CACHE_VERSION`. Bump it when:
@@ -1147,17 +1270,26 @@ rewrites it — `compute_shell_hash()` normalises the `CACHE_VERSION = '...'`
 line out before hashing so a version bump alone never re-triggers "bump
 owed" (the chicken-and-egg guard — see `apps/core/sw_shell.py`'s docstring).
 
-### The basemap caches are versioned separately (SNOW-484, SNOW-521)
+### The basemap caches are versioned separately (SNOW-484, SNOW-521, SNOW-586)
 
-`BASEMAP_CACHE` (`snowdesk-basemap-v1`) and `BASEMAP_PINNED_CACHE`
-(`snowdesk-basemap-pinned-v1`) are **separate** constants, each with its own
-version number and deliberately decoupled from `CACHE_VERSION`. The `activate`
-cleanup sweep reaps stale `snowdesk-basemap-*` caches the same way it reaps
-stale shell caches, but excludes the two *current* basemap caches — so a routine
-`CACHE_VERSION` bump does not evict previously-browsed tiles or a deliberate
-download. Bump a basemap cache constant independently, only when its cache
-contract changes (e.g. what gets cached, or a poisoned-cache incident specific
-to it).
+`BASEMAP_CACHE` (`snowdesk-basemap-v1`) is a single, separately-versioned
+constant, deliberately decoupled from `CACHE_VERSION`. The pinned side is
+no longer one constant: SNOW-586 replaced the single
+`BASEMAP_PINNED_CACHE` (`snowdesk-basemap-pinned-v1`) with one bucket per
+downloaded area, named `BASEMAP_PINNED_CACHE_PREFIX + areaId`
+(`snowdesk-basemap-pinned-<areaId>`) — there is no fixed list of names to
+compare against, so the `activate` cleanup sweep keeps any
+`snowdesk-basemap-*` cache that either IS `BASEMAP_CACHE` or matches the
+pinned prefix (excluding the old shared cache's exact name,
+`LEGACY_BASEMAP_PINNED_CACHE`, which is swept and dropped outright — the
+"no migration" decision: nobody had a completed per-area download when
+this shipped). A routine `CACHE_VERSION` bump therefore still never evicts
+previously-browsed tiles or a deliberate download, region-by-region.
+Bump `BASEMAP_CACHE` independently, only when its cache contract changes
+(e.g. what gets cached, or a poisoned-cache incident specific to it); the
+per-area pinned buckets have no version number to bump at all — a new
+one is created (and an old one destroyed) by ordinary download/eviction
+traffic, not a shell deploy.
 
 ## Regenerating icons
 
@@ -1273,8 +1405,8 @@ underlying PNGs.
 - `tests/e2e/test_cache_this_area.py` (SNOW-492, SNOW-493, SNOW-521
   final shape, `tox -e e2e`) — the micro download icon's full flow:
   idle→busy→done transitions with no toast (the icon carries the
-  outcome); a reselected region reading `done` from real
-  `BASEMAP_PINNED_CACHE` state rather than in-page memory; a probe that
+  outcome); a reselected region reading `done` from real per-area pinned
+  bucket state rather than in-page memory; a probe that
   couldn't resolve the active basemap's tile template re-running once
   the style settles; the `over_ceiling` disabled state; and the
   partial/failed/vacuous `{ok, failed}` branches reverting to idle
@@ -1284,6 +1416,21 @@ underlying PNGs.
   alongside the download rework (`[data-overlay-key="l3"]`,
   `#autozoom-toggle`, `#basemap-sync-status`) are absent from the live
   DOM and the menu still functions.
+- `tests/e2e/test_basemap_download_budget.py` (SNOW-586, `tox -e e2e`) —
+  the regression that matters: downloading a second area that cannot
+  coexist with the first under the standing budget must remove the first
+  area ENTIRELY (its whole bucket gone), never perforate it, and the
+  second must read as fully available — the old shared-cache FIFO trim
+  left both partial. Also covers: the coverage probe still answering
+  correctly with several per-area buckets present; a run larger than the
+  whole budget refused up front with nothing half-written; and the
+  confirm banner naming the area that would be evicted, where cancelling
+  writes nothing. `tests/e2e/test_cache_this_area.py`,
+  `test_offline_basemap_cache.py`, `test_downloaded_areas_overlay.py`,
+  and `test_custom_download_area.py` were all updated for the per-area
+  bucket naming (`_stub_warm_cache` now writes into
+  `BASEMAP_PINNED_CACHE_PREFIX + options.areaId` rather than one shared
+  constant).
 - `tests/core/test_sw_shell.py` (SNOW-517) — `read_cache_version()` /
   `next_version()` parsing, `compute_shell_hash()` / `bump_owed()`
   against a throwaway shell tree, and the chicken-and-egg guard (a

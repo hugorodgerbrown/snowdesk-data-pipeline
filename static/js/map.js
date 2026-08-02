@@ -190,14 +190,265 @@ function assembleBasemapDownloadFeedURLs() {
   return urls;
 }
 
-// SNOW-568: the two basemap-download failure toasts in _map_embed.html.
-// Only 'quota' has a remedy of its own (free space, or frame a smaller
-// area); every other cause — an unreachable network, a worker that went
-// silent, a server answering 4xx/5xx — leads to the same instruction, so
-// they share the generic toast rather than leaking a classification the
-// user can do nothing with.
+// SNOW-586: the Cache Storage name prefix every per-area pinned basemap
+// bucket shares — mirrors static/js/sw.js's BASEMAP_PINNED_CACHE_PREFIX
+// and basemap_download_core.js's own PINNED_CACHE_PREFIX exactly (three
+// literals, one per script-loading context, kept honest against each
+// other by tests/js/test_basemap_download_core.js's round-trip
+// assertion). Module scope because it used to be copied verbatim into
+// both download controls' own closures — see pinnedBasemapCacheURLs's own
+// comment for why that duplication is gone.
+const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+
+/**
+ * Every URL held across EVERY pinned basemap bucket, as one Set.
+ *
+ * SNOW-586 replaced the single shared pinned cache with one bucket per
+ * downloaded area (`snowdesk-basemap-pinned-<areaId>`), so "is this tile
+ * cached?" now means unioning across all of them. This one module-scope
+ * reader replaces three near-identical copies of a single-cache lookup
+ * (the downloaded-areas overlay, the region control, the custom-area
+ * control) that each assumed exactly one pinned cache existed — three
+ * copies of the OLD one-liner was defensible repetition; three copies of
+ * a union-across-buckets read is drift waiting to happen, so it is lifted
+ * here the same way `assembleBasemapDownloadFeedURLs` above was.
+ *
+ * Never throws. Cache Storage being unavailable, or one bucket failing to
+ * enumerate (a concurrent eviction racing this read), both read as "no
+ * more URLs from that bucket" rather than aborting the whole union — a
+ * caller asking "is X downloaded?" mid-eviction should see the state as
+ * it settles, not blow up over the race.
+ *
+ * @returns {Promise<Set<string>>}
+ */
+async function pinnedBasemapCacheURLs() {
+  const urls = new Set();
+  if (!('caches' in window)) return urls;
+  try {
+    const names = await caches.keys();
+    const pinnedNames = names.filter((name) => name.startsWith(BASEMAP_PINNED_CACHE_PREFIX));
+    await Promise.all(
+      pinnedNames.map(async (name) => {
+        try {
+          const cache = await caches.open(name);
+          const requests = await cache.keys();
+          for (const request of requests) urls.add(request.url);
+        } catch (_e) {
+          // One bucket failing to enumerate must not lose the others.
+        }
+      }),
+    );
+  } catch (_e) {
+    // Cache Storage unavailable — empty Set, as before this ticket.
+  }
+  return urls;
+}
+
+// SNOW-586: reads-through to meta:app's `basemap.budgetMb` device-local
+// override, falling back to pwaBasemapDownloadCore.DOWNLOAD_BUDGET_MB
+// (500) when no row is present — nothing writes that row yet; SNOW-588's
+// managed-downloads UI is what will ever change it, this ticket only
+// reads it. Best-effort throughout: a failed read is the default budget,
+// never a thrown error blocking a download.
+//
+// @returns {Promise<number>} The budget in BYTES (planEviction's unit).
+async function basemapDownloadBudgetBytes() {
+  const core = self.pwaBasemapDownloadCore;
+  let mb = core ? core.DOWNLOAD_BUDGET_MB : 500;
+  try {
+    const row = await window.pwaDb?.get('meta:app', 'basemap.budgetMb');
+    const value = row && row.value;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) mb = value;
+  } catch (_e) {
+    // Best-effort — the default budget.
+  }
+  return mb * 1024 * 1024;
+}
+
+// SNOW-586: every area currently recorded as downloaded, normalised into
+// planEviction's `[{id, name, bytes, savedAt}]` shape — the union of
+// `basemap.regions` (mapDownloadControlInit's record, one entry per
+// downloaded region) and `basemap.customArea` (mapCustomDownloadControlInit's
+// record, at most one). Best-effort: a failed read contributes nothing
+// rather than throwing — eviction planning degrades to "nothing recorded,
+// so nothing to evict", never to blocking a download outright over a
+// transient IndexedDB error.
+//
+// @returns {Promise<Array<{id: string, name: string, bytes: number, savedAt: string}>>}
+async function basemapDownloadedAreas() {
+  const core = self.pwaBasemapDownloadCore;
+  const areas = [];
+  if (!core || !window.pwaDb) return areas;
+  try {
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const regions = Array.isArray(row && row.value) ? row.value : [];
+    for (const entry of regions) {
+      if (!entry || !entry.region_id) continue;
+      areas.push({
+        id: core.areaIdForRegion(entry.region_id),
+        name: entry.name || entry.region_id,
+        bytes: Number(entry.bytes) || 0,
+        savedAt: entry.savedAt,
+      });
+    }
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
+  try {
+    const row = await window.pwaDb.get('meta:app', 'basemap.customArea');
+    const area = row && row.value;
+    if (area && Array.isArray(area.bbox)) {
+      areas.push({
+        id: core.CUSTOM_AREA_ID,
+        name: area.name || core.CUSTOM_AREA_ID,
+        bytes: Number(area.bytes) || 0,
+        savedAt: area.savedAt,
+      });
+    }
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
+  return areas;
+}
+
+/**
+ * SNOW-586: pre-flight an incoming `areaId` download of `mb` megabytes
+ * against the standing byte budget — the page-side half of the eviction
+ * plan (basemap_download_core.js's `planEviction` does the arithmetic;
+ * this just gathers its inputs). Uses the worst-case `mb` ESTIMATE, not
+ * an actual byte count — the real size is only known after the run
+ * completes (`_warmCache`'s reported `bytes`), so pre-flight budgets on
+ * the same upper-bound estimate `DOWNLOAD_CEILING_MB` already uses.
+ *
+ * @param {string} areaId The id of the area about to be (re)downloaded —
+ *   `planEviction` excludes its own existing record from the standing
+ *   total, so a re-download never counts its own earlier copy against
+ *   itself.
+ * @param {number} mb
+ * @returns {Promise<{fits: boolean, impossible: boolean, evict: string[],
+ *   projectedBytes: number, areasById: Map<string, Object>} | null>}
+ *   ``null`` when `pwaBasemapDownloadCore` isn't loaded — callers treat
+ *   that the same as "nothing to evict, proceed" (the pre-SNOW-586
+ *   behaviour), since there is no budget arithmetic to run without it.
+ */
+async function planBasemapDownloadBudget(areaId, mb) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core) return null;
+  const [areas, budgetBytes] = await Promise.all([
+    basemapDownloadedAreas(),
+    basemapDownloadBudgetBytes(),
+  ]);
+  const incomingBytes = Math.max(0, Number(mb) || 0) * 1024 * 1024;
+  const plan = core.planEviction(areas, { id: areaId, bytes: incomingBytes }, budgetBytes);
+  const areasById = new Map(areas.map((a) => [a.id, a]));
+  return { fits: plan.fits, impossible: plan.impossible, evict: plan.evict, projectedBytes: plan.projectedBytes, areasById };
+}
+
+/**
+ * SNOW-586: delete whole areas — each one's pinned Cache Storage bucket
+ * AND its meta:app record — so an eviction can never leave a stale
+ * "downloaded" ring or a budget entry with nothing behind it. Best-effort
+ * per area: one failure doesn't abort the rest, and a record whose bucket
+ * is already gone (or vice versa) still gets its other half cleaned up.
+ *
+ * @param {string[]} areaIds
+ * @returns {Promise<void>}
+ */
+async function evictBasemapAreas(areaIds) {
+  const core = self.pwaBasemapDownloadCore;
+  const ids = Array.isArray(areaIds) ? areaIds : [];
+  if (!core || !ids.length) return;
+  await Promise.all(
+    ids.map(async (areaId) => {
+      try {
+        await caches.delete(core.pinnedCacheName(areaId));
+      } catch (_e) {
+        // Best-effort.
+      }
+      try {
+        if (areaId === core.CUSTOM_AREA_ID) {
+          await window.pwaDb?.delete('meta:app', 'basemap.customArea');
+        } else {
+          const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+          const existing = Array.isArray(row && row.value) ? row.value : [];
+          const next = existing.filter(
+            (entry) => !(entry && core.areaIdForRegion(entry.region_id) === areaId),
+          );
+          if (next.length !== existing.length) {
+            await window.pwaDb?.put('meta:app', { key: 'basemap.regions', value: next });
+          }
+        }
+      } catch (_e) {
+        // Best-effort — a stale record with no bucket behind it is
+        // treated as evictable-first the next time budget planning runs
+        // (see the "byte totals are page-recorded" risk note in
+        // docs/decisions/per-area-pinned-basemap-caches.md).
+      }
+    }),
+  );
+  // SNOW-570: an evicted area's ring must disappear immediately, not at
+  // the next refresh trigger.
+  window.pwaDownloadedOverlay?.refresh();
+}
+
+/**
+ * SNOW-586: reveal the whole-area-eviction confirm banner naming
+ * `evictAreas` and resolve once the user answers.
+ *
+ * Degrades to `false` (treated as "cancelled") when the banner markup
+ * isn't present — an older cached shell mid-rollout, say — because
+ * silently proceeding to evict without ever having asked is exactly the
+ * silence this ticket exists to remove; refusing the run is the safe
+ * direction, not evicting anyway.
+ *
+ * @param {Array<{id: string, name: string}>} evictAreas
+ * @returns {Promise<boolean>} `true` = proceed (the caller still has to
+ *   call `evictBasemapAreas` itself — this only asks), `false` = cancel.
+ */
+function confirmBasemapEviction(evictAreas) {
+  return new Promise((resolve) => {
+    const banner = document.getElementById('map-download-evict-confirm');
+    const body = document.getElementById('map-download-evict-confirm-body');
+    const cta = document.getElementById('map-download-evict-confirm-cta');
+    if (!banner || !cta) {
+      resolve(false);
+      return;
+    }
+    if (body) body.textContent = (evictAreas || []).map((a) => a.name).join(', ');
+    let settled = false;
+    const onConfirm = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      banner.classList.add('hidden');
+      resolve(true);
+    };
+    const onDismiss = (e) => {
+      if (settled || !(e.detail && e.detail.overlay === banner)) return;
+      settled = true;
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      cta.removeEventListener('click', onConfirm);
+      document.removeEventListener('overlay:dismissed', onDismiss);
+    };
+    cta.addEventListener('click', onConfirm);
+    document.addEventListener('overlay:dismissed', onDismiss);
+    banner.classList.remove('hidden');
+  });
+}
+
+// SNOW-568: the basemap-download failure toasts in _map_embed.html. Only
+// 'quota' and (SNOW-586) 'budget' have a remedy of their own (free space
+// / frame a smaller area; refuse a run larger than the whole standing
+// budget) — every other cause — an unreachable network, a worker that
+// went silent, a server answering 4xx/5xx — leads to the same
+// instruction, so they share the generic toast rather than leaking a
+// classification the user can do nothing with.
 const BASEMAP_DOWNLOAD_ERROR_TOAST_IDS = {
   quota: 'map-download-error-toast-quota',
+  budget: 'map-download-error-toast-budget',
 };
 const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
 
@@ -3089,41 +3340,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // region you have selected.
   //
   // PROBED, NEVER STORED — literally true: every tile square is read
-  // straight back out of real BASEMAP_PINNED_CACHE contents on every
-  // refresh, with no stored record involved anywhere in the path.
-  // Eviction, a basemap swap and Clear Site Data all change the answer,
-  // and all of them show up here for free.
+  // straight back out of real pinned-cache contents on every refresh, with
+  // no stored record involved anywhere in the path. Eviction, a basemap
+  // swap and Clear Site Data all change the answer, and all of them show
+  // up here for free.
   //
-  // ONE cache.keys() PASS. The roundel probes a single region and can
-  // afford cache.match(); this asks about every tile in the pinned cache,
-  // so it takes one pass over the cache's URLs and answers the whole map
-  // from that set (pwaBasemapDownloadCore.cachedTilesFromURLs). Never call
-  // it per frame — the pinned cache holds thousands of entries.
+  // ONE cache.keys() PASS PER BUCKET. The roundel probes a single region
+  // and can afford cache.match(); this asks about every tile the user has
+  // pinned, so it takes one pass over every per-area bucket's URLs
+  // (pinnedBasemapCacheURLs, module scope — SNOW-586 gave every downloaded
+  // area its own bucket, so "one pass" is now one pass per bucket, unioned)
+  // and answers the whole map from that set
+  // (pwaBasemapDownloadCore.cachedTilesFromURLs). Never call it per frame —
+  // the pinned buckets together hold thousands of entries.
   //
   // PER-BASEMAP, like the roundels: the probe keys off the ACTIVE
   // basemap's tile template, so downloading on Standard and switching to
   // Swisstopo empties the overlay. That is the truth — those tiles are not
   // cached — and it is why this refreshes on snowdesk:basemap-changed.
-
-  /**
-   * Every URL in the pinned basemap cache, as a Set. Empty when Cache
-   * Storage is unavailable or nothing has been pinned yet. Never throws.
-   *
-   * @returns {Promise<Set<string>>}
-   */
-  const _pinnedCacheURLs = async () => {
-    if (!('caches' in window)) return new Set();
-    try {
-      const names = await caches.keys();
-      const name = names.find((n) => n.startsWith('snowdesk-basemap-pinned-'));
-      if (!name) return new Set();
-      const cache = await caches.open(name);
-      const requests = await cache.keys();
-      return new Set(requests.map((request) => request.url));
-    } catch (_e) {
-      return new Set();
-    }
-  };
 
   // Coalesces overlapping refreshes: several of the signals below can land
   // together (a download settling also refreshes the sync dashboard, which
@@ -3177,7 +3411,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         _refreshDownloadedWhenStyleSettles();
         return;
       }
-      const cached = await _pinnedCacheURLs();
+      const cached = await pinnedBasemapCacheURLs();
 
       // The tiles themselves, read straight back out of the cache's own
       // URLs — no stored record involved, so this cannot drift from what
@@ -5774,9 +6008,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // State (no-region/idle/busy/done/disabled/offline, data-download-state)
 // — idle/done are
-// derived from a real BASEMAP_PINNED_CACHE probe every time the icon is
-// (re)shown, never a stored flag (the "layers menu is a live cache-state
-// dashboard" invariant — see docs/offline-map.md); disabled is the
+// derived from a real pinned-cache probe (every per-area bucket, unioned
+// — SNOW-586) every time the icon is (re)shown, never a stored flag (the
+// "layers menu is a live cache-state dashboard" invariant — see
+// docs/offline-map.md); disabled is the
 // server-flagged over_ceiling backstop. That probe needs the active
 // basemap's tile template, which isn't resolvable while the style is
 // still settling (the boot case) — so a probe that can't tell yet is
@@ -5796,14 +6031,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   if (!btn) return;
 
   const ribbonEl = document.getElementById('season-ribbon');
-
-  // caches.keys() prefix match (not a hardcoded full cache name) so a
-  // sw.js version bump of the pinned cache's own suffix never breaks
-  // this probe — same rationale as map_layer_sync_status.js's
-  // BASEMAP_CACHE_PREFIX, narrowed to the *pinned* partition only:
-  // ordinary passive-browsing tile caching must never read as "this
-  // region was deliberately downloaded".
-  const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
   // SNOW-570: the regions the user has downloaded, in meta:app under
   // 'basemap.regions' as [{region_id, band, z, savedAt}].
@@ -5843,24 +6070,45 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * fetch in `_probeDone` below still answers correctly, just over the
    * network instead of from IndexedDB.
    *
+   * SNOW-586: `bytes` accumulates onto whatever was previously recorded
+   * rather than replacing it. A region's pinned bucket is keyed on the
+   * region id ALONE, not per-basemap, so downloading the same region
+   * under a SECOND basemap adds genuinely new tiles (different URLs,
+   * different origin) to the one shared bucket — the recorded total has
+   * to grow with it to stay honest against what `planEviction` actually
+   * has to budget for. The trade-off: a same-basemap RETRY re-fetches
+   * every URL in the run (not just the ones that failed previously), so
+   * it re-counts bytes already on disk and over-states this area's size
+   * until a later change corrects it. That is a conservative direction —
+   * it can only make eviction MORE eager, never let the recorded total
+   * drift under what is genuinely on disk — so it is accepted rather than
+   * tracked more precisely (see docs/decisions/per-area-pinned-basemap-caches.md).
+   *
    * @param {string} regionId
    * @param {Object | null} z The downloaded blob's own tile ranges
    *   (`blob.z` — rectangle or clipped row spans), or null when the run's
    *   blob carried none — in which case nothing is recorded, since an
    *   entry with no `z` could never be verified against the cache.
    * @param {number[]} band The zoom band the run actually fetched.
+   * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
+   *   ``warm-cache-done`` reply.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, z, band) {
+  async function _recordRegionDownload(regionId, z, band, bytes) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const existing = Array.isArray(row && row.value) ? row.value : [];
+      const previous = existing.find((entry) => entry && entry.region_id === regionId);
       const next = existing.filter((entry) => entry && entry.region_id !== regionId);
+      const feature = FEATURE_BY_REGION_ID[regionId];
+      const name = (feature && feature.properties && feature.properties.name) || regionId;
       next.push({
         region_id: regionId,
         band: band,
         z: z,
+        name: name,
+        bytes: (Number(previous && previous.bytes) || 0) + (Number(bytes) || 0),
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
@@ -5946,41 +6194,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let currentRegionId = (ribbonEl && ribbonEl.dataset.defaultRegionId) || null;
 
   /**
-   * Open the (single) Cache Storage cache whose name starts with
-   * BASEMAP_PINNED_CACHE_PREFIX, or null if Cache Storage is
-   * unsupported or no such cache exists yet (nothing pinned this
-   * session). Never throws.
-   *
-   * @returns {Promise<Cache | null>}
-   */
-  async function _openPinnedBasemapCache() {
-    if (!('caches' in window)) return null;
-    try {
-      const names = await caches.keys();
-      const name = names.find((n) => n.startsWith(BASEMAP_PINNED_CACHE_PREFIX));
-      return name ? await caches.open(name) : null;
-    } catch (_e) {
-      return null;
-    }
-  }
-
-  /**
-   * Every URL in the pinned basemap cache, as a Set. Empty when Cache
-   * Storage is unavailable or nothing has been pinned. Never throws.
-   *
-   * @returns {Promise<Set<string>>}
-   */
-  async function _pinnedCacheURLs() {
-    const cache = await _openPinnedBasemapCache();
-    if (!cache) return new Set();
-    try {
-      return new Set((await cache.keys()).map((request) => request.url));
-    } catch (_e) {
-      return new Set();
-    }
-  }
-
-  /**
    * True when EVERY tile of `data`'s region is present in the pinned
    * cache — "is this region actually available offline?".
    *
@@ -6027,7 +6240,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
-    const cached = await _pinnedCacheURLs();
+    // SNOW-586: the cached set is unioned across every per-area pinned
+    // bucket, not read from one shared cache. That is the ONLY thing this
+    // ticket changes here — SNOW-583's stored-`z` strategy below is kept
+    // whole, because it asks about the tile ranges the run actually
+    // fetched. Deriving them from the region's bbox instead (as this
+    // probe did before SNOW-583 clipped downloads to the region plus a
+    // tile of margin) would demand tiles a clipped download never wrote,
+    // so every region would read as permanently un-downloaded.
+    const cached = await pinnedBasemapCacheURLs();
 
     const stored = await _storedRegionRecord(data.regionId);
     if (stored) return core.blobFullyCached(template, { z: stored.z }, cached);
@@ -6230,6 +6451,27 @@ const repaintRegionsForDate = (dateKey, cache) => {
       revealBasemapDownloadError('quota');
       return;
     }
+    // SNOW-586: refuse, or ask before evicting, BEFORE spending a fetch on
+    // the blob — same "cost a click, not a whole run" reasoning as the
+    // quota pre-flight above.
+    const areaId = self.pwaBasemapDownloadCore
+      ? self.pwaBasemapDownloadCore.areaIdForRegion(data.regionId)
+      : null;
+    const budgetPlan = areaId ? await planBasemapDownloadBudget(areaId, data.summary.mb) : null;
+    if (budgetPlan && budgetPlan.impossible) {
+      setState('error', data.summary.mb);
+      revealBasemapDownloadError('budget');
+      return;
+    }
+    if (budgetPlan && budgetPlan.evict.length > 0) {
+      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
+      const proceed = await confirmBasemapEviction(evictAreas);
+      if (!proceed) {
+        setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
+        return;
+      }
+      await evictBasemapAreas(budgetPlan.evict);
+    }
 
     let blob;
     try {
@@ -6296,7 +6538,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // record back directly, with no recomputation, so it is exactly
       // right for whatever shape the blob was.
       if (ok) {
-        await _recordRegionDownload(data.regionId, blob.z, blob.band || core.MICRO_BAND);
+        await _recordRegionDownload(
+          data.regionId,
+          blob.z,
+          blob.band || core.MICRO_BAND,
+          result.bytes,
+        );
       }
       // SNOW-569: await the on-map pulse before flipping the roundel — the
       // two are one gesture, the region finishes filling, pulses, and only
@@ -6323,12 +6570,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       window.pwaDownloadedOverlay?.refresh();
     };
 
-    // SNOW-521: `pinned: true` routes the basemap-origin writes into
-    // sw.js's dedicated BASEMAP_PINNED_CACHE, exempt from the passive
-    // browsing LRU trim — a deliberate download can't be evicted by
-    // casual panning elsewhere.
+    // SNOW-521: `pinned: true` routes the basemap-origin writes into a
+    // dedicated pinned bucket, exempt from the passive browsing LRU trim
+    // — a deliberate download can't be evicted by casual panning
+    // elsewhere. SNOW-586: `areaId` selects WHICH bucket — this region's
+    // own, so it can never perforate (or be perforated by) another area.
     if (typeof window.pwaWarmCache === 'function') {
-      window.pwaWarmCache(urls, { pinned: true, onProgress }).then(finish).catch(() => finish(null));
+      window.pwaWarmCache(urls, { pinned: true, areaId, onProgress }).then(finish).catch(() => finish(null));
     } else {
       finish(null);
     }
@@ -6410,31 +6658,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // Persistence — exactly one custom area exists at a time. A confirmed
 // download is saved to IndexedDB's meta:app store under
-// 'basemap.customArea', {bbox, band, centre_tile, savedAt} — the same
-// {key, value} row shape as basemap.origins (map.js:~450) and
+// 'basemap.customArea', {bbox, band, centre_tile, name, bytes, savedAt}
+// (SNOW-586 added name/bytes — see basemapDownloadedAreas's own comment)
+// — the same {key, value} row shape as basemap.origins (map.js:~450) and
 // mutations.principal. The roundel's "done" state is still PROBED, never
 // read off that row directly, exactly like the per-region control: real
-// BASEMAP_PINNED_CACHE contents — checked against the saved bbox/band's
-// WHOLE tile set (_probeDone below, blobFullyCached), not merely
-// centre_tile (still stored, but no longer what the probe checks) — are
-// the source of truth for whether the area is actually downloaded; the
-// meta:app row only records WHERE the frame was. Clicking a 'done'
-// roundel re-opens framing at the saved area (MAP.fitBounds) rather than
-// re-downloading outright, so the user can move on from there.
+// Pinned-cache contents — checked against the saved bbox/band's WHOLE
+// tile set (_probeDone below, blobFullyCached), not merely centre_tile
+// (still stored, but no longer what the probe checks), and read across
+// EVERY per-area bucket rather than one shared cache (SNOW-586,
+// pinnedBasemapCacheURLs) — are the source of truth for whether the area
+// is actually downloaded; the meta:app row only records WHERE the frame
+// was. Clicking a 'done' roundel re-opens framing at the saved area
+// (MAP.fitBounds) rather than re-downloading outright, so the user can
+// move on from there.
 //
-// Evict-on-confirm — moving the frame and cancelling touches nothing.
-// Confirming a NEW bbox (one that differs from the saved one) first
-// deletes the OLD area's tiles from the pinned cache before warming the
-// new set — expanding the saved blob's ranges the same pure way a
-// download does (buildBlob is deterministic given bbox + band) and
-// calling cache.delete() on each URL, since sw.js has no per-entry-
-// deletion message (verified: its message handler covers only
-// version/SKIP_WAITING/register-basemap-origins/warm-cache — a page-side
-// caches.open() + delete() loop is the only option). Without this a
-// region download plus an abandoned custom area could together exceed
-// BASEMAP_PINNED_CACHE_MAX_ENTRIES (raised 2500 → 5000 in static/js/
-// sw.js, sized for exactly two concurrent pinned areas) and
-// _warmCache's own trim would silently evict whichever was older.
+// SNOW-586: two DISTINCT evictions can happen on confirm, for two
+// different reasons. (1) Confirming a NEW bbox (one that differs from the
+// saved one) deletes the OLD area's own bucket outright before warming
+// the new set — a plain `caches.delete()`, since the custom area's bucket
+// is keyed on its area id ('custom') alone, not its geometry; this needs
+// no confirmation, because it is replacing the user's own prior choice
+// with the new one they just made. (2) Making room under the standing
+// byte budget may require evicting OTHER areas entirely — planned by
+// `planBasemapDownloadBudget`/`planEviction` and, unlike (1), always
+// confirmed first (`confirmBasemapEviction`) naming what would be
+// removed. Before SNOW-586 there was only (1), driven by re-deriving the
+// stale tile URLs against the CURRENT template and deleting them
+// one-by-one — which silently deleted nothing after a basemap switch,
+// since the tiles it computed no longer matched what was actually on
+// disk; a bucket delete has no such dependency.
 //
 // Offline-integrity: mirrors mapDownloadControlInit's offline handling
 // exactly — neither opening the framing overlay nor confirming a download
@@ -6452,14 +6705,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   const CUSTOM_AREA_KEY = 'basemap.customArea';
 
-  // caches.keys() prefix match, not a hardcoded full cache name — same
-  // idiom (and same rationale) as mapDownloadControlInit's own copy of
-  // this constant, kept as a separate copy per that IIFE's convention of
-  // being a fully self-contained module (only assembleBasemapDownloadFeedURLs
-  // was lifted to module scope, deliberately — see its own comment).
-  const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
-
-  // The persisted saved area, or null: {bbox, band, centre_tile, savedAt}.
+  // The persisted saved area, or null: {bbox, band, centre_tile, name,
+  // bytes, savedAt}.
   let savedArea = null;
 
   // The live bbox/blob for whatever the frame currently covers, while the
@@ -6473,25 +6720,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let resizeHandler = null;
 
   /**
-   * Open the (single) Cache Storage cache whose name starts with
-   * BASEMAP_PINNED_CACHE_PREFIX, or null if Cache Storage is unsupported
-   * or no such cache exists yet. Never throws — see
-   * mapDownloadControlInit's own copy for the full rationale.
-   *
-   * @returns {Promise<Cache | null>}
-   */
-  async function _openPinnedBasemapCache() {
-    if (!('caches' in window)) return null;
-    try {
-      const names = await caches.keys();
-      const name = names.find((n) => n.startsWith(BASEMAP_PINNED_CACHE_PREFIX));
-      return name ? await caches.open(name) : null;
-    } catch (_e) {
-      return null;
-    }
-  }
-
-  /**
    * True when EVERY tile of the saved custom area is present in the
    * pinned cache. Returns `null` for "can't tell yet" (the active
    * basemap's tile template isn't resolvable), exactly like
@@ -6502,8 +6730,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * shared by both download shapes means a region download that happened
    * to cover this area's centre tile made the area read as downloaded.
    * Eviction produced the same lie from the other direction — the area's
-   * centre tile can outlive most of the area, since the pinned cache
-   * trims by insertion order and not by which run owns what.
+   * centre tile can outlive most of the area, since the OLD pinned cache
+   * trimmed by insertion order and not by which run owned what (SNOW-586
+   * removed that shared cache/trim entirely — see
+   * pinnedBasemapCacheURLs's module-scope comment).
    *
    * @param {{bbox: number[], band?: number[]}} area The saved custom area.
    * @returns {Promise<boolean | null>}
@@ -6513,24 +6743,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
     if (!area || !area.bbox) return false;
-    const cached = await _pinnedCacheURLs();
+    const cached = await pinnedBasemapCacheURLs();
     const [minZ, maxZ] = area.band || core.MICRO_BAND;
     return core.blobFullyCached(template, core.buildBlob(area.bbox, minZ, maxZ), cached);
-  }
-
-  /**
-   * Every URL in the pinned basemap cache, as a Set. Never throws.
-   *
-   * @returns {Promise<Set<string>>}
-   */
-  async function _pinnedCacheURLs() {
-    const cache = await _openPinnedBasemapCache();
-    if (!cache) return new Set();
-    try {
-      return new Set((await cache.keys()).map((request) => request.url));
-    } catch (_e) {
-      return new Set();
-    }
   }
 
   /**
@@ -6647,7 +6862,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * Best-effort persistence of `area` to meta:app, replacing whatever was
    * there before — exactly one custom area exists at a time.
    *
-   * @param {{bbox: number[], band: number[], centre_tile: Object, savedAt: string}} area
+   * @param {{bbox: number[], band: number[], centre_tile: Object, name:
+   *   string, bytes: number, savedAt: string}} area
    * @returns {void}
    */
   function _persistSavedArea(area) {
@@ -7267,29 +7483,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Delete `area`'s previously-warmed tiles from the pinned cache —
-   * evict-on-confirm. There is no service-worker message for per-entry
-   * deletion (sw.js's message handler covers only version/SKIP_WAITING/
-   * register-basemap-origins/warm-cache), so this re-derives the exact
-   * same tile URLs a download of `area` would have warmed — buildBlob is
-   * a pure function of bbox + band, so it reproduces the same ranges —
-   * and deletes them from the page side.
-   *
-   * @param {{bbox: number[], band: number[]}} area
-   * @param {string} template
-   * @returns {Promise<void>}
-   */
-  async function _evictArea(area, template) {
-    const core = self.pwaBasemapDownloadCore;
-    if (!core || !template) return;
-    const cache = await _openPinnedBasemapCache();
-    if (!cache) return;
-    const staleBlob = core.buildBlob(area.bbox, area.band[0], area.band[1]);
-    const staleUrls = core.rangesToTileURLs(template, staleBlob);
-    await Promise.all(staleUrls.map((url) => cache.delete(url).catch(() => {})));
-  }
-
-  /**
    * Run the confirmed download: evict the previous saved area's tiles if
    * the framed bbox has moved, assemble the URL list, and hand it to the
    * SW's warm-cache handler — mirrors mapDownloadControlInit's
@@ -7345,8 +7538,42 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return;
     }
 
-    if (savedArea && !_bboxesEqual(savedArea.bbox, bbox)) {
-      await _evictArea(savedArea, template);
+    // SNOW-586: refuse, or ask before evicting OTHER areas, before
+    // spending a fetch — same pre-flight the region control runs.
+    // `planEviction` already excludes THIS area's own existing record
+    // from the standing total (incoming.id matches it), so a re-download
+    // of the same custom area — moved or not — never counts its own old
+    // copy against itself here.
+    const areaId = core.CUSTOM_AREA_ID;
+    const budgetPlan = await planBasemapDownloadBudget(areaId, blob.mb);
+    if (budgetPlan && budgetPlan.impossible) {
+      setState('error');
+      revealBasemapDownloadError('budget');
+      return;
+    }
+    if (budgetPlan && budgetPlan.evict.length > 0) {
+      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
+      const proceed = await confirmBasemapEviction(evictAreas);
+      if (!proceed) {
+        setState(navigator.onLine ? 'idle' : 'offline');
+        return;
+      }
+      await evictBasemapAreas(budgetPlan.evict);
+    }
+
+    // A REPLACEMENT of the same area at a NEW bbox — the frame moved
+    // since the last confirm — clears the old tiles first: they belong to
+    // ground this run doesn't cover, and leaving them would both bloat
+    // this area's one shared bucket and inflate its recorded byte total.
+    // Unlike the budget eviction above this needs no confirmation — it is
+    // replacing the user's OWN prior choice with a new one they just
+    // made, not touching another area. SNOW-586: a bucket delete, not the
+    // old URL-by-URL re-derivation against buildBlob — which also fixes a
+    // latent bug, since that re-derivation used the CURRENT template and
+    // so deleted nothing after a basemap switch.
+    const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
+    if (savedArea && !sameBbox) {
+      await evictBasemapAreas([areaId]);
     }
 
     // Tile-grid rework: cell-ordered tile URLs — see mapDownloadControlInit's
@@ -7377,10 +7604,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // a retry; only success closes it.
       const ok = !!(result && result.ok > 0 && result.failed === 0);
       if (ok) {
+        // SNOW-586: bytes accumulate onto the PREVIOUS record only when
+        // this is the same area at the same bbox (a same-basemap retry,
+        // or a redownload after switching basemap) — the "shares one
+        // bucket across basemaps" accumulation mapDownloadControlInit's
+        // _recordRegionDownload documents. A bbox change already had its
+        // old bucket/record wiped above, so there is nothing to add onto.
+        const previousBytes = sameBbox && savedArea ? Number(savedArea.bytes) || 0 : 0;
         savedArea = {
           bbox: bbox,
           band: blob.band,
           centre_tile: blob.centre_tile,
+          name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
+          bytes: previousBytes + (Number(result.bytes) || 0),
           savedAt: new Date().toISOString(),
         };
         _persistSavedArea(savedArea);
@@ -7414,7 +7650,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     };
 
     if (typeof window.pwaWarmCache === 'function') {
-      window.pwaWarmCache(urls, { pinned: true, onProgress }).then(finish).catch(() => finish(null));
+      window.pwaWarmCache(urls, { pinned: true, areaId, onProgress }).then(finish).catch(() => finish(null));
     } else {
       finish(null);
     }

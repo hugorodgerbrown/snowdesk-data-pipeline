@@ -233,6 +233,12 @@
           ok: data.ok,
           failed: data.failed,
           reason: data.reason || null,
+          // SNOW-586: the run's total on-disk bytes, so the caller can
+          // record it against the area's standing budget entry. An older
+          // worker still serving a cached shell won't send it — 0 then
+          // reads as "unknown size", which callers already treat safely
+          // (nothing is ever evicted on the strength of a zero).
+          bytes: data.bytes || 0,
         });
         _warmCacheSlot = null;
       }
@@ -284,13 +290,23 @@
    * shape) still works — ``pinned`` defaults false and progress is simply
    * not observed.
    *
+   * SNOW-586: ``opts.areaId`` is likewise forwarded verbatim
+   * (``event.data.areaId``) — REQUIRED whenever ``opts.pinned`` is true,
+   * since it selects which per-area pinned bucket the run writes into;
+   * ``sw.js`` refuses a pinned run with no ``areaId`` rather than falling
+   * back to a shared bucket (see its own docstring). The resolved
+   * summary's ``bytes`` field is the run's total on-disk size
+   * (``sw.js``'s ``_warmCache`` sums it as it writes), which the caller
+   * records against the area's standing budget entry.
+   *
    * Tile-grid rework: ``settled`` is the batch of ``urls`` indices that succeeded
    * since the previous report — see ``_warmCache`` in ``sw.js``.
    *
    * @param {string[]} urls
-   * @param {{pinned?: boolean, onProgress?: (done: number, total: number,
-   *   settled?: number[]) => void}} [opts]
-   * @returns {Promise<{ok: number, failed: number, reason: string|null} | null>}
+   * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
+   *   total: number, settled?: number[]) => void}} [opts]
+   * @returns {Promise<{ok: number, failed: number, reason: string|null,
+   *   bytes: number} | null>}
    */
   function warmCache(urls, opts) {
     const active = navigator.serviceWorker.controller;
@@ -323,7 +339,7 @@
           // active worker, so there was nothing to warm" — which callers
           // treat as a non-event; a worker that went silent mid-run IS an
           // event, and the user needs telling.
-          settle({ ok: 0, failed: 0, reason: 'timeout' });
+          settle({ ok: 0, failed: 0, reason: 'timeout', bytes: 0 });
         }, WARM_CACHE_TIMEOUT_MS);
       };
 
@@ -339,6 +355,9 @@
         urls: urls || [],
         requestId,
         pinned: !!options.pinned,
+        // SNOW-586: which pinned bucket a pinned run writes into —
+        // undefined for a non-pinned call, same as before this ticket.
+        areaId: options.areaId,
       });
     });
   }
