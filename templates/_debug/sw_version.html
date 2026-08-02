@@ -1,8 +1,9 @@
 {% extends "public/base.html" %}
 {% load static %}
 
-{# SNOW-553: sharing=False. Staff-only debug page, mounted only when     #}
-{# DEBUG is on. It has no public URL to share.                          #}
+{# SNOW-553: sharing=False. Staff-only debug page, mounted unconditionally #}
+{# (staff-gated, not a DEBUG gate — see apps/public/debug_views.py's       #}
+{# module docstring). It has no public URL to share.                      #}
 {% block page_meta %}
     {% include "includes/_page_meta.html" with title="SW shell version — debug" description="Staff-only service-worker shell version debug page." sharing=False %}
 {% endblock page_meta %}
@@ -40,9 +41,32 @@
                 controls this page (JS disabled, or first visit).
             </p>
         </section>
+
+        {% if sw_dev_shell_bypass %}
+            {# SNOW-585: only rendered when settings.SW_DEV_SHELL_BYPASS is on #}
+            {# (development default; always off in production).              #}
+            <section class="bg-card border border-border rounded-card p-4 space-y-2">
+                <h2 class="font-semibold text-text-1">Dev shell-cache bypass</h2>
+                <p class="text-text-2 text-sm">
+                    Active — the service worker skips its shell cache entirely, so every reload serves current bytes
+                    off disk (see <code>docs/decisions/dev-bypasses-the-shell-cache.md</code>).
+                </p>
+                <label class="mt-2 flex cursor-pointer items-center gap-2 text-xs text-text-2">
+                    <input
+                        id="sw-dev-shell-cache-optin"
+                        type="checkbox"
+                        class="h-3.5 w-3.5 rounded border-border text-text-1 focus:ring-text-2"
+                    >
+                    <span>Restore ordinary shell caching (opt back in)</span>
+                </label>
+            </section>
+        {% endif %}
     </main>
 {% endblock %}
 
 {% block extra_js %}
     <script src="{% static 'js/pwa_sw_version_probe.js' %}" defer></script>
+    {% if sw_dev_shell_bypass %}
+        <script src="{% static 'js/pwa_dev_shell_toggle.js' %}" defer></script>
+    {% endif %}
 {% endblock %}
