@@ -37,6 +37,9 @@ from django.core.checks import Error, Tags, register
 # E002 — SITE_BASE_URL is not an absolute URL (no scheme, or no host).
 CHECK_ID_PREFIX = "core.site_base_url"
 
+# E001 — SW_DEV_SHELL_BYPASS is on while DEBUG is off (SNOW-585).
+SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX = "core.sw_dev_shell_bypass"
+
 # Host names that only ever resolve to the machine serving the request.
 # ``urlsplit().hostname`` lower-cases and strips the port and any IPv6
 # brackets, so these are compared against a normalised value.
@@ -91,5 +94,39 @@ def check_site_base_url(app_configs: Any, **kwargs: Any) -> list[Error]:
                 f"SILENCED_SYSTEM_CHECKS = ['{CHECK_ID_PREFIX}.E001']."
             ),
             id=f"{CHECK_ID_PREFIX}.E001",
+        )
+    ]
+
+
+@register(Tags.compatibility)
+def check_sw_dev_shell_bypass(app_configs: Any, **kwargs: Any) -> list[Error]:
+    """Verify ``SW_DEV_SHELL_BYPASS`` is never on when ``DEBUG`` is off (SNOW-585).
+
+    The bypass makes the service worker skip its shell cache entirely — the
+    right behaviour for a local dev worktree, where the previous SW would
+    otherwise keep serving stale ``map.js`` and friends after a ``git
+    pull``, but wrong in production, where the shell cache is what makes the
+    second page load instant. ``manage.py migrate`` runs system checks
+    before applying anything and ``build.sh`` runs ``migrate`` on every
+    deploy, so an ``Error`` here aborts the deploy rather than silently
+    shipping the carve-out (mirrors ``check_site_base_url``'s SNOW-554
+    rationale above).
+    """
+    if not settings.SW_DEV_SHELL_BYPASS or settings.DEBUG:
+        return []
+
+    return [
+        Error(
+            "SW_DEV_SHELL_BYPASS is enabled with DEBUG off.",
+            hint=(
+                "SW_DEV_SHELL_BYPASS is a local-development convenience — it "
+                "makes the service worker skip its shell cache so a stale "
+                "worker can never keep serving pre-pull assets. Shipping it "
+                "to a non-debug deploy would disable the shell cache "
+                "everywhere, including production. Unset the "
+                "SW_DEV_SHELL_BYPASS environment variable (or set it to "
+                "False) on this service."
+            ),
+            id=f"{SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX}.E001",
         )
     ]
