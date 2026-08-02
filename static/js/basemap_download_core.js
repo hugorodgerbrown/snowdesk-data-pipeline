@@ -44,15 +44,32 @@
  * identical here so a reader porting between the two never has to
  * mentally swap axes.
  *
+ * SNOW-583 clips a REGION download to its real boundary plus a margin
+ * tile server-side (``apps.regions.services.basemap_tiles.
+ * build_region_blob``), so a region's ``z`` entry is no longer always the
+ * 4-int rectangle ``[xmin, xmax, ymin, ymax]`` — it is now
+ * ``{"<y>": [xmin, xmax]}``, one row span per present row. The
+ * CUSTOM-AREA blob ``buildBlob`` (below) produces is UNCHANGED and stays
+ * rectangular — a user-drawn rectangle genuinely is one — and a stale
+ * `Cache-Control: max-age=86400` response can still hand back an
+ * old-shape rectangle for up to 24h after a deploy. ``zoomRows`` is the
+ * one accessor every consumer of a blob's ``z`` routes through so both
+ * shapes are handled in exactly one place.
+ *
  * Public API — attached to ``self.pwaBasemapDownloadCore``:
  *
+ *   zoomRows(zEntry)
+ *     Normalises one zoom level's ``z`` entry — either shape — to
+ *     ``{"<y>": [xmin, xmax]}``. See the SNOW-583 note above; every
+ *     function below that walks a blob's tiles goes through this rather
+ *     than assuming a rectangle.
  *   rangesToTileURLs(template, blob)
  *     Expands a full basemap_download blob's ``z`` tile-index ranges
- *     (``{"<z>": [xmin, xmax, ymin, ymax]}``, as fetched from
- *     ``/api/region-basemap-tiles/?id=...`` OR produced locally by
- *     ``buildBlob`` below) into the full list of ``{z}/{x}/{y}`` tile
- *     URLs, substituted into ``template``. Returns ``[]`` for a falsy
- *     ``template`` or ``blob``, or a blob with no ``z`` ranges.
+ *     (as fetched from ``/api/region-basemap-tiles/?id=...`` OR produced
+ *     locally by ``buildBlob`` below) into the full list of
+ *     ``{z}/{x}/{y}`` tile URLs, substituted into ``template``. Returns
+ *     ``[]`` for a falsy ``template`` or ``blob``, or a blob with no
+ *     ``z`` ranges.
  *   centreTileURL(template, summary)
  *     Builds the single tile URL for ``summary.centre_tile``
  *     (``{z, x, y}``) — the "done-probe" key: the client checks whether
@@ -129,11 +146,17 @@
  *   tileGridPlan(template, blob)
  *     The grid's cells AND the run's tile URLs ordered to fill them one
  *     at a time — see its docstring for why the ordering is the feature.
- *   downloadedIds(template, entries, cachedURLs)
- *     SNOW-570: which of ``entries`` (``{id, centre_tile}``) have their
- *     centre tile in ``cachedURLs`` — the pure half of the "which areas
- *     are downloaded?" overlay, so the caller does ONE ``cache.keys()``
- *     pass rather than a ``cache.match()`` per region.
+ *   blobFullyCached(template, blob, cached)
+ *     SNOW-570, widened by SNOW-583: whether EVERY tile in ``blob``'s own
+ *     ``z`` (either shape, via ``zoomRows``) is present in ``cached`` —
+ *     "is this download actually available offline?". Replaces the old
+ *     ``downloadedIds(template, entries, cachedURLs)``/internal
+ *     ``_bboxFullyCached`` pair now that the only two callers (the
+ *     per-region and custom-area done-probes) each ask about ONE blob at
+ *     a time rather than a whole list of regions — SNOW-583 dropped the
+ *     "Downloaded areas" overlay's per-region ring (see
+ *     ``docs/decisions/region-downloads-clip-custom-areas-dont.md``), the
+ *     last caller that needed the list form.
  */
 
 (function () {
@@ -158,26 +181,58 @@
   var STORAGE_HEADROOM_FACTOR = 0.5;
 
   /**
+   * Normalise one zoom level's ``z`` entry to ``{"<y>": [xmin, xmax]}``,
+   * whichever of the two shapes it arrived in (SNOW-583).
+   *
+   * A full blob's ``z[zoom]`` is one of:
+   *   - a 4-int rectangle ``[xmin, xmax, ymin, ymax]`` — ``buildBlob``'s
+   *     own shape (the custom-area download, always a rectangle) and
+   *     what a stale `max-age=86400` region response can still be for up
+   *     to 24h after a deploy — expanded here into one identical span
+   *     per row.
+   *   - an object ``{"<y>": [xmin, xmax]}`` — a clipped region blob's
+   *     shape (``apps.regions.services.basemap_tiles.build_region_blob``),
+   *     taken as given.
+   *
+   * Every consumer of a blob's ``z`` below (``rangesToTileURLs``,
+   * ``tileCount``, ``tileGridPlan``, ``blobFullyCached``) routes through
+   * this rather than assuming either shape directly.
+   *
+   * @param {number[] | Object<string, number[]> | undefined} zEntry
+   * @returns {Object<string, [number, number]>}
+   */
+  function zoomRows(zEntry) {
+    if (!zEntry) return {};
+    if (Array.isArray(zEntry)) {
+      const [xmin, xmax, ymin, ymax] = zEntry;
+      const rows = {};
+      for (let y = ymin; y <= ymax; y++) rows[String(y)] = [xmin, xmax];
+      return rows;
+    }
+    return zEntry;
+  }
+
+  /**
    * Expand a full basemap_download blob's ``z`` ranges into tile URLs.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
-   * @param {{z?: Object<string, number[]>}} blob The full blob — either
-   *   fetched from ``/api/region-basemap-tiles/?id=...`` or built locally
-   *   by ``buildBlob`` (``{band, count, mb, over_ceiling, centre_tile,
-   *   z}`` — see ``regions/services/basemap_tiles.py``'s module
-   *   docstring).
+   * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
+   *   The full blob — either fetched from
+   *   ``/api/region-basemap-tiles/?id=...`` or built locally by
+   *   ``buildBlob`` (``{band, count, mb, over_ceiling, centre_tile, z}``
+   *   — see ``regions/services/basemap_tiles.py``'s module docstring).
+   *   Each zoom's ``z[zoom]`` is either shape ``zoomRows`` accepts.
    * @returns {string[]}
    */
   function rangesToTileURLs(template, blob) {
     const urls = [];
     if (!template || !blob || !blob.z) return urls;
     for (const z of Object.keys(blob.z)) {
-      const [xmin, xmax, ymin, ymax] = blob.z[z];
-      for (let x = xmin; x <= xmax; x++) {
-        for (let y = ymin; y <= ymax; y++) {
-          urls.push(
-            template.replace('{z}', z).replace('{x}', String(x)).replace('{y}', String(y)),
-          );
+      const rows = zoomRows(blob.z[z]);
+      for (const y of Object.keys(rows)) {
+        const [xmin, xmax] = rows[y];
+        for (let x = xmin; x <= xmax; x++) {
+          urls.push(template.replace('{z}', z).replace('{x}', String(x)).replace('{y}', y));
         }
       }
     }
@@ -283,17 +338,24 @@
   /**
    * Total tile count across every zoom level in ``ranges``.
    *
-   * Deliberate re-port of ``basemap_tiles.tile_count``.
+   * Deliberate re-port of ``basemap_tiles.tile_count`` (rectangle
+   * ranges) — but, via ``zoomRows``, also correct for a clipped region
+   * blob's row-span ``z`` (SNOW-583's ``row_tile_count`` counterpart),
+   * so one function serves both shapes.
    *
-   * @param {Object<string, number[]>} ranges The ``{"<z>": [xmin, xmax,
-   *   ymin, ymax]}`` shape returned by ``tileRangesForBBox``.
+   * @param {Object<string, number[] | Object<string, number[]>>} ranges
+   *   The ``{"<z>": ...}`` shape returned by ``tileRangesForBBox``, or a
+   *   full blob's ``z``.
    * @returns {number}
    */
   function tileCount(ranges) {
     let total = 0;
     for (const key of Object.keys(ranges)) {
-      const [xmin, xmax, ymin, ymax] = ranges[key];
-      total += (xmax - xmin + 1) * (ymax - ymin + 1);
+      const rows = zoomRows(ranges[key]);
+      for (const y of Object.keys(rows)) {
+        const [xmin, xmax] = rows[y];
+        total += xmax - xmin + 1;
+      }
     }
     return total;
   }
@@ -671,23 +733,34 @@
    * completing several cells would let squares light up for ground whose
    * own detail tiles have not been fetched yet.
    *
-   * ``range`` clamps the result into the grid's own footprint. A coarse
-   * tile starts WEST and NORTH of the area it was fetched for (its
+   * ``gridRows`` clamps the result into the grid's own footprint. A
+   * coarse tile starts WEST and NORTH of the area it was fetched for (its
    * indices floor to a wider grid), so its north-westmost fine cell can
-   * fall outside the range the grid draws — which showed up as a lattice
+   * fall outside the rows the grid draws — which showed up as a lattice
    * of stray squares scattered off the edge of the download area, over
    * ground the run does not cover. Clamping folds those onto the edge
    * cell the tile actually overlaps.
+   *
+   * SNOW-583: a clipped region blob's grid rows are no longer necessarily
+   * CONTIGUOUS in y (a concave boundary can leave a gap between two
+   * present rows), so the old single clamp — bound ``cx``/``cy`` each
+   * independently into the grid zoom's own rectangle — could land a cell
+   * on a row that has no tiles at all. The clamp is therefore two steps,
+   * row first: ``cy`` snaps to the nearest row ``gridRows`` actually has,
+   * THEN ``cx`` clamps into that row's own ``[xmin, xmax]`` span. For a
+   * rectangular grid (every row present, one shared span) this reduces to
+   * exactly the old single clamp — the ``buildBlob``/custom-area path is
+   * untouched in substance, only in shape of the arithmetic.
    *
    * @param {number} z The tile's zoom level.
    * @param {number} x The tile's x index.
    * @param {number} y The tile's y index.
    * @param {number} gridZ The grid's zoom level.
-   * @param {number[]} range The grid zoom's own ``[xmin, xmax, ymin,
-   *   ymax]`` tile range.
+   * @param {Object<string, [number, number]>} gridRows The grid zoom's own
+   *   ``{"<y>": [xmin, xmax]}`` rows (``zoomRows(blob.z[gridZ])``).
    * @returns {[number, number]} ``[cellX, cellY]``.
    */
-  function _cellForTile(z, x, y, gridZ, range) {
+  function _cellForTile(z, x, y, gridZ, gridRows) {
     const shift = z - gridZ;
     let cx;
     let cy;
@@ -700,11 +773,37 @@
       cx = x * scale;
       cy = y * scale;
     }
-    const [xmin, xmax, ymin, ymax] = range;
-    return [
-      Math.max(xmin, Math.min(cx, xmax)),
-      Math.max(ymin, Math.min(cy, ymax)),
-    ];
+    cy = _nearestRow(cy, gridRows);
+    const [xmin, xmax] = gridRows[String(cy)];
+    cx = Math.max(xmin, Math.min(cx, xmax));
+    return [cx, cy];
+  }
+
+  /**
+   * The row (``y``) in ``gridRows`` closest to ``cy`` — exact when ``cy``
+   * is itself present, otherwise the nearest neighbour. Ties (equidistant
+   * above and below) resolve to the smaller ``y``, i.e. the row further
+   * NORTH — an arbitrary but deterministic choice; a boundary narrow
+   * enough to produce one is already a rare, single-row sliver.
+   *
+   * @param {number} cy A candidate row index, possibly absent from
+   *   ``gridRows``.
+   * @param {Object<string, [number, number]>} gridRows The grid zoom's
+   *   own rows.
+   * @returns {number} A row index guaranteed present in ``gridRows``.
+   */
+  function _nearestRow(cy, gridRows) {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const key of Object.keys(gridRows)) {
+      const y = Number(key);
+      const distance = Math.abs(y - cy);
+      if (distance < bestDistance || (distance === bestDistance && y < best)) {
+        best = y;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
 
   /**
@@ -742,9 +841,11 @@
    * the same order.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
-   * @param {{z?: Object<string, number[]>}} blob A full download blob —
-   *   fetched from ``/api/region-basemap-tiles/?id=...`` or built by
-   *   ``buildBlob``.
+   * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
+   *   A full download blob — fetched from
+   *   ``/api/region-basemap-tiles/?id=...`` (rectangle or clipped row
+   *   spans — either shape, via ``zoomRows``) or built by ``buildBlob``
+   *   (always a rectangle).
    * @returns {{gridZ: number, cells: Array<{x: number, y: number, bbox:
    *   [number, number, number, number], total: number}>, urls: string[],
    *   cellOfURL: number[]} | null} ``null`` when there is nothing to draw.
@@ -755,15 +856,17 @@
 
     // Bucket every tile in the blob by the cell it lands in, keyed on the
     // cell's own indices so the two loops below agree on identity.
-    const gridRange = blob.z[String(gridZ)];
+    const gridRows = zoomRows(blob.z[String(gridZ)]);
     const buckets = new Map();
     for (const key of Object.keys(blob.z)) {
       const z = Number(key);
       if (!Number.isFinite(z)) continue;
-      const [xmin, xmax, ymin, ymax] = blob.z[key];
-      for (let x = xmin; x <= xmax; x++) {
-        for (let y = ymin; y <= ymax; y++) {
-          const [cx, cy] = _cellForTile(z, x, y, gridZ, gridRange);
+      const rows = zoomRows(blob.z[key]);
+      for (const rowKey of Object.keys(rows)) {
+        const y = Number(rowKey);
+        const [xmin, xmax] = rows[rowKey];
+        for (let x = xmin; x <= xmax; x++) {
+          const [cx, cy] = _cellForTile(z, x, y, gridZ, gridRows);
           const cellKey = cx + ':' + cy;
           let bucket = buckets.get(cellKey);
           if (!bucket) {
@@ -815,59 +918,55 @@
   }
 
   /**
-   * Whether EVERY tile of a ``[minZ, maxZ]`` download of ``bbox`` is in
-   * ``cachedURLs`` — "is this area actually available offline?" (SNOW-570).
+   * Whether EVERY tile in ``blob``'s own ``z`` is present in ``cached`` —
+   * "is this download actually available offline?" (SNOW-570; widened by
+   * SNOW-583 from a bbox rectangle to whatever tile set the blob itself
+   * carries, via ``zoomRows`` — a clipped region blob is checked against
+   * exactly the tiles its download fetched, not a bbox super-set of them).
    *
-   * Deliberately not the centre-tile proxy the roundel's done-probe uses.
-   * That proxy is fair for the roundel, which only ever asks about a region
-   * the user downloaded AS A REGION: the centre tile is then a witness that
-   * that particular run completed. It is NOT fair here, because both
-   * download shapes write to one pinned cache over the same zoom band with
-   * the same URL template, so their tiles are indistinguishable strings. A
-   * custom-area download whose frame merely crosses a region's centre
-   * caches that region's centre tile, and a centre-tile probe would then
-   * ring the whole region on the strength of one tile it never covered —
-   * and would equally MISS a region almost entirely covered whose centre
-   * happens to fall outside the frame.
+   * Deliberately not the centre-tile proxy an earlier version of the
+   * roundel's own done-probe used. That proxy is fair only for a question
+   * that only ever asks about a download the user made AS THAT DOWNLOAD:
+   * the centre tile is then a witness that that particular run completed.
+   * It is NOT fair when two download shapes write to one pinned cache over
+   * the same zoom band with the same URL template, so their tiles are
+   * indistinguishable strings — a custom-area download whose frame merely
+   * crosses a region's centre caches that region's centre tile, and a
+   * centre-tile probe would then read the whole region as downloaded on
+   * the strength of one tile it never covered (and would equally MISS a
+   * region almost entirely covered whose centre falls outside the frame).
    *
    * Full coverage is the honest question and it is nearly free: the caller
    * has already paid for the answer with one ``cache.keys()`` pass, and
-   * every tile after the first is a Set lookup. A region is a few hundred
-   * tiles across the micro band, so the whole map costs single-digit
-   * milliseconds — which is why this checks all of them rather than
-   * sampling. It is also the RIGHT answer whoever cached the tiles: a
-   * region wholly inside a custom-area download genuinely is available
+   * every tile after the first is a Set lookup. A download is at most a
+   * few hundred tiles across the micro band, so the whole check costs
+   * single-digit milliseconds — which is why this checks all of them
+   * rather than sampling. It is also the RIGHT answer whoever cached the
+   * tiles: an area wholly inside a larger download genuinely is available
    * offline, and should say so.
-   *
-   * The remaining imprecision is the download's own: tile ranges cover a
-   * bbox, not the exact polygon, so a region reads as covered when the
-   * tiles over its bounding box are present. That is what its download
-   * fetches, so the two agree by construction.
    *
    * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
    *   the ACTIVE basemap's, which is what makes the answer per-basemap.
-   * @param {[number, number, number, number]} bbox ``[west, south, east,
-   *   north]`` in degrees.
-   * @param {number} minZ Shallowest zoom level (inclusive).
-   * @param {number} maxZ Deepest zoom level (inclusive).
-   * @param {Set<string>} cached The pinned cache's URLs.
-   * @returns {boolean} ``false`` for a falsy template or bbox, and for an
-   *   empty tile set — "nothing is cached" must never read as "all of
-   *   nothing is cached, so yes".
+   * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
+   *   A full download blob — fetched from
+   *   ``/api/region-basemap-tiles/?id=...`` or built locally by
+   *   ``buildBlob`` (custom area).
+   * @param {Set<string> | string[]} cached The pinned cache's URLs.
+   * @returns {boolean} ``false`` for a falsy template or blob (or one with
+   *   no ``z``), and for an empty tile set — "nothing is cached" must
+   *   never read as "all of nothing is cached, so yes".
    */
-  function _bboxFullyCached(template, bbox, minZ, maxZ, cached) {
-    if (!template || !bbox) return false;
-    const ranges = tileRangesForBBox(bbox, minZ, maxZ);
+  function blobFullyCached(template, blob, cached) {
+    if (!template || !blob || !blob.z) return false;
+    const cachedSet = cached instanceof Set ? cached : new Set(cached || []);
     let seen = 0;
-    for (const z of Object.keys(ranges)) {
-      const [xmin, xmax, ymin, ymax] = ranges[z];
-      for (let x = xmin; x <= xmax; x++) {
-        for (let y = ymin; y <= ymax; y++) {
-          const url = template
-            .replace('{z}', z)
-            .replace('{x}', String(x))
-            .replace('{y}', String(y));
-          if (!cached.has(url)) return false;
+    for (const z of Object.keys(blob.z)) {
+      const rows = zoomRows(blob.z[z]);
+      for (const y of Object.keys(rows)) {
+        const [xmin, xmax] = rows[y];
+        for (let x = xmin; x <= xmax; x++) {
+          const url = template.replace('{z}', z).replace('{x}', String(x)).replace('{y}', y);
+          if (!cachedSet.has(url)) return false;
           seen++;
         }
       }
@@ -875,49 +974,8 @@
     return seen > 0;
   }
 
-  /**
-   * Which of ``entries`` are fully present in ``cachedURLs`` — the
-   * set-membership half of the "which areas are downloaded?" question
-   * (SNOW-570).
-   *
-   * Split out as a pure function because the expensive, impure half is a
-   * single ``cache.keys()`` pass the caller does once: probing N regions
-   * with N ``cache.match()`` calls (the per-region roundel's approach,
-   * which only ever asks about one) does not scale to every region on
-   * screen. Hand that one pass's URLs in here and the answer for the whole
-   * map falls out with no further I/O.
-   *
-   * Each entry carries its own ``bbox`` — a region's derived from its
-   * boundary geometry, a custom area's stored with it. That mirrors how
-   * the download itself is defined server-side
-   * (``basemap_tiles.build_blob(bbox_from_boundary(boundary), *MICRO_BAND)``),
-   * so the tile set checked here is exactly the tile set a download of that
-   * area fetches. See ``_bboxFullyCached`` for why every tile is checked
-   * rather than just the centre one.
-   *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
-   *   the ACTIVE basemap's, which is what makes the answer per-basemap.
-   * @param {Array<{id: string, bbox?: number[], band?: number[]}>} entries
-   *   One per candidate area. An entry with no ``bbox`` is skipped, never
-   *   reported as downloaded. ``band`` defaults to ``MICRO_BAND``, which is
-   *   what both download shapes use.
-   * @param {Set<string> | string[]} cachedURLs The pinned cache's URLs.
-   * @returns {string[]} The ``id`` of every fully-cached entry, in input
-   *   order. ``[]`` for a falsy template.
-   */
-  function downloadedIds(template, entries, cachedURLs) {
-    if (!template || !entries) return [];
-    const cached = cachedURLs instanceof Set ? cachedURLs : new Set(cachedURLs || []);
-    const ids = [];
-    for (const entry of entries) {
-      if (!entry || !entry.bbox) continue;
-      const [minZ, maxZ] = entry.band || MICRO_BAND;
-      if (_bboxFullyCached(template, entry.bbox, minZ, maxZ, cached)) ids.push(entry.id);
-    }
-    return ids;
-  }
-
   self.pwaBasemapDownloadCore = Object.freeze({
+    zoomRows: zoomRows,
     rangesToTileURLs: rangesToTileURLs,
     centreTileURL: centreTileURL,
     lonLatToTile: lonLatToTile,
@@ -933,7 +991,7 @@
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,
-    downloadedIds: downloadedIds,
+    blobFullyCached: blobFullyCached,
     MICRO_BAND: MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
