@@ -21,6 +21,30 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
+// SNOW-588: region-id → display-name bridge for modules OUTSIDE this file.
+// FEATURE_BY_REGION_ID is module scope, so map_downloads_manager.js (the
+// "Manage downloads" sheet) cannot reach it to name the areas it lists.
+// Exposing a one-function reader rather than the map itself keeps the
+// dictionary this file's own, and keeps the sheet's dependency to the one
+// thing it actually needs.
+//
+// Deliberately lazy: the sheet is opened by a user action, long after the
+// regions GeoJSON has populated this. It resolves offline for the same
+// reason the map's own labels do — that feed is stale-while-revalidate in
+// the SW's static bucket, so it is cached before any download exists to
+// list. An unresolved id is not an error: the sheet falls back to the id
+// itself, since a download the user cannot see is worse than one whose
+// name is a code.
+window.pwaRegionNames = Object.freeze({
+  /**
+   * @param {string} regionID
+   * @returns {string} '' when the region isn't loaded.
+   */
+  get(regionID) {
+    return FEATURE_BY_REGION_ID[regionID]?.properties?.name || '';
+  },
+});
+
 // SNOW-236: Country visibility state — which countries are currently shown.
 // Populated by the main IIFE from localStorage + the country-toggle
 // buttons; read by the scrubber IIFE for country-aware effective-last
@@ -1261,12 +1285,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let basemapFallbackActive = false;
   // Mark the active radio so the popover renders in the right state on
   // first paint, before basemapPickerInit binds its click handlers.
-  // The selector deliberately excludes the SNOW-59 overlay checkboxes —
-  // they own their own aria-checked state, applied below from
-  // ``overlayState``.
+  //
+  // Selected POSITIVELY, by the data attribute that makes a row a basemap
+  // radio. This used to exclude the SNOW-59 overlay checkboxes instead
+  // (``:not(.basemap-menu-item--overlay)``), which was the same set for as
+  // long as the menu held only radios and checkboxes — but SNOW-588 added a
+  // third kind, a plain ``role="menuitem"`` action row, and exclusion
+  // silently swept it in and gave it an ``aria-checked`` state that means
+  // nothing on a menuitem. Overlay checkboxes still own their own state,
+  // applied below from ``overlayState``.
   if (basemapMenu) {
     for (const btn of basemapMenu.querySelectorAll(
-      '.basemap-menu-item:not(.basemap-menu-item--overlay)',
+      '.basemap-menu-item[data-basemap-key]',
     )) {
       btn.setAttribute(
         'aria-checked',
@@ -5754,6 +5784,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (open) clampMenuHeight();
   };
 
+  // SNOW-588: let the "Manage downloads" sheet close this menu when it
+  // opens over it. The menu's open state is three DOM writes held in this
+  // closure; mirroring them in map_downloads_manager.js would be a
+  // duplicate free to drift from the real one, so expose the setter
+  // instead — the same bridge pattern pwaDownloadedOverlay uses for the
+  // download controls in sibling IIFEs.
+  window.pwaLayersMenu = Object.freeze({
+    close() {
+      setMenuOpen(false);
+    },
+  });
+
   // SNOW-511: keep the cap correct if the viewport changes while the menu is
   // open (orientation flip, mobile URL-bar show/hide, desktop resize).
   window.addEventListener('resize', () => {
@@ -5955,9 +5997,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }));
       writeStorage(STORAGE_KEY, key);
       // Only update aria-checked on basemap radios — overlay checkboxes
-      // are independent and shouldn't be cleared when the basemap swaps.
+      // are independent and shouldn't be cleared when the basemap swaps,
+      // and SNOW-588's "Manage downloads…" action row has no checked state
+      // at all. Tested for positively rather than by excluding the overlay
+      // rows, so a fourth kind of row added later is left alone by default
+      // instead of silently acquiring an aria-checked it should not have.
       for (const other of items) {
-        if (other.dataset.overlayKey) continue;
+        if (!other.dataset.basemapKey) continue;
         other.setAttribute(
           'aria-checked',
           other === item ? 'true' : 'false',
