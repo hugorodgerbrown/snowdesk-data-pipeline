@@ -24,6 +24,14 @@ DEBUG = False
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
+# SNOW-585: this module inherits ``development.py``, where the SW dev
+# shell-cache bypass defaults on. A perf run is meant to be
+# production-representative, so the shell cache must behave exactly as it
+# does in production — leaving the bypass on would both skew the audit
+# (every shell asset re-fetched from the network) and trip
+# ``core.checks.check_sw_dev_shell_bypass``, since DEBUG is off here.
+SW_DEV_SHELL_BYPASS = False
+
 # This module is the one place DEBUG is off while the site legitimately
 # serves localhost, so ``core.checks.check_site_base_url`` — which aborts a
 # deploy whose SITE_BASE_URL was never pointed at a real origin (SNOW-554) —
