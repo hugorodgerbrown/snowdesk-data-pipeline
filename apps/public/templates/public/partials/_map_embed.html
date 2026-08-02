@@ -358,22 +358,25 @@ Optional context:
                 {# pins, and a permanent extra outline over all of that is   #}
                 {# crowding for an answer most sessions don't need.          #}
                 {#                                                           #}
-                {# Deliberately NO sync dot. Every other row's dot says      #}
-                {# whether THAT row's data is available offline; this row    #}
-                {# has no fetched data of its own — it is derived from the   #}
-                {# cache the dots describe, so a dot here would either be    #}
-                {# permanently green (saying nothing) or a second, subtly    #}
-                {# different claim about the same cache. The --no-sync class #}
-                {# keeps it aligned with rows whose dot has resolved.        #}
+                {# Carries a sync dot like every other overlay row. It used  #}
+                {# to be deliberately dotless, on the reasoning that this row #}
+                {# has no fetched data of its own and a dot would restate     #}
+                {# what the other dots already say. That made it the only     #}
+                {# row shaped differently from its neighbours, which read as  #}
+                {# a rendering bug rather than a distinction — and the dot    #}
+                {# does have something of its own to say: whether ANY basemap #}
+                {# tiles are pinned, i.e. whether there is an offline map at  #}
+                {# all. Same question the other dots answer for their feed.   #}
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay basemap-menu-item--no-sync"
+                        class="basemap-menu-item basemap-menu-item--overlay"
                         data-overlay-key="downloaded"
                         aria-checked="false"
                     >
-                        {% trans "Downloaded areas" %}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        {% trans "Available offline" %}
                     </button>
                 </li>
                 <li role="separator" class="basemap-menu-separator"></li>

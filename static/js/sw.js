@@ -330,7 +330,7 @@ try {
 // every area held in the pinned basemap cache, probed from real Cache
 // Storage rather than a stored flag. Shell JS/HTML/CSS bytes changed
 // (map.js, basemap_download_core.js, map.css, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v91';
+const CACHE_VERSION = 'snowdesk-shell-v100';
 
 // SNOW-484: a dedicated cache for the active basemap's cross-origin
 // responses (vector tiles, sprites, glyphs) — deliberately NOT the shell
@@ -869,6 +869,14 @@ async function _trimCache(cache, max) {
 // ERR_INSUFFICIENT_RESOURCES on every one of them.
 const WARM_CACHE_CONCURRENCY = 6;
 
+// Tile-grid rework: shortest gap between two 'warm-cache-progress' messages. The
+// on-map grid wants to know about each tile as it lands, but a
+// full-ceiling run settles thousands of them and one postMessage each
+// would flood the page with structured clones for no visible gain. ~8
+// reports a second is under a frame's worth of work and still faster than
+// the eye resolves individual squares appearing.
+const PROGRESS_FLUSH_MS = 120;
+
 /**
  * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
  * The inline fallback (used only if that importScripts 404s) runs the
@@ -938,10 +946,18 @@ function _warmCacheWorseReason(a, b) {
  * cache used is trimmed afterwards since a single run can add hundreds of
  * tile entries in one burst.
  *
- * SNOW-521: ``options.onProgress(done, total)``, if supplied, is called
- * once per settled URL, throttled to roughly every 5% of ``total`` (plus
- * always on the final URL) so a caller can drive a live n/total readout
- * without a flood of calls for a large run.
+ * SNOW-521: ``options.onProgress(done, total, settled)``, if supplied, is
+ * called once per settled URL, throttled to roughly every 5% of ``total``
+ * (plus always on the final URL) so a caller can drive a live n/total
+ * readout without a flood of calls for a large run.
+ *
+ * Tile-grid rework: ``settled`` carries the INDICES into ``urls`` that succeeded
+ * since the previous report, so a caller that built the list knows which
+ * tiles are now cached rather than just how many — that is what lets the
+ * map fill its progress grid square by square. Failed URLs are omitted
+ * (they count toward ``done``, but nothing was cached). Because the
+ * indices are what makes it useful, reports also go out on a
+ * ``PROGRESS_FLUSH_MS`` timer, not on the 5% buckets alone.
  *
  * SNOW-568: the fan-out is bounded to ``WARM_CACHE_CONCURRENCY`` in-flight
  * fetches (see that constant), and the returned summary carries a
@@ -967,12 +983,29 @@ async function _warmCache(urls, options) {
   let failed = 0;
   let done = 0;
   let lastReportedBucket = -1;
+  let lastReportedAt = 0;
+  // Tile-grid rework: which list indices have settled since the last report. The
+  // caller pairs these against the URL list it built, so it knows which
+  // TILES landed rather than only how many — see the ``settled`` note on
+  // ``onProgress`` in this function's docstring.
+  let settledSince = [];
   const reportProgress = () => {
     if (!onProgress || total === 0) return;
+    const final = done === total;
     const bucket = Math.floor((done / total) * 20); // 20 buckets ≈ every 5%
-    if (bucket === lastReportedBucket && done !== total) return;
+    // Tile-grid rework: the 5% buckets alone are too coarse to drive a per-tile
+    // grid — a big run would light up a whole row of squares at once — so
+    // a report also goes out whenever PROGRESS_FLUSH_MS has passed. That
+    // bounds the message rate rather than the message count: a slow
+    // download reports roughly per tile, a fast one batches whatever
+    // settled inside the window.
+    const elapsed = Date.now() - lastReportedAt;
+    if (bucket === lastReportedBucket && elapsed < PROGRESS_FLUSH_MS && !final) return;
     lastReportedBucket = bucket;
-    onProgress(done, total);
+    lastReportedAt = Date.now();
+    const settled = settledSince;
+    settledSince = [];
+    onProgress(done, total, settled);
   };
   // SNOW-568: the most actionable failure seen so far, or null.
   let reason = null;
@@ -1019,7 +1052,7 @@ async function _warmCache(urls, options) {
     }
   };
 
-  await _warmCacheRunPool(list, WARM_CACHE_CONCURRENCY, async (rawUrl) => {
+  await _warmCacheRunPool(list, WARM_CACHE_CONCURRENCY, async (rawUrl, index) => {
     let why = await warmOne(rawUrl);
     // One retry for a transient failure. A quota failure is never
     // retried — the disk will not have grown between the two attempts,
@@ -1033,6 +1066,10 @@ async function _warmCache(urls, options) {
       noteFailure(why);
     } else {
       ok += 1;
+      // Successes only. A failed tile must not light up its square — the
+      // grid's job is to show what is actually cached. Skipped entirely
+      // when there is no onProgress: nothing would ever drain the array.
+      if (onProgress) settledSince.push(index);
     }
     done += 1;
     reportProgress();
@@ -1293,11 +1330,14 @@ self.addEventListener('message', (event) => {
   ) {
     const requestId = event.data.requestId;
     const pinned = !!event.data.pinned;
-    const onProgress = (done, total) => {
+    const onProgress = (done, total, settled) => {
       event.source?.postMessage({
         type: 'warm-cache-progress',
         done,
         total,
+        // Tile-grid rework: indices into the posted URL list that succeeded since
+        // the last message — the page turns them back into tiles.
+        settled,
         requestId,
       });
     };

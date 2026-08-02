@@ -113,21 +113,61 @@ from tests.e2e.conftest import PwaPage
 
 pytestmark = pytest.mark.usefixtures("_load_test_data")
 
-# A tiny, self-consistent blob: one z14 tile, matching its own
-# centre_tile exactly — so a stubbed-successful download always writes
-# the one URL the done-probe (centreTileURL) will check for.
+# A tiny, self-consistent region: a square small enough to be exactly one
+# tile at every zoom in the micro band, so full coverage is five URLs and
+# a test can cache all of it in five puts.
+#
+# The done-probe checks EVERY tile of the region's bbox across the band —
+# not just the centre tile, which a neighbouring download can cache
+# without covering the region (that bug is why the probe changed). So the
+# fixture has to carry a real boundary, and the blob's ranges have to be
+# the coverage of that boundary, or a stubbed-successful download would
+# write a set the probe does not accept.
+#
+# Regenerate after any change to _GEOMETRY:
+#   uv run python -c "from apps.regions.services import basemap_tiles as b; \
+#       print(b.build_blob([7.5, 46.25, 7.5005, 46.2505], 10, 14))"
 _STUB_TEMPLATE = "https://tiles.example.invalid/{z}/{x}/{y}.pbf"
-_CENTRE_TILE = {"z": 14, "x": 100, "y": 100}
+_CENTRE_TILE = {"z": 14, "x": 8533, "y": 5812}
+_GEOMETRY: dict[str, Any] = {
+    "type": "Polygon",
+    "coordinates": [
+        [
+            [7.5000, 46.2500],
+            [7.5005, 46.2500],
+            [7.5005, 46.2505],
+            [7.5000, 46.2505],
+            [7.5000, 46.2500],
+        ]
+    ],
+}
 _STUB_BLOB: dict[str, Any] = {
     "band": [10, 14],
-    "count": 1,
+    "count": 5,
     "mb": 1,
     "over_ceiling": False,
     "centre_tile": _CENTRE_TILE,
-    "z": {"14": [100, 100, 100, 100]},
+    "z": {
+        "10": [533, 533, 363, 363],
+        "11": [1066, 1066, 726, 726],
+        "12": [2133, 2133, 1453, 1453],
+        "13": [4266, 4266, 2906, 2906],
+        "14": [8533, 8533, 5812, 5812],
+    },
 }
+# Every URL a full-coverage probe of _GEOMETRY looks for.
+_COVERAGE_URLS: list[str] = [
+    _STUB_TEMPLATE.replace("{z}", z).replace("{x}", x).replace("{y}", y)
+    for z, x, y in (
+        ("10", "533", "363"),
+        ("11", "1066", "726"),
+        ("12", "2133", "1453"),
+        ("13", "4266", "2906"),
+        ("14", "8533", "5812"),
+    )
+]
 _MICRO_SUMMARY: dict[str, Any] = {
-    "count": 1,
+    "count": 5,
     "mb": 1,
     "over_ceiling": False,
     "centre_tile": _CENTRE_TILE,
@@ -163,16 +203,17 @@ def _select_region(page: Page, region_id: str, download: dict[str, Any] | None) 
 
     """
     page.evaluate(
-        """({ regionId, download }) => {
+        """({ regionId, download, geometry }) => {
             FEATURE_BY_REGION_ID[regionId] = {
                 type: 'Feature',
                 properties: { id: regionId, regionID: regionId, download },
+                geometry: geometry,
             };
             document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
                 detail: { region_id: regionId, region_name: regionId },
             }));
         }""",
-        {"regionId": region_id, "download": download},
+        {"regionId": region_id, "download": download, "geometry": _GEOMETRY},
     )
 
 

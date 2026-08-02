@@ -51,6 +51,8 @@ pytestmark = pytest.mark.usefixtures("_load_test_data")
 _TOGGLE = '#basemap-menu [data-overlay-key="downloaded"]'
 _REGION_LAYER = "regions-line-downloaded"
 _AREA_LAYER = "downloaded-area-line"
+_TILE_FILL_LAYER = "cached-tiles-fill"
+_TILE_LINE_LAYER = "cached-tiles-line"
 _TEMPLATE = "https://tiles.example.invalid/{z}/{x}/{y}.pbf"
 _PINNED_CACHE = "snowdesk-basemap-pinned-v1"
 
@@ -71,6 +73,7 @@ def _boot(page: Page, live_server: LiveServer) -> None:
             && !!MAP.getSource('regions')
             && !!MAP.getLayer('regions-line-downloaded')
             && !!MAP.getSource('downloaded-area')
+            && !!MAP.getSource('cached-tiles')
             && typeof window.pwaDownloadedOverlay === 'object'""",
         timeout=30000,
     )
@@ -240,18 +243,66 @@ def test_overlay_is_off_by_default(page: Page, live_server: LiveServer) -> None:
     assert _layer_visibility(page, _AREA_LAYER) == "none"
 
 
-def test_row_carries_no_sync_dot(page: Page, live_server: LiveServer) -> None:
-    """The row has no dot — it has no data of its own to be cached.
+def test_row_is_shaped_like_every_other_overlay_row(
+    page: Page, live_server: LiveServer
+) -> None:
+    """It carries a sync dot, like its neighbours.
 
-    Every other overlay row's dot reports whether THAT row's feed is
-    available offline. This row is derived from the cache those dots
-    describe, so a dot here would be a second, subtly different claim about
-    the same thing.
+    It used to be deliberately dotless, on the reasoning that the row has
+    no feed of its own. That made it the only differently-shaped row in the
+    menu, which reads as a rendering fault rather than a distinction — and
+    the dot does have its own thing to say: whether any basemap tiles are
+    pinned at all.
     """
     _boot(page, live_server)
     _open_layers_menu(page)
 
-    assert page.locator(f"{_TOGGLE} .sync-dot").count() == 0
+    assert page.locator(f"{_TOGGLE} .sync-dot").count() == 1
+    # The same markup as a row that has always had one.
+    peer = '#basemap-menu [data-overlay-key="community_reports"] .sync-dot'
+    assert page.locator(peer).count() == 1
+
+
+def test_dot_goes_green_once_tiles_are_pinned(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The dot answers "is there an offline map at all?".
+
+    Not "did you download an area" — the question every other dot answers
+    for its own feed, asked of the basemap tiles.
+    """
+    _boot(page, live_server)
+    _open_layers_menu(page)
+    page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
+    assert _sync_state(page) != "cached"
+
+    _cache_urls(
+        page,
+        [_TEMPLATE.replace("{z}", "14").replace("{x}", "8501").replace("{y}", "5820")],
+    )
+    page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
+    page.wait_for_function(
+        """(sel) => {
+            const dot = document.querySelector(sel);
+            return !!dot && dot.dataset.syncState === 'cached';
+        }""",
+        arg=f"{_TOGGLE} .sync-dot",
+        timeout=10000,
+    )
+
+
+def _sync_state(page: Page) -> str:
+    """The row's current sync-dot state."""
+    return cast(
+        str,
+        page.evaluate(
+            """(sel) => {
+                const dot = document.querySelector(sel);
+                return dot ? (dot.dataset.syncState || '') : '';
+            }""",
+            f"{_TOGGLE} .sync-dot",
+        ),
+    )
 
 
 def test_a_fully_cached_region_is_outlined(page: Page, live_server: LiveServer) -> None:
@@ -419,3 +470,103 @@ def test_custom_area_source_starts_empty(page: Page, live_server: LiveServer) ->
         page.evaluate("() => MAP.getSource('downloaded-area').serialize().data"),
     )
     assert data.get("features") == []
+
+
+def _cached_tile_features(page: Page) -> list[dict[str, Any]]:
+    """The features currently drawn by the cached-tiles overlay."""
+    return cast(
+        list[dict[str, Any]],
+        page.evaluate(
+            """() => {
+                const source = MAP.getSource('cached-tiles');
+                if (!source) return [];
+                const data = source.serialize().data;
+                return (data && data.features) || [];
+            }"""
+        ),
+    )
+
+
+def test_cached_tiles_overlay_draws_one_square_per_cached_tile(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Exactly the tiles Cache Storage holds, one square each.
+
+    This half of the overlay is derived from the cache ALONE — no stored
+    download record — which is what makes it unable to drift from what is
+    on disk. It is also why it can afford to: drawing the tiles attributes
+    them to nothing, so the mis-attribution the rings guard against (a
+    custom-area download that merely crossed a region) cannot arise.
+    """
+    _boot(page, live_server)
+    # The refresh is a no-op while the overlay is switched off — it is a
+    # cache probe, and probing for something nobody is looking at is waste.
+    _toggle_overlay(page, on=True)
+    _cache_urls(
+        page,
+        [
+            _TEMPLATE.replace("{z}", "14")
+            .replace("{x}", "8501")
+            .replace("{y}", "5820"),
+            _TEMPLATE.replace("{z}", "14")
+            .replace("{x}", "8502")
+            .replace("{y}", "5820"),
+        ],
+    )
+    _refresh(page)
+
+    features = _cached_tile_features(page)
+    assert len(features) == 2
+    # Each square is that tile's own footprint, whole — a tile is cached in
+    # full whether or not a region boundary happens to cross it.
+    expected = cast(
+        list[list[float]],
+        page.evaluate(
+            """() => [
+                window.pwaBasemapDownloadCore.tileBounds(14, 8501, 5820),
+                window.pwaBasemapDownloadCore.tileBounds(14, 8502, 5820),
+            ]"""
+        ),
+    )
+    drawn = sorted(
+        [min(p[0] for p in f["geometry"]["coordinates"][0]) for f in features]
+    )
+    assert drawn == pytest.approx(sorted(bounds[0] for bounds in expected))
+
+
+def test_cached_tiles_overlay_ignores_another_basemaps_tiles(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Per-template, so a basemap swap empties it.
+
+    Tiles cached for one origin genuinely are not cached for another; the
+    overlay reporting otherwise would be the same lie the roundels avoid.
+    """
+    _boot(page, live_server)
+    _toggle_overlay(page, on=True)
+    _cache_urls(
+        page,
+        [
+            _TEMPLATE.replace("{z}", "14")
+            .replace("{x}", "8501")
+            .replace("{y}", "5820"),
+            "https://other.example.invalid/14/8501/5820.pbf",
+        ],
+    )
+    _refresh(page)
+
+    assert len(_cached_tile_features(page)) == 1
+
+
+def test_cached_tiles_overlay_follows_the_downloaded_toggle(
+    page: Page, live_server: LiveServer
+) -> None:
+    """The squares are part of the "Downloaded areas" overlay, not always on."""
+    _boot(page, live_server)
+
+    assert _layer_visibility(page, _TILE_FILL_LAYER) == "none"
+    assert _layer_visibility(page, _TILE_LINE_LAYER) == "none"
+
+    _toggle_overlay(page, on=True)
+    assert _layer_visibility(page, _TILE_FILL_LAYER) == "visible"
+    assert _layer_visibility(page, _TILE_LINE_LAYER) == "visible"

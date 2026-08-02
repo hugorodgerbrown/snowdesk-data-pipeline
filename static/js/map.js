@@ -319,9 +319,9 @@ async function basemapDownloadFitsQuota(mb) {
   }
 }
 
-// SNOW-569: ids for the on-map download progress fill. One source and one
-// layer, created on demand and torn down when the run settles — there is
-// never more than one download in flight (both controls refuse a click
+// SNOW-569, reworked as a tile grid: ids for the on-map download progress
+// grid. One source and two layers, created on demand and torn down when the run settles — there
+// is never more than one download in flight (both controls refuse a click
 // while their own state is 'busy', and they can't both be running because
 // the custom-area control's framing overlay covers the region control).
 const DOWNLOAD_PROGRESS_SOURCE_ID = 'download-progress';
@@ -336,7 +336,7 @@ const DOWNLOAD_PROGRESS_LINE_LAYER_ID = 'download-progress-line';
 // theme has a lighter green in dark mode) and this is only the floor.
 const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
 
-// Opacity the rising fill sits at, and the peak of the completion pulse.
+// Opacity a landed square sits at, and the peak of the completion pulse.
 // The fill lands ABOVE the choropleth, so it has to stay translucent
 // enough to read the region's danger colour through it while a download
 // runs; the pulse then swells past that for one beat before fading out.
@@ -345,48 +345,105 @@ const DOWNLOAD_PROGRESS_PULSE_OPACITY = 0.85;
 const DOWNLOAD_PROGRESS_PULSE_RISE_MS = 180;
 const DOWNLOAD_PROGRESS_PULSE_FADE_MS = 440;
 
+// The empty grid — every square is drawn from the first frame, so the user
+// sees the shape of what they asked for and then watches it fill.
+//
+// A square that hasn't landed is washed in at PENDING opacity rather than
+// left fully transparent. The grid is drawn at the band's detail floor, so
+// a large region is several thousand squares; at that density the outlines
+// alone read as a mesh, and zoomed out far enough they stop resolving as
+// squares at all. The wash keeps the download's extent legible as a block
+// whatever the scale, with the landed squares reading against it.
+const DOWNLOAD_PROGRESS_PENDING_OPACITY = 0.12;
+const DOWNLOAD_PROGRESS_GRID_OPACITY = 0.5;
+const DOWNLOAD_PROGRESS_GRID_WIDTH = 0.75;
+
+// Gridlines fade out as the squares shrink on screen. A tile spans roughly
+// the whole viewport-tile width when the map sits at its own zoom, halving
+// with every level out — so a few levels below the grid's zoom the
+// outlines are sub-pixel and turn into noise. These are offsets FROM the
+// grid's zoom: invisible at gridZ + FADE_START, full strength by
+// gridZ + FADE_END.
+const DOWNLOAD_PROGRESS_GRID_FADE_START = -4;
+const DOWNLOAD_PROGRESS_GRID_FADE_END = -2;
+
 /**
- * A download's on-map progress fill: the geometry being downloaded fills
- * from its southern edge upwards as the run progresses, pulses once on
- * success, and is removed.
+ * The insertion point for an overlay that belongs above every region
+ * layer but below the region labels: ``regions-label``, or undefined.
  *
- * Why the level is real geometry rather than a paint trick: MapLibre has
- * no clip-path and no per-pixel gradient on a ``fill`` layer, so "half a
- * polygon" can only be expressed as half a polygon. Each tick clips the
- * geometry against the half-plane below the current level
- * (``pwaBasemapDownloadCore.clipPolygonBelow``) and pushes the result
- * through ``setData``.
+ * Deliberately this one named layer rather than "the style's first
+ * ``symbol`` layer". That generic rule reads whatever the BASEMAP happens
+ * to provide, and a basemap's own labels sit below the region tiers — so
+ * it could return an anchor UNDER ``regions-fill`` and push the overlay
+ * below the very layers it is supposed to cover. It also varied with how
+ * far the style had parsed when the overlay was built, which made the
+ * ordering depend on timing.
  *
- * The level is a line of constant LATITUDE — the fill is anchored to the
- * ground, so it stays put as the map is panned and zoomed under it. Under
- * a bearing rotation it therefore no longer runs along the bottom of the
- * screen, which is the deliberate trade: this map is used north-up, and a
- * screen-space level would slide across the region every time the user
- * dragged the map.
- *
- * Ticks arrive once per cached URL — thousands of them for a region — so
- * repaints are coalesced onto an animation frame and skipped entirely
- * when the rounded percentage hasn't moved.
- *
- * @param {{type?: string, coordinates?: any}} geometry The Polygon or
- *   MultiPolygon being downloaded.
- * @returns {{update: function(number): void, finish: function(boolean):
- *   Promise<void>}} ``update`` takes a percentage (0-100); ``finish``
- *   takes whether the run succeeded and resolves once the pulse (success
- *   only) has played and the layer is gone. Both are no-ops on a map or
- *   geometry the fill can't be built for, so callers never have to
- *   branch.
+ * @returns {string | undefined} ``'regions-label'`` when it is installed,
+ *   otherwise undefined — the caller then adds on top, which is the right
+ *   answer for a style with no region labels to protect.
  */
-function createDownloadProgressFill(geometry) {
-  const core = self.pwaBasemapDownloadCore;
-  const bounds = core && geometry ? core.geometryBounds(geometry) : null;
-  // No map, no geometry, or a degenerate one (a bbox with no height can
-  // never show a level): hand back the same shape doing nothing, so the
-  // download path itself stays branch-free.
-  if (!MAP || !bounds || bounds[3] <= bounds[1]) {
+function _aboveRegionsBeforeId() {
+  try {
+    return MAP.getLayer('regions-label') ? 'regions-label' : undefined;
+  } catch (_e) {
+    // Style mid-reload — the caller falls back to adding on top.
+    return undefined;
+  }
+}
+
+/**
+ * A download's on-map progress grid: the tiles being fetched are drawn as
+ * an empty grid of squares over the area, and each square fills in as its
+ * own tiles land. The whole grid pulses once on success, then is removed.
+ *
+ * Why squares and not a rising fill (which this replaces): the squares
+ * ARE the download. Each one is a real Web Mercator tile footprint at
+ * ``plan.gridZ``, so what the user watches is the actual unit of work
+ * completing, rather than a percentage re-expressed as a water level. It
+ * also removes the old version's one dishonesty — a region's boundary
+ * filling up, when what a run actually fetches is the tiles covering its
+ * bounding box.
+ *
+ * Cells complete one at a time because ``tileGridPlan`` hands the service
+ * worker its URLs grouped by cell (see that function). Fetch order is the
+ * only thing making this legible; nothing here reorders anything.
+ *
+ * The grid is anchored to the ground, so it stays put as the map is
+ * panned and zoomed under it — the squares are geometry, not screen-space
+ * decoration. It draws above every region layer (see ``_ensure``): what is
+ * filling up is the tile cache, not a region, and a tile is cached whole
+ * whether or not a boundary happens to cross it.
+ *
+ * Ticks arrive in batches from the service worker (~8 a second for a fast
+ * run, roughly per-tile for a slow one). A completed square is lit with
+ * `setFeatureState` rather than by rewriting the source: at the band's
+ * detail floor a large region is several thousand cells, and re-serialising
+ * that collection on every batch would be megabytes of JSON a second.
+ *
+ * @param {{gridZ: number, cells: Array<{bbox: number[], total: number}>,
+ *   cellOfURL: number[]} | null} plan The grid plan from
+ *   ``pwaBasemapDownloadCore.tileGridPlan``.
+ * @param {number} [urlOffset] How many non-tile URLs (the feed warm-up
+ *   list) sit in front of the plan's tile URLs in the list handed to the
+ *   worker, so reported indices can be mapped back onto ``cellOfURL``.
+ * @returns {{update: function(number, number, number[]=): void, finish:
+ *   function(boolean): Promise<void>}} ``update`` takes the worker's
+ *   ``(done, total, settled)`` progress report; ``finish`` takes whether
+ *   the run succeeded and resolves once the pulse (success only) has
+ *   played and the layers are gone. Both are no-ops on a map or plan the
+ *   grid can't be built for, so callers never have to branch.
+ */
+function createDownloadProgressGrid(plan, urlOffset) {
+  const cells = plan && Array.isArray(plan.cells) ? plan.cells : null;
+  // No map, or nothing to draw: hand back the same shape doing nothing, so
+  // the download path itself stays branch-free.
+  if (!MAP || !cells || !cells.length) {
     return { update: () => {}, finish: () => Promise.resolve() };
   }
 
+  const offset = typeof urlOffset === 'number' ? urlOffset : 0;
+  const cellOfURL = Array.isArray(plan.cellOfURL) ? plan.cellOfURL : [];
   const colour =
     getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
     DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
@@ -394,10 +451,41 @@ function createDownloadProgressFill(geometry) {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const EMPTY = { type: 'FeatureCollection', features: [] };
-
-  let lastPct = -1;
-  let pendingPct = 0;
+  // One Feature per cell, built once and pushed to the source once. The
+  // `id` is what lets a completed square be lit with `setFeatureState`
+  // instead of re-serialising the whole collection — at the band's detail
+  // floor a large region is several thousand cells, so a per-tick setData
+  // would be megabytes of JSON several times a second.
+  const features = cells.map((cell, index) => {
+    const [west, south, east, north] = cell.bbox;
+    return {
+      type: 'Feature',
+      id: index,
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south],
+          ],
+        ],
+      },
+    };
+  });
+  // Tiles still outstanding per cell. A cell completes when its count
+  // reaches zero — which is why a FAILED tile never decrements it (the
+  // worker reports successes only): a square must not light up over
+  // ground that isn't cached.
+  const outstanding = cells.map((cell) => cell.total);
+  // Which cells have completed. Kept alongside the feature states because
+  // a mid-run basemap swap takes the source with it, and feature state
+  // does not survive that — `_ensure` replays this set onto the rebuilt
+  // source so the grid picks up where it left off rather than emptying.
+  const doneCells = new Set();
   let frame = 0;
   let removed = false;
 
@@ -420,38 +508,80 @@ function createDownloadProgressFill(geometry) {
       // Style.loaded(), which additionally requires every SOURCE to have
       // loaded — so a basemap whose tiles are slow, or whose origin is
       // unreachable, holds it false indefinitely and would suppress the
-      // fill for the whole run. addSource needs only a parsed style, and
+      // grid for the whole run. addSource needs only a parsed style, and
       // the catch below already covers a style that can't take one.
-      MAP.addSource(DOWNLOAD_PROGRESS_SOURCE_ID, { type: 'geojson', data: EMPTY });
-      // Sits directly above the choropleth so it reads as that region
-      // filling up, and below every outline and label so the selection
-      // ring and region name stay legible through it. With the regions
-      // overlay (L4) switched off there is no regions-line to anchor to,
-      // and the fill goes on top — it's transient, deliberate feedback,
-      // so it shows either way rather than silently doing nothing.
-      const beforeId = MAP.getLayer('regions-line') ? 'regions-line' : undefined;
+      MAP.addSource(DOWNLOAD_PROGRESS_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: features },
+      });
+      // Above every region layer, below the labels.
+      //
+      // It used to sit between the choropleth and the region outline, to
+      // read as "this region filling up". That was the wrong model and it
+      // showed: the grid is translucent, so the danger colour beneath it
+      // tinted the part of each square inside the region's boundary and
+      // left the part outside untinted — one square rendered as two
+      // shades, which reads as the square being CUT along the boundary.
+      // Nothing was ever clipped; the whole tile is fetched and the whole
+      // tile is cached. What the user is watching is the tile cache
+      // filling, and a cache does not stop at a region edge, so the grid
+      // is drawn as its own overlay: uniform, whatever is underneath.
+      //
+      // Below ``regions-label`` rather than flat on top, so region names
+      // stay readable through a run.
+      const beforeId = _aboveRegionsBeforeId();
+      // Every cell is in the fill layer from the start; only the ones
+      // whose feature state says `done` are actually painted. Opacity
+      // rather than a filter, because a filter is re-evaluated against
+      // the source data (which never changes here) while feature state is
+      // designed for exactly this — cheap per-feature updates on a source
+      // that stays put.
       MAP.addLayer(
         {
           id: DOWNLOAD_PROGRESS_FILL_LAYER_ID,
           type: 'fill',
           source: DOWNLOAD_PROGRESS_SOURCE_ID,
-          paint: { 'fill-color': colour, 'fill-opacity': DOWNLOAD_PROGRESS_OPACITY },
+          paint: {
+            'fill-color': colour,
+            'fill-opacity': [
+              'case',
+              ['boolean', ['feature-state', 'done'], false],
+              DOWNLOAD_PROGRESS_OPACITY,
+              DOWNLOAD_PROGRESS_PENDING_OPACITY,
+            ],
+          },
         },
         beforeId,
       );
-      // A crisp line along the top of the fill — the level itself. Without
-      // it a translucent fill over a mid-tone choropleth has no visible
-      // leading edge, and the whole point is watching it rise.
+      // Every cell's outline, landed or not — the empty grid the run
+      // starts from, and the gridlines between the squares once they
+      // begin filling.
       MAP.addLayer(
         {
           id: DOWNLOAD_PROGRESS_LINE_LAYER_ID,
           type: 'line',
           source: DOWNLOAD_PROGRESS_SOURCE_ID,
           layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': colour, 'line-width': 1.5, 'line-opacity': 0.9 },
+          paint: {
+            'line-color': colour,
+            'line-width': DOWNLOAD_PROGRESS_GRID_WIDTH,
+            'line-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              plan.gridZ + DOWNLOAD_PROGRESS_GRID_FADE_START,
+              0,
+              plan.gridZ + DOWNLOAD_PROGRESS_GRID_FADE_END,
+              DOWNLOAD_PROGRESS_GRID_OPACITY,
+            ],
+          },
         },
         beforeId,
       );
+      // A freshly-built source has no feature state, so anything already
+      // completed has to be replayed onto it — otherwise a basemap swap
+      // mid-run would empty a half-filled grid.
+      for (const index of doneCells) _light(index);
       return MAP.getSource(DOWNLOAD_PROGRESS_SOURCE_ID);
     } catch (_e) {
       // Style mid-reload. The next tick tries again.
@@ -460,25 +590,34 @@ function createDownloadProgressFill(geometry) {
   }
 
   /**
-   * Push the clipped geometry for `pct` into the source.
+   * Set cell `index`'s feature state to done, so its square paints.
    *
-   * @param {number} pct
+   * @param {number} index Index into `cells`.
    * @returns {void}
    */
-  function _paint(pct) {
-    const source = _ensure();
-    if (!source) return;
-    const lat = core.fillLevelLatitude(bounds, pct / 100);
-    const clipped = core.clipPolygonBelow(geometry, lat);
+  function _light(index) {
     try {
-      source.setData(
-        clipped
-          ? { type: 'Feature', geometry: clipped, properties: {} }
-          : EMPTY,
+      MAP.setFeatureState(
+        { source: DOWNLOAD_PROGRESS_SOURCE_ID, id: index },
+        { done: true },
       );
     } catch (_e) {
-      // Source went away with a style reload between _ensure and here.
+      // Source went away with a style reload. `_ensure` replays
+      // `doneCells` onto its replacement.
     }
+  }
+
+  /**
+   * Mark cell `index` complete, if it isn't already.
+   *
+   * @param {number} index Index into `cells`.
+   * @returns {void}
+   */
+  function _complete(index) {
+    if (index < 0 || index >= features.length) return;
+    if (doneCells.has(index)) return;
+    doneCells.add(index);
+    _light(index);
   }
 
   /**
@@ -506,7 +645,7 @@ function createDownloadProgressFill(geometry) {
   }
 
   /**
-   * One swell and fade of the completed fill — the "this is finished"
+   * One swell and fade of the completed grid — the "this is finished"
    * beat before the roundel flips to its green done state.
    *
    * @returns {Promise<void>} Resolves when the pulse has played out.
@@ -537,7 +676,12 @@ function createDownloadProgressFill(geometry) {
           opacity = DOWNLOAD_PROGRESS_PULSE_OPACITY * (1 - t);
         }
         try {
+          // A flat opacity, replacing the feature-state expression — safe
+          // only because `finish` completes every cell before pulsing, so
+          // there is no longer a dark square for it to reveal.
           MAP.setPaintProperty(DOWNLOAD_PROGRESS_FILL_LAYER_ID, 'fill-opacity', opacity);
+          // The gridlines fade with the fill rather than at their own
+          // fainter level, so the whole grid leaves as one object.
           MAP.setPaintProperty(DOWNLOAD_PROGRESS_LINE_LAYER_ID, 'line-opacity', opacity);
         } catch (_e) {
           resolve();
@@ -553,29 +697,50 @@ function createDownloadProgressFill(geometry) {
     });
   }
 
+  // Draw the empty grid straight away: the squares are up before the first
+  // tile lands, so the user sees the extent of what they asked for and
+  // then watches it fill.
+  _ensure();
+
   return {
     /**
-     * Raise the fill to `pct`, coalescing repeat ticks onto one frame.
+     * Take one progress report from the worker and light up any square it
+     * completed.
      *
-     * @param {number} pct Percentage complete, 0-100.
+     * @param {number} done Tiles settled so far.
+     * @param {number} total Tiles in the run.
+     * @param {number[]} [settled] Indices into the posted URL list that
+     *   succeeded since the last report. Absent when an older service
+     *   worker is still serving the cached shell — the grid then falls
+     *   back to filling cells in plan order at the reported percentage,
+     *   which is the same information the pre-tile-grid fill had.
      * @returns {void}
      */
-    update(pct) {
+    update(done, total, settled) {
       if (removed) return;
-      pendingPct = pct;
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const rounded = Math.round(pendingPct);
-        if (rounded === lastPct) return;
-        lastPct = rounded;
-        _paint(rounded);
-      });
+      if (Array.isArray(settled)) {
+        for (const urlIndex of settled) {
+          // Feed URLs sit in front of the tiles and belong to no cell.
+          const tileIndex = urlIndex - offset;
+          if (tileIndex < 0 || tileIndex >= cellOfURL.length) continue;
+          const cellIndex = cellOfURL[tileIndex];
+          outstanding[cellIndex] -= 1;
+          if (outstanding[cellIndex] <= 0) _complete(cellIndex);
+        }
+      } else if (total > 0) {
+        // Proportional fallback: no per-tile detail to place, so fill in
+        // plan order to the fraction reported.
+        const target = Math.floor(cells.length * (done / total));
+        for (let i = 0; i < target; i++) _complete(i);
+      }
+      // No repaint to schedule: `_complete` already lit each new square
+      // through feature state, and MapLibre coalesces those onto its own
+      // next frame.
     },
 
     /**
-     * Settle the fill: a full-region pulse on success, an immediate
-     * removal otherwise (a failed run must not leave a green region
+     * Settle the grid: a whole-grid pulse on success, an immediate
+     * removal otherwise (a failed run must not leave a green area
      * behind, however briefly).
      *
      * @param {boolean} ok Whether the run succeeded.
@@ -591,10 +756,11 @@ function createDownloadProgressFill(geometry) {
         _remove();
         return;
       }
-      // Whatever the last tick painted, a success means the whole thing
-      // is downloaded — pulse the complete geometry, not a 99% one.
-      lastPct = 100;
-      _paint(100);
+      // A success means every tile landed — pulse a complete grid, not a
+      // 99% one. Cells can legitimately still be dark here: a tile that
+      // succeeded in the worker's final batch is reported alongside the
+      // done reply, and `finish` can win that race.
+      for (let i = 0; i < features.length; i++) _complete(i);
       if (!reducedMotion) await _pulse();
       _remove();
     },
@@ -1256,7 +1422,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // cache they report on. Resolved from the stylesheet rather than
   // hardcoded (the theme carries a lighter green in dark mode); MapLibre
   // paint values can't reference a CSS variable, hence the read here.
-  const DOWNLOADED_OUTLINE_COLOUR =
+  // The cached-tiles overlay: one square per tile actually in the pinned
+// cache. Fainter than a download's live grid — this is ambient state the
+// user can leave switched on, not transient feedback demanding attention.
+// Drawn at the band's detail floor, the same zoom the download grid uses,
+// so the two describe the same squares.
+const CACHED_TILES_OPACITY = 0.22;
+const CACHED_TILES_LINE_OPACITY = 0.4;
+const CACHED_TILES_ZOOM = 14;
+
+const DOWNLOADED_OUTLINE_COLOUR =
     getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
     '#16a34a';
 
@@ -1350,6 +1525,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // installed below, so both have to come off here — a re-install
         // over a surviving layer throws.
         'regions-line-downloaded', 'downloaded-area-line',
+        'cached-tiles-fill', 'cached-tiles-line',
         'regions-label',
       ]) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -1546,6 +1722,60 @@ const repaintRegionsForDate = (dateKey, cache) => {
         'line-color': DOWNLOADED_OUTLINE_COLOUR,
         'line-width': 2.5,
         'line-dasharray': [2, 1.5],
+      },
+    });
+
+    // The tiles themselves. The rings above say WHICH downloads the user
+    // made; this says what is actually on disk — one square per tile in
+    // the pinned cache, at the band's detail floor.
+    //
+    // Unlike the rings, this is derived from the cache ALONE and needs no
+    // stored record to stay honest. The reason the rings can't be (see
+    // refreshDownloadedOverlay) is that tiles carry no record of which run
+    // fetched them, so attributing them to a region misreports a
+    // custom-area download that merely crossed it. Drawing the tiles
+    // themselves attributes nothing: every square shown is a tile Cache
+    // Storage holds, whichever run put it there.
+    if (!map.getSource('cached-tiles')) {
+      map.addSource('cached-tiles', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    map.addLayer({
+      id: 'cached-tiles-fill',
+      type: 'fill',
+      source: 'cached-tiles',
+      layout: { visibility: overlayState.downloaded ? 'visible' : 'none' },
+      paint: {
+        'fill-color': DOWNLOADED_OUTLINE_COLOUR,
+        'fill-opacity': CACHED_TILES_OPACITY,
+      },
+    });
+    map.addLayer({
+      id: 'cached-tiles-line',
+      type: 'line',
+      source: 'cached-tiles',
+      layout: {
+        visibility: overlayState.downloaded ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': DOWNLOADED_OUTLINE_COLOUR,
+        'line-width': 0.75,
+        // Same reasoning as the download grid's own gridlines: a few
+        // thousand sub-pixel outlines read as a mesh, so they fade out as
+        // the squares shrink on screen.
+        'line-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          CACHED_TILES_ZOOM + DOWNLOAD_PROGRESS_GRID_FADE_START,
+          0,
+          CACHED_TILES_ZOOM + DOWNLOAD_PROGRESS_GRID_FADE_END,
+          CACHED_TILES_LINE_OPACITY,
+        ],
       },
     });
 
@@ -3117,6 +3347,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
             ? { type: 'Feature', geometry: core.bboxPolygon(area.bbox), properties: {} }
             : { type: 'FeatureCollection', features: [] },
         );
+      }
+
+      // The tiles themselves, read straight back out of the cache's own
+      // URLs — no stored record involved, so this cannot drift from what
+      // is on disk. Eviction, a basemap swap and Clear Site Data all
+      // change the answer, and all of them show up here for free.
+      const tileSource = map.getSource('cached-tiles');
+      if (tileSource) {
+        const tiles = core.cachedTilesFromURLs(template, cached, CACHED_TILES_ZOOM);
+        tileSource.setData({
+          type: 'FeatureCollection',
+          features: tiles.map((tile) => ({
+            type: 'Feature',
+            properties: {},
+            geometry: core.bboxPolygon(core.tileBounds(tile.z, tile.x, tile.y)),
+          })),
+        });
       }
     })().catch(() => {}).finally(() => {
       downloadedRefreshInFlight = null;
@@ -5500,7 +5747,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // source itself, so this is a plain visibility flip. The refresh that
     // decides WHICH areas are outlined is driven from the main IIFE's
     // snowdesk:overlays-changed handler.
-    downloaded: ['regions-line-downloaded', 'downloaded-area-line'],
+    downloaded: [
+      'regions-line-downloaded', 'downloaded-area-line',
+      'cached-tiles-fill', 'cached-tiles-line',
+    ],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
@@ -5806,30 +6056,67 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * True when `summary`'s centre tile is present in the pinned cache —
-   * the done-probe proxy for "this region's download completed".
+   * Every URL in the pinned basemap cache, as a Set. Empty when Cache
+   * Storage is unavailable or nothing has been pinned. Never throws.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  async function _pinnedCacheURLs() {
+    const cache = await _openPinnedBasemapCache();
+    if (!cache) return new Set();
+    try {
+      return new Set((await cache.keys()).map((request) => request.url));
+    } catch (_e) {
+      return new Set();
+    }
+  }
+
+  /**
+   * True when EVERY tile of `data`'s region is present in the pinned
+   * cache — "is this region actually available offline?".
+   *
+   * This used to be a centre-tile probe: one `cache.match` on the tile at
+   * the region's centre, taken as a witness that the region's own
+   * download had completed. That reasoning only holds for a region the
+   * user downloaded AS A REGION, and the roundel does not get to assume
+   * that — it probes whatever region is selected. Both download shapes
+   * write to one pinned cache over the same band with the same URL
+   * template, so a neighbouring region's download, or a custom area that
+   * merely overlapped, caches this region's centre tile without covering
+   * it. The roundel then painted `done` for a region holding a handful of
+   * tiles, and because `handleClick` only acts on `idle`/`error`, the
+   * region could no longer be downloaded at all.
+   *
+   * Full coverage is the honest question and the overlay already asks it
+   * the same way (`downloadedIds`, SNOW-570). The cost is one
+   * `cache.keys()` pass per probe instead of one `cache.match`; a region
+   * is a few hundred tiles across the micro band and every tile after the
+   * first is a Set lookup, so this is single-digit milliseconds against a
+   * cache capped at a few thousand entries.
    *
    * Returns `null` for "can't tell yet" — the active basemap's tile
-   * template isn't resolvable, so the probe has no URL to look up. That
-   * is deliberately distinct from `false` ("looked, not there"): see
+   * template isn't resolvable, so there is nothing to look up. That is
+   * deliberately distinct from `false` ("looked, not there"): see
    * `_retryWhenStyleSettles`.
    *
-   * @param {Object} summary
+   * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<boolean | null>}
    */
-  async function _probeDone(summary) {
+  async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
-    const url = core.centreTileURL(template, summary);
-    if (!url) return false;
-    const cache = await _openPinnedBasemapCache();
-    if (!cache) return false;
-    try {
-      return !!(await cache.match(url));
-    } catch (_e) {
-      return false;
-    }
+    const feature = FEATURE_BY_REGION_ID[data.regionId];
+    const bbox = core.geometryBounds((feature && feature.geometry) || null);
+    // A region carrying no boundary can't be coverage-checked. It also
+    // can't be downloaded meaningfully, so "not downloaded" is right.
+    if (!bbox) return false;
+    const band = (data.summary && data.summary.band) || core.MICRO_BAND;
+    const cached = await _pinnedCacheURLs();
+    return (
+      core.downloadedIds(template, [{ id: data.regionId, bbox: bbox, band: band }], cached)
+        .length > 0
+    );
   }
 
   /**
@@ -5944,7 +6231,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       setState('disabled', data.summary.mb);
       return;
     }
-    const done = await _probeDone(data.summary);
+    const done = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
@@ -6044,19 +6331,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
       revealBasemapDownloadError(null);
       return;
     }
-    const tileUrls = core.rangesToTileURLs(template, blob);
-    const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
+    // Tile-grid rework: the tile list comes from the grid plan, not
+    // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
+    // on-map grid fills in one square at a time rather than sweeping the
+    // whole area once per zoom level. A plan is only ever null for a blob
+    // with no ranges, which `rangesToTileURLs` would answer with an empty
+    // list anyway.
+    const gridPlan = core.tileGridPlan(template, blob);
+    const feedUrls = assembleBasemapDownloadFeedURLs();
+    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
 
-    // SNOW-569: the region itself fills from its southern edge as the run
-    // progresses. The roundel's own fill stays — it's the part that
+    // SNOW-569, reworked as a tile grid: the area's tiles are drawn as an
+    // empty grid that fills in as they land. The roundel's own fill stays — it's the part that
     // survives the user panning the region off screen.
     const feature = FEATURE_BY_REGION_ID[data.regionId];
-    const progressFill = createDownloadProgressFill(feature && feature.geometry);
+    const progressFill = createDownloadProgressGrid(gridPlan, feedUrls.length);
 
-    const onProgress = (done, total) => {
+    const onProgress = (done, total, settled) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       setState('busy', data.summary.mb, pct);
-      progressFill.update(pct);
+      progressFill.update(done, total, settled);
     };
 
     const finish = async (result) => {
@@ -6269,26 +6563,49 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * True when `centreTile` is present in the pinned cache — the
-   * done-probe proxy for "this custom area is downloaded". Returns `null`
-   * for "can't tell yet" (the active basemap's tile template isn't
-   * resolvable), exactly like mapDownloadControlInit's own probe.
+   * True when EVERY tile of the saved custom area is present in the
+   * pinned cache. Returns `null` for "can't tell yet" (the active
+   * basemap's tile template isn't resolvable), exactly like
+   * mapDownloadControlInit's own probe — which this now matches in
+   * substance too.
    *
-   * @param {{z: number, x: number, y: number}} centreTile
+   * Was a centre-tile probe, and carried the same flaw: one pinned cache
+   * shared by both download shapes means a region download that happened
+   * to cover this area's centre tile made the area read as downloaded.
+   * Eviction produced the same lie from the other direction — the area's
+   * centre tile can outlive most of the area, since the pinned cache
+   * trims by insertion order and not by which run owns what.
+   *
+   * @param {{bbox: number[], band?: number[]}} area The saved custom area.
    * @returns {Promise<boolean | null>}
    */
-  async function _probeDone(centreTile) {
+  async function _probeDone(area) {
     const core = self.pwaBasemapDownloadCore;
     const template = activeBasemapTileTemplate(MAP);
     if (!core || !template) return null;
-    const url = core.centreTileURL(template, { centre_tile: centreTile });
-    if (!url) return false;
+    if (!area || !area.bbox) return false;
+    const cached = await _pinnedCacheURLs();
+    return (
+      core.downloadedIds(
+        template,
+        [{ id: 'custom', bbox: area.bbox, band: area.band || core.MICRO_BAND }],
+        cached,
+      ).length > 0
+    );
+  }
+
+  /**
+   * Every URL in the pinned basemap cache, as a Set. Never throws.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  async function _pinnedCacheURLs() {
     const cache = await _openPinnedBasemapCache();
-    if (!cache) return false;
+    if (!cache) return new Set();
     try {
-      return !!(await cache.match(url));
+      return new Set((await cache.keys()).map((request) => request.url));
     } catch (_e) {
-      return false;
+      return new Set();
     }
   }
 
@@ -6369,7 +6686,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return;
     }
     const area = savedArea;
-    const done = await _probeDone(area.centre_tile);
+    const done = await _probeDone(area);
     if (savedArea !== area || btn.dataset.downloadState === 'busy') return;
     if (done === null) {
       setState(navigator.onLine ? 'idle' : 'offline');
@@ -7108,18 +7425,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
       await _evictArea(savedArea, template);
     }
 
-    const tileUrls = core.rangesToTileURLs(template, blob);
-    const urls = [...assembleBasemapDownloadFeedURLs(), ...tileUrls];
+    // Tile-grid rework: cell-ordered tile URLs — see mapDownloadControlInit's
+    // matching comment.
+    const gridPlan = core.tileGridPlan(template, blob);
+    const feedUrls = assembleBasemapDownloadFeedURLs();
+    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
 
-    // SNOW-569: the framed area fills from its southern edge as the run
-    // progresses, exactly as a region does — same helper, with the bbox
-    // as its geometry.
-    const progressFill = createDownloadProgressFill(core.bboxPolygon(bbox));
+    // SNOW-569, reworked as a tile grid: the framed area fills in square by
+    // square as its tiles land, exactly as a region does — same helper, same plan shape.
+    const progressFill = createDownloadProgressGrid(gridPlan, feedUrls.length);
 
-    const onProgress = (done, total) => {
+    const onProgress = (done, total, settled) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       setState('busy', pct);
-      progressFill.update(pct);
+      progressFill.update(done, total, settled);
     };
 
     const finish = async (result) => {

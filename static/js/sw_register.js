@@ -197,7 +197,12 @@
       if (_warmCacheSlot && data.requestId === _warmCacheSlot.requestId) {
         _warmCacheSlot.onTimeoutReset?.();
         try {
-          _warmCacheSlot.onProgress?.(data.done, data.total);
+          // Tile-grid rework: ``data.settled`` (indices into the posted URL list
+          // that succeeded since the last message) rides along as a third
+          // argument. An older worker still serving a cached shell won't
+          // send it — callers treat ``undefined`` as "counts only" and
+          // fall back to a proportional fill.
+          _warmCacheSlot.onProgress?.(data.done, data.total, data.settled);
         } catch (_err) {
           // A broken onProgress callback must never break the SW message
           // channel or abort the in-flight call.
@@ -264,13 +269,18 @@
    *
    * SNOW-521: ``opts.pinned`` is forwarded verbatim in the posted message
    * (``sw.js`` reads ``event.data.pinned``); ``opts.onProgress(done,
-   * total)``, if supplied, is invoked from the message listener above on
-   * every ``warm-cache-progress`` reply matching this call's requestId. A
-   * caller passing no ``opts`` at all (the pre-SNOW-521 call shape) still
-   * works — ``pinned`` defaults false and progress is simply not observed.
+   * total, settled)``, if supplied, is invoked from the message listener
+   * above on every ``warm-cache-progress`` reply matching this call's
+   * requestId. A caller passing no ``opts`` at all (the pre-SNOW-521 call
+   * shape) still works — ``pinned`` defaults false and progress is simply
+   * not observed.
+   *
+   * Tile-grid rework: ``settled`` is the batch of ``urls`` indices that succeeded
+   * since the previous report — see ``_warmCache`` in ``sw.js``.
    *
    * @param {string[]} urls
-   * @param {{pinned?: boolean, onProgress?: (done: number, total: number) => void}} [opts]
+   * @param {{pinned?: boolean, onProgress?: (done: number, total: number,
+   *   settled?: number[]) => void}} [opts]
    * @returns {Promise<{ok: number, failed: number, reason: string|null} | null>}
    */
   function warmCache(urls, opts) {

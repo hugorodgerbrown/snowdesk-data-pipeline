@@ -152,7 +152,18 @@
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
+    // The "Available offline" row. Unlike every other entry this has no
+    // feed of its own to probe — its question is "are any basemap tiles
+    // pinned at all", i.e. is there an offline map to speak of.
+    downloaded: Object.freeze({ kind: 'pinned-tiles' }),
   });
+
+  // The cache deliberate downloads write to. NOT the passive
+  // ``snowdesk-basemap-`` cache that ordinary panning and zooming fills:
+  // that one is a browsing side effect, capped and LRU-trimmed, and can
+  // vanish under the user at any moment. Reporting it as "available
+  // offline" would be a promise this app cannot keep.
+  const PINNED_BASEMAP_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
   // SNOW-524: the four feeds a country load fetches (``ensureCountryLoaded`` in
   // static/js/map.js). All four are ``?country=<code>``-scoped and all four are
@@ -455,6 +466,42 @@
   }
 
   /**
+   * Whether the pinned basemap cache holds at least one TILE.
+   *
+   * Tiles specifically, not merely "at least one entry": a download also
+   * pins the style JSON and its sprites, so an entry count would go green
+   * off a run that cached the furniture and none of the map. Tiles are
+   * identified by running the active basemap's URL template backwards
+   * (``cachedTilesFromURLs``), which also makes the dot per-basemap —
+   * consistent with the overlay it sits beside, and honest, since tiles
+   * pinned for one basemap genuinely are not available on another.
+   *
+   * Falls back to "any entry at all" when the template is unresolvable
+   * (the style still settling) rather than reporting a bare no.
+   *
+   * @returns {Promise<boolean>}
+   */
+  async function _probeAnyPinnedTile() {
+    try {
+      const names = await caches.keys();
+      const name = names.find((n) => n.startsWith(PINNED_BASEMAP_CACHE_PREFIX));
+      if (!name) return false;
+      const cache = await caches.open(name);
+      const urls = (await cache.keys()).map((request) => request.url);
+      if (!urls.length) return false;
+      const core = self.pwaBasemapDownloadCore;
+      const template =
+        typeof window.activeBasemapTileTemplate === 'function' && window.MAP
+          ? window.activeBasemapTileTemplate(window.MAP)
+          : null;
+      if (!core || !template) return true;
+      return core.cachedTilesFromURLs(template, urls).length > 0;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
    * True when ``url`` (a basemap's cross-origin style URL) is present in
    * ANY Cache Storage cache — the per-basemap "available offline" proxy.
    * The style JSON is cached both by passive browsing (sw.js's
@@ -517,7 +564,9 @@
       if (!dot) continue;
 
       let probe;
-      if (resource.kind === 'idb') {
+      if (resource.kind === 'pinned-tiles') {
+        probe = _probeAnyPinnedTile();
+      } else if (resource.kind === 'idb') {
         probe = _probeIdbRow(resource.key);
       } else if (resource.countryScoped && enabledCountries.length > 0) {
         probe = _probeEveryCountry(resource.path, enabledCountries);
