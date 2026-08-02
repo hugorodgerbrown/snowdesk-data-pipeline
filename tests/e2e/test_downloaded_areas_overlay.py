@@ -72,50 +72,10 @@ def _boot(page: Page, live_server: LiveServer) -> None:
     )
 
 
-def _pick_region(page: Page) -> dict[str, Any]:
-    """The loaded region with the fewest tiles, plus its tile URLs.
-
-    Smallest-first purely for speed: every tile has to be written into the
-    cache one ``cache.put`` at a time, and the assertions don't care which
-    region they are about. Derived with the app's own tile math, which is
-    the same arithmetic the server used to build the region's stored blob
-    (``build_blob(bbox_from_boundary(boundary), *MICRO_BAND)``) — so this is
-    genuinely the tile set a download of this region would fetch.
-    """
-    return cast(
-        dict[str, Any],
-        page.evaluate(
-            """() => {
-                const core = window.pwaBasemapDownloadCore;
-                const [minZ, maxZ] = core.MICRO_BAND;
-                let best = null;
-                for (const [regionId, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
-                    if (!feature?.properties?.download || !feature.geometry) continue;
-                    const bbox = core.geometryBounds(feature.geometry);
-                    if (!bbox) continue;
-                    const ranges = core.tileRangesForBBox(bbox, minZ, maxZ);
-                    const count = core.tileCount(ranges);
-                    if (!best || count < best.count) {
-                        best = {
-                            regionId,
-                            featureId: feature.id,
-                            count,
-                            bbox,
-                            band: [minZ, maxZ],
-                            urls: core.rangesToTileURLs(
-                                'https://tiles.example.invalid/{z}/{x}/{y}.pbf',
-                                { z: ranges },
-                            ),
-                            centreUrl: core.centreTileURL(
-                                'https://tiles.example.invalid/{z}/{x}/{y}.pbf',
-                                { centre_tile: core.centreTile(bbox, maxZ) },
-                            ),
-                        };
-                    }
-                }
-                return best;
-            }"""
-        ),
+def _tile_url(z: int, x: int, y: int) -> str:
+    """The pinned-cache URL for one tile, under the stubbed template."""
+    return (
+        _TEMPLATE.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
     )
 
 
@@ -224,10 +184,7 @@ def test_dot_goes_green_once_tiles_are_pinned(
     page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
     assert _sync_state(page) != "cached"
 
-    _cache_urls(
-        page,
-        [_TEMPLATE.replace("{z}", "14").replace("{x}", "8501").replace("{y}", "5820")],
-    )
+    _cache_urls(page, [_tile_url(14, 8501, 5820)])
     page.evaluate("async () => { await window.pwaLayerSyncStatus.refresh(); }")
     page.wait_for_function(
         """(sel) => {
@@ -277,22 +234,31 @@ def test_cached_tiles_drop_a_tile_evicted_behind_the_apps_back(
     without the app being told, so only a real Cache Storage read gets this
     right. A flag set when the user clicked Download would still claim it.
     """
+    # Tiles at CACHED_TILES_ZOOM (z14) so each cached URL is one square. A
+    # whole band's worth would collapse: the overlay draws z14 only, so the
+    # deeper zooms of a real download fold into the z14 square containing
+    # them and the count would not be the number of URLs written.
+    tiles = [
+        _tile_url(14, 8501, 5820),
+        _tile_url(14, 8502, 5820),
+        _tile_url(14, 8503, 5820),
+    ]
     _boot(page, live_server)
-    region = _pick_region(page)
-    _cache_urls(page, region["urls"])
     _toggle_overlay(page, on=True)
-    assert len(_cached_tile_features(page)) == region["count"]
+    _cache_urls(page, tiles)
+    _refresh(page)
+    assert len(_cached_tile_features(page)) == 3
 
     page.evaluate(
         """async ({ cacheName, url }) => {
             const cache = await caches.open(cacheName);
             await cache.delete(url);
         }""",
-        {"cacheName": _PINNED_CACHE, "url": region["urls"][0]},
+        {"cacheName": _PINNED_CACHE, "url": tiles[0]},
     )
     _refresh(page)
 
-    assert len(_cached_tile_features(page)) == region["count"] - 1
+    assert len(_cached_tile_features(page)) == 2
 
 
 def test_toggling_off_hides_the_cached_tiles_layers(
@@ -322,17 +288,7 @@ def test_cached_tiles_overlay_draws_one_square_per_cached_tile(
     # The refresh is a no-op while the overlay is switched off — it is a
     # cache probe, and probing for something nobody is looking at is waste.
     _toggle_overlay(page, on=True)
-    _cache_urls(
-        page,
-        [
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8501")
-            .replace("{y}", "5820"),
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8502")
-            .replace("{y}", "5820"),
-        ],
-    )
+    _cache_urls(page, [_tile_url(14, 8501, 5820), _tile_url(14, 8502, 5820)])
     _refresh(page)
 
     features = _cached_tile_features(page)
@@ -366,12 +322,7 @@ def test_cached_tiles_overlay_ignores_another_basemaps_tiles(
     _toggle_overlay(page, on=True)
     _cache_urls(
         page,
-        [
-            _TEMPLATE.replace("{z}", "14")
-            .replace("{x}", "8501")
-            .replace("{y}", "5820"),
-            "https://other.example.invalid/14/8501/5820.pbf",
-        ],
+        [_tile_url(14, 8501, 5820), "https://other.example.invalid/14/8501/5820.pbf"],
     )
     _refresh(page)
 
