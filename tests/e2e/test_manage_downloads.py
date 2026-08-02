@@ -102,14 +102,13 @@ def _boot(page: Page, live_server: LiveServer) -> None:
 
 def _a_loaded_region(page: Page) -> tuple[str, str]:
     """A real ``(region_id, name)`` pair from the loaded map."""
-    return tuple(  # type: ignore[return-value]
-        page.evaluate(
-            """() => {
-                const id = Object.keys(FEATURE_BY_REGION_ID).sort()[0];
-                return [id, FEATURE_BY_REGION_ID[id].properties.name];
-            }"""
-        )
+    pair: list[str] = page.evaluate(
+        """() => {
+            const id = Object.keys(FEATURE_BY_REGION_ID).sort()[0];
+            return [id, FEATURE_BY_REGION_ID[id].properties.name];
+        }"""
     )
+    return pair[0], pair[1]
 
 
 def _seed(page: Page, areas: list[dict[str, Any]], budget_mb: int = 500) -> None:
@@ -157,12 +156,13 @@ def _pinned_buckets(page: Page) -> list[str]:
 
 def _stored_area_ids(page: Page) -> list[str]:
     """The ids in the ``basemap.areas`` record, as stored."""
-    return page.evaluate(
+    ids: list[str] = page.evaluate(
         """async () => {
             const row = await window.pwaDb.get('meta:app', 'basemap.areas');
             return (row?.value || []).map(a => a.id);
         }"""
     )
+    return ids
 
 
 def _row_texts(page: Page, selector: str) -> list[str]:

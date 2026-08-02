@@ -1136,6 +1136,106 @@ fetched data of its own and a dot would restate what the other dots
 already say; that made it the only row shaped differently from its
 neighbours, which read as a rendering fault rather than a distinction.
 
+### "Manage downloads" sheet (SNOW-588)
+
+The overlay above answers "which areas do I have?" on the map. It cannot
+answer "what is that costing me, and how do I get rid of some of it" —
+before this, deleting a download was impossible short of Clear Site Data,
+which takes everything.
+
+The sheet (`public/partials/_map_downloads_sheet.html`, driven by
+`static/js/map_downloads_manager.js` over the pure
+`static/js/basemap_manage_core.js`) lists every stored area with its name
+and size, a running total against the budget, an explicit delete, and the
+budget control itself. It opens from a `Manage downloads…` row in the
+layers menu and uses the shared sheet primitive
+(`includes/_overlay_sheet.html` + `_sheet_header.html`), so
+`overlays.js`'s delegated dismiss handler closes it.
+
+**Why it lives on the map, not under account settings.** Downloading
+happens here, so managing downloads belongs here — but the deciding
+argument is names. A region download records only a `region_id`, and the
+list has to show something a person recognises. On the map,
+`FEATURE_BY_REGION_ID` already holds every region's name from the
+SW-cached `regions.geojson`, so names resolve **offline**, which is
+exactly when storage pressure is felt. `/account/manage/` would have
+needed a fetch that may not be cached at that moment — and, being an
+account page, would have implied the list follows the user between
+devices. It does not: Cache Storage is per-browser, so a signed-in user
+with a phone and a laptop has two independent sets of downloads and two
+independent budgets. Every string in the sheet is written to say so, and
+`tests/e2e/test_manage_downloads.py` asserts the copy does.
+
+**Sizes are read, not measured.** Each row's size is the `bytes` figure
+SNOW-586 stores per area, never a live sum over Cache Storage: an area is
+thousands of entries, so measuring would mean a `cache.match()` per entry
+on every open. SNOW-586 already keeps that standing total for
+`planEviction`, so this consumes it rather than deriving a second, subtly
+different number for the same download.
+
+**Deleting is a bucket delete.** With one cache per area
+(`snowdesk-basemap-pinned-<areaId>`), removal is a single
+`caches.delete()` that cannot leave an area half-deleted. That is the
+first delete path a *region* download has ever had — and it retires the
+custom-area control's evict-on-confirm approach, which re-derived the old
+URL set from `buildBlob` and deleted entry by entry, silently leaving
+orphan tiles if it failed part-way. The order is load-bearing: the
+`basemap.areas` record is rewritten only **after** the bucket delete
+resolves, because the other order would leave tiles on disk with nothing
+pointing at them — bytes the user has been told are gone, which no
+surface could then account for or reclaim. A `caches.delete()` returning
+`false` (bucket already absent) still drops the record entry; only a
+thrown error leaves it alone.
+
+**The budget** is `meta:app`'s `basemap.budgetMb`, the row SNOW-586's
+eviction planner reads. It is offered as a fixed set of presets
+(`BUDGET_CHOICES_MB`) rather than free entry — predictable and
+explainable beats a number the user has to invent — and its smallest
+choice is pinned to `basemap_download_core.js`'s `DOWNLOAD_CEILING_MB`.
+That floor matters: a standing budget below the per-run ceiling would let
+a user pick a setting under which some single downloads could never be
+kept, which is SNOW-586's "two limits that do not talk to each other" bug
+arriving through the front door. The two constants are re-declared across
+a page-scope IIFE boundary with no module system between them, so a
+round-trip assertion in `tests/js/test_basemap_manage_core.js` is what
+holds them together.
+
+Lowering the budget below what is already stored **is** allowed — refusing
+would leave a user on a full device unable to say how much room they are
+willing to give up. The sheet states the over-budget condition rather than
+clamping it away (the bar's percentage is capped at 100 and cannot say
+it), and nothing is evicted at that moment: the next download is what
+reconciles it.
+
+**Two narrow bridges into `map.js`.** The module deliberately stays out of
+that file — it was written while SNOW-586 was editing it — and reaches it
+through `window.pwaLayersMenu.close()` (the menu's open state is three DOM
+writes held in the picker IIFE's closure; mirroring them would be a
+duplicate free to drift) and `window.pwaRegionNames.get()`
+(`FEATURE_BY_REGION_ID` is module scope). Both are optional: without them
+the sheet still opens, lists and deletes.
+
+**The action row is the menu's first non-toggle.** It takes
+`role="menuitem"` and never sets `aria-checked`;
+`.basemap-menu-item--action` (`static/css/map.css`) hides the
+radio/checkbox glyph that would otherwise sit permanently empty beside it.
+Adding it exposed two latent selector-by-exclusion bugs in `map.js` — the
+boot-time `:not(.basemap-menu-item--overlay)` sweep and the basemap-swap
+loop's `if (other.dataset.overlayKey) continue` — both of which meant
+"basemap radio" only for as long as radios and overlay checkboxes were the
+only rows in the menu, and both of which duly gave the new row an
+`aria-checked` that means nothing on a `menuitem`. Both now test
+positively for `data-basemap-key`, so a fourth kind of row is left alone
+by default.
+
+**Strings.** `makemessages` scans templates and Python only, so every
+string the module renders is server-rendered into
+`#map-downloads-strings-template` and read back at boot rather than
+written as a JS literal. The reader collapses internal whitespace,
+because `djangofmt` reflows a long `{% blocktrans %}` across lines and
+would otherwise put source indentation into the middle of a
+`window.confirm` dialog.
+
 ## Offline gating of the layers menu
 
 The layers popover (`#basemap-menu`) is a live cache-state dashboard:
