@@ -368,7 +368,11 @@ try {
 // pull. Shell JS/HTML bytes changed (sw.js, sw_register.js,
 // pwa_version_check.js, sw_version.html) plus a new
 // pwa_dev_shell_toggle.js.
-const CACHE_VERSION = 'snowdesk-shell-v103';
+// SNOW-589: the write behind SNOW-587's removed rings goes too — the
+// orphaned 'basemap.regions' row in meta:app is no longer written, and
+// db.js purges it from devices that still carry one. Shell JS bytes
+// changed (map.js, db.js).
+const CACHE_VERSION = 'snowdesk-shell-v104';
 
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
 // (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS
