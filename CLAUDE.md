@@ -221,6 +221,13 @@ These rules apply to **every** new or refactored management command
 3. **Respects `--verbosity`** in log calls.
 4. **Exits non-zero on failure**, including partially failed batches
    (`records_failed > 0`), so cron/CI can detect it.
+5. **Streams a growable queryset, doesn't materialise it** — order `-id`
+   and iterate via `apps.core.command_iteration.iterate_rows` (or
+   `countdown` for a derived, non-row unit of work), printing each row's
+   id as it is processed so stdout reads as a countdown to 1. Exemptions
+   (derived non-row units of work; stdout carrying a data artefact) need
+   an inline reason, not silence. Full rationale and the two exemptions:
+   [`docs/management-commands.md`](docs/management-commands.md).
 
 Full contract plus the command catalogue and flag reference:
 [`docs/management-commands.md`](docs/management-commands.md).
