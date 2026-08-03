@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.test.utils import override_settings
 from django.urls import reverse
+from freezegun import freeze_time
 
 if TYPE_CHECKING:
     from django.test.client import _MonkeyPatchedWSGIResponse as _Response
@@ -141,9 +142,17 @@ def test_post_succeeds_without_a_csrf_token(client: Client) -> None:
 
 @pytest.mark.django_db
 def test_rate_limit_exceeded_returns_403(client: Client) -> None:
-    """The 61st request within a minute from one IP is blocked (block=True)."""
+    """The 61st request within a minute from one IP is blocked (block=True).
+
+    The clock is frozen for the same reason as the share-redirect abuse
+    bounds (SNOW-603): django_ratelimit keys its counter on the end of the
+    current window, so a loop that straddles that boundary starts counting
+    again from 1 and the request that should be refused succeeds. At
+    ``60/m`` the boundary comes round every 60 seconds rather than every
+    3600, making this the more exposed of the two live-limiter tests.
+    """
     body = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
-    with override_settings(RATELIMIT_ENABLE=True):
+    with override_settings(RATELIMIT_ENABLE=True), freeze_time():
         for _ in range(60):
             response = _post(client, body)
             assert response.status_code == 200

@@ -9,19 +9,32 @@ explicitly (not 301) and the visitor hash stability.
 SNOW-551 adds the abuse bounds: only GET/HEAD are accepted, speculative
 requests (HEAD, ``Sec-Purpose: prefetch`` / ``prerender``) redirect
 without recording anything, and follows are capped per (token, IP).
+
+SNOW-603 freezes the clock for the rate-limit tests. django_ratelimit keys
+its counter on the end of the current window, so a test that walks a budget
+up to the limit is silently betting that the window does not roll over
+mid-loop — a bet it loses on CI about once every ``period / loop duration``
+runs. See ``TestShareRedirectAbuseBounds._live_rate_limit``.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
+
+# django-ratelimit's own window/rate helpers. Imported rather than
+# reimplemented so the boundary this module reasons about stays the one the
+# limiter actually uses, even if upstream changes the formula (SNOW-603).
+from django_ratelimit.core import _get_window, _split_rate
+from freezegun import freeze_time
+from freezegun.api import FrozenDateTimeFactory
 from pytest_django.fixtures import SettingsWrapper
 
 from apps.bulletins.models import BulletinShareClick
@@ -32,8 +45,9 @@ from tests.factories import (
     MicroRegionFactory,
 )
 
-# How many follows of one link from one IP are allowed before the 429.
-_SHARE_RATE_LIMIT = int(SHARE_CLICK_RATE.split("/")[0])
+# How many follows of one link from one IP are allowed before the 429, and the
+# length of the window that budget is measured over (30 and 3600 for "30/h").
+_SHARE_RATE_LIMIT, _SHARE_RATE_PERIOD = _split_rate(SHARE_CLICK_RATE)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -319,8 +333,10 @@ class TestShareRedirectAbuseBounds:
     """The endpoint writes three rows on arrival; those writes are bounded."""
 
     @pytest.fixture(autouse=True)
-    def _live_rate_limit(self, settings: SettingsWrapper) -> Iterator[None]:
-        """Switch the rate limiter on and isolate its counters per test.
+    def _live_rate_limit(
+        self, settings: SettingsWrapper
+    ) -> Iterator[FrozenDateTimeFactory]:
+        """Switch the rate limiter on, and pin the two things it counts against.
 
         ``config.settings.development`` sets ``RATELIMIT_ENABLE = False``,
         so the decorator is inert under the test settings. Turning it on —
@@ -330,14 +346,36 @@ class TestShareRedirectAbuseBounds:
         is the substance of SNOW-551's rate-limit decision; the view's
         handling of ``request.limited`` is trivial by comparison.
 
-        django_ratelimit keeps its counters in the default cache, which is
-        process-wide and outlives a single test, so the tests that
-        deliberately exhaust a budget would otherwise leak into the ones
-        that expect a fresh one.
+        Two sources of cross-test nondeterminism have to be closed:
+
+        * **The cache.** django_ratelimit keeps its counters in the default
+          cache, which is process-wide and outlives a single test, so the
+          tests that deliberately exhaust a budget would otherwise leak
+          into the ones that expect a fresh one.
+        * **The clock.** ``django_ratelimit.core._get_window`` derives the
+          counter's cache key from the *end* of the current window,
+          ``ts - (ts % period) + (crc32(value) % period)`` — the crc32
+          jitter puts every key's boundary at its own pseudo-random second.
+          A test that walks a budget up to the limit and asserts the next
+          request is refused silently depends on that boundary not falling
+          between its first request and its last: when it does, the key
+          changes, the count restarts at 1, and the request that should
+          have been a 429 is a 302. That is a real CI failure (SNOW-603),
+          arriving with probability ~``loop duration / period`` and so
+          rare, unreproducible on re-run, and unrelated to the rest of the
+          suite. Freezing the clock removes it outright — a window cannot
+          roll over if time does not advance.
+
+        Yields the freezegun factory so a test can move the frozen clock to
+        a chosen instant; see ``test_rate_limit_survives_its_window_boundary``.
         """
         settings.RATELIMIT_ENABLE = True
         cache.clear()
-        yield
+        with freeze_time() as frozen_clock:
+            # freeze_time() is declared as returning any of freezegun's three
+            # factory flavours; the no-argument form is always the frozen one.
+            assert isinstance(frozen_clock, FrozenDateTimeFactory)
+            yield frozen_clock
         cache.clear()
 
     @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
@@ -458,3 +496,36 @@ class TestShareRedirectAbuseBounds:
         assert client.get(url, REMOTE_ADDR="203.0.113.3").status_code == 429
 
         assert client.get(url, REMOTE_ADDR="198.51.100.7").status_code == 302
+
+    def test_rate_limit_survives_its_window_boundary(
+        self, client: Client, _live_rate_limit: FrozenDateTimeFactory
+    ) -> None:
+        """A budget walked up to the limit is not reset by the window rolling.
+
+        Guards the fix for SNOW-603 rather than the view. The three tests
+        above are correct only because ``_live_rate_limit`` freezes the
+        clock, and nothing in their bodies says so — delete the freeze and
+        they keep passing locally while going back to failing roughly once
+        every ``period / loop duration`` CI runs, odds low enough to get a
+        red job waved through as "flaky, just re-run it".
+
+        Two things make that regression visible here instead. The clock is
+        driven through the fixture, so a fixture that stops freezing fails
+        this test outright rather than leaving it quietly passing; and it is
+        parked one second before *this key's own* boundary, the worst
+        instant a caller could start from, so the assertion is made exactly
+        where the counter is most at risk of being rolled out from under it.
+        """
+        share = BulletinShareFactory.create()
+        url = _redirect_url(share.token)
+        ip = "203.0.113.4"
+
+        # The key the limiter buckets on is (token, IP) — see
+        # apps.public.views._share_rate_limit_key.
+        boundary = _get_window(f"{share.token}|{ip}", _SHARE_RATE_PERIOD)
+        _live_rate_limit.move_to(datetime.fromtimestamp(boundary - 1, tz=UTC))
+
+        for _ in range(_SHARE_RATE_LIMIT):
+            assert client.get(url, REMOTE_ADDR=ip).status_code == 302
+
+        assert client.get(url, REMOTE_ADDR=ip).status_code == 429
