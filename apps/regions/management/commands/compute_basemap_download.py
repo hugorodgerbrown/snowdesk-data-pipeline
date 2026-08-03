@@ -39,6 +39,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.core.command_iteration import iterate_rows
 from apps.regions.models import MicroRegion
 from apps.regions.services.basemap_tiles import (
     MICRO_BAND,
@@ -82,7 +83,7 @@ class Command(BaseCommand):
             )
         )
 
-        totals = _compute_micro_regions(commit, verbosity)
+        totals = _compute_micro_regions(self, commit, verbosity)
 
         if verbosity >= 1:
             if commit:
@@ -118,10 +119,16 @@ class Command(BaseCommand):
             )
 
 
-def _compute_micro_regions(commit: bool, verbosity: int) -> dict[str, int]:
+def _compute_micro_regions(
+    cmd: BaseCommand, commit: bool, verbosity: int
+) -> dict[str, int]:
     """Recompute basemap_download for every MicroRegion.
 
+    Streams newest-id-first via ``iterate_rows``, printing each processed
+    region's ``region_id`` as a countdown line.
+
     Args:
+        cmd: The calling command, used for progress output.
         commit: Whether to persist the computed blob.
         verbosity: Django's ``--verbosity`` level.
 
@@ -133,7 +140,12 @@ def _compute_micro_regions(commit: bool, verbosity: int) -> dict[str, int]:
     counts = {"updated": 0, "unchanged": 0, "failed": 0}
     to_save: list[MicroRegion] = []
 
-    for region in MicroRegion.objects.all().iterator():
+    for region in iterate_rows(
+        cmd,
+        MicroRegion.objects.all(),
+        verbosity=verbosity,
+        describe=lambda r: r.region_id,
+    ):
         # _try_region_bbox's return value is discarded here — it only
         # validates that boundary is present and well-formed (the same
         # bbox_from_boundary build_region_blob calls internally to derive

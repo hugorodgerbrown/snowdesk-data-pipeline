@@ -68,7 +68,11 @@ _LABEL_MICRO = "regions.microregion"
 
 
 class Command(BaseCommand):
-    """Recompute L1/L2 centre + bbox from L4 unions. Read-only unless --commit."""
+    """Recompute L1/L2 centre + bbox from L4 unions. Read-only unless --commit.
+
+    SNOW-602 exempt: operates on the parsed on-disk fixture JSON in memory,
+    not a queryset.
+    """
 
     help = (
         "Recompute derived centre + bbox on the L1/L2 EAWS entries in eaws_CH.json "

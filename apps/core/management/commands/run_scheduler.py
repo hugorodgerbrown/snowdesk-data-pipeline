@@ -34,6 +34,8 @@ class Command(BaseCommand):
 
     Blocks until interrupted (SIGINT/SIGTERM). Suitable as a long-running
     Render Background Worker ``startCommand``.
+
+    SNOW-602 exempt: no queryset loop — dispatches cron-scheduled jobs.
     """
 
     help = (

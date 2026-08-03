@@ -13,6 +13,12 @@ Pure SELECT — read-only by default, no ``--commit`` flag. Defaults to
 stdout; pass ``--output PATH`` to write to a file. Optional ``--lang``,
 ``--start-date``, and ``--end-date`` filters narrow the archive scan.
 
+SNOW-602 partial exemption: this command keeps chronological ``valid_from``
+ordering — the export's contract, not ``-id`` — and emits a per-row countdown
+line only when ``--output PATH`` is passed. The default stdout mode carries
+the CSV data itself, so a countdown line there would corrupt the output;
+``--output`` mode writes CSV to a file, leaving stdout free.
+
 Typical use::
 
     uv run python manage.py export_day_character_csv --lang de > dc.csv
@@ -152,12 +158,20 @@ class Command(BaseCommand):
             with path.open("w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh, lineterminator="\n")
                 writer.writerow(CSV_HEADERS)
-                rows_written, failures = self._stream_rows(queryset, writer)
+                # stdout carries no CSV data in --output mode, so it is free
+                # for a per-row countdown line (SNOW-602 partial exemption —
+                # see the module docstring).
+                rows_written, failures = self._stream_rows(
+                    queryset, writer, emit_countdown=True
+                )
             self.stderr.write(f"Wrote {rows_written} row(s) to {path}.")
         else:
             writer = csv.writer(self.stdout, lineterminator="\n")
             writer.writerow(CSV_HEADERS)
-            rows_written, failures = self._stream_rows(queryset, writer)
+            # Default mode: stdout *is* the CSV, so no countdown line here.
+            rows_written, failures = self._stream_rows(
+                queryset, writer, emit_countdown=False
+            )
 
         return failures
 
@@ -165,17 +179,25 @@ class Command(BaseCommand):
         self,
         queryset: Any,
         writer: Any,
+        *,
+        emit_countdown: bool,
     ) -> tuple[int, int]:
         """
         Walk ``queryset`` and feed one CSV row per bulletin into ``writer``.
 
         Uses ``iterator(chunk_size=...)`` so the prefetched-regions cache is
         flushed periodically rather than buffered for the whole archive.
+        Ordered chronologically (``valid_from``) rather than ``-id`` — see
+        the module docstring's SNOW-602 partial exemption. When
+        ``emit_countdown`` is True (``--output`` mode only), writes each
+        processed bulletin's pk to ``self.stdout`` before building its row.
         Returns ``(rows_written, failures)``.
         """
         rows_written = 0
         failures = 0
         for bulletin in queryset.iterator(chunk_size=500):
+            if emit_countdown:
+                self.stdout.write(str(bulletin.pk))
             try:
                 writer.writerow(_row_for_bulletin(bulletin))
                 rows_written += 1

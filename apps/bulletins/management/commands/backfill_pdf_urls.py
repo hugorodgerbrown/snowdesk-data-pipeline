@@ -48,6 +48,7 @@ from apps.bulletins.services.meteofrance_fetcher import (
 )
 from apps.bulletins.services.render_model import RenderModelBuildError, detect_source
 from apps.bulletins.services.slf_fetcher import _slf_pdf_url
+from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write("Scanning for bulletins with empty pdf_url …")
 
-        qs = Bulletin.objects.exclude(pdf_url__gt="").order_by("id")
+        qs = Bulletin.objects.exclude(pdf_url__gt="")
         total = qs.count()
 
         if verbosity >= 1:
@@ -123,7 +124,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
-        counts, batch = _process_queryset(qs, commit)
+        counts, batch = _process_queryset(self, qs, commit, verbosity=verbosity)
         _log_summary(self, verbosity, commit, counts, len(batch) if not commit else 0)
         logger.info("backfill_pdf_urls finished: %s commit=%s", counts, commit)
 
@@ -192,10 +193,16 @@ def _process_one(
 
 
 def _process_queryset(
+    cmd: BaseCommand,
     qs: Any,
     commit: bool,
+    *,
+    verbosity: int,
 ) -> tuple[dict[str, int], list[Bulletin]]:
     """Iterate over the queryset, derive pdf_urls, and optionally bulk-update.
+
+    Streams newest-id-first via ``iterate_rows``, printing each processed
+    bulletin's pk as a countdown line.
 
     Returns the counts dict and any unflushed batch (non-empty only in dry-run).
     """
@@ -212,7 +219,7 @@ def _process_queryset(
     batch: list[Bulletin] = []
     mf_call_count = 0
 
-    for bulletin in qs.iterator():
+    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
         raw_props = (bulletin.raw_data or {}).get("properties", {})
         try:
             is_mf = detect_source(raw_props) == Bulletin.Source.METEOFRANCE

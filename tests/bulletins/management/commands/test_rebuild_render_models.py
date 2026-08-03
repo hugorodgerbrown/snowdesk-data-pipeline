@@ -248,6 +248,32 @@ class TestRebuildRenderModelsDayRatings:
         # But no day rating rows should have been created.
         assert not RegionDayRating.objects.filter(region=region).exists()
 
+    def test_day_rating_failure_exits_nonzero(self) -> None:
+        """A failed day-rating recompute surfaces in the exit code (SNOW-602).
+
+        The render-model rebuild itself succeeds here; only the downstream
+        recompute fails. Before SNOW-602 the return value of
+        ``refresh_day_ratings`` was discarded and the command exited 0,
+        unlike the three sibling commands that rewrite bulletins.
+        """
+        from unittest.mock import patch
+
+        region = MicroRegionFactory.create(region_id="CH-dr-fail")
+        b = _make_bulletin(render_model_version=0, bulletin_id="dr-fail-001")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+
+        with patch(
+            "apps.bulletins.management.commands.rebuild_render_models."
+            "refresh_day_ratings",
+            return_value=1,
+        ):
+            with pytest.raises(CommandError, match="failed to recompute"):
+                call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        # The rebuild itself still committed — only the recompute failed.
+        b.refresh_from_db()
+        assert b.render_model_version == RENDER_MODEL_VERSION
+
     def test_error_summary_printed_and_exits_nonzero(
         self, capsys: pytest.CaptureFixture
     ) -> None:
@@ -269,3 +295,55 @@ class TestRebuildRenderModelsDayRatings:
         captured = capsys.readouterr()
         # Summary should mention rebuilt count and failed count.
         assert "Rebuilt" in captured.out or "failed" in captured.out
+
+
+@pytest.mark.django_db
+class TestRebuildRenderModelsStreaming:
+    """SNOW-602: every row is visited exactly once, even across chunk boundaries.
+
+    The default queryset filters on ``render_model_version < RENDER_MODEL_VERSION``
+    and the loop body updates that very column — the shape that broke the old
+    OFFSET/LIMIT batching (a row could drop out of a later page's re-queried
+    slice once an earlier page's write shrank the filtered set).
+    """
+
+    def test_every_stale_row_rebuilt_exactly_once_across_chunk_boundaries(
+        self,
+    ) -> None:
+        """A row count exceeding --batch-size is still rebuilt exactly once each."""
+        bulletins = [
+            _make_bulletin(render_model_version=0, bulletin_id=f"chunked-{i:03d}")
+            for i in range(5)
+        ]
+
+        call_command(
+            "rebuild_render_models",
+            commit=True,
+            batch_size=2,
+            verbosity=0,
+        )
+
+        for b in bulletins:
+            b.refresh_from_db()
+            assert b.render_model_version == RENDER_MODEL_VERSION
+
+    def test_stdout_carries_processed_bulletin_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Each processed bulletin's bulletin_id is printed, newest pk first."""
+        first = _make_bulletin(render_model_version=0, bulletin_id="countdown-001")
+        second = _make_bulletin(render_model_version=0, bulletin_id="countdown-002")
+        expected = [
+            b.bulletin_id
+            for b in Bulletin.objects.filter(pk__in=[first.pk, second.pk]).order_by(
+                "-id"
+            )
+        ]
+
+        call_command("rebuild_render_models", commit=True, verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [
+            line for line in out_lines if line in {"countdown-001", "countdown-002"}
+        ]
+        assert printed == expected

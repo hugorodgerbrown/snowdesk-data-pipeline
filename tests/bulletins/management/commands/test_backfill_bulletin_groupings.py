@@ -17,7 +17,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.bulletins.models import BulletinGrouping
+from apps.bulletins.models import Bulletin, BulletinGrouping
 from tests.factories import BulletinFactory, BulletinGroupingFactory, PipelineRunFactory
 
 _PATCH_TARGET = (
@@ -140,3 +140,21 @@ class TestBackfillBulletinGroupingsCommand:
 
         # All three were attempted despite the first failure.
         assert len(call_counts) == 3
+
+    # ------------------------------------------------------------------
+    # Countdown (SNOW-602)
+    # ------------------------------------------------------------------
+
+    def test_stdout_carries_processed_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Each processed bulletin's pk is printed, newest id first."""
+        _make_bulletins(3)
+        pks = sorted(Bulletin.objects.values_list("pk", flat=True), reverse=True)
+
+        with patch(_PATCH_TARGET, return_value=None):
+            call_command("backfill_bulletin_groupings", commit=True)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed_pks == pks

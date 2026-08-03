@@ -238,6 +238,8 @@ def _audit_resort_regions(
     """
     region_polygons = _build_region_polygons()
 
+    # SNOW-602 exempt: bounded curated data — a few hundred geocoded Resort
+    # rows, not a growable table.
     geocoded = list(
         Resort.objects.select_related("region")
         .filter(latitude__isnull=False, longitude__isnull=False)

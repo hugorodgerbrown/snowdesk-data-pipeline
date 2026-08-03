@@ -49,11 +49,11 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import detect_source
+from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 500
-_LOG_INTERVAL = 500
 
 
 class Command(BaseCommand):
@@ -96,7 +96,7 @@ class Command(BaseCommand):
             )
         )
 
-        qs = Bulletin.objects.filter(source="").order_by("id")
+        qs = Bulletin.objects.filter(source="")
         total = qs.count()
 
         self.stdout.write(f"Bulletins missing a source: {total}")
@@ -106,7 +106,7 @@ class Command(BaseCommand):
             return
 
         detected, failed = _process_queryset(
-            self, qs, total=total, commit=commit, verbosity=verbosity
+            self, qs, commit=commit, verbosity=verbosity
         )
 
         self._report_breakdown(detected)
@@ -147,7 +147,6 @@ def _process_queryset(
     cmd: BaseCommand,
     qs: Any,
     *,
-    total: int,
     commit: bool,
     verbosity: int,
 ) -> tuple[Counter[str], int]:
@@ -155,11 +154,12 @@ def _process_queryset(
 
     In read-only mode the detection still runs — so the summary reports a real
     breakdown of what would change — but nothing is accumulated or written.
+    Streams newest-id-first via ``iterate_rows``, printing each processed
+    bulletin's pk as a countdown line.
 
     Args:
         cmd: The calling command, used for progress output.
         qs: Queryset of Bulletin rows with a blank source.
-        total: Total number of rows in ``qs``, for progress reporting.
         commit: If True, persist detected values via bulk_update.
         verbosity: Django verbosity level (0–3).
 
@@ -173,7 +173,7 @@ def _process_queryset(
     failed = 0
     batch: list[Bulletin] = []
 
-    for bulletin in qs.iterator():
+    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
         properties = (bulletin.raw_data or {}).get("properties") or {}
         try:
             bulletin.source = detect_source(properties)
@@ -195,10 +195,6 @@ def _process_queryset(
             if len(batch) >= _BATCH_SIZE:
                 Bulletin.objects.bulk_update(batch, ["source"], batch_size=_BATCH_SIZE)
                 batch = []
-
-        processed = sum(detected.values())
-        if verbosity >= 1 and processed % _LOG_INTERVAL == 0:
-            cmd.stdout.write(f"  Processed {processed}/{total} bulletin(s)…")
 
     if commit and batch:
         Bulletin.objects.bulk_update(batch, ["source"], batch_size=_BATCH_SIZE)

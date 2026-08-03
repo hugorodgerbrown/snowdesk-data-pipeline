@@ -4,9 +4,16 @@ apps/bulletins/management/commands/recompute_day_ratings.py — Management comma
 Re-derives every ``RegionDayRating`` row under the current v7 policy:
 elevation-band split → afternoon-elevated split → headline fallback.
 
-Intended as a post-deployment step after a day-rating policy change.  Iterates
-every distinct (region, date) pair present in the ``RegionDayRating`` table and
-calls ``recompute_region_day`` for each, optionally filtered to a date window.
+Intended as a post-deployment step after a day-rating policy change.  Streams
+every distinct (region, date) pair present in the ``RegionDayRating`` table
+via ``.values_list(...).iterator()`` and calls ``recompute_region_day`` for
+each, optionally filtered to a date window.
+
+A (region, date) pair has no id of its own, so it is driven by
+``apps.core.command_iteration.countdown`` rather than ``iterate_rows`` —
+the documented exemption from the ``-id``-ordering half of the SNOW-602
+streaming rule: prints "N pair(s) remaining" per pair instead of a
+descending id.
 
 Read-only by default — pass ``--commit`` to persist changes (per the
 project-wide management command convention).
@@ -26,6 +33,7 @@ Typical use::
 
 import logging
 from argparse import ArgumentParser
+from collections.abc import Iterator
 from datetime import date
 from typing import Any
 
@@ -33,11 +41,10 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.day_rating import recompute_region_day
+from apps.core.command_iteration import countdown
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
-
-_LOG_INTERVAL = 100
 
 
 class Command(BaseCommand):
@@ -73,33 +80,43 @@ class Command(BaseCommand):
             help="Only recompute pairs on or before this date (inclusive).",
         )
 
-    def _collect_pairs(
+    def _pairs_queryset(
         self,
         start_date: date | None,
         end_date: date | None,
-    ) -> list[tuple[Any, date]]:
-        """Return distinct (region_id, date) pairs, optionally filtered."""
+    ) -> Any:
+        """Return the distinct (region_id, date) queryset, optionally filtered."""
         qs = RegionDayRating.objects.values_list("region_id", "date")
         if start_date:
             qs = qs.filter(date__gte=start_date)
         if end_date:
             qs = qs.filter(date__lte=end_date)
-        return list(qs.distinct())
+        return qs.distinct()
 
     def _process_pairs(
         self,
-        pairs: list[tuple[Any, date]],
+        pairs: Iterator[tuple[Any, date]],
         *,
+        total: int,
         commit: bool,
         verbosity: int,
     ) -> tuple[int, int]:
-        """Recompute each pair; return (processed, failed) counts."""
+        """Recompute each pair; return (processed, failed) counts.
+
+        Streams ``pairs`` (a ``values_list(...).iterator()``) via
+        ``countdown`` rather than materialising the whole distinct set — a
+        pair has no id, so the countdown counts down a known ``total``
+        instead of ``-id`` (the documented exemption from that half of the
+        SNOW-602 streaming rule).
+
+        """
         region_cache: dict[Any, MicroRegion] = {}
-        total = len(pairs)
         processed = 0
         failed = 0
 
-        for region_id, day in pairs:
+        for region_id, day in countdown(
+            self, pairs, total=total, verbosity=verbosity, label="pair(s)"
+        ):
             if region_id not in region_cache:
                 try:
                     region_cache[region_id] = MicroRegion.objects.get(pk=region_id)
@@ -124,18 +141,17 @@ class Command(BaseCommand):
                 failed += 1
 
             processed += 1
-            if verbosity >= 1 and processed % _LOG_INTERVAL == 0:
-                self.stdout.write(f"  Processed {processed}/{total} pairs …")
 
         return processed, failed
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the recompute command.
 
-        Collects all distinct (region_id, date) pairs from ``RegionDayRating``,
+        Streams the distinct (region_id, date) pairs from ``RegionDayRating``,
         applies any date filters, caches ``Region`` objects to avoid N+1 queries,
-        then calls ``recompute_region_day`` for each pair.  Logs progress every
-        ``_LOG_INTERVAL`` pairs and raises ``CommandError`` if any pair fails.
+        then calls ``recompute_region_day`` for each pair.  Prints a
+        countdown line per pair (verbosity >= 1) and raises ``CommandError``
+        if any pair fails.
 
         Flags:
             --commit: Persist recomputed ratings to the database.
@@ -144,7 +160,7 @@ class Command(BaseCommand):
 
         """
         commit: bool = options["commit"]
-        verbosity: int = options.get("verbosity", 1)
+        verbosity: int = options["verbosity"]
 
         start_date: date | None = options["start_date"]
         end_date: date | None = options["end_date"]
@@ -158,8 +174,8 @@ class Command(BaseCommand):
             )
         )
 
-        pairs = self._collect_pairs(start_date, end_date)
-        total = len(pairs)
+        pairs_qs = self._pairs_queryset(start_date, end_date)
+        total = pairs_qs.count()
         self.stdout.write(f"(region, date) pairs to process: {total}")
 
         if total == 0:
@@ -167,7 +183,7 @@ class Command(BaseCommand):
             return
 
         processed, failed = self._process_pairs(
-            pairs, commit=commit, verbosity=verbosity
+            pairs_qs.iterator(), total=total, commit=commit, verbosity=verbosity
         )
 
         succeeded = processed - failed

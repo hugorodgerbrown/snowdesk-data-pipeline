@@ -52,7 +52,11 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Seed the golden week of real bulletins; read-only unless --commit."""
+    """Seed the golden week of real bulletins; read-only unless --commit.
+
+    SNOW-602 exempt: a fixed-size seed spec (seven days, three providers),
+    not a queryset over a growable table.
+    """
 
     help = (
         "Load seven consecutive real days of bulletins (SLF, ALBINA, "

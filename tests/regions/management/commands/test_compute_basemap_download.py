@@ -80,3 +80,29 @@ class TestComputeBasemapDownloadCommit:
         # Should not raise.
         call_command("compute_basemap_download", "--commit", stdout=StringIO())
         assert MicroRegion.objects.filter(basemap_download__isnull=False).exists()
+
+    def test_stdout_carries_processed_region_ids_in_descending_pk_order(
+        self,
+    ) -> None:
+        """Each processed region's region_id is printed, newest pk first."""
+        first = MicroRegionFactory.create(
+            region_id="CH-0001", boundary=_BOUNDARY, basemap_download=None
+        )
+        second = MicroRegionFactory.create(
+            region_id="CH-0002", boundary=_BOUNDARY, basemap_download=None
+        )
+        expected = [
+            region.region_id
+            for region in MicroRegion.objects.filter(
+                pk__in=[first.pk, second.pk]
+            ).order_by("-id")
+        ]
+
+        out = StringIO()
+        call_command("compute_basemap_download", "--commit", stdout=out)
+
+        lines = out.getvalue().splitlines()
+        printed = [
+            line for line in lines if line in {first.region_id, second.region_id}
+        ]
+        assert printed == expected

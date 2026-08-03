@@ -120,6 +120,8 @@ class Command(BaseCommand):
 
     Dry-run by default; pass --commit to write the raw private scalar to
     the secret file at ``VAPID_PRIVATE_KEY_PATH``.
+
+    SNOW-602 exempt: no queryset loop — a one-shot keypair generation.
     """
 
     help = (

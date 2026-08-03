@@ -198,3 +198,20 @@ class TestBackfillBulletinSourceCommand:
         out = capsys.readouterr().out
         assert "Bulletins missing a source: 0" in out
         assert "Nothing to do." in out
+
+    # ------------------------------------------------------------------
+    # Countdown (SNOW-602)
+    # ------------------------------------------------------------------
+
+    def test_stdout_carries_processed_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Each processed bulletin's pk is printed, newest id first."""
+        _seed_one_per_provider()
+        pks = sorted(Bulletin.objects.values_list("pk", flat=True), reverse=True)
+
+        call_command("backfill_bulletin_source", "--commit")
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed_pks == pks

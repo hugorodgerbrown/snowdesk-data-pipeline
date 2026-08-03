@@ -294,3 +294,50 @@ class TestArguments:
         call_command("rekey_meteofrance_bulletins", "--commit", verbosity=0)
 
         assert capsys.readouterr().out == ""
+
+
+@pytest.mark.django_db
+class TestStreaming:
+    """SNOW-602: every row is visited exactly once, even across chunk boundaries.
+
+    The queryset filters on ``bulletin_id__startswith='FR-'`` and the loop body
+    rewrites that very column — the shape that broke the old OFFSET/LIMIT
+    batching in the other three commands. The new id still starts with
+    ``FR-``, so this doesn't hit the row-skipping failure mode directly, but
+    it is exactly the pattern the plan calls out, so it is covered here too.
+    """
+
+    def test_every_row_rekeyed_exactly_once_across_chunk_boundaries(self) -> None:
+        """A row count exceeding --batch-size is still re-keyed exactly once each."""
+        bulletin_ids = [f"FR-{i:02d}-2026-02-13" for i in range(2, 7)]
+        for bulletin_id in bulletin_ids:
+            _make_bulletin(bulletin_id)
+
+        call_command(
+            "rekey_meteofrance_bulletins", "--commit", "--batch-size", "2", verbosity=0
+        )
+
+        assert Bulletin.objects.filter(bulletin_id__startswith="FR-").count() == 5
+        for bulletin_id in bulletin_ids:
+            assert Bulletin.objects.filter(
+                bulletin_id=f"{bulletin_id}-{_EVENING_STAMP}"
+            ).exists()
+
+    def test_stdout_carries_processed_ids_in_descending_pk_order(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Each inspected bulletin's original bulletin_id is printed, newest pk first."""
+        first = _make_bulletin("FR-02-2026-02-13")
+        second = _make_bulletin("FR-03-2026-02-13")
+        expected = [
+            b.bulletin_id
+            for b in Bulletin.objects.filter(pk__in=[first.pk, second.pk]).order_by(
+                "-id"
+            )
+        ]
+
+        call_command("rekey_meteofrance_bulletins", "--commit", verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [line for line in out_lines if line in set(expected)]
+        assert printed == expected

@@ -2,7 +2,7 @@
 name: management-commands
 description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-08-03
 ---
 
 # Management commands
@@ -52,6 +52,54 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 5. **Exit non-zero on failure.** Any unhandled error, or a partially
    failed batch (`records_failed > 0`), must surface as a non-zero exit
    so cron/CI can detect it.
+
+6. **Stream a growable queryset — never materialise it, and count down as
+   you go (SNOW-602).** A plain `for obj in qs:` loads every matching row
+   into memory before the loop body runs once — invisible on a dev
+   database, fatal on a production-sized table. Use the shared helpers in
+   [`apps/core/command_iteration.py`](../apps/core/command_iteration.py)
+   at every call site rather than hand-rolling the loop:
+
+   - **`iterate_rows(cmd, queryset, *, verbosity, chunk_size=None,
+     describe=None)`** — the default. Orders `queryset` by `-id` and
+     streams it via `.iterator()`, printing each row's id (or
+     `describe(row)`, for a command that already surfaces a domain id)
+     before yielding it, so stdout reads as a countdown to 1 on a long
+     run. Descending id order also means a row created mid-run sorts
+     *ahead* of the cursor and is never re-visited. Pass `chunk_size`
+     whenever the queryset carries a `prefetch_related` — Django raises
+     without it.
+   - **`countdown(cmd, items, *, total, verbosity, label)`** — for a loop
+     whose unit of work is a derived value with no primary key of its own
+     (e.g. a `(region, date)` pair from a `values_list`). Prints `"N
+     <label> remaining"` per item instead of a descending id; `total` is
+     typically a `.count()` taken before streaming `items`.
+
+   Never hand-roll OFFSET/LIMIT batching to page through a queryset —
+   re-querying a slice of the *same* filtered queryset on every page is
+   O(n²), and if the loop body mutates the column the queryset filters on
+   (rewriting an id, flipping a status flag), a row can drop out of a
+   later page's slice and silently never be visited.
+
+   Two exemptions, each carrying an inline `# SNOW-602 exempt: …` reason
+   rather than silent divergence:
+
+   - **Derived non-row unit of work** — the pair has no id, so `countdown`
+     replaces the `-id` half of the rule (`recompute_day_ratings` is the
+     reference example).
+   - **stdout is carrying a data artefact, not log output** — a command
+     that defaults to writing e.g. CSV to stdout must not interleave
+     countdown lines into it. Keep the export's own row ordering (it's the
+     contract, not `-id`) and only emit the countdown when an explicit
+     `--output PATH` flag redirects the data elsewhere, freeing stdout
+     (`export_day_character_csv` is the reference example).
+
+   Bounded curated-data tables (a few hundred rows — `Resort`, EAWS region
+   fixtures), commands with no queryset at all (fixture builders, seeders,
+   provider-API fetchers), and commands with no queryset loop (flag sync,
+   query-count monitor, the scheduler, one-shot dev/ops commands) are
+   exempt outright — mark the exemption inline, don't just leave the loop
+   as `for x in qs:` unexplained.
 
 ## Operational requirements
 
@@ -290,8 +338,8 @@ incident that invalidates derived state:
   uv run python manage.py reformat_mf_comments --commit --skip-day-ratings
   ```
 
-  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
-  `--skip-day-ratings`.
+  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500 —
+  the streamed-queryset iterator's chunk size, SNOW-602), `--skip-day-ratings`.
 - `rekey_meteofrance_bulletins --commit` — one-off migration of FR bulletins from
   the old `FR-{NN}-{covered date}` identifier to
   `FR-{NN}-{covered date}-{publication timestamp}` (SNOW-559). The old id could
@@ -310,8 +358,8 @@ incident that invalidates derived state:
   uv run python manage.py rekey_meteofrance_bulletins --commit
   ```
 
-  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
-  `--skip-day-ratings`.
+  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500 —
+  the streamed-queryset iterator's chunk size, SNOW-602), `--skip-day-ratings`.
 
   Re-keying alone does not restore the issues that were previously overwritten.
   It also cannot run against a database still holding a full season of
@@ -345,8 +393,9 @@ incident that invalidates derived state:
   uv run python manage.py purge_legacy_meteofrance_bulletins --commit --allow-orphaned-shares
   ```
 
-  Flags: `--commit`, `--batch-size N` (default 500), `--skip-day-ratings`,
-  `--allow-orphaned-shares`.
+  Flags: `--commit`, `--batch-size N` (default 500 — the streamed-queryset
+  iterator's chunk size and the delete step's chunk size, SNOW-602),
+  `--skip-day-ratings`, `--allow-orphaned-shares`.
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
 - `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
@@ -620,7 +669,8 @@ uv run python manage.py fetch_bulletins --source slf \
 uv run python manage.py rebuild_render_models           # read-only
 uv run python manage.py rebuild_render_models --commit  # persist
 
-# Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
+# Flags: --commit, --all (every row), --bulletin-id <id> (single row),
+#   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602)
 
 # Re-derive every RegionDayRating row under the current v8 policy: min/max
 # come from an elevation-band split (distinct all_day band keys) or, failing

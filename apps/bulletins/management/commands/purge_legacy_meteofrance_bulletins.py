@@ -33,6 +33,17 @@ Read-only by default — pass ``--commit`` to persist deletions (per the
 project-wide management command convention;
 see docs/decisions/dry-run-default-commands.md).
 
+Streams the queryset newest-id-first via ``apps.core.command_iteration
+.iterate_rows`` rather than hand-rolled OFFSET/LIMIT batching (SNOW-602) —
+the old batching re-queried an offset slice of the same queryset on every
+page, which is O(n²). The walk collects only what the delete step actually
+needs — candidate ``pk``s and ``bulletin_id`` strings, plus the (region, day)
+pairs touched by a replaceable row via ``day_rating_pairs`` — rather than the
+full ``Bulletin`` instances in a list held until the end of the run.
+``_has_replacement`` is a single indexed ``.exists()`` query against the
+new-grammar id's exact shape rather than materialising every id sharing the
+old id's prefix and pattern-matching them in Python.
+
 Typical use::
 
     # Read-only walk — reports the per-massif pre-flight table.
@@ -55,6 +66,7 @@ import re
 from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
@@ -68,10 +80,12 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.day_rating import day_rating_pairs, refresh_day_ratings
 from apps.bulletins.services.meteofrance_identity import BULLETIN_ID_RE
+from apps.core.command_iteration import iterate_rows
+from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BATCH_SIZE = 500
+_PREFETCH_CHUNK_SIZE = 500
 
 # Rows to inspect: every Météo-France bulletin, old or new grammar.
 _FR_PREFIX = "FR-"
@@ -92,11 +106,12 @@ class _MassifStats:
 
 @dataclass
 class _PurgeReport:
-    """Everything gathered by one walk of the FR bulletin table."""
+    """Everything gathered by one streamed walk of the FR bulletin table."""
 
     massifs: dict[str, _MassifStats] = field(default_factory=dict)
-    replaceable: list[Bulletin] = field(default_factory=list)
-    unreplaced: list[Bulletin] = field(default_factory=list)
+    replaceable_pks: list[int] = field(default_factory=list)
+    unreplaced_ids: list[str] = field(default_factory=list)
+    pairs: set[tuple[MicroRegion, date]] = field(default_factory=set)
     new_grammar_count: int = 0
     recovered_count: int = 0
     region_bulletin_count: int = 0
@@ -150,10 +165,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--batch-size",
             type=int,
-            default=_DEFAULT_BATCH_SIZE,
+            default=_PREFETCH_CHUNK_SIZE,
             metavar="N",
             help=(
-                f"Process bulletins in batches of N (default: {_DEFAULT_BATCH_SIZE})."
+                "Chunk size for the streamed queryset iterator and the "
+                f"delete step (default: {_PREFETCH_CHUNK_SIZE})."
             ),
         )
         parser.add_argument(
@@ -174,10 +190,12 @@ class Command(BaseCommand):
     def _has_replacement(self, old_id: str) -> bool:
         """Return whether a new-grammar replacement already exists for ``old_id``.
 
-        A candidate is replaceable iff some row matching ``BULLETIN_ID_RE`` has
-        a ``bulletin_id`` starting ``f"{old_id}-"`` — the new grammar is exactly
-        the old id plus ``-`` plus a 14-digit publication stamp. This is a
-        single indexed prefix lookup; no region/date re-parsing is needed.
+        A candidate is replaceable iff a row exists whose ``bulletin_id`` is
+        exactly the old id plus ``-`` plus a 14-digit publication stamp — the
+        new grammar's exact shape (mirrors ``BULLETIN_ID_RE``). A single
+        indexed ``.exists()`` query against that regex, rather than
+        materialising every row sharing the old id's prefix and pattern
+        -matching them in Python.
 
         Args:
             old_id: The candidate's current (old-grammar) bulletin_id.
@@ -186,71 +204,63 @@ class Command(BaseCommand):
             ``True`` when a matching new-grammar row exists.
 
         """
-        for candidate_id in Bulletin.objects.filter(
-            bulletin_id__startswith=f"{old_id}-"
-        ).values_list("bulletin_id", flat=True):
-            if BULLETIN_ID_RE.match(candidate_id):
-                return True
-        return False
+        return Bulletin.objects.filter(
+            bulletin_id__regex=rf"^{re.escape(old_id)}-\d{{14}}$"
+        ).exists()
 
-    def _walk(self, batch_size: int) -> _PurgeReport:
-        """Walk every FR bulletin in pk-ordered batches, building the report.
+    def _walk(self, *, chunk_size: int, verbosity: int) -> _PurgeReport:
+        """Stream every FR bulletin newest-id-first, building the report.
 
         Args:
-            batch_size: Rows per batch.
+            chunk_size: Forwarded to ``iterate_rows`` as its ``chunk_size``.
+            verbosity: Django's ``--verbosity`` level.
 
         Returns:
             A populated ``_PurgeReport``.
 
         """
-        qs = Bulletin.objects.filter(bulletin_id__startswith=_FR_PREFIX).order_by("pk")
-        total = qs.count()
+        qs = Bulletin.objects.filter(
+            bulletin_id__startswith=_FR_PREFIX
+        ).prefetch_related("regions")
 
         massifs: dict[str, _MassifStats] = defaultdict(_MassifStats)
-        replaceable: list[Bulletin] = []
-        unreplaced: list[Bulletin] = []
+        replaceable_pks: list[int] = []
+        unreplaced_ids: list[str] = []
+        pairs: set[tuple[MicroRegion, date]] = set()
         new_grammar_count = 0
         # Old-grammar ids implied by every new-grammar row seen — used to
         # derive the number of second issues the load recovered.
         massif_days_with_new_grammar: set[str] = set()
 
-        offset = 0
-        while offset < total:
-            batch_ids = list(
-                qs.values_list("pk", flat=True)[offset : offset + batch_size]
-            )
-            if not batch_ids:
-                break
+        for bulletin in iterate_rows(
+            self,
+            qs,
+            verbosity=verbosity,
+            chunk_size=chunk_size,
+            describe=lambda b: b.bulletin_id,
+        ):
+            if BULLETIN_ID_RE.match(bulletin.bulletin_id):
+                new_grammar_count += 1
+                massif_days_with_new_grammar.add(
+                    _STAMP_SUFFIX_RE.sub("", bulletin.bulletin_id)
+                )
+                continue
 
-            batch = (
-                Bulletin.objects.filter(pk__in=batch_ids)
-                .order_by("pk")
-                .prefetch_related("regions")
-            )
-            for bulletin in batch:
-                if BULLETIN_ID_RE.match(bulletin.bulletin_id):
-                    new_grammar_count += 1
-                    massif_days_with_new_grammar.add(
-                        _STAMP_SUFFIX_RE.sub("", bulletin.bulletin_id)
-                    )
-                    continue
+            stats = massifs[_massif_code(bulletin.bulletin_id)]
+            stats.candidates += 1
+            if self._has_replacement(bulletin.bulletin_id):
+                stats.replaceable += 1
+                replaceable_pks.append(bulletin.pk)
+                pairs |= day_rating_pairs([bulletin])
+            else:
+                stats.unreplaced += 1
+                unreplaced_ids.append(bulletin.bulletin_id)
 
-                stats = massifs[_massif_code(bulletin.bulletin_id)]
-                stats.candidates += 1
-                if self._has_replacement(bulletin.bulletin_id):
-                    stats.replaceable += 1
-                    replaceable.append(bulletin)
-                else:
-                    stats.unreplaced += 1
-                    unreplaced.append(bulletin)
-
-            offset += batch_size
-
-        replaceable_pks = [b.pk for b in replaceable]
         return _PurgeReport(
             massifs=dict(massifs),
-            replaceable=replaceable,
-            unreplaced=unreplaced,
+            replaceable_pks=replaceable_pks,
+            unreplaced_ids=unreplaced_ids,
+            pairs=pairs,
             new_grammar_count=new_grammar_count,
             recovered_count=new_grammar_count - len(massif_days_with_new_grammar),
             region_bulletin_count=RegionBulletin.objects.filter(
@@ -282,8 +292,10 @@ class Command(BaseCommand):
                 f"replaceable={stats.replaceable} unreplaced={stats.unreplaced}"
             )
         self.stdout.write(
-            f"Totals: candidates={len(report.replaceable) + len(report.unreplaced)} "
-            f"replaceable={len(report.replaceable)} unreplaced={len(report.unreplaced)}"
+            "Totals: candidates="
+            f"{len(report.replaceable_pks) + len(report.unreplaced_ids)} "
+            f"replaceable={len(report.replaceable_pks)} "
+            f"unreplaced={len(report.unreplaced_ids)}"
         )
         self.stdout.write(
             "Cascading on delete: "
@@ -297,23 +309,22 @@ class Command(BaseCommand):
             f"({report.recovered_count} second issue(s) recovered by the rebuilt "
             "archive)."
         )
-        if report.unreplaced:
+        if report.unreplaced_ids:
             self.stdout.write(self.style.WARNING("Unreplaced (will not be deleted):"))
-            for bulletin in report.unreplaced:
-                self.stdout.write(f"  {bulletin.bulletin_id}")
+            for bulletin_id in report.unreplaced_ids:
+                self.stdout.write(f"  {bulletin_id}")
 
-    def _delete(self, bulletins: list[Bulletin], batch_size: int) -> int:
-        """Delete ``bulletins`` in pk-ordered chunks of ``batch_size``.
+    def _delete(self, pks: list[int], batch_size: int) -> int:
+        """Delete the bulletins named by ``pks`` in chunks of ``batch_size``.
 
         Args:
-            bulletins: The rows to delete.
+            pks: Primary keys of the rows to delete.
             batch_size: Rows per chunk.
 
         Returns:
             The number of Bulletin rows deleted.
 
         """
-        pks = [b.pk for b in bulletins]
         deleted = 0
         for i in range(0, len(pks), batch_size):
             chunk = pks[i : i + batch_size]
@@ -335,11 +346,11 @@ class Command(BaseCommand):
             CommandError: Any candidate has no replacement.
 
         """
-        if report.unreplaced:
+        if report.unreplaced_ids:
             raise CommandError(
-                f"{len(report.unreplaced)} legacy bulletin(s) have no new-grammar "
-                "replacement — see the report above. Load the rebuilt archive "
-                "before purging."
+                f"{len(report.unreplaced_ids)} legacy bulletin(s) have no "
+                "new-grammar replacement — see the report above. Load the "
+                "rebuilt archive before purging."
             )
 
     def _check_share_gate(
@@ -398,11 +409,10 @@ class Command(BaseCommand):
         # — a dry-run must report the share count without failing on it.
         self._check_share_gate(report, allow_orphaned_shares=allow_orphaned_shares)
 
-        # Collect (region, day) pairs before deleting — the RegionBulletin
-        # links that back bulletin.regions.all() cascade away with the row.
-        pairs = day_rating_pairs(report.replaceable)
-
-        deleted = self._delete(report.replaceable, batch_size)
+        # The (region, day) pairs were collected in _walk, before deleting —
+        # the RegionBulletin links that back bulletin.regions.all() cascade
+        # away with the row.
+        deleted = self._delete(report.replaceable_pks, batch_size)
         if verbosity:
             self.stdout.write(self.style.SUCCESS(f"Deleted {deleted} bulletin(s)."))
 
@@ -411,9 +421,9 @@ class Command(BaseCommand):
 
         if verbosity:
             self.stdout.write(
-                f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
+                f"Refreshing day ratings for {len(report.pairs)} (region, day) pair(s)."
             )
-        failures = refresh_day_ratings(pairs)
+        failures = refresh_day_ratings(report.pairs)
         if verbosity:
             self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
         if failures:
@@ -446,7 +456,7 @@ class Command(BaseCommand):
             mode = "commit" if commit else "read-only"
             self.stdout.write(f"Inspecting Météo-France bulletins [{mode}].")
 
-        report = self._walk(batch_size)
+        report = self._walk(chunk_size=batch_size, verbosity=verbosity)
 
         if verbosity:
             self._print_report(report)
@@ -455,7 +465,7 @@ class Command(BaseCommand):
         # a dry-run just as loudly as a real run.
         self._check_unreplaced_gate(report)
 
-        if not report.replaceable:
+        if not report.replaceable_pks:
             if verbosity:
                 self.stdout.write(self.style.SUCCESS("Nothing to purge."))
             return
@@ -464,7 +474,7 @@ class Command(BaseCommand):
             if verbosity:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Would delete {len(report.replaceable)} bulletin(s). "
+                        f"Would delete {len(report.replaceable_pks)} bulletin(s). "
                         "Read-only run — pass --commit to persist."
                     )
                 )

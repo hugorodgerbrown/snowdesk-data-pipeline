@@ -33,10 +33,9 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
+from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
-
-_LOG_INTERVAL = 100
 
 
 class Command(BaseCommand):
@@ -125,7 +124,7 @@ class Command(BaseCommand):
             )
         )
 
-        qs = Bulletin.objects.filter(grouping__isnull=True).order_by("valid_from")
+        qs = Bulletin.objects.filter(grouping__isnull=True)
         total = qs.count()
 
         self.stdout.write(f"Bulletins missing a grouping: {total}")
@@ -145,7 +144,7 @@ class Command(BaseCommand):
         skipped = 0
         failed = 0
 
-        for bulletin in qs.iterator():
+        for bulletin in iterate_rows(self, qs, verbosity=verbosity):
             outcome = self._process_one(bulletin, verbosity=verbosity)
             if outcome == "created":
                 processed += 1
@@ -153,10 +152,6 @@ class Command(BaseCommand):
                 skipped += 1
             else:
                 failed += 1
-
-            total_done = processed + skipped + failed
-            if verbosity >= 1 and total_done % _LOG_INTERVAL == 0:
-                self.stdout.write(f"  Processed {total_done}/{total} …")
 
         self.stdout.write(
             self.style.SUCCESS(

@@ -39,6 +39,9 @@ class Command(BaseCommand):
 
     Read-only by default; ``--commit`` persists the create/delete diff.
     Flags present in both the manifest and the DB are left untouched.
+
+    SNOW-602 exempt: no per-row queryset loop — a handful of named flags,
+    reconciled as name sets via bulk create/delete.
     """
 
     help = (

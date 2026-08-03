@@ -37,6 +37,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.core.command_iteration import iterate_rows
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,11 @@ class Command(BaseCommand):
         """Execute the diagnostic and print the partition."""
         target_date: dt.date | None = options["target_date"]
         verbose_table: bool = options["verbose_table"]
+        verbosity: int = options["verbosity"]
 
         all_regions = self._all_regions()
         rated_ids = self._rated_region_ids(target_date)
-        seen_ids = self._seen_in_bulletins_region_ids(target_date)
+        seen_ids = self._seen_in_bulletins_region_ids(target_date, verbosity=verbosity)
 
         # Buckets are computed against the fixture ("all_regions") so any
         # rated/seen ID that isn't in the fixture (shouldn't happen, but
@@ -142,8 +144,12 @@ class Command(BaseCommand):
             qs = qs.filter(date=target_date)
         return set(qs.values_list("region__region_id", flat=True).distinct())
 
-    @staticmethod
-    def _seen_in_bulletins_region_ids(target_date: dt.date | None) -> set[str]:
+    def _seen_in_bulletins_region_ids(
+        self,
+        target_date: dt.date | None,
+        *,
+        verbosity: int,
+    ) -> set[str]:
         """
         Return ``region_id``\u200bs appearing in any bulletin's raw payload.
 
@@ -154,13 +160,17 @@ class Command(BaseCommand):
 
         If ``target_date`` is given, restrict to bulletins whose stored
         ``target_date`` equals that date — mirroring the candidate filter in
-        ``recompute_region_day``.
+        ``recompute_region_day``. Streams newest-id-first via ``iterate_rows``,
+        printing each scanned bulletin's id as a countdown line — ``id`` is
+        carried in the whole-archive scan's ``values_list`` tuple purely so
+        there is something to print.
         """
         if target_date is None:
             seen: set[str] = set()
-            for raw_data in Bulletin.objects.values_list(
-                "raw_data", flat=True
-            ).iterator():
+            rows = Bulletin.objects.values_list("id", "raw_data")
+            for _pk, raw_data in iterate_rows(
+                self, rows, verbosity=verbosity, describe=lambda row: row[0]
+            ):
                 _collect_region_ids(raw_data, seen)
             return seen
 
@@ -169,7 +179,7 @@ class Command(BaseCommand):
         # exactly the bulletins forecasting this day.
         candidates = Bulletin.objects.for_target_date(target_date)
         seen = set()
-        for bulletin in candidates.iterator():
+        for bulletin in iterate_rows(self, candidates, verbosity=verbosity):
             _collect_region_ids(bulletin.raw_data, seen)
         return seen
 

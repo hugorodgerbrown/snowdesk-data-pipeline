@@ -386,6 +386,51 @@ class TestArguments:
         assert capsys.readouterr().out == ""
 
 
+@pytest.mark.django_db
+class TestStreaming:
+    """SNOW-602: every candidate is visited exactly once, even across chunk boundaries."""
+
+    def test_every_replaceable_row_purged_exactly_once_across_chunk_boundaries(
+        self,
+    ) -> None:
+        """A row count exceeding --batch-size still purges every replaceable row."""
+        pairs = []
+        for i in range(2, 7):
+            region_id = f"FR-{i:02d}"
+            region = _region(region_id)
+            old = _fr_bulletin(f"{region_id}-2026-02-13", region=region)
+            new = _fr_bulletin(f"{region_id}-2026-02-13-{_STAMP}", region=region)
+            pairs.append((old, new))
+
+        call_command(
+            "purge_legacy_meteofrance_bulletins",
+            "--commit",
+            "--batch-size",
+            "2",
+            verbosity=0,
+        )
+
+        for old, new in pairs:
+            assert not Bulletin.objects.filter(pk=old.pk).exists()
+            assert Bulletin.objects.filter(pk=new.pk).exists()
+
+    def test_stdout_carries_scanned_ids_in_descending_pk_order(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Each scanned bulletin's bulletin_id is printed, newest pk first."""
+        old, new = _old_and_new()
+        expected = [
+            b.bulletin_id
+            for b in Bulletin.objects.filter(pk__in=[old.pk, new.pk]).order_by("-id")
+        ]
+
+        call_command("purge_legacy_meteofrance_bulletins", "--commit", verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [line for line in out_lines if line in set(expected)]
+        assert printed == expected
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: a synthetic archive load feeding the purge.
 # ---------------------------------------------------------------------------

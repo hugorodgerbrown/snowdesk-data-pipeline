@@ -42,11 +42,11 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import target_day_for_valid_from
+from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 500
-_LOG_INTERVAL = 500
 
 
 class Command(BaseCommand):
@@ -89,7 +89,7 @@ class Command(BaseCommand):
             )
         )
 
-        qs = Bulletin.objects.filter(target_date__isnull=True).order_by("id")
+        qs = Bulletin.objects.filter(target_date__isnull=True)
         total = qs.count()
 
         self.stdout.write(f"Bulletins missing a target_date: {total}")
@@ -99,7 +99,7 @@ class Command(BaseCommand):
             return
 
         processed, failed = _process_queryset(
-            self, qs, total=total, commit=commit, verbosity=verbosity
+            self, qs, commit=commit, verbosity=verbosity
         )
 
         if commit:
@@ -132,7 +132,6 @@ def _process_queryset(
     cmd: BaseCommand,
     qs: Any,
     *,
-    total: int,
     commit: bool,
     verbosity: int,
 ) -> tuple[int, int]:
@@ -140,11 +139,12 @@ def _process_queryset(
 
     In read-only mode the derivation still runs — so the summary reports a real
     count of what would change — but nothing is accumulated or written.
+    Streams newest-id-first via ``iterate_rows``, printing each processed
+    bulletin's pk as a countdown line.
 
     Args:
         cmd: The calling command, used for progress output.
         qs: Queryset of Bulletin rows missing a target_date.
-        total: Total number of rows in ``qs``, for progress reporting.
         commit: If True, persist derived values via bulk_update.
         verbosity: Django verbosity level (0–3).
 
@@ -158,7 +158,7 @@ def _process_queryset(
     failed = 0
     batch: list[Bulletin] = []
 
-    for bulletin in qs.iterator():
+    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
         try:
             bulletin.target_date = target_day_for_valid_from(bulletin.valid_from)
         except Exception:
@@ -181,9 +181,6 @@ def _process_queryset(
                     batch, ["target_date"], batch_size=_BATCH_SIZE
                 )
                 batch = []
-
-        if verbosity >= 1 and processed % _LOG_INTERVAL == 0:
-            cmd.stdout.write(f"  Processed {processed}/{total} bulletin(s)…")
 
     if commit and batch:
         Bulletin.objects.bulk_update(batch, ["target_date"], batch_size=_BATCH_SIZE)
