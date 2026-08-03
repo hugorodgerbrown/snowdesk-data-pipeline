@@ -25,7 +25,7 @@ from django.shortcuts import render
 from apps.accounts.models import PushSubscription
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.core.decorators import require_htmx
-from apps.core.sw_shell import read_cache_version
+from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
 
 DEFAULT_SLUG = "typography"
@@ -97,9 +97,11 @@ def push_demo(request: HttpRequest) -> HttpResponse:
 def sw_version(request: HttpRequest) -> HttpResponse:
     """Staff page surfacing the service-worker shell version (SNOW-517).
 
-    Server-renders the deployed ``CACHE_VERSION`` (read live from
-    ``static/js/sw.js`` via ``apps.core.sw_shell.read_cache_version()``) and
-    ``settings.APP_VERSION`` so the baseline works with JS disabled. The
+    Server-renders the deployed ``CACHE_VERSION`` (derived live from the
+    shell content hash via ``apps.core.sw_shell.cache_version()`` — the
+    same value ``serve_sw`` injects into ``/sw.js``, recomputed here rather
+    than read from the process cache so the page never shows a stale name)
+    and ``settings.APP_VERSION`` so the baseline works with JS disabled. The
     live SW version — what the browser actually has under control right
     now — is filled in by ``static/js/pwa_sw_version_probe.js`` as a
     progressive enhancement: it posts ``'version'`` to
@@ -115,7 +117,7 @@ def sw_version(request: HttpRequest) -> HttpResponse:
         request,
         "_debug/sw_version.html",
         {
-            "cache_version": read_cache_version(),
+            "cache_version": cache_version(),
             "app_version": settings.APP_VERSION,
             "sw_dev_shell_bypass": settings.SW_DEV_SHELL_BYPASS,
         },

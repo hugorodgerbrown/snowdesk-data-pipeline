@@ -95,13 +95,26 @@
  *
  * Cache version
  * -------------
- * Bump ``CACHE_VERSION`` whenever the shell changes — a new version
- * string changes the bytes of this script, which is what makes the
- * browser detect the update and surface the banner. On ``activate``,
- * every cache key not matching the current version is deleted so old SW
- * deploys leave nothing behind. The version is also surfaced via a
- * ``message`` handler so devtools can confirm which SW version is in
- * control.
+ * ``CACHE_VERSION`` is **derived, not committed** (SNOW-590). The literal
+ * below is a placeholder: ``apps.public.views.serve_sw`` rewrites it on
+ * every response with ``snowdesk-shell-<shell content hash>``, so any
+ * change to a shell source automatically produces a new cache name. There
+ * is nothing to bump by hand — the old ``bin/sw-version`` ritual and its
+ * committed hash file are gone, along with the merge conflict they caused
+ * on every concurrent branch touching ``static/js/``.
+ *
+ * A new version string changes the bytes of this script, which is what
+ * makes the browser detect the update and surface the banner. On
+ * ``activate``, every cache key not matching the current version is
+ * deleted so old SW deploys leave nothing behind. The version is also
+ * surfaced via a ``message`` handler so devtools can confirm which SW
+ * version is in control.
+ *
+ * Keep the assignment in its exact single-quoted form. The substitution
+ * is a regex, and ``apps.core.checks.check_sw_cache_version_substitutable``
+ * fails ``manage.py check`` if it stops matching — without that guard an
+ * unmatched line would freeze every client on one cache name and stop
+ * shell updates reaching anyone (SNOW-457).
  *
  * X-SW-Cache header (SNOW-482, SNOW-490)
  * ----------------------------------------
@@ -383,7 +396,12 @@ try {
 // (sw.js, sw_register.js, map.js, basemap_download_core.js,
 // basemap_cache_core.js) plus the new confirm-banner/over-budget-toast
 // markup (_overlay_banner.html, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v108';
+// Placeholder — substituted per-response by apps.public.views.serve_sw with
+// the derived `snowdesk-shell-<hash>` name (SNOW-590). The value here is
+// never what a browser sees; it is deliberately not a plausible version
+// string so that a substitution failure is obvious in devtools rather than
+// looking like a legitimate cache name.
+const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';
 
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
 // (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS

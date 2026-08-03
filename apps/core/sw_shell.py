@@ -1,63 +1,72 @@
 """
-apps/core/sw_shell.py — SW shell cache-version tracker (SNOW-517).
+apps/core/sw_shell.py — SW shell cache-version derivation (SNOW-517, SNOW-590).
 
-``static/js/sw.js`` declares a hand-bumped ``CACHE_VERSION`` constant
-(``'snowdesk-shell-vNN'``) that must be incremented whenever a shell asset
-changes, or returning users get a stale shell (SNOW-457 shipped exactly
-that regression). Nothing previously enforced the bump. This module is the
-pure-Python core reused by both ``bin/sw-version`` (CLI) and
-``apps.public.debug_views.sw_version`` (staff page) — no Django imports, so it
-is importable standalone by the bin script and under Django by the view
-alike (composition over duplication, matching ``bin/ds-lint`` /
-``bin/docs-lint``).
+The service worker names its shell cache with a ``CACHE_VERSION`` string. A
+returning client keeps serving the old shell until that name changes, so the
+value must change whenever a shell asset changes — SNOW-457 shipped exactly
+that regression when it did not.
 
-Approach: keep the legible monotonic ``snowdesk-shell-vNN`` scheme, but
-commit a content hash of the shell sources (``static/js/sw-shell.hash``)
-next to it. ``bump_owed()`` recomputes the live hash and compares it to the
-committed one to decide whether a bump is owed.
+SNOW-517 solved this with a hand-bumped ``snowdesk-shell-vNN`` constant in
+``static/js/sw.js``, policed by a committed hash file, a ``bin/sw-version``
+CLI and a CI guard. That worked, but the bump was a hand edit to a single
+line in the one file every shell change touches, which made it a guaranteed
+conflict between concurrent branches — it collided three times in one
+afternoon on 2026-08-02, and one of those collisions silently skipped every
+``pull_request`` workflow because GitHub cannot build a merge commit for a
+conflicting PR.
 
-Chicken-and-egg guard
-----------------------
-``static/js/sw.js`` is itself one of the hashed shell sources, and bumping
-the version rewrites it. Without care, bumping the version would change
-the hash of ``sw.js``, which would make ``bump_owed()`` true again
-immediately after a bump. ``compute_shell_hash()`` avoids this by
-normalising the ``CACHE_VERSION = '...'`` line out of ``sw.js`` before
-hashing it (replacing the value with a fixed placeholder), so a version
-bump alone never changes the computed hash. ``static/js/sw-shell.hash``
-itself is deliberately excluded from ``SHELL_SOURCES``.
+SNOW-590 removes the constant from source control instead. The version is
+now **derived** from the shell content hash and injected at serve time by
+``apps.public.views.serve_sw``. Nothing compares it ordinally — it is used
+purely as a cache *name* (``caches.open(CACHE_VERSION)`` and
+``name !== CACHE_VERSION`` in the activate sweep) — so the monotonic ``vNN``
+scheme was never load-bearing. A change to any shell source changes the
+hash, which changes the cache name, which is the whole requirement.
+
+There is consequently nothing to bump, nothing to keep in sync, and no
+conflict surface: ``bin/sw-version``, ``static/js/sw-shell.hash`` and the
+``sw-version`` tox env are all gone.
+
+Failing safe
+------------
+The one new risk is a silent substitution failure: if the placeholder line
+in ``sw.js`` were edited into an unrecognised shape, every client would keep
+whatever literal shipped and the shell would freeze — the SNOW-457 failure
+mode again. ``inject_cache_version()`` therefore **raises** rather than
+returning the body unchanged, and ``apps.core.checks`` turns the same
+condition into a Django system check so it fails in ``tox -e django-checks``
+(a required CI job) long before it can reach production.
 
 The hash is byte-exact and therefore line-ending-sensitive: it reads each
 shell source as raw bytes, so a checkout that rewrites LF to CRLF (Windows
 with ``git autocrlf=true`` and no ``.gitattributes`` pinning these files to
-LF) would compute a digest that diverges from one committed on macOS/Linux.
-The project runs on macOS + Render (Linux) today, so this is latent, not
-current — noted here so it is understood before it bites a new contributor.
+LF) would compute a digest that diverges from one computed on macOS/Linux.
+Under SNOW-590 that no longer causes a mismatch against a committed value —
+it would just mean Windows clients get their own cache name — so this is
+now a curiosity rather than a hazard.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+from functools import cache
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
 SW_JS_PATH: Path = REPO_ROOT / "static" / "js" / "sw.js"
-HASH_FILE_PATH: Path = REPO_ROOT / "static" / "js" / "sw-shell.hash"
 
-# Matches e.g. "const CACHE_VERSION = 'snowdesk-shell-v37';" and captures
-# the numeric suffix.
-_CACHE_VERSION_RE: re.Pattern[str] = re.compile(
-    r"const CACHE_VERSION = 'snowdesk-shell-v(?P<num>\d+)';"
-)
-# Matches the whole assignment statement, regardless of its value — used to
-# both normalise the line out for hashing and to rewrite it on --write.
+# The cache name is a fixed prefix plus a slice of the shell digest. Twelve
+# hex chars is ~48 bits — far beyond any collision concern for a value whose
+# only job is to differ from the previous one.
+_VERSION_PREFIX: str = "snowdesk-shell-"
+_HASH_SLICE: int = 12
+
+# Matches the whole assignment statement regardless of its value, so the
+# committed placeholder and any previously-shipped literal are both
+# rewritable at serve time.
 _CACHE_VERSION_LINE_RE: re.Pattern[str] = re.compile(r"const CACHE_VERSION = '[^']*';")
-_CACHE_VERSION_PLACEHOLDER: str = "const CACHE_VERSION = '__CACHE_VERSION__';"
-
-# Version scheme: a literal prefix ending in "-v" plus a numeric suffix.
-_VERSION_SCHEME_RE: re.Pattern[str] = re.compile(r"^(?P<prefix>.*-v)(?P<num>\d+)$")
 
 
 def _shell_template_paths() -> tuple[Path, ...]:
@@ -91,8 +100,12 @@ def _default_shell_sources() -> tuple[Path, ...]:
     is picked up automatically without editing this module), the committed
     Tailwind source ``src/css/main.css`` (``static/css/output.css`` is a
     gitignored build artefact and must NOT be hashed), and the shell
-    templates from ``_shell_template_paths()``. ``static/js/sw-shell.hash``
-    is never part of this list — hashing the hash file would be circular.
+    templates from ``_shell_template_paths()``.
+
+    ``static/js/sw.js`` is included like any other script. Under SNOW-590
+    its ``CACHE_VERSION`` line is a fixed placeholder that serve-time
+    substitution never writes back, so hashing it raises no circularity —
+    the chicken-and-egg normalisation SNOW-517 needed is gone with it.
     """
     js_sources = sorted((REPO_ROOT / "static" / "js").glob("*.js"))
     css_source = (REPO_ROOT / "src" / "css" / "main.css",)
@@ -101,7 +114,7 @@ def _default_shell_sources() -> tuple[Path, ...]:
 
 # Computed once at import time from the current tree. Tests that need to
 # exercise a mutated shell monkeypatch this (and, where relevant,
-# ``SW_JS_PATH`` / ``HASH_FILE_PATH``) rather than mutating real repo files.
+# ``SW_JS_PATH``) rather than mutating real repo files.
 SHELL_SOURCES: tuple[Path, ...] = _default_shell_sources()
 
 
@@ -118,75 +131,16 @@ def _repo_relative(path: Path) -> str:
         return path.as_posix()
 
 
-def _normalise_cache_version_line(raw: bytes) -> bytes:
-    """
-    Strip the live ``CACHE_VERSION`` value out of raw ``sw.js`` bytes.
-
-    Replaces the ``CACHE_VERSION = '...'`` assignment with a fixed
-    placeholder so its value never affects a computed hash — see the
-    module docstring's "Chicken-and-egg guard" section.
-    """
-    text = raw.decode("utf-8")
-    normalised = _CACHE_VERSION_LINE_RE.sub(_CACHE_VERSION_PLACEHOLDER, text, count=1)
-    return normalised.encode("utf-8")
-
-
-def read_cache_version() -> str:
-    """
-    Return the current committed ``CACHE_VERSION``.
-
-    Parsed from ``static/js/sw.js``, e.g. ``"snowdesk-shell-v37"``.
-
-    Raises:
-        ValueError: if the ``CACHE_VERSION`` assignment can't be found —
-            a sign ``sw.js`` was hand-edited into an unrecognised shape.
-
-    """
-    text = SW_JS_PATH.read_text(encoding="utf-8")
-    match = _CACHE_VERSION_RE.search(text)
-    if match is None:
-        raise ValueError(f"CACHE_VERSION assignment not found in {SW_JS_PATH}")
-    return f"snowdesk-shell-v{match.group('num')}"
-
-
-def next_version(current: str) -> str:
-    """
-    Return the next version in the ``snowdesk-shell-vNN`` scheme.
-
-    Args:
-        current: The current version string, e.g. ``"snowdesk-shell-v37"``.
-
-    Returns:
-        The incremented version string, e.g. ``"snowdesk-shell-v38"``.
-
-    Raises:
-        ValueError: if ``current`` doesn't match the ``<prefix>-v<N>``
-            scheme.
-
-    """
-    match = _VERSION_SCHEME_RE.match(current)
-    if match is None:
-        raise ValueError(f"cannot parse version scheme: {current!r}")
-    incremented = int(match.group("num")) + 1
-    return f"{match.group('prefix')}{incremented}"
-
-
 def compute_shell_hash() -> str:
     """
     Return the sha256 hex digest over every path in ``SHELL_SOURCES``.
 
     Hashes the sorted (repo-relative-path, file-bytes) pairs so the result
-    is independent of filesystem iteration order. ``static/js/sw.js`` has
-    its ``CACHE_VERSION`` line normalised out first (see
-    ``_normalise_cache_version_line``) so bumping the version alone never
-    changes the digest.
+    is independent of filesystem iteration order.
     """
     entries: list[tuple[str, bytes]] = []
     for path in SHELL_SOURCES:
-        raw = path.read_bytes()
-        if path == SW_JS_PATH:
-            raw = _normalise_cache_version_line(raw)
-        entries.append((_repo_relative(path), raw))
+        entries.append((_repo_relative(path), path.read_bytes()))
     entries.sort(key=lambda entry: entry[0])
 
     digest = hashlib.sha256()
@@ -198,48 +152,64 @@ def compute_shell_hash() -> str:
     return digest.hexdigest()
 
 
-def read_committed_hash() -> str:
+def cache_version() -> str:
     """
-    Return the committed shell hash.
+    Return the derived shell cache name, e.g. ``"snowdesk-shell-a1b2c3d4e5f6"``.
 
-    Read from ``static/js/sw-shell.hash``, or ``""`` if the file doesn't
-    exist yet (first-run — everything is "owed").
+    Not cached here: ``cached_cache_version()`` is the request-path entry
+    point. Call this one when a fresh read of the tree is wanted (tests,
+    the staff debug page).
     """
-    if not HASH_FILE_PATH.exists():
-        return ""
-    return HASH_FILE_PATH.read_text(encoding="utf-8").strip()
+    return f"{_VERSION_PREFIX}{compute_shell_hash()[:_HASH_SLICE]}"
 
 
-def bump_owed() -> bool:
+@cache
+def cached_cache_version() -> str:
     """
-    Return whether a ``CACHE_VERSION`` bump is owed.
+    Return ``cache_version()``, computed once per process.
 
-    True when the live shell hash differs from the committed one — i.e. a
-    shell source changed since the last ``CACHE_VERSION`` bump.
+    ``/sw.js`` is served with ``Cache-Control: no-cache``, so browsers
+    revalidate it on every page load; hashing ~15 files per request would
+    be pure waste. The shell cannot change under a running process in
+    production (the tree is immutable between deploys).
+
+    In development the tree *does* change under the process, and the
+    autoreloader only restarts on ``.py`` edits — not on the ``.js`` /
+    ``.css`` / template edits that matter here. ``serve_sw`` therefore
+    calls ``cache_version()`` directly when ``settings.DEBUG`` is on, and
+    only uses this cached form in production.
     """
-    return compute_shell_hash() != read_committed_hash()
+    return cache_version()
 
 
-def write_cache_version(new_version: str) -> None:
+def inject_cache_version(body: str, version: str | None = None) -> str:
     """
-    Rewrite the ``CACHE_VERSION`` assignment in ``static/js/sw.js``.
+    Return ``body`` with its ``CACHE_VERSION`` assignment set to ``version``.
 
     Args:
-        new_version: The full new version string, e.g.
-            ``"snowdesk-shell-v38"``.
+        body: The raw ``sw.js`` source.
+        version: The cache name to inject. Defaults to ``cache_version()``.
+
+    Returns:
+        The body with the assignment rewritten.
+
+    Raises:
+        ValueError: if no ``CACHE_VERSION`` assignment is present. This is
+            deliberately loud: returning the body unchanged would ship a
+            frozen cache name and reintroduce the SNOW-457 stale-shell
+            regression silently. ``apps.core.checks`` catches the same
+            condition at ``manage.py check`` time.
 
     """
-    text = SW_JS_PATH.read_text(encoding="utf-8")
-    new_text = _CACHE_VERSION_LINE_RE.sub(
-        f"const CACHE_VERSION = '{new_version}';", text, count=1
+    if version is None:
+        version = cache_version()
+    new_body, count = _CACHE_VERSION_LINE_RE.subn(
+        f"const CACHE_VERSION = '{version}';", body, count=1
     )
-    SW_JS_PATH.write_text(new_text, encoding="utf-8")
-
-
-def write_committed_hash(hash_hex: str) -> None:
-    """
-    Write ``hash_hex`` to ``static/js/sw-shell.hash``.
-
-    Overwrites any existing content.
-    """
-    HASH_FILE_PATH.write_text(f"{hash_hex}\n", encoding="utf-8")
+    if count == 0:
+        raise ValueError(
+            "No `const CACHE_VERSION = '...';` assignment found in the service "
+            "worker source. Serving it unmodified would freeze every client's "
+            "shell cache name — see apps/core/sw_shell.py."
+        )
+    return new_body

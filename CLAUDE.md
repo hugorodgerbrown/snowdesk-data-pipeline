@@ -297,7 +297,7 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, docs-lint, sw-version, test, js)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, docs-lint, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks

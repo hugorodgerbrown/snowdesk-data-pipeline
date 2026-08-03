@@ -35,7 +35,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import Account
-from apps.core.sw_shell import read_cache_version
+from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
 from tests.factories import AccountFactory, UserFactory
 
@@ -581,11 +581,11 @@ class TestSwVersionPage:
         """
         response = staff_client.get(_sw_version_url())
         assert response.status_code == 200
-        assert response.context["cache_version"] == read_cache_version()
+        assert response.context["cache_version"] == cache_version()
         assert response.context["app_version"] == settings.APP_VERSION
 
         body = response.content.decode()
-        assert read_cache_version() in body
+        assert cache_version() in body
         assert str(settings.APP_VERSION) in body
 
     def test_staff_user_sees_live_version_probe_script(
