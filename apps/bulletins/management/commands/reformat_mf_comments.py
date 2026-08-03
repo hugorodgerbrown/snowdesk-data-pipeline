@@ -12,6 +12,14 @@ The idempotency guard is simple: any comment that already contains ``<`` or
 input, re-applying it to an already-formatted comment would double-escape
 angle brackets, so we must skip those rows.
 
+Streams the queryset newest-id-first via ``apps.core.command_iteration
+.iterate_rows`` rather than hand-rolled OFFSET/LIMIT batching (SNOW-602) —
+the old batching re-queried an offset slice of the same queryset on every
+page, which is O(n²). The (region, day) pairs touched by a successful
+reformat are accumulated into a bounded ``set`` as each bulletin is
+processed, rather than collecting the full ``Bulletin`` instances in a list
+held until the end of the run.
+
 Read-only by default — pass ``--commit`` to persist changes (per the
 project-wide management command convention).
 
@@ -41,20 +49,19 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.day_rating import (
-    recompute_region_day,
-    target_day_for_valid_from,
-)
+from apps.bulletins.services.day_rating import day_rating_pairs, recompute_region_day
 from apps.bulletins.services.meteofrance_translator import format_comment_as_html
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
 )
+from apps.core.command_iteration import iterate_rows
+from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BATCH_SIZE = 500
+_PREFETCH_CHUNK_SIZE = 500
 
 
 def _needs_formatting(text: Any) -> bool:
@@ -151,10 +158,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--batch-size",
             type=int,
-            default=_DEFAULT_BATCH_SIZE,
+            default=_PREFETCH_CHUNK_SIZE,
             metavar="N",
             help=(
-                f"Process bulletins in batches of N (default: {_DEFAULT_BATCH_SIZE})."
+                "Chunk size for the streamed queryset iterator "
+                f"(default: {_PREFETCH_CHUNK_SIZE})."
             ),
         )
         parser.add_argument(
@@ -171,7 +179,8 @@ class Command(BaseCommand):
             bulletin_id_arg: Optional bulletin_id to restrict to a single row.
 
         Returns:
-            A Bulletin queryset ordered by pk.
+            A Bulletin queryset, ``regions`` prefetched for the day-rating
+            pair collection.
 
         Raises:
             CommandError: If ``bulletin_id_arg`` is supplied but not found.
@@ -188,8 +197,10 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"No bulletin found with bulletin_id={bulletin_id_arg!r}"
                 )
-            return qs.order_by("pk")
-        return Bulletin.objects.filter(bulletin_id__startswith="FR").order_by("pk")
+            return qs.prefetch_related("regions")
+        return Bulletin.objects.filter(bulletin_id__startswith="FR").prefetch_related(
+            "regions"
+        )
 
     def _process_bulletin(
         self, bulletin: Bulletin, *, commit: bool
@@ -256,27 +267,24 @@ class Command(BaseCommand):
             )
         return True, success, fields_upgraded
 
-    def _refresh_day_ratings(self, bulletins: list[Bulletin]) -> int:
+    def _refresh_day_ratings(
+        self, pairs: set[tuple[MicroRegion, datetime.date]]
+    ) -> int:
         """
-        Recompute RegionDayRating for every (region, day) touched by ``bulletins``.
+        Recompute RegionDayRating for every (region, day) pair supplied.
 
-        Deduplicates pairs before calling ``recompute_region_day`` so a region+day
-        covered by several bulletins is only recomputed once.
+        Calls ``recompute_region_day`` directly (rather than the shared
+        ``day_rating.refresh_day_ratings`` wrapper) so a per-pair failure is
+        counted here and folded into the command's own non-zero exit.
 
         Args:
-            bulletins: Bulletins whose day ratings should be refreshed.
+            pairs: (region, day) pairs to refresh, already deduplicated by
+                the caller.
 
         Returns:
             The number of (region, day) pairs that failed to recompute.
 
         """
-        pairs: set[tuple[Any, datetime.date]] = set()
-        for bulletin in bulletins:
-            regions = list(bulletin.regions.all())
-            day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
-            for region in regions:
-                pairs.add((region, day))
-
         self.stdout.write(
             f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
         )
@@ -294,66 +302,77 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
         return rating_failures
 
-    def _process_in_batches(
-        self, qs: Any, total: int, batch_size: int, commit: bool
-    ) -> tuple[int, int, list[Bulletin]]:
+    def _process_queryset(
+        self,
+        qs: Any,
+        *,
+        commit: bool,
+        skip_day_ratings: bool,
+        chunk_size: int,
+        verbosity: int,
+    ) -> tuple[int, int, set[tuple[MicroRegion, datetime.date]]]:
         """
-        Iterate the queryset in pk-ordered batches, processing each bulletin.
+        Stream the queryset, reformatting each bulletin and collecting pairs.
+
+        Args:
+            qs: The FR-bulletin queryset to stream.
+            commit: If True, persist changes.
+            skip_day_ratings: If True, never accumulate (region, day) pairs.
+            chunk_size: Forwarded to ``iterate_rows`` as its ``chunk_size``.
+            verbosity: Django verbosity level (0–3).
 
         Returns:
-            A ``(changed_count, errored, successfully_changed_bulletins)`` tuple.
-            ``successfully_changed_bulletins`` contains only bulletins that were
-            both changed and built without error, so day ratings are not refreshed
-            for error sentinels.
+            A ``(changed_count, errored, pairs)`` tuple. ``pairs`` is the
+            deduplicated set of (region, day) pairs touched by successfully
+            reformatted bulletins.
 
         """
         changed_count = 0
         errored = 0
-        changed_bulletins: list[Bulletin] = []
-        offset = 0
+        pairs: set[tuple[MicroRegion, datetime.date]] = set()
 
-        while offset < total:
-            batch_ids = list(
-                qs.values_list("pk", flat=True)[offset : offset + batch_size]
-            )
-            if not batch_ids:
-                break
+        for bulletin in iterate_rows(
+            self,
+            qs,
+            verbosity=verbosity,
+            chunk_size=chunk_size,
+            describe=lambda b: b.bulletin_id,
+        ):
+            changed, success, _ = self._process_bulletin(bulletin, commit=commit)
+            if not changed:
+                continue
+            changed_count += 1
+            if not success:
+                errored += 1
+            elif commit and not skip_day_ratings:
+                pairs |= day_rating_pairs([bulletin])
 
-            batch = Bulletin.objects.filter(pk__in=batch_ids).order_by("pk")
-            for bulletin in batch:
-                changed, success, _ = self._process_bulletin(bulletin, commit=commit)
-                if changed:
-                    changed_count += 1
-                    if success:
-                        changed_bulletins.append(bulletin)
-                    else:
-                        errored += 1
-
-            offset += batch_size
-
-        return changed_count, errored, changed_bulletins
+        return changed_count, errored, pairs
 
     def handle(self, *args: Any, **options: Any) -> None:
         """
         Execute the reformat command.
 
-        Default behaviour: walks all FR bulletins in pk order, inspects the
-        three prose-comment fields, and counts how many would change. Pass
-        ``--commit`` to persist changes. After reformatting, refreshes
+        Default behaviour: streams all FR bulletins newest-id-first, inspects
+        the three prose-comment fields, and counts how many would change.
+        Pass ``--commit`` to persist changes. After reformatting, refreshes
         RegionDayRating for every covered (region, day) unless
-        ``--skip-day-ratings`` is passed.
+        ``--skip-day-ratings`` is passed — the pairs are accumulated into a
+        bounded set as each bulletin is processed, not collected as a list of
+        full ``Bulletin`` instances.
 
         Flags:
             --commit: Persist reformatted data to the database.
             --bulletin-id: Restrict to a single bulletin by its bulletin_id.
-            --batch-size N: Override the default batch size.
+            --batch-size N: Chunk size for the streamed queryset iterator.
             --skip-day-ratings: Skip the RegionDayRating refresh step.
 
         """
         commit: bool = options["commit"]
         bulletin_id_arg: str | None = options["bulletin_id"]
-        batch_size: int = options["batch_size"]
+        chunk_size: int = options["batch_size"]
         skip_day_ratings: bool = options["skip_day_ratings"]
+        verbosity: int = options["verbosity"]
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
@@ -371,8 +390,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
-        changed_count, errored, changed_bulletins = self._process_in_batches(
-            qs, total, batch_size, commit
+        changed_count, errored, pairs = self._process_queryset(
+            qs,
+            commit=commit,
+            skip_day_ratings=skip_day_ratings,
+            chunk_size=chunk_size,
+            verbosity=verbosity,
         )
 
         if not commit:
@@ -397,8 +420,8 @@ class Command(BaseCommand):
         )
 
         rating_failures = 0
-        if commit and not skip_day_ratings and changed_bulletins:
-            rating_failures = self._refresh_day_ratings(changed_bulletins)
+        if commit and not skip_day_ratings and pairs:
+            rating_failures = self._refresh_day_ratings(pairs)
 
         if errored > 0 or rating_failures > 0:
             raise CommandError(

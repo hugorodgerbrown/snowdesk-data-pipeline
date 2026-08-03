@@ -500,7 +500,14 @@ class TestReformatRenderModelBuildError:
                 call_command("reformat_mf_comments", commit=True, verbosity=0)
 
     def test_build_error_does_not_abort_batch(self) -> None:
-        """A RenderModelBuildError on one bulletin does not abort processing others."""
+        """A RenderModelBuildError on one bulletin does not abort processing others.
+
+        Which bulletin is visited first is no longer creation order (SNOW-602
+        streams newest-id-first via ``iterate_rows``), so the assertion checks
+        the invariant that matters — exactly one of the two bulletins got the
+        error sentinel and the other was rebuilt — rather than which specific
+        bulletin failed.
+        """
         b1 = _make_fr_bulletin(bulletin_id="FR-01-2026-05-20")
         b2 = _make_fr_bulletin(bulletin_id="FR-02-2026-05-20")
 
@@ -522,9 +529,10 @@ class TestReformatRenderModelBuildError:
 
         b1.refresh_from_db()
         b2.refresh_from_db()
-        # b1 got the error sentinel; b2 was rebuilt successfully.
-        assert b1.render_model_version == 0
-        assert b2.render_model_version == RENDER_MODEL_VERSION
+        versions = {b1.render_model_version, b2.render_model_version}
+        # Exactly one bulletin got the error sentinel (0); the other rebuilt.
+        assert versions == {0, RENDER_MODEL_VERSION}
+        assert call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -575,3 +583,50 @@ class TestReformatDayRatingFailure:
 
         # Both pairs were attempted — call_count must be 2.
         assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Streaming (SNOW-602)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestReformatStreaming:
+    """Every row is visited exactly once, including across chunk boundaries."""
+
+    def test_every_row_reformatted_exactly_once_across_chunk_boundaries(self) -> None:
+        """A row count exceeding --batch-size is still reformatted exactly once each."""
+        bulletins = [
+            _make_fr_bulletin(bulletin_id=f"FR-01-2026-05-{20 + i:02d}")
+            for i in range(5)
+        ]
+
+        call_command("reformat_mf_comments", commit=True, batch_size=2, verbosity=0)
+
+        for b in bulletins:
+            b.refresh_from_db()
+            snowpack = b.raw_data["properties"]["snowpackStructure"]["comment"]
+            assert "<" in snowpack
+
+    def test_stdout_carries_processed_bulletin_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Each processed bulletin's bulletin_id is printed, newest pk first."""
+        first = _make_fr_bulletin(bulletin_id="FR-01-2026-06-01")
+        second = _make_fr_bulletin(bulletin_id="FR-02-2026-06-01")
+        expected = [
+            b.bulletin_id
+            for b in Bulletin.objects.filter(pk__in=[first.pk, second.pk]).order_by(
+                "-id"
+            )
+        ]
+
+        call_command("reformat_mf_comments", commit=True, verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [
+            line
+            for line in out_lines
+            if line in {first.bulletin_id, second.bulletin_id}
+        ]
+        assert printed == expected
