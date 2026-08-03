@@ -84,6 +84,14 @@ in addition to the shared map assets.
     {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
     {# and favourites) — loaded once here, ahead of both surface partials. #}
     <script defer src="{% static 'js/htmx.min.js' %}"></script>
+    {# SNOW-475: place_picker.js is likewise shared by both sheet surfaces #}
+    {# — loaded once here, ahead of both surface partials. Each partial     #}
+    {# carried its own tag until the 2026-08-03 JS review (C5): browsers    #}
+    {# do not deduplicate script elements by URL, so the IIFE ran twice and #}
+    {# the second window.PlacePicker overwrote the first, orphaning its     #}
+    {# closure. Document order here puts it before report.js and            #}
+    {# favourites.js, which is what both of them require.                   #}
+    <script defer src="{% static 'js/place_picker.js' %}"></script>
     {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
