@@ -40,6 +40,9 @@ CHECK_ID_PREFIX = "core.site_base_url"
 # E001 — SW_DEV_SHELL_BYPASS is on while DEBUG is off (SNOW-585).
 SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX = "core.sw_dev_shell_bypass"
 
+# E001 — sw.js has no substitutable CACHE_VERSION assignment (SNOW-590).
+SW_CACHE_VERSION_CHECK_ID_PREFIX = "core.sw_cache_version"
+
 # Host names that only ever resolve to the machine serving the request.
 # ``urlsplit().hostname`` lower-cases and strips the port and any IPv6
 # brackets, so these are compared against a normalised value.
@@ -130,3 +133,60 @@ def check_sw_dev_shell_bypass(app_configs: Any, **kwargs: Any) -> list[Error]:
             id=f"{SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX}.E001",
         )
     ]
+
+
+@register(Tags.compatibility)
+def check_sw_cache_version_substitutable(
+    app_configs: Any, **kwargs: Any
+) -> list[Error]:
+    """Verify ``sw.js`` still carries a substitutable ``CACHE_VERSION`` line (SNOW-590).
+
+    Since SNOW-590 the shell cache name is derived from the shell content
+    hash and injected into the response by ``serve_sw``; the value in the
+    committed file is only a placeholder. That makes the *shape* of the
+    assignment load-bearing: edit it into something the substitution regex
+    no longer matches and every client would keep whatever literal shipped,
+    freezing the shell cache name — the SNOW-457 stale-shell regression,
+    silently.
+
+    ``inject_cache_version()`` raises rather than passing the body through
+    unchanged, so the failure is loud either way. This check moves it
+    earlier still: ``manage.py check`` runs in ``tox -e django-checks`` (a
+    required CI job) and ``migrate`` runs it on every deploy, so a broken
+    placeholder is caught before it can reach a browser.
+    """
+    from apps.core.sw_shell import SW_JS_PATH, inject_cache_version
+
+    try:
+        source = SW_JS_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [
+            Error(
+                f"Could not read the service worker source at {SW_JS_PATH}: {exc}",
+                hint=(
+                    "serve_sw reads this file on every /sw.js request. If it "
+                    "is missing from the deployed tree, the PWA cannot "
+                    "register at all."
+                ),
+                id=f"{SW_CACHE_VERSION_CHECK_ID_PREFIX}.E002",
+            )
+        ]
+
+    try:
+        inject_cache_version(source, version="probe")
+    except ValueError:
+        return [
+            Error(
+                "No substitutable CACHE_VERSION assignment in static/js/sw.js.",
+                hint=(
+                    "serve_sw rewrites the `const CACHE_VERSION = '...';` line "
+                    "at serve time with a name derived from the shell content "
+                    "hash. Restore that exact single-quoted form — without it "
+                    "every client keeps one frozen cache name and stops "
+                    "picking up shell changes. See apps/core/sw_shell.py."
+                ),
+                id=f"{SW_CACHE_VERSION_CHECK_ID_PREFIX}.E001",
+            )
+        ]
+
+    return []

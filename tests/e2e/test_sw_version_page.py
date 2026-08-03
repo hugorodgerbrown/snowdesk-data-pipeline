@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.sw_shell import read_cache_version
+from apps.core.sw_shell import cache_version
 from tests.e2e.conftest import PwaPage, _session_login
 from tests.factories import UserFactory
 
@@ -46,7 +46,7 @@ def test_staff_sees_live_sw_version_populated_by_probe(
     page.wait_for_load_state("load")
 
     # Baseline (server-rendered) values are present immediately.
-    expected_version = read_cache_version()
+    expected_version = cache_version()
     assert expected_version in page.content()
 
     # The probe fills in the live value from the SW's 'version' reply.

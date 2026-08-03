@@ -1,18 +1,22 @@
 """
-tests/core/test_checks.py — Tests for the SITE_BASE_URL system check.
+tests/core/test_checks.py — Tests for the project-wide system checks.
 
-Exercises ``core.checks.check_site_base_url`` directly against
-``override_settings`` combinations — no full app startup needed. The
-check's whole job is to turn a silent misconfiguration into a failed
-deploy (SNOW-554), so the cases that matter are the two it must stay
-quiet for (``DEBUG`` on, real origin) as much as the ones it must catch.
+Exercises ``core.checks`` directly against ``override_settings``
+combinations — no full app startup needed. Each check's whole job is to
+turn a silent misconfiguration into a failed deploy (SNOW-554 for
+``SITE_BASE_URL``, SNOW-585 for ``SW_DEV_SHELL_BYPASS``, SNOW-590 for the
+service worker's substitutable ``CACHE_VERSION`` line), so the cases they
+must stay quiet for matter as much as the ones they must catch.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from django.test import override_settings
 
-from apps.core import checks
+from apps.core import checks, sw_shell
 
 
 @override_settings(DEBUG=False, SITE_BASE_URL="http://localhost:8000")
@@ -143,3 +147,50 @@ def test_dev_shell_bypass_check_is_registered() -> None:
     from django.core.checks import registry
 
     assert checks.check_sw_dev_shell_bypass in registry.registry.get_checks()
+
+
+# ---------------------------------------------------------------------------
+# SW CACHE_VERSION substitutability (SNOW-590)
+# ---------------------------------------------------------------------------
+
+
+def test_sw_cache_version_check_passes_on_the_real_tree() -> None:
+    """The committed static/js/sw.js is substitutable as shipped."""
+    assert checks.check_sw_cache_version_substitutable(app_configs=None) == []
+
+
+def test_sw_cache_version_check_fails_on_an_unsubstitutable_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sw.js whose assignment was reshaped is an Error, not a silent pass.
+
+    Without this the substitution would be skipped and every client would
+    keep one frozen cache name — the SNOW-457 stale-shell regression.
+    """
+    broken = tmp_path / "sw.js"
+    broken.write_text('const CACHE_VERSION = "double-quoted";\n', encoding="utf-8")
+    monkeypatch.setattr(sw_shell, "SW_JS_PATH", broken)
+
+    errors = checks.check_sw_cache_version_substitutable(app_configs=None)
+
+    assert len(errors) == 1
+    assert errors[0].id == "core.sw_cache_version.E001"
+
+
+def test_sw_cache_version_check_fails_when_the_file_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing sw.js is reported rather than raising out of the check."""
+    monkeypatch.setattr(sw_shell, "SW_JS_PATH", tmp_path / "absent.js")
+
+    errors = checks.check_sw_cache_version_substitutable(app_configs=None)
+
+    assert len(errors) == 1
+    assert errors[0].id == "core.sw_cache_version.E002"
+
+
+def test_sw_cache_version_check_is_registered() -> None:
+    """The check is wired into Django's registry, not just importable."""
+    from django.core.checks import registry
+
+    assert checks.check_sw_cache_version_substitutable in registry.registry.get_checks()

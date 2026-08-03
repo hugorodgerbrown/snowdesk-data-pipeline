@@ -110,6 +110,7 @@ from apps.bulletins.services.weather_fetcher import (
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
+from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
 from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
@@ -1693,6 +1694,17 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     ``Cache-Control: no-cache`` ensures the browser re-validates on every
     page load so SW updates take effect promptly.
 
+    SNOW-590: the ``CACHE_VERSION`` literal on disk is a placeholder, and
+    is rewritten here with a name derived from the shell content hash. That
+    is what replaced the hand-bumped constant — see ``apps.core.sw_shell``.
+    Unlike the bypass substitution below, this one is **required**: a body
+    with no substitutable assignment raises, because serving it unchanged
+    would pin every client to one frozen cache name and stop shell updates
+    reaching anyone (the SNOW-457 regression). Under ``DEBUG`` the version
+    is recomputed per request, since the autoreloader only restarts on
+    ``.py`` edits and would otherwise serve a stale name after a ``.js`` /
+    ``.css`` / template change.
+
     SNOW-585: when ``settings.SW_DEV_SHELL_BYPASS`` is on, the on-disk
     ``const DEV_SHELL_BYPASS = false;`` literal is rewritten to ``true`` in
     the response body returned by ``_serve_sw_file`` — deliberately done
@@ -1712,15 +1724,24 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
 
     Raises:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
+        ValueError: If the body carries no substitutable ``CACHE_VERSION``
+            assignment. ``apps.core.checks`` catches this at
+            ``manage.py check`` time so it cannot first appear in
+            production.
 
     """
     response = _serve_sw_file("js/sw.js")
+    body = response.content.decode("utf-8")
+
+    version = cache_version() if settings.DEBUG else cached_cache_version()
+    body = inject_cache_version(body, version=version)
+
     if settings.SW_DEV_SHELL_BYPASS:
-        body = response.content.decode("utf-8").replace(
+        body = body.replace(
             "const DEV_SHELL_BYPASS = false;",
             "const DEV_SHELL_BYPASS = true;",
         )
-        response.content = body.encode("utf-8")
+    response.content = body.encode("utf-8")
     return response
 
 

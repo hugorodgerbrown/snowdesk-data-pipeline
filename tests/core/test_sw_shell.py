@@ -1,13 +1,15 @@
 """
-tests/core/test_sw_shell.py — Tests for the service-worker shell version
-tracker (SNOW-517): CACHE_VERSION parsing, next_version() incrementing,
-the shell content hash, and the "bump owed" comparison — including the
-chicken-and-egg guard that bumping the version alone must not re-trigger
-"bump owed".
+tests/core/test_sw_shell.py — Tests for the service-worker shell cache-version
+derivation (SNOW-517, SNOW-590): the shell content hash, the derived cache
+name, and the serve-time ``CACHE_VERSION`` substitution.
+
+The behaviour that matters is that *any* change to *any* shell source
+produces a different cache name, and that a body which cannot be
+substituted raises rather than silently shipping a frozen name.
 
 Builds a throwaway shell tree under ``tmp_path`` and monkeypatches
 ``apps.core.sw_shell``'s module-level path constants to point at it, so tests
-never touch the real repo's ``static/js/sw.js`` / ``sw-shell.hash``.
+never touch the real repo's ``static/js/sw.js``.
 """
 
 from __future__ import annotations
@@ -18,16 +20,14 @@ import pytest
 
 from apps.core import sw_shell
 
-_SW_JS_TEMPLATE = "const CACHE_VERSION = 'snowdesk-shell-v{version}';\n"
+_SW_JS_TEMPLATE = "const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';\n"
 
 
-def _write_shell_tree(root: Path, *, version: int = 37) -> None:
+def _write_shell_tree(root: Path) -> None:
     """Populate `root` with a minimal shell tree matching SHELL_SOURCES' shape."""
     js_dir = root / "static" / "js"
     js_dir.mkdir(parents=True, exist_ok=True)
-    (js_dir / "sw.js").write_text(
-        _SW_JS_TEMPLATE.format(version=version), encoding="utf-8"
-    )
+    (js_dir / "sw.js").write_text(_SW_JS_TEMPLATE, encoding="utf-8")
     (js_dir / "other.js").write_text("console.log('shell');\n", encoding="utf-8")
 
     css_dir = root / "src" / "css"
@@ -52,122 +52,176 @@ def shell_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _write_shell_tree(tmp_path)
     monkeypatch.setattr(sw_shell, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sw_shell, "SW_JS_PATH", tmp_path / "static" / "js" / "sw.js")
-    monkeypatch.setattr(
-        sw_shell, "HASH_FILE_PATH", tmp_path / "static" / "js" / "sw-shell.hash"
-    )
     monkeypatch.setattr(sw_shell, "SHELL_SOURCES", sw_shell._default_shell_sources())
     return tmp_path
 
 
-class TestReadCacheVersion:
-    """Tests for read_cache_version()."""
+class TestComputeShellHash:
+    """Tests for compute_shell_hash()'s sensitivity and stability."""
 
-    def test_parses_current_version(self, shell_tree: Path) -> None:
-        """The version is parsed from the CACHE_VERSION assignment."""
-        assert sw_shell.read_cache_version() == "snowdesk-shell-v37"
-
-    def test_raises_when_assignment_missing(self, shell_tree: Path) -> None:
-        """A sw.js with no recognisable CACHE_VERSION assignment raises."""
-        (shell_tree / "static" / "js" / "sw.js").write_text(
-            "// no version here\n", encoding="utf-8"
-        )
-        with pytest.raises(ValueError, match="CACHE_VERSION"):
-            sw_shell.read_cache_version()
-
-
-class TestNextVersion:
-    """Tests for next_version()."""
-
-    @pytest.mark.parametrize(
-        ("current", "expected"),
-        [
-            ("snowdesk-shell-v37", "snowdesk-shell-v38"),
-            ("snowdesk-shell-v1", "snowdesk-shell-v2"),
-            ("snowdesk-shell-v9", "snowdesk-shell-v10"),
-        ],
-    )
-    def test_increments_numeric_suffix(self, current: str, expected: str) -> None:
-        """The trailing -vNN suffix increments by one; the prefix is preserved."""
-        assert sw_shell.next_version(current) == expected
-
-    def test_raises_for_unparseable_scheme(self) -> None:
-        """A string with no -vNN suffix raises rather than guessing."""
-        with pytest.raises(ValueError, match="cannot parse version scheme"):
-            sw_shell.next_version("not-a-version")
-
-
-class TestBumpOwed:
-    """Tests for compute_shell_hash() / bump_owed() — the core contract."""
-
-    def test_unchanged_shell_is_not_owed(self, shell_tree: Path) -> None:
-        """A hash committed against the current tree reports no bump owed."""
-        sw_shell.write_committed_hash(sw_shell.compute_shell_hash())
-        assert sw_shell.bump_owed() is False
-
-    def test_mutated_shell_source_is_owed(self, shell_tree: Path) -> None:
-        """Editing any shell source after committing the hash flips bump_owed()."""
-        sw_shell.write_committed_hash(sw_shell.compute_shell_hash())
-        (shell_tree / "static" / "js" / "other.js").write_text(
-            "console.log('changed');\n", encoding="utf-8"
-        )
-        assert sw_shell.bump_owed() is True
-
-    def test_mutated_template_is_owed(self, shell_tree: Path) -> None:
-        """A shell template edit also flips bump_owed() — not just JS/CSS."""
-        sw_shell.write_committed_hash(sw_shell.compute_shell_hash())
-        (
-            shell_tree / "apps" / "public" / "templates" / "public" / "home.html"
-        ).write_text("<div>changed</div>\n", encoding="utf-8")
-        assert sw_shell.bump_owed() is True
-
-    def test_missing_hash_file_is_owed(self, shell_tree: Path) -> None:
-        """No committed hash file at all counts as a bump owed."""
-        assert sw_shell.read_committed_hash() == ""
-        assert sw_shell.bump_owed() is True
-
-    def test_version_bump_alone_does_not_flip_bump_owed(self, shell_tree: Path) -> None:
-        """The chicken-and-egg guard.
-
-        Bumping CACHE_VERSION rewrites sw.js's bytes, but must not, on its
-        own, make bump_owed() true again — the version line is normalised
-        out of the hash before it's computed.
-        """
-        sw_shell.write_committed_hash(sw_shell.compute_shell_hash())
-        assert sw_shell.bump_owed() is False
-
-        sw_shell.write_cache_version("snowdesk-shell-v38")
-        assert sw_shell.read_cache_version() == "snowdesk-shell-v38"
-        assert sw_shell.bump_owed() is False
-
-    def test_compute_shell_hash_is_deterministic(self, shell_tree: Path) -> None:
-        """Repeated calls against an unchanged tree return the same digest."""
+    def test_is_stable_across_calls(self, shell_tree: Path) -> None:
+        """An unchanged tree hashes to the same digest every time."""
         assert sw_shell.compute_shell_hash() == sw_shell.compute_shell_hash()
 
+    @pytest.mark.parametrize(
+        "relative_path",
+        [
+            "static/js/other.js",
+            "src/css/main.css",
+            "apps/public/templates/public/base.html",
+            "apps/public/templates/public/home.html",
+            "apps/public/templates/public/partials/_map_embed.html",
+            "static/offline.html",
+        ],
+    )
+    def test_changes_when_any_shell_source_changes(
+        self, shell_tree: Path, relative_path: str
+    ) -> None:
+        """Editing any hashed shell source changes the digest.
 
-class TestCommittedHash:
-    """Tests for read_committed_hash() / write_committed_hash() round-trip."""
+        This is the whole contract: the cache name is derived from this
+        digest, so a source the hash ignores is a source whose change never
+        reaches a returning client.
+        """
+        before = sw_shell.compute_shell_hash()
 
-    def test_round_trips(self, shell_tree: Path) -> None:
-        """Whatever is written is read back verbatim (whitespace-stripped)."""
-        sw_shell.write_committed_hash("deadbeef")
-        assert sw_shell.read_committed_hash() == "deadbeef"
+        target = shell_tree / relative_path
+        target.write_text(
+            target.read_text(encoding="utf-8") + "/* changed */\n", encoding="utf-8"
+        )
 
-    def test_missing_file_returns_empty_string(self, shell_tree: Path) -> None:
-        """No hash file yet reads back as an empty string, not an error."""
-        assert sw_shell.read_committed_hash() == ""
+        assert sw_shell.compute_shell_hash() != before
+
+    def test_changes_when_sw_js_itself_changes(self, shell_tree: Path) -> None:
+        """Hash sw.js like any other source.
+
+        SNOW-590 dropped the chicken-and-egg normalisation along with the
+        hand-bumped constant, so an edit to sw.js now changes the digest.
+        """
+        before = sw_shell.compute_shell_hash()
+
+        sw_js = shell_tree / "static" / "js" / "sw.js"
+        sw_js.write_text(
+            sw_js.read_text(encoding="utf-8") + "// changed\n", encoding="utf-8"
+        )
+
+        assert sw_shell.compute_shell_hash() != before
+
+    def test_ignores_untracked_build_artefacts(self, shell_tree: Path) -> None:
+        """static/css/output.css is a gitignored build artefact and must not be hashed."""
+        before = sw_shell.compute_shell_hash()
+
+        output_css = shell_tree / "static" / "css" / "output.css"
+        output_css.parent.mkdir(parents=True, exist_ok=True)
+        output_css.write_text("body{color:blue}\n", encoding="utf-8")
+
+        assert sw_shell.compute_shell_hash() == before
 
 
-class TestWriteCacheVersion:
-    """Tests for write_cache_version()."""
+class TestCacheVersion:
+    """Tests for the derived cache name."""
 
-    def test_rewrites_only_the_version_line(self, shell_tree: Path) -> None:
-        """Only the CACHE_VERSION assignment changes — nothing else in sw.js."""
-        sw_js_path = shell_tree / "static" / "js" / "sw.js"
-        original = sw_js_path.read_text(encoding="utf-8")
-        sw_shell.write_cache_version("snowdesk-shell-v99")
-        rewritten = sw_js_path.read_text(encoding="utf-8")
-        assert "snowdesk-shell-v99" in rewritten
-        assert original.replace("v37", "v99") == rewritten
+    def test_uses_the_shell_prefix_and_a_hash_slice(self, shell_tree: Path) -> None:
+        """The name is the fixed prefix plus a slice of the digest."""
+        version = sw_shell.cache_version()
+
+        assert version.startswith("snowdesk-shell-")
+        suffix = version.removeprefix("snowdesk-shell-")
+        assert suffix == sw_shell.compute_shell_hash()[: sw_shell._HASH_SLICE]
+        assert len(suffix) == sw_shell._HASH_SLICE
+
+    def test_changes_when_the_shell_changes(self, shell_tree: Path) -> None:
+        """A shell edit yields a different cache name — the point of the whole change."""
+        before = sw_shell.cache_version()
+
+        (shell_tree / "src" / "css" / "main.css").write_text(
+            "body { color: green; }\n", encoding="utf-8"
+        )
+
+        assert sw_shell.cache_version() != before
+
+
+class TestInjectCacheVersion:
+    """Tests for the serve-time CACHE_VERSION substitution."""
+
+    def test_replaces_the_placeholder(self) -> None:
+        """The committed placeholder is rewritten with the supplied version."""
+        body = "const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';\n"
+
+        result = sw_shell.inject_cache_version(body, version="snowdesk-shell-abc123")
+
+        assert result == "const CACHE_VERSION = 'snowdesk-shell-abc123';\n"
+        assert "UNSUBSTITUTED" not in result
+
+    def test_replaces_any_previously_shipped_literal(self) -> None:
+        """A stale hand-bumped value is rewritten too, not just the placeholder."""
+        body = "const CACHE_VERSION = 'snowdesk-shell-v108';\n"
+
+        result = sw_shell.inject_cache_version(body, version="snowdesk-shell-abc123")
+
+        assert result == "const CACHE_VERSION = 'snowdesk-shell-abc123';\n"
+
+    def test_replaces_only_the_first_assignment(self) -> None:
+        """Substitution is bounded — a later mention in a comment is untouched."""
+        body = (
+            "const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';\n"
+            "// see const CACHE_VERSION = 'x'; above\n"
+        )
+
+        result = sw_shell.inject_cache_version(body, version="v")
+
+        assert result.count("const CACHE_VERSION = 'v';") == 1
+        assert "const CACHE_VERSION = 'x';" in result
+
+    def test_defaults_to_the_derived_version(self, shell_tree: Path) -> None:
+        """Called without an explicit version, it injects cache_version()."""
+        body = "const CACHE_VERSION = 'placeholder';\n"
+
+        result = sw_shell.inject_cache_version(body)
+
+        assert sw_shell.cache_version() in result
+
+    def test_raises_when_no_assignment_is_present(self) -> None:
+        """A body with nothing to substitute raises rather than passing through.
+
+        Returning it unchanged would pin every client to one frozen cache
+        name and stop shell updates reaching anyone — the SNOW-457
+        regression, but silent.
+        """
+        with pytest.raises(ValueError, match="No `const CACHE_VERSION"):
+            sw_shell.inject_cache_version("// no assignment here\n")
+
+    def test_raises_on_a_double_quoted_assignment(self) -> None:
+        """The single-quoted form is the contract; a reformat must fail loudly."""
+        with pytest.raises(ValueError):
+            sw_shell.inject_cache_version('const CACHE_VERSION = "single-only";\n')
+
+
+class TestRealShellSource:
+    """Guards against the real repo drifting out of the substitutable shape."""
+
+    def test_committed_sw_js_is_substitutable(self) -> None:
+        """The real static/js/sw.js can be substituted.
+
+        Belt-and-braces alongside
+        ``apps.core.checks.check_sw_cache_version_substitutable`` — this one
+        fails in the unit suite, which runs on every PR.
+        """
+        source = sw_shell.SW_JS_PATH.read_text(encoding="utf-8")
+
+        result = sw_shell.inject_cache_version(source, version="snowdesk-shell-probe")
+
+        assert "const CACHE_VERSION = 'snowdesk-shell-probe';" in result
+
+    def test_committed_sw_js_ships_the_placeholder(self) -> None:
+        """The committed value is the inert placeholder, not a real-looking name.
+
+        A plausible-looking literal in source would make a substitution
+        failure indistinguishable from correct operation in devtools.
+        """
+        source = sw_shell.SW_JS_PATH.read_text(encoding="utf-8")
+
+        assert "const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';" in source
 
 
 class TestDefaultShellSources:
