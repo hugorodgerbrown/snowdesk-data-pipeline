@@ -43,6 +43,14 @@ SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX = "core.sw_dev_shell_bypass"
 # E001 — sw.js has no substitutable CACHE_VERSION assignment (SNOW-590).
 SW_CACHE_VERSION_CHECK_ID_PREFIX = "core.sw_cache_version"
 
+# E001 — an environment-derived setting failed its spec validator.
+# E002 — a setting required in production is empty (SNOW-580).
+SETTINGS_SPEC_CHECK_ID_PREFIX = "core.settings"
+
+# E001 — an Open-Meteo key is set while both hosts are still free-tier.
+# E002 — an Open-Meteo customer host is configured with no key (SNOW-580).
+OPEN_METEO_CHECK_ID_PREFIX = "core.open_meteo"
+
 # Host names that only ever resolve to the machine serving the request.
 # ``urlsplit().hostname`` lower-cases and strips the port and any IPv6
 # brackets, so these are compared against a normalised value.
@@ -186,6 +194,126 @@ def check_sw_cache_version_substitutable(
                     "picking up shell changes. See apps/core/sw_shell.py."
                 ),
                 id=f"{SW_CACHE_VERSION_CHECK_ID_PREFIX}.E001",
+            )
+        ]
+
+    return []
+
+
+@register(Tags.compatibility)
+def check_settings_spec(app_configs: Any, **kwargs: Any) -> list[Error]:
+    """Validate every environment-derived setting against its spec (SNOW-580).
+
+    Generalises ``check_site_base_url``'s SNOW-554 mechanism from one
+    setting to the whole environment surface. A bare
+    ``OPEN_METEO_API_BASE_URL=customer-api.open-meteo.com`` used to be
+    accepted at startup and only surfaced as an ``Invalid URL`` part-way
+    through a fetch batch; the shape validators here turn that into a
+    failed deploy, because ``build.sh`` runs ``migrate`` and ``migrate``
+    runs system checks first.
+
+    Shape only, never correctness — see ``apps.core.settings_spec``'s
+    module docstring for why "is this the right host" is deliberately out
+    of scope.
+    """
+    from apps.core.settings_spec import SETTINGS_SPEC, non_empty
+
+    errors: list[Error] = []
+    for spec in SETTINGS_SPEC:
+        value = getattr(settings, spec.name, None)
+
+        if spec.validator is not None:
+            problem = spec.validator(value)
+            if problem is not None:
+                errors.append(
+                    Error(
+                        f"{spec.name}: {problem}",
+                        hint=(
+                            f"Set {spec.name} on this service to a valid value. "
+                            f"Purpose: {spec.note or 'see config/settings/'}."
+                        ),
+                        id=f"{SETTINGS_SPEC_CHECK_ID_PREFIX}.E001",
+                    )
+                )
+                continue
+
+        # Emptiness is only an error off DEBUG: a fresh local checkout
+        # deliberately runs with no .env entries for most of these.
+        if spec.required_in_production and not settings.DEBUG:
+            problem = non_empty(value)
+            if problem is not None:
+                errors.append(
+                    Error(
+                        f"{spec.name} is required with DEBUG off but {problem}.",
+                        hint=(
+                            f"Set the {spec.name} environment variable on this "
+                            f"service. Purpose: {spec.note or 'see config/settings/'}."
+                        ),
+                        id=f"{SETTINGS_SPEC_CHECK_ID_PREFIX}.E002",
+                    )
+                )
+
+    return errors
+
+
+@register(Tags.compatibility)
+def check_open_meteo_key_host_pairing(app_configs: Any, **kwargs: Any) -> list[Error]:
+    """Verify the Open-Meteo key and hosts are configured as a pair (SNOW-580).
+
+    Neither half is wrong on its own, so no per-field validator can catch
+    either case:
+
+    * A key set while both hosts are still the free public ones is silently
+      ignored — ``request_url()`` only attaches ``apikey`` to a host that
+      has been moved off its free default (SNOW-579). The configuration
+      reads as "we are on the paid tier" while every request is still
+      subject to the shared per-IP quota.
+    * A customer host with no key 401s on every request. That is the live
+      incident this ticket came from, and this rule catches it.
+
+    Both are ``Error``s off ``DEBUG`` only — a local checkout legitimately
+    runs the free hosts with no key.
+    """
+    from apps.core.settings_spec import FREE_OPEN_METEO_HOSTS
+
+    if settings.DEBUG:
+        return []
+
+    hosts = (settings.OPEN_METEO_API_BASE_URL, settings.OPEN_METEO_ARCHIVE_BASE_URL)
+    hostnames = {urlsplit(host).hostname for host in hosts if host}
+    # A hostname we do not recognise is treated as a customer host: that is
+    # the fail-safe direction, since the cost of a false positive is a
+    # startup error and the cost of a false negative is every request 401ing.
+    on_customer_host = bool(hostnames - FREE_OPEN_METEO_HOSTS)
+    has_key = bool(settings.OPEN_METEO_API_KEY)
+
+    if on_customer_host and not has_key:
+        return [
+            Error(
+                "Open-Meteo is pointed at a customer host with no API key.",
+                hint=(
+                    "OPEN_METEO_API_BASE_URL / OPEN_METEO_ARCHIVE_BASE_URL are "
+                    "set to a non-free host, but OPEN_METEO_API_KEY is empty — "
+                    "every request will 401. Set the key, or point the hosts "
+                    "back at https://api.open-meteo.com/v1 and "
+                    "https://archive-api.open-meteo.com/v1."
+                ),
+                id=f"{OPEN_METEO_CHECK_ID_PREFIX}.E002",
+            )
+        ]
+
+    if has_key and not on_customer_host:
+        return [
+            Error(
+                "An Open-Meteo API key is set while both hosts are free-tier.",
+                hint=(
+                    "The key is only attached to a host that has been moved off "
+                    "its free default (SNOW-579), so this key is never sent and "
+                    "the deploy is still on the shared per-IP quota. Point "
+                    "OPEN_METEO_API_BASE_URL / OPEN_METEO_ARCHIVE_BASE_URL at "
+                    "the customer hosts, or unset OPEN_METEO_API_KEY."
+                ),
+                id=f"{OPEN_METEO_CHECK_ID_PREFIX}.E001",
             )
         ]
 
