@@ -380,6 +380,32 @@ Optional context:
                         {% trans "Available offline" %}
                     </button>
                 </li>
+                {# SNOW-588: opens the "Manage downloads" sheet             #}
+                {# (public/partials/_map_downloads_sheet.html) — what is    #}
+                {# stored offline on this device, what it costs, and a      #}
+                {# delete. It sits directly under "Available offline"       #}
+                {# because that row is the same subject seen from the map;  #}
+                {# this is the same subject as a list you can act on.       #}
+                {#                                                          #}
+                {# The first plain action row in this menu: every other is  #}
+                {# a checkbox or a radio, so it takes role="menuitem" and   #}
+                {# never sets aria-checked. .basemap-menu-item--action      #}
+                {# (static/css/map.css) hides the glyph that would          #}
+                {# otherwise sit permanently empty beside it — the class    #}
+                {# SNOW-492 left behind when its own action row went.       #}
+                {# It carries no sync dot for the same reason it carries no #}
+                {# glyph: it has no cache state of its own to report, it is #}
+                {# the way in to the surface that reports all of them.      #}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitem"
+                        class="basemap-menu-item basemap-menu-item--action"
+                        data-menu-action="manage-downloads"
+                    >
+                        {% trans "Manage downloads…" %}
+                    </button>
+                </li>
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}

@@ -1,0 +1,123 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_map_downloads_sheet.html — "Manage downloads" sheet (SNOW-588).
+
+The surface that answers "what have I stored offline, and what is it
+costing me". Opened from the ``[data-menu-action="manage-downloads"]`` row
+in the layers menu (public/partials/_map_embed.html) and driven by
+static/js/map_downloads_manager.js.
+
+It lives on the map, rather than under account settings, for two reasons.
+Downloading happens here, so managing downloads belongs here; and the list
+has to name each area, which on the map is free — ``FEATURE_BY_REGION_ID``
+already holds every region's name from the SW-cached ``regions.geojson``,
+so the names resolve offline, which is exactly when storage pressure is
+felt. An account page would also imply the list follows the user between
+devices, and it emphatically does not: Cache Storage is per-browser, so
+both the downloads and the budget are **device-local**. Every string below
+is written to say so.
+
+Structure mirrors _favourites_surface.html: the shared sheet primitive
+(includes/_overlay_sheet.html) as an empty container, plus server-rendered
+``<template>``s the JS clones. The templates exist so every string stays in
+a ``{% trans %}`` tag rather than being concatenated in JS where
+makemessages cannot see it.
+
+The budget ``<select>``'s options are NOT rendered here — they are built by
+map_downloads_manager.js from ``pwaBasemapManageCore.BUDGET_CHOICES_MB``,
+so the offered sizes live in one place (the core, next to the floor that
+pins them to ``DOWNLOAD_CEILING_MB``) instead of being duplicated into
+markup that could drift from it. Their labels are pure numerals plus "MB",
+so nothing translatable is lost by generating them.
+
+htmx.min.js / db.js are loaded earlier by home.html / base.html — not
+repeated here.
+{% endcomment %}
+{% trans "Downloads on this device" as downloads_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label %}
+{# Sheet body — cloned into #map-downloads-sheet by map_downloads_manager.js #}
+{# each time the sheet is opened, then populated from the basemap.areas     #}
+{# record. Re-cloned rather than updated in place so a stale row can never  #}
+{# survive a re-open.                                                        #}
+<template id="map-downloads-body-template">
+    <div class="flex flex-col gap-3">
+        {% trans "Downloads on this device" as downloads_sheet_title %}
+        {% include "includes/_sheet_header.html" with title=downloads_sheet_title close_action="dismiss" %}
+        {# Running total. The bar is decorative (aria-hidden) — the same    #}
+        {# figure is stated in words immediately above it, so a screen      #}
+        {# reader gets the number rather than a percentage role.            #}
+        <p data-downloads-summary class="text-sm text-text-2"></p>
+        <div
+            class="h-1.5 w-full overflow-hidden rounded-pill bg-border"
+            aria-hidden="true"
+        >
+            <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
+        </div>
+        {# Shown only when stored downloads exceed the budget — reachable   #}
+        {# by lowering the budget below what is already held, which is      #}
+        {# allowed deliberately: the alternative is refusing a setting on   #}
+        {# a device that has run out of room. Nothing is evicted here; the  #}
+        {# next download is what reconciles it (SNOW-586), so the copy says #}
+        {# what will happen rather than warning about what has.            #}
+        <p
+            data-downloads-over
+            hidden
+            class="rounded-tag bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text"
+        >
+            {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
+        </p>
+        <ul data-downloads-list class="flex flex-col divide-y divide-border"></ul>
+        <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
+            {% trans "You haven't downloaded any areas yet. Use the download controls on the map to save an area for offline use." %}
+        </p>
+        <div class="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <label for="map-downloads-budget" class="text-sm text-text-2">
+                {% trans "Storage budget" %}
+            </label>
+            <select
+                id="map-downloads-budget"
+                data-downloads-budget
+                class="rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1 focus:outline-none"
+            >
+            </select>
+        </div>
+        <p class="text-xs text-text-3">
+            {% trans "Downloads and this budget are stored on this device only — they don't follow you to your other devices." %}
+        </p>
+    </div>
+</template>
+{# One list row. ``data-downloads-delete`` carries the area id so the       #}
+{# delegated click handler needs no closure over the rendered row.          #}
+<template id="map-downloads-row-template">
+    <li class="flex items-center justify-between gap-3 py-2">
+        <span class="flex min-w-0 flex-col">
+            <span data-row-label class="truncate text-sm text-text-1"></span>
+            <span data-row-kind class="text-xs text-text-3"></span>
+        </span>
+        <span class="flex shrink-0 items-center gap-3">
+            <span data-row-size class="text-sm text-text-2"></span>
+            <button
+                type="button"
+                data-downloads-delete
+                class="rounded-tag border border-border px-3 py-1 text-xs font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
+            >
+                {% trans "Remove" %}
+            </button>
+        </span>
+    </li>
+</template>
+{# Strings the JS needs but cannot hold itself — makemessages only scans    #}
+{# templates and Python, so anything JS renders has to be handed to it      #}
+{# from here. ``%(name)s`` / ``%(size)s`` are substituted by the module.    #}
+<template id="map-downloads-strings-template">
+    <span data-string="kind-region">{% trans "Region" %}</span>
+    <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    <span data-string="usage">{% blocktrans %}%(used)s of %(budget)s used{% endblocktrans %}</span>
+    <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
+            download it again when you're back online.{% endblocktrans %}</span>
+    <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
+</template>
+{# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
+{# load before the manager below; both are defer, so document order holds.  #}
+<script defer src="{% static 'js/basemap_manage_core.js' %}"></script>
+<script defer src="{% static 'js/map_downloads_manager.js' %}"></script>
