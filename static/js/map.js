@@ -3591,8 +3591,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // stops — the boundary is only ever drawn for a day the user rests on.
   // Also skipped while L4 is off: the boundary is hidden then, so refetching
   // it per scrubbed date would be pure network cost for nothing on screen.
+  //
+  // L4's state is read from localStorage, not from ``overlayState``: the
+  // picker writes the key on every click but only a toggle-ON reaches the
+  // ``snowdesk:overlay-load`` handler that refreshes ``overlayState``, so
+  // after a toggle-OFF the in-memory copy still says true for the rest of
+  // the session and this guard never fires. localStorage is the picker's
+  // live source of truth — the same read the overlay-load handler makes
+  // (``stillEnabled`` above), for the same reason.
   document.addEventListener('snowdesk:date-changed', (e) => {
-    if (!overlayLoaded.l3 || !overlayState.l4) return;
+    if (!overlayLoaded.l3) return;
+    if (!readBoolStorage(OVERLAY_STORAGE_KEY.l4, overlayState.l4)) return;
     const dk = (e.detail && e.detail.date) || null;
     if (!dk) return;
     scheduleGroupingsForDate(dk);
@@ -6511,26 +6520,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
       revealBasemapDownloadError('quota');
       return;
     }
-    // SNOW-586: refuse, or ask before evicting, BEFORE spending a fetch on
-    // the blob — same "cost a click, not a whole run" reasoning as the
-    // quota pre-flight above.
-    const areaId = self.pwaBasemapDownloadCore
-      ? self.pwaBasemapDownloadCore.areaIdForRegion(data.regionId)
-      : null;
-    const budgetPlan = areaId ? await planBasemapDownloadBudget(areaId, data.summary.mb) : null;
+    const core = self.pwaBasemapDownloadCore;
+    const template = activeBasemapTileTemplate(MAP);
+    // No tile template (style still settling) means no tiles to warm, and a
+    // feeds-only run must never paint 'done' — the region's basemap would
+    // not in fact be available offline. SNOW-568: reads as a failed
+    // download so the user knows to retry (by which point the style will
+    // have settled), rather than silently reverting.
+    //
+    // This check sits AHEAD of the eviction below — see the ordering note
+    // on that block — matching the order handleConfirm already runs in.
+    if (!core || !template) {
+      setState('error', data.summary.mb);
+      revealBasemapDownloadError(null);
+      return;
+    }
+    // SNOW-586: refuse a run that no eviction could ever make fit BEFORE
+    // spending a fetch on the blob — same "cost a click, not a whole run"
+    // reasoning as the quota pre-flight above. The plan's eviction half is
+    // acted on further down, once nothing is left that can abort the run.
+    const areaId = core.areaIdForRegion(data.regionId);
+    const budgetPlan = await planBasemapDownloadBudget(areaId, data.summary.mb);
     if (budgetPlan && budgetPlan.impossible) {
       setState('error', data.summary.mb);
       revealBasemapDownloadError('budget');
       return;
-    }
-    if (budgetPlan && budgetPlan.evict.length > 0) {
-      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
-      const proceed = await confirmBasemapEviction(evictAreas);
-      if (!proceed) {
-        setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
-        return;
-      }
-      await evictBasemapAreas(budgetPlan.evict);
     }
 
     let blob;
@@ -6550,18 +6564,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
       return;
     }
 
-    const core = self.pwaBasemapDownloadCore;
-    const template = activeBasemapTileTemplate(MAP);
-    // No tile template (style still settling) means no tiles to warm, and a
-    // feeds-only run must never paint 'done' — the region's basemap would
-    // not in fact be available offline. SNOW-568: reads as a failed
-    // download so the user knows to retry (by which point the style will
-    // have settled), rather than silently reverting.
-    if (!core || !template) {
-      setState('error', data.summary.mb);
-      revealBasemapDownloadError(null);
-      return;
+    // Ordering, not an optimisation: `evictBasemapAreas` destroys ANOTHER
+    // area's pinned bucket and its meta:app record for good, so it is the
+    // last pre-flight step — every check that can abort this run (quota,
+    // tile template, budget ceiling, blob fetch) has passed by the time we
+    // ask. A user who answers "yes, evict X" and then watches the run fail
+    // would be left with neither X nor the download they asked for.
+    // handleConfirm in mapCustomDownloadControlInit keeps the same order.
+    if (budgetPlan && budgetPlan.evict.length > 0) {
+      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
+      const proceed = await confirmBasemapEviction(evictAreas);
+      if (!proceed) {
+        setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
+        return;
+      }
+      await evictBasemapAreas(budgetPlan.evict);
     }
+
     // Tile-grid rework: the tile list comes from the grid plan, not
     // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
     // on-map grid fills in one square at a time rather than sweeping the
