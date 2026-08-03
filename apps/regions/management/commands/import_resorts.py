@@ -349,6 +349,8 @@ def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
 
     """
     plan = _Plan()
+    # SNOW-602 exempt: bounded curated data — a few hundred Resort rows,
+    # not a growable table.
     by_uuid = {str(resort.uuid): resort for resort in Resort.objects.all()}
     live_uuids: set[str] = set()
 

@@ -70,7 +70,9 @@ class Command(BaseCommand):
         verbosity: int = options.get("verbosity", 1)
 
         # Order by pk so the fixture keeps a stable diff across runs (matches
-        # the existing resorts.json which is pk-ordered).
+        # the existing resorts.json which is pk-ordered). SNOW-602 exempt:
+        # bounded curated data — a few hundred Resort rows, not a growable
+        # table — and pk order is the fixture's own diff-stability contract.
         queryset = Resort.objects.order_by("pk").all()
         new_text = _serialise_with_natural_keys(queryset)
 

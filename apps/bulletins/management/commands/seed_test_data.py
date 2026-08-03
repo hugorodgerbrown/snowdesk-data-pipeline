@@ -566,6 +566,9 @@ class Command(BaseCommand):
 
     Read-only by default; ``--commit`` persists. Exactly one of ``--all``,
     ``--include``, or ``--exclude`` selects which models to seed.
+
+    SNOW-602 exempt: a fixed-size seed spec driven by module-level helpers,
+    not a queryset over a growable table.
     """
 
     help = (

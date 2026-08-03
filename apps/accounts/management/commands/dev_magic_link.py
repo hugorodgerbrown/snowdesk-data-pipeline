@@ -30,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Print a magic-link URL for an account, creating it if needed."""
+    """Print a magic-link URL for an account, creating it if needed.
+
+    SNOW-602 exempt: no queryset loop — operates on a single named account.
+    """
 
     help = "Print a dev magic-link URL for local passkey / subscription testing."
 

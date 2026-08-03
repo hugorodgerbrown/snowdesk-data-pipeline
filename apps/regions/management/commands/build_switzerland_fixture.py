@@ -92,6 +92,8 @@ class Command(BaseCommand):
     """Build apps/regions/fixtures/eaws_CH.json from EAWS micro-region source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.
+
+    SNOW-602 exempt: operates on parsed GeoJSON in memory, not a queryset.
     """
 
     help = (

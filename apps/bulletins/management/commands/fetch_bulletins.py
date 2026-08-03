@@ -104,7 +104,11 @@ def _non_negative_float(raw: str) -> float:
 
 
 class Command(BaseCommand):
-    """Fetch bulletins from one or more providers; read-only unless --commit."""
+    """Fetch bulletins from one or more providers; read-only unless --commit.
+
+    SNOW-602 exempt: iterates provider API results (a fetched page/response),
+    not a queryset over a growable local table.
+    """
 
     help = (
         "Fetch avalanche bulletins for a date range. "

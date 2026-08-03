@@ -124,6 +124,8 @@ class Command(BaseCommand):
         delay: float = options["delay"]
         verbosity: int = options["verbosity"]
 
+        # SNOW-602 exempt: bounded curated data — a few hundred geocoded
+        # Resort rows, not a growable table.
         candidates = list(Resort.objects.geocoded().filter(forecast_point__isnull=True))
 
         self._announce(len(candidates), commit=commit, delay=delay)

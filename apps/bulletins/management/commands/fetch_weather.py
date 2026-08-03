@@ -116,6 +116,8 @@ class Command(BaseCommand):
     """Fetch Open-Meteo weather for all regions across a resolved date window.
 
     Read-only by default; pass --commit to persist WeatherSnapshot rows.
+    SNOW-602 exempt: iterates provider API results (a fetched page/response),
+    not a queryset over a growable local table.
     Automatically routes past dates to the archive endpoint and today to the
     forecast endpoint. When the window reaches today, also fetches today's
     forecast for every active ForecastPoint (forecast-only; pass

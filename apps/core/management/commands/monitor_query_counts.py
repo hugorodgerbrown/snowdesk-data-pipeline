@@ -102,7 +102,10 @@ def _display_path(path: Path) -> str:
 
 
 class Command(BaseCommand):
-    """Measure per-URL query counts; compare to or overwrite the baseline."""
+    """Measure per-URL query counts; compare to or overwrite the baseline.
+
+    SNOW-602 exempt: no queryset loop — walks a fixed list of monitored URLs.
+    """
 
     help = (
         "Measure the SQL query count for a fixed list of monitored URLs "
