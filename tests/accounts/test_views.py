@@ -1305,6 +1305,22 @@ class TestManageViewAuthenticated:
         assert response.status_code == 302
         assert reverse("accounts:sign_in") in response["Location"]
 
+    def test_response_is_no_store(self) -> None:
+        """The dashboard is never cached — C1, docs/code-reviews/2026-08-03-js-review.md.
+
+        This page renders the signed-in user's email address and passkeys.
+        ``no-store`` keeps it out of shared HTTP caches and, in particular,
+        out of the PWA shell cache: ``_networkFirst`` in ``static/js/sw.js``
+        reads the directive and skips its ``cache.put``, which is what stops
+        an offline navigation after a sign-out replaying the previous user's
+        rendered page.
+        """
+        account = AccountFactory.create()
+        client = _make_session_client(account)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert "no-store" in response["Cache-Control"]
+
     def test_get_shows_map_cta_link(self) -> None:
         """Authenticated manage page contains the 'Choose more regions on the map' link.
 
