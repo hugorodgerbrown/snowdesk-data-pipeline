@@ -32,6 +32,14 @@ the ambiguity this change removes.
 Re-keying alone does not restore the issues that were previously overwritten;
 re-run the archive load afterwards to create them.
 
+Streams the queryset newest-id-first via ``apps.core.command_iteration
+.iterate_rows`` rather than hand-rolled OFFSET/LIMIT batching (SNOW-602) —
+the old batching re-queried an offset slice of the same queryset on every
+page, which is O(n²). The (region, day) pairs touched by a successful re-key
+are accumulated into a bounded ``set`` as each bulletin is processed, rather
+than collecting the full ``Bulletin`` instances in a list held until the end
+of the run.
+
 Typical use::
 
     # Read-only walk — reports what would change.
@@ -48,6 +56,7 @@ from __future__ import annotations
 
 import logging
 from argparse import ArgumentParser
+from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
@@ -62,10 +71,12 @@ from apps.bulletins.services.meteofrance_identity import (
     BULLETIN_ID_RE,
     build_bulletin_id,
 )
+from apps.core.command_iteration import iterate_rows
+from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BATCH_SIZE = 500
+_PREFETCH_CHUNK_SIZE = 500
 
 # Rows to re-key: every Météo-France bulletin.
 _FR_PREFIX = "FR-"
@@ -194,10 +205,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--batch-size",
             type=int,
-            default=_DEFAULT_BATCH_SIZE,
+            default=_PREFETCH_CHUNK_SIZE,
             metavar="N",
             help=(
-                f"Process bulletins in batches of N (default: {_DEFAULT_BATCH_SIZE})."
+                "Chunk size for the streamed queryset iterator "
+                f"(default: {_PREFETCH_CHUNK_SIZE})."
             ),
         )
         parser.add_argument(
@@ -213,7 +225,8 @@ class Command(BaseCommand):
             bulletin_id_arg: Optional bulletin_id to restrict to one row.
 
         Returns:
-            A Bulletin queryset ordered by pk.
+            A Bulletin queryset, ``regions`` prefetched for the day-rating
+            pair collection.
 
         Raises:
             CommandError: ``bulletin_id_arg`` is not an FR id, or is not found.
@@ -231,10 +244,10 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"No bulletin found with bulletin_id={bulletin_id_arg!r}"
                 )
-            return qs.order_by("pk")
-        return Bulletin.objects.filter(bulletin_id__startswith=_FR_PREFIX).order_by(
-            "pk"
-        )
+            return qs.prefetch_related("regions")
+        return Bulletin.objects.filter(
+            bulletin_id__startswith=_FR_PREFIX
+        ).prefetch_related("regions")
 
     def _new_id_for(self, bulletin: Bulletin) -> tuple[str | None, str]:
         """Derive the new id for one row.
@@ -290,16 +303,16 @@ class Command(BaseCommand):
         return True
 
     def _refresh_day_ratings(
-        self, bulletins: list[Bulletin], verbosity: int = 1
+        self, pairs: set[tuple[MicroRegion, date]], verbosity: int = 1
     ) -> int:
-        """Recompute RegionDayRating for every (region, day) touched.
+        """Recompute RegionDayRating for every (region, day) pair supplied.
 
-        Thin wrapper over ``day_rating.day_rating_pairs`` /
-        ``day_rating.refresh_day_ratings`` — this command supplies only its
-        own stdout reporting.
+        Thin wrapper over ``day_rating.refresh_day_ratings`` — this command
+        supplies only its own stdout reporting.
 
         Args:
-            bulletins: Bulletins whose day ratings should be refreshed.
+            pairs: (region, day) pairs to refresh, already deduplicated by
+                the caller.
             verbosity: Django's ``--verbosity``; ``0`` suppresses progress
                 output.
 
@@ -307,8 +320,6 @@ class Command(BaseCommand):
             The number of (region, day) pairs that failed to recompute.
 
         """
-        pairs = day_rating_pairs(bulletins)
-
         if verbosity:
             self.stdout.write(
                 f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
@@ -318,65 +329,67 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
         return failures
 
-    def _process_in_batches(
-        self, qs: Any, total: int, batch_size: int, commit: bool
-    ) -> tuple[int, int, int, list[Bulletin]]:
-        """Walk the queryset in pk-ordered batches, re-keying each row.
+    def _process_queryset(
+        self,
+        qs: Any,
+        *,
+        commit: bool,
+        skip_day_ratings: bool,
+        chunk_size: int,
+        verbosity: int,
+    ) -> tuple[int, int, int, set[tuple[MicroRegion, date]]]:
+        """Stream the queryset newest-id-first, re-keying each candidate row.
 
         Args:
             qs: The queryset of candidate bulletins.
-            total: The queryset count, for batch bookkeeping.
-            batch_size: Rows per batch.
             commit: Whether to persist changes.
+            skip_day_ratings: If True, never accumulate (region, day) pairs.
+            chunk_size: Forwarded to ``iterate_rows`` as its ``chunk_size``.
+            verbosity: Django's ``--verbosity`` level.
 
         Returns:
-            A ``(changed, skipped, failed, changed_bulletins)`` tuple.
+            A ``(changed, skipped, failed, pairs)`` tuple. ``pairs`` is the
+            deduplicated set of (region, day) pairs touched by successfully
+            re-keyed bulletins.
 
         """
         changed = 0
         skipped = 0
         failed = 0
-        changed_bulletins: list[Bulletin] = []
-        offset = 0
+        pairs: set[tuple[MicroRegion, date]] = set()
 
-        while offset < total:
-            batch_ids = list(
-                qs.values_list("pk", flat=True)[offset : offset + batch_size]
-            )
-            if not batch_ids:
-                break
-
-            for bulletin in Bulletin.objects.filter(pk__in=batch_ids).order_by("pk"):
-                new_id, reason = self._new_id_for(bulletin)
-                if new_id is None:
-                    if reason == "skipped":
-                        skipped += 1
-                    else:
-                        failed += 1
-                        logger.warning(
-                            "Cannot re-key %s: %s", bulletin.bulletin_id, reason
-                        )
-                    continue
-
-                if not commit:
-                    changed += 1
-                    logger.info(
-                        "[read-only] Would re-key %s → %s",
-                        bulletin.bulletin_id,
-                        new_id,
-                    )
-                    continue
-
-                if self._rekey(bulletin, new_id):
-                    changed += 1
-                    bulletin.bulletin_id = new_id
-                    changed_bulletins.append(bulletin)
+        for bulletin in iterate_rows(
+            self,
+            qs,
+            verbosity=verbosity,
+            chunk_size=chunk_size,
+            describe=lambda b: b.bulletin_id,
+        ):
+            new_id, reason = self._new_id_for(bulletin)
+            if new_id is None:
+                if reason == "skipped":
+                    skipped += 1
                 else:
                     failed += 1
+                    logger.warning("Cannot re-key %s: %s", bulletin.bulletin_id, reason)
+                continue
 
-            offset += batch_size
+            if not commit:
+                changed += 1
+                logger.info(
+                    "[read-only] Would re-key %s → %s", bulletin.bulletin_id, new_id
+                )
+                continue
 
-        return changed, skipped, failed, changed_bulletins
+            if self._rekey(bulletin, new_id):
+                changed += 1
+                if not skip_day_ratings:
+                    bulletin.bulletin_id = new_id
+                    pairs |= day_rating_pairs([bulletin])
+            else:
+                failed += 1
+
+        return changed, skipped, failed, pairs
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the re-key command.
@@ -391,8 +404,9 @@ class Command(BaseCommand):
 
         """
         commit: bool = options["commit"]
-        batch_size: int = options["batch_size"]
+        chunk_size: int = options["batch_size"]
         verbosity: int = options["verbosity"]
+        skip_day_ratings: bool = options["skip_day_ratings"]
 
         qs = self._build_queryset(options.get("bulletin_id"))
         total = qs.count()
@@ -401,12 +415,16 @@ class Command(BaseCommand):
             mode = "commit" if commit else "read-only"
             self.stdout.write(f"Inspecting {total} Météo-France bulletin(s) [{mode}].")
 
-        changed, skipped, failed, changed_bulletins = self._process_in_batches(
-            qs, total, batch_size, commit
+        changed, skipped, failed, pairs = self._process_queryset(
+            qs,
+            commit=commit,
+            skip_day_ratings=skip_day_ratings,
+            chunk_size=chunk_size,
+            verbosity=verbosity,
         )
 
-        if commit and changed_bulletins and not options["skip_day_ratings"]:
-            failed += self._refresh_day_ratings(changed_bulletins, verbosity)
+        if commit and pairs and not skip_day_ratings:
+            failed += self._refresh_day_ratings(pairs, verbosity)
 
         if verbosity:
             prefix = "Re-keyed" if commit else "Would re-key"
