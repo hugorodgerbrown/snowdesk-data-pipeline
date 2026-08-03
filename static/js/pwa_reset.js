@@ -18,12 +18,19 @@
  *       so the fallback list is empty for now — noted so future work
  *       has an obvious place to extend.
  *   (4) Clear ``localStorage`` and ``sessionStorage``.
- *   (5) Reload the page.
+ *   (5) Reload the page — but only on a clean run.
+ *
+ * Every step records its own outcome. A step that fails (most often a
+ * ``blocked`` IndexedDB delete, meaning another tab still holds the
+ * connection) is reported on the ``#pwa-reset-required`` overlay and the
+ * reload is skipped: reloading would land the user back in the state the
+ * reset was meant to clear, with nothing said about why.
  *
  * Emits ``pwa.reset.user_initiated`` (manage-page button, this file's own
  * ``[data-pwa-reset-trigger]`` binding) or ``pwa.reset.forced`` (the
  * ``db.js`` Reset Required overlay CTA, called with ``forced=true`` —
- * SNOW-384) via ``window.pwaTelemetry?.emit``.
+ * SNOW-384) via ``window.pwaTelemetry?.emit``, carrying the outcome as
+ * ``{ ok, failed_steps }`` properties.
  *
  * The reset is idempotent — calling it twice does the same work twice
  * and lands on the same page. A confirmation dialog (``window.confirm``)
@@ -45,10 +52,78 @@
   // name here so old databases are also wiped.
   const KNOWN_DB_NAMES = Object.freeze(['snowdesk-pwa-v1']);
 
+  // Human labels for the wipe steps, keyed by the step ids recorded in
+  // the outcome and sent to telemetry. Used to name the failed step in
+  // the overlay copy, so the user is told what survived the reset.
+  const STEP_LABELS = Object.freeze({
+    service_workers: 'the offline service worker',
+    caches: 'cached pages and map tiles',
+    indexeddb: 'the offline database',
+    web_storage: 'saved preferences',
+  });
+
   /**
-   * Run the full six-step wipe. Every step swallows its own errors —
-   * we always want the reload to happen. Returns a promise that
-   * resolves once the reload has been scheduled.
+   * Build the copy shown on the Reset Required overlay when a step did
+   * not complete. Names the data that survived, then the action that
+   * clears the common cause — a second tab holding the database open.
+   *
+   * @param {string[]} failed Step ids that did not complete.
+   * @returns {string}
+   */
+  function failureMessage(failed) {
+    const names = failed.map((step) => STEP_LABELS[step] || step).join(', ');
+    return (
+      `Snowdesk could not finish resetting local data: ${names} could not ` +
+      'be cleared. This usually means Snowdesk is open in another tab or ' +
+      'window — close the others, then tap Reset now to try again.'
+    );
+  }
+
+  /**
+   * Bind the Reset Required CTA to a retry. Only called when this module
+   * revealed the overlay itself; on the forced path ``db.js`` has already
+   * bound the same button, and a second binding would run two wipes per
+   * tap.
+   *
+   * @param {boolean} forced Carried into the retry so it keeps reporting
+   *   under the same telemetry event as the run that failed.
+   */
+  function bindRetryCta(forced) {
+    const cta = document.getElementById('pwa-reset-required-cta');
+    if (!cta || cta.dataset.pwaResetRetryBound === '1') return;
+    cta.dataset.pwaResetRetryBound = '1';
+    cta.addEventListener('click', (evt) => {
+      evt.preventDefault();
+      resetLocalData(forced);
+    });
+  }
+
+  /**
+   * Surface a failed wipe on the ``#pwa-reset-required`` overlay.
+   *
+   * @param {string[]} failed Step ids that did not complete.
+   * @param {boolean} forced Whether the run came from the forced path.
+   * @returns {boolean} True when the failure reached a visible surface;
+   *   false when the page carries no overlay markup (admin pages), which
+   *   leaves the caller to fall back to the reload.
+   */
+  function reportFailure(failed, forced) {
+    const overlay = document.getElementById('pwa-reset-required');
+    if (!overlay) return false;
+    const body = document.getElementById('pwa-reset-required-body');
+    // textContent, never innerHTML — the copy is built from a fixed
+    // label table, but the escaping guarantee shouldn't rest on that.
+    if (body) body.textContent = failureMessage(failed);
+    const alreadyOpen = !overlay.classList.contains('hidden');
+    overlay.classList.remove('hidden');
+    if (!alreadyOpen) bindRetryCta(forced === true);
+    return true;
+  }
+
+  /**
+   * Run the full six-step wipe. Every step swallows its own errors and
+   * records whether it completed; the reload happens only when all of
+   * them did. Returns a promise resolving to the outcome.
    *
    * @param {boolean} [forced] SNOW-384 — true when the reset was not an
    *   elective user action but was forced by the app entering an
@@ -58,26 +133,38 @@
    *   ``pwa.reset.forced`` vs ``pwa.reset.user_initiated``. Defaults to
    *   ``false`` so every existing caller (the manage-page button, via
    *   ``bindTrigger`` below) keeps reporting user-initiated.
+   * @returns {Promise<{ok: boolean, failed: string[]}>} The per-step
+   *   outcome. ``ok`` is false when at least one step did not complete,
+   *   in which case the page is not reloaded.
    */
   async function resetLocalData(forced) {
+    /** @type {string[]} Step ids that did not complete. */
+    const failed = [];
+
     // (1) Service workers.
     try {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
+        const results = await Promise.all(
+          regs.map((r) => r.unregister().then(() => true, () => false)),
+        );
+        if (results.some((ok) => !ok)) failed.push('service_workers');
       }
     } catch (_err) {
-      // Non-fatal.
+      failed.push('service_workers');
     }
 
     // (2) Cache Storage.
     try {
       if ('caches' in window) {
         const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k).catch(() => {})));
+        const results = await Promise.all(
+          keys.map((k) => caches.delete(k).then(() => true, () => false)),
+        );
+        if (results.some((ok) => !ok)) failed.push('caches');
       }
     } catch (_err) {
-      // Non-fatal.
+      failed.push('caches');
     }
 
     // (3) IndexedDB.
@@ -87,7 +174,7 @@
           typeof indexedDB.databases === 'function'
             ? await indexedDB.databases().catch(() => [])
             : KNOWN_DB_NAMES.map((name) => ({ name }));
-        await Promise.all(
+        const results = await Promise.all(
           dbs
             .filter((db) => db && db.name)
             .map(
@@ -95,49 +182,70 @@
                 new Promise((resolve) => {
                   try {
                     const req = indexedDB.deleteDatabase(db.name);
-                    req.onsuccess = () => resolve();
-                    req.onerror = () => resolve();
-                    req.onblocked = () => resolve();
+                    req.onsuccess = () => resolve(true);
+                    req.onerror = () => resolve(false);
+                    // A blocked delete is not a success: another tab
+                    // holds the connection open, so the database
+                    // survives into the page this reset lands on.
+                    req.onblocked = () => resolve(false);
                   } catch (_err) {
-                    resolve();
+                    resolve(false);
                   }
                 }),
             ),
         );
+        if (results.some((ok) => !ok)) failed.push('indexeddb');
       }
     } catch (_err) {
-      // Non-fatal.
+      failed.push('indexeddb');
     }
 
-    // (4) Web-storage.
+    // (4) Web-storage. Both stores share one step id — a browser that
+    // refuses one (Safari private mode) refuses both, and the step is
+    // reported as failed rather than tolerated: data the reset promised
+    // to clear is still on the device either way.
+    let webStorageCleared = true;
     try {
       localStorage.clear();
     } catch (_err) {
-      // Non-fatal (Safari private mode).
+      webStorageCleared = false;
     }
     try {
       sessionStorage.clear();
     } catch (_err) {
-      // Non-fatal.
+      webStorageCleared = false;
     }
+    if (!webStorageCleared) failed.push('web_storage');
+
+    const ok = failed.length === 0;
 
     // Telemetry — SNOW-385 / SNOW-384. Both pwa.reset.forced and
     // pwa.reset.user_initiated are critical events, so telemetry.js
     // fires ``sendBeacon`` immediately (even opt-out clients still send
     // the signal, spec §16.6). Optional chaining because this file is
-    // loaded on admin pages too, where telemetry.js is not.
+    // loaded on admin pages too, where telemetry.js is not. The outcome
+    // rides as properties: the event names stay as they are, so
+    // apps/analytics/schema.py's allowlist is untouched.
     try {
       window.pwaTelemetry?.emit(
         forced ? 'pwa.reset.forced' : 'pwa.reset.user_initiated',
+        { ok: ok, failed_steps: failed },
       );
     } catch (_err) {
       // Ignore — analytics must never break the reset flow.
     }
 
-    // (5) Reload. Using ``location.reload()`` (no argument) picks up
-    // the new SW / cache state on the next navigation. In Safari
-    // private mode where storage APIs are stubs, this is still safe.
-    window.location.reload();
+    // (5) Reload, on a clean run only. Using ``location.reload()`` (no
+    // argument) picks up the new SW / cache state on the next
+    // navigation. In Safari private mode where storage APIs are stubs,
+    // this is still safe. A failed run reports instead — reloading
+    // would drop the user back into the state the reset was meant to
+    // clear. Pages without the overlay markup (admin) have nowhere to
+    // report, so they keep the old behaviour.
+    if (ok || !reportFailure(failed, forced === true)) {
+      window.location.reload();
+    }
+    return { ok: ok, failed: failed };
   }
 
   /**
