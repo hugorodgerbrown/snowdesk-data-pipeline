@@ -19,17 +19,14 @@
 name: JS unit tests (Vitest)
 
 on:
+  # The push trigger is deliberately NOT path-filtered — see SNOW-600. `JS unit
+  # tests` is not itself a required context today, but the filters are kept
+  # uniform across the CI workflows so the next context promoted to "required"
+  # cannot silently reintroduce the release-blocking gap. The suite is fast.
   push:
     branches:
       - main
       - release
-    paths:
-      - "**/*.js"
-      - "**/*.mjs"
-      - "package.json"
-      - "package-lock.json"
-      - "tox.ini"
-      - ".github/workflows/js.yml"
 
   pull_request:
     types: [opened, synchronize, reopened]

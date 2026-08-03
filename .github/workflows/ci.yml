@@ -16,16 +16,18 @@
 name: Python / Django
 
 on:
+  # The push trigger is deliberately NOT path-filtered — see SNOW-600. Every
+  # commit on main is a release candidate, and the "Release branch" ruleset
+  # requires this workflow's checks on the commit it fast-forwards to. A
+  # `paths:` filter here means the workflow is never *scheduled* on a commit
+  # that misses it, so the required check never reports and the release push
+  # is blocked forever. That is different from a job-level skip, which still
+  # reports a (skipped) check run and satisfies the ruleset. Cost control for
+  # PRs belongs in the `changes` gate below, not here.
   push:
     branches:
       - main
       - release
-    paths:
-      - "**/*.py"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "tox.ini"
-      - ".github/workflows/ci.yml"
 
   pull_request:
     types: [opened, synchronize, reopened]
