@@ -77,7 +77,11 @@ sast = [
     "semgrep>=1.171.0,<2",
 ]
 e2e = [
-    "playwright>=1.0,<2",
+    # Upper-bounded below 1.62: that release (bundling a newer Chromium
+    # build) broke test_offline_reload_preserves_sync_clock's offline-banner
+    # timing deterministically in CI (SNOW-584 dependency-update run).
+    # Investigate and lift this bound in SNOW-597.
+    "playwright>=1.0,<1.62",
     "pytest-playwright>=0.7,<0.9",
     # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
     # that can't be made fully deterministic (SNOW-516) — e2e-only, see
