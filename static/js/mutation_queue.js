@@ -33,9 +33,10 @@
  *
  *   - 2xx                              → success: delete the row.
  *   - {408, 429}, 5xx, network error    → retry: attempts += 1,
- *     next_attempt_at = now + backoffDelayMs(attempts) (2/4/8/…/32s, then
- *     capped at 300s). attempts >= MAX_ATTEMPTS (20) without a 2xx →
- *     'failed', no further retry.
+ *     next_attempt_at = now + backoffDelayMs(attempts)
+ *     (2/4/8/…/256s, then capped at 300s from attempt 9).
+ *     attempts >= MAX_ATTEMPTS (20) without a 2xx → 'failed', no
+ *     further retry.
  *   - any other 4xx                     → 'failed' on the FIRST attempt,
  *     no further retry — the request itself is wrong, not the connection.
  *
