@@ -332,7 +332,9 @@ account, shown for any authenticated account.
                     Renders disabled + aria-busy="true" until the inline
                     script below resolves the persisted preference via
                     window.pwaTelemetry.isOptIn() — see the binding block
-                    at the bottom of this template. Links to the privacy
+                    at the bottom of this template, which waits for
+                    DOMContentLoaded because window.pwaTelemetry is
+                    installed by a deferred script. Links to the privacy
                     policy so the toggle copy and the policy stay
                     consistent (SNOW-387 also rewrote privacy.html §5/§8).
                 {% endcomment %}
@@ -451,8 +453,9 @@ account, shown for any authenticated account.
                     /* Telemetry opt-in/opt-out toggle (SNOW-387). Left disabled
                        (as rendered) when window.pwaTelemetry is unavailable —
                        same graceful-degradation posture as pwa_reset.js. */
-                    var telemetryToggle = document.querySelector("[data-telemetry-toggle]");
-                    if (telemetryToggle && window.pwaTelemetry) {
+                    function bindTelemetryToggle() {
+                        var telemetryToggle = document.querySelector("[data-telemetry-toggle]");
+                        if (!telemetryToggle || !window.pwaTelemetry) return;
                         window.pwaTelemetry.isOptIn().then(function (optedIn) {
                             telemetryToggle.setAttribute("aria-checked", String(optedIn));
                             telemetryToggle.removeAttribute("aria-busy");
@@ -463,6 +466,22 @@ account, shown for any authenticated account.
                             telemetryToggle.setAttribute("aria-checked", String(next));
                             window.pwaTelemetry.setOptIn(next);
                         });
+                    }
+
+                    /* This is a parser-blocking classic script inside the
+                       page content, so it runs before every deferred script
+                       in base.html — including telemetry.js, which is what
+                       installs window.pwaTelemetry. Binding at parse time
+                       therefore always took the degradation path and left
+                       the switch permanently disabled + aria-busy (M2,
+                       2026-08-03 JS review). Deferred scripts all run before
+                       DOMContentLoaded, so binding there gets a real
+                       window.pwaTelemetry. The readyState branch covers an
+                       already-loaded document. */
+                    if (document.readyState === "loading") {
+                        document.addEventListener("DOMContentLoaded", bindTelemetryToggle);
+                    } else {
+                        bindTelemetryToggle();
                     }
                 })();
             </script>
