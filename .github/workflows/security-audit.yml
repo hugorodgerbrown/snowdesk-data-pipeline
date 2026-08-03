@@ -4,6 +4,13 @@
 # (semgrep) and a gitleaks secret scan — the CI backstop for the bypassable
 # pre-commit gitleaks hook (invariant #5: no secrets in source).
 #
+# Two dependency-audit jobs, deliberately separate (SNOW-576):
+#   * ``Security audit`` — the runtime gate, --no-dev, a required check.
+#   * ``Dependency audit (dev + npm)`` — detection only, covers the dev
+#     groups and the npm tree, NOT a required check. Keeping them apart is
+#     what stops an advisory in a linter blocking a production release while
+#     still surfacing it.
+#
 # Docs-only PRs skip pip-audit and semgrep via the ``changes`` gate — a
 # job-level skip still reports a (skipped) check run that satisfies any
 # ruleset requirement (SNOW-481). The gitleaks scan is deliberately NOT
@@ -112,6 +119,46 @@ jobs:
 
       - name: Audit dependencies for known CVEs
         run: pip-audit -r /tmp/requirements-audit.txt
+
+  dependency-audit-dev:
+    # Detection-only counterpart to `Security audit` above, covering what the
+    # runtime gate cannot see: the dev dependency groups (104 of the 169
+    # packages in uv.lock) and the npm tree — SNOW-576.
+    #
+    # This is deliberately NOT in either ruleset's required-check list. The
+    # runtime gate stays scoped to --no-dev so an advisory in a linter can
+    # never block a production release; this job makes the same advisory
+    # *visible* without giving it that power. Do not promote it to a required
+    # check, and do not fold it into the `Security audit` job.
+    name: Dependency audit (dev + npm)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      # npm is needed for the `npm audit` step of the tox env. No `npm ci`:
+      # the env audits with --package-lock-only, straight from the lockfile.
+      - name: Set up Node (20)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Install tox
+        run: pip install tox tox-uv
+
+      - name: Audit dev groups and the npm tree
+        run: tox -e audit-dev
 
   sast:
     name: SAST (semgrep)
