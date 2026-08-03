@@ -534,11 +534,28 @@ let _devShellCacheHydration = null;
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
-// loses connectivity. Keep this list short — anything hashed by
-// ManifestStaticFilesStorage can't be precached by stable URL, and
-// stale-while-revalidate already handles the shell on the second visit.
+// loses connectivity. Keep this list short — stale-while-revalidate
+// already handles the shell on the second visit.
+//
+// Both entries are unhashed paths, and that is deliberate rather than an
+// oversight. ``collectstatic`` under ``CompressedManifestStaticFilesStorage``
+// writes the original filename alongside the hashed one, so the stable URL
+// resolves in production. What a stable URL cannot do is serve a page that
+// references its assets through ``{% static %}`` — those request the hashed
+// name, so a precached unhashed entry would never be matched. Neither entry
+// here is reached that way: the worker asks for ``OFFLINE_FALLBACK`` by this
+// exact constant, and ``offline.html`` is a plain static file that hardcodes
+// ``RESET_SCRIPT`` in its own markup. Precache and request agree, so both
+// are hits.
+//
+// RESET_SCRIPT carries spec §12.7's "Reset local data" escape hatch onto the
+// offline page (SNOW-607). The hatch exists for the state where the app is
+// broken and the network is gone, so the script that binds it has to survive
+// exactly that — without it the control renders bound to nothing, which is
+// worse than absent.
 const OFFLINE_FALLBACK = '/static/offline.html';
-const PRECACHE_URLS = [OFFLINE_FALLBACK];
+const RESET_SCRIPT = '/static/js/pwa_reset.js';
+const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
 
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through

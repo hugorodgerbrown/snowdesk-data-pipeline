@@ -1,8 +1,8 @@
 ---
 name: offline-first
-description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version, freshness, idempotency, reset, install, telemetry, sync log
+description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-07-26
+last-reviewed: 2026-08-03
 ---
 
 # Offline-first PWA compliance
@@ -38,7 +38,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
-| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on the manage page                           |
+| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page (`@never_cache` since SNOW-607, so online only) and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user; it reveals itself only once `pwa_reset.js` has loaded, which needs one entry adding to `PRECACHE_URLS` — see [Reset local data](#reset-local-data-snow-378) below. |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
@@ -251,6 +251,62 @@ response status and resolved URL, to decide whether a response advances
 (2xx), un-stamped, non-synthesized same-origin response — excluding
 both cache replays and synthesized fallbacks.
 
+### `X-SW-Principal` header (SNOW-607)
+
+The shell cache is the one persistent store in the PWA that held page
+HTML with no record of who it was rendered for. `_networkFirst`
+(`static/js/sw.js:1652`) now partitions it by account, with two guards.
+
+**No-store responses are never written.** `_isNoStore`
+(`static/js/sw.js:1506`) reads `Cache-Control` and skips the `cache.put`
+— Cache Storage is not the HTTP cache, so nothing else in the stack
+enforces the directive. Django's `@never_cache` is what puts
+authenticated HTML on the right side of the gate: `manage_view`
+(`apps/accounts/views.py:1408`) and `change_email_view`
+(`apps/accounts/views.py:699`) carry it, and `AdminSite.admin_view`
+already applies it to every admin view.
+
+**Everything else is stamped.** Each cached navigation carries an
+`X-SW-Principal` header naming the account its HTML was rendered for,
+read out of the response's own `<meta name="pwa-user-id">`
+(`apps/public/templates/public/base.html:120`). The offline read serves
+an entry only when that stamp equals the principal signed in now, read
+from the `meta:app` row `mutations.principal` (`_currentPrincipal`,
+`static/js/sw.js:1544`). The stamp comes from the response body rather
+than that row because the row lags by one page load — the page's own
+`_reconcilePrincipal()` (`static/js/mutation_queue.js:721`) writes it
+after the navigation carrying the HTML has already been cached. An entry
+with no stamp, or one from a page carrying no meta tag, never matches
+and is never served.
+
+This is the same partitioning SNOW-493 applied to the `data:map_overlays`
+cache and SNOW-462 applied to mutation rows (see
+[`mutation-queue.md`](mutation-queue.md#account-change-partitioning-snow-462)).
+Mechanics, the `Vary: Cookie` dead end, and the fail-closed argument:
+[`offline-map.md`](offline-map.md#principal-partitioned-navigations-snow-607).
+
+**What this costs offline.** A shell entry cached under one principal is
+not served to another, so a `/` cached while anonymous falls back to
+`/static/offline.html` for a signed-in user until that page is next
+loaded online. `/account/manage/` and `/account/change-email/` are never
+available offline at all.
+
+That second consequence takes two offline-facing surfaces with it, since
+both live only on the manage page:
+
+- **§12.7's escape hatch** — the "Reset local data on this device"
+  button (`[data-pwa-reset-trigger]`,
+  `apps/accounts/templates/accounts/manage.html:304`) no longer lives
+  only there. `static/offline.html` carries a second copy of the same
+  control, since that page is pre-cached and outside the principal
+  check. The manage-page copy is unchanged and still the online
+  surface. One entry is still missing from `PRECACHE_URLS` before the
+  offline copy reveals itself on an offline load — see
+  [Reset local data](#reset-local-data-snow-378).
+- **The `log:sync` read-out panel** (`static/js/sync_log.js`, `sync_log`
+  waffle flag). The store keeps filling offline; the page that renders
+  it is unreachable.
+
 ### Sync log (SNOW-482)
 
 Qualifying responses (same-origin, un-cached, not a static asset —
@@ -259,9 +315,11 @@ Qualifying responses (same-origin, un-cached, not a static asset —
 to the newest 100. The manage page's "Sync log" panel — and a matching
 `/help/` section — read it back via `window.pwaDb.getSyncLog()`
 (`static/js/sync_log.js`), both gated on the `sync_log` waffle flag
-(see [`feature-flags.md`](feature-flags.md)). The SNOW-378 reset wipes
-the whole IndexedDB database, so the log clears along with everything
-else. Store shape: [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md#logsync-row-shape-snow-482).
+(see [`feature-flags.md`](feature-flags.md)). The store keeps filling
+offline; the manage page that reads it back does not load offline (see
+[`X-SW-Principal`](#x-sw-principal-header-snow-607)). The SNOW-378 reset
+wipes the whole IndexedDB database, so the log clears along with
+everything else. Store shape: [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md#logsync-row-shape-snow-482).
 
 ## Reset local data (SNOW-378)
 
@@ -271,11 +329,46 @@ IndexedDB database (`indexedDB.databases()` with an explicit
 `KNOWN_DB_NAMES` fallback list for browsers without it) → clear
 `localStorage` / `sessionStorage` → reload.
 
-The manage page ships a visible "Reset local data on this device"
-button (`[data-pwa-reset-trigger]`) with helper copy. Programmatic
-callers use `window.pwaResetLocalData()`;
+Two surfaces ship a visible "Reset local data on this device" button
+(`[data-pwa-reset-trigger]`) with helper copy. Both are the same
+mechanism — the attribute is `pwa_reset.js`'s binding contract, and the
+confirmation dialogue, the six-step wipe and the telemetry all live in
+that one module:
+
+- **The manage page** (`apps/accounts/templates/accounts/manage.html`).
+  `@never_cache` since SNOW-607, so it is an online-only surface (see
+  [`X-SW-Principal`](#x-sw-principal-header-snow-607)).
+- **The offline fallback page** (`static/offline.html`, `#pwa-reset-panel`).
+  Pre-cached on SW install and outside the principal check, so it is the
+  surface that can reach a user whose PWA is stuck *and* whose network is
+  gone — the state §12.7 exists for.
+
+Programmatic callers use `window.pwaResetLocalData()`;
 `data-pwa-reset-skip-confirm` skips the `window.confirm` dialogue for
 callers that carry their own (e.g. the Update Required modal).
+
+### Why the reset script is precached
+
+The offline page's panel ships `hidden` and reveals itself only once
+`window.pwaResetLocalData` exists. The wipe itself needs no network
+(service workers, Cache Storage, IndexedDB, web storage — all local),
+but *delivering* `pwa_reset.js` does: it is a subresource, so it has to
+survive the same conditions the hatch exists for. `PRECACHE_URLS`
+(`static/js/sw.js`) therefore holds `/static/js/pwa_reset.js` alongside
+`/static/offline.html`.
+
+Both are unhashed paths. `collectstatic` under
+`CompressedManifestStaticFilesStorage` writes the original filename
+next to the hashed one, so the stable URL resolves in production. What
+a stable URL cannot do is serve a page that references assets through
+`{% static %}` — those request the hashed name and would miss a
+precached unhashed entry. Neither of these is reached that way: the
+worker asks for the fallback by constant, and `offline.html` is a plain
+static file that hardcodes the script path in its own markup, so
+precache and request agree.
+
+The offline journey is covered by `test_offline_page_reset_control_offline`
+in `tests/e2e/test_pwa_lifecycle_kill_and_reset.py`.
 
 ## Install prompt orchestration (SNOW-379)
 
