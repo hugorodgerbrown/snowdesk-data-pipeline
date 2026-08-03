@@ -12,7 +12,7 @@
     "@tailwindcss/cli": "^4.2.2",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.1",
-    "sharp": "^0.34.0",
+    "sharp": "^0.35.3",
     "vitest": "^3.0.0"
   },
   "comments": {
