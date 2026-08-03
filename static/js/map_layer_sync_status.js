@@ -497,6 +497,17 @@
    * Falls back to "any entry at all" when the template is unresolvable
    * (the style still settling) rather than reporting a bare no.
    *
+   * The map handle is read as the BARE identifier ``MAP``, matching
+   * favourites.js / place_picker.js / map_placement_focus.js. map.js
+   * declares it as a top-level ``let`` in a classic script, so the binding
+   * lives in the global declarative environment and never becomes a
+   * ``window`` property — a ``window.MAP`` read is undefined for every
+   * user, which left the template null and this probe stuck on the "any
+   * entry at all" fallback the paragraph above warns against (M1,
+   * docs/code-reviews/2026-08-03-js-review.md).
+   * ``activeBasemapTileTemplate`` is a top-level function declaration,
+   * which does land on ``window``, so that read is left as it was.
+   *
    * @returns {Promise<boolean>}
    */
   async function _probeAnyPinnedTile() {
@@ -516,9 +527,10 @@
       }
       if (!urls.length) return false;
       const core = self.pwaBasemapDownloadCore;
+      const map = typeof MAP !== 'undefined' ? MAP : null;
       const template =
-        typeof window.activeBasemapTileTemplate === 'function' && window.MAP
-          ? window.activeBasemapTileTemplate(window.MAP)
+        typeof window.activeBasemapTileTemplate === 'function' && map
+          ? window.activeBasemapTileTemplate(map)
           : null;
       if (!core || !template) return true;
       return core.cachedTilesFromURLs(template, urls).length > 0;

@@ -21,7 +21,10 @@
  * runs its REAL `cachedTilesFromURLs()` filtering against a real URL
  * template rather than a stand-in — the whole point of those tests is
  * proving tiles from a bucket that doesn't match the active basemap are
- * excluded and tiles from one that does are still found after it.
+ * excluded and tiles from one that does are still found after it. That
+ * block stubs the map handle as the bare global `MAP` and hides it from
+ * `window` (`hideWindowMap()`), which is how a browser presents map.js's
+ * top-level `let MAP` — see that helper's docstring.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -126,6 +129,30 @@ function basemapRowDisabled(key) {
 
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true });
+}
+
+/**
+ * Give `window` the shape a browser gives it for map.js's map handle:
+ * `let MAP = null` at the top of a classic script binds in the global
+ * declarative environment, so `window.MAP` is undefined while the bare
+ * identifier `MAP` resolves. jsdom collapses `globalThis` and `window` onto
+ * one object, which erases that distinction — the conflation that let a
+ * `window.MAP` read look correct here for as long as it did.
+ *
+ * Installs a stand-in `window` inheriting everything from the real one
+ * (so `window.pwaLayerSyncStatus`, `window.pwaDb` and the rest still
+ * resolve) with an own `MAP` of `undefined`. Returns the restore function.
+ *
+ * @returns {function(): void}
+ */
+function hideWindowMap() {
+  const real = globalThis.window;
+  const standIn = Object.create(real);
+  Object.defineProperty(standIn, 'MAP', { value: undefined });
+  const install = (value) =>
+    Object.defineProperty(globalThis, 'window', { value, configurable: true, writable: true });
+  install(standIn);
+  return () => install(real);
 }
 
 /**
@@ -607,16 +634,55 @@ describe('downloaded row (pinned-tiles) — SNOW-586 multi-bucket union', () => 
   const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
   const MATCHING_TILE_URL = 'https://tiles.example/10/1/1.pbf';
   const NON_MATCHING_URL = 'https://other.example/not-a-tile.json';
+  // The furniture a download pins alongside the tiles: the style JSON and
+  // its sprite sheet. Same host as the template, neither matching it.
+  const STYLE_JSON_URL = 'https://tiles.example/standard/style.json';
+  const SPRITE_URL = 'https://tiles.example/standard/sprite@2x.png';
+
+  let restoreWindow = null;
 
   beforeEach(() => {
     buildFixture({ includeDownloaded: true });
     // `_probeAnyPinnedTile()` falls back to "any entry at all" when either
     // of these is unresolvable (see its own docstring) — stubbed here so
-    // the two tests below exercise the REAL per-tile filtering instead of
+    // the tests below exercise the REAL per-tile filtering instead of
     // that fallback, which is the only way to actually distinguish the
     // matching bucket from the non-matching one.
-    vi.stubGlobal('MAP', {});
-    vi.stubGlobal('activeBasemapTileTemplate', () => TEMPLATE);
+    //
+    // The map handle is stubbed as a BARE global, the way map.js's
+    // top-level `let MAP` reaches its sibling scripts (same idiom as
+    // tests/js/test_place_picker.js and test_map_placement_focus.js), and
+    // `hideWindowMap()` then takes `window.MAP` away — see its docstring.
+    globalThis.MAP = {};
+    globalThis.activeBasemapTileTemplate = () => TEMPLATE;
+    restoreWindow = hideWindowMap();
+  });
+
+  afterEach(() => {
+    if (restoreWindow) restoreWindow();
+    restoreWindow = null;
+    delete globalThis.MAP;
+    delete globalThis.activeBasemapTileTemplate;
+  });
+
+  it('a bucket holding only the style JSON and sprites reads as uncached', async () => {
+    // The case the probe exists for (see its docstring): a run that pinned
+    // the furniture and none of the map must not read as available
+    // offline. Fails against a `window.MAP` read, which resolves to
+    // undefined in a browser and drops the probe onto its "any entry at
+    // all" fallback.
+    vi.stubGlobal(
+      'caches',
+      fakeCaches({
+        pinnedBuckets: {
+          'snowdesk-basemap-pinned-region-a': { urls: [STYLE_JSON_URL, SPRITE_URL] },
+        },
+      }),
+    );
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('downloaded')).toBe('uncached');
   });
 
   it('an earlier bucket with no tiles for this basemap does not hide a later one that has them', async () => {
