@@ -31,6 +31,12 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
 
+  # Run the full-history gitleaks scan on demand. Push and pull_request runs
+  # scan only their commit range, so without this the only way to verify a
+  # change to .gitleaks.toml is to wait for the Monday cron — which is how the
+  # scan stayed red for four weeks (SNOW-599).
+  workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

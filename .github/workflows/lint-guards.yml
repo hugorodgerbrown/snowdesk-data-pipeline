@@ -20,26 +20,19 @@
 name: Lint guards
 
 on:
+  # The push trigger is deliberately NOT path-filtered — see SNOW-600. Every
+  # commit on main is a release candidate, and the "Release branch" ruleset
+  # requires this workflow's checks on the commit it fast-forwards to. A
+  # `paths:` filter here means the workflow is never *scheduled* on a commit
+  # that misses it, so the required check never reports and the release push
+  # is blocked forever. That is different from a job-level skip, which still
+  # reports a (skipped) check run and satisfies the ruleset. Unlike ci.yml and
+  # e2e.yml this workflow has no `changes` gate — every guard here is a
+  # seconds-long script, so there is nothing worth gating.
   push:
     branches:
       - main
       - release
-    paths:
-      - "**/*.html"
-      - "docs/**"
-      - "CLAUDE.md"
-      - "bin/ds-lint"
-      - "bin/docs-lint"
-      - "bin/sw-version"
-      - "apps/core/sw_shell.py"
-      - "static/js/**"
-      - "src/css/**"
-      - "apps/public/templates/public/base.html"
-      - "apps/public/templates/public/home.html"
-      - "apps/public/templates/public/partials/_map_embed.html"
-      - "static/offline.html"
-      - "tox.ini"
-      - ".github/workflows/lint-guards.yml"
 
   pull_request:
     types: [opened, synchronize, reopened]
