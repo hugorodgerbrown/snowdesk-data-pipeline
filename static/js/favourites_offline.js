@@ -26,6 +26,12 @@
  * roster record for the same uuid (the card is the more detailed source,
  * so its fields win).
  *
+ * The roster sidecar carries the user's whole current list, so the same
+ * pass also drops any cached record the roster omits. Deleting a
+ * favourite is an online-only ``hx-post`` with no cache-eviction step of
+ * its own, so this reconcile is what keeps a deleted pin out of the
+ * offline roster below.
+ *
  * Offline read
  * ------------
  * On ``htmx:sendError`` / ``htmx:responseError`` (network failure or a
@@ -77,9 +83,30 @@
   }
 
   /**
+   * Delete every cached record whose uuid is absent from ``keep``.
+   *
+   * ``db.js`` exposes single-key operations only, so this is a second pass
+   * over the store rather than part of the roster's write transaction.
+   * Both passes are idempotent and every later roster swap repeats the
+   * reconcile, so a failure between them self-corrects.
+   *
+   * @param {Set<string>} keep - uuids present in the roster payload.
+   * @returns {Promise<void>}
+   */
+  async function _evictAbsent(keep) {
+    const cached = await window.pwaDb.getAll(STORE);
+    for (const record of cached) {
+      if (record && record.uuid && !keep.has(record.uuid)) {
+        await window.pwaDb.delete(STORE, record.uuid);
+      }
+    }
+  }
+
+  /**
    * Write-through: upsert the roster + card sidecars found under ``root``
-   * into ``data:favourites``. Never throws — every failure is swallowed
-   * so a broken cache write can't break the HTMX swap it rides on.
+   * into ``data:favourites``, and reconcile the store against the roster.
+   * Never throws — every failure is swallowed so a broken cache write
+   * can't break the HTMX swap it rides on.
    *
    * @param {ParentNode} root
    * @returns {Promise<void>}
@@ -92,12 +119,19 @@
       let wrote = false;
 
       if (Array.isArray(roster)) {
+        const rosterUuids = new Set();
         for (const record of roster) {
           if (record && record.uuid) {
+            rosterUuids.add(record.uuid);
             await window.pwaDb.put(STORE, record);
             wrote = true;
           }
         }
+        // The roster is the user's full list, so anything cached and not
+        // in it has been deleted since the last swap. A card-only swap
+        // never reaches here — it says nothing about which favourites
+        // exist, so it must not evict.
+        await _evictAbsent(rosterUuids);
       }
 
       if (card && card.uuid) {
