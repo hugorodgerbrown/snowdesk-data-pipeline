@@ -22,6 +22,7 @@ import pytest
 from django.core.management import call_command
 from pytest import CaptureFixture
 
+from apps.bulletins.models import Bulletin
 from tests.factories import BulletinFactory
 
 # ---------------------------------------------------------------------------
@@ -279,3 +280,38 @@ class TestParseWetSnowCoverage:
         # Both lang codes should appear in the report.
         assert "en" in captured.out
         assert "de" in captured.out
+
+    def test_stdout_carries_scanned_ids_in_descending_order(
+        self, capsys: CaptureFixture[str]
+    ) -> None:
+        """Each scanned bulletin's id is printed, newest id first (SNOW-602)."""
+        first = BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+        )
+        second = BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(comment="Wet-snow on north slopes below 2000m."),
+        )
+        expected = sorted([first.pk, second.pk], reverse=True)
+
+        call_command("parse_wet_snow_coverage", verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed == expected
+
+    def test_no_countdown_lines_at_verbosity_0(
+        self, capsys: CaptureFixture[str]
+    ) -> None:
+        """Countdown lines are suppressed at verbosity 0."""
+        BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+        )
+        pk = Bulletin.objects.get().pk
+
+        call_command("parse_wet_snow_coverage", verbosity=0)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        assert str(pk) not in out_lines

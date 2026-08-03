@@ -270,3 +270,36 @@ class TestReadOnly:
         assert RegionDayRating.objects.count() == baseline_ratings
         assert RegionBulletin.objects.count() == baseline_links
         assert Bulletin.objects.count() == baseline_bulletins
+
+
+@pytest.mark.django_db
+class TestCountdown:
+    """SNOW-602: stdout carries the scanned bulletin ids in descending order."""
+
+    def test_stdout_carries_scanned_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Each scanned bulletin's id is printed, newest id first."""
+        MicroRegionFactory.create(region_id="CH-Z001")
+        MicroRegionFactory.create(region_id="CH-Z002")
+        first = _bulletin_with_regions(["CH-Z001"], bulletin_id="bul-z001")
+        second = _bulletin_with_regions(["CH-Z002"], bulletin_id="bul-z002")
+        expected = sorted([first.pk, second.pk], reverse=True)
+
+        call_command("diagnose_region_coverage", verbosity=1)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed == expected
+
+    def test_no_countdown_lines_at_verbosity_0(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Countdown lines are suppressed at verbosity 0."""
+        MicroRegionFactory.create(region_id="CH-Z003")
+        bulletin = _bulletin_with_regions(["CH-Z003"], bulletin_id="bul-z003")
+
+        call_command("diagnose_region_coverage", verbosity=0)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        assert str(bulletin.pk) not in out_lines

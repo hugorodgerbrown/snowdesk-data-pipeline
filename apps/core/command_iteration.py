@@ -29,23 +29,21 @@ management commands needs it.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from django.core.management.base import BaseCommand
-from django.db.models import Model, QuerySet
 
-_M = TypeVar("_M", bound=Model)
 _T = TypeVar("_T")
 
 
 def iterate_rows(
     cmd: BaseCommand,
-    queryset: QuerySet[_M],
+    queryset: Any,
     *,
     verbosity: int,
     chunk_size: int | None = None,
-    describe: Callable[[_M], object] | None = None,
-) -> Iterator[_M]:
+    describe: Callable[[Any], object] | None = None,
+) -> Iterator[Any]:
     """
     Stream a queryset newest-row-first, printing a countdown line per row.
 
@@ -53,6 +51,11 @@ def iterate_rows(
     full result set is never materialised in memory. At ``verbosity >= 1``,
     writes one line per row before yielding it, so stdout reads as a
     countdown to 1 on a long-running command.
+
+    ``queryset`` is typed ``Any`` rather than ``QuerySet[Model]`` because a
+    handful of call sites stream a ``values_list(...)`` queryset (rows are
+    plain tuples, not model instances) — those callers must always pass
+    ``describe``, since a tuple has no ``.pk``.
 
     Args:
         cmd: The calling command, used for ``cmd.stdout`` so output honours
@@ -66,7 +69,8 @@ def iterate_rows(
             at every such call site or Django raises.
         describe: Optional callable returning the token to print for a row,
             in place of the bare primary key (e.g. ``lambda b: b.bulletin_id``
-            for a command that already surfaces a domain id).
+            for a command that already surfaces a domain id, or a
+            ``values_list`` tuple's own id element).
 
     Yields:
         Each row of ``queryset``, ordered newest id first.

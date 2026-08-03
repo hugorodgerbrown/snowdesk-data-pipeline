@@ -36,6 +36,7 @@ import apps.bulletins.services.prose.en  # noqa: F401 — registers the "en" par
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.prose import parse_for
 from apps.bulletins.services.render_model import WET_PROBLEM_TYPES
+from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,9 @@ class Command(BaseCommand):
         verbosity: int = options["verbosity"]
         filter_source: str | None = options.get("filter_source")
 
-        stats, bulletin_count, problem_count = self._scan_archive(filter_source)
+        stats, bulletin_count, problem_count = self._scan_archive(
+            filter_source, verbosity=verbosity
+        )
 
         if verbosity >= 2:
             self.stdout.write(
@@ -118,6 +121,8 @@ class Command(BaseCommand):
     def _scan_archive(
         self,
         filter_source: str | None,
+        *,
+        verbosity: int,
     ) -> tuple[dict[tuple[str, str], _Stats], int, int]:
         """
         Iterate the bulletin archive and accumulate wet-snow coverage stats.
@@ -127,10 +132,15 @@ class Command(BaseCommand):
         than from a model field, because the Bulletin model does not store
         source as a dedicated database column.
 
+        Streams newest-id-first via ``iterate_rows``, printing each scanned
+        bulletin's id as a countdown line — ``id`` is carried in the
+        ``values_list`` tuple purely so there is something to print.
+
         Args:
             filter_source: Optional source slug (``"slf"``, ``"albina"``,
                 ``"meteofrance"``) to restrict the scan. When given, bulletins
                 whose detected source does not match are silently skipped.
+            verbosity: Django verbosity level (0–3).
 
         Returns:
             A 3-tuple of (stats_dict, bulletin_count, problem_count).
@@ -140,9 +150,13 @@ class Command(BaseCommand):
         bulletin_count = 0
         problem_count = 0
 
-        for raw_data, lang in Bulletin.objects.values_list(
-            "raw_data", "lang"
-        ).iterator():
+        rows = Bulletin.objects.values_list("id", "raw_data", "lang")
+        for _pk, raw_data, lang in iterate_rows(
+            self,
+            rows,
+            verbosity=verbosity,
+            describe=lambda row: row[0],
+        ):
             properties = _get_properties(raw_data)
             if not properties:
                 continue
