@@ -305,7 +305,8 @@ uv run tox -e fmt             # ruff format --check
 uv run tox -e lint            # ruff check
 uv run tox -e ds-lint         # design-system template linter (see "Design system" above)
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
-uv run tox -e audit           # pip-audit on the locked dependency set
+uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
+uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
 uv run tox -e js              # Vitest JS-unit tests (in default envlist; fast, see docs/client-side-tests.md)
 uv run tox --recreate         # rebuild envs from scratch after a deps change
