@@ -323,3 +323,68 @@ class TestExportDayCharacterCsv:
                 "not-a-date",
                 stdout=StringIO(),
             )
+
+    # ------------------------------------------------------------------
+    # SNOW-602: countdown is stdout-mode-only (the partial exemption)
+    # ------------------------------------------------------------------
+
+    def test_default_stdout_mode_carries_only_csv_no_countdown_lines(self) -> None:
+        """Default (no --output) stdout is exactly the header plus one row per
+        bulletin — no interleaved countdown lines.
+        """
+        BulletinFactory.create(
+            bulletin_id="b-nocountdown-1",
+            issued_at=datetime(2026, 5, 1, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 5, 1, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 5, 1, 18, 0, tzinfo=UTC),
+            render_model=_render_model("1"),
+        )
+        BulletinFactory.create(
+            bulletin_id="b-nocountdown-2",
+            issued_at=datetime(2026, 5, 2, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 5, 2, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 5, 2, 18, 0, tzinfo=UTC),
+            render_model=_render_model("1"),
+        )
+
+        out = StringIO()
+        call_command("export_day_character_csv", stdout=out)
+
+        lines = out.getvalue().splitlines()
+        # Header + 2 data rows, nothing else.
+        assert len(lines) == 3
+        assert lines[0].startswith("bulletin_id,")
+
+    def test_output_mode_prints_a_countdown_line_per_row(self, tmp_path: Path) -> None:
+        """``--output PATH`` prints each processed bulletin's pk to stdout."""
+        first = BulletinFactory.create(
+            bulletin_id="b-countdown-1",
+            issued_at=datetime(2026, 5, 1, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 5, 1, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 5, 1, 18, 0, tzinfo=UTC),
+            render_model=_render_model("1"),
+        )
+        second = BulletinFactory.create(
+            bulletin_id="b-countdown-2",
+            issued_at=datetime(2026, 5, 2, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 5, 2, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 5, 2, 18, 0, tzinfo=UTC),
+            render_model=_render_model("1"),
+        )
+
+        out_path = tmp_path / "dc.csv"
+        stdout_buf = StringIO()
+        call_command(
+            "export_day_character_csv", "--output", str(out_path), stdout=stdout_buf
+        )
+
+        printed = {
+            int(line)
+            for line in stdout_buf.getvalue().splitlines()
+            if line.strip().isdigit()
+        }
+        assert printed == {first.pk, second.pk}
+        # The file itself carries no countdown lines — only the CSV.
+        file_lines = out_path.read_text(encoding="utf-8").splitlines()
+        assert len(file_lines) == 3
+        assert file_lines[0].startswith("bulletin_id,")
