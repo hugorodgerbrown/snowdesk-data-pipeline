@@ -194,3 +194,125 @@ def test_sw_cache_version_check_is_registered() -> None:
     from django.core.checks import registry
 
     assert checks.check_sw_cache_version_substitutable in registry.registry.get_checks()
+
+
+# ---------------------------------------------------------------------------
+# Environment settings spec (SNOW-580)
+# ---------------------------------------------------------------------------
+
+
+def test_settings_spec_check_passes_on_the_real_config() -> None:
+    """The committed settings pass their own spec."""
+    assert checks.check_settings_spec(app_configs=None) == []
+
+
+@override_settings(OPEN_METEO_API_BASE_URL="customer-api.open-meteo.com")
+def test_settings_spec_check_catches_a_bare_host() -> None:
+    """The SNOW-580 incident value now fails at startup, not mid-batch."""
+    errors = checks.check_settings_spec(app_configs=None)
+
+    assert [e.id for e in errors] == ["core.settings.E001"]
+    assert "no scheme" in errors[0].msg
+
+
+@override_settings(DEBUG=True, SITE_BASE_URL="")
+def test_settings_spec_check_allows_empty_required_settings_under_debug() -> None:
+    """A fresh local checkout runs with no .env entries."""
+    assert checks.check_settings_spec(app_configs=None) == []
+
+
+@override_settings(DEBUG=False, WEBAUTHN_ORIGIN="")
+def test_settings_spec_check_requires_production_settings_off_debug() -> None:
+    """A required setting left empty on a real deploy is an Error."""
+    errors = checks.check_settings_spec(app_configs=None)
+
+    assert "core.settings.E002" in {e.id for e in errors}
+
+
+@override_settings(DEBUG=False, METEOFRANCE_API_LOCAL_MIRROR_URL="file://docs/x")
+def test_settings_spec_check_catches_a_relative_file_mirror() -> None:
+    """A relative file:// mirror silently reads the wrong directory."""
+    errors = checks.check_settings_spec(app_configs=None)
+
+    assert "core.settings.E001" in {e.id for e in errors}
+
+
+def test_settings_spec_check_is_registered() -> None:
+    """The check is wired into Django's registry, not just importable."""
+    from django.core.checks import registry
+
+    assert checks.check_settings_spec in registry.registry.get_checks()
+
+
+# ---------------------------------------------------------------------------
+# Open-Meteo key/host pairing (SNOW-580)
+# ---------------------------------------------------------------------------
+
+
+@override_settings(
+    DEBUG=False,
+    OPEN_METEO_API_BASE_URL="https://customer-api.open-meteo.com/v1",
+    OPEN_METEO_ARCHIVE_BASE_URL="https://customer-archive-api.open-meteo.com/v1",
+    OPEN_METEO_API_KEY="",
+)
+def test_open_meteo_customer_host_without_key_fails() -> None:
+    """The live incident: customer hosts with no key 401 on every request."""
+    errors = checks.check_open_meteo_key_host_pairing(app_configs=None)
+
+    assert [e.id for e in errors] == ["core.open_meteo.E002"]
+
+
+@override_settings(
+    DEBUG=False,
+    OPEN_METEO_API_BASE_URL="https://api.open-meteo.com/v1",
+    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
+    OPEN_METEO_API_KEY="sk-live-something",
+)
+def test_open_meteo_key_on_free_hosts_fails() -> None:
+    """A key that is never sent reads as "paid tier" while still on the free quota."""
+    errors = checks.check_open_meteo_key_host_pairing(app_configs=None)
+
+    assert [e.id for e in errors] == ["core.open_meteo.E001"]
+
+
+@override_settings(
+    DEBUG=False,
+    OPEN_METEO_API_BASE_URL="https://api.open-meteo.com/v1",
+    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
+    OPEN_METEO_API_KEY="",
+)
+def test_open_meteo_free_hosts_without_key_passes() -> None:
+    """The free tier, correctly configured, is silent."""
+    assert checks.check_open_meteo_key_host_pairing(app_configs=None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    OPEN_METEO_API_BASE_URL="https://customer-api.open-meteo.com/v1",
+    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
+    OPEN_METEO_API_KEY="sk-live-something",
+)
+def test_open_meteo_split_tier_with_key_passes() -> None:
+    """One host moved to the paid tier with a key set is a supported shape.
+
+    SNOW-579 sends the key only to a host that has been moved off its free
+    default, so a split configuration is legitimate rather than a mistake.
+    """
+    assert checks.check_open_meteo_key_host_pairing(app_configs=None) == []
+
+
+@override_settings(
+    DEBUG=True,
+    OPEN_METEO_API_BASE_URL="https://customer-api.open-meteo.com/v1",
+    OPEN_METEO_API_KEY="",
+)
+def test_open_meteo_pairing_is_skipped_under_debug() -> None:
+    """Local development runs whatever combination it likes."""
+    assert checks.check_open_meteo_key_host_pairing(app_configs=None) == []
+
+
+def test_open_meteo_pairing_check_is_registered() -> None:
+    """The check is wired into Django's registry, not just importable."""
+    from django.core.checks import registry
+
+    assert checks.check_open_meteo_key_host_pairing in registry.registry.get_checks()

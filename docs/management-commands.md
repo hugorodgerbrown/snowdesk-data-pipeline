@@ -470,6 +470,31 @@ incident that invalidates derived state:
 
 ### Health checks (read-only)
 
+- `dump_settings` — print every environment-derived setting with secrets
+  redacted, plus any validation problem, so "what is this environment
+  actually configured with" does not mean reading the Render dashboard
+  field by field (SNOW-580). The rows come from
+  `apps.core.settings_spec.SETTINGS_SPEC`, the same spec the
+  `core.settings` system check validates, so the dump and the deploy gate
+  can never disagree. Read-only by construction — no `--commit` flag,
+  because there is nothing to commit.
+
+  ```bash
+  # Everything, secrets redacted.
+  uv run python manage.py dump_settings
+
+  # Just what is broken — useful against a service whose deploy is failing.
+  uv run python manage.py dump_settings --problems-only
+
+  # Include each setting's purpose.
+  uv run python manage.py dump_settings -v 2
+  ```
+
+  Secrets print as `***redacted***` — never a prefix or a hash, because a
+  leaked prefix is still a leak in a pasted support thread. A setting that
+  is empty prints `(unset)`, so "I forgot this" is visually distinct from
+  "this is set to something".
+
 - `monitor_query_counts` — diff against the committed query-count baseline
   (`perf/query_counts.txt`). Runs in CI; locally surfaces regressions
   before a PR.
