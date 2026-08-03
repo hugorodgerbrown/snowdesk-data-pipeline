@@ -45,10 +45,12 @@
  * and refreshes the nav sync badge into its error colouring.
  *
  * Drain triggers (mirrors static/js/telemetry.js's ``_wireLifecycle``):
- * ``online``, ``visibilitychange`` → visible, a periodic timer, and
- * immediately after ``enqueue`` when ``navigator.onLine``. All of them
- * funnel through one in-flight guard (``_drainInFlight``) so concurrent
- * triggers never double-POST the same row.
+ * ``online``, ``visibilitychange`` → visible, a periodic timer,
+ * ``pagehide``, and immediately after ``enqueue`` when ``navigator.onLine``.
+ * All of them funnel through one in-flight guard (``_drainInFlight``) so
+ * concurrent triggers never double-POST the same row, and through one
+ * ``navigator.onLine`` guard in ``drain()`` so an offline trigger cannot
+ * spend a row's retry budget on a POST that can only fail.
  *
  * Public API — attached to ``window.pwaMutationQueue``:
  *
@@ -592,6 +594,15 @@
    * @returns {Promise<void>}
    */
   function drain() {
+    // Offline-integrity: don't replay to the network while offline — the
+    // POST can only fail, and each failure classifies as 'retry', spends one
+    // of the row's MAX_ATTEMPTS and lengthens its backoff. Rows stay queued;
+    // the ``online`` lifecycle trigger drains them on reconnect. Mirrors
+    // telemetry.js's flush() guard and the navigator.onLine check enqueue()
+    // already makes before its own drain.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve();
+    }
     if (_drainInFlight) return _drainInFlight;
     _drainInFlight = (async () => {
       var drained = 0;
@@ -763,6 +774,20 @@
           drain().catch(() => {});
         }
       }, DRAIN_INTERVAL_MS);
+    } catch (_e) {
+      // Non-fatal.
+    }
+    try {
+      // Best-effort drain as the tab tears down, and the only trigger that
+      // runs regardless of visibility. Unlike telemetry.js's mirror of this
+      // trigger there is no ``keepalive`` counterpart: a replay carries a
+      // body and an Idempotency-Key, so a fetch cut short by the teardown
+      // leaves the row queued for the next load or for the Background Sync
+      // registration made at enqueue time, and the server deduplicates a
+      // replay that did reach it.
+      window.addEventListener('pagehide', () => {
+        drain().catch(() => {});
+      });
     } catch (_e) {
       // Non-fatal.
     }

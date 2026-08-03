@@ -474,3 +474,59 @@ describe('drain-guard (SNOW-462)', () => {
     expect(discardedEvent.properties.reason).toBe('principal_mismatch');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 8. Offline guard — a drain while offline must not spend an attempt.
+// ---------------------------------------------------------------------------
+
+describe('offline drain guard', () => {
+  it('does not advance attempts across drains while navigator.onLine is false', async () => {
+    // Records only the mutation replay — telemetry.js's own flush shares
+    // this stub and would otherwise be counted as a queue round-trip.
+    const mutationCalls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url === MUTATION_URL) {
+          mutationCalls.push(url);
+          throw new TypeError('network error');
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    expect((await mutationRows())[0].attempts).toBe(0);
+
+    // Three passes stand in for the lifecycle triggers that keep firing
+    // while a tab stays open offline (online, visibilitychange, the 30s
+    // interval). Each unguarded pass burns one of the row's 20 attempts.
+    await window.pwaMutationQueue.drain();
+    await window.pwaMutationQueue.drain();
+    await window.pwaMutationQueue.drain();
+
+    const row = (await mutationRows())[0];
+    expect(row.attempts).toBe(0);
+    expect(row.status).toBe('queued');
+    expect(mutationCalls).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. pagehide drains as the tab tears down (mirrors telemetry.js).
+// ---------------------------------------------------------------------------
+
+describe('pagehide trigger', () => {
+  it('drains the queue when the tab is torn down', async () => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    expect((await mutationRows()).length).toBe(1);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 201 })));
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    window.dispatchEvent(new Event('pagehide'));
+
+    await waitFor(async () => (await mutationRows()).length === 0);
+  });
+});
