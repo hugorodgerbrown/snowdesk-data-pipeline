@@ -1,0 +1,46 @@
+# .gitleaks.toml — secret-scanning config for the CI backstop and the
+# pre-commit hook (invariant #5: no secrets in source).
+#
+# The default gitleaks ruleset is the baseline; this file only adds narrow
+# allowlists for specific, individually-assessed false positives that live
+# in git history. Every entry is scoped with `condition = "AND"` so it needs
+# BOTH a matching path AND a matching line — a genuinely new secret in one
+# of these files still fires.
+#
+# Do not add a bare `paths` entry to silence a file wholesale: that blinds
+# the scan to every future secret in it. If a new finding needs allowlisting,
+# assess it first and give it its own block with a reason (SNOW-599).
+
+[extend]
+useDefault = true
+
+# The pen.dev design canvas ends with a `fileToken` that is a plain UUID
+# document handle, sitting alongside the `font-sans` / `font-mono` design
+# tokens — it identifies the canvas, it does not authenticate to it. The
+# file is a local design scratch file and is gitignored (see .gitignore);
+# this entry covers the one commit that landed it on the unmerged branch
+# `chore/fix-design-system-inconsistencies` (3445c402).
+[[allowlists]]
+description = "pen.dev canvas fileToken is a document UUID, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^design-canvas\.pen$''']
+regexTarget = "line"
+regexes = ['''"fileToken"\s*:''']
+
+# FIELD_ENCRYPTION_KEY belonged to the EncryptedEmailField feature added in
+# SNOW-285 and reversed in SNOW-312 — the field, the setting and every
+# reader are gone from the tree, so the value decrypts nothing that exists.
+# It survives only in history at 45139b95: once as the example value in
+# .env.example, and four times as a hardcoded throwaway CI test key in the
+# workflow files. See docs/decisions/encrypted-email-field.md.
+[[allowlists]]
+description = "FIELD_ENCRYPTION_KEY from the reverted SNOW-312 feature (history only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+    '''^\.env\.example$''',
+    '''^\.github/workflows/(ci|e2e|lighthouse)\.yml$''',
+]
+regexTarget = "line"
+regexes = ['''FIELD_ENCRYPTION_KEY''']

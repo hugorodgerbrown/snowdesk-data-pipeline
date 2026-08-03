@@ -9,6 +9,13 @@
 # ruleset requirement (SNOW-481). The gitleaks scan is deliberately NOT
 # gated: Markdown can leak credentials just as well as code can, and the
 # weekly cron plus push runs are unaffected either way.
+#
+# The cron run scans full history, so it can fail on a commit that no PR
+# ever touched — it went red for four consecutive Mondays before anyone
+# noticed (SNOW-599). ``Secret scan (gitleaks)`` is a required check on both
+# the main and release rulesets, so a red cron run blocks releases outright:
+# treat a failure here as release-blocking, not informational. Allowlisted
+# historical findings live in ``.gitleaks.toml``.
 
 name: Security audit
 
@@ -143,6 +150,12 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin to the same version the pre-commit hook runs (see
+          # .pre-commit-config.yaml). Left unpinned the action installs its own
+          # default, which drifted to 8.24.3 while pre-commit ran 8.30.0 — a
+          # commit could then pass the hook and fail CI, or vice versa. Both
+          # sides read .gitleaks.toml, so both must parse it identically.
+          GITLEAKS_VERSION: "8.30.0"
           # Disable PR review comments: they need pull-requests:write, which
           # would defeat the least-privilege scoping (SNOW-506). The gate is
           # the non-zero exit on a detected leak, not the comment. The scan

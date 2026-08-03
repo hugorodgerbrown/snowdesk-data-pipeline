@@ -68,3 +68,8 @@ Thumbs.db
 
 # GeoIP database files — downloaded by bin/fetch-geoip-data; not committed
 reference_data/geoip/*.mmdb
+
+# pen.dev design canvas — a local design scratch file, not a project artefact.
+# It carries a `fileToken` document UUID that trips the gitleaks generic-api-key
+# rule (SNOW-599); keep it out of history rather than allowlisting new copies.
+design-canvas.pen
