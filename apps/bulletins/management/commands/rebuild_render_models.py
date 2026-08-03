@@ -270,15 +270,19 @@ class Command(BaseCommand):
 
         # Refresh day ratings for all (region, day) pairs covered by
         # successfully rebuilt bulletins.
+        rating_failures = 0
         if commit and not skip_day_ratings and pairs:
             self.stdout.write(
                 f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
             )
-            refresh_day_ratings(pairs)
+            # A failed recompute counts towards the exit code, matching the
+            # other three bulletin-rewriting commands (design rule 5).
+            rating_failures = refresh_day_ratings(pairs)
             self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
 
-        if errored > 0:
+        if errored > 0 or rating_failures > 0:
             raise CommandError(
-                f"{errored} bulletin(s) failed render-model rebuild. "
-                f"They are stored with version=0 error sentinels."
+                f"{errored} bulletin(s) failed render-model rebuild "
+                f"(stored with version=0 error sentinels); "
+                f"{rating_failures} (region, day) pair(s) failed to recompute."
             )

@@ -160,7 +160,7 @@ class Command(BaseCommand):
 
         """
         commit: bool = options["commit"]
-        verbosity: int = options.get("verbosity", 1)
+        verbosity: int = options["verbosity"]
 
         start_date: date | None = options["start_date"]
         end_date: date | None = options["end_date"]

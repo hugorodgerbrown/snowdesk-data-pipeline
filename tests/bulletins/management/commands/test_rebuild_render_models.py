@@ -248,6 +248,32 @@ class TestRebuildRenderModelsDayRatings:
         # But no day rating rows should have been created.
         assert not RegionDayRating.objects.filter(region=region).exists()
 
+    def test_day_rating_failure_exits_nonzero(self) -> None:
+        """A failed day-rating recompute surfaces in the exit code (SNOW-602).
+
+        The render-model rebuild itself succeeds here; only the downstream
+        recompute fails. Before SNOW-602 the return value of
+        ``refresh_day_ratings`` was discarded and the command exited 0,
+        unlike the three sibling commands that rewrite bulletins.
+        """
+        from unittest.mock import patch
+
+        region = MicroRegionFactory.create(region_id="CH-dr-fail")
+        b = _make_bulletin(render_model_version=0, bulletin_id="dr-fail-001")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+
+        with patch(
+            "apps.bulletins.management.commands.rebuild_render_models."
+            "refresh_day_ratings",
+            return_value=1,
+        ):
+            with pytest.raises(CommandError, match="failed to recompute"):
+                call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        # The rebuild itself still committed — only the recompute failed.
+        b.refresh_from_db()
+        assert b.render_model_version == RENDER_MODEL_VERSION
+
     def test_error_summary_printed_and_exits_nonzero(
         self, capsys: pytest.CaptureFixture
     ) -> None:
