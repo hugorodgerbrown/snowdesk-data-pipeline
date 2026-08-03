@@ -168,3 +168,20 @@ class TestBackfillBulletinTargetDatesCommand:
             if Bulletin.objects.get(pk=b.pk).target_date is not None
         )
         assert populated == 2
+
+    # ------------------------------------------------------------------
+    # Countdown (SNOW-602)
+    # ------------------------------------------------------------------
+
+    def test_stdout_carries_processed_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Each processed bulletin's pk is printed, newest id first."""
+        bulletins = _make_bulletins_missing_target_date(3)
+        pks = sorted((b.pk for b in bulletins), reverse=True)
+
+        call_command("backfill_bulletin_target_dates", commit=True)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed_pks == pks

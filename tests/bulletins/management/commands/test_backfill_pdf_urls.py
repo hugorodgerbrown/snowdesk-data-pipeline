@@ -383,6 +383,28 @@ class TestBackfillPdfUrlsErrorExit:
         assert b.pdf_url == ""
 
 
+@pytest.mark.django_db
+class TestBackfillPdfUrlsCountdown:
+    """SNOW-602: stdout carries the processed ids in descending order."""
+
+    def test_stdout_carries_processed_ids_in_descending_order(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Each processed bulletin's pk is printed, newest id first."""
+        _make_slf_bulletin(bulletin_id="slf-001")
+        _make_albina_bulletin(bulletin_id="albina-001")
+        pks = sorted(
+            Bulletin.objects.values_list("pk", flat=True),
+            reverse=True,
+        )
+
+        call_command("backfill_pdf_urls", commit=True)
+
+        out_lines = capsys.readouterr().out.splitlines()
+        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        assert printed_pks == pks
+
+
 class TestAlbinaCdnRegion:
     """Unit tests for the _albina_cdn_region prefix-extraction helper."""
 
