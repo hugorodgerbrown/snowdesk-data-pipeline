@@ -88,6 +88,10 @@ in addition to the shared map assets.
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
     {% include "public/partials/_favourites_surface.html" %}
+    {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
+    {# stored offline, what it costs, and a delete. Opened from the       #}
+    {# layers menu's "Manage downloads…" row, not from a map roundel.     #}
+    {% include "public/partials/_map_downloads_sheet.html" %}
 {% endblock %}
 
 {% block extra_js %}

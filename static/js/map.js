@@ -391,6 +391,44 @@ async function evictBasemapAreas(areaIds) {
   window.pwaDownloadedOverlay?.refresh();
 }
 
+// SNOW-588: the two functions above, for modules OUTSIDE this file — the
+// "Manage downloads" sheet (static/js/map_downloads_manager.js), which
+// lists every downloaded area and deletes the ones the user picks.
+//
+// Both are module scope, so the sheet cannot reach them directly, and
+// both are exactly what it needs — which is why it delegates rather than
+// reading `basemap.regions` / `basemap.customArea` for itself. Downloads
+// live in TWO records (one array of regions, one optional custom area),
+// each keyed differently from the Cache Storage bucket it owns, and
+// `evictBasemapAreas` already knows how to take an area id back to the
+// right half of the right record. A second reader would have to
+// re-derive all of that and would be free to drift from the eviction
+// path, which is the same state seen from the other side: the budget
+// this sheet edits is spent by the planner these functions feed.
+//
+// Exposed as one frozen object beside pwaDownloadedOverlay, the bridge
+// this file already uses for its sibling IIFEs.
+window.pwaBasemapDownloads = Object.freeze({
+  /**
+   * Every recorded area, normalised to `{id, name, bytes, savedAt}` and
+   * keyed by the id that also names its pinned Cache Storage bucket.
+   *
+   * @returns {Promise<Array<Object>>} Empty when nothing is recorded or
+   *   the read fails — never rejects.
+   */
+  areas: () => basemapDownloadedAreas(),
+
+  /**
+   * Delete whole areas — bucket and record entry both.
+   *
+   * @param {string[]} areaIds
+   * @returns {Promise<void>} Resolves whether or not every area went;
+   *   it is best-effort per area, so callers that need to know verify by
+   *   re-reading `areas()` rather than trusting this to report.
+   */
+  evict: (areaIds) => evictBasemapAreas(areaIds),
+});
+
 /**
  * SNOW-586: reveal the whole-area-eviction confirm banner naming
  * `evictAreas` and resolve once the user answers.
@@ -1261,12 +1299,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let basemapFallbackActive = false;
   // Mark the active radio so the popover renders in the right state on
   // first paint, before basemapPickerInit binds its click handlers.
-  // The selector deliberately excludes the SNOW-59 overlay checkboxes —
-  // they own their own aria-checked state, applied below from
-  // ``overlayState``.
+  //
+  // Selected POSITIVELY, by the data attribute that makes a row a basemap
+  // radio. This used to exclude the SNOW-59 overlay checkboxes instead
+  // (``:not(.basemap-menu-item--overlay)``), which was the same set for as
+  // long as the menu held only radios and checkboxes — but SNOW-588 added a
+  // third kind, a plain ``role="menuitem"`` action row, and exclusion
+  // silently swept it in and gave it an ``aria-checked`` state that means
+  // nothing on a menuitem. Overlay checkboxes still own their own state,
+  // applied below from ``overlayState``.
   if (basemapMenu) {
     for (const btn of basemapMenu.querySelectorAll(
-      '.basemap-menu-item:not(.basemap-menu-item--overlay)',
+      '.basemap-menu-item[data-basemap-key]',
     )) {
       btn.setAttribute(
         'aria-checked',
@@ -5754,6 +5798,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (open) clampMenuHeight();
   };
 
+  // SNOW-588: let the "Manage downloads" sheet close this menu when it
+  // opens over it. The menu's open state is three DOM writes held in this
+  // closure; mirroring them in map_downloads_manager.js would be a
+  // duplicate free to drift from the real one, so expose the setter
+  // instead — the same bridge pattern pwaDownloadedOverlay uses for the
+  // download controls in sibling IIFEs.
+  window.pwaLayersMenu = Object.freeze({
+    close() {
+      setMenuOpen(false);
+    },
+  });
+
   // SNOW-511: keep the cap correct if the viewport changes while the menu is
   // open (orientation flip, mobile URL-bar show/hide, desktop resize).
   window.addEventListener('resize', () => {
@@ -5955,9 +6011,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }));
       writeStorage(STORAGE_KEY, key);
       // Only update aria-checked on basemap radios — overlay checkboxes
-      // are independent and shouldn't be cleared when the basemap swaps.
+      // are independent and shouldn't be cleared when the basemap swaps,
+      // and SNOW-588's "Manage downloads…" action row has no checked state
+      // at all. Tested for positively rather than by excluding the overlay
+      // rows, so a fourth kind of row added later is left alone by default
+      // instead of silently acquiring an aria-checked it should not have.
       for (const other of items) {
-        if (other.dataset.overlayKey) continue;
+        if (!other.dataset.basemapKey) continue;
         other.setAttribute(
           'aria-checked',
           other === item ? 'true' : 'false',

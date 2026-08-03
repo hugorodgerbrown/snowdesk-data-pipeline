@@ -383,7 +383,7 @@ try {
 // (sw.js, sw_register.js, map.js, basemap_download_core.js,
 // basemap_cache_core.js) plus the new confirm-banner/over-budget-toast
 // markup (_overlay_banner.html, _map_embed.html).
-const CACHE_VERSION = 'snowdesk-shell-v105';
+const CACHE_VERSION = 'snowdesk-shell-v107';
 
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
 // (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS

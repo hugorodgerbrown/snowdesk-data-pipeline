@@ -430,9 +430,15 @@
     pointer-events: none;
 }
 
-/* SNOW-492: "Cache this area for offline" is a one-shot command, not a
-   persistent toggle — it never sets aria-checked, so the shared radio-dot
-   glyph would otherwise sit permanently empty. Hide it for this item only. */
+/* An action row in the layers menu: a one-shot command, not a persistent
+   toggle. It never sets aria-checked, so the shared radio-dot glyph would
+   otherwise sit permanently empty beside it — hide it for these rows only.
+
+   Introduced by SNOW-492 for "Cache this area for offline", which has since
+   moved out of the menu to its own roundel; SNOW-588's "Manage downloads…"
+   row (public/partials/_map_embed.html) is the current user. Those rows also
+   take role="menuitem" rather than menuitemcheckbox/menuitemradio, which is
+   the accessibility half of the same distinction this rule makes visually. */
 .basemap-menu-item--action::before {
     display: none;
 }
