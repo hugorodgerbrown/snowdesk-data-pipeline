@@ -184,6 +184,16 @@
     if (e.key !== 'Escape') return;
     if (overlay.hasAttribute('hidden')) return;
     hide(true);
+    // overlays.js dispatches 'overlay:dismissed' from its delegated click
+    // handler only, so the keyboard path has to announce itself — otherwise
+    // the teardown above (hash clear, ?intro=1 strip) never runs and the
+    // next reload forces the panel back open.
+    overlay.dispatchEvent(
+      new CustomEvent('overlay:dismissed', {
+        bubbles: true,
+        detail: { overlay: overlay },
+      }),
+    );
   });
 
   // ---- /#about hash restore ----
