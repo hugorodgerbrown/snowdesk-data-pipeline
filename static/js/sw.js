@@ -1281,7 +1281,33 @@ async function _warmCache(urls, options) {
         return 'other';
       }
       const cache = sameOrigin ? shellCache : basemapCache;
-      await cache.put(url.toString(), response.clone());
+      // SNOW-624: a same-origin response that is page HTML goes into the
+      // shell cache alongside the ones `_networkFirst` writes, and the
+      // offline read refuses any shell entry without a matching
+      // `X-SW-Principal` stamp (C1). Writing one unstamped would put it in
+      // the cache and make it permanently unservable — the user would see
+      // `offline.html` for a page the device demonstrably holds, with no
+      // error anywhere.
+      //
+      // Latent until now: both callers pass feeds and basemap tiles, so no
+      // HTML has ever reached here. But warming a page URL ahead of time is
+      // an obvious thing to want, and the trap would have sprung silently
+      // months later. Stamping rather than refusing, because that makes the
+      // obvious thing work instead of merely failing loudly.
+      //
+      // Scoped by content type so the feed path is untouched: reading the
+      // principal means buffering the body, and `/api/*` responses carry no
+      // `pwa-user-id` meta tag and are read back by `_staleWhileRevalidate`,
+      // which does not check a principal at all.
+      if (sameOrigin && _isHtmlResponse(response)) {
+        const html = await response.clone().text();
+        await cache.put(
+          url.toString(),
+          _stampPrincipal(response.clone(), _principalFromHtml(html)),
+        );
+      } else {
+        await cache.put(url.toString(), response.clone());
+      }
       // SNOW-586: measured off the same (unconsumed) response the clone
       // above was taken from — responseBytes clones again internally for
       // its blob fallback, so this never races the cache.put write.
@@ -1607,6 +1633,21 @@ function _principalMatches(cached, current) {
   const stamped = cached.headers.get(PRINCIPAL_HEADER);
   if (!stamped || stamped === PRINCIPAL_UNKNOWN) return false;
   return stamped === current;
+}
+
+/**
+ * True when ``response`` is page HTML rather than data (SNOW-624).
+ *
+ * The discriminator for "would `_networkFirst` have cached this, and so
+ * does the offline read expect a principal stamp on it?". Matches on the
+ * media type alone, ignoring any ``; charset=…`` parameter.
+ *
+ * @param {Response} response
+ * @returns {boolean}
+ */
+function _isHtmlResponse(response) {
+  const type = (response.headers && response.headers.get('Content-Type')) || '';
+  return type.split(';')[0].trim().toLowerCase() === 'text/html';
 }
 
 /**
