@@ -109,7 +109,7 @@
    * @returns {maplibregl.Map|null}
    */
   function getMap() {
-    return typeof MAP !== 'undefined' ? MAP : null; // eslint-disable-line no-undef
+    return typeof MAP !== 'undefined' ? MAP : null;
   }
 
   /** @returns {HTMLElement|null} The centre-pin element, if in the DOM. */

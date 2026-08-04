@@ -9,6 +9,10 @@
  *
  * Three of these assertions are load-bearing rather than incidental:
  *
+ *   - ``DEFAULT_BUDGET_MB`` matches ``basemap_download_core.js``'s
+ *     ``DOWNLOAD_BUDGET_MB`` (SNOW-615) — the standing 500 MB budget is
+ *     declared in both, and a device that has never opened the sheet
+ *     budgets on one while a device that has budgets on the other.
  *   - ``MIN_BUDGET_MB`` matches ``basemap_download_core.js``'s
  *     ``DOWNLOAD_CEILING_MB``. The two modules are separate page-scope
  *     IIFEs with no module system between them, so the constant is
@@ -46,6 +50,18 @@ describe('constants', () => {
     // constants. If DOWNLOAD_CEILING_MB moves, this fails and the budget
     // floor must move with it.
     expect(core.MIN_BUDGET_MB).toBe(downloadCore.DOWNLOAD_CEILING_MB);
+  });
+
+  it("agrees with basemap_download_core.js's DOWNLOAD_BUDGET_MB default", () => {
+    // SNOW-615: the same 500 MB standing budget is declared twice — here as
+    // `DEFAULT_BUDGET_MB` (what the manage sheet preselects) and in
+    // `basemap_download_core.js` as `DOWNLOAD_BUDGET_MB` (what
+    // `basemapDownloadBudgetBytes()` falls back to when no `basemap.budgetMb`
+    // row exists). A device that has never opened the sheet budgets on the
+    // second; one that has, on the first. If they drift, the sheet opens
+    // showing a figure the planner has never used, and the first interaction
+    // silently changes the budget by writing the row.
+    expect(core.DEFAULT_BUDGET_MB).toBe(downloadCore.DOWNLOAD_BUDGET_MB);
   });
 
   it('offers the minimum as the smallest choice and 500 as the default', () => {

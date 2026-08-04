@@ -13,11 +13,18 @@ Context expected:
   today             — datetime.date: current date (for data-default-date).
   default_region_id — str: the region whose ribbon is server-rendered (CH-4115).
 
-The strip is fully interactive once map.js has the season-ratings cache
-(seasonRibbonInit IIFE, SNOW-314): clicking a cell dispatches
-``snowdesk:scrub-to`` to drive the scrubber; ``snowdesk:region-selected``
-swaps the cells to the new region; ``snowdesk:date-changed`` keeps the
-active-day highlight in sync.
+This element is the data carrier (season bounds + default region) and the
+caption header. The visible cells are painted by map.js's seasonRibbonInit
+IIFE into the SCRUBBER's own track once the season-ratings cache resolves,
+so they are decorative rather than interactive — the scrubber thumb they
+sit behind is what the user drags, and the ribbon just colours the ground
+it runs over. ``snowdesk:region-selected`` swaps the cells to the new
+region; ``snowdesk:date-changed`` keeps the active-day highlight in sync.
+
+There was a ``snowdesk:scrub-to`` click-to-scrub contract here until
+SNOW-615: no cell had carried a click handler since the cells moved into
+the track, so the documented event had no dispatcher and map.js's listener
+for it was dead.
 {% endcomment %}
 {% if ribbon %}
     <div

@@ -16,8 +16,8 @@
  * server-side (``regions.services.basemap_tiles`` — see that module's
  * docstring for the stored blob shape) and served over the API, so the
  * per-*region* download does no tile enumeration or byte-estimate
- * arithmetic of its own — ``rangesToTileURLs``/``centreTileURL`` below
- * still just turn that server-computed data into URLs.
+ * arithmetic of its own — ``rangesToTileURLs`` below still just turns
+ * that server-computed data into URLs.
  *
  * SNOW-522 re-introduces the tile-index/byte-estimate arithmetic
  * client-side, deliberately, for the *custom-area* download: a
@@ -70,14 +70,6 @@
  *     ``{z}/{x}/{y}`` tile URLs, substituted into ``template``. Returns
  *     ``[]`` for a falsy ``template`` or ``blob``, or a blob with no
  *     ``z`` ranges.
- *   centreTileURL(template, summary)
- *     Builds the single tile URL for ``summary.centre_tile``
- *     (``{z, x, y}``) — the "done-probe" key: the client checks whether
- *     this one tile is present in the pinned cache as a proxy for "this
- *     download completed" (matches the download's centre tile at its
- *     band's detail floor, whether server-picked (region) or
- *     locally-computed (custom area)). Returns ``null`` for a falsy
- *     ``template``/``summary``/``summary.centre_tile``.
  *   lonLatToTile(lon, lat, z)
  *     Web Mercator ``[x, y]`` tile indices for ``(lon, lat)`` at zoom
  *     ``z`` — mirror of ``basemap_tiles.lon_lat_to_tile``. Not clamped
@@ -96,7 +88,7 @@
  *   buildBlob(bbox, minZ, maxZ)
  *     The full blob (``{band, count, mb, over_ceiling, centre_tile, z}``)
  *     — mirror of ``basemap_tiles.build_blob`` — produced in the SAME
- *     shape ``rangesToTileURLs``/``centreTileURL`` already consume, so a
+ *     shape ``rangesToTileURLs`` already consumes, so a
  *     locally-built blob and a server-fetched one are interchangeable.
  *   budgetScaleForBBox(bbox, minZ, maxZ)
  *     The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
@@ -161,19 +153,14 @@
  *
  * SNOW-569 and the tile-grid rework that followed it add a second
  * client-only group — the geometry a download's on-map progress grid
- * needs (``geometryBounds``, ``bboxPolygon``,
- * ``tileBounds``, ``gridZoomFor``, ``tileGridPlan``). Like
+ * needs (``bboxPolygon``, ``tileBounds``, ``gridZoomFor``,
+ * ``tileGridPlan``). Like
  * ``budgetScaleForBBox`` these have no ``basemap_tiles.py`` counterpart
  * and need none: the server never draws anything. They live here rather
  * than in ``map.js`` because they are pure functions of geometry, which
  * makes them unit-testable without a MapLibre instance — everything in
  * ``map.js`` that touches them is a side effect on a live map.
  *
- *   geometryBounds(geometry)
- *     ``[west, south, east, north]`` of a Polygon/MultiPolygon, or
- *     ``null`` for anything else. Antimeridian-naive, which is safe for
- *     every geometry this project downloads (Alpine regions and a
- *     user-framed rectangle).
  *   bboxPolygon(bbox)
  *     A ``bbox`` as a GeoJSON Polygon — the custom-area download's
  *     equivalent of a region's own boundary.
@@ -410,25 +397,6 @@
     return urls;
   }
 
-  /**
-   * Build the single "done-probe" tile URL for a download summary.
-   *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
-   * @param {{centre_tile?: {z: number, x: number, y: number}}} summary A
-   *   download's summary (the small ``{count, mb, over_ceiling,
-   *   centre_tile}`` shape inlined on the geojson endpoints' ``properties.
-   *   download``, a full server-fetched blob, or a locally-built
-   *   ``buildBlob`` result — all carry ``centre_tile`` in the same shape).
-   * @returns {string | null}
-   */
-  function centreTileURL(template, summary) {
-    if (!template || !summary || !summary.centre_tile) return null;
-    const { z, x, y } = summary.centre_tile;
-    return template
-      .replace('{z}', String(z))
-      .replace('{x}', String(x))
-      .replace('{y}', String(y));
-  }
 
   /**
    * Web Mercator ``[x, y]`` tile indices for ``(lon, lat)`` at zoom ``z``.
@@ -532,8 +500,9 @@
   }
 
   /**
-   * The tile at ``bbox``'s centre point, at zoom ``z`` — the "done-probe"
-   * key (see ``centreTileURL`` above).
+   * The tile at ``bbox``'s centre point, at zoom ``z``. Recorded on a
+   * download's blob as ``centre_tile``; ``map.js``'s ``_probeDone`` reads
+   * it back off the stored record rather than re-deriving a URL for it.
    *
    * Deliberate re-port of ``basemap_tiles.centre_tile``.
    *
@@ -553,7 +522,7 @@
 
   /**
    * Build the full download blob for ``bbox`` — the SAME shape
-   * ``rangesToTileURLs``/``centreTileURL`` consume, and the same shape
+   * ``rangesToTileURLs`` consumes, and the same shape
    * ``/api/region-basemap-tiles/`` serves for a region download.
    *
    * Deliberate re-port of ``basemap_tiles.build_blob``.
@@ -693,49 +662,6 @@
     return needed <= (quota - usage) * STORAGE_HEADROOM_FACTOR;
   }
 
-  /**
-   * The polygon rings of ``geometry``, as a flat list — one entry per
-   * ring, outer and inner alike. ``[]`` for anything that isn't a
-   * Polygon or MultiPolygon.
-   *
-   * @param {{type?: string, coordinates?: any}} geometry
-   * @returns {number[][][]}
-   */
-  function _rings(geometry) {
-    if (!geometry || !geometry.coordinates) return [];
-    if (geometry.type === 'Polygon') return geometry.coordinates;
-    if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat();
-    return [];
-  }
-
-  /**
-   * ``[west, south, east, north]`` of a Polygon/MultiPolygon.
-   *
-   * Antimeridian-naive: a geometry straddling ±180° would get a bounds
-   * spanning the whole globe. Nothing this project downloads does — a
-   * region boundary and a user-framed rectangle are both small and
-   * Alpine — and the fill only needs the north/south edges anyway.
-   *
-   * @param {{type?: string, coordinates?: any}} geometry
-   * @returns {[number, number, number, number] | null} ``null`` for a
-   *   non-polygon geometry or one with no positions.
-   */
-  function geometryBounds(geometry) {
-    let west = Infinity;
-    let south = Infinity;
-    let east = -Infinity;
-    let north = -Infinity;
-    for (const ring of _rings(geometry)) {
-      for (const [lon, lat] of ring) {
-        if (lon < west) west = lon;
-        if (lon > east) east = lon;
-        if (lat < south) south = lat;
-        if (lat > north) north = lat;
-      }
-    }
-    if (!Number.isFinite(west) || !Number.isFinite(south)) return null;
-    return [west, south, east, north];
-  }
 
   /**
    * ``bbox`` as a GeoJSON Polygon, wound anticlockwise from its
@@ -1148,7 +1074,6 @@
   self.pwaBasemapDownloadCore = Object.freeze({
     zoomRows: zoomRows,
     rangesToTileURLs: rangesToTileURLs,
-    centreTileURL: centreTileURL,
     lonLatToTile: lonLatToTile,
     tileRangesForBBox: tileRangesForBBox,
     tileCount: tileCount,
@@ -1156,7 +1081,6 @@
     buildBlob: buildBlob,
     budgetScaleForBBox: budgetScaleForBBox,
     hasStorageHeadroom: hasStorageHeadroom,
-    geometryBounds: geometryBounds,
     bboxPolygon: bboxPolygon,
     tileBounds: tileBounds,
     cachedTilesFromURLs: cachedTilesFromURLs,

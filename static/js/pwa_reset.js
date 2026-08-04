@@ -3,20 +3,21 @@
  *
  * Spec §3.10 / §10.6 / §12.7 (non-negotiable). Single-tap recovery for
  * a stuck installation: any element with ``data-pwa-reset-trigger``
- * gets a click handler that runs the six-step wipe from the spec and
- * reloads the page. Also called by the Update Required modal
- * (``pwa_version_check.js``) when its own reset dance fails to land the
- * user on a fresh client.
+ * gets a click handler that runs the wipe from the spec and reloads the
+ * page. Also the wipe every programmatic caller goes through:
+ * ``db.js``'s Reset Required overlay CTA, and (since SNOW-615) the
+ * Update Required modal in ``pwa_version_check.js``, which until then
+ * carried its own copy that spared IndexedDB entirely. Both reach it via
+ * ``window.pwaResetLocalData``.
  *
  * The six steps, in order:
  *   (1) Unregister every service worker via ``getRegistrations()``.
  *   (2) Delete every Cache Storage entry via ``caches.keys()``.
  *   (3) Delete every IndexedDB database. ``indexedDB.databases()`` is
  *       the preferred entry point; browsers without it (older Safari)
- *       are handled by iterating a known DB-name list. Snowdesk does
- *       not yet own any IndexedDB databases (SNOW-375 is a follow-up)
- *       so the fallback list is empty for now — noted so future work
- *       has an obvious place to extend.
+ *       are handled by iterating ``KNOWN_DB_NAMES`` below, which since
+ *       SNOW-375 holds the one database this app owns. Extend that list
+ *       rather than this comment when a second one arrives.
  *   (4) Clear ``localStorage`` and ``sessionStorage``.
  *   (5) Reload the page — but only on a clean run.
  *

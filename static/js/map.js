@@ -39,6 +39,36 @@ let BOOT_DATE_KEY = null;
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// SNOW-615: the localStorage keys the map persists its chrome state under,
+// at module scope so each has exactly one owner.
+//
+// `OVERLAY_STORAGE_KEY` was declared three times — once in the main IIFE,
+// once in `basemapPickerInit`, and (as a bare literal) in the autozoom
+// toggle — with the picker's copy silently dropping the two explanatory
+// comments the main one carries. Three literal copies of a key that the
+// reader and the writer must agree on is drift waiting to happen: a typo
+// in one is not a crash, it is a setting that no longer persists.
+const OVERLAY_STORAGE_KEY = {
+  l1: 'snowdesk.map.overlay.l1',
+  l2: 'snowdesk.map.overlay.l2',
+  l4: 'snowdesk.map.overlay.l4',
+  resorts: 'snowdesk.map.overlay.resorts',
+  // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
+  // key is only ever read/written) when data-favourites-eligible="true".
+  favourites: 'snowdesk.map.overlay.favourites',
+  // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
+  // is only ever read/written) when data-community-reports-eligible="true".
+  community_reports: 'snowdesk.map.overlay.community_reports',
+  // SNOW-570: which areas are held in the pinned basemap cache.
+  downloaded: 'snowdesk.map.overlay.downloaded',
+};
+
+// No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
+// persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR.
+
+const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
+
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
 // uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
 // (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
@@ -191,13 +221,24 @@ function assembleBasemapDownloadFeedURLs() {
 }
 
 // SNOW-586: the Cache Storage name prefix every per-area pinned basemap
-// bucket shares — mirrors static/js/sw.js's BASEMAP_PINNED_CACHE_PREFIX
-// and basemap_download_core.js's own PINNED_CACHE_PREFIX exactly (three
-// literals, one per script-loading context, kept honest against each
-// other by tests/js/test_basemap_download_core.js's round-trip
-// assertion). Module scope because it used to be copied verbatim into
-// both download controls' own closures — see pinnedBasemapCacheURLs's own
-// comment for why that duplication is gone.
+// bucket shares. FOUR literals hold this value, one per script-loading
+// context: this one, static/js/sw.js's BASEMAP_PINNED_CACHE_PREFIX,
+// basemap_download_core.js's PINNED_CACHE_PREFIX, and
+// map_layer_sync_status.js's PINNED_BASEMAP_CACHE_PREFIX.
+//
+// SNOW-615: this comment used to say three literals "kept honest against
+// each other by tests/js/test_basemap_download_core.js's round-trip
+// assertion". That test asserts only that basemap_download_core's
+// pinnedCacheName() returns its OWN prefix plus the area id — it cannot
+// see this file, sw.js or map_layer_sync_status.js, so it holds nothing
+// honest against anything. Cross-file agreement here is a review
+// discipline, not an enforced mechanism (the same convention
+// basemap_tiles.py's shared golden vector documents for the Python↔JS
+// tile math): changing one copy means checking the other three.
+//
+// Module scope because it used to be copied verbatim into both download
+// controls' own closures — see pinnedBasemapCacheURLs's own comment for
+// why that duplication is gone.
 const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
 /**
@@ -1525,7 +1566,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // lives in basemapPickerInit() at the bottom of this file; the
   // ``style.load`` handler inside the main IIFE re-installs the regions
   // source + layers when MAP.setStyle() loads a new style.
-  const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
   const basemapMenu = document.getElementById('basemap-menu');
   const BASEMAP_OPTIONS = {};
   if (basemapMenu) {
@@ -1630,22 +1670,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Visibility is user-driven via the basemap picker popover and
   // persisted in localStorage; the ``style.load`` handler re-applies
   // it after a basemap swap.
-  // No ``l3`` entry: the bulletin-boundary layer has no toggle and no
-  // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR below.
-  const OVERLAY_STORAGE_KEY = {
-    l1: 'snowdesk.map.overlay.l1',
-    l2: 'snowdesk.map.overlay.l2',
-    l4: 'snowdesk.map.overlay.l4',
-    resorts: 'snowdesk.map.overlay.resorts',
-    // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
-    // key is only ever read/written) when data-favourites-eligible="true".
-    favourites: 'snowdesk.map.overlay.favourites',
-    // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
-    // is only ever read/written) when data-community-reports-eligible="true".
-    community_reports: 'snowdesk.map.overlay.community_reports',
-    // SNOW-570: which areas are held in the pinned basemap cache.
-    downloaded: 'snowdesk.map.overlay.downloaded',
-  };
+  // Keys: the module-scope OVERLAY_STORAGE_KEY above.
   // L4 defaults to visible: hiding it leaves only the basemap and any
   // active overlay tiers, which is intended. SNOW-78 resorts default off
   // so the map opens uncluttered.
@@ -1703,7 +1728,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const loadedCountries = new Set();
 
   // SNOW-63: restore auto-zoom preference from localStorage.
-  AUTOZOOM = readBoolStorage('snowdesk.map.autozoom', false);
+  AUTOZOOM = readBoolStorage(AUTOZOOM_STORAGE_KEY, false);
   // Reflect the persisted overlay state on first paint so the popover
   // matches reality before the click handler at the bottom of the file
   // takes over.
@@ -5773,13 +5798,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   });
 
-  // SNOW-314: ribbon click-to-scrub — the season ribbon dispatches this
-  // event when a day cell is clicked; commitDate drives the scrubber thumb
-  // and repaints the choropleth just as a drag-release would.
-  document.addEventListener('snowdesk:scrub-to', (e) => {
-    commitDate(e.detail.date);
-  });
-
 })();
 
 // SNOW-38: Collapsible danger-scale legend. State persists in localStorage
@@ -6092,7 +6110,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const items = Array.from(menu.querySelectorAll('.basemap-menu-item'));
   if (items.length === 0) return;
 
-  const STORAGE_KEY = 'snowdesk.map.basemap';
+  const STORAGE_KEY = BASEMAP_STORAGE_KEY;
 
   // SNOW-511: the menu is bottom-anchored (CSS `bottom: -96px`) and grows
   // upward. On a short viewport a tall menu grows past the top of #map,
@@ -6201,15 +6219,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // refresh that decides WHICH tiles are drawn is driven from the main
     // IIFE's snowdesk:downloaded-overlay-changed handler.
     downloaded: ['cached-tiles-fill', 'cached-tiles-line'],
-  };
-  const OVERLAY_STORAGE_KEY = {
-    l1: 'snowdesk.map.overlay.l1',
-    l2: 'snowdesk.map.overlay.l2',
-    l4: 'snowdesk.map.overlay.l4',
-    resorts: 'snowdesk.map.overlay.resorts',
-    favourites: 'snowdesk.map.overlay.favourites',
-    community_reports: 'snowdesk.map.overlay.community_reports',
-    downloaded: 'snowdesk.map.overlay.downloaded',
   };
 
   for (const item of items) {
@@ -7944,7 +7953,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const btn = document.getElementById('autozoom-toggle');
   if (!btn) return;
 
-  const STORAGE_KEY = 'snowdesk.map.autozoom';
+  const STORAGE_KEY = AUTOZOOM_STORAGE_KEY;
 
   const sync = () => {
     btn.setAttribute('aria-checked', AUTOZOOM ? 'true' : 'false');

@@ -17,10 +17,10 @@ The phrase re-renders on a timer while the banner is shown, so an
 open banner keeps counting up rather than freezing. It falls back to an
 em dash until the first sync is known.
 
-Opening the caret reveals a short explanation of the offline state. The
-data-generated clock (``freshness.last_generated_at``, read from
-``X-Data-Generated-At``, SNOW-370) is still absorbed and persisted by the
-ledger, but is no longer surfaced on the banner itself.
+Opening the caret reveals a short explanation of the offline state. There
+is one clock, not two: a ``freshness.last_generated_at`` companion read
+from ``X-Data-Generated-At`` (SNOW-370) was absorbed and persisted but
+never surfaced anywhere, and SNOW-615 removed it.
 
 In-flow, not ``fixed`` — it sits as the first child of the body, above
 ``includes/nav.html``, so when revealed it pushes the nav and page

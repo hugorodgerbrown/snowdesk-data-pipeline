@@ -66,7 +66,7 @@
    * @returns {maplibregl.Map|null}
    */
   function getMap() {
-    return typeof MAP !== 'undefined' ? MAP : null; // eslint-disable-line no-undef
+    return typeof MAP !== 'undefined' ? MAP : null;
   }
 
   /** Ids of every layer this app draws over the basemap — see the header

@@ -271,7 +271,6 @@
       // A reveal always wins over an in-progress dismiss.
       _cancelToastHideTransition(el);
       el.classList.remove('hidden');
-      // eslint-disable-next-line no-unused-expressions
       el.offsetWidth; // force layout — see comment above.
       el.classList.remove('-translate-y-full', 'opacity-0');
       el.classList.add('translate-y-0', 'opacity-100');
@@ -620,7 +619,6 @@
         for (const row of eligible) {
           // Sequential, not parallel — keeps replay order stable and
           // avoids concurrent writes to the same store racing each other.
-          // eslint-disable-next-line no-await-in-loop
           var result = await _processRow(row);
           if (result === 'success') drained += 1;
         }

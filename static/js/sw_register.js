@@ -654,10 +654,19 @@
         // Ignore — telemetry must never block the kill switch.
       }
       // Mechanism A activated. Unregister every SW on this origin so the
-      // next navigation runs without a controller. We don't touch caches
-      // here — that's the kill-switch SW's job when the flip goes through
-      // Mechanism B (``/sw-kill.js``). This path just gets the SW out of
-      // the way; the user can hard-refresh to clear anything else.
+      // next navigation runs without a controller. Caches are deliberately
+      // left alone: that is the kill-switch SW's job when the flip goes
+      // through Mechanism B (``/sw-kill.js``), and not wiping a user's
+      // deliberate 500 MB of downloaded basemaps because ops flipped a
+      // temporary switch is the right trade.
+      //
+      // SNOW-615: this used to say "the user can hard-refresh to clear
+      // anything else". A hard refresh does not clear Cache Storage, and
+      // unregistering the worker also removes the only worker-side reaper
+      // (the activate sweep) — so that sentence described a recovery that
+      // does not exist. Nothing is permanently stranded: the page-side
+      // paths still work (``pwa_reset.js``, ``clearShellCachesAndReload``
+      // below, and ``evictBasemapAreas`` in map.js).
       navigator.serviceWorker
         .getRegistrations()
         .then((regs) => Promise.all(regs.map((r) => r.unregister())))

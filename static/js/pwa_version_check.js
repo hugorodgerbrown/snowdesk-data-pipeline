@@ -180,33 +180,33 @@
   }
 
   /**
-   * The nuclear-option recovery path: unregister every SW, delete every
-   * Cache Storage entry, then reload. Called from the modal's "Reload
-   * now" button so the user sees a single deterministic outcome.
+   * The full local-data wipe, then a reload.
+   *
+   * SNOW-615: delegates to ``window.pwaResetLocalData`` (static/js/pwa_reset.js)
+   * rather than reimplementing it. This file used to carry its own copy,
+   * whose docstring called it "the nuclear-option recovery path" while
+   * leaving IndexedDB — the mutation queue, the offline favourites roster,
+   * the cached ratings — entirely intact. `pwa_reset.js`'s own header
+   * already claimed this module called it; now it does.
+   *
+   * Falls back to a plain reload when `pwa_reset.js` has not loaded — this
+   * runs on a page that may already be part-broken, so the reload is the
+   * floor rather than the plan.
+   *
+   * @returns {Promise<void>}
    */
   async function resetAndReload() {
     try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-      }
-    } catch (_err) {
-      // Non-fatal — reload anyway.
-    }
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (_err) {
-      // Non-fatal — reload anyway.
-    }
-    try {
       localStorage.removeItem(FIRST_SHOWN_KEY);
     } catch (_err) {
-      // Ignore.
+      // Ignore — this key is a soft-banner throttle, not state the reset
+      // depends on.
     }
-    window.location.reload();
+    if (typeof window.pwaResetLocalData !== 'function') {
+      window.location.reload();
+      return;
+    }
+    await window.pwaResetLocalData(true);
   }
 
   /**

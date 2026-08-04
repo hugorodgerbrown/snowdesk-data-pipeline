@@ -182,12 +182,12 @@ every public page. Its responsibilities:
     6 minutes ago" — rendered with `Intl.RelativeTimeFormat` and
     re-rendered on a 30s timer while the banner is shown, so it counts
     up rather than freezing.
-  - `freshness.last_generated_at` — newest `X-Data-Generated-At`
-    header seen, absorbed regardless of cache-hit status. Persisted for
-    the ledger but **not** surfaced on the banner; the caret opens a
-    short plain-language explanation of the offline state instead.
-  - Off-season these can differ substantially: a device that synced
-    minutes ago can still be showing a rating generated weeks earlier.
+  - SNOW-482 added a second clock alongside it,
+    `freshness.last_generated_at` — the newest `X-Data-Generated-At`
+    header seen — persisted "for the ledger" but never surfaced. Nothing
+    read it in the three tickets of banner work that followed, so
+    SNOW-615 removed it. Rows already written under that key on devices
+    in the field are simply never read again.
 - Toggle the `disabled` state of any element carrying
   `data-network-required` (and cascade into child submit buttons of
   form containers) so a user can't fire a mutation offline.
@@ -471,7 +471,8 @@ Shipped from the observability + IndexedDB track:
   separate, still-open follow-up.
 - **SNOW-482** — Splits the single in-memory freshness ledger into two
   persisted `meta:app` clocks (`sync.last_at` /
-  `freshness.last_generated_at`), stamps cache-served responses with
+  `freshness.last_generated_at` — the latter removed again by SNOW-615,
+  having never been read), stamps cache-served responses with
   `X-SW-Cache: hit` (`static/js/sw.js`) so the two can be told apart,
   and adds a `log:sync` IndexedDB store (schema v3) with a manage-page
   read-out panel and matching `/help/` section behind the `sync_log`
