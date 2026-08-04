@@ -7,13 +7,12 @@ everything it needs to run the check.
 
 Covered:
 
-* ``apps.public.context_processors.pwa_version`` returns the two build strings
-  and passes them through untouched.
+* ``apps.public.context_processors.pwa_version`` returns the build string
+  and passes it through untouched.
 * Every page response bakes the current build into the
   ``<meta name="pwa-app-version">`` tag.
-* Every page response bakes the min-version into the
-  ``<meta name="pwa-app-min-version">`` tag (empty content when the
-  setting is empty — the client treats "" as "no floor enforced").
+* The ``<meta name="pwa-app-min-version">`` tag is gone (SNOW-609) — there
+  is no client-side floor to compare against any more.
 * The blocking modal partial ships hidden on every page (revealed by JS).
 * The version-check script is loaded on every page.
 """
@@ -28,53 +27,45 @@ from apps.public.context_processors import pwa_version
 
 
 def test_context_processor_returns_configured_values() -> None:
-    """The context processor exposes both settings verbatim as strings."""
-    with override_settings(
-        APP_VERSION="2026.07.15.abcdef", APP_MIN_VERSION="2026.07.01"
-    ):
+    """The context processor exposes the build setting verbatim as a string."""
+    with override_settings(APP_VERSION="2026.07.15.abcdef"):
         result = pwa_version(HttpRequest())
 
-    assert result == {
-        "APP_VERSION": "2026.07.15.abcdef",
-        "APP_MIN_VERSION": "2026.07.01",
-    }
+    assert result == {"APP_VERSION": "2026.07.15.abcdef"}
 
 
-def test_context_processor_defaults_to_empty_strings() -> None:
-    """Missing settings are exposed as empty strings, not raised."""
-    with override_settings(APP_VERSION="", APP_MIN_VERSION=""):
+def test_context_processor_defaults_to_empty_string() -> None:
+    """A missing setting is exposed as an empty string, not raised."""
+    with override_settings(APP_VERSION=""):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": "", "APP_MIN_VERSION": ""}
+    assert result == {"APP_VERSION": ""}
 
 
 @pytest.mark.django_db
-@override_settings(
-    APP_VERSION="2026.07.15.testbuild", APP_MIN_VERSION="2026.07.01.floor"
-)
-def test_meta_tags_present_on_home_page() -> None:
-    """Home page bakes both version tags into the shell."""
+@override_settings(APP_VERSION="2026.07.15.testbuild")
+def test_meta_tag_present_on_home_page() -> None:
+    """Home page bakes the version tag into the shell."""
     response = Client().get("/")
     body = response.content.decode("utf-8")
 
     assert '<meta name="pwa-app-version" content="2026.07.15.testbuild">' in body
-    assert '<meta name="pwa-app-min-version" content="2026.07.01.floor">' in body
 
 
 @pytest.mark.django_db
-@override_settings(APP_VERSION="dev", APP_MIN_VERSION="")
-def test_empty_min_version_still_ships_the_tag() -> None:
-    """Empty min-version renders as an empty ``content=""`` — never omitted.
+@override_settings(APP_VERSION="dev")
+def test_min_version_meta_tag_is_gone() -> None:
+    """The shell no longer carries a client-side floor (SNOW-609).
 
-    The client relies on the tag being present so it can distinguish
-    "server declared no floor" from "an ancient server that doesn't know
-    about the header". Same rationale as the response-header middleware.
+    The tag fed a string-inequality comparison against a git SHA, which
+    read every client as below the floor. There is nothing for the client
+    to compare any more — ``/api/version`` returns the verdict itself.
     """
     response = Client().get("/")
     body = response.content.decode("utf-8")
 
     assert '<meta name="pwa-app-version" content="dev">' in body
-    assert '<meta name="pwa-app-min-version" content="">' in body
+    assert "pwa-app-min-version" not in body
 
 
 @pytest.mark.django_db

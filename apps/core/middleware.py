@@ -18,11 +18,16 @@ same-origin POST form (``same-origin`` is required there so the POST is not
 sent with ``Origin: null``, which Django's CSRF check rejects on HTTPS — see
 SNOW-438).
 
-``AppVersionHeaderMiddleware`` stamps ``X-App-Version`` and
-``X-App-Min-Version`` on every response (SNOW-369). The PWA client reads
-these on every response — not just at startup — so mid-session transitions
-into a forced-update state fire the moment the deploy rolls, without
-waiting for the next visit to ``/api/version``.
+``AppVersionHeaderMiddleware`` stamps ``X-App-Version`` on every response
+(SNOW-369). The PWA client reads it on every response — not just at startup
+— so a deploy is noticed the moment it rolls, without waiting for the next
+scheduled visit to ``/api/version``.
+
+SNOW-609 removed the companion ``X-App-Min-Version`` header. The client no
+longer compares versions at all: whether a build is acceptable is a server
+decision, returned as ``update_required`` in the ``/api/version`` body.
+Dropping the header also disarms already-deployed shells, which read a
+missing floor as "no floor enforced".
 """
 
 from __future__ import annotations
@@ -105,18 +110,21 @@ class SecurityHeadersMiddleware:
 
 
 class AppVersionHeaderMiddleware:
-    """Stamp ``X-App-Version`` and ``X-App-Min-Version`` on every response.
+    """Stamp ``X-App-Version`` on every response.
 
-    The PWA client compares its own build to ``X-App-Min-Version`` on every
-    response and enters an Update Required state when it falls behind,
-    without needing to poll ``/api/version``. Empty ``APP_MIN_VERSION``
-    (the default) still sends the header — the client treats an empty
-    string as "no minimum enforced", which is safer than an omitted header
-    that could be confused with an older server that never set it.
+    The PWA client compares its own build to this header on every response
+    and, on a mismatch, schedules one authoritative ``/api/version`` round
+    trip — the header is a hint that something may have moved, never a
+    verdict (``static/js/pwa_version_check.js``).
+
+    SNOW-609: the companion ``X-App-Min-Version`` header is gone. It carried
+    ``settings.APP_MIN_VERSION``, a floor the client compared against by
+    string inequality — meaningless when ``APP_VERSION`` resolves to a git
+    SHA. Whether a client must force-update is now decided server-side and
+    reported only in the ``/api/version`` body.
     """
 
     _CURRENT_HEADER = "X-App-Version"
-    _MIN_HEADER = "X-App-Min-Version"
 
     def __init__(
         self,
@@ -126,14 +134,13 @@ class AppVersionHeaderMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        """Run the view, stamp the two headers.
+        """Run the view, stamp the header.
 
-        Values are read from settings at request time (not cached at init)
+        The value is read from settings at request time (not cached at init)
         so ``override_settings`` in tests takes effect immediately, and so a
         settings hot-reload picks up new values without a process restart.
         The lookup is a bare attribute access on the settings holder — cheap.
         """
         response = self.get_response(request)
         response[self._CURRENT_HEADER] = str(getattr(settings, "APP_VERSION", ""))
-        response[self._MIN_HEADER] = str(getattr(settings, "APP_MIN_VERSION", ""))
         return response

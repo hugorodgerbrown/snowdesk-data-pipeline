@@ -66,7 +66,7 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.cache import patch_cache_control
+from django.utils.cache import patch_cache_control, patch_vary_headers
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
@@ -2174,32 +2174,55 @@ def version(request: HttpRequest) -> JsonResponse:
 
     Returns the fixed shape the offline-first spec requires so the client
     can (a) detect a new build to pick up (``current``), (b) enter a forced
-    Update Required state when it falls below ``min_supported``, and (c)
-    trigger the Mechanism-A kill switch when ``kill`` is true.
+    Update Required state when the server says so (``update_required``),
+    and (c) trigger the Mechanism-A kill switch when ``kill`` is true.
+
+    ``update_required`` (SNOW-609) is the whole forced-update verdict; the
+    client does no version arithmetic of its own. It is true only when the
+    request carried an ``X-Client-Version`` header AND that value is listed
+    in ``settings.APP_BLOCKED_VERSIONS``. Two properties are load-bearing:
+
+    * **Membership, not ordering.** ``APP_VERSION`` resolves to a git SHA,
+      and SHAs have no order, so a "minimum supported version" is not
+      expressible on either side of the wire. Ops names the specific builds
+      that must not keep running — see
+      ``docs/decisions/blocked-builds-not-a-version-floor.md``.
+    * **Fail open on an unidentified client.** No header means an empty
+      string, which is never a member (``_comma_separated_frozenset`` in
+      ``config/settings/base.py`` drops empty entries), so a client we
+      cannot identify is never blocked. A blocking modal on a client whose
+      build we do not know has no recovery path.
+
+    The header itself is sent by ``static/js/pwa_client_version.js``
+    (SNOW-388) on every same-origin fetch / HTMX request.
 
     The response is cacheable at the CDN for 60 seconds because the values
     only change on deploy or on an explicit ops flip — the client itself
     fetches this on cold start and every 15 minutes while active, so a
-    stale entry at the edge is bounded by the polling window.
+    stale entry at the edge is bounded by the polling window. ``Vary:
+    X-Client-Version`` keeps one client's verdict out of another's cache
+    entry now that the body depends on a request header.
     """
+    client_version = request.headers.get("X-Client-Version", "")
+    update_required = bool(client_version) and (
+        client_version in settings.APP_BLOCKED_VERSIONS
+    )
     response = JsonResponse(
         {
             "current": settings.APP_VERSION,
-            "min_supported": settings.APP_MIN_VERSION,
+            "update_required": update_required,
             "released_at": settings.APP_RELEASED_AT,
             "kill": bool(settings.SW_KILL),
         }
     )
     response["Cache-Control"] = "public, max-age=60"
+    patch_vary_headers(response, ["X-Client-Version"])
     # SNOW-381 (spec §16.2): capture the endpoint hit so the observability
     # dashboards can chart poll cadence and detect clients that stop
     # phoning home.
-    # SNOW-384: client_version is read from the X-Client-Version request
-    # header. Client sends this header via static/js/pwa_client_version.js
-    # (SNOW-388) on every same-origin fetch/HTMX request.
     emit_server_signal(
         "pwa.version.endpoint.hit",
-        {"client_version": request.headers.get("X-Client-Version", "")},
+        {"client_version": client_version},
     )
     return response
 

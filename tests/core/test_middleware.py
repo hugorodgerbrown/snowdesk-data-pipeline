@@ -122,41 +122,36 @@ def test_view_override_takes_precedence_over_middleware_default() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(
-    APP_VERSION="2026.07.15.testabc", APP_MIN_VERSION="2026.07.01.baseln"
-)
-def test_app_version_headers_present_on_page_response() -> None:
-    """Every response carries X-App-Version and X-App-Min-Version.
+@override_settings(APP_VERSION="2026.07.15.testabc")
+def test_app_version_header_present_on_page_response() -> None:
+    """Every response carries X-App-Version.
 
-    The PWA client parses these on every response, not just on
+    The PWA client parses it on every response, not just on
     ``/api/version`` polls — see spec §5.3.
     """
     response = Client().get("/")
     assert response["X-App-Version"] == "2026.07.15.testabc"
-    assert response["X-App-Min-Version"] == "2026.07.01.baseln"
 
 
 @pytest.mark.django_db
-@override_settings(
-    APP_VERSION="2026.07.15.testabc", APP_MIN_VERSION="2026.07.01.baseln"
-)
-def test_app_version_headers_present_on_api_response() -> None:
-    """Non-page (JSON API) responses also carry the version headers."""
+@override_settings(APP_VERSION="2026.07.15.testabc")
+def test_app_version_header_present_on_api_response() -> None:
+    """Non-page (JSON API) responses also carry the version header."""
     response = Client().get("/api/regions.geojson?country=ch")
     assert response.status_code == 200
     assert response["X-App-Version"] == "2026.07.15.testabc"
-    assert response["X-App-Min-Version"] == "2026.07.01.baseln"
 
 
 @pytest.mark.django_db
-@override_settings(APP_MIN_VERSION="")
-def test_app_min_version_empty_string_is_still_sent() -> None:
-    """Empty ``APP_MIN_VERSION`` still emits the header — client treats "" as no min.
+def test_min_version_header_is_never_stamped() -> None:
+    """``X-App-Min-Version`` is gone — SNOW-609.
 
-    Guarding against a client that would confuse an empty-string min
-    ("no minimum enforced") with a missing header ("older server that
-    doesn't know about this contract"). The middleware always stamps.
+    The header carried a floor the client compared by string inequality,
+    which is meaningless against a git-SHA ``APP_VERSION``: every client
+    read as "below the floor". Its absence is load-bearing, not incidental
+    — shells deployed before SNOW-609 treat a missing floor as "no floor
+    enforced", so removing the header disarms the buggy comparison in
+    clients we cannot update.
     """
     response = Client().get("/")
-    assert "X-App-Min-Version" in response
-    assert response["X-App-Min-Version"] == ""
+    assert "X-App-Min-Version" not in response
