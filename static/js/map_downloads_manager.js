@@ -344,7 +344,8 @@
   /**
    * Build one list row.
    *
-   * @param {{id: string, kind: string, label: string, size: string}} row
+   * @param {{id: string, kind: string, orphaned?: boolean, label: string,
+   *   size: string}} row
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -356,10 +357,19 @@
 
     const kind = fragment.querySelector('[data-row-kind]');
     if (kind) {
-      kind.textContent =
-        row.kind === 'custom'
-          ? STRINGS['kind-custom'] || ''
-          : STRINGS['kind-region'] || '';
+      // SNOW-612: an orphaned bucket is labelled by what it IS — the
+      // leftovers of a download that never finished — rather than as the
+      // region or custom area it was going to be. It has no stored name
+      // to show, and calling it a finished download would be a lie about
+      // what the device can do offline.
+      if (row.orphaned) {
+        kind.textContent = STRINGS['kind-incomplete'] || '';
+      } else {
+        kind.textContent =
+          row.kind === 'custom'
+            ? STRINGS['kind-custom'] || ''
+            : STRINGS['kind-region'] || '';
+      }
     }
 
     const size = fragment.querySelector('[data-row-size]');

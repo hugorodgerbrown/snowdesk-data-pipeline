@@ -112,6 +112,10 @@ repeated here.
 <template id="map-downloads-strings-template">
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    {# SNOW-612: a pinned bucket left on disk by a download that failed    #}
+    {# partway, with no record naming it. Listed so the space it is        #}
+    {# holding is visible and can be reclaimed.                            #}
+    <span data-string="kind-incomplete">{% trans "Incomplete download" %}</span>
     <span data-string="usage">{% blocktrans %}%(used)s of %(budget)s used{% endblocktrans %}</span>
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
             download it again when you're back online.{% endblocktrans %}</span>

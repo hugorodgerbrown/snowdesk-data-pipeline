@@ -244,6 +244,95 @@ async function pinnedBasemapCacheURLs() {
   return urls;
 }
 
+/**
+ * Every area id with a pinned bucket present in Cache Storage (SNOW-612).
+ *
+ * The bucket is the ground truth for what is actually stored; the
+ * `basemap.regions` / `basemap.customArea` records are only what COMPLETED
+ * runs left behind. A download that failed partway leaves the former
+ * without the latter, which is exactly the stranded quota this reader
+ * exists to surface — see `basemapDownloadedAreas` below.
+ *
+ * Never throws: Cache Storage being unavailable reads as "no buckets",
+ * which degrades to the pre-SNOW-612 behaviour of trusting the records
+ * alone rather than blocking anything.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function pinnedBucketAreaIds() {
+  if (!('caches' in window)) return [];
+  try {
+    const names = await caches.keys();
+    return names
+      .filter((name) => name.startsWith(BASEMAP_PINNED_CACHE_PREFIX))
+      .map((name) => name.slice(BASEMAP_PINNED_CACHE_PREFIX.length))
+      .filter(Boolean);
+  } catch (_e) {
+    return [];
+  }
+}
+
+// SNOW-612: measured sizes for orphaned buckets, keyed by area id. Held
+// for the page's lifetime only — a reload re-measures, which is cheap
+// enough given an orphan is by definition a rare leftover, and avoids a
+// persisted record that would itself need invalidating when the bucket is
+// finally deleted.
+//
+// Only two things can change a bucket's size — a download run writing into
+// it, and an eviction deleting it — and both call
+// `forgetPinnedBucketMeasurement` below. Without that, a run that failed
+// twice in one page session would report the first attempt's size for the
+// bucket the second attempt had since grown.
+const ORPHAN_BUCKET_BYTES = new Map();
+
+/**
+ * Drop the cached measurement for `areaId` (SNOW-612).
+ *
+ * @param {string} areaId
+ * @returns {void}
+ */
+function forgetPinnedBucketMeasurement(areaId) {
+  ORPHAN_BUCKET_BYTES.delete(areaId);
+}
+
+/**
+ * Measure one pinned bucket by summing its entries' `Content-Length`
+ * (SNOW-612).
+ *
+ * Only ever called for an ORPHANED bucket — one with no stored record to
+ * read a byte total off. Every other area's size comes from the figure its
+ * completed run recorded, because an area is thousands of entries and
+ * measuring them all on every render is precisely what
+ * `basemap_manage_core.js`'s header rules out.
+ *
+ * `Content-Length` rather than the body: `cache.match()` hands back a
+ * Response without reading it, so a header sum is N cheap lookups where a
+ * `blob()` sum would be N decompressions. An entry with no such header
+ * contributes nothing — under-reporting a stranded bucket is better than
+ * paying to decode it, and the row is deletable either way.
+ *
+ * @param {string} areaId
+ * @returns {Promise<number>} Bytes, or 0 if the bucket cannot be read.
+ */
+async function measurePinnedBucketBytes(areaId) {
+  if (ORPHAN_BUCKET_BYTES.has(areaId)) return ORPHAN_BUCKET_BYTES.get(areaId);
+  let total = 0;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const requests = await cache.keys();
+    for (const request of requests) {
+      const response = await cache.match(request);
+      const length = response && Number(response.headers.get('Content-Length'));
+      if (Number.isFinite(length) && length > 0) total += length;
+    }
+  } catch (_e) {
+    // A bucket that cannot be read is still worth listing at 0 bytes —
+    // the user can delete it, which is the point.
+  }
+  ORPHAN_BUCKET_BYTES.set(areaId, total);
+  return total;
+}
+
 // SNOW-586: reads-through to meta:app's `basemap.budgetMb` device-local
 // override, falling back to pwaBasemapDownloadCore.DOWNLOAD_BUDGET_MB
 // (500) when no row is present — nothing writes that row yet; SNOW-588's
@@ -308,7 +397,26 @@ async function basemapDownloadedAreas() {
   } catch (_e) {
     // Best-effort — see docstring.
   }
-  return areas;
+
+  // SNOW-612: union in the pinned buckets actually on disk. A record is
+  // only written when a run COMPLETES, so a download that failed partway
+  // left a bucket the budget never counted and the manage sheet could not
+  // delete — quota that accumulated silently across failed attempts.
+  // Without the manage core there is no reconciliation to run, so this
+  // degrades to the records alone rather than to nothing.
+  const manage = self.pwaBasemapManageCore;
+  if (!manage || typeof manage.reconcileAreas !== 'function') return areas;
+  const storedIds = await pinnedBucketAreaIds();
+  const recordedIds = new Set(areas.map((area) => area.id));
+  const orphanIds = storedIds.filter((id) => !recordedIds.has(id));
+  // Measured one bucket at a time rather than in parallel: an orphan is
+  // rare, and a concurrent walk of several thousand cache entries each is
+  // the kind of burst that makes a slow device feel broken.
+  const bytesById = {};
+  for (const id of orphanIds) {
+    bytesById[id] = await measurePinnedBucketBytes(id);
+  }
+  return manage.reconcileAreas(areas, storedIds, bytesById);
 }
 
 /**
@@ -365,6 +473,8 @@ async function evictBasemapAreas(areaIds) {
       } catch (_e) {
         // Best-effort.
       }
+      // SNOW-612: the bucket is gone, so any measurement of it is too.
+      forgetPinnedBucketMeasurement(areaId);
       try {
         if (areaId === core.CUSTOM_AREA_ID) {
           await window.pwaDb?.delete('meta:app', 'basemap.customArea');
@@ -1104,6 +1214,9 @@ const PINNED_DOWNLOAD_DEPS = {
  * @returns {Promise<void>}
  */
 async function runPinnedDownload(options) {
+  // SNOW-612: whatever this run writes changes the bucket's size, so a
+  // measurement taken before it is stale from here on.
+  forgetPinnedBucketMeasurement(options.areaId);
   const runner = self.pwaBasemapDownloadRunner;
   if (!runner) {
     options.paint('error');
@@ -6269,8 +6382,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
-    } catch (_e) {
-      // Non-fatal — see the docstring.
+    } catch (err) {
+      // Still non-fatal — see the docstring — but no longer silent
+      // (SNOW-612). This is the write whose absence leaves a completed
+      // download with a pinned bucket and no record, and the bucket then
+      // reads as an orphan: the reconciliation above makes that visible
+      // and deletable, and this says why it happened.
+      console.warn('basemap download record write failed', err);
+      window.pwaTelemetry?.emit('map.basemap.record_write_failed', {
+        region_id: regionId,
+      });
     }
   }
 
