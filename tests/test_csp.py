@@ -10,16 +10,27 @@ header (built-in content-type filter).
 time by django-csp-plus, so these tests deliberately do not use
 ``override_settings`` to toggle them — they assert the dev baseline
 instead.
+
+The basemap-origin tests do the opposite (SNOW-626): they name the
+origin they exercise via ``_basemap_style_url`` rather than asserting
+the packaged default, because ``OPENFREEMAP_STYLE_URL`` is env-derived
+and any developer whose ``.env`` carries the self-hosted production
+value would otherwise see them fail for reasons unrelated to their work.
 """
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
-from urllib.parse import urlsplit
 
 import pytest
+from csp.policy import clear_cache
 from django.conf import settings
-from django.test import Client
+from django.core.exceptions import ImproperlyConfigured
+from django.test import Client, override_settings
+
+from config.settings.base import basemap_origin, csp_defaults
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
 ENFORCING_HEADER = "Content-Security-Policy"
@@ -28,6 +39,34 @@ ENFORCING_HEADER = "Content-Security-Policy"
 def _csp(response: Any) -> str:
     """Return the CSP-Report-Only header as a string, or empty if absent."""
     return str(response.headers.get(REPORT_ONLY_HEADER, ""))
+
+
+@contextmanager
+def _basemap_style_url(style_url: str) -> Generator[str, None, None]:
+    """Point the basemap settings — and the derived CSP — at ``style_url``.
+
+    ``OPENFREEMAP_ORIGIN`` and ``CSP_DEFAULTS`` are both computed once at
+    ``config.settings.base`` import time, so overriding
+    ``OPENFREEMAP_STYLE_URL`` on its own recomputes neither. All three are
+    overridden together here, with the derived pair built by the same two
+    callables the settings module itself calls — so the override cannot
+    encode a different derivation from production's.
+
+    django-csp-plus caches the assembled policy (``csp::rules``), which
+    outlives a single request, so the cache is cleared on both entry and
+    exit; the surrounding tests must not see this policy either.
+    """
+    origin = basemap_origin(style_url)
+    with override_settings(
+        OPENFREEMAP_STYLE_URL=style_url,
+        OPENFREEMAP_ORIGIN=origin,
+        CSP_DEFAULTS=csp_defaults(origin),
+    ):
+        clear_cache()
+        try:
+            yield origin
+        finally:
+            clear_cache()
 
 
 @pytest.mark.django_db
@@ -54,46 +93,73 @@ def test_csp_header_present_on_map_page() -> None:
 @pytest.mark.django_db
 def test_csp_allows_maplibre_tile_origin() -> None:
     """The baseline policy allowlists the MapLibre tile origin in connect-src."""
-    response = Client().get("/")
-    policy = _csp(response)
+    with _basemap_style_url("https://tiles.example.test/styles/liberty") as origin:
+        response = Client().get("/")
+        policy = _csp(response)
     assert "connect-src" in policy
-    assert "https://tiles.openfreemap.org" in policy
+    assert origin in policy
 
 
 @pytest.mark.django_db
-def test_csp_connect_src_derived_from_openfreemap_style_url() -> None:
+@pytest.mark.parametrize(
+    ("style_url", "expected_origin"),
+    [
+        # The packaged default (the public OpenFreeMap volunteer tier)...
+        (
+            "https://tiles.openfreemap.org/styles/liberty",
+            "https://tiles.openfreemap.org",
+        ),
+        # ...the self-hosted production origin (SNOW-485)...
+        (
+            "https://tiles.snowdesk-data.info/styles/liberty",
+            "https://tiles.snowdesk-data.info",
+        ),
+        # ...and a port-bearing URL, which is a valid origin too.
+        ("http://localhost:8080/styles/liberty", "http://localhost:8080"),
+    ],
+)
+def test_csp_connect_src_derived_from_openfreemap_style_url(
+    style_url: str, expected_origin: str
+) -> None:
     """connect-src allowlists OPENFREEMAP_ORIGIN, derived from OPENFREEMAP_STYLE_URL.
 
     SNOW-242: the two settings are derived from a single env-configurable
-    value so they never drift.
+    value so they never drift. SNOW-626: driving several values through
+    the derivation pins that contract without depending on which one the
+    ambient environment happens to carry.
     """
-    assert settings.OPENFREEMAP_ORIGIN == "https://tiles.openfreemap.org"
-    assert settings.OPENFREEMAP_STYLE_URL.startswith(settings.OPENFREEMAP_ORIGIN)
+    with _basemap_style_url(style_url) as origin:
+        assert origin == expected_origin
+        assert settings.OPENFREEMAP_ORIGIN == expected_origin
+        assert settings.OPENFREEMAP_STYLE_URL.startswith(settings.OPENFREEMAP_ORIGIN)
 
-    response = Client().get("/")
-    policy = _csp(response)
-    assert settings.OPENFREEMAP_ORIGIN in policy
+        response = Client().get("/")
+        policy = _csp(response)
+
+    assert expected_origin in policy
 
 
 def test_openfreemap_style_url_validation_failure_mode() -> None:
-    """A scheme-less OPENFREEMAP_STYLE_URL would fail base.py's startup guard.
+    """A scheme-less OPENFREEMAP_STYLE_URL trips base.py's startup guard.
 
-    SNOW-242: settings are read at import time, so this test cannot reload
-    ``config.settings.base`` with a bad env value without side effects on
-    the rest of the suite. Instead it pins the failure mode the inline
-    ``ImproperlyConfigured`` guard relies on (empty ``scheme``/``netloc``
-    from ``urlsplit``) and confirms the deployed default does not trip it.
+    SNOW-242: an absolute URL is required because the CSP origin is
+    derived from it — a bare host would yield ``://`` in connect-src and
+    break tile loading at runtime instead of at startup. SNOW-626: the
+    guard lives in ``basemap_origin()``, so this drives it directly
+    rather than re-deriving ``urlsplit``'s behaviour by hand.
     """
-    bad_parts = urlsplit("tiles.openfreemap.org/styles/liberty")
-    assert not bad_parts.scheme
-    assert not bad_parts.netloc
+    with pytest.raises(ImproperlyConfigured):
+        basemap_origin("tiles.openfreemap.org/styles/liberty")
 
     # A port-bearing URL is still a valid origin — scheme + host:port.
-    port_parts = urlsplit("https://host.example:8080/styles/liberty")
-    assert port_parts.scheme and port_parts.netloc
-    assert f"{port_parts.scheme}://{port_parts.netloc}" == "https://host.example:8080"
+    assert (
+        basemap_origin("https://host.example:8080/styles/liberty")
+        == "https://host.example:8080"
+    )
 
-    assert settings.OPENFREEMAP_ORIGIN == "https://tiles.openfreemap.org"
+    # And the value the running environment supplied is itself absolute:
+    # settings imported at all means the guard passed.
+    assert settings.OPENFREEMAP_ORIGIN == basemap_origin(settings.OPENFREEMAP_STYLE_URL)
 
 
 @pytest.mark.django_db
