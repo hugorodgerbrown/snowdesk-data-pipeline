@@ -936,6 +936,28 @@ class TestActiveForecastPointPass:
         mock_fetch_points.assert_called_once()
         assert mock_fetch_points.call_args[0][0] == date(2026, 5, 1)
         assert mock_fetch_points.call_args[1]["commit"] is True
+        # History retention is opt-in (SNOW-629) — a bare run does not ask
+        # for it.
+        assert mock_fetch_points.call_args[1]["add_history"] is False
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_add_history_flag_reaches_the_point_pass(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """--add-history is threaded through to fetch_all_points (SNOW-629)."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+        mock_fetch_points.return_value = _make_counts()
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command("fetch_weather", commit=True, add_history=True)
+
+        assert mock_fetch_points.call_args[1]["add_history"] is True
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)

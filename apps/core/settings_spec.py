@@ -237,6 +237,10 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Customer apikey; empty means the free tier",
     ),
     SettingSpec(
+        "FETCH_WEATHER_ADD_HISTORY",
+        note="Scheduled fetch_weather retains point-forecast history",
+    ),
+    SettingSpec(
         "WEATHER_API_LOCAL_MIRROR_BASE_URL",
         validator=local_mirror_url,
         note="Dev mirror; empty disables",

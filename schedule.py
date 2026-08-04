@@ -7,7 +7,8 @@ pre-loaded with the two recurring data-pipeline jobs:
 - **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
   running ``fetch_bulletins --source slf albina meteofrance --commit``.
 - **fetch_weather** — fires at midnight, 06:00, 12:00, and 18:00 UTC,
-  running ``fetch_weather --commit``.
+  running ``fetch_weather --commit``, plus ``--add-history`` when
+  ``settings.FETCH_WEATHER_ADD_HISTORY`` is set.
 
 Both jobs share the same guard settings (``coalesce=True``,
 ``max_instances=1``, ``misfire_grace_time=300``) so a slow run does not
@@ -66,13 +67,26 @@ def _run_fetch_bulletins() -> None:
 
 
 def _run_fetch_weather() -> None:
-    """Invoke the ``fetch_weather`` management command."""
+    """Invoke the ``fetch_weather`` management command.
+
+    Adds ``--add-history`` when ``settings.FETCH_WEATHER_ADD_HISTORY`` is
+    set, so point-forecast retention (SNOW-575) can be turned on or off by
+    changing the environment variable and restarting this worker — no
+    deploy, and no effect on the operational ForecastPointWeather write.
+    """
+    from django.conf import (
+        settings,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
     from django.core.management import (
         call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
     )
 
-    logger.info("schedule: firing fetch_weather")
-    call_command("fetch_weather", "--commit")
+    args = ["--commit"]
+    if settings.FETCH_WEATHER_ADD_HISTORY:
+        args.append("--add-history")
+
+    logger.info("schedule: firing fetch_weather (args=%s)", args)
+    call_command("fetch_weather", *args)
 
 
 def build_scheduler() -> BlockingScheduler:

@@ -585,6 +585,21 @@ OPEN_METEO_ARCHIVE_BASE_URL = config(
 # Empty means the free tier: no ``apikey`` parameter is sent at all.
 OPEN_METEO_API_KEY = config("OPEN_METEO_API_KEY", default="")
 
+# Whether the scheduled ``fetch_weather`` run also retains a
+# ForecastPointWeatherHistory row per stored day (SNOW-575).
+#
+# History is analysis data for future forecast-convergence work — nothing
+# user-facing reads it, and it grows by one row per point per day of each
+# point's window. This setting is what ``schedule.py`` reads to decide
+# whether to pass ``--add-history``, so the retention can be turned on or
+# off by changing the Render environment variable and restarting the
+# scheduler — no deploy required. Ad-hoc runs pass the flag directly.
+FETCH_WEATHER_ADD_HISTORY = config(
+    "FETCH_WEATHER_ADD_HISTORY",
+    default=False,
+    cast=bool,
+)
+
 # MeteoFrance / DPBRA bulletin API.
 # Live endpoint:
 #   GET {METEOFRANCE_API_BASE_URL}/massif/{id}/BRA

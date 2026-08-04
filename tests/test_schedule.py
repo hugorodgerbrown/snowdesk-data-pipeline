@@ -6,6 +6,8 @@ Covers:
   - The jobs have the expected IDs: ``fetch_bulletins`` and ``fetch_weather``.
   - Each job's ``CronTrigger`` has the correct non-default field expressions.
   - Firing each job's callable invokes ``call_command`` with the expected arguments.
+  - ``FETCH_WEATHER_ADD_HISTORY`` decides whether the scheduled fetch_weather
+    run also passes ``--add-history`` (SNOW-629).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from unittest import mock
 import pytest
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from django.test import override_settings
 
 import schedule as schedule_module
 from schedule import build_scheduler
@@ -147,6 +150,7 @@ def test_fetch_bulletins_calls_call_command() -> None:
     )
 
 
+@override_settings(FETCH_WEATHER_ADD_HISTORY=False)
 def test_fetch_weather_calls_call_command() -> None:
     """Firing the fetch_weather job invokes call_command with the correct args.
 
@@ -157,3 +161,17 @@ def test_fetch_weather_calls_call_command() -> None:
         schedule_module._run_fetch_weather()
 
     mock_cc.assert_called_once_with("fetch_weather", "--commit")
+
+
+@override_settings(FETCH_WEATHER_ADD_HISTORY=True)
+def test_fetch_weather_adds_history_when_the_setting_is_on() -> None:
+    """FETCH_WEATHER_ADD_HISTORY appends --add-history to the scheduled run.
+
+    The setting is read at fire time rather than at import, so flipping the
+    Render environment variable and restarting the scheduler is enough to
+    turn point-forecast retention on or off (SNOW-629) — no deploy.
+    """
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_fetch_weather()
+
+    mock_cc.assert_called_once_with("fetch_weather", "--commit", "--add-history")
