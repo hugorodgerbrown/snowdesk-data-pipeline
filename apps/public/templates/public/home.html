@@ -131,6 +131,10 @@ in addition to the shared map assets.
     {# basemap" control (window.pwaBasemapDownloadCore). Must load before   #}
     {# map.js, whose cacheNowInit delegates to it.                          #}
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
+    {# SNOW-611: the one ordered pinned-download run both map download      #}
+    {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
+    {# map.js, whose runPinnedDownload delegates to it.                     #}
+    <script defer src="{% static 'js/basemap_download_runner.js' %}"></script>
     {# Distraction-free pin positioning (window.PlacementFocus): hides every #}
     {# app layer over the basemap while a favourite / observation / resort   #}
     {# pin is being positioned. Callers (place_picker.js, map.js,            #}

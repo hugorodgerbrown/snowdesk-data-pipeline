@@ -1056,6 +1056,94 @@ function createDownloadProgressGrid(plan, urlOffset) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Shared pinned-download runner (SNOW-611)
+// ---------------------------------------------------------------------------
+//
+// The ordered run itself lives in `static/js/basemap_download_runner.js`,
+// so the sequence both download controls depend on can be tested against
+// fakes rather than a live MapLibre instance
+// (`tests/js/test_basemap_download_runner.js`). This is the thin delegator
+// — the same shape `sw.js` uses for `basemap_cache_core.js`.
+//
+// The ordering that matters, and why it is encoded in one place rather
+// than at the two call sites: `evictBasemapAreas` destroys ANOTHER area's
+// pinned bucket and its meta:app record for good, so it has to be the LAST
+// step before the run. Splitting the sequence across call sites is how the
+// two copies drifted; SNOW-607 (D1) fixed the ordering in one of them.
+
+// The helpers `run` needs, bound once. Every one of them reaches for the
+// live map, Cache Storage, `navigator.storage` or the service worker,
+// which is exactly why they are passed in rather than imported.
+const PINNED_DOWNLOAD_DEPS = {
+  clearError: () => clearBasemapDownloadError(),
+  revealError: (reason) => revealBasemapDownloadError(reason),
+  fitsQuota: (mb) => basemapDownloadFitsQuota(mb),
+  core: () => self.pwaBasemapDownloadCore,
+  tileTemplate: () => activeBasemapTileTemplate(MAP),
+  planBudget: (areaId, mb) => planBasemapDownloadBudget(areaId, mb),
+  confirmEviction: (areas) => confirmBasemapEviction(areas),
+  evict: (areaIds) => evictBasemapAreas(areaIds),
+  feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  progressGrid: (plan, offset) => createDownloadProgressGrid(plan, offset),
+  warmCache: (urls, opts) =>
+    typeof window.pwaWarmCache === 'function' ? window.pwaWarmCache(urls, opts) : null,
+  isOnline: () => navigator.onLine,
+};
+
+/**
+ * Run one pinned basemap download — see `basemap_download_runner.js` for
+ * the sequence and the argument contract.
+ *
+ * A missing runner module fails the run rather than silently doing
+ * nothing: from the user's side a click that quietly returns to idle is
+ * indistinguishable from the download never having been offered, which is
+ * the silence SNOW-568 exists to remove.
+ *
+ * @param {Object} options
+ * @returns {Promise<void>}
+ */
+async function runPinnedDownload(options) {
+  const runner = self.pwaBasemapDownloadRunner;
+  if (!runner) {
+    options.paint('error');
+    revealBasemapDownloadError(null);
+    return;
+  }
+  return runner.run(PINNED_DOWNLOAD_DEPS, options);
+}
+
+/**
+ * Build a "re-run `render` once MapLibre next goes idle" callback
+ * (SNOW-611). Both download controls had a byte-identical copy of this,
+ * each with its own coalescing flag.
+ *
+ * Needed because `activeBasemapTileTemplate` is gated on
+ * `map.isStyleLoaded()`, which is false for the whole of the boot sequence
+ * that first paints these icons: the region/overlay sources are added
+ * inside `map.on('load')` itself, leaving the style dirty when
+ * MAP_READY_PROMISE resolves. The first done-probe therefore couldn't see
+ * the pinned cache at all, and a reload of an already-downloaded area
+ * always painted 'idle' until the user reselected it.
+ *
+ * @param {function(): void} render The control's own `renderControl`.
+ * @returns {function(): void} Idempotent while a retry is already queued —
+ *   repeated unresolved probes coalesce into one pending listener.
+ */
+function makeStyleSettleRetry(render) {
+  let pending = false;
+  return function retryWhenStyleSettles() {
+    if (pending) return;
+    if (!MAP || typeof MAP.once !== 'function') return;
+    pending = true;
+    MAP.once('idle', () => {
+      pending = false;
+      render();
+    });
+  };
+}
+
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -6388,34 +6476,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     btn.title = text;
   }
 
-  // True while a MAP 'idle' retry is already queued — see
-  // _retryWhenStyleSettles. Coalesces repeated unresolved probes into one
-  // pending listener.
-  let styleSettleRetryPending = false;
-
-  /**
-   * Re-run renderControl the next time MapLibre goes idle — i.e. once the
-   * style (and so `activeBasemapTileTemplate`) has settled.
-   *
-   * Needed because `activeBasemapTileTemplate` is gated on
-   * `map.isStyleLoaded()`, which is false for the whole of the boot
-   * sequence that first paints this icon: the region/overlay sources are
-   * added inside `map.on('load')` itself, leaving the style dirty when
-   * MAP_READY_PROMISE resolves. The first done-probe therefore couldn't
-   * see the pinned cache at all, and a reload of an already-downloaded
-   * region always painted 'idle' until the user reselected it.
-   *
-   * @returns {void}
-   */
-  function _retryWhenStyleSettles() {
-    if (styleSettleRetryPending) return;
-    if (!MAP || typeof MAP.once !== 'function') return;
-    styleSettleRetryPending = true;
-    MAP.once('idle', () => {
-      styleSettleRetryPending = false;
-      renderControl();
-    });
-  }
+  // SNOW-611: the shared retry-when-the-style-settles callback — see
+  // `makeStyleSettleRetry`, which the custom-area control also uses. Both
+  // controls carried a byte-identical copy of it.
+  const _retryWhenStyleSettles = makeStyleSettleRetry(() => renderControl());
 
   /**
    * (Re)probe the control against the current regionData. A stale async
@@ -6488,8 +6552,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Run the download: fetch the region's full blob, assemble the URL
-   * list, and hand it to the SW's warm-cache handler.
+   * Run the download for the focused region.
+   *
+   * SNOW-611: the ordered pre-flight, the eviction and the warm-cache
+   * dispatch all live in the shared `runPinnedDownload` — this supplies
+   * only what is this control's own: how the roundel paints, where the
+   * blob comes from, and what a successful run records.
    *
    * @returns {Promise<void>}
    */
@@ -6504,161 +6572,73 @@ const repaintRegionsForDate = (dateKey, cache) => {
       setState('offline', data.summary.mb);
       return;
     }
-    // SNOW-568: a new attempt clears the previous one's message before it
-    // can raise its own.
-    clearBasemapDownloadError();
-    // Claimed synchronously, before the first await — see the custom-area
-    // control's identical ordering note. The guard at the top of this
-    // function reads this state, so an await ahead of it would leave a
-    // window for a second click to start a second run.
-    setState('busy', data.summary.mb, 0);
-    // SNOW-568: refuse a download that cannot fit in the origin's storage
-    // quota before spending a single fetch on it — see the custom-area
-    // control's identical pre-flight for the rationale.
-    if (!(await basemapDownloadFitsQuota(data.summary.mb))) {
-      setState('error', data.summary.mb);
-      revealBasemapDownloadError('quota');
-      return;
-    }
+
     const core = self.pwaBasemapDownloadCore;
-    const template = activeBasemapTileTemplate(MAP);
-    // No tile template (style still settling) means no tiles to warm, and a
-    // feeds-only run must never paint 'done' — the region's basemap would
-    // not in fact be available offline. SNOW-568: reads as a failed
-    // download so the user knows to retry (by which point the style will
-    // have settled), rather than silently reverting.
-    //
-    // This check sits AHEAD of the eviction below — see the ordering note
-    // on that block — matching the order handleConfirm already runs in.
-    if (!core || !template) {
-      setState('error', data.summary.mb);
-      revealBasemapDownloadError(null);
-      return;
-    }
-    // SNOW-586: refuse a run that no eviction could ever make fit BEFORE
-    // spending a fetch on the blob — same "cost a click, not a whole run"
-    // reasoning as the quota pre-flight above. The plan's eviction half is
-    // acted on further down, once nothing is left that can abort the run.
-    const areaId = core.areaIdForRegion(data.regionId);
-    const budgetPlan = await planBasemapDownloadBudget(areaId, data.summary.mb);
-    if (budgetPlan && budgetPlan.impossible) {
-      setState('error', data.summary.mb);
-      revealBasemapDownloadError('budget');
-      return;
-    }
+    // `runPinnedDownload` re-reads the core itself and fails the run
+    // properly if it is missing; this only needs it for the area id, so a
+    // missing core simply yields none and the runner handles the rest.
+    const areaId = core ? core.areaIdForRegion(data.regionId) : '';
 
-    let blob;
-    try {
-      const response = await fetch(
-        '/api/region-basemap-tiles/?id=' + encodeURIComponent(data.regionId),
-      );
-      if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
-      blob = await response.json();
-    } catch (_e) {
-      // SNOW-568: this never got as far as a warm-cache attempt, but from
-      // the user's side a click that quietly returns to idle is the same
-      // silent failure this ticket exists to remove — the download they
-      // asked for did not happen.
-      setState('error', data.summary.mb);
-      revealBasemapDownloadError(null);
-      return;
-    }
-
-    // Ordering, not an optimisation: `evictBasemapAreas` destroys ANOTHER
-    // area's pinned bucket and its meta:app record for good, so it is the
-    // last pre-flight step — every check that can abort this run (quota,
-    // tile template, budget ceiling, blob fetch) has passed by the time we
-    // ask. A user who answers "yes, evict X" and then watches the run fail
-    // would be left with neither X nor the download they asked for.
-    // handleConfirm in mapCustomDownloadControlInit keeps the same order.
-    if (budgetPlan && budgetPlan.evict.length > 0) {
-      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
-      const proceed = await confirmBasemapEviction(evictAreas);
-      if (!proceed) {
-        setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
-        return;
-      }
-      await evictBasemapAreas(budgetPlan.evict);
-    }
-
-    // Tile-grid rework: the tile list comes from the grid plan, not
-    // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
-    // on-map grid fills in one square at a time rather than sweeping the
-    // whole area once per zoom level. A plan is only ever null for a blob
-    // with no ranges, which `rangesToTileURLs` would answer with an empty
-    // list anyway.
-    const gridPlan = core.tileGridPlan(template, blob);
-    const feedUrls = assembleBasemapDownloadFeedURLs();
-    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
-
-    // SNOW-569, reworked as a tile grid: the area's tiles are drawn as an
-    // empty grid that fills in as they land. The roundel's own fill stays — it's the part that
-    // survives the user panning the region off screen.
-    const progressFill = createDownloadProgressGrid(gridPlan, feedUrls.length);
-
-    const onProgress = (done, total, settled) => {
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      setState('busy', data.summary.mb, pct);
-      progressFill.update(done, total, settled);
-    };
-
-    const finish = async (result) => {
-      // "done" (the green offline circle) requires at least one success
-      // and no failures; a partial, vacuous, or absent result must not
-      // claim the region is downloaded.
-      //
-      // SNOW-568: a run that didn't succeed paints 'error' and raises the
-      // shared toast, rather than reverting to 'idle' — which was
-      // indistinguishable from never having clicked.
-      const ok = !!(result && result.ok > 0 && result.failed === 0);
-      // SNOW-570: record what was downloaded before anything is painted.
-      // SNOW-583: records the blob's own `z` (the clipped tile set the run
-      // actually fetched) rather than a bbox — `_probeDone` reads this
-      // record back directly, with no recomputation, so it is exactly
-      // right for whatever shape the blob was.
-      if (ok) {
-        await _recordRegionDownload(
-          data.regionId,
-          blob.z,
-          blob.band || core.MICRO_BAND,
-          result.bytes,
+    await runPinnedDownload({
+      areaId: areaId,
+      mb: data.summary.mb,
+      // This control's roundel carries the region's size in every state,
+      // so the shared runner's (state, pct) pair is widened here.
+      paint: (nextState, pct) => setState(nextState, data.summary.mb, pct),
+      loadBlob: async () => {
+        const response = await fetch(
+          '/api/region-basemap-tiles/?id=' + encodeURIComponent(data.regionId),
         );
-      }
-      // SNOW-569: await the on-map pulse before flipping the roundel — the
-      // two are one gesture, the region finishes filling, pulses, and only
-      // then does the icon go green. The control stays 'busy' throughout,
-      // which also keeps renderControl from repainting underneath the
-      // pulse. A failed run clears the fill without pulsing, so the error
-      // state and its toast arrive with no delay.
-      await progressFill.finish(ok);
-      if (ok) {
-        setState('done', data.summary.mb);
-      } else {
-        setState('error', data.summary.mb);
-        revealBasemapDownloadError(result ? result.reason : null);
-      }
-      // SNOW-505: the warm-cache run has just warmed the shell + pinned
-      // basemap caches (the SW's warm-cache handler awaits its
-      // cache.put calls before replying, so this re-probe races
-      // nothing). Re-probe every sync dot against real cache state so
-      // the layers popover reflects the newly-warmed feeds/tiles.
-      window.pwaLayerSyncStatus?.refresh();
-      // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
-      // just finished downloading appear immediately rather than at the
-      // next basemap swap or reload.
-      window.pwaDownloadedOverlay?.refresh();
-    };
-
-    // SNOW-521: `pinned: true` routes the basemap-origin writes into a
-    // dedicated pinned bucket, exempt from the passive browsing LRU trim
-    // — a deliberate download can't be evicted by casual panning
-    // elsewhere. SNOW-586: `areaId` selects WHICH bucket — this region's
-    // own, so it can never perforate (or be perforated by) another area.
-    if (typeof window.pwaWarmCache === 'function') {
-      window.pwaWarmCache(urls, { pinned: true, areaId, onProgress }).then(finish).catch(() => finish(null));
-    } else {
-      finish(null);
-    }
+        if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
+        return response.json();
+      },
+      finish: async (result, blob, { core: runCore, progressFill }) => {
+        // "done" (the green offline circle) requires at least one success
+        // and no failures; a partial, vacuous, or absent result must not
+        // claim the region is downloaded.
+        //
+        // SNOW-568: a run that didn't succeed paints 'error' and raises the
+        // shared toast, rather than reverting to 'idle' — which was
+        // indistinguishable from never having clicked.
+        const ok = !!(result && result.ok > 0 && result.failed === 0);
+        // SNOW-570: record what was downloaded before anything is painted.
+        // SNOW-583: records the blob's own `z` (the clipped tile set the run
+        // actually fetched) rather than a bbox — `_probeDone` reads this
+        // record back directly, with no recomputation, so it is exactly
+        // right for whatever shape the blob was.
+        if (ok) {
+          await _recordRegionDownload(
+            data.regionId,
+            blob.z,
+            blob.band || runCore.MICRO_BAND,
+            result.bytes,
+          );
+        }
+        // SNOW-569: await the on-map pulse before flipping the roundel — the
+        // two are one gesture, the region finishes filling, pulses, and only
+        // then does the icon go green. The control stays 'busy' throughout,
+        // which also keeps renderControl from repainting underneath the
+        // pulse. A failed run clears the fill without pulsing, so the error
+        // state and its toast arrive with no delay.
+        await progressFill.finish(ok);
+        if (ok) {
+          setState('done', data.summary.mb);
+        } else {
+          setState('error', data.summary.mb);
+          revealBasemapDownloadError(result ? result.reason : null);
+        }
+        // SNOW-505: the warm-cache run has just warmed the shell + pinned
+        // basemap caches (the SW's warm-cache handler awaits its
+        // cache.put calls before replying, so this re-probe races
+        // nothing). Re-probe every sync dot against real cache state so
+        // the layers popover reflects the newly-warmed feeds/tiles.
+        window.pwaLayerSyncStatus?.refresh();
+        // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
+        // just finished downloading appear immediately rather than at the
+        // next basemap swap or reload.
+        window.pwaDownloadedOverlay?.refresh();
+      },
+    });
   }
 
   btn.addEventListener('click', () => handleClick());
@@ -6865,27 +6845,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
     btn.title = text;
   }
 
-  // True while a MAP 'idle' retry is already queued — see
-  // _retryWhenStyleSettles.
-  let styleSettleRetryPending = false;
-
-  /**
-   * Re-run renderControl the next time MapLibre goes idle — i.e. once the
-   * style (and so `activeBasemapTileTemplate`) has settled. Same
-   * rationale as mapDownloadControlInit's own copy: the done-probe needs
-   * a resolved basemap tile template, unavailable for the whole of boot.
-   *
-   * @returns {void}
-   */
-  function _retryWhenStyleSettles() {
-    if (styleSettleRetryPending) return;
-    if (!MAP || typeof MAP.once !== 'function') return;
-    styleSettleRetryPending = true;
-    MAP.once('idle', () => {
-      styleSettleRetryPending = false;
-      renderControl();
-    });
-  }
+  // SNOW-611: shared with mapDownloadControlInit — see `makeStyleSettleRetry`.
+  const _retryWhenStyleSettles = makeStyleSettleRetry(() => renderControl());
 
   /**
    * (Re)probe the roundel against the current savedArea. A stale async
@@ -7584,155 +7545,99 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     const blob = pendingBlob;
     const bbox = pendingBbox;
-    // SNOW-568: a new attempt clears the previous one's message before it
-    // can raise its own.
-    clearBasemapDownloadError();
-    // 'busy' is claimed SYNCHRONOUSLY, before the first await below — the
-    // re-entrancy guard above reads this same state, so any await ahead of
-    // it leaves a window in which a second click starts a second run. It
-    // also means the roundel acknowledges the click immediately rather
-    // than after the quota round trip.
-    setState('busy', 0);
-    // SNOW-568: refuse a download that cannot fit in the origin's storage
-    // quota before spending a single fetch on it. Without this the run
-    // gets most of the way through, starts collecting QuotaExceededErrors
-    // from cache.put, and the user waits out a long download to be told
-    // it failed.
-    if (!(await basemapDownloadFitsQuota(blob.mb))) {
-      setState('error');
-      revealBasemapDownloadError('quota');
-      return;
-    }
+
+    // A REPLACEMENT of the same area at a NEW bbox — the frame moved since
+    // the last confirm — clears the old tiles first: they belong to ground
+    // this run doesn't cover, and leaving them would both bloat this area's
+    // one shared bucket and inflate its recorded byte total. Computed here
+    // because `finish` needs the answer too, to decide whether bytes
+    // accumulate onto the previous record.
+    const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
 
     const core = self.pwaBasemapDownloadCore;
-    const template = activeBasemapTileTemplate(MAP);
-    // No tile template (style still settling) means no tiles to warm, and
-    // a feeds-only run must never claim done — the area would not in fact
-    // be available offline. SNOW-568: this is a failed download like any
-    // other, so it reads as one and leaves the frame up for a retry
-    // (which, the style having settled by then, will find a template).
-    if (!core || !template) {
-      setState('error');
-      revealBasemapDownloadError(null);
-      return;
-    }
-
-    // SNOW-586: refuse, or ask before evicting OTHER areas, before
-    // spending a fetch — same pre-flight the region control runs.
-    // `planEviction` already excludes THIS area's own existing record
-    // from the standing total (incoming.id matches it), so a re-download
-    // of the same custom area — moved or not — never counts its own old
-    // copy against itself here.
-    const areaId = core.CUSTOM_AREA_ID;
-    const budgetPlan = await planBasemapDownloadBudget(areaId, blob.mb);
-    if (budgetPlan && budgetPlan.impossible) {
-      setState('error');
-      revealBasemapDownloadError('budget');
-      return;
-    }
-    if (budgetPlan && budgetPlan.evict.length > 0) {
-      const evictAreas = budgetPlan.evict.map((id) => budgetPlan.areasById.get(id)).filter(Boolean);
-      const proceed = await confirmBasemapEviction(evictAreas);
-      if (!proceed) {
-        setState(navigator.onLine ? 'idle' : 'offline');
-        return;
-      }
-      await evictBasemapAreas(budgetPlan.evict);
-    }
-
-    // A REPLACEMENT of the same area at a NEW bbox — the frame moved
-    // since the last confirm — clears the old tiles first: they belong to
-    // ground this run doesn't cover, and leaving them would both bloat
-    // this area's one shared bucket and inflate its recorded byte total.
-    // Unlike the budget eviction above this needs no confirmation — it is
-    // replacing the user's OWN prior choice with a new one they just
-    // made, not touching another area. SNOW-586: a bucket delete, not the
-    // old URL-by-URL re-derivation against buildBlob — which also fixes a
-    // latent bug, since that re-derivation used the CURRENT template and
-    // so deleted nothing after a basemap switch.
-    const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
-    if (savedArea && !sameBbox) {
-      await evictBasemapAreas([areaId]);
-    }
-
-    // Tile-grid rework: cell-ordered tile URLs — see mapDownloadControlInit's
-    // matching comment.
-    const gridPlan = core.tileGridPlan(template, blob);
-    const feedUrls = assembleBasemapDownloadFeedURLs();
-    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
-
-    // SNOW-569, reworked as a tile grid: the framed area fills in square by
-    // square as its tiles land, exactly as a region does — same helper, same plan shape.
-    const progressFill = createDownloadProgressGrid(gridPlan, feedUrls.length);
-
-    const onProgress = (done, total, settled) => {
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      setState('busy', pct);
-      progressFill.update(done, total, settled);
-    };
-
-    const finish = async (result) => {
-      // "done" requires at least one success and no failures; a partial,
-      // vacuous, or absent result must not claim the area is downloaded.
-      //
-      // SNOW-568: a run that didn't succeed now says so. It used to fall
-      // back to 'idle' and close the overlay — indistinguishable from
-      // never having clicked Download, which is exactly what a failing
-      // download looked like from the outside. The overlay stays open on
-      // failure so the framed area (and the Download button) survive for
-      // a retry; only success closes it.
-      const ok = !!(result && result.ok > 0 && result.failed === 0);
-      if (ok) {
-        // SNOW-586: bytes accumulate onto the PREVIOUS record only when
-        // this is the same area at the same bbox (a same-basemap retry,
-        // or a redownload after switching basemap) — the "shares one
-        // bucket across basemaps" accumulation mapDownloadControlInit's
-        // _recordRegionDownload documents. A bbox change already had its
-        // old bucket/record wiped above, so there is nothing to add onto.
-        const previousBytes = sameBbox && savedArea ? Number(savedArea.bytes) || 0 : 0;
-        savedArea = {
-          bbox: bbox,
-          band: blob.band,
-          centre_tile: blob.centre_tile,
-          name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
-          bytes: previousBytes + (Number(result.bytes) || 0),
-          savedAt: new Date().toISOString(),
-        };
-        _persistSavedArea(savedArea);
-        // SNOW-569: close the framing overlay BEFORE the pulse — the CTA
-        // bar and the dimmed surround are the framing UI, and the pulse is
-        // the map's own confirmation, so it should play on a clean map
-        // rather than behind the furniture that set it up. Only on
-        // success: SNOW-568 deliberately keeps the overlay open after a
-        // failure, and the fill is cleared without a pulse there anyway.
-        _closeFramingAfterRun();
-        await progressFill.finish(true);
-        setState('done');
-      } else {
-        await progressFill.finish(false);
-        setState('error');
-        // A null result means there was no active worker at all — nothing
-        // ran and nothing was cached, which is still a failed download
-        // from the user's point of view, just one with no reason to
-        // report beyond the generic line.
-        revealBasemapDownloadError(result ? result.reason : null);
-      }
-      // SNOW-505/522: the warm-cache run has just warmed the shell +
-      // pinned basemap caches; re-probe every sync dot against real
-      // cache state, mirroring mapDownloadControlInit's own post-run
-      // refresh — the layers menu is a live cache-state dashboard.
-      window.pwaLayerSyncStatus?.refresh();
-      // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
-      // just finished downloading appear immediately rather than at the
-      // next basemap swap or reload.
-      window.pwaDownloadedOverlay?.refresh();
-    };
-
-    if (typeof window.pwaWarmCache === 'function') {
-      window.pwaWarmCache(urls, { pinned: true, areaId, onProgress }).then(finish).catch(() => finish(null));
-    } else {
-      finish(null);
-    }
+    // `runPinnedDownload` re-reads the core itself and fails the run
+    // properly if it is missing; this only needs it for the area id, so a
+    // missing core simply yields none and the runner handles the rest.
+    await runPinnedDownload({
+      areaId: core ? core.CUSTOM_AREA_ID : '',
+      // `planEviction` already excludes THIS area's own existing record
+      // from the standing total (incoming.id matches it), so a re-download
+      // of the same custom area — moved or not — never counts its own old
+      // copy against itself.
+      mb: blob.mb,
+      // This control's roundel carries no size, so the shared runner's
+      // (state, pct) pair is narrowed here.
+      paint: (nextState, pct) => setState(nextState, pct),
+      loadBlob: () => blob,
+      beforeWarm: async (_blob, areaId) => {
+        // Unlike the budget eviction the runner has just done, this needs
+        // no confirmation — it is replacing the user's OWN prior choice
+        // with a new one they just made, not touching another area.
+        // SNOW-586: a bucket delete, not the old URL-by-URL re-derivation
+        // against buildBlob — which also fixes a latent bug, since that
+        // re-derivation used the CURRENT template and so deleted nothing
+        // after a basemap switch.
+        if (savedArea && !sameBbox) {
+          await evictBasemapAreas([areaId]);
+        }
+      },
+      finish: async (result, runBlob, { core, progressFill }) => {
+        // "done" requires at least one success and no failures; a partial,
+        // vacuous, or absent result must not claim the area is downloaded.
+        //
+        // SNOW-568: a run that didn't succeed now says so. It used to fall
+        // back to 'idle' and close the overlay — indistinguishable from
+        // never having clicked Download, which is exactly what a failing
+        // download looked like from the outside. The overlay stays open on
+        // failure so the framed area (and the Download button) survive for
+        // a retry; only success closes it.
+        const ok = !!(result && result.ok > 0 && result.failed === 0);
+        if (ok) {
+          // SNOW-586: bytes accumulate onto the PREVIOUS record only when
+          // this is the same area at the same bbox (a same-basemap retry,
+          // or a redownload after switching basemap) — the "shares one
+          // bucket across basemaps" accumulation mapDownloadControlInit's
+          // _recordRegionDownload documents. A bbox change already had its
+          // old bucket/record wiped above, so there is nothing to add onto.
+          const previousBytes = sameBbox && savedArea ? Number(savedArea.bytes) || 0 : 0;
+          savedArea = {
+            bbox: bbox,
+            band: runBlob.band,
+            centre_tile: runBlob.centre_tile,
+            name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
+            bytes: previousBytes + (Number(result.bytes) || 0),
+            savedAt: new Date().toISOString(),
+          };
+          _persistSavedArea(savedArea);
+          // SNOW-569: close the framing overlay BEFORE the pulse — the CTA
+          // bar and the dimmed surround are the framing UI, and the pulse is
+          // the map's own confirmation, so it should play on a clean map
+          // rather than behind the furniture that set it up. Only on
+          // success: SNOW-568 deliberately keeps the overlay open after a
+          // failure, and the fill is cleared without a pulse there anyway.
+          _closeFramingAfterRun();
+          await progressFill.finish(true);
+          setState('done');
+        } else {
+          await progressFill.finish(false);
+          setState('error');
+          // A null result means there was no active worker at all — nothing
+          // ran and nothing was cached, which is still a failed download
+          // from the user's point of view, just one with no reason to
+          // report beyond the generic line.
+          revealBasemapDownloadError(result ? result.reason : null);
+        }
+        // SNOW-505/522: the warm-cache run has just warmed the shell +
+        // pinned basemap caches; re-probe every sync dot against real
+        // cache state, mirroring mapDownloadControlInit's own post-run
+        // refresh — the layers menu is a live cache-state dashboard.
+        window.pwaLayerSyncStatus?.refresh();
+        // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
+        // just finished downloading appear immediately rather than at the
+        // next basemap swap or reload.
+        window.pwaDownloadedOverlay?.refresh();
+      },
+    });
   }
 
   btn.addEventListener('click', () => {
