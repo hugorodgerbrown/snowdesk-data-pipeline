@@ -1143,6 +1143,16 @@ Optional context:
 {# constraint to "free up"), so it gets its own copy. #}
 {% trans "This area is too large for the download budget. Frame a smaller area." as basemap_download_budget_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast-budget" kind="error" body=basemap_download_budget_body dismissible=True %}
+{# SNOW-605: no service worker is controlling the page, so the download had #}
+{# nowhere to go and no request was ever made. A shift-reload leaves the    #}
+{# document uncontrolled for its whole life (Chrome does this on purpose),  #}
+{# and an SW update leaves it uncontrolled for its activation window. The   #}
+{# generic toast below is actively wrong here — it blames the connection    #}
+{# for a failure that never touched the network — and its "try again"       #}
+{# cannot work, because a retry on the same document hits the same missing  #}
+{# controller. Reloading is the only remedy, so the copy says so. #}
+{% trans "Offline maps aren't active on this page yet. Reload the page, then try the download again." as basemap_download_no_worker_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-no-worker" kind="error" body=basemap_download_no_worker_body dismissible=True %}
 {% trans "Download failed. Check your connection and try again." as basemap_download_failed_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast" kind="error" body=basemap_download_failed_body dismissible=True %}
 {# SNOW-586: whole-area-eviction confirm banner — reveals when a download #}
