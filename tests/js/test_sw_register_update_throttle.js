@@ -1,6 +1,7 @@
 /*
  * tests/js/test_sw_register_update_throttle.js — the visibilitychange
- * update-check throttle (SNOW-622).
+ * update-check throttle (SNOW-622) and the shared update-banner pair
+ * (SNOW-623).
  *
  * `registration.update()` is a network round trip for the worker script
  * every time it is called — `/sw.js` is served `Cache-Control: no-cache`,
@@ -79,6 +80,12 @@ function visibilityChange(state) {
 }
 
 beforeAll(async () => {
+  // SNOW-623: the module resolves `#sw-update-banner` ONCE at load, and
+  // synthesises an inline-styled admin fallback when it finds none — so the
+  // public partial's markup has to be in place before the import. That also
+  // fixes which idiom this file can exercise: class-toggled, not fallback.
+  document.body.innerHTML = '<div id="sw-update-banner" class="hidden"></div>';
+
   await import('../../static/js/sw_register.js');
   // The listener is attached inside the register() promise chain.
   for (let i = 0; i < 20 && !registration.update.mock; i += 1) {
@@ -136,5 +143,53 @@ describe('visibilitychange update check', () => {
     now += 2_000;
     visibilityChange('visible');
     expect(registration.update).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('window.pwaUpdateBanner (SNOW-623)', () => {
+  /**
+   * The element the module resolved at import — not a fresh one.
+   *
+   * Looked up per call rather than once at collection time: the fixture is
+   * written inside `beforeAll`, which runs after `describe` bodies.
+   *
+   * @returns {HTMLElement}
+   */
+  const el = () => document.getElementById('sw-update-banner');
+
+  it('is published for the version-check path to reach', () => {
+    // pwa_version_check.js reveals this same element on a confirmed
+    // server-header drift, and used to carry its own copy of the fork.
+    expect(typeof window.pwaUpdateBanner?.reveal).toBe('function');
+    expect(typeof window.pwaUpdateBanner?.hide).toBe('function');
+  });
+
+  it('reveals and hides a class-toggled banner', () => {
+    window.pwaUpdateBanner.reveal();
+    expect(el().classList.contains('hidden')).toBe(false);
+
+    window.pwaUpdateBanner.hide();
+    expect(el().classList.contains('hidden')).toBe(true);
+  });
+
+  it('is idempotent — a second reveal changes nothing', () => {
+    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.reveal();
+
+    expect(el().classList.contains('hidden')).toBe(false);
+  });
+
+  it('never flips which idiom the markup uses', () => {
+    // The admin fallback this file synthesises is inline-styled; the
+    // public partial is class-toggled. Revealing one with the other's
+    // idiom leaves it invisible, which is the fork both owners had to
+    // reproduce and only one now does.
+    window.pwaUpdateBanner.reveal();
+
+    expect(el().style.display).toBe('');
+  });
+
+  it('is frozen, so a third owner cannot quietly replace the reveal', () => {
+    expect(Object.isFrozen(window.pwaUpdateBanner)).toBe(true);
   });
 });

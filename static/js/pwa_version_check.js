@@ -153,23 +153,21 @@
    * sw_register.js has wired up — we do not manage the banner's DOM
    * ourselves so the two flows stay in sync. The public partial reveals
    * via ``hidden`` class toggle; the admin fallback (data-fallback="1",
-   * inline-styled) uses ``display: flex`` instead — mirror the same fork
-   * sw_register.js uses in ``showUpdateBanner``.
+   * inline-styled) uses ``display: flex`` instead.
+   *
+   * SNOW-623: that fork is ``sw_register.js``'s, reached through
+   * ``window.pwaUpdateBanner``. This file used to carry its own copy, under
+   * a docstring telling the reader to "mirror" the other one — which is
+   * how two owners of one element stay in step only as long as somebody
+   * remembers. The dev-bypass suppression is checked there too, so the
+   * banner cannot be revealed by either path under the bypass.
+   *
+   * What stays here is this path's own concern: the first-shown stamp that
+   * feeds the 24h escalation.
    */
   function showSoftBanner() {
-    // SNOW-585: only present when settings.SW_DEV_SHELL_BYPASS is on (base.html;
-    // always false in production). The bypass already serves fresh shell
-    // assets on the very next reload, so a banner asking the developer to
-    // reload would be misleading. See
-    // docs/decisions/dev-bypasses-the-shell-cache.md.
-    if (readMeta('pwa-dev-shell-bypass') === '1') return;
-    const banner = document.getElementById('sw-update-banner');
-    if (!banner) return;
-    if (banner.dataset.fallback === '1') {
-      banner.style.display = 'flex';
-    } else {
-      banner.classList.remove('hidden');
-    }
+    if (!window.pwaUpdateBanner) return;
+    window.pwaUpdateBanner.reveal();
     try {
       if (!localStorage.getItem(FIRST_SHOWN_KEY)) {
         localStorage.setItem(FIRST_SHOWN_KEY, String(Date.now()));

@@ -91,6 +91,17 @@ let responseHeaders = {};
  */
 let resetLocalData = null;
 
+/**
+ * Stands in for `sw_register.js`'s `window.pwaUpdateBanner` (SNOW-623).
+ *
+ * The soft banner has one owner now, and this module reaches it through
+ * that export rather than toggling the element itself. The stub does the
+ * real class toggle so the `bannerShowing()` assertions below still test
+ * the user-visible outcome, and records the call so the delegation itself
+ * can be asserted.
+ */
+let revealBanner = null;
+
 /** The module's wrapped fetch, replaced on every ``loadModule()``. */
 let wrappedFetch = null;
 
@@ -153,6 +164,10 @@ beforeEach(async () => {
   baseFetch.mockClear();
   resetLocalData = vi.fn(async () => {});
   window.pwaResetLocalData = resetLocalData;
+  revealBanner = vi.fn(() => {
+    document.getElementById('sw-update-banner').classList.remove('hidden');
+  });
+  window.pwaUpdateBanner = { reveal: revealBanner, hide: vi.fn() };
   await loadModule();
   // The import's own cold-launch escalation check runs with no stamp in
   // place, so it is a no-op here — but clear the counter anyway, since a
@@ -163,6 +178,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete window.pwaResetLocalData;
+  delete window.pwaUpdateBanner;
 });
 
 describe('the fetch wrapper', () => {
@@ -241,6 +257,23 @@ describe('a drifting header is a hint, not a verdict', () => {
     expect(bannerShowing()).toBe(true);
     expect(modalShowing()).toBe(false);
     expect(Number(localStorage.getItem(FIRST_SHOWN_KEY))).toBeGreaterThan(0);
+    // SNOW-623: through sw_register.js's export, not a second copy of the
+    // reveal in this file.
+    expect(revealBanner).toHaveBeenCalled();
+  });
+
+  it('does nothing when the banner owner has not loaded', async () => {
+    delete window.pwaUpdateBanner;
+    versionBody = { current: NEWER_BUILD, min_supported: '' };
+
+    await respondWith({ version: NEWER_BUILD });
+    await settle();
+
+    // No banner and, importantly, no stamp — a first-shown timestamp with
+    // no banner behind it would escalate to the blocking modal 24h later
+    // for something the user was never shown.
+    expect(bannerShowing()).toBe(false);
+    expect(localStorage.getItem(FIRST_SHOWN_KEY)).toBeNull();
   });
 
   it('keeps a confirmed drift sticky without another round trip', async () => {
