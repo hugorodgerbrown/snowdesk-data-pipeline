@@ -130,6 +130,10 @@ in addition to the shared map assets.
     {# SNOW-521: pure tile-math + "up to N MB" estimate for the "Download   #}
     {# basemap" control (window.pwaBasemapDownloadCore). Must load before   #}
     {# map.js, whose cacheNowInit delegates to it.                          #}
+    {# SNOW-618: pure region/resort search matching + ordering              #}
+    {# (window.pwaSearchCore), extracted from map.js's main IIFE so it can  #}
+    {# be unit-tested. Must load before map.js, whose search box uses it.   #}
+    <script defer src="{% static 'js/search_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
