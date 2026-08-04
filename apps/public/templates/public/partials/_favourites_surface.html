@@ -10,8 +10,8 @@ rename / delete + the geojson layer), so the create form and the CSRF token
 it carries are rendered once, here, and reused by the JS for both the
 create flow and the pin-detail (rename/delete) flow.
 
-Two shared modules are loaded once each by home.html (shared with
-_report_surface.html) before this partial — neither is repeated here:
+Three shared modules are loaded once each by home.html (shared with
+_report_surface.html) before this partial — none is repeated here:
 
   htmx.min.js       used by the report surface's HTMX-swapped form.
   place_picker.js   favourites.js drives window.PlacePicker. Both partials
@@ -19,6 +19,9 @@ _report_surface.html) before this partial — neither is repeated here:
                     twice on one page and left the second IIFE's
                     window.PlacePicker overwriting the first (C5,
                     2026-08-03 JS review).
+  map_sheet.js      the sheet controller, failure toast and
+                    mutation-storage guard this surface shares with
+                    _report_surface.html (SNOW-608).
 
 Context expected:
   favourite_create_url        — str: POST endpoint for favourites:create.

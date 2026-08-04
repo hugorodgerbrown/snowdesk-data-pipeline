@@ -8,9 +8,9 @@ The roundel button lives in _map_embed.html (inside #map so it floats above
 the season scrubber). This partial owns the viewport-anchored sheet panel
 that report.js opens, and the script tag required to drive it.
 
-Two shared modules are loaded by home.html, once each, ahead of both this
-partial and _favourites_surface.html (SNOW-414) — neither is repeated here,
-and home.html's include ordering guarantees both precede report.js in
+Three shared modules are loaded by home.html, once each, ahead of both this
+partial and _favourites_surface.html (SNOW-414) — none is repeated here,
+and home.html's include ordering guarantees all three precede report.js in
 document order:
 
   htmx.min.js       report.js calls htmx.ajax and the swapped-in form
@@ -20,6 +20,9 @@ document order:
                     twice on one page and left the second IIFE's
                     window.PlacePicker overwriting the first (C5,
                     2026-08-03 JS review).
+  map_sheet.js      the sheet controller, failure toast and
+                    mutation-storage guard this surface shares with
+                    _favourites_surface.html (SNOW-608).
 
 Context expected:
   (No context keys are required here; report.js reads data-* attributes

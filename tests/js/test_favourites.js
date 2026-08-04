@@ -22,9 +22,16 @@
  * the dynamic import below and no test replaces it. The
  * [data-favourite-detail] container is re-queried on every afterRequest, so
  * each test owns its contents.
+ *
+ * SNOW-608: favourites.js now attaches its sheet through the shared
+ * window.MapSheet, so map_sheet.js is imported first — home.html loads it
+ * ahead of both surface partials for the same reason. Its own behaviour is
+ * covered in tests/js/test_map_sheet.js.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import '../../static/js/map_sheet.js';
 
 document.body.innerHTML = `
   <button id="favourite-add-btn"
