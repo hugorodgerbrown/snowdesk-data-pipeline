@@ -442,6 +442,41 @@ const BASEMAP_CACHE = 'snowdesk-basemap-v1';
 // for SNOW-484).
 const BASEMAP_CACHE_MAX_ENTRIES = 600;
 
+// SNOW-614: how many passive basemap puts may land between two trims.
+//
+// The trim was run after EVERY put, and each run is a full `cache.keys()`
+// walk over up to 600 entries — so browsing (and, before SNOW-586 split
+// downloads into their own untrimmed buckets, a download) paid an
+// enumeration per tile. Amortising over a batch makes it one walk per 32
+// tiles instead.
+//
+// The cap is a soft one already — an insertion-order approximation of LRU,
+// not a byte budget — so the cost of batching is that the cache can sit at
+// most BASEMAP_CACHE_TRIM_INTERVAL entries over its limit between trims.
+// 32 of 600 is ~5% overshoot, small against a bound whose own value is a
+// judgement call, and the next trim always brings it back to exactly the
+// limit rather than to the limit minus a batch.
+const BASEMAP_CACHE_TRIM_INTERVAL = 32;
+
+// Puts into BASEMAP_CACHE since the last trim. Worker-global rather than
+// per-cache: there is exactly one passively-trimmed basemap cache (the
+// pinned buckets are never trimmed — see `_warmCache`).
+let _basemapPutsSinceTrim = 0;
+
+/**
+ * Trim BASEMAP_CACHE, but only once per ``BASEMAP_CACHE_TRIM_INTERVAL``
+ * puts (SNOW-614).
+ *
+ * @param {Cache} cache
+ * @returns {Promise<void>}
+ */
+async function _trimBasemapCacheEvery(cache) {
+  _basemapPutsSinceTrim += 1;
+  if (_basemapPutsSinceTrim < BASEMAP_CACHE_TRIM_INTERVAL) return;
+  _basemapPutsSinceTrim = 0;
+  await _trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+}
+
 // SNOW-586: ONE Cache Storage bucket PER DOWNLOADED AREA
 // (``BASEMAP_PINNED_CACHE_PREFIX + areaId``), replacing the single shared
 // ``BASEMAP_PINNED_CACHE`` every pinned download used to write into. The
@@ -1454,6 +1489,9 @@ async function _warmCache(urls, options) {
   // the docstring). Only the passive BASEMAP_CACHE still gets the
   // entry-count trim.
   if (!pinned) {
+    // Once per run, not per tile, so this stays an unbatched trim — and it
+    // resets the batch counter, since the cache is at its limit right after.
+    _basemapPutsSinceTrim = 0;
     await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
   }
   return { ok, failed, reason, bytes };
@@ -1503,7 +1541,8 @@ async function _basemapStaleWhileRevalidate(request) {
     .then(async (response) => {
       if (response && response.ok && response.type === 'cors') {
         await cache.put(request, response.clone()).catch(() => {});
-        await _trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+        // SNOW-614: batched — this used to be a full keys() walk per tile.
+        await _trimBasemapCacheEvery(cache);
       }
       return response;
     })

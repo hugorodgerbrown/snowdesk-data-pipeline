@@ -68,6 +68,8 @@ const SW_EXPORTS = [
   '_pinnedCacheNames',
   '_invalidatePinnedCacheNames',
   '_basemapStaleWhileRevalidate',
+  'BASEMAP_CACHE_TRIM_INTERVAL',
+  'BASEMAP_CACHE_MAX_ENTRIES',
   'PRINCIPAL_ANONYMOUS',
   'PRINCIPAL_UNKNOWN',
   'PRINCIPAL_HEADER',
@@ -660,5 +662,111 @@ describe('pinned-bucket miss recheck (SNOW-613)', () => {
     }
 
     expect(stub.counters.keys).toBe(1);
+  });
+});
+
+describe('basemap cache trim batching (SNOW-614)', () => {
+  const TILE_ORIGIN = 'https://tiles.example';
+
+  /**
+   * A CacheStorage stub that counts `keys()` per cache name, so the number
+   * of trim walks can be asserted separately from the number of puts.
+   *
+   * @returns {object}
+   */
+  function countingCaches() {
+    const stub = makeCaches();
+    const openReal = stub.open;
+    stub.perCacheKeys = {};
+    stub.open = async (name) => {
+      const cache = await openReal(name);
+      const wrapped = Object.create(cache);
+      wrapped.keys = async () => {
+        stub.perCacheKeys[name] = (stub.perCacheKeys[name] || 0) + 1;
+        return [];
+      };
+      wrapped.delete = async () => true;
+      return wrapped;
+    };
+    return stub;
+  }
+
+  /**
+   * Drive `n` successful basemap tile fetches through the revalidate path.
+   *
+   * @param {object} sw
+   * @param {number} n
+   * @returns {Promise<void>}
+   */
+  async function fetchTiles(sw, n) {
+    for (let i = 0; i < n; i += 1) {
+      await sw._basemapStaleWhileRevalidate(new Request(`${TILE_ORIGIN}/9/1/${i}.png`));
+    }
+  }
+
+  /**
+   * A fetch stub answering every request with a cacheable cross-origin
+   * tile — `type: 'cors'` is what the revalidate path requires before it
+   * will write.
+   *
+   * @returns {Function}
+   */
+  function corsFetch() {
+    return async () => {
+      const real = new Response('tile');
+      return {
+        ok: true,
+        status: 200,
+        type: 'cors',
+        headers: real.headers,
+        arrayBuffer: () => real.clone().arrayBuffer(),
+        clone() {
+          return this;
+        },
+      };
+    };
+  }
+
+  it('walks the cache once per batch, not once per tile', async () => {
+    const stub = countingCaches();
+    const sw = loadSw({ caches: stub, fetch: corsFetch() });
+    const n = sw.BASEMAP_CACHE_TRIM_INTERVAL;
+
+    await fetchTiles(sw, n);
+
+    // Before SNOW-614 this was one full keys() walk per tile response.
+    expect(stub.perCacheKeys['snowdesk-basemap-v1']).toBe(1);
+  });
+
+  it('does not walk at all before the batch is full', async () => {
+    const stub = countingCaches();
+    const sw = loadSw({ caches: stub, fetch: corsFetch() });
+
+    await fetchTiles(sw, sw.BASEMAP_CACHE_TRIM_INTERVAL - 1);
+
+    expect(stub.perCacheKeys['snowdesk-basemap-v1']).toBeUndefined();
+  });
+
+  it('keeps walking on every subsequent batch', async () => {
+    const stub = countingCaches();
+    const sw = loadSw({ caches: stub, fetch: corsFetch() });
+
+    await fetchTiles(sw, sw.BASEMAP_CACHE_TRIM_INTERVAL * 3);
+
+    // Not a one-shot: the cap still holds over a long browsing session.
+    expect(stub.perCacheKeys['snowdesk-basemap-v1']).toBe(3);
+  });
+
+  it('bounds the overshoot to one batch', () => {
+    // The cap is a soft, insertion-order approximation of LRU, so batching
+    // costs at most this much headroom between trims — the property that
+    // makes the interval safe to choose freely.
+    expect(sw614Overshoot()).toBeLessThan(0.1);
+
+    /** @returns {number} Overshoot as a fraction of the entry cap. */
+    function sw614Overshoot() {
+      const sw = loadSw();
+      return sw.BASEMAP_CACHE_TRIM_INTERVAL / sw.BASEMAP_CACHE_MAX_ENTRIES;
+    }
   });
 });

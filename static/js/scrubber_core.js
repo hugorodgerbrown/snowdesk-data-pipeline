@@ -105,11 +105,16 @@
    */
   function snapToNearestDataDay(dateKey, sortedDates) {
     if (!sortedDates || sortedDates.length === 0) return dateKey;
+    // SNOW-614: hoisted out of the loop. ``dateKey`` does not change across
+    // it, and this runs on every pointermove of a scrubber drag over a
+    // season's worth of dates — so it was one redundant date parse per
+    // candidate per frame.
+    var targetMs = Date.parse(dateKey);
     var best = sortedDates[0];
-    var bestDelta = Math.abs(Date.parse(best) - Date.parse(dateKey));
+    var bestDelta = Math.abs(Date.parse(best) - targetMs);
     for (var i = 0; i < sortedDates.length; i++) {
       var d = sortedDates[i];
-      var delta = Math.abs(Date.parse(d) - Date.parse(dateKey));
+      var delta = Math.abs(Date.parse(d) - targetMs);
       if (delta < bestDelta) {
         best = d;
         bestDelta = delta;

@@ -1883,28 +1883,58 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // provider. MapLibre's own attribution control is disabled via
   // ``attributionControl: false`` on the Map constructor above.
   const attributionTarget = document.getElementById('map-attribution-text');
+
+  // SNOW-614: the source-id list for the current style, and the last string
+  // written to the panel.
+  //
+  // ``sourcedata`` fires for every tile of every source — hundreds of times
+  // during a pan — and this handler ran ``getStyle()`` (which serialises
+  // the whole style object) and then an ``innerHTML`` write on each one,
+  // for a string that only ever changes on a basemap swap. The ids come
+  // from the style, so they are re-read on ``style.load`` and cached
+  // between; the string is compared before the write, so the parse-and-
+  // reflow only happens when the text actually differs.
+  /** @type {string[]|null} */
+  let attributionSourceIds = null;
+  let attributionHtml = null;
+
   const updateMapAttribution = () => {
     if (!attributionTarget) return;
-    const style = map.getStyle && map.getStyle();
-    if (!style || !style.sources) return;
+    if (!attributionSourceIds) {
+      const style = map.getStyle && map.getStyle();
+      if (!style || !style.sources) return;
+      attributionSourceIds = Object.keys(style.sources);
+    }
     const seen = new Set();
     // ``getStyle().sources`` returns the static style config, which does
     // not include the attribution string for tilejson-backed sources —
     // that arrives on the runtime ``Source`` instance after the tilejson
     // resolves. ``map.getSource(id)`` is the public path to that
     // instance, mirroring what MapLibre's own AttributionControl uses.
-    for (const id of Object.keys(style.sources)) {
+    // That is also why the ids can be cached but the lookup cannot: the
+    // set of ids is fixed by the style, the strings on them are not.
+    for (const id of attributionSourceIds) {
       const src = map.getSource(id);
       if (src && src.attribution) seen.add(src.attribution);
     }
+    const html = Array.from(seen).join(' &middot; ');
+    if (html === attributionHtml) return;
+    attributionHtml = html;
     // Source attribution strings carry trusted HTML (provider links) — we
     // assign innerHTML rather than textContent so the same anchors that
     // MapLibre's stock AttributionControl renders stay clickable. The
     // basemap URLs are server-controlled, so the trust boundary matches.
-    attributionTarget.innerHTML = Array.from(seen).join(' &middot; ');
+    attributionTarget.innerHTML = html;
   };
   map.on('sourcedata', updateMapAttribution);
-  map.on('style.load', updateMapAttribution);
+  map.on('style.load', () => {
+    // A new style means a new source set and, usually, a new provider —
+    // both caches have to go, or the panel would keep naming the basemap
+    // the user just switched away from.
+    attributionSourceIds = null;
+    attributionHtml = null;
+    updateMapAttribution();
+  });
 
   // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
   // Also logs visible bounds on every move (zoom or pan) so the current
@@ -5608,6 +5638,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let pointerId = null;
   let liveDate = null;  // tracked during drag, used by the date-preview event
 
+  // SNOW-614: the date the choropleth is currently painted for. A drag
+  // fires pointermove far more often than it crosses into a new day — the
+  // thumb moves a pixel at a time across a whole season — and each repaint
+  // is a setFeatureState per region. Repainting only on a change turns most
+  // frames into a thumb move and an event dispatch.
+  let paintedDateKey = null;
+
   const updateDragVisuals = (clientX) => {
     const rect = track.getBoundingClientRect();
     const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
@@ -5621,8 +5658,31 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // day so off-data days don't flash everything to no_rating mid-drag.
     if (ratingsCache) {
       const snapped = snapToNearestDataDay(liveDate);
-      repaintRegionsForDate(snapped, ratingsCache);
+      if (snapped !== paintedDateKey) {
+        paintedDateKey = snapped;
+        repaintRegionsForDate(snapped, ratingsCache);
+      }
     }
+  };
+
+  // SNOW-614: pointermove fires faster than the display refreshes, and the
+  // only thing a move does is decide what the NEXT frame looks like — so
+  // coalescing onto requestAnimationFrame drops the redundant work rather
+  // than deferring it. Only the newest position is kept; an older one is
+  // already wrong by the time the frame runs.
+  let pendingDragX = null;
+  let dragFrame = 0;
+
+  const scheduleDragVisuals = (clientX) => {
+    pendingDragX = clientX;
+    if (dragFrame) return;
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = 0;
+      if (pendingDragX === null) return;
+      const x = pendingDragX;
+      pendingDragX = null;
+      updateDragVisuals(x);
+    });
   };
 
   track.addEventListener('pointerdown', (e) => {
@@ -5630,19 +5690,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
     pointerId = e.pointerId;
     track.classList.add('dragging');
     track.classList.remove('animating');
+    // Not coalesced: the press must move the thumb in the same tick it
+    // happens, or the control feels unresponsive on the very interaction
+    // that starts the drag.
+    paintedDateKey = null;
     updateDragVisuals(e.clientX);
     e.preventDefault();
   });
 
   document.addEventListener('pointermove', (e) => {
     if (!dragging || e.pointerId !== pointerId) return;
-    updateDragVisuals(e.clientX);
+    scheduleDragVisuals(e.clientX);
   });
 
   const release = (e) => {
     if (!dragging || (e && e.pointerId !== pointerId)) return;
     dragging = false;
     pointerId = null;
+    // SNOW-614: drop any frame still queued — it holds a position from
+    // before the release, and commitDate below is about to paint the
+    // authoritative one.
+    if (dragFrame) {
+      cancelAnimationFrame(dragFrame);
+      dragFrame = 0;
+    }
+    pendingDragX = null;
+    paintedDateKey = null;
     track.classList.remove('dragging');
     // SNOW-236: use effectiveTodayKey (country-aware last populated date)
     // as the snap target when the user releases without having dragged.

@@ -94,6 +94,41 @@ describe('snapToNearestDataDay', () => {
     expect(core.snapToNearestDataDay('2026-01-03', [])).toBe('2026-01-03');
     expect(core.snapToNearestDataDay('2026-01-03', null)).toBe('2026-01-03');
   });
+
+  it('gives the same answer over a full season after the parse hoist', () => {
+    // SNOW-614 lifted Date.parse(dateKey) out of the loop — it does not
+    // vary across it. A season's worth of data days, probed on every day
+    // between them, is the shape a drag actually walks.
+    const season = [];
+    for (let d = 1; d <= 28; d += 3) {
+      season.push(`2026-01-${String(d).padStart(2, '0')}`);
+    }
+
+    for (let d = 1; d <= 28; d += 1) {
+      const key = `2026-01-${String(d).padStart(2, '0')}`;
+      const target = Date.parse(key);
+      // The reference answer, computed independently: smallest absolute
+      // delta, first entry winning a tie.
+      let expected = season[0];
+      let bestDelta = Math.abs(Date.parse(season[0]) - target);
+      for (const candidate of season) {
+        const delta = Math.abs(Date.parse(candidate) - target);
+        if (delta < bestDelta) {
+          expected = candidate;
+          bestDelta = delta;
+        }
+      }
+      expect(core.snapToNearestDataDay(key, season)).toBe(expected);
+    }
+  });
+
+  it('keeps the first entry on an exact tie', () => {
+    // 2026-01-03 is equidistant from both. The hoist must not change which
+    // side wins, or a drag would flicker between two days at the midpoint.
+    expect(core.snapToNearestDataDay('2026-01-03', ['2026-01-01', '2026-01-05'])).toBe(
+      '2026-01-01',
+    );
+  });
 });
 
 describe('nearestFrameIndex', () => {
