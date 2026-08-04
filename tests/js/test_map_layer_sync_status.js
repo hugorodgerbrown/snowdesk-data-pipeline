@@ -650,11 +650,14 @@ describe('downloaded row (pinned-tiles) — SNOW-586 multi-bucket union', () => 
     // that fallback, which is the only way to actually distinguish the
     // matching bucket from the non-matching one.
     //
-    // The map handle is stubbed as a BARE global, the way map.js's
-    // top-level `let MAP` reaches its sibling scripts (same idiom as
-    // tests/js/test_place_picker.js and test_map_placement_focus.js), and
-    // `hideWindowMap()` then takes `window.MAP` away — see its docstring.
-    globalThis.MAP = {};
+    // SNOW-610: the map handle now comes from `window.snowdeskMapState`,
+    // map.js's one named channel to its shared state. `hideWindowMap()`
+    // still runs, so `window.MAP` stays undefined throughout — that is
+    // what keeps this the M1 regression test: if the module ever goes back
+    // to reading `window.MAP`, `map` resolves null, the template goes with
+    // it, and the probe drops onto the "any entry at all" fallback these
+    // tests exist to distinguish from real per-tile filtering.
+    window.snowdeskMapState = Object.freeze({ get map() { return {}; } });
     globalThis.activeBasemapTileTemplate = () => TEMPLATE;
     restoreWindow = hideWindowMap();
   });
@@ -662,7 +665,7 @@ describe('downloaded row (pinned-tiles) — SNOW-586 multi-bucket union', () => 
   afterEach(() => {
     if (restoreWindow) restoreWindow();
     restoreWindow = null;
-    delete globalThis.MAP;
+    delete window.snowdeskMapState;
     delete globalThis.activeBasemapTileTemplate;
   });
 

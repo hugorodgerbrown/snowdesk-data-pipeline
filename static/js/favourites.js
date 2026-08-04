@@ -96,12 +96,21 @@
   // Module-level helpers.
   // ---------------------------------------------------------------------------
 
-  /** Return the global MAP object if available, else null. Guards against
-   * the case where map.js has not yet initialised.
+  /** Return the map if it is up, else null.
+   *
+   * SNOW-610: reads window.snowdeskMapState — map.js's one named channel to
+   * its shared state — rather than the bare ``MAP`` identifier. Both work
+   * (a top-level ``let`` in a classic script is visible by bare name), but
+   * only one is greppable, and the near-identical ``window.MAP`` spelling
+   * silently yields undefined.
+   *
+   * Still guarded: map.js may not have run, and ``map`` is null until the
+   * style loads.
+   *
    * @returns {maplibregl.Map|null}
    */
   function getMap() {
-    return typeof MAP !== 'undefined' ? MAP : null;
+    return window.snowdeskMapState ? window.snowdeskMapState.map : null;
   }
 
   // ---------------------------------------------------------------------------
