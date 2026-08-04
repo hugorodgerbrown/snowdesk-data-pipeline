@@ -54,6 +54,7 @@ from django.http import (
     HttpResponse,
     HttpResponseBadRequest,
     HttpResponseGone,
+    HttpResponseNotModified,
     HttpResponseRedirect,
 )
 from django.shortcuts import get_object_or_404, redirect, render
@@ -63,6 +64,7 @@ from django.utils import timezone
 from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
+from django.utils.http import quote_etag
 from django.utils.text import slugify
 from django.utils.translation import (
     get_language,
@@ -1684,6 +1686,43 @@ def _serve_sw_file(static_relative_path: str) -> HttpResponse:
     return response
 
 
+def _sw_conditional(request: HttpRequest, response: HttpResponse) -> HttpResponse:
+    """Stamp an ``ETag`` on a service-worker response and honour revalidation.
+
+    SNOW-622: ``Cache-Control: no-cache`` means the browser revalidates on
+    every page load, which is the contract these workers need — but without
+    a validator there is nothing to revalidate *against*, so every load
+    re-downloaded the whole script. ``sw.js`` is ~2,000 lines. An ``ETag``
+    turns the unchanged case into a bodyless 304 while keeping the
+    revalidation the workers depend on.
+
+    The tag is computed over the FINAL body, after ``serve_sw``'s
+    cache-version and dev-bypass substitutions, so it changes exactly when
+    what the browser would receive changes — which is also what makes the
+    worker detect an update.
+
+    Args:
+        request: The incoming request, read for ``If-None-Match``.
+        response: The fully-substituted service-worker response.
+
+    Returns:
+        ``response`` with an ``ETag``, or a bodyless 304 when the client
+        already holds that exact body.
+
+    """
+    etag = quote_etag(hashlib.sha256(response.content).hexdigest())
+    response["ETag"] = etag
+    if request.headers.get("If-None-Match") == etag:
+        not_modified = HttpResponseNotModified()
+        # A 304 carries no body, but must repeat the headers that govern
+        # how the cached copy may be used — a worker re-served from cache
+        # still needs its root scope and its revalidate-every-time rule.
+        for header in ("Service-Worker-Allowed", "Cache-Control", "ETag"):
+            not_modified[header] = response[header]
+        return not_modified
+    return response
+
+
 def serve_sw(request: HttpRequest) -> HttpResponse:
     """
     Serve the service worker script from the root URL path (``/sw.js``).
@@ -1742,7 +1781,7 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
             "const DEV_SHELL_BYPASS = true;",
         )
     response.content = body.encode("utf-8")
-    return response
+    return _sw_conditional(request, response)
 
 
 def serve_sw_kill(request: HttpRequest) -> HttpResponse:
@@ -1771,7 +1810,7 @@ def serve_sw_kill(request: HttpRequest) -> HttpResponse:
         Http404: If ``js/sw-kill.js`` is not found by staticfiles finders.
 
     """
-    return _serve_sw_file("js/sw-kill.js")
+    return _sw_conditional(request, _serve_sw_file("js/sw-kill.js"))
 
 
 def serve_manifest(request: HttpRequest) -> HttpResponse:

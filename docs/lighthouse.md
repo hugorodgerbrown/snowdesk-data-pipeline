@@ -24,13 +24,22 @@ Mobile preset by default (no desktop override), 3 runs per URL.
 
 Requires Chrome/Chromium on the host. The script:
 
-1. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
+1. Runs `bin/minify-js` (SNOW-622), which minifies `static/js/*.js` **in
+   place**. Before this, the audit measured ~23,000 lines of unminified
+   first-party JS that production does not serve — a budget checked against
+   assets nobody receives is measuring the wrong thing. `bin/build.sh` runs
+   the same step on deploy, so the two agree.
+
+   It rewrites tracked files, so `git checkout -- static/js` after a local
+   run if you intend to keep working in the tree. `sw.js` and `sw-kill.js`
+   are deliberately excluded — see the script header for why.
+2. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
    so the ManifestStaticFilesStorage manifest is populated.
-2. Starts a Django server on `:8765` using `config.settings.perf` — the
+3. Starts a Django server on `:8765` using `config.settings.perf` — the
    same WhiteNoise + `CompressedManifestStaticFilesStorage` + `GZipMiddleware`
    stack as production, so hashed filenames, pre-compressed assets, and
    cache headers match reality.
-3. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
+4. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
    to `.lighthouseci/` (gitignored).
 
 ```bash

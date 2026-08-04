@@ -1,0 +1,116 @@
+#!/usr/bin/env node
+/*
+ * bin/minify-js — Minify the first-party JavaScript in place (SNOW-622).
+ *
+ * Roughly 23,000 lines of first-party JS reached the browser as written,
+ * comments and all, on a map homepage that is already the heaviest page on
+ * the site and the one the Lighthouse budgets are set against.
+ *
+ * Runs from `bin/build.sh` (Render) and from `npm run lh`, so the measured
+ * number matches what production serves — a budget checked against
+ * unminified assets is measuring something nobody is served.
+ *
+ * In place, not into a build directory
+ * ------------------------------------
+ * Templates reference `{% static 'js/foo.js' %}` and the service worker
+ * precaches those same paths; writing minified copies elsewhere would mean
+ * every reference had to know which tree it was in. The Render checkout is
+ * ephemeral, and `npm run lh` is a local perf run, so overwriting is safe
+ * in both — but it does mean this must never run as part of an ordinary
+ * dev loop. It is deliberately not wired into `npm test` or any tox env.
+ *
+ * Source maps are emitted alongside so a production stack trace still
+ * points at real lines.
+ *
+ * Exclusions
+ * ----------
+ *   *.min.js   Vendored and already minified.
+ *   sw.js      `apps.public.views.serve_sw` rewrites its
+ *              `const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';`
+ *              per response with a regex that expects that exact,
+ *              single-quoted form, and `apps.core.checks
+ *              .check_sw_cache_version_substitutable` fails
+ *              `manage.py check` if it stops matching. Minifying would
+ *              rewrite the quoting and whitespace and break the
+ *              substitution — the SW would ship with a placeholder cache
+ *              name and every client would share one bucket.
+ *   sw-kill.js Same serving path, same reasoning; and it is the recovery
+ *              mechanism, which is the last thing to make clever.
+ *
+ * Usage:
+ *   node bin/minify-js          # minify static/js in place
+ *   node bin/minify-js --check  # report what would change, write nothing
+ */
+
+const fs = require('node:fs');
+const path = require('node:path');
+const esbuild = require('esbuild');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const JS_DIR = path.join(REPO_ROOT, 'static', 'js');
+
+// See the header for why each of these is left alone.
+const EXCLUDED = new Set(['sw.js', 'sw-kill.js']);
+
+/** @returns {string[]} Absolute paths of the files to minify. */
+function targets() {
+  return fs
+    .readdirSync(JS_DIR)
+    .filter((name) => name.endsWith('.js'))
+    .filter((name) => !name.endsWith('.min.js'))
+    .filter((name) => !EXCLUDED.has(name))
+    .sort()
+    .map((name) => path.join(JS_DIR, name));
+}
+
+async function main() {
+  const check = process.argv.includes('--check');
+  const files = targets();
+  let before = 0;
+  let after = 0;
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    before += Buffer.byteLength(source);
+
+    // `format` is deliberately unset: these are classic scripts, not
+    // modules, and esbuild must not wrap them in anything that would move
+    // their top-level declarations out of global scope — several modules
+    // publish themselves that way and `map.js`'s own helpers are read as
+    // `window.*` by other files.
+    const result = await esbuild.transform(source, {
+      minify: true,
+      sourcemap: check ? false : 'external',
+      sourcefile: path.basename(file),
+      // The browsers the PWA supports. Left broad — this is a size pass,
+      // not a transpile, and downlevelling would only make the output
+      // bigger.
+      target: 'es2020',
+      legalComments: 'none',
+    });
+
+    after += Buffer.byteLength(result.code);
+    if (check) continue;
+
+    fs.writeFileSync(
+      file,
+      `${result.code}\n//# sourceMappingURL=${path.basename(file)}.map\n`,
+    );
+    fs.writeFileSync(`${file}.map`, result.map);
+  }
+
+  const saved = before - after;
+  const pct = before > 0 ? ((saved / before) * 100).toFixed(1) : '0.0';
+  const verb = check ? 'would save' : 'saved';
+  console.log(
+    `minify-js: ${files.length} file(s) | ` +
+      `${(before / 1024).toFixed(0)} KiB → ${(after / 1024).toFixed(0)} KiB | ` +
+      `${verb} ${(saved / 1024).toFixed(0)} KiB (${pct}%)`,
+  );
+  console.log(`minify-js: left alone — ${[...EXCLUDED].join(', ')}, *.min.js`);
+}
+
+main().catch((err) => {
+  console.error('minify-js failed:', err);
+  process.exit(1);
+});

@@ -73,3 +73,8 @@ reference_data/geoip/*.mmdb
 # It carries a `fileToken` document UUID that trips the gitleaks generic-api-key
 # rule (SNOW-599); keep it out of history rather than allowlisting new copies.
 design-canvas.pen
+
+# SNOW-622: source maps emitted beside the minified JS by `bin/minify-js`,
+# which runs on deploy and before a Lighthouse run. Never committed — the
+# sources they map back to are the tracked files themselves.
+static/js/*.js.map
