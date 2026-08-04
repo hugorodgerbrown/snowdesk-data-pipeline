@@ -38,3 +38,22 @@ Context expected:
 {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
 {# Deferred so it executes in document order after the map assets.      #}
 <script defer src="{% static 'js/report.js' %}"></script>
+{# SNOW-620: report.js's toast and ineligible-state copy. The module builds  #}
+{# those states itself, so none of this text has ever passed through a       #}
+{# template and makemessages could not see it. Read back via                 #}
+{# window.pwaStrings.read(); the module keeps the English literal as the     #}
+{# fallback. See static/js/i18n_strings.js.                                  #}
+<template id="report-strings-template">
+    <span data-string="no-signal-type">{% trans "Could not submit your report — please tap a signal type." %}</span>
+    <span
+        data-string="cannot-queue"
+    >{% trans "Could not save your report on this device — please try again." %}</span>
+    <span data-string="generic">{% trans "Something went wrong — please try again." %}</span>
+    <span data-string="sheet-title">{% trans "Report" %}</span>
+    <span data-string="close">{% trans "Close" %}</span>
+    <span
+        data-string="verify-email"
+    >{% trans "Verify your email to submit a field observation. Check your inbox for the verification link." %}</span>
+    <span data-string="signin-prompt">{% trans "Sign in to submit a field observation." %}</span>
+    <span data-string="signin-cta">{% trans "Sign in" %}</span>
+</template>

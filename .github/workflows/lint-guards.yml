@@ -2,7 +2,8 @@
 # template-formatting linters.
 #
 # Runs ``tox -e ds-lint`` (design-token guard over templates AND
-# static/js), ``tox -e js-globals-lint`` (reads of globals nothing
+# static/js), ``tox -e i18n-lint`` (user-facing strings hardcoded in JS),
+# ``tox -e js-globals-lint`` (reads of globals nothing
 # assigns), ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing
 # guard) and ``tox -e djangofmt`` (template formatting — the CI backstop
 # for the bypassable pre-commit hook).
@@ -64,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, js-globals-lint, docs-lint, djangofmt]
+        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

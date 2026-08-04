@@ -226,10 +226,13 @@ the manage page can be authenticated-only.
             }
 
             document.addEventListener("passkey:auth-unknown-credential", function () {
-                showAuthError("{% trans "The passkey you used could not be found on Snowdesk. Please try a different passkey or use the sign-in link." %}");
+                {# SNOW-620: escapejs — this is a JS string literal, not HTML. #}
+                {% trans "The passkey you used could not be found on Snowdesk. Please try a different passkey or use the sign-in link." as passkey_unknown %}
+                showAuthError("{{ passkey_unknown|escapejs }}");
             });
             document.addEventListener("passkey:auth-error", function () {
-                showAuthError("{% trans "Sign-in failed. Please try again or use the sign-in link." %}");
+                {% trans "Sign-in failed. Please try again or use the sign-in link." as passkey_auth_failed %}
+                showAuthError("{{ passkey_auth_failed|escapejs }}");
             });
 
             /* After a successful passkey auth, reload so sign_in_view can redirect */

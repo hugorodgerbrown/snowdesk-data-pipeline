@@ -16,6 +16,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 const STORAGE_KEY = 'snowdesk.map.controls.expanded';
 
 /**
@@ -141,5 +143,47 @@ describe('map controls collapse', () => {
   it('is inert when the stack is absent', async () => {
     document.body.innerHTML = '<div id="unrelated"></div>';
     await expect(loadModule()).resolves.not.toThrow();
+  });
+});
+
+describe('translated labels (SNOW-620)', () => {
+  /**
+   * Append a strings template to the fixture, as _map_embed.html does.
+   *
+   * @param {Object<string, string>} entries
+   */
+  function mountStrings(entries) {
+    const tpl = document.createElement('template');
+    tpl.id = 'map-controls-strings-template';
+    tpl.innerHTML = Object.entries(entries)
+      .map(([key, value]) => `<span data-string="${key}">${value}</span>`)
+      .join('');
+    document.body.appendChild(tpl);
+  }
+
+  it('labels the toggle from the strings template when it is present', async () => {
+    buildFixture();
+    mountStrings({ collapse: 'Bedienelemente ausblenden', expand: 'Bedienelemente' });
+    await loadModule();
+
+    // Rendered expanded, so the label describes what the next tap does.
+    expect(toggle().getAttribute('aria-label')).toBe('Bedienelemente ausblenden');
+
+    toggle().click();
+
+    expect(toggle().getAttribute('aria-label')).toBe('Bedienelemente');
+  });
+
+  it('falls back to English when the partial did not render the template', async () => {
+    // The real case this guards: a page that includes the module but not
+    // the surface partial. The control must still be labelled.
+    buildFixture();
+    await loadModule();
+
+    expect(toggle().getAttribute('aria-label')).toBe('Hide map controls');
+
+    toggle().click();
+
+    expect(toggle().getAttribute('aria-label')).toBe('Show map controls');
   });
 });

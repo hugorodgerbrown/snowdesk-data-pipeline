@@ -102,7 +102,6 @@
   var SHEET_ID = 'map-downloads-sheet';
   var BODY_TEMPLATE_ID = 'map-downloads-body-template';
   var ROW_TEMPLATE_ID = 'map-downloads-row-template';
-  var STRINGS_TEMPLATE_ID = 'map-downloads-strings-template';
 
   // The one storage row this module touches directly. The downloads
   // themselves live in two records read through window.pwaBasemapDownloads
@@ -124,44 +123,26 @@
    * here rather than written as a JS literal — which would ship
    * untranslatable English to every locale.
    *
-   * Internal whitespace is collapsed, not merely trimmed. ``djangofmt``
-   * reflows a long ``{% blocktrans %}`` across lines to satisfy the line
-   * length it enforces, which puts a newline and a run of source
-   * indentation into the middle of the string — invisible in the template,
-   * and rendered verbatim into a ``window.confirm`` dialog. Collapsing on
-   * read makes these strings immune to how the formatter chooses to wrap
-   * them, rather than leaving a template that must never be reformatted.
+   * SNOW-620: this module was the reference implementation, and its reader
+   * is now the shared one in static/js/i18n_strings.js — eight more
+   * surfaces needed it, and its two non-obvious details (whitespace
+   * collapsed rather than trimmed; substitution by name rather than
+   * position) are exactly the kind that get lost in a re-implementation.
    *
    * @type {Object<string, string>}
    */
-  var STRINGS = (function () {
-    var out = {};
-    var tpl = document.getElementById(STRINGS_TEMPLATE_ID);
-    if (!tpl) return out;
-    tpl.content.querySelectorAll('[data-string]').forEach(function (el) {
-      out[el.dataset.string] = el.textContent.replace(/\s+/g, ' ').trim();
-    });
-    return out;
-  })();
+  var STRINGS = self.pwaStrings.read('map-downloads-strings-template', {
+    'kind-region': 'Region',
+    'kind-custom': 'Custom area',
+    'kind-incomplete': 'Incomplete download',
+    usage: '%(used)s of %(budget)s used',
+    'confirm-remove':
+      "Remove the offline map for %(name)s? This frees %(size)s. You can " +
+      "download it again when you're back online.",
+    'remove-failed': "That download couldn't be removed. Try again.",
+  });
 
-  /**
-   * Substitute ``%(name)s``-style placeholders into a translated string.
-   *
-   * Django's ``blocktrans`` emits named placeholders, and a locale is free
-   * to reorder them — so substitution has to be by name, never positional.
-   *
-   * @param {string} template
-   * @param {Object<string, string>} values
-   * @returns {string}
-   */
-  function interpolate(template, values) {
-    if (!template) return '';
-    return template.replace(/%\((\w+)\)s/g, function (match, key) {
-      return Object.prototype.hasOwnProperty.call(values, key)
-        ? String(values[key])
-        : match;
-    });
-  }
+  var interpolate = self.pwaStrings.interpolate;
 
   /** @returns {Object|null} The pure core, once it has loaded. */
   function manageCore() {

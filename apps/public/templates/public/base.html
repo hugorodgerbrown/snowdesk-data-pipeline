@@ -202,6 +202,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below — loads first among them so it's registered before any   #}
         {# overlay could plausibly be revealed and clicked.                #}
         <script src="{% static 'js/overlays.js' %}" defer></script>
+        {# SNOW-620: reads server-translated copy back out of the hidden      #}
+        {# strings <template>s the surface partials render, so makemessages  #}
+        {# can see strings that JS is what actually puts on screen. Every    #}
+        {# consumer calls window.pwaStrings at IIFE time, so this must load  #}
+        {# FIRST among them — every script here is defer, so document order  #}
+        {# is execution order.                                               #}
+        <script src="{% static 'js/i18n_strings.js' %}" defer></script>
         {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}
@@ -252,6 +259,7 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# failed favourites:list / favourites:card HTMX request. Loads    #}
         {# after db.js (needs window.pwaDb) and pwa_offline.js (shares the #}
         {# same htmx:sendError convention).                                #}
+        {% include "includes/_favourites_offline_strings.html" %}
         <script src="{% static 'js/favourites_offline.js' %}" defer></script>
         {# SNOW-379: install-prompt orchestration. Captures                  #}
         {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}

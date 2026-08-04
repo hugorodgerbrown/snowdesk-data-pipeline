@@ -1161,3 +1161,44 @@ Optional context:
 {% trans "Downloading this area would remove earlier downloads to make room. Continue?" as basemap_download_evict_confirm_title %}
 {% trans "Remove and continue" as basemap_download_evict_confirm_cta_label %}
 {% include "includes/_overlay_banner.html" with id="map-download-evict-confirm" variant="floating" title=basemap_download_evict_confirm_title title_id="map-download-evict-confirm-title" body="" body_id="map-download-evict-confirm-body" cta_id="map-download-evict-confirm-cta" cta_label=basemap_download_evict_confirm_cta_label dismissible=True aria_live="assertive" %}
+{# SNOW-620: strings templates for the three modules whose surface is this   #}
+{# partial. makemessages scans templates and Python, never JavaScript, so a  #}
+{# string a module writes into the DOM itself has to be rendered here to     #}
+{# reach the catalogue at all. Each module reads its own template back via   #}
+{# window.pwaStrings.read() and keeps the English literal as the fallback,   #}
+{# so a page that omits this partial still shows words. See                  #}
+{# static/js/i18n_strings.js.                                                #}
+<template id="map-controls-strings-template">
+    {# The expanded label is also rendered directly onto the button above    #}
+    {# (aria-label) for the pre-JS state; same msgid, so one catalogue entry.#}
+    <span data-string="collapse">{% trans "Hide map controls" %}</span>
+    <span data-string="expand">{% trans "Show map controls" %}</span>
+</template>
+{# The layers-menu sync dots. The layer / basemap / country groups keep      #}
+{# separate entries even where their English is identical: gettext dedupes   #}
+{# identical msgids so the repetition is free, and each row stays free to    #}
+{# diverge later without being untangled first.                              #}
+<template id="map-sync-status-strings-template">
+    <span data-string="cached">{% trans "Available offline" %}</span>
+    <span data-string="uncached">{% trans "Not cached — view online first" %}</span>
+    <span data-string="offline-blocked">{% trans "Unavailable offline — not cached" %}</span>
+    <span data-string="basemap-cached">{% trans "Available offline" %}</span>
+    <span data-string="basemap-uncached">{% trans "Not cached — view online first" %}</span>
+    <span data-string="basemap-offline-blocked">{% trans "Unavailable offline — switch back online to load" %}</span>
+    <span data-string="country-cached">{% trans "Region data available offline" %}</span>
+    <span data-string="country-uncached">{% trans "Not cached — view online first" %}</span>
+    <span data-string="country-offline-blocked">{% trans "Unavailable offline — not cached" %}</span>
+    <span data-string="syncing">{% trans "Caching for offline use…" %}</span>
+</template>
+{# map.js's region popup and season-timelapse transport. The two %(date)s    #}
+{# strings are blocktrans, not concatenation: a locale is free to put the    #}
+{# date anywhere in the sentence.                                           #}
+<template id="map-strings-template">
+    <span data-string="bulletin-link">{% blocktrans %}Open bulletin for %(date)s →{% endblocktrans %}</span>
+    <span data-string="no-bulletin">{% blocktrans %}No bulletin available for %(date)s{% endblocktrans %}</span>
+    <span data-string="season-unavailable">{% trans "Season data unavailable" %}</span>
+    <span data-string="timelapse-play">{% trans "Play season timelapse" %}</span>
+    <span data-string="timelapse-play-reverse">{% trans "Play season timelapse in reverse" %}</span>
+    <span data-string="timelapse-stop">{% trans "Stop season timelapse" %}</span>
+    <span data-string="timelapse-stop-reverse">{% trans "Stop reverse timelapse" %}</span>
+</template>
