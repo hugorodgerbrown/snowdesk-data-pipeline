@@ -474,23 +474,112 @@ const BASEMAP_PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 // than split up.
 const LEGACY_BASEMAP_PINNED_CACHE = 'snowdesk-basemap-pinned-v1';
 
+// SNOW-613: the memoised pinned-bucket name list, and the promise for an
+// enumeration currently in flight.
+//
+// This used to be re-derived from ``caches.keys()`` on every call, and the
+// comment explaining why said a memo "would go stale with no invalidation
+// path". There is one now, and the cost of not having it was real: every
+// offline tile read paid a full ``caches.keys()``, so a single map pan on a
+// device with several downloaded areas issued one enumeration per tile.
+//
+// Two events invalidate it explicitly:
+//
+//   1. This worker warms a pinned bucket it has not seen before
+//      (``_warmCache`` below).
+//   2. The page deletes one — ``evictBasemapAreas`` in static/js/map.js,
+//      which posts ``pinned-buckets-changed`` after every eviction (see
+//      the message handler).
+//
+// Those two are not a closed set, and relying on them being one would be
+// the same class of trap this review is clearing out: anything that calls
+// ``caches.open(BASEMAP_PINNED_CACHE_PREFIX + id)`` outside ``_warmCache``
+// creates a bucket the memo cannot see, and the symptom is a downloaded
+// tile silently failing to serve offline.
+//
+// So a MISS re-enumerates unconditionally, and that costs nothing worth
+// saving: reaching a pinned miss means the passive basemap cache missed
+// too, so this request is already on its way to the network. One
+// ``caches.keys()`` is noise beside a network round trip. The memo earns
+// its keep on the HIT path — a device panning offline over ground it has
+// downloaded, which is thousands of reads that now share one enumeration.
+//
+// Staleness in either direction is a real fault, not just a slow path: a
+// name left in the list would be handed to ``caches.open``, which CREATES
+// an empty cache under that name — resurrecting a bucket the user just
+// deleted, and one that ``pinnedBucketAreaIds()`` (SNOW-612) would then
+// report back to them as an orphaned download.
+/** @type {string[]|null} */
+let _pinnedNames = null;
+/** @type {Promise<string[]>|null} */
+let _pinnedNamesInFlight = null;
+
+/**
+ * Drop the memoised pinned-bucket list (SNOW-613).
+ *
+ * @returns {void}
+ */
+function _invalidatePinnedCacheNames() {
+  _pinnedNames = null;
+  _pinnedNamesInFlight = null;
+}
+
 /**
  * SNOW-586: every live per-area pinned bucket currently in Cache Storage
  * — i.e. every ``caches.keys()`` entry under ``BASEMAP_PINNED_CACHE_PREFIX``
  * EXCLUDING the legacy shared name, which activate's sweep deletes rather
  * than treats as a bucket.
  *
- * Deliberately re-derived from ``caches.keys()`` on every call rather than
- * memoised: the page deletes buckets directly (a confirmed eviction), so a
- * cached name list kept here would go stale with no invalidation path.
+ * SNOW-613: memoised, with the invalidation contract documented above.
+ * Concurrent callers share one enumeration rather than each starting their
+ * own — a burst of tile requests on a cold memo is the exact case this
+ * exists for.
  *
  * @returns {Promise<string[]>}
  */
 async function _pinnedCacheNames() {
-  const names = await caches.keys();
-  return names.filter(
-    (name) => name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE,
-  );
+  if (_pinnedNames) return _pinnedNames;
+  if (_pinnedNamesInFlight) return _pinnedNamesInFlight;
+  _pinnedNamesInFlight = (async () => {
+    const names = await caches.keys();
+    return names.filter(
+      (name) =>
+        name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE,
+    );
+  })();
+  try {
+    const resolved = await _pinnedNamesInFlight;
+    // Only memoise a settled result — an invalidation that landed WHILE
+    // this enumeration was in flight has already cleared the in-flight
+    // handle, and writing the now-stale answer into the memo would undo it.
+    if (_pinnedNamesInFlight) _pinnedNames = resolved;
+    return resolved;
+  } finally {
+    _pinnedNamesInFlight = null;
+  }
+}
+
+/**
+ * The pinned-bucket list, re-enumerated after a lookup the memoised one
+ * failed to answer (SNOW-613).
+ *
+ * The memo can only ever be wrong in one direction that costs anything: a
+ * bucket that exists but is not in the list, whose tiles then fail to
+ * serve offline. That shows up as a miss, so a miss is where it is worth
+ * paying to re-check — see the section comment above for why the walk is
+ * effectively free on that path.
+ *
+ * @param {string[]} tried The list the miss was computed against.
+ * @returns {Promise<string[]|null>} A fresh list when it differs from
+ *   ``tried``; ``null`` when there is nothing new to search.
+ */
+async function _pinnedCacheNamesAfterMiss(tried) {
+  _invalidatePinnedCacheNames();
+  const fresh = await _pinnedCacheNames();
+  if (fresh.length === tried.length && fresh.every((n, i) => n === tried[i])) {
+    return null;
+  }
+  return fresh;
 }
 
 // SNOW-484: the allowlist of cross-origin basemap origins it is safe to
@@ -1248,6 +1337,11 @@ async function _warmCache(urls, options) {
   const areaId = opts.areaId;
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
   const shellCache = await caches.open(CACHE_VERSION);
+  // SNOW-613: `caches.open` CREATES a pinned bucket that did not exist, so
+  // a pinned run can add a name the memoised list below has not seen. Drop
+  // it rather than test for membership — a run happens once, an offline
+  // tile read happens thousands of times, and the next read repopulates.
+  if (pinned) _invalidatePinnedCacheNames();
   const basemapCache = await caches.open(
     pinned ? BASEMAP_PINNED_CACHE_PREFIX + areaId : BASEMAP_CACHE,
   );
@@ -1418,12 +1512,39 @@ async function _basemapStaleWhileRevalidate(request) {
   // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
   // falling through to the network. Defensive: a pinned-cache lookup
   // failure must not break the existing miss -> network -> 504 chain.
+  //
+  // SNOW-613: the buckets are searched in parallel rather than walked in
+  // order. A device with several downloaded areas paid one round trip per
+  // bucket per tile, serially, on every offline pan. Which bucket answers
+  // first is immaterial — a tile held by two overlapping areas is
+  // identical bytes in either — so there is nothing for the ordering to
+  // preserve, and `Promise.all` turns N sequential waits into one.
   try {
+    const searchPinned = async (names) => {
+      const hits = await Promise.all(
+        names.map(async (name) => {
+          try {
+            const pinnedCache = await caches.open(name);
+            return await pinnedCache.match(request);
+          } catch (_e) {
+            // One bucket failing must not lose the others.
+            return undefined;
+          }
+        }),
+      );
+      return hits.find(Boolean);
+    };
+
     const pinnedNames = await _pinnedCacheNames();
-    for (const name of pinnedNames) {
-      const pinnedCache = await caches.open(name);
-      const pinnedHit = await pinnedCache.match(request);
-      if (pinnedHit) return pinnedHit;
+    const pinnedHit = await searchPinned(pinnedNames);
+    if (pinnedHit) return pinnedHit;
+
+    // Missed. The list may be the stale half of the story — re-enumerate
+    // and search again if anything has appeared since.
+    const freshNames = await _pinnedCacheNamesAfterMiss(pinnedNames);
+    if (freshNames) {
+      const freshHit = await searchPinned(freshNames);
+      if (freshHit) return freshHit;
     }
   } catch (_err) {
     // Fall through to the network/504 path below.
@@ -1787,6 +1908,20 @@ self.addEventListener('message', (event) => {
   // ``clients.claim()``), which hands control to this new shell.
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  // SNOW-613: the page has deleted one or more pinned basemap buckets —
+  // `evictBasemapAreas` in static/js/map.js posts this after every
+  // eviction, whether a confirmed budget eviction, a "Remove" from the
+  // manage-downloads sheet, or a custom area being replaced at a new bbox.
+  //
+  // The worker cannot see those deletions any other way, and a stale name
+  // in its memoised list is not merely a slow path: it would be handed to
+  // `caches.open`, which CREATES an empty cache under that name —
+  // resurrecting the bucket the user just deleted, and one that
+  // `pinnedBucketAreaIds()` (SNOW-612) would then report back to them as
+  // an orphaned download.
+  if (event.data && event.data.type === 'pinned-buckets-changed') {
+    _invalidatePinnedCacheNames();
   }
   // SNOW-484: map.js posts this once BASEMAP_OPTIONS is parsed from the
   // basemap picker's data-basemap-url attributes (and again on

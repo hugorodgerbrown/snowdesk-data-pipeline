@@ -496,6 +496,13 @@ async function evictBasemapAreas(areaIds) {
       }
     }),
   );
+  // SNOW-613: tell the worker its memoised pinned-bucket list is stale.
+  // It has no other way to learn about a page-side deletion, and a stale
+  // name there would be handed to `caches.open`, recreating the bucket the
+  // user just deleted as an empty one.
+  navigator.serviceWorker?.controller?.postMessage({
+    type: 'pinned-buckets-changed',
+  });
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
@@ -1224,6 +1231,45 @@ async function runPinnedDownload(options) {
     return;
   }
   return runner.run(PINNED_DOWNLOAD_DEPS, options);
+}
+
+/**
+ * Wrap an async, idempotent render so overlapping calls coalesce
+ * (SNOW-613).
+ *
+ * Both download controls' `renderControl` probes Cache Storage, and its
+ * triggers arrive in bursts — a basemap swap, a connectivity flip and a
+ * region selection can all land in the same tick. Each probe now walks
+ * every pinned bucket, so a burst issued that walk several times over for
+ * one answer.
+ *
+ * Trailing, not leading: a call arriving mid-probe carries NEWER state
+ * than the one running (a different focused region, a connection that has
+ * since dropped), so dropping it would settle the roundel against state
+ * the user has already moved on from. One extra pass runs after the
+ * current one, however many calls arrive during it.
+ *
+ * @param {function(): Promise<void>} render
+ * @returns {function(): Promise<void>}
+ */
+function coalesceRenders(render) {
+  let running = false;
+  let again = false;
+  return async function coalesced() {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    try {
+      do {
+        again = false;
+        await render();
+      } while (again);
+    } finally {
+      running = false;
+    }
+  };
 }
 
 /**
@@ -6001,8 +6047,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
-    // SNOW-505: recompute the sync-status dots on every open — cheap,
-    // client-side probes, so no need to keep them live while closed.
+    // SNOW-505: recompute the sync-status dots on every open, so no need
+    // to keep them live while closed. SNOW-613: "cheap, client-side
+    // probes" was written before the per-area bucket split — a pass is now
+    // a dozen Cache Storage reads, several of which walk every pinned
+    // bucket, so repeated opens coalesce inside `refresh()` rather than
+    // each starting their own pass.
     if (open) window.pwaLayerSyncStatus?.refresh();
     // SNOW-511: size the menu to the visible map area once it's laid out.
     if (open) clampMenuHeight();
@@ -6616,7 +6666,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * @returns {Promise<void>}
    */
-  async function renderControl() {
+  async function _renderControl() {
     const data = regionData;
     if (!data) {
       setState('no-region');
@@ -6654,6 +6704,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     setState(done ? 'done' : 'idle', data.summary.mb);
   }
+
+  // SNOW-613: overlapping renders coalesce onto one trailing pass — see
+  // `coalesceRenders`. Every trigger below calls this, not `_renderControl`.
+  const renderControl = coalesceRenders(_renderControl);
 
   /**
    * Adopt `regionId` as the focused region: pull its download summary
@@ -6976,7 +7030,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * @returns {Promise<void>}
    */
-  async function renderControl() {
+  async function _renderControl() {
     if (btn.dataset.downloadState === 'busy') return;
     // Offline-integrity: an undownloaded area can't be fetched now, so it
     // reads offline rather than actionable idle; an already-downloaded
@@ -6999,6 +7053,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     setState(done ? 'done' : 'idle');
   }
+
+  // SNOW-613: overlapping renders coalesce onto one trailing pass — see
+  // `coalesceRenders`. Every trigger below calls this, not `_renderControl`.
+  const renderControl = coalesceRenders(_renderControl);
 
   /**
    * Best-effort read of the persisted saved area from meta:app. Never
