@@ -24,17 +24,20 @@
  *        `data-overlay-persist="key=value"`.
  *      - dispatches a bubbling `overlay:dismissed` CustomEvent
  *        (`detail.overlay` = the element) so the owning module can run
- *        teardown beyond hide (favourites.js / report.js deactivate the
- *        place-picker and clear the sheet's content; home_intro.js /
- *        map_help.js set aria-hidden and restore focus) without binding
- *        its own ×-click listener.
+ *        teardown beyond hide (map_sheet.js deactivates the place-picker
+ *        and clears the sheet's content for both map sheets, and drops the
+ *        shared toast's auto-dismiss timer; home_intro.js / map_help.js
+ *        set aria-hidden and restore focus) without binding its own
+ *        ×-click listener.
  *
  * 2. A shared toast auto-dismiss controller — any element carrying
  *    `data-toast-timeout="<ms>"` (an opt-in on templates/includes/_toast.html)
  *    is watched for becoming visible and hidden again that many ms later,
- *    via the same idiom-aware hide as above. No current template passes
- *    `timeout`, so this is inert today — it exists so a future toast can
- *    opt in without new JS.
+ *    via the same idiom-aware hide as above. The three offline toasts in
+ *    public/partials/_map_embed.html opt in at 6000ms; a toast whose text
+ *    is rewritten between reveals (map_sheet.js's #map-sheet-toast) runs
+ *    its own timer instead, since a text change fires no mutation the
+ *    observer below watches for and so would not re-arm this one.
  */
 
 (function overlayDismissInit() {

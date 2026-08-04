@@ -92,6 +92,15 @@ in addition to the shared map assets.
     {# closure. Document order here puts it before report.js and            #}
     {# favourites.js, which is what both of them require.                   #}
     <script defer src="{% static 'js/place_picker.js' %}"></script>
+    {# SNOW-608: the sheet controller, failure toast and mutation-storage  #}
+    {# guard both surfaces below share. Loaded here rather than from       #}
+    {# either partial — all three scripts are defer, so document order is  #}
+    {# execution order and window.MapSheet exists before either caller.    #}
+    <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
+    {# and hidden, so the markup, tokens and ARIA roles have a single      #}
+    {# owner and the "×" is handled by overlays.js like every other toast. #}
+    {% include "includes/_toast.html" with id="map-sheet-toast" kind="warning" body="" %}
     {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}

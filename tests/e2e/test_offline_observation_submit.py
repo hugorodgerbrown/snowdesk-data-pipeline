@@ -291,7 +291,9 @@ def test_reset_required_state_shows_error_toast_not_false_confirmation(
 
     # The guard fires: the error toast appears, the form stays put (no
     # optimistic confirmation swapped in), and nothing is claimed as recorded.
-    page.wait_for_selector("#report-toast")
+    # SNOW-608: one shared toast for both map sheets, server-rendered hidden
+    # and revealed by MapSheet.toast() — so wait on visibility, not presence.
+    page.wait_for_selector("#map-sheet-toast", state="visible")
     assert page.locator("#report-sheet #report-form").count() == 1
     assert (
         page.locator('#report-sheet:has-text("Thank you for your report")').count() == 0

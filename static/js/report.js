@@ -99,91 +99,18 @@
   const IS_UNVERIFIED = btn.dataset.reportUnverified === 'true';
 
   // ---------------------------------------------------------------------------
-  // Toast helper — reuses the project-wide toast markup conventions.
+  // Sheet controller + toast — SNOW-608's shared static/js/map_sheet.js, which
+  // owns the open/focus cycle, the three dismissal routes (Escape,
+  // click-outside, overlays.js's [data-action="dismiss"]) and their common
+  // teardown. favourites.js attaches to its own sheet the same way.
   // ---------------------------------------------------------------------------
 
-  function showToast(message) {
-    const existing = document.getElementById('report-toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.id = 'report-toast';
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.className = [
-      'flex', 'fixed', 'bottom-4', 'left-1/2', '-translate-x-1/2', 'z-50',
-      'items-center', 'gap-3', 'max-w-md', 'rounded-full',
-      'bg-status-warning-bg', 'text-status-warning-text',
-      'px-4', 'py-2', 'text-sm', 'shadow-lg',
-    ].join(' ');
-
-    const span = document.createElement('span');
-    span.textContent = message;
-    toast.appendChild(span);
-
-    const dismiss = document.createElement('button');
-    dismiss.type = 'button';
-    dismiss.setAttribute('aria-label', 'Dismiss');
-    dismiss.className = 'text-status-warning-text opacity-70 hover:opacity-100 px-1 leading-none';
-    dismiss.textContent = '×';
-    dismiss.addEventListener('click', function () { toast.remove(); });
-    toast.appendChild(dismiss);
-
-    document.body.appendChild(toast);
-    setTimeout(function () { if (toast.parentNode) toast.remove(); }, 6000);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Sheet open / close
-  // ---------------------------------------------------------------------------
-
-  function openSheet() {
-    sheet.removeAttribute('hidden');
-    sheet.focus();
-  }
-
-  function closeSheet() {
-    window.PlacePicker?.deactivate();
-    sheet.setAttribute('hidden', '');
-    sheet.innerHTML = '';
-  }
-
-  // SNOW-486: #report-sheet is a [data-overlay] element (see
-  // includes/_overlay_sheet.html), so a click on any
-  // [data-action="dismiss"] inside it — the Cancel button, the header ×,
-  // the confirmation's Close button — is already caught by
-  // static/js/overlays.js's shared delegated handler, which hides the
-  // sheet (the attribute idiom it already used) and dispatches
-  // overlay:dismissed. This listens for that event to run the teardown
-  // the shared handler doesn't know about: deactivating the place-picker
-  // and clearing the sheet's content so the next open starts fresh.
-  document.addEventListener('overlay:dismissed', function (event) {
-    const el = event.detail && event.detail.overlay;
-    if (el !== sheet) return;
-    window.PlacePicker?.deactivate();
-    sheet.innerHTML = '';
+  const controller = window.MapSheet.attach(sheet, {
+    triggerSelector: '#report-btn',
   });
-
-  // Esc dismisses the sheet.
-  document.addEventListener('keydown', function (event) {
-    if (event.key !== 'Escape') return;
-    if (sheet.hasAttribute('hidden')) return;
-    closeSheet();
-  });
-
-  // Click-outside dismisses the sheet — but not while the user is
-  // interacting with the map or place-picker to position a pin, and not
-  // on the opening trigger itself (which has its own click handler).
-  document.addEventListener('click', function (event) {
-    if (sheet.hasAttribute('hidden')) return;
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (!target || !target.closest) return;
-    if (target.closest('#report-sheet')) return;
-    if (target.closest('#report-btn')) return;
-    if (target.closest('#map')) return;
-    if (target.closest('[data-place-picker]')) return;
-    closeSheet();
-  });
+  const openSheet = controller.open;
+  const closeSheet = controller.close;
+  const showToast = window.MapSheet.toast;
 
   // ---------------------------------------------------------------------------
   // Form-coord helpers — written by the place-picker's onChange (SNOW-475).
@@ -311,17 +238,9 @@
       body: body,
     };
 
-    // enqueue() is defensively non-fatal: when IndexedDB is missing or in the
-    // terminal Reset-Required state (SNOW-375/376 contract) it silently drops
-    // the operation and still resolves, so awaiting it can't tell us the
-    // report was persisted. Detect those states up front and surface the
-    // error toast instead of showing a success confirmation for a report that
-    // was never actually queued.
-    const dbUnavailable =
-      typeof window.pwaDb !== 'object' ||
-      (typeof window.pwaDb.isResetRequired === 'function' &&
-        window.pwaDb.isResetRequired());
-    if (!window.pwaMutationQueue || dbUnavailable) {
+    // enqueue() is defensively non-fatal — see MapSheet.canQueueMutations()
+    // for why the check has to come first rather than off the promise.
+    if (!window.MapSheet.canQueueMutations()) {
       showToast('Could not save your report on this device — please try again.');
       return;
     }
