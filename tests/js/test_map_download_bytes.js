@@ -1,18 +1,36 @@
 /*
  * tests/js/test_map_download_bytes.js — Vitest DOM test for SNOW-632: the
  * region download control's ``_recordRegionDownload`` (static/js/map.js)
- * measures its pinned bucket instead of accumulating a reported byte total.
+ * records each run's own reported byte total, replacing any previous
+ * figure — never accumulating onto it, and never re-measuring the pinned
+ * bucket.
  *
- * The bug: a re-download of an already-downloaded region at the SAME
- * basemap fetches the identical tile URLs into the SAME pinned bucket —
- * ``cache.put`` OVERWRITES each key, so the bucket does not grow — but the
- * pre-fix code added the run's reported ``bytes`` onto whatever was already
- * recorded regardless, doubling the figure on every repeat with nothing new
- * on disk. This drives the real ``mapDownloadControlInit`` click flow
- * through the real ``basemap_download_runner.js`` twice against the SAME
- * region and asserts the recorded total does not move, and that it comes
- * from measuring the bucket (not from the run's own reported figure, which
- * this harness deliberately sets to a different, wrong number).
+ * The bug this covers (twice, in two directions):
+ *
+ *   1. A re-download of an already-downloaded region under the SAME
+ *      basemap must not inflate the recorded total. The original bug
+ *      accumulated the run's reported ``bytes`` onto whatever was already
+ *      recorded, doubling the figure on every repeat even though a
+ *      same-template retry fetches identical URLs into the identical
+ *      bucket (``cache.put`` OVERWRITES each key, so the bucket does not
+ *      grow). A later attempt fixed this by MEASURING the bucket instead
+ *      of trusting the reported figure — which is what this suite used to
+ *      assert — but that measurement reads a Response's ``Content-Length``
+ *      header only, and a real tile response under the gzip encoding every
+ *      browser requests carries no such header at all, so it read 0 in
+ *      production and silently fell back to the run's own reported figure
+ *      anyway (see docs/decisions/per-area-pinned-basemap-caches.md for
+ *      the curl evidence). The fix under test here is simpler: record the
+ *      run's own reported bytes directly, replacing the previous record.
+ *   2. A re-download of the SAME region under a DIFFERENT basemap must
+ *      evict the old basemap's tiles from the bucket FIRST — otherwise
+ *      they sit alongside the new run's tiles, and "record the run's own
+ *      bytes" under-counts what the bucket actually holds. This drives the
+ *      real ``mapDownloadControlInit`` click flow through the real
+ *      ``basemap_download_runner.js`` with the stub map's active tile
+ *      template switched between runs, and asserts both that the bucket
+ *      was cleared before the second run wrote to it and that the
+ *      recorded total is the second run's own figure, not a sum.
  *
  * Booting map.js in jsdom follows the same pattern as
  * ``test_map_download_eviction.js`` (see its header for why: one script of
@@ -21,15 +39,9 @@
  * additionally imports ``basemap_download_runner.js`` — the eviction test
  * deliberately leaves it unloaded so `runPinnedDownload` aborts before
  * doing anything, but a run that has to actually WRITE bytes needs the real
- * runner — and gives the stub map a working vector source, so
- * ``activeBasemapTileTemplate`` returns a template instead of the
- * eviction test's deliberate "style still settling" null.
- *
- * ``caches`` here is a richer stub than the eviction test's: entries carry
- * an actual byte size, retrievable via ``response.headers.get
- * ('Content-Length')`` — what ``measurePinnedBucketBytes`` reads — so a
- * measurement-based assertion is genuinely exercisable, not merely a
- * fallback path.
+ * runner — and gives the stub map a working, MUTABLE vector source, so
+ * ``activeBasemapTileTemplate`` can be switched between downloads to
+ * exercise the template-change eviction.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -37,12 +49,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 
 const REGION_ID = 'CH-4115';
-const TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
+const TEMPLATE_A = 'https://tiles-a.example.invalid/{z}/{x}/{y}.pbf';
+const TEMPLATE_B = 'https://tiles-b.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';
-// Deliberately NOT what the measured bucket total will be — every
-// assertion below is against the MEASURED figure, so a test that
-// accidentally matched the reported one would prove nothing.
-const REPORTED_BYTES = 999;
 const TILE_BYTES = 4096;
 
 /** One region carrying a precomputed download summary, as /api/regions.geojson emits. */
@@ -81,12 +90,13 @@ const REGION_BLOB = {
 
 /**
  * Minimal MapLibre stub, as ``test_map_download_eviction.js``'s, but with a
- * working vector source so ``activeBasemapTileTemplate`` answers
- * ``TEMPLATE`` instead of null — this suite needs the run to actually
- * reach the warm-cache step, not abort before it.
+ * MUTABLE vector source — ``setActiveTemplate`` lets a test switch which
+ * template ``activeBasemapTileTemplate`` resolves, to exercise the
+ * template-change eviction between two downloads of the same region.
  */
 function stubMapLibre() {
   const handlers = {};
+  let activeTemplate = TEMPLATE_A;
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -101,7 +111,7 @@ function stubMapLibre() {
     getPaintProperty: () => null,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
-    getSource: (id) => (id === 'basemap' ? { tiles: [TEMPLATE] } : null),
+    getSource: (id) => (id === 'basemap' ? { tiles: [activeTemplate] } : null),
     addSource: () => {},
     addLayer: () => {},
     removeLayer: () => {},
@@ -138,6 +148,9 @@ function stubMapLibre() {
     queryRenderedFeatures: () => [],
     resize: () => {},
     handlers,
+    setActiveTemplate: (template) => {
+      activeTemplate = template;
+    },
   };
   globalThis.maplibregl = {
     Map: function () {
@@ -164,9 +177,9 @@ function stubMapLibre() {
  * Cache Storage stub over ``name -> Map<url, byteSize|null>``. Unlike
  * ``test_map_download_eviction.js``'s (URLs only, no sizes), ``put``
  * records a real byte figure off the response's ``Content-Length`` header
- * and ``match`` hands it back the same way ``measurePinnedBucketBytes``
- * reads a real Cache Storage entry — the point of this file is that the
- * measurement path is genuinely exercised, not stood in for.
+ * and ``match`` hands it back the same way — so a test can inspect exactly
+ * what a bucket holds after eviction, even though the fix under test no
+ * longer reads these sizes itself.
  */
 function installCachesStub() {
   const buckets = new Map();
@@ -268,17 +281,17 @@ async function recordedRegion() {
   return list.find((entry) => entry && entry.region_id === REGION_ID);
 }
 
-/** Sum of every byte size the pinned bucket for `areaId` actually holds. */
-function measuredBucketTotal(cachesStub, areaId) {
+/** Every URL key currently held in the pinned bucket for `areaId`. */
+function bucketKeys(cachesStub, areaId) {
   const store = cachesStub.buckets.get(PINNED_PREFIX + areaId) || new Map();
-  let total = 0;
-  for (const size of store.values()) if (Number.isFinite(size)) total += size;
-  return total;
+  return [...store.keys()];
 }
 
 let mapStub;
 let cachesStub;
 let core;
+/** The `bytes` figure `pwaWarmCache`'s stub reports for the NEXT run. */
+let nextReportedBytes;
 
 beforeAll(async () => {
   buildFixture();
@@ -301,10 +314,9 @@ beforeAll(async () => {
   );
   // The stub `_warmCache` a real page reaches via a postMessage round trip
   // to sw.js: writes every URL into the run's real pinned bucket (mirroring
-  // what the SW's own warm-cache handler does) and reports a `bytes` figure
-  // deliberately wrong (`REPORTED_BYTES`), so an assertion that happens to
-  // pass against the REPORTED figure rather than the MEASURED one is
-  // exposed rather than accidentally satisfied.
+  // what the SW's own warm-cache handler does) and reports whatever
+  // `nextReportedBytes` currently holds, so each test controls exactly what
+  // figure this run claims independently of what actually landed on disk.
   window.pwaWarmCache = vi.fn(async (urls, options) => {
     const cache = await window.caches.open(PINNED_PREFIX + options.areaId);
     for (const url of urls) {
@@ -312,7 +324,7 @@ beforeAll(async () => {
         headers: { get: (h) => (h.toLowerCase() === 'content-length' ? String(TILE_BYTES) : null) },
       });
     }
-    return { ok: urls.length, failed: 0, bytes: REPORTED_BYTES, cancelled: false };
+    return { ok: urls.length, failed: 0, bytes: nextReportedBytes, cancelled: false };
   });
 
   vi.resetModules();
@@ -354,36 +366,78 @@ async function downloadRegion() {
 }
 
 describe('region download byte recording (SNOW-632)', () => {
-  it('records the measured bucket size, not the run-reported figure', async () => {
+  it("records the run's own reported bytes, not a bucket measurement", async () => {
+    nextReportedBytes = 999;
     await downloadRegion();
 
     const areaId = core.areaIdForRegion(REGION_ID);
-    const measured = measuredBucketTotal(cachesStub, areaId);
+    const keys = bucketKeys(cachesStub, areaId);
     // Every URL this run wrote (feed URLs + the one tile) carries
-    // TILE_BYTES, and there is at least the tile itself — a non-trivial,
-    // non-zero total to compare the record against.
-    expect(measured).toBeGreaterThan(0);
-    expect(measured).not.toBe(REPORTED_BYTES);
+    // TILE_BYTES, so the bucket's real measured size is
+    // `keys.length * TILE_BYTES` — deliberately NOT what was reported
+    // (999), so an assertion that happened to match the measured figure
+    // rather than the reported one would be exposed rather than
+    // accidentally satisfied.
+    const measured = keys.length * TILE_BYTES;
+    expect(measured).not.toBe(nextReportedBytes);
 
     const recorded = await recordedRegion();
     expect(recorded).toBeDefined();
-    expect(recorded.bytes).toBe(measured);
+    expect(recorded.bytes).toBe(nextReportedBytes);
+    expect(recorded.bytes).not.toBe(measured);
   });
 
-  it('does not inflate the total on a same-basemap repeat', async () => {
+  it('does not inflate the total on a same-template repeat', async () => {
     const before = await recordedRegion();
     expect(before).toBeDefined();
 
-    // Re-download the SAME region — the exact same URLs land in the exact
-    // same bucket. A `cache.put` overwrite doesn't change the bucket's
-    // size, so the pre-fix accumulation (previous + this run's reported
-    // bytes) would have doubled `before.bytes`; the fix must not move it.
+    // Re-download the SAME region at the SAME active template — the exact
+    // same URLs land in the exact same bucket. A `cache.put` overwrite
+    // doesn't change the bucket's size, and this run reports the SAME
+    // figure as before, so the pre-fix accumulation (previous + this run's
+    // reported bytes) would have doubled `before.bytes`; the fix must not
+    // move it.
+    nextReportedBytes = before.bytes;
     await downloadRegion();
 
     const after = await recordedRegion();
     expect(after).toBeDefined();
     expect(after.bytes).toBe(before.bytes);
-    expect(after.bytes).not.toBe(before.bytes + REPORTED_BYTES);
     expect(after.bytes).not.toBe(2 * before.bytes);
+  });
+
+  it('evicts the bucket and records only the new run when the active template changes', async () => {
+    const areaId = core.areaIdForRegion(REGION_ID);
+    const before = await recordedRegion();
+    expect(before).toBeDefined();
+    const beforeKeys = bucketKeys(cachesStub, areaId);
+    // At least the one tile URL (plus feed URLs) was fetched against
+    // TEMPLATE_A.
+    const beforeTileKeysA = beforeKeys.filter((k) => k.includes('tiles-a.example.invalid'));
+    expect(beforeTileKeysA.length).toBeGreaterThan(0);
+
+    // Switch the active basemap — same region, same bbox, different
+    // template — and report a DIFFERENT bytes figure for this run, so an
+    // accumulation bug (`before.bytes + this run's bytes`) is
+    // distinguishable from a correct replacement.
+    mapStub.setActiveTemplate(TEMPLATE_B);
+    nextReportedBytes = before.bytes + 12345;
+    await downloadRegion();
+
+    const after = await recordedRegion();
+    expect(after).toBeDefined();
+    expect(after.bytes).toBe(nextReportedBytes);
+    expect(after.template).toBe(TEMPLATE_B);
+    expect(after.bytes).not.toBe(before.bytes + nextReportedBytes);
+
+    // The bucket was evicted before the second run wrote to it: TEMPLATE_B's
+    // tile URLs are present, and none of TEMPLATE_A's survive alongside
+    // them — proving eviction happened rather than the bucket simply
+    // accumulating a second basemap's tiles on top of the first.
+    const afterKeys = bucketKeys(cachesStub, areaId);
+    const afterTileKeysA = afterKeys.filter((k) => k.includes('tiles-a.example.invalid'));
+    const afterTileKeysB = afterKeys.filter((k) => k.includes('tiles-b.example.invalid'));
+    expect(afterTileKeysB.length).toBeGreaterThan(0);
+    expect(afterTileKeysA.length).toBe(0);
   });
 });

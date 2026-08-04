@@ -44,7 +44,9 @@ roundel re-opens framing at the saved area; moving the frame then
 Cancelling leaves the saved area untouched; moving the frame then
 confirming deletes the custom area's OWN pinned bucket outright before
 warming the new set (SNOW-586's whole-bucket evict-on-confirm, replacing
-the old per-URL re-derivation).
+the old per-URL re-derivation) — and (SNOW-632) so does confirming again
+at the SAME bbox under a DIFFERENT basemap, which a bbox-only eviction
+check would miss.
 
 SNOW-568 adds the failure path, which had no coverage because it had no
 behaviour: every failed run reverted the roundel to ``idle`` and closed
@@ -1069,6 +1071,57 @@ def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None
     assert _pinned_cache_has(page, url_after)
 
 
+_TEMPLATE_B = "https://tiles-b.example.invalid/{z}/{x}/{y}.pbf"
+
+
+def test_switching_basemap_then_confirming_evicts_the_old_bucket(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: confirming at the SAME bbox under a DIFFERENT basemap evicts first.
+
+    ``test_move_then_confirm_evicts_the_old_areas_tiles`` above covers a
+    bbox change; this covers the other half of the eviction condition — the
+    frame never moves (so ``sameBbox`` alone would say "nothing to evict"),
+    only the ACTIVE basemap template does, as a basemap switch with the
+    custom area still framed on the same ground would produce. Without
+    evicting here too, the old basemap's tiles would sit in the bucket
+    alongside the new run's — bloating it, and leaving the recorded byte
+    total wrong either way (see
+    docs/decisions/per-area-pinned-basemap-caches.md).
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _confirm_download(page, worker)
+    area_before = _saved_area(page)
+    assert area_before is not None
+    assert area_before["template"] == _STUB_TEMPLATE
+    url_before = _centre_tile_url(page, area_before["centre_tile"])
+    assert _pinned_cache_has(page, url_before)
+
+    # Close this session, switch the ACTIVE basemap, and re-open framing
+    # without moving the map — the frame lands back on the SAME ground, so
+    # any eviction below can only be explained by the template change.
+    _close_completed_overlay(page)
+    _stub_active_basemap_template(page, template=_TEMPLATE_B)
+    _open_framing(page)
+    _confirm_download(page, worker)
+
+    area_after = _saved_area(page)
+    assert area_after is not None
+    assert area_after["template"] == _TEMPLATE_B
+    url_after = (
+        _TEMPLATE_B.replace("{z}", str(area_after["centre_tile"]["z"]))
+        .replace("{x}", str(area_after["centre_tile"]["x"]))
+        .replace("{y}", str(area_after["centre_tile"]["y"]))
+    )
+
+    assert not _pinned_cache_has(page, url_before), (
+        "the old basemap's tiles should have been evicted before the new set warmed"
+    )
+    assert _pinned_cache_has(page, url_after)
+
+
 def test_failed_download_keeps_the_frame_up_and_says_why(pwa_page: PwaPage) -> None:
     """SNOW-568: a failed run reports itself and leaves the framed area alone.
 
@@ -1369,23 +1422,26 @@ def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
 def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
     pwa_page: PwaPage,
 ) -> None:
-    """SNOW-632: a same-bbox repeat measures the bucket, so its total does not double.
+    """SNOW-632: a same-bbox repeat records the run's own bytes, so its total does not double.
 
     The bug: confirming Download twice at the SAME bbox re-fetches the
     identical tile URLs into the SAME pinned bucket each time —
     ``cache.put`` OVERWRITES each key, so the bucket never grows — but the
-    pre-SNOW-632 code accumulated the run's reported ``bytes`` onto the
+    original code accumulated the run's reported ``bytes`` onto the
     previous record regardless, doubling the figure with nothing new on
     disk to show for it. ``planBasemapDownloadBudget`` then evicted other
     areas against that inflated total.
 
-    ``_stub_warm_cache`` writes headerless stub ``Response`` objects into
-    the real pinned bucket (see its own docstring), so
-    ``measurePinnedBucketBytes`` genuinely reads the real bucket here — it
-    reads back 0 (no ``Content-Length`` header on a bare ``new
-    Response(...)``), and the fix's fallback then records the run's own
-    reported ``bytes_total``. That fallback is exactly what stops the
-    double-count: the SAME figure both times, never the sum.
+    The fix records each run's own reported ``bytes_total`` outright,
+    replacing rather than accumulating onto the previous record — no
+    bucket measurement involved (an earlier version of the fix tried
+    measuring the bucket's ``Content-Length`` total instead, but a real
+    tile response carries no such header under the gzip encoding every
+    browser requests, so that measurement always read 0 in production and
+    silently fell back to this same run-reported figure anyway; see
+    docs/decisions/per-area-pinned-basemap-caches.md). Recording the same
+    reported figure twice, rather than summing it, is what stops the
+    double-count.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)

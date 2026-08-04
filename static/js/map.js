@@ -345,22 +345,18 @@ async function pinnedBucketAreaIds() {
   }
 }
 
-// SNOW-612, widened SNOW-632: measured pinned-bucket sizes, keyed by area
-// id. Held for the page's lifetime only — a reload re-measures, which is
-// cheap enough given how rarely this runs (an orphan is a rare leftover;
-// a completed-download measurement happens once per run, not per render —
-// see `measurePinnedBucketBytes`'s docstring) — and avoids a persisted
-// record that would itself need invalidating when the bucket is deleted.
+// SNOW-612: measured sizes for orphaned buckets, keyed by area id. Held
+// for the page's lifetime only — a reload re-measures, which is cheap
+// enough given an orphan is by definition a rare leftover, and avoids a
+// persisted record that would itself need invalidating when the bucket is
+// finally deleted.
 //
-// Three things can change a bucket's size — a download run writing into
-// it, an eviction deleting it, and (SNOW-632) a completed run reading its
-// OWN bucket to record what actually landed — and all three call
-// `forgetPinnedBucketMeasurement` immediately beforehand. Without that, a
-// run that failed twice in one page session would report the first
-// attempt's size for the bucket the second attempt had since grown, and a
-// completed run would record whatever the bucket measured BEFORE it wrote
-// anything.
-const PINNED_BUCKET_BYTES = new Map();
+// Only two things can change a bucket's size — a download run writing into
+// it, and an eviction deleting it — and both call
+// `forgetPinnedBucketMeasurement` below. Without that, a run that failed
+// twice in one page session would report the first attempt's size for the
+// bucket the second attempt had since grown.
+const ORPHAN_BUCKET_BYTES = new Map();
 
 /**
  * Drop the cached measurement for `areaId` (SNOW-612).
@@ -369,36 +365,42 @@ const PINNED_BUCKET_BYTES = new Map();
  * @returns {void}
  */
 function forgetPinnedBucketMeasurement(areaId) {
-  PINNED_BUCKET_BYTES.delete(areaId);
+  ORPHAN_BUCKET_BYTES.delete(areaId);
 }
 
 /**
  * Measure one pinned bucket by summing its entries' `Content-Length`
  * (SNOW-612).
  *
- * Two callers, both narrow. The first is an ORPHANED bucket — one with no
- * stored record to read a byte total off — reconciled by
- * `basemap_manage_core.js`. The second (SNOW-632) is a download control's
- * `finish` handler, measuring the area it just finished writing to, so the
- * RECORDED total is ground truth against the bucket rather than an
- * accumulation that cannot tell an overwritten retry from a genuine
- * addition. Neither is "every render" — the header in
- * `basemap_manage_core.js` that rules out measuring on every render is
- * about the READ path (rendering the managed-downloads list from whatever
- * is already recorded); this runs once per completed download or once per
- * orphan discovered, not once per paint.
+ * Only ever called for an ORPHANED bucket — one with no stored record to
+ * read a byte total off. Every other area's size comes from the figure its
+ * completed run recorded (SNOW-632: the run's own reported total, not a
+ * re-measurement — see `_recordRegionDownload` and
+ * `mapCustomDownloadControlInit`'s `finish`), because an area is thousands
+ * of entries and measuring them all on every render is precisely what
+ * `basemap_manage_core.js`'s header rules out.
  *
  * `Content-Length` rather than the body: `cache.match()` hands back a
  * Response without reading it, so a header sum is N cheap lookups where a
  * `blob()` sum would be N decompressions. An entry with no such header
  * contributes nothing — under-reporting a stranded bucket is better than
- * paying to decode it, and the row is deletable either way.
+ * paying to decode it, and the row is deletable either way. In production
+ * this is not a rare edge case for a tile entry specifically: the browser
+ * always sends `Accept-Encoding: gzip`, so a live tile response carries NO
+ * `Content-Length` at all (curl against the origin confirms it — the
+ * header only appears with compression explicitly disabled), and this
+ * function has no blob fallback the way `responseBytes`
+ * (`basemap_cache_core.js`) does. An orphaned bucket therefore reads ~0
+ * bytes here even when it holds real tiles — acceptable for what this is
+ * used for (a deletable orphan still needs deleting at 0 MB as much as at
+ * its true size), but not a general-purpose measurement. Not fixed here;
+ * see this ticket's decision doc for why.
  *
  * @param {string} areaId
  * @returns {Promise<number>} Bytes, or 0 if the bucket cannot be read.
  */
 async function measurePinnedBucketBytes(areaId) {
-  if (PINNED_BUCKET_BYTES.has(areaId)) return PINNED_BUCKET_BYTES.get(areaId);
+  if (ORPHAN_BUCKET_BYTES.has(areaId)) return ORPHAN_BUCKET_BYTES.get(areaId);
   let total = 0;
   try {
     const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
@@ -412,7 +414,7 @@ async function measurePinnedBucketBytes(areaId) {
     // A bucket that cannot be read is still worth listing at 0 bytes —
     // the user can delete it, which is the point.
   }
-  PINNED_BUCKET_BYTES.set(areaId, total);
+  ORPHAN_BUCKET_BYTES.set(areaId, total);
   return total;
 }
 
@@ -6598,47 +6600,49 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * fetch in `_probeDone` below still answers correctly, just over the
    * network instead of from IndexedDB.
    *
-   * SNOW-632: `bytes` is a fresh measurement of the pinned bucket, not an
-   * accumulation onto whatever was previously recorded. Accumulating used
-   * to be necessary because a region's pinned bucket is keyed on the
-   * region id ALONE, not per-basemap — downloading the same region under
-   * a SECOND basemap genuinely adds new tiles (different URLs, different
-   * origin) to the one shared bucket. But arithmetic couldn't tell that
-   * case apart from a same-basemap RETRY, which re-fetches identical URLs
-   * into the same bucket — `cache.put` OVERWRITES each key rather than
-   * adding to it, so the bucket doesn't grow, yet the old code counted the
-   * bytes again anyway, doubling the recorded total on every repeat.
-   * Measuring the bucket after the run settles gets both cases right for
-   * free: a basemap switch's real new bytes are measured, and a retry's
-   * unchanged bucket measures unchanged.
+   * SNOW-632: `bytes` is this run's OWN reported total — from
+   * `_warmCache`'s ``warm-cache-done`` reply — recorded outright, never
+   * accumulated onto the previous record and never re-measured from the
+   * bucket. A same-bbox, same-basemap RETRY re-fetches identical URLs into
+   * the same bucket (`cache.put` OVERWRITES each key rather than adding to
+   * it, so the bucket doesn't grow), so replacing the record with this
+   * run's own figure already lands on the right answer without reading
+   * the bucket at all. Re-measuring the bucket after every run (an earlier
+   * version of this fix) looked more exact, but a live tile response
+   * carries no `Content-Length` under the gzip encoding every browser
+   * requests, so it measured 0 in production and silently fell back to
+   * this same figure anyway — see
+   * docs/decisions/per-area-pinned-basemap-caches.md for the curl
+   * evidence.
+   *
+   * A basemap SWITCH at the same region used to need accumulation,
+   * because the bucket is keyed on region id alone and a switch adds
+   * genuinely new tiles (different URLs, different origin) to it — but
+   * that arithmetic couldn't tell a switch apart from a retry, doubling
+   * the recorded total on every repeat. `mapDownloadControlInit`'s
+   * `handleClick` now sidesteps the ambiguity instead of resolving it
+   * numerically: its `beforeWarm` deletes the bucket outright whenever the
+   * `template` this run is about to fetch differs from the one recorded
+   * for it, so by the time this function runs the bucket always holds
+   * exactly one basemap's tiles and this run's own total is the bucket's
+   * whole total.
    *
    * @param {string} regionId
-   * @param {string} areaId This region's pinned-bucket id
-   *   (`core.areaIdForRegion(regionId)`), used to measure the bucket's
-   *   real on-disk size.
+   * @param {string} template The tile URL template this run fetched
+   *   (`basemap_download_runner.js`'s `run` resolves it once and hands it
+   *   to both `beforeWarm` and `finish`'s `extras`) — stored so a LATER
+   *   run can tell whether the bucket still matches the active basemap.
    * @param {Object | null} z The downloaded blob's own tile ranges
    *   (`blob.z` — rectangle or clipped row spans), or null when the run's
    *   blob carried none — in which case nothing is recorded, since an
    *   entry with no `z` could never be verified against the cache.
    * @param {number[]} band The zoom band the run actually fetched.
    * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
-   *   ``warm-cache-done`` reply — used only as a fallback when the bucket
-   *   measurement comes back 0 (see `measurePinnedBucketBytes`).
+   *   ``warm-cache-done`` reply.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, areaId, z, band, bytes) {
+  async function _recordRegionDownload(regionId, template, z, band, bytes) {
     if (!z || !window.pwaDb) return;
-    // SNOW-632: whatever this run wrote is on disk now, so a measurement
-    // taken before it (e.g. by a render mid-run) is stale from here on —
-    // same invalidate-then-measure pairing `runPinnedDownload` uses before
-    // a run, mirrored here after one.
-    forgetPinnedBucketMeasurement(areaId);
-    const measured = await measurePinnedBucketBytes(areaId);
-    // A 0 measurement means the bucket couldn't be read, not that it's
-    // empty (see measurePinnedBucketBytes's docstring) — falling back to
-    // this run's own reported total keeps a real area visible to budget
-    // planning rather than recording it as empty.
-    const recordedBytes = Number.isFinite(measured) && measured > 0 ? measured : Number(bytes) || 0;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const existing = Array.isArray(row && row.value) ? row.value : [];
@@ -6650,7 +6654,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
         band: band,
         z: z,
         name: name,
-        bytes: recordedBytes,
+        template: template,
+        bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
@@ -6682,7 +6687,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * @param {string} regionId
    * @returns {Promise<{region_id: string, band: number[], z: Object,
-   *   savedAt: string} | null>}
+   *   template?: string, savedAt: string} | null>} `template` is absent on
+   *   a record written before SNOW-632 — callers deciding whether to evict
+   *   the region's bucket on a template mismatch treat that absence as
+   *   "unknown, so different" (see `handleClick`'s `beforeWarm`).
    */
   async function _storedRegionRecord(regionId) {
     try {
@@ -6989,7 +6997,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
         return response.json();
       },
-      finish: async (result, blob, { core: runCore, progressFill }) => {
+      // SNOW-632: a region's pinned bucket is keyed on the region id ALONE
+      // (see `_recordRegionDownload`'s docstring), so downloading the same
+      // region under a DIFFERENT basemap would otherwise leave the old
+      // basemap's tiles sitting in the bucket alongside the new run's —
+      // the bucket's real size stops matching what gets recorded, and
+      // `planBasemapDownloadBudget` under-charges the area for it. No
+      // confirmation needed: this replaces the user's own prior download
+      // of the SAME region, not another area — same reasoning as the
+      // custom-area control's own `beforeWarm`, which this mirrors.
+      // `template` is what the runner is about to build THIS run's URLs
+      // from, so the comparison and the fetch can never disagree about
+      // which basemap is active.
+      beforeWarm: async (_blob, evictAreaId, template) => {
+        const previous = await _storedRegionRecord(data.regionId);
+        // No usable record (never downloaded, or a pre-SNOW-632 record
+        // with no `template`) is treated the same as a mismatch — the
+        // safe direction, since it costs one redundant eviction rather
+        // than risking a stale bucket read as bigger than it is.
+        if (!previous || previous.template !== template) {
+          await evictBasemapAreas([evictAreaId]);
+        }
+      },
+      finish: async (result, blob, { core: runCore, progressFill, template }) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -7013,7 +7043,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (ok) {
           await _recordRegionDownload(
             data.regionId,
-            areaId,
+            template,
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,
@@ -7122,8 +7152,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // Persistence — exactly one custom area exists at a time. A confirmed
 // download is saved to IndexedDB's meta:app store under
-// 'basemap.customArea', {bbox, band, centre_tile, name, bytes, savedAt}
-// (SNOW-586 added name/bytes — see basemapDownloadedAreas's own comment)
+// 'basemap.customArea', {bbox, band, centre_tile, name, template, bytes,
+// savedAt} (SNOW-586 added name/bytes — see basemapDownloadedAreas's own
+// comment; SNOW-632 added template — see handleConfirm's beforeWarm)
 // — the same {key, value} row shape as basemap.origins (map.js:~450) and
 // mutations.principal. The roundel's "done" state is still PROBED, never
 // read off that row directly, exactly like the per-region control: real
@@ -7139,19 +7170,28 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // SNOW-586: two DISTINCT evictions can happen on confirm, for two
 // different reasons. (1) Confirming a NEW bbox (one that differs from the
-// saved one) deletes the OLD area's own bucket outright before warming
-// the new set — a plain `caches.delete()`, since the custom area's bucket
-// is keyed on its area id ('custom') alone, not its geometry; this needs
-// no confirmation, because it is replacing the user's own prior choice
-// with the new one they just made. (2) Making room under the standing
-// byte budget may require evicting OTHER areas entirely — planned by
-// `planBasemapDownloadBudget`/`planEviction` and, unlike (1), always
-// confirmed first (`confirmBasemapEviction`) naming what would be
-// removed. Before SNOW-586 there was only (1), driven by re-deriving the
-// stale tile URLs against the CURRENT template and deleting them
-// one-by-one — which silently deleted nothing after a basemap switch,
-// since the tiles it computed no longer matched what was actually on
-// disk; a bucket delete has no such dependency.
+// saved one) OR a DIFFERENT basemap template (SNOW-632 — see the
+// `sameTemplate` note below) deletes the OLD area's own bucket outright
+// before warming the new set — a plain `caches.delete()`, since the custom
+// area's bucket is keyed on its area id ('custom') alone, not its
+// geometry or its basemap; this needs no confirmation, because it is
+// replacing the user's own prior choice with the new one they just made.
+// (2) Making room under the standing byte budget may require evicting
+// OTHER areas entirely — planned by `planBasemapDownloadBudget`/
+// `planEviction` and, unlike (1), always confirmed first
+// (`confirmBasemapEviction`) naming what would be removed. Before SNOW-586
+// there was only (1), driven by re-deriving the stale tile URLs against
+// the CURRENT template and deleting them one-by-one — which silently
+// deleted nothing after a basemap switch, since the tiles it computed no
+// longer matched what was actually on disk; a bucket delete has no such
+// dependency.
+//
+// SNOW-632: (1) used to fire on a bbox change alone. A basemap switch AT
+// THE SAME bbox fell through it — the old basemap's tiles stayed in the
+// bucket, the new run's tiles landed alongside them, and the bucket's
+// real size stopped matching what got recorded (see the bytes bullet in
+// docs/decisions/per-area-pinned-basemap-caches.md). (1) now fires on
+// EITHER change, so the bucket always holds exactly one basemap's tiles.
 //
 // Offline-integrity: mirrors mapDownloadControlInit's offline handling
 // exactly — neither opening the framing overlay nor confirming a download
@@ -7209,7 +7249,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const CUSTOM_AREA_KEY = 'basemap.customArea';
 
   // The persisted saved area, or null: {bbox, band, centre_tile, name,
-  // bytes, savedAt}.
+  // template, bytes, savedAt}.
   let savedArea = null;
 
   // The live bbox/blob for whatever the frame currently covers, while the
@@ -7465,7 +7505,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * there before — exactly one custom area exists at a time.
    *
    * @param {{bbox: number[], band: number[], centre_tile: Object, name:
-   *   string, bytes: number, savedAt: string}} area
+   *   string, template: string, bytes: number, savedAt: string}} area
    * @returns {void}
    */
   function _persistSavedArea(area) {
@@ -8243,10 +8283,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // A REPLACEMENT of the same area at a NEW bbox — the frame moved since
     // the last confirm — clears the old tiles first: they belong to ground
     // this run doesn't cover, and leaving them would both bloat this area's
-    // one shared bucket and inflate its measured byte total. SNOW-632: this
-    // used to also decide whether `finish` accumulated bytes onto the
-    // previous record; that arithmetic is gone (finish now measures the
-    // bucket directly), so eviction here is its only remaining use.
+    // one shared bucket and inflate its recorded byte total.
     const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
 
     const core = self.pwaBasemapDownloadCore;
@@ -8265,7 +8302,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => setState(nextState, pct, bytes),
       loadBlob: () => blob,
-      beforeWarm: async (_blob, areaId) => {
+      beforeWarm: async (_blob, areaId, template) => {
         // Unlike the budget eviction the runner has just done, this needs
         // no confirmation — it is replacing the user's OWN prior choice
         // with a new one they just made, not touching another area.
@@ -8273,11 +8310,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // against buildBlob — which also fixes a latent bug, since that
         // re-derivation used the CURRENT template and so deleted nothing
         // after a basemap switch.
-        if (savedArea && !sameBbox) {
+        //
+        // SNOW-632: also evicts on a TEMPLATE change at the SAME bbox — a
+        // basemap switch with the frame left untouched. Without this the
+        // old basemap's tiles stayed in the bucket alongside the new run's,
+        // so the bucket's real size stopped matching its recorded total
+        // (see docs/decisions/per-area-pinned-basemap-caches.md). A saved
+        // area with no `template` (a pre-SNOW-632 record) is treated as a
+        // mismatch too — the safe direction, since it costs one redundant
+        // eviction rather than an unaccounted-for stale bucket.
+        const sameTemplate = !!savedArea && savedArea.template === template;
+        if (savedArea && (!sameBbox || !sameTemplate)) {
           await evictBasemapAreas([areaId]);
         }
       },
-      finish: async (result, runBlob, { core, progressFill }) => {
+      finish: async (result, runBlob, { core, progressFill, template }) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
         // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
@@ -8302,32 +8349,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
           await progressFill.finish(false);
           setState(navigator.onLine ? 'idle' : 'offline');
         } else if (ok) {
-          // SNOW-632: measure the pinned bucket for a real total instead
-          // of accumulating this run's reported bytes onto the previous
-          // record. Accumulation couldn't tell a same-basemap RETRY (which
-          // re-fetches identical URLs into the same bucket — cache.put
-          // OVERWRITES each key, so the bucket doesn't grow) from a
-          // basemap SWITCH (which genuinely adds new URLs to the shared
-          // bucket) — it double-counted the former on every repeat.
-          // Measuring gets both right: a switch's real new bytes are
-          // measured, a retry's unchanged bucket measures unchanged. A
-          // bbox change already had its old bucket wiped above (see
-          // `beforeWarm`), so there is nothing stale left to measure.
-          const areaId = core.CUSTOM_AREA_ID;
-          forgetPinnedBucketMeasurement(areaId);
-          const measured = await measurePinnedBucketBytes(areaId);
-          // A 0 measurement means the bucket couldn't be read (see
-          // measurePinnedBucketBytes's docstring), not that it's empty —
-          // fall back to this run's own reported total so a real area
-          // stays visible to budget planning rather than reading as empty.
-          const bytes =
-            Number.isFinite(measured) && measured > 0 ? measured : Number(result.bytes) || 0;
+          // SNOW-632: `bytes` is this run's OWN reported total, recorded
+          // outright — never accumulated onto the previous record, and
+          // never re-measured from the bucket (a live tile response
+          // carries no `Content-Length` under gzip, so a bucket
+          // measurement reads ~0 in production; see the decision doc for
+          // the curl evidence). `beforeWarm` above has already cleared the
+          // bucket on either a bbox or a template change, so by the time
+          // this runs the bucket holds exactly this run's own tiles and
+          // its own total is the bucket's whole total.
           savedArea = {
             bbox: bbox,
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
             name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
-            bytes: bytes,
+            template: template,
+            bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };
           _persistSavedArea(savedArea);

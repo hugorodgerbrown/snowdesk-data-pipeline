@@ -69,7 +69,7 @@
    *   mb: number,
    *   loadBlob: function(): (Object|Promise<Object>),
    *   paint: function(string, number=, number=): void,
-   *   beforeWarm?: function(Object, string): Promise<void>,
+   *   beforeWarm?: function(Object, string, string): Promise<void>,
    *   finish: function(Object|null, Object, Object): Promise<void>,
    * }} options
    *   `areaId` — the pinned bucket this run writes into.
@@ -81,9 +81,17 @@
    *     differ in arity, so they adapt.
    *   `beforeWarm` — optional last step after eviction, before the warm run
    *     (the custom-area control clears its own bucket when the frame
-   *     moved).
+   *     moved; SNOW-632 widened this to the region control too, clearing a
+   *     bucket whose tiles belong to a DIFFERENT basemap than the one this
+   *     run is about to fetch). Called as `(blob, areaId, template)` — the
+   *     same `template` this run itself resolved and is about to build
+   *     tile URLs from, so a caller's eviction decision and the URLs that
+   *     follow it can never disagree about which basemap is active.
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
-   *     `extras` carries `core` and `progressFill`. `result` is the
+   *     `extras` carries `core`, `progressFill` and, SNOW-632, `template`
+   *     (the same value handed to `beforeWarm`, so a caller recording what
+   *     was downloaded records the basemap that was actually fetched, not
+   *     whatever happens to be active when `finish` runs). `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
    *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
@@ -171,7 +179,7 @@
       await deps.evict(budgetPlan.evict);
     }
 
-    if (beforeWarm) await beforeWarm(blob, areaId);
+    if (beforeWarm) await beforeWarm(blob, areaId, template);
 
     // Tile-grid rework: the tile list comes from the grid plan, not
     // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
@@ -199,7 +207,7 @@
       progressFill.update(done, total, settled);
     };
 
-    const settle = (result) => finish(result, blob, { core, progressFill });
+    const settle = (result) => finish(result, blob, { core, progressFill, template });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —

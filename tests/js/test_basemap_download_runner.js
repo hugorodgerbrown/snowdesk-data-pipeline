@@ -314,6 +314,21 @@ describe('the warm run', () => {
     expect(calls.indexOf('beforeWarm')).toBeLessThan(calls.indexOf('warmCache'));
   });
 
+  it('hands beforeWarm the blob, the area id and the resolved template (SNOW-632)', async () => {
+    const d = deps();
+    const o = options({
+      beforeWarm: vi.fn(async () => {}),
+    });
+
+    await runAndSettle(d, o);
+
+    expect(o.beforeWarm).toHaveBeenCalledWith(
+      { z: 12, band: 'micro', mb: 12 },
+      'region:ch-4115',
+      'https://tiles/{z}/{x}/{y}.png',
+    );
+  });
+
   it('hands finish the worker result, the blob and the core', async () => {
     const d = deps();
     const o = options();
@@ -326,6 +341,9 @@ describe('the warm run', () => {
     expect(blob).toEqual({ z: 12, band: 'micro', mb: 12 });
     expect(extras.core).toBeTruthy();
     expect(extras.progressFill).toBeTruthy();
+    // SNOW-632: the same template beforeWarm saw, so a caller recording
+    // what was downloaded can never disagree with what was fetched.
+    expect(extras.template).toBe('https://tiles/{z}/{x}/{y}.png');
   });
 
   it('finishes with null when there is no active worker', async () => {
