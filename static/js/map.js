@@ -7009,6 +7009,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // `template` is what the runner is about to build THIS run's URLs
       // from, so the comparison and the fetch can never disagree about
       // which basemap is active.
+      //
+      // Accepted trade-off: evicting BEFORE the warm means a run that
+      // then fails leaves the user with neither the old download nor a
+      // new one. Bucket and record go together, so the state stays
+      // consistent (empty bucket, no record, roundel on 'error') rather
+      // than stale — and the evicted tiles were the previous basemap's,
+      // which the done-probe already ignored under the new one, so there
+      // was nothing usable to lose.
       beforeWarm: async (_blob, evictAreaId, template) => {
         const previous = await _storedRegionRecord(data.regionId);
         // No usable record (never downloaded, or a pre-SNOW-632 record
