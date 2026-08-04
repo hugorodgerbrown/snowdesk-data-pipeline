@@ -680,61 +680,92 @@ QUERY_COUNT_HEADER_ENABLED = config(
 # OpenFreeMap Liberty basemap onto a self-hosted origin (SNOW-485) without a
 # code deploy. Defaults to the public volunteer tier. The CSP connect-src
 # origin below is derived from this same value so the two never drift.
+#
+# The derivation and the policy are both callables (SNOW-626) rather than
+# inline module-level code: everything here is evaluated once at import, so a
+# test that wants to exercise a different basemap origin cannot re-run the
+# derivation by overriding OPENFREEMAP_STYLE_URL. Driving the same two
+# functions the module itself calls keeps the test's overrides from drifting
+# away from what production computes. Lower-case names — Django's settings
+# object only exposes UPPER_CASE attributes, so these stay off
+# ``django.conf.settings``.
+
+
+def basemap_origin(style_url: str) -> str:
+    """Return the ``scheme://host[:port]`` origin of a basemap style URL.
+
+    Raises ``ImproperlyConfigured`` when ``style_url`` is not absolute — a
+    scheme-less value yields empty ``scheme``/``netloc`` from ``urlsplit``,
+    which would otherwise reach the CSP as a meaningless ``://`` entry and
+    silently break tile loading rather than failing at startup.
+    """
+    parts = urlsplit(style_url)
+    if not parts.scheme or not parts.netloc:
+        raise ImproperlyConfigured(
+            f"OPENFREEMAP_STYLE_URL={style_url!r} must be an absolute "
+            f"URL (e.g. https://tiles.openfreemap.org/styles/liberty)."
+        )
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def csp_defaults(tile_origin: str) -> dict[str, list[str]]:
+    """Return the baseline CSP directives, allowlisting ``tile_origin``.
+
+    ``tile_origin`` is the basemap origin the map page fetches its style
+    JSON and vector tiles from — the sole part of the policy that varies
+    with the environment.
+    """
+    return {
+        "default-src": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        "script-src": [
+            "'self'",
+            "{nonce}",
+        ],
+        # 'unsafe-inline' is required because (a) map.html uses inline style=""
+        # attributes on legend swatches and the debug pill, and (b) map.js +
+        # MapLibre GL set element.style programmatically, which CSP treats as
+        # inline-style. Refactoring these into CSS classes is tracked as a
+        # follow-up and is out of scope for the initial policy.
+        "style-src": [
+            "'self'",
+            "'unsafe-inline'",
+        ],
+        "img-src": ["'self'", "data:"],
+        "font-src": ["'self'", "data:"],
+        # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
+        # our own service worker (served from /).
+        "worker-src": ["'self'", "blob:"],
+        # MapLibre fetches the Liberty style + vector tiles from the OpenFreeMap
+        # origin via fetch(); derived from OPENFREEMAP_STYLE_URL
+        # (env-configurable, SNOW-242) so the two settings never drift. Leave
+        # self in for XHRs issued against our own API endpoints.
+        "connect-src": [
+            "'self'",
+            tile_origin,
+            # swisstopo winter/light styles + tiles.
+            "https://vectortiles.geo.admin.ch",
+            # Regional national basemaps: IGN Plan IGN (France) and
+            # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
+            "https://data.geopf.fr",
+            "https://mapsneu.wien.gv.at",
+        ],
+        "manifest-src": ["'self'"],
+        "report-uri": ["{report_uri}"],
+    }
+
+
 OPENFREEMAP_STYLE_URL = config(
     "OPENFREEMAP_STYLE_URL",
     default="https://tiles.openfreemap.org/styles/liberty",
 )
-_ofm_parts = urlsplit(OPENFREEMAP_STYLE_URL)
-if not _ofm_parts.scheme or not _ofm_parts.netloc:
-    raise ImproperlyConfigured(
-        f"OPENFREEMAP_STYLE_URL={OPENFREEMAP_STYLE_URL!r} must be an absolute "
-        f"URL (e.g. https://tiles.openfreemap.org/styles/liberty)."
-    )
-OPENFREEMAP_ORIGIN = f"{_ofm_parts.scheme}://{_ofm_parts.netloc}"
-del _ofm_parts
+OPENFREEMAP_ORIGIN = basemap_origin(OPENFREEMAP_STYLE_URL)
 
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
-CSP_DEFAULTS = {
-    "default-src": ["'none'"],
-    "base-uri": ["'self'"],
-    "form-action": ["'self'"],
-    "frame-ancestors": ["'none'"],
-    "script-src": [
-        "'self'",
-        "{nonce}",
-    ],
-    # 'unsafe-inline' is required because (a) map.html uses inline style=""
-    # attributes on legend swatches and the debug pill, and (b) map.js +
-    # MapLibre GL set element.style programmatically, which CSP treats as
-    # inline-style. Refactoring these into CSS classes is tracked as a
-    # follow-up and is out of scope for the initial policy.
-    "style-src": [
-        "'self'",
-        "'unsafe-inline'",
-    ],
-    "img-src": ["'self'", "data:"],
-    "font-src": ["'self'", "data:"],
-    # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
-    # our own service worker (served from /).
-    "worker-src": ["'self'", "blob:"],
-    # MapLibre fetches the Liberty style + vector tiles from the OpenFreeMap
-    # origin via fetch(); derived from OPENFREEMAP_STYLE_URL (env-configurable,
-    # SNOW-242) so the two settings never drift. Leave self in for XHRs
-    # issued against our own API endpoints.
-    "connect-src": [
-        "'self'",
-        OPENFREEMAP_ORIGIN,
-        # swisstopo winter/light styles + tiles.
-        "https://vectortiles.geo.admin.ch",
-        # Regional national basemaps: IGN Plan IGN (France) and
-        # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
-        "https://data.geopf.fr",
-        "https://mapsneu.wien.gv.at",
-    ],
-    "manifest-src": ["'self'"],
-    "report-uri": ["{report_uri}"],
-}
+CSP_DEFAULTS = csp_defaults(OPENFREEMAP_ORIGIN)
 
 
 def _csp_filter_request(request):  # type: ignore[no-untyped-def]
