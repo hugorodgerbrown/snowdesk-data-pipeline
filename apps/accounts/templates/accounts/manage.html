@@ -394,8 +394,13 @@ account, shown for any authenticated account.
             {% comment %}
                 Passkey + HTMX error handling scripts.
             {% endcomment %}
-            {# SNOW-378: reset-local-data escape hatch — wires the [data-pwa-reset-trigger] button above. #}
-            <script src="{% static 'js/pwa_reset.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+            {# SNOW-378: the [data-pwa-reset-trigger] button above is wired by  #}
+            {# pwa_reset.js, which base.html now loads on every page (SNOW-615). #}
+            {# The tag that used to sit here is gone rather than duplicated:     #}
+            {# browsers do not deduplicate script elements by URL, so a second   #}
+            {# copy would run the IIFE twice and its                             #}
+            {# Object.defineProperty(window, 'pwaResetLocalData', …) — declared  #}
+            {# non-configurable — would throw on the second run.                 #}
             {% if sync_log_visible %}
                 {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
                 <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>

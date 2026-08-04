@@ -234,6 +234,14 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# SNOW-388: dispatches a fetch() synchronously at IIFE-load — must #}
         {# load AFTER pwa_client_version.js above so that fetch is wrapped. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
+        {# SNOW-378: the local-data wipe (window.pwaResetLocalData). Loaded  #}
+        {# here rather than only on the manage page since SNOW-615: BOTH its #}
+        {# programmatic callers live on every page — db.js's Reset Required  #}
+        {# overlay CTA (db.js:117), and pwa_version_check.js's forced-update #}
+        {# path below. Off the manage page neither could reach it, so the    #}
+        {# overlay's only control silently did nothing and the forced update #}
+        {# reloaded without wiping anything. Must load before both.          #}
+        <script src="{% static 'js/pwa_reset.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
         <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
         {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
