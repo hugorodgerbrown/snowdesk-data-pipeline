@@ -17,6 +17,8 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 // db.js first: it assigns window.pwaDb, which every favourites_offline.js
 // entry point reads through.
 await import('../../static/js/db.js');
@@ -162,5 +164,54 @@ describe('favourites offline cache reconcile', () => {
 
     const uuids = (await window.pwaDb.getAll(STORE)).map((row) => row.uuid);
     expect(uuids.sort()).toEqual(['fav-a', 'fav-b']);
+  });
+});
+
+describe('translated card copy (SNOW-620)', () => {
+  /*
+   * The card is built entirely in JS — it stands in for a server partial
+   * that could not be fetched — so none of its copy ever passed through a
+   * template. The strings template mounted here is what
+   * includes/_favourites_offline_strings.html renders on every page.
+   *
+   * The module reads its strings at import time and the import happened at
+   * the top of this file, so a template mounted now is too late. That makes
+   * these tests the FALLBACK path by construction — which is the path a
+   * real page hits if the include is ever dropped, and the one that decides
+   * whether the card renders words or `undefined`.
+   */
+
+  it('renders the altitude with the value substituted into the string', async () => {
+    // %(metres)s is substituted by name, so a locale may put it anywhere.
+    await replayRoster([record('u-alt', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const altitude = target.querySelector('[data-testid="favourite-card-altitude"]');
+    expect(altitude.textContent).toBe('1500 m altitude');
+  });
+
+  it('renders the no-coverage line as words, not undefined', async () => {
+    await replayRoster([record('u-cov', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const line = target.querySelector('[data-testid="favourite-card-no-coverage"]');
+    expect(line.textContent).toBe('No bulletin coverage for this location.');
+  });
+
+  it('renders the cached-as-of stamp with its time substituted', async () => {
+    await replayRoster([record('u-stamp', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const asOf = target.querySelector('[data-testid="favourite-card-cached-as-of"]');
+    expect(asOf.textContent).toMatch(/^Showing cached data — as of \d{2}:\d{2}$/);
   });
 });

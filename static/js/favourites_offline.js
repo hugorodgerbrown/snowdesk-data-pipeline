@@ -52,6 +52,24 @@
   const LIST_PATH_SUFFIX = '/partials/list/';
   const CARD_PATH_SUFFIX = '/card/';
 
+  // SNOW-620: server-translated card copy, read back from the template
+  // includes/_favourites_offline_strings.html renders. This module builds
+  // the offline favourite card entirely in JS — it stands in for a server
+  // partial that could not be fetched — so none of its copy has ever
+  // passed through a template. The literals are the English fallback;
+  // see static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('favourites-offline-strings-template', {
+    altitude: '%(metres)s m altitude',
+    'no-coverage': 'No bulletin coverage for this location.',
+    'rating-expired': "Rating expired — reconnect to see today's danger level",
+    'rating-as-of': 'as of %(time)s',
+    'weather-empty':
+      "Point forecast coming soon — weather for this exact location and altitude isn't available yet.",
+    'cached-as-of': 'Showing cached data — as of %(time)s',
+  });
+
+  const interpolate = self.pwaStrings.interpolate;
+
   /**
    * True when ``window.pwaDb`` is present and the app is not in the
    * terminal Reset Required state. Every DB access in this file is
@@ -215,7 +233,9 @@
     const altitude = document.createElement('p');
     altitude.className = 'text-sm text-text-2 mt-0.5';
     altitude.setAttribute('data-testid', 'favourite-card-altitude');
-    altitude.textContent = `${Math.round(record.elevation)} m altitude`;
+    altitude.textContent = interpolate(STRINGS.altitude, {
+      metres: Math.round(record.elevation),
+    });
     root.appendChild(altitude);
 
     const dangerSection = document.createElement('div');
@@ -225,7 +245,7 @@
       const noCoverage = document.createElement('p');
       noCoverage.className = 'text-sm text-text-3';
       noCoverage.setAttribute('data-testid', 'favourite-card-no-coverage');
-      noCoverage.textContent = 'No bulletin coverage for this location.';
+      noCoverage.textContent = STRINGS['no-coverage'];
       dangerSection.appendChild(noCoverage);
     } else if (_isExpired(record)) {
       const expired = document.createElement('p');
@@ -234,8 +254,7 @@
         'data-testid',
         'favourite-card-rating-expired',
       );
-      expired.textContent =
-        "Rating expired — reconnect to see today's danger level";
+      expired.textContent = STRINGS['rating-expired'];
       dangerSection.appendChild(expired);
     } else if (record.rating) {
       const row = document.createElement('div');
@@ -250,7 +269,9 @@
 
       const stamp = document.createElement('span');
       stamp.className = 'text-xs text-text-3 font-mono';
-      stamp.textContent = `as of ${_formatHHMM(record.generated_at)}`;
+      stamp.textContent = interpolate(STRINGS['rating-as-of'], {
+        time: _formatHHMM(record.generated_at),
+      });
       row.appendChild(stamp);
 
       dangerSection.appendChild(row);
@@ -262,15 +283,16 @@
     const weatherEmpty = document.createElement('p');
     weatherEmpty.className = 'text-sm text-text-3';
     weatherEmpty.setAttribute('data-testid', 'favourite-card-weather-empty');
-    weatherEmpty.textContent =
-      "Point forecast coming soon — weather for this exact location and altitude isn't available yet.";
+    weatherEmpty.textContent = STRINGS['weather-empty'];
     weatherSection.appendChild(weatherEmpty);
     root.appendChild(weatherSection);
 
     const asOf = document.createElement('p');
     asOf.className = 'text-xs text-text-3 font-mono mt-4';
     asOf.setAttribute('data-testid', 'favourite-card-cached-as-of');
-    asOf.textContent = `Showing cached data — as of ${_formatHHMM(record.generated_at)}`;
+    asOf.textContent = interpolate(STRINGS['cached-as-of'], {
+      time: _formatHHMM(record.generated_at),
+    });
     root.appendChild(asOf);
 
     return root;

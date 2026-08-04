@@ -24,6 +24,8 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 /** Wall clock the module reads through `Date.now`, advanced by tests. */
 let now = 1_000_000;
 

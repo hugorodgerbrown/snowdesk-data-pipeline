@@ -35,6 +35,8 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 const MB = 1024 * 1024;
 
 const REGION_ID = 'CH-4115';

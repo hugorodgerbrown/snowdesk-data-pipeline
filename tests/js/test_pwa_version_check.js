@@ -66,6 +66,13 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// SNOW-620: sw_register.js reads its banner copy through
+// self.pwaStrings at IIFE time. The sandbox below injects window /
+// document / navigator / caches / fetch as parameters, but `self`
+// still resolves to the real global — so the helper has to be loaded
+// onto it here or the source throws before it exports anything.
+import '../../static/js/i18n_strings.js';
+
 const CURRENT_BUILD = '2026.08.01';
 const NEWER_BUILD = '2026.08.02';
 

@@ -33,6 +33,14 @@
 
   const STORAGE_KEY = 'snowdesk.map.controls.expanded';
 
+  // SNOW-620: server-translated copy, read back from the template
+  // _map_embed.html renders. The literals here are the English fallback
+  // for when that partial is absent — see static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('map-controls-strings-template', {
+    collapse: 'Hide map controls',
+    expand: 'Show map controls',
+  });
+
   // localStorage guarded by try/catch — private mode, disabled storage and
   // quota errors are all swallowed; the choice still applies for the session.
   const readStored = (dflt) => {
@@ -77,7 +85,7 @@
   const apply = (expanded) => {
     stack.dataset.expanded = String(expanded);
     toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.setAttribute('aria-label', expanded ? 'Hide map controls' : 'Show map controls');
+    toggle.setAttribute('aria-label', expanded ? STRINGS.collapse : STRINGS.expand);
   };
 
   // The user's own preference, distinct from the transient forced-open state

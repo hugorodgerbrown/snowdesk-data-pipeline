@@ -24,6 +24,8 @@
 
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 const GROUPINGS_URL = '/api/bulletin-groupings.geojson';
 const L4_STORAGE_KEY = 'snowdesk.map.overlay.l4';
 // GROUPINGS_SETTLE_MS is 250 in map.js — the debounce a scrubbed date waits

@@ -158,6 +158,19 @@ extra_js        : scripts loaded at end of <body>. Used by
         <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin.woff2' %}">
         <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin-ext.woff2' %}">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {# SNOW-620: reads server-translated copy back out of the hidden strings #}
+        {# <template>s the surface partials render, so makemessages can see the  #}
+        {# strings JS is what actually puts on screen.                           #}
+        {#                                                                       #}
+        {# In <head>, NOT with the scripts at the end of <body>. Every consumer  #}
+        {# calls window.pwaStrings at IIFE time, and deferred scripts execute in #}
+        {# DOCUMENT order — so a consumer loaded from inside {% block content %} #}
+        {# (report.js, favourites.js and map_downloads_manager.js all are, via   #}
+        {# their surface partials) runs before anything in the block below it.   #}
+        {# Loading it here puts it ahead of every consumer wherever they are     #}
+        {# declared; loading it below meant those three threw at IIFE time and   #}
+        {# the map page lost its report sheet, favourites and downloads sheet.   #}
+        <script src="{% static 'js/i18n_strings.js' %}" defer></script>
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
@@ -254,6 +267,7 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# failed favourites:list / favourites:card HTMX request. Loads    #}
         {# after db.js (needs window.pwaDb) and pwa_offline.js (shares the #}
         {# same htmx:sendError convention).                                #}
+        {% include "includes/_favourites_offline_strings.html" %}
         <script src="{% static 'js/favourites_offline.js' %}" defer></script>
         {# SNOW-379: install-prompt orchestration. Captures                  #}
         {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}

@@ -1,0 +1,32 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_favourites_offline_strings.html — copy for the offline
+favourite card (SNOW-620).
+
+static/js/favourites_offline.js builds a favourite card entirely through
+DOM APIs, standing in for a server partial that could not be fetched.
+``makemessages`` scans templates and Python, never JavaScript, so every
+string on that card was invisible to the message catalogue and would have
+shipped as English to every locale.
+
+Included from public/base.html rather than a favourites-page partial
+because the card is an HTMX-failure fallback: the request it replaces can
+fail on any page that lists or opens a favourite, and by definition it
+fails when the network is unavailable — so the copy has to be on the page
+already. It is a handful of hidden spans.
+
+Read back by the module via ``window.pwaStrings.read()``, which keeps the
+English literal as the fallback if this partial is ever not rendered. The
+``%(…)s`` placeholders are substituted by name — see
+static/js/i18n_strings.js.
+{% endcomment %}
+<template id="favourites-offline-strings-template">
+    <span data-string="altitude">{% blocktrans %}%(metres)s m altitude{% endblocktrans %}</span>
+    <span data-string="no-coverage">{% trans "No bulletin coverage for this location." %}</span>
+    <span data-string="rating-expired">{% trans "Rating expired — reconnect to see today's danger level" %}</span>
+    <span data-string="rating-as-of">{% blocktrans %}as of %(time)s{% endblocktrans %}</span>
+    <span
+        data-string="weather-empty"
+    >{% trans "Point forecast coming soon — weather for this exact location and altitude isn't available yet." %}</span>
+    <span data-string="cached-as-of">{% blocktrans %}Showing cached data — as of %(time)s{% endblocktrans %}</span>
+</template>

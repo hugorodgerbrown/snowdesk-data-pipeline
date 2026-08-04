@@ -89,7 +89,9 @@
 
   async function refreshState() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      $('#push-state').textContent = 'unsupported in this browser';
+      // i18n-allow: /_push-demo/ is a staff-only diagnostic page, not a
+  // public surface — see apps/public/debug_views.py.
+  $('#push-state').textContent = 'unsupported in this browser';
       return;
     }
     $('#push-permission').textContent = Notification.permission;

@@ -100,24 +100,47 @@
 
   const IDB_STORE = 'data:map_overlays';
 
-  const CACHED_LABEL = 'Available offline';
-  const UNCACHED_LABEL = 'Not cached — view online first';
-  // Offline + uncached: genuinely unavailable *right now* (red dot, disabled
-  // row) — distinct from the grey advisory "view online first" (which only
-  // applies while online, when viewing online is actually an option).
-  const OFFLINE_BLOCKED_LABEL = 'Unavailable offline — not cached';
-  const BASEMAP_CACHED_LABEL = 'Available offline';
-  const BASEMAP_UNCACHED_LABEL = 'Not cached — view online first';
-  const BASEMAP_OFFLINE_BLOCKED_LABEL = 'Unavailable offline — switch back online to load';
-  // SNOW-524: country rows claim only that the country's REGION DATA is
-  // cached — basemap tiles are a separate row with a separate download flow
-  // (SNOW-521), so the label deliberately doesn't say "available offline"
-  // unqualified.
-  const COUNTRY_CACHED_LABEL = 'Region data available offline';
-  const COUNTRY_UNCACHED_LABEL = 'Not cached — view online first';
-  const COUNTRY_OFFLINE_BLOCKED_LABEL = 'Unavailable offline — not cached';
-  // SNOW-524: mid-fetch — the data is on its way into the offline cache.
-  const SYNCING_LABEL = 'Caching for offline use…';
+  // SNOW-620: every label below is server-translated into the strings
+  // template _map_embed.html renders, and read back here. The literals are
+  // the English fallback for when that partial is absent — see
+  // static/js/i18n_strings.js.
+  //
+  // The three groups (layer / basemap / country) keep separate keys even
+  // where their English coincides. gettext dedupes identical msgids, so the
+  // repetition costs nothing in the catalogue, and it leaves each row free
+  // to diverge — in a locale or in a later copy change — without having to
+  // be untangled first.
+  const STRINGS = self.pwaStrings.read('map-sync-status-strings-template', {
+    cached: 'Available offline',
+    uncached: 'Not cached — view online first',
+    // Offline + uncached: genuinely unavailable *right now* (red dot,
+    // disabled row) — distinct from the grey advisory "view online first"
+    // (which only applies while online, when viewing online is an option).
+    'offline-blocked': 'Unavailable offline — not cached',
+    'basemap-cached': 'Available offline',
+    'basemap-uncached': 'Not cached — view online first',
+    'basemap-offline-blocked': 'Unavailable offline — switch back online to load',
+    // SNOW-524: country rows claim only that the country's REGION DATA is
+    // cached — basemap tiles are a separate row with a separate download
+    // flow (SNOW-521), so the label deliberately doesn't say "available
+    // offline" unqualified.
+    'country-cached': 'Region data available offline',
+    'country-uncached': 'Not cached — view online first',
+    'country-offline-blocked': 'Unavailable offline — not cached',
+    // SNOW-524: mid-fetch — the data is on its way into the offline cache.
+    syncing: 'Caching for offline use…',
+  });
+
+  const CACHED_LABEL = STRINGS.cached;
+  const UNCACHED_LABEL = STRINGS.uncached;
+  const OFFLINE_BLOCKED_LABEL = STRINGS['offline-blocked'];
+  const BASEMAP_CACHED_LABEL = STRINGS['basemap-cached'];
+  const BASEMAP_UNCACHED_LABEL = STRINGS['basemap-uncached'];
+  const BASEMAP_OFFLINE_BLOCKED_LABEL = STRINGS['basemap-offline-blocked'];
+  const COUNTRY_CACHED_LABEL = STRINGS['country-cached'];
+  const COUNTRY_UNCACHED_LABEL = STRINGS['country-uncached'];
+  const COUNTRY_OFFLINE_BLOCKED_LABEL = STRINGS['country-offline-blocked'];
+  const SYNCING_LABEL = STRINGS.syncing;
 
   // Marker set on any menu row this module disabled for the offline+uncached
   // case, so the reverse transition only re-enables what it disabled (never
@@ -497,16 +520,15 @@
    * Falls back to "any entry at all" when the template is unresolvable
    * (the style still settling) rather than reporting a bare no.
    *
-   * The map handle is read as the BARE identifier ``MAP``, matching
-   * favourites.js / place_picker.js / map_placement_focus.js. map.js
-   * declares it as a top-level ``let`` in a classic script, so the binding
-   * lives in the global declarative environment and never becomes a
-   * ``window`` property — a ``window.MAP`` read is undefined for every
-   * user, which left the template null and this probe stuck on the "any
-   * entry at all" fallback the paragraph above warns against (M1,
+   * SNOW-610: the map handle comes from ``window.snowdeskMapState``, the
+   * one named channel to map.js's shared state. It used to be read as the
+   * bare identifier ``MAP`` — which works, because a top-level ``let`` in
+   * a classic script lands in the global declarative environment — but
+   * that is invisible to a reader and impossible to grep for, and reading
+   * the same handle as ``window.MAP`` (which is NOT a window property) is
+   * what left this probe stuck on the "any entry at all" fallback the
+   * paragraph above warns against for its whole life (M1,
    * docs/code-reviews/2026-08-03-js-review.md).
-   * ``activeBasemapTileTemplate`` is a top-level function declaration,
-   * which does land on ``window``, so that read is left as it was.
    *
    * @returns {Promise<boolean>}
    */
@@ -527,7 +549,7 @@
       }
       if (!urls.length) return false;
       const core = self.pwaBasemapDownloadCore;
-      const map = typeof MAP !== 'undefined' ? MAP : null;
+      const map = window.snowdeskMapState ? window.snowdeskMapState.map : null;
       const template =
         typeof window.activeBasemapTileTemplate === 'function' && map
           ? window.activeBasemapTileTemplate(map)

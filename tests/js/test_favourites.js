@@ -31,6 +31,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 
 document.body.innerHTML = `
