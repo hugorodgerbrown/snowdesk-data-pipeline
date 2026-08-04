@@ -4,11 +4,16 @@
  * Spec §3.10 / §10.6 / §12.7 (non-negotiable). Single-tap recovery for
  * a stuck installation: any element with ``data-pwa-reset-trigger``
  * gets a click handler that runs the wipe from the spec and reloads the
- * page. Also the wipe every programmatic caller goes through:
- * ``db.js``'s Reset Required overlay CTA, and (since SNOW-615) the
- * Update Required modal in ``pwa_version_check.js``, which until then
- * carried its own copy that spared IndexedDB entirely. Both reach it via
- * ``window.pwaResetLocalData``.
+ * page. Also the wipe ``db.js``'s Reset Required overlay CTA goes
+ * through, via ``window.pwaResetLocalData``.
+ *
+ * SNOW-615 routed ``pwa_version_check.js``'s Update Required modal here
+ * too; SNOW-609 took it back out. A blocked build is a code problem, and
+ * clearing the shell caches fixes code — taking IndexedDB and the pinned
+ * basemap buckets with it would destroy user data for a reason unrelated
+ * to it. That path now calls ``window.pwaClearShellCachesAndReload``
+ * (``sw_register.js``) instead. This file stays the everything-goes
+ * path, and it asks before it runs.
  *
  * The six steps, in order:
  *   (1) Unregister every service worker via ``getRegistrations()``.
@@ -36,8 +41,8 @@
  * The reset is idempotent — calling it twice does the same work twice
  * and lands on the same page. A confirmation dialog (``window.confirm``)
  * gates the trigger by default; markup can opt out by setting
- * ``data-pwa-reset-skip-confirm`` (only used by the Update Required
- * modal path, which already carries its own dialogue).
+ * ``data-pwa-reset-skip-confirm``, for a surface that already carries
+ * its own dialogue.
  */
 
 (function () {
@@ -289,9 +294,9 @@
     document.querySelectorAll(`[${TRIGGER_ATTR}]`).forEach(bindTrigger);
   }
 
-  // Expose the reset routine for programmatic callers (Update Required
-  // modal, tests). The named export is deliberate so third-party scripts
-  // can't accidentally re-bind ``window.pwaReset``.
+  // Expose the reset routine for programmatic callers (db.js's Reset
+  // Required overlay CTA, tests). The named export is deliberate so
+  // third-party scripts can't accidentally re-bind ``window.pwaReset``.
   Object.defineProperty(window, 'pwaResetLocalData', {
     value: resetLocalData,
     writable: false,

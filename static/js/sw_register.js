@@ -415,7 +415,9 @@
     title.textContent = 'Update available';
     title.style.cssText = 'font-weight:600;font-size:14px;';
     const sub = document.createElement('div');
-    sub.textContent = 'A newer version of Snowdesk is ready.';
+    sub.textContent =
+      'A newer version of Snowdesk is ready. Your downloaded maps and ' +
+      'saved data are kept.';
     sub.style.cssText = 'color:#475569;font-size:12px;margin-top:2px;';
     copy.append(title, sub);
     const reload = document.createElement('button');
@@ -527,6 +529,14 @@
    * ``pwa-app-version`` meta tag (the original reload-loop bug). Bulletin
    * JSON and other network-only paths are unaffected; the shell caches
    * are the only thing that would keep the stale meta tag alive.
+   *
+   * Scoped to ``snowdesk-shell-*`` / ``map-shell-*`` on purpose: the
+   * user's pinned basemap buckets, and everything in IndexedDB, are not
+   * code and survive a code update. SNOW-609 made this the forced-update
+   * path's wipe too (see the ``window.pwaClearShellCachesAndReload``
+   * export below).
+   *
+   * @returns {Promise<void>}
    */
   async function clearShellCachesAndReload() {
     try {
@@ -548,6 +558,25 @@
     window.location.reload();
   }
 
+  // SNOW-609: exported so ``pwa_version_check.js``'s forced-update path
+  // reuses this wipe rather than carrying a third copy of one (the others
+  // being ``pwa_reset.js``'s everything-goes reset and ``sw-kill.js``'s
+  // activate-time sweep). Non-writable / non-configurable, matching
+  // ``window.pwaResetLocalData`` (pwa_reset.js) — the named export is
+  // deliberate so a third-party script can't swap the implementation.
+  //
+  // This script is loaded before ``pwa_version_check.js`` (load order is
+  // documented in ``pwa_client_version.js``), so the global is present by
+  // the time that module binds its modal handler. The one exception is a
+  // browser with no ``navigator.serviceWorker``, where this IIFE returns
+  // before reaching here — hence the plain-reload fallback on the calling
+  // side.
+  Object.defineProperty(window, 'pwaClearShellCachesAndReload', {
+    value: clearShellCachesAndReload,
+    writable: false,
+    configurable: false,
+  });
+
   /**
    * Reload click handler. Handles both the SW-driven path (a fresh worker
    * is waiting) and the version-header-driven path (the server's
@@ -564,9 +593,11 @@
    * hasn't fired shortly after ``SKIP_WAITING`` was posted, fall back to
    * the cache-clearing reload so the click ALWAYS lands on a fresh shell.
    *
-   * Also clears ``pwa.update.first_shown_at`` so a successful update
-   * doesn't leave a stale escalation timer that later trips the blocking
-   * modal on cold launch (SNOW-374 §3.9).
+   * SNOW-609: this used to also clear ``pwa.update.first_shown_at``, the
+   * stamp behind the 24h escalation to the blocking modal. That
+   * escalation is gone — it blocked the app on elapsed time rather than
+   * on any server statement that the build was unacceptable — and the
+   * stamp is no longer written, so there is nothing to clear.
    */
   async function handleReloadClick() {
     const btn = document.getElementById('sw-update-banner-reload');
@@ -574,12 +605,6 @@
       if (btn.dataset.busy === '1') return;
       btn.dataset.busy = '1';
       btn.setAttribute('disabled', 'disabled');
-    }
-
-    try {
-      localStorage.removeItem('pwa.update.first_shown_at');
-    } catch (_err) {
-      // Storage unavailable — ignore.
     }
 
     userTriggeredUpdate = true;

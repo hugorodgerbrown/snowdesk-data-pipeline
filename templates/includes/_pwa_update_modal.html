@@ -3,12 +3,16 @@
 templates/includes/_pwa_update_modal.html — Non-dismissable PWA update modal.
 
 Rendered hidden by base.html on every public page. Revealed by
-static/js/pwa_version_check.js when:
+static/js/pwa_version_check.js when ``/api/version`` answers
+``update_required: true`` — the server has listed this build in
+``settings.APP_BLOCKED_VERSIONS`` (spec §3.4 forced-update, SNOW-609).
 
-  * the server declares ``X-App-Min-Version`` and the client's build is
-    below it (spec §3.4 forced-update), or
-  * the soft update banner has been showing for more than 24h and the
-    user has just cold-launched the app (spec §3.9 24h escalation).
+The modal stays open until the user clicks "Reload now"; nothing is
+cleared and nothing reloads before that click. So the body copy states
+the consequence up front — clicking clears the offline copy of the app
+itself. Downloaded maps and saved data are named explicitly as
+surviving, because "clears" on a mostly-offline app otherwise reads as
+"deletes my 500 MB of downloaded maps".
 
 SNOW-486: markup delegated to the shared modal primitive
 (includes/_overlay_modal.html) — this file now only supplies the
@@ -18,7 +22,7 @@ copy/ids. See that partial's header comment for the design contract
 Copy is wrapped in ``{% trans %}`` for future localisation.
 {% endcomment %}
 {% trans "Update required" as pwa_update_modal_title %}
-{% blocktrans asvar pwa_update_modal_body %}Snowdesk has been updated. Reload to continue using the latest
-    version.{% endblocktrans %}
+{% blocktrans asvar pwa_update_modal_body %}This version of Snowdesk is no longer supported. Reloading refreshes the
+    offline copy of the app — your downloaded maps and saved data are kept.{% endblocktrans %}
 {% trans "Reload now" as pwa_update_modal_cta_label %}
 {% include "includes/_overlay_modal.html" with id="pwa-update-modal" title_id="pwa-update-modal-title" body_id="pwa-update-modal-body" title=pwa_update_modal_title body=pwa_update_modal_body cta_id="pwa-update-modal-reload" cta_label=pwa_update_modal_cta_label %}
