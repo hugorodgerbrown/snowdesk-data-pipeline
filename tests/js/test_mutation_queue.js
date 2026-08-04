@@ -530,3 +530,81 @@ describe('pagehide trigger', () => {
     await waitFor(async () => (await mutationRows()).length === 0);
   });
 });
+
+describe('failed rows do not starve the queue (SNOW-617)', () => {
+  /**
+   * Write `count` permanently-failed rows, oldest first.
+   *
+   * They are never deleted — the nav badge's error state is defined on
+   * their presence (docs/mutation-queue.md) — so they accumulate at the
+   * head of the store, which is what made the old batch selection starve.
+   *
+   * @param {number} count
+   * @returns {Promise<void>}
+   */
+  async function seedFailedRows(count) {
+    for (let i = 0; i < count; i += 1) {
+      await window.pwaDb.put('queue:mutations', {
+        idempotency_key: `failed-${i}`,
+        method: 'POST',
+        url: MUTATION_URL,
+        headers: {},
+        body: null,
+        created_at: new Date().toISOString(),
+        attempts: 20,
+        status: 'failed',
+        next_attempt_at: 0,
+        principal: null,
+      });
+    }
+  }
+
+  it('drains an eligible row sitting behind a full batch of failed ones', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // BATCH_SIZE is 50: exactly enough failed rows to fill a pass under
+    // the old read-then-filter order, leaving the queued row below
+    // permanently unreachable.
+    await seedFailedRows(50);
+    await window.pwaDb.put('queue:mutations', {
+      idempotency_key: 'eligible-one',
+      method: 'POST',
+      url: MUTATION_URL,
+      headers: {},
+      body: null,
+      created_at: new Date().toISOString(),
+      attempts: 0,
+      status: 'queued',
+      next_attempt_at: 0,
+      principal: null,
+    });
+
+    await window.pwaMutationQueue.drain();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const remaining = await mutationRows();
+    expect(remaining.map((r) => r.idempotency_key)).not.toContain('eligible-one');
+    // The failed rows are still there — deleting them would take the
+    // badge's error state with them.
+    expect(remaining).toHaveLength(50);
+  });
+
+  it('leaves a failed row in the store rather than pruning it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 400 })));
+
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    await waitFor(async () => {
+      const rows = await mutationRows();
+      return rows.length === 1 && rows[0].status === 'failed';
+    });
+
+    // Pinning the retention decision: the badge swaps to its error tokens
+    // "when any row in the store has status: 'failed'", so the row is what
+    // carries that state. Starvation is solved by how the batch is
+    // selected, not by deleting the evidence.
+    const rows = await mutationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('failed');
+  });
+});

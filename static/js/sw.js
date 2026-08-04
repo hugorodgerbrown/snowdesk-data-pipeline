@@ -1985,23 +1985,62 @@ function _idbDelete(db, storeName, key) {
  *
  * @returns {Promise<void>}
  */
+// Hand-rolled stand-ins for ``mutation_queue_core.js``, used only when the
+// ``importScripts`` at startup failed — see the try/catch there. Kept so
+// this path stays self-contained rather than a hard dependency on that
+// call succeeding.
+//
+// SNOW-617: ``nextRowState`` is the transition the drain used to spell out
+// inline, here and again in ``mutation_queue.js``. Both now call core's;
+// this copy exists for the no-core case alone, and
+// ``tests/js/test_sw.js`` runs it and core's over one shared input table
+// so a future change to either fails there — the same treatment D3 gave
+// ``worseReason`` after it drifted.
+const _INLINE_MUTATION_QUEUE_CORE = {
+  MAX_ATTEMPTS: 20,
+  backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
+  classifyStatus: (status) => {
+    if (status >= 200 && status < 300) return 'success';
+    if (status === 408 || status === 429) return 'retry';
+    if (status >= 500) return 'retry';
+    if (status >= 400) return 'permanent';
+    return 'retry';
+  },
+  isRowEligible: (row, now) =>
+    !!row && row.status !== 'failed' && (row.next_attempt_at || 0) <= now,
+  nextRowState: (row, outcome, now) => {
+    if (outcome === 'success') return { action: 'delete' };
+    const attempts = (row && row.attempts ? row.attempts : 0) + 1;
+    if (outcome === 'permanent') {
+      return {
+        action: 'fail',
+        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        reason: 'permanent_4xx',
+      };
+    }
+    if (attempts >= _INLINE_MUTATION_QUEUE_CORE.MAX_ATTEMPTS) {
+      return {
+        action: 'fail',
+        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        reason: 'max_attempts',
+      };
+    }
+    return {
+      action: 'reschedule',
+      row: Object.assign({}, row, {
+        attempts,
+        status: 'retry-scheduled',
+        next_attempt_at: now + _INLINE_MUTATION_QUEUE_CORE.backoffDelayMs(attempts),
+      }),
+    };
+  },
+};
+
 async function _selfDrainMutations() {
   // Fall back to a hand-rolled version of the shared helpers if
   // importScripts failed at startup — keeps this path self-contained
   // rather than a hard dependency on the earlier try/catch succeeding.
-  const core = self.pwaMutationQueueCore || {
-    MAX_ATTEMPTS: 20,
-    backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
-    classifyStatus: (status) => {
-      if (status >= 200 && status < 300) return 'success';
-      if (status === 408 || status === 429) return 'retry';
-      if (status >= 500) return 'retry';
-      if (status >= 400) return 'permanent';
-      return 'retry';
-    },
-    isRowEligible: (row, now) =>
-      !!row && row.status !== 'failed' && (row.next_attempt_at || 0) <= now,
-  };
+  const core = self.pwaMutationQueueCore || _INLINE_MUTATION_QUEUE_CORE;
 
   const db = await _openMutationsDb();
   let rows;
@@ -2068,47 +2107,32 @@ async function _selfDrainMutations() {
       outcome = 'retry';
     }
 
-    if (outcome === 'success') {
+    // SNOW-617: the transition is core's. This loop used to spell it out
+    // by hand, in parallel with `mutation_queue.js`'s own copy — including
+    // a `max_attempts` telemetry payload that, unlike the page's, omitted
+    // `attempts` entirely.
+    const transition = core.nextRowState(row, outcome, now);
+
+    if (transition.action === 'delete') {
       await _idbDelete(db, 'queue:mutations', row.id);
       successCount += 1;
       continue;
     }
 
-    if (outcome === 'permanent') {
-      // This attempt just happened — increment before persisting/
-      // reporting so `attempts` (and the telemetry it feeds) reflects the
-      // failed attempt rather than reading as "never attempted".
-      row.attempts = (row.attempts || 0) + 1;
-      row.status = 'failed';
-      await _idbPut(db, 'queue:mutations', row);
+    await _idbPut(db, 'queue:mutations', transition.row);
+
+    if (transition.action === 'fail') {
       _postTelemetry('pwa.mutation.failed_permanent', {
-        method: row.method,
-        url: row.url,
-        idempotency_key: row.idempotency_key,
-        attempts: row.attempts,
-        reason: 'permanent_4xx',
+        method: transition.row.method,
+        url: transition.row.url,
+        idempotency_key: transition.row.idempotency_key,
+        attempts: transition.row.attempts,
+        reason: transition.reason,
       });
       continue;
     }
 
-    // 'retry'
-    const attempts = (row.attempts || 0) + 1;
-    row.attempts = attempts;
-    if (attempts >= core.MAX_ATTEMPTS) {
-      row.status = 'failed';
-      await _idbPut(db, 'queue:mutations', row);
-      _postTelemetry('pwa.mutation.failed_permanent', {
-        method: row.method,
-        url: row.url,
-        idempotency_key: row.idempotency_key,
-        reason: 'max_attempts',
-      });
-    } else {
-      row.status = 'retry-scheduled';
-      row.next_attempt_at = now + core.backoffDelayMs(attempts);
-      await _idbPut(db, 'queue:mutations', row);
-      retryableRemaining = true;
-    }
+    retryableRemaining = true;
   }
 
   try {

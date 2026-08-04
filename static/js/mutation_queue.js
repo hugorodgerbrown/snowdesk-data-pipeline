@@ -427,6 +427,10 @@
    * @param {string} reason Short machine-identifier for the failure.
    */
   async function _markRowFailed(row, reason) {
+    // `status: 'failed'` is stamped by core's `nextRowState` for the drain
+    // path; re-asserted here because `markFailed()` (the caller-driven
+    // report for a mutation attempted outside the queue) does not go
+    // through it.
     var updated = Object.assign({}, row, { status: 'failed' });
     try {
       await window.pwaDb.put(STORE, updated);
@@ -513,33 +517,19 @@
       outcome = 'retry';
     }
 
-    if (outcome === 'success') {
+    // SNOW-617: the transition itself is core's, not this file's — see
+    // `nextRowState`. This function keeps only the IO around it.
+    var transition = core.nextRowState(row, outcome, Date.now());
+
+    if (transition.action === 'delete') {
       await window.pwaDb.delete(STORE, row.id);
       return 'success';
     }
-
-    // Both remaining branches represent an attempt that just happened —
-    // increment before persisting/reporting so `attempts` (and the
-    // telemetry it feeds) reflects the failed attempt rather than reading
-    // as "never attempted".
-    var attempts = (row.attempts || 0) + 1;
-
-    if (outcome === 'permanent') {
-      await _markRowFailed(Object.assign({}, row, { attempts: attempts }), 'permanent_4xx');
+    if (transition.action === 'fail') {
+      await _markRowFailed(transition.row, transition.reason);
       return 'failed';
     }
-
-    // 'retry' — {408, 429}, 5xx, or a network error.
-    if (attempts >= core.MAX_ATTEMPTS) {
-      await _markRowFailed(Object.assign({}, row, { attempts: attempts }), 'max_attempts');
-      return 'failed';
-    }
-    var updated = Object.assign({}, row, {
-      attempts: attempts,
-      status: 'retry-scheduled',
-      next_attempt_at: Date.now() + core.backoffDelayMs(attempts),
-    });
-    await window.pwaDb.put(STORE, updated);
+    await window.pwaDb.put(STORE, transition.row);
     return 'retry';
   }
 
@@ -611,11 +601,22 @@
           return;
         }
         var core = window.pwaMutationQueueCore;
-        var rows = (await window.pwaDb.getAll(STORE, BATCH_SIZE)) || [];
+        // SNOW-617: read every row and let core pick the batch, rather
+        // than reading the oldest BATCH_SIZE and filtering those. A
+        // permanently-failed row is never deleted — the nav badge's error
+        // state is defined on its presence (docs/mutation-queue.md) — so
+        // under the old order BATCH_SIZE failed rows at the head of the
+        // store occupied every slot in every pass, and each eligible row
+        // behind them starved indefinitely, with no error and no telemetry
+        // to say why. Unbounded read matches `_updateBadge`, which already
+        // does one.
+        var rows = (await window.pwaDb.getAll(STORE)) || [];
         var now = Date.now();
-        var eligible = rows.filter(function (row) {
-          return core ? core.isRowEligible(row, now) : row.status !== 'failed';
-        });
+        var eligible = core
+          ? core.selectDrainBatch(rows, now, BATCH_SIZE)
+          : rows.filter(function (row) {
+              return row.status !== 'failed';
+            }).slice(0, BATCH_SIZE);
         for (const row of eligible) {
           // Sequential, not parallel — keeps replay order stable and
           // avoids concurrent writes to the same store racing each other.

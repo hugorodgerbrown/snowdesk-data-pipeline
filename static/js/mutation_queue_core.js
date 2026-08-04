@@ -40,6 +40,23 @@
  *                                to be replayed right now: not already
  *                                ``failed``, and its backoff window (if
  *                                any) has elapsed.
+ *   selectDrainBatch(rows, now, batchSize)
+ *                                The rows one drain pass should replay:
+ *                                eligible ones FIRST, then capped at
+ *                                ``batchSize``. Doing it the other way
+ *                                round starves the queue (SNOW-617).
+ *   nextRowState(row, outcome, now)
+ *                                The whole post-attempt transition, as a
+ *                                pure function: what to do with the row
+ *                                and what it should look like afterwards.
+ *
+ * SNOW-617: ``selectDrainBatch`` and ``nextRowState`` were the two pieces
+ * of the state machine that lived OUTSIDE this module, spelled out once in
+ * ``mutation_queue.js``'s ``drain``/``_processRow`` and again by hand in
+ * ``sw.js``'s ``_selfDrainMutations``. That is how the offline guard came
+ * to be missing from ``drain()`` while its mirror in ``telemetry.js`` had
+ * one: the transitions were not in the tested unit, so nothing compared
+ * the two copies.
  *
  * See docs/mutation-queue.md for the full row shape, state machine, and
  * backoff schedule this file implements.
@@ -108,11 +125,100 @@
     return nextAttemptAt <= now;
   }
 
+  /**
+   * The rows one drain pass should replay.
+   *
+   * SNOW-617: the order of these two steps is the whole point. ``drain()``
+   * used to read the oldest ``batchSize`` rows and filter THOSE for
+   * eligibility, so a permanently-failed row — which is never deleted,
+   * because the nav badge's error state is defined on its presence
+   * (docs/mutation-queue.md) — occupied a slot in every pass forever. With
+   * ``batchSize`` such rows at the head of the store, every eligible row
+   * behind them starved: the queue would sit there, badge showing a count,
+   * draining nothing, with no error and no telemetry to say why.
+   *
+   * Filtering first and capping after means failed rows cost nothing, and
+   * the cap still bounds how much one pass can do.
+   *
+   * @param {object[]} rows Every row in the store, oldest first.
+   * @param {number} now epoch milliseconds
+   * @param {number} batchSize Maximum rows to return.
+   * @returns {object[]}
+   */
+  function selectDrainBatch(rows, now, batchSize) {
+    var batch = [];
+    if (!rows) return batch;
+    for (var i = 0; i < rows.length; i++) {
+      if (!isRowEligible(rows[i], now)) continue;
+      batch.push(rows[i]);
+      if (batch.length >= batchSize) break;
+    }
+    return batch;
+  }
+
+  /**
+   * What to do with ``row`` after an attempt that produced ``outcome``.
+   *
+   * The whole post-attempt transition, as a pure function of its inputs —
+   * so the state machine can be tested without IndexedDB, a network, or a
+   * service worker. Both drain paths call this; neither decides for
+   * itself.
+   *
+   * ``attempts`` is incremented on every non-success branch before the row
+   * is handed back, so it reflects the attempt that just happened rather
+   * than reading as "never attempted" — the distinction the
+   * ``pwa.mutation.failed_permanent`` telemetry relies on to tell
+   * "failed on the first try" from "never tried".
+   *
+   * @param {object} row The stored row, as read.
+   * @param {'success'|'permanent'|'retry'} outcome ``classifyStatus``'s
+   *   verdict, or ``'retry'`` for a thrown ``fetch()`` (a network error
+   *   has no status to classify).
+   * @param {number} now epoch milliseconds
+   * @returns {{action: 'delete'|'fail'|'reschedule', row?: object,
+   *   reason?: string}} ``delete`` — it succeeded, drop it. ``fail`` —
+   *   persist ``row`` (already stamped ``status: 'failed'``) and report
+   *   ``reason``. ``reschedule`` — persist ``row`` with its new backoff.
+   */
+  function nextRowState(row, outcome, now) {
+    if (outcome === 'success') return { action: 'delete' };
+
+    var attempts = (row && row.attempts ? row.attempts : 0) + 1;
+
+    if (outcome === 'permanent') {
+      return {
+        action: 'fail',
+        row: Object.assign({}, row, { attempts: attempts, status: 'failed' }),
+        reason: 'permanent_4xx',
+      };
+    }
+
+    // 'retry' — {408, 429}, 5xx, or a network error.
+    if (attempts >= MAX_ATTEMPTS) {
+      return {
+        action: 'fail',
+        row: Object.assign({}, row, { attempts: attempts, status: 'failed' }),
+        reason: 'max_attempts',
+      };
+    }
+
+    return {
+      action: 'reschedule',
+      row: Object.assign({}, row, {
+        attempts: attempts,
+        status: 'retry-scheduled',
+        next_attempt_at: now + backoffDelayMs(attempts),
+      }),
+    };
+  }
+
   self.pwaMutationQueueCore = Object.freeze({
     MAX_ATTEMPTS: MAX_ATTEMPTS,
     SYNC_TAG: SYNC_TAG,
     backoffDelayMs: backoffDelayMs,
     classifyStatus: classifyStatus,
     isRowEligible: isRowEligible,
+    selectDrainBatch: selectDrainBatch,
+    nextRowState: nextRowState,
   });
 })();

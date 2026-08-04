@@ -245,6 +245,16 @@ drains inline once the row is persisted, when `navigator.onLine` is true
 (`_drainInFlight`) so concurrent triggers can never double-POST the same
 row, and one pass replays at most `BATCH_SIZE` (50) rows.
 
+**Which 50** matters (SNOW-617). `drain()` reads the whole store and hands
+it to `pwaMutationQueueCore.selectDrainBatch(rows, now, BATCH_SIZE)`, which
+selects eligible rows *first* and caps *after*. It used to read the oldest
+`BATCH_SIZE` rows and filter those for eligibility — and because a row that
+lands in `status: 'failed'` is deliberately never deleted (the nav badge's
+error state is defined on its presence, above), 50 failed rows at the head
+of the store occupied every slot in every pass. Every eligible row behind
+them starved indefinitely: the badge showed a count, the queue drained
+nothing, and there was no error and no telemetry to say why.
+
 `pagehide` is the only trigger that fires regardless of visibility. Unlike
 telemetry.js's mirror of it, the replay fetch carries no `keepalive` flag: a
 replay sends a body and an `Idempotency-Key`, so a fetch cut short by the

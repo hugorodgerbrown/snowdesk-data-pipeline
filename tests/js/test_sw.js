@@ -46,8 +46,10 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import '../../static/js/basemap_cache_core.js';
+import '../../static/js/mutation_queue_core.js';
 
 const core = self.pwaBasemapCacheCore;
+const coreQueue = self.pwaMutationQueueCore;
 
 // Resolved off ``process.cwd()`` rather than ``import.meta.url``: under the
 // jsdom environment that URL is an ``http:`` one Vitest serves the module
@@ -70,6 +72,7 @@ const SW_EXPORTS = [
   '_basemapStaleWhileRevalidate',
   'BASEMAP_CACHE_TRIM_INTERVAL',
   'BASEMAP_CACHE_MAX_ENTRIES',
+  '_INLINE_MUTATION_QUEUE_CORE',
   'PRINCIPAL_ANONYMOUS',
   'PRINCIPAL_UNKNOWN',
   'PRINCIPAL_HEADER',
@@ -767,6 +770,46 @@ describe('basemap cache trim batching (SNOW-614)', () => {
     function sw614Overshoot() {
       const sw = loadSw();
       return sw.BASEMAP_CACHE_TRIM_INTERVAL / sw.BASEMAP_CACHE_MAX_ENTRIES;
+    }
+  });
+});
+
+describe('inline mutation-queue core agrees with the real one (SNOW-617)', () => {
+  // The same treatment D3 gave `worseReason` after it drifted: run both
+  // implementations over one shared table, so a change to either fails
+  // here. sw.js's copy is reached only when the startup `importScripts`
+  // failed, which is exactly the path nothing else exercises.
+  const NOW = 1_000_000;
+
+  const ROWS = [
+    { label: 'never attempted', row: { id: 1, attempts: 0, status: 'queued' } },
+    { label: 'no attempts field', row: { id: 2, status: 'queued' } },
+    { label: 'mid-backoff', row: { id: 3, attempts: 5, status: 'retry-scheduled' } },
+    { label: 'one short of the ceiling', row: { id: 4, attempts: 18, status: 'retry-scheduled' } },
+    { label: 'at the ceiling', row: { id: 5, attempts: 19, status: 'retry-scheduled' } },
+    { label: 'past the ceiling', row: { id: 6, attempts: 25, status: 'retry-scheduled' } },
+  ];
+  const OUTCOMES = ['success', 'permanent', 'retry'];
+
+  it('returns identical transitions across every row and outcome', () => {
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+
+    for (const { label, row } of ROWS) {
+      for (const outcome of OUTCOMES) {
+        expect(
+          inline.nextRowState(row, outcome, NOW),
+          `${label} / ${outcome}`,
+        ).toEqual(coreQueue.nextRowState(row, outcome, NOW));
+      }
+    }
+  });
+
+  it('agrees on MAX_ATTEMPTS and the backoff schedule', () => {
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+
+    expect(inline.MAX_ATTEMPTS).toBe(coreQueue.MAX_ATTEMPTS);
+    for (let attempts = 1; attempts <= 12; attempts += 1) {
+      expect(inline.backoffDelayMs(attempts)).toBe(coreQueue.backoffDelayMs(attempts));
     }
   });
 });
