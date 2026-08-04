@@ -226,7 +226,7 @@ never computed at request time, since region geometry and the basemap
 tile grid are both static:
 
 ```json
-"download": {"count": 329, "mb": 33, "over_ceiling": false, "centre_tile": {"z": 14, "x": 8520, "y": 5820}}
+"download": {"count": 329, "mb": 17, "over_ceiling": false, "centre_tile": {"z": 14, "x": 8520, "y": 5820}}
 ```
 
 The whole `download` key is omitted when the region has no computed

@@ -81,7 +81,7 @@ Stored blob shape (``MicroRegion.basemap_download``, from
     {
       "band": [10, 14],
       "count": 312,
-      "mb": 31,
+      "mb": 16,
       "over_ceiling": false,
       "centre_tile": {"z": 14, "x": 8501, "y": 5820},
       "z": {"10": {"362": [530, 531]}, ..., "14": {"5792": [8502, 8504], ...}}
@@ -119,11 +119,15 @@ type RegionZMap = dict[str, dict[str, list[int]]]
 # single band.
 MICRO_BAND: tuple[int, int] = (10, 14)
 
-# A conservative upper bound for a dense Liberty-style vector tile, so the
-# stored "mb" estimate is a true worst-case ceiling rather than a
-# typical-case average — mirrors the pre-rework
-# ``BASEMAP_WORST_CASE_BYTES_PER_TILE`` client-side constant.
-WORST_CASE_BYTES_PER_TILE: int = 100 * 1024
+# Calibrated against seven real max-size custom-area downloads (SNOW-631):
+# estimate-vs-actual ranged 11.03%-48.00% of the old 100 KB/tile guess, with
+# Geneva (48.00%) the densest area measured. 50 KB rounds that worst
+# observed ratio up, so the estimate still never under-promises against a
+# measured ceiling rather than an assumed one. Alpine (sparser) areas still
+# overstate by 3-5x — a deliberate trade for keeping a single constant that
+# never under-promises. Mirrors the JS twin at
+# ``static/js/basemap_download_core.js``'s ``WORST_CASE_BYTES_PER_TILE``.
+WORST_CASE_BYTES_PER_TILE: int = 50 * 1024
 
 # Download hard ceiling. A region whose worst-case estimate exceeds this
 # is flagged ``over_ceiling`` — a backstop against a pathologically large

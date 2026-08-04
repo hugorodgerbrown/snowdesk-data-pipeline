@@ -244,7 +244,7 @@ def test_build_blob_golden_vector_matches_js_twin() -> None:
     assert blob == {
         "band": [10, 14],
         "count": 205,
-        "mb": 21,
+        "mb": 11,
         "over_ceiling": False,
         "centre_tile": {"z": 14, "x": 8515, "y": 5822},
         "z": {

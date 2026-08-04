@@ -158,7 +158,7 @@
    *
    * The unbounded ``Promise.all(items.map(worker))`` this replaces issued
    * every fetch of a warm-cache run in a single tick. A full-ceiling
-   * custom-area download is up to 2048 tiles (``DOWNLOAD_CEILING_MB`` /
+   * custom-area download is up to 4096 tiles (``DOWNLOAD_CEILING_MB`` /
    * ``WORST_CASE_BYTES_PER_TILE``), and Chrome's net stack starts
    * rejecting requests with ``ERR_INSUFFICIENT_RESOURCES`` well below
    * that — a request-budget exhaustion, not a storage-quota failure, so

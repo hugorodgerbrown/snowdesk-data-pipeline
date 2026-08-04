@@ -217,7 +217,7 @@ describe('buildBlob (golden vector)', () => {
     expect(blob).toEqual({
       band: [10, 14],
       count: 205,
-      mb: 21,
+      mb: 11,
       over_ceiling: false,
       centre_tile: { z: 14, x: 8515, y: 5822 },
       z: {
@@ -349,7 +349,10 @@ describe('budgetScaleForBBox', () => {
       }
       previous = scale;
     }
-    expect(previous).toBeLessThan(0.2);
+    // SNOW-631: halving WORST_CASE_BYTES_PER_TILE halves mb at any given
+    // tile count, so the scale needed to fit the same box under the
+    // ceiling grows by roughly sqrt(2) — this floor moved with it.
+    expect(previous).toBeLessThan(0.3);
   });
 
   it('returns a usable factor for a degenerate box', () => {
@@ -360,7 +363,7 @@ describe('budgetScaleForBBox', () => {
 describe('MICRO_BAND / WORST_CASE_BYTES_PER_TILE / DOWNLOAD_CEILING_MB', () => {
   it('mirror the Python module-level constants', () => {
     expect(core.MICRO_BAND).toEqual([10, 14]);
-    expect(core.WORST_CASE_BYTES_PER_TILE).toBe(100 * 1024);
+    expect(core.WORST_CASE_BYTES_PER_TILE).toBe(50 * 1024);
     expect(core.DOWNLOAD_CEILING_MB).toBe(200);
   });
 });

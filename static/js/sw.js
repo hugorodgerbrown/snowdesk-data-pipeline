@@ -1023,7 +1023,7 @@ async function _trimCache(cache, max) {
 // matches the per-host connection limit every major browser applies to
 // HTTP/1.1, so the pool keeps the pipe full without queueing work the
 // network stack would only stall on. The previous unbounded fan-out
-// issued the whole list in one tick — up to 2048 fetches for a
+// issued the whole list in one tick — up to 4096 fetches for a
 // full-ceiling area download — and Chrome answered with
 // ERR_INSUFFICIENT_RESOURCES on every one of them.
 const WARM_CACHE_CONCURRENCY = 6;
