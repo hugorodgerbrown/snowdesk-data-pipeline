@@ -70,6 +70,8 @@ const SW_EXPORTS = [
   '_pinnedCacheNames',
   '_invalidatePinnedCacheNames',
   '_basemapStaleWhileRevalidate',
+  '_warmCache',
+  '_isHtmlResponse',
   'BASEMAP_CACHE_TRIM_INTERVAL',
   'BASEMAP_CACHE_MAX_ENTRIES',
   '_INLINE_MUTATION_QUEUE_CORE',
@@ -811,5 +813,106 @@ describe('inline mutation-queue core agrees with the real one (SNOW-617)', () =>
     for (let attempts = 1; attempts <= 12; attempts += 1) {
       expect(inline.backoffDelayMs(attempts)).toBe(coreQueue.backoffDelayMs(attempts));
     }
+  });
+});
+
+describe('_warmCache stamps the page HTML it writes (SNOW-624)', () => {
+  const PAGE_URL = `${ORIGIN}/ch-4115/martigny-verbier/`;
+  const FEED_URL = `${ORIGIN}/api/ratings/`;
+
+  /**
+   * A same-origin `Response`-alike with a chosen content type and body.
+   *
+   * `type: 'basic'` is what `_warmCache` requires of a same-origin
+   * response before it will cache anything.
+   *
+   * @param {string} body
+   * @param {string} contentType
+   * @returns {object}
+   */
+  function sameOriginResponse(body, contentType) {
+    return basicResponse(body, { headers: { 'Content-Type': contentType } });
+  }
+
+  it('stamps a warmed page with the principal its HTML was rendered for', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({
+      caches: stub,
+      fetch: async () =>
+        sameOriginResponse(
+          '<meta name="pwa-user-id" content="acct-77">',
+          'text/html; charset=utf-8',
+        ),
+    });
+
+    await sw._warmCache([PAGE_URL]);
+
+    const cache = await stub.open('snowdesk-shell-UNSUBSTITUTED');
+    const hit = await cache.match(PAGE_URL);
+    // Unstamped, this entry would sit in the cache and be refused on every
+    // offline read — the user seeing offline.html for a page the device
+    // demonstrably holds.
+    expect(hit).toBeTruthy();
+    expect(hit.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-77');
+  });
+
+  it('stamps a warmed anonymous page as anonymous, not unknown', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({
+      caches: stub,
+      fetch: async () =>
+        sameOriginResponse('<meta name="pwa-user-id" content="">', 'text/html'),
+    });
+
+    await sw._warmCache([PAGE_URL]);
+
+    const cache = await stub.open('snowdesk-shell-UNSUBSTITUTED');
+    const hit = await cache.match(PAGE_URL);
+    // PRINCIPAL_UNKNOWN never matches anything, so getting this wrong
+    // would make a public page unservable offline.
+    expect(hit.headers.get(sw.PRINCIPAL_HEADER)).toBe(sw.PRINCIPAL_ANONYMOUS);
+  });
+
+  it('leaves a data response alone', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({
+      caches: stub,
+      fetch: async () => sameOriginResponse('{"ok":true}', 'application/json'),
+    });
+
+    await sw._warmCache([FEED_URL]);
+
+    const cache = await stub.open('snowdesk-shell-UNSUBSTITUTED');
+    const hit = await cache.match(FEED_URL);
+    expect(hit).toBeTruthy();
+    // Feeds are read back by _staleWhileRevalidate, which checks no
+    // principal — stamping them would cost a body buffer for nothing.
+    expect(hit.headers.get(sw.PRINCIPAL_HEADER)).toBeNull();
+  });
+
+  it('reports the warmed page as a success', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({
+      caches: stub,
+      fetch: async () =>
+        sameOriginResponse('<meta name="pwa-user-id" content="a">', 'text/html'),
+    });
+
+    const result = await sw._warmCache([PAGE_URL]);
+
+    expect(result.ok).toBe(1);
+    expect(result.failed).toBe(0);
+  });
+
+  it('classifies content types the way the offline read does', () => {
+    const sw = loadSw();
+    const withType = (t) => ({ headers: new Headers({ 'Content-Type': t }) });
+
+    expect(sw._isHtmlResponse(withType('text/html'))).toBe(true);
+    expect(sw._isHtmlResponse(withType('text/html; charset=utf-8'))).toBe(true);
+    expect(sw._isHtmlResponse(withType('TEXT/HTML'))).toBe(true);
+    expect(sw._isHtmlResponse(withType('application/json'))).toBe(false);
+    expect(sw._isHtmlResponse(withType(''))).toBe(false);
+    expect(sw._isHtmlResponse({ headers: new Headers() })).toBe(false);
   });
 });
