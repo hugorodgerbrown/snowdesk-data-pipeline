@@ -663,6 +663,12 @@ function confirmBasemapEviction(evictAreas) {
 const BASEMAP_DOWNLOAD_ERROR_TOAST_IDS = {
   quota: 'map-download-error-toast-quota',
   budget: 'map-download-error-toast-budget',
+  // SNOW-605: the page has no service worker controlling it, so there was
+  // nothing to dispatch the download to — a state a shift-reload leaves the
+  // document in permanently, and an SW update leaves it in briefly. The
+  // fallback copy ("check your connection") actively misleads here: the
+  // network is fine and no request was ever made.
+  'no-worker': 'map-download-error-toast-no-worker',
 };
 const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
 

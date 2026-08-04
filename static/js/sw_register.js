@@ -281,14 +281,81 @@
   // nothing is surfaced meaningfully later than before.
   const SW_UPDATE_CHECK_INTERVAL_MS = 60000;
 
+  // SNOW-605: how long ``_activeWorker()`` waits for a controller before
+  // declaring the page uncontrolled. Sized for the activation window of an
+  // SW update — the gap between the new worker activating and its
+  // ``clients.claim()`` reaching this page — which is milliseconds, not
+  // seconds. It is deliberately NOT sized for a shift-reloaded page, where
+  // no controller is ever coming and the only cure is a reload: waiting
+  // longer there would just stall the download control with a spinner
+  // before showing the same message.
+  const CONTROLLER_WAIT_MS = 3000;
+
+  /**
+   * SNOW-605: the worker that should receive this page's messages, waiting
+   * briefly for one if the page is momentarily uncontrolled.
+   *
+   * ``navigator.serviceWorker.controller`` is null in three situations that
+   * look identical from here but are not: the activation window of an
+   * update (a controller is about to arrive), a shift-reloaded document
+   * (none ever will — Chrome loads it uncontrolled on purpose), and a first
+   * load whose worker has not yet claimed. Waiting for ``controllerchange``
+   * resolves the first and third; the second falls through to the timeout,
+   * which is the honest answer for it.
+   *
+   * ``navigator.serviceWorker.ready`` is awaited first so a page whose
+   * worker is still installing doesn't time out on a technicality — it
+   * resolves once a registration is active, which is the earliest a
+   * controller could exist.
+   *
+   * @returns {Promise<ServiceWorker | null>}
+   */
+  function _activeWorker() {
+    if (navigator.serviceWorker.controller) {
+      return Promise.resolve(navigator.serviceWorker.controller);
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (worker) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+        resolve(worker);
+      };
+      const onChange = () => finish(navigator.serviceWorker.controller);
+      const timer = setTimeout(() => finish(navigator.serviceWorker.controller), CONTROLLER_WAIT_MS);
+      navigator.serviceWorker.addEventListener('controllerchange', onChange);
+      // A registration that is already active may still not have claimed
+      // this page; re-check once ``ready`` settles rather than waiting out
+      // the full timeout for a controller that is already there.
+      navigator.serviceWorker.ready
+        .then(() => {
+          if (navigator.serviceWorker.controller) finish(navigator.serviceWorker.controller);
+        })
+        .catch(() => {});
+    });
+  }
+
   /**
    * SNOW-492: bridge for map.js's "Download basemap" control. Posts the
    * given URL list to the active worker's ``warm-cache`` message handler
    * (``static/js/sw.js``) and resolves with its ``{ok, failed}`` summary
-   * once the worker posts ``warm-cache-done`` back. Resolves ``null``
-   * immediately when there's no active worker (unsupported browser, or the
-   * kill switch has unregistered every SW) — the caller degrades to
-   * "nothing to warm".
+   * once the worker posts ``warm-cache-done`` back.
+   *
+   * SNOW-605: an uncontrolled page no longer fails on the spot. A page can
+   * have no ``controller`` while a perfectly healthy worker exists — during
+   * an update's activation window, and (for the whole life of the document)
+   * after a shift-reload, which Chrome deliberately loads uncontrolled. This
+   * used to resolve ``null`` on the first line, which the download controls
+   * report as a flat "Download failed. Check your connection and try again."
+   * having dispatched nothing — no request, nothing to see in the network
+   * panel, and a message pointing at the one thing that isn't wrong. So:
+   * wait ``CONTROLLER_WAIT_MS`` for a controller to arrive, and only if none
+   * does resolve ``{ok: 0, failed: 0, reason: 'no-worker', bytes: 0}`` — a
+   * distinct reason the caller can word accurately (reload the page), rather
+   * than ``null``, which is indistinguishable from a run that fetched
+   * nothing.
    *
    * SNOW-568: if the worker goes ``WARM_CACHE_TIMEOUT_MS`` without a reply
    * OR a progress message (see that constant's comment), this resolves
@@ -332,9 +399,12 @@
    * @returns {Promise<{ok: number, failed: number, reason: string|null,
    *   bytes: number} | null>}
    */
-  function warmCache(urls, opts) {
-    const active = navigator.serviceWorker.controller;
-    if (!active) return Promise.resolve(null);
+  async function warmCache(urls, opts) {
+    const active = await _activeWorker();
+    // SNOW-605: no controller after the wait — the page is uncontrolled and
+    // will stay that way until it reloads. Report it as its own reason so
+    // the user is told to reload rather than to check their connection.
+    if (!active) return { ok: 0, failed: 0, reason: 'no-worker', bytes: 0 };
     const options = opts || {};
     const requestId = _mintRequestId();
     return new Promise((resolve) => {
