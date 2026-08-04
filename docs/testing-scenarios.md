@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on seed_test_data data
 status: current
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -734,13 +734,15 @@ completed so state exists to clear.
 
 > Automated: [test_pwa_lifecycle_kill_and_reset.py::test_offline_page_reset_control](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py).
 > The offline half of the journey (step 4) is covered by
-> `test_offline_page_reset_control_offline` in the same file, marked
-> `xfail` until `/static/js/pwa_reset.js` joins `PRECACHE_URLS` — see
+> `test_offline_page_reset_control_offline` in the same file — see
 > [`offline-first.md`](offline-first.md#reset-local-data-snow-378).
 
 **Goal**: Verify the same "Reset local data" control on
-`static/offline.html` — the surface that exists because the manage page
-is `@never_cache` (SNOW-607) and so never loads offline.
+`static/offline.html` — the surface that reaches a user who is stuck
+*and* offline. The manage page carries its own copy, but that page is
+cached per account (SNOW-607), so its copy is present only once that
+account has loaded it online in this browser. The offline page is
+pre-cached and carries no account identity, so it is always there.
 
 **Preconditions**: Scenario P1 completed (a SW is registered and the
 shell is cached), so there is state to clear.
@@ -750,4 +752,4 @@ shell is cached), so there is state to clear.
 | 1 | Navigate to http://localhost:8000/static/offline.html | The branded fallback page renders; below Retry, a "Reset local data on this device" control with a short explanation |
 | 2 | Click "Reset local data on this device" | The same native confirm dialog as P12 opens |
 | 3 | Accept the dialog | IndexedDB, Cache storage and Service workers are cleared; the page reloads |
-| 4 | Go offline (DevTools → Network → Offline), navigate to a URL never visited (e.g. http://localhost:8000/some-page-never-visited/) | The fallback page renders. The reset control is **hidden** — `pwa_reset.js` is not pre-cached, so it cannot load, and the panel does not show a control that would do nothing. It reappears once that entry is added to `PRECACHE_URLS` |
+| 4 | Go offline (DevTools → Network → Offline), navigate to a URL never visited (e.g. http://localhost:8000/some-page-never-visited/) | The fallback page renders **with** the reset control visible and working — `/static/js/pwa_reset.js` is in `PRECACHE_URLS` (`static/js/sw.js`) alongside the page itself, so it loads with no network. The panel reveals itself only once that script has defined `window.pwaResetLocalData`, so a control bound to nothing is never shown |
