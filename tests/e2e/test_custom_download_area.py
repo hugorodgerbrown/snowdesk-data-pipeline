@@ -1419,6 +1419,96 @@ def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
     assert "500 MB" in after
 
 
+def test_budget_banner_does_not_double_count_this_area_mid_run(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: a re-download's live banner replaces this area's share, not adds to it.
+
+    The bug: the banner rendered ``bannerBaselineBytes + liveBytes``, and
+    the baseline already contained the very area being re-downloaded. A
+    62.6 MB custom area re-downloading with 18.4 MB landed read as
+    "80.9 MB / 500 MB" — the area counted twice — and only snapped back to
+    the truth when ``finish`` re-read the records, which made it look
+    self-healing rather than wrong.
+
+    The run REPLACES that recorded share (see the sibling test below), so
+    the live figure has to take it back out first — the same exclusion
+    ``planEviction`` already applies when budgeting an incoming area
+    against the standing total.
+
+    Held mid-run via the stub's ``pause_after_step`` handshake so the
+    assertion lands on a known progress tick rather than a sleep.
+    """
+    page, worker = _boot(pwa_page)
+
+    # A pre-existing download of ANOTHER area (a region), so the baseline
+    # has a component the run must NOT remove — a naive "show only the
+    # live bytes" fix would pass a test that seeded nothing else.
+    page.evaluate(
+        """() => window.pwaDb.put('meta:app', {
+            key: 'basemap.regions',
+            value: [{
+                region_id: 'CH-9999',
+                name: 'Seed',
+                bytes: 10 * 1024 * 1024,
+                savedAt: new Date().toISOString(),
+            }],
+        })"""
+    )
+
+    # Now give the CUSTOM area its own prior record — this is the share
+    # that must be swapped out, not stacked on.
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=20 * 1024 * 1024)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    _close_completed_overlay(page)
+
+    # Baseline is now 10 MB (region) + 20 MB (custom) = 30 MB.
+    _open_framing(page)
+    _wait_for_budget_banner(page)
+    assert "30.0 MB" in _instruction_text(page)
+
+    # Re-download the SAME area, paused after the first progress tick.
+    _stub_warm_cache(
+        worker,
+        ok=1,
+        failed=0,
+        bytes_total=20 * 1024 * 1024,
+        progress_steps=[(1, 2), (2, 2)],
+        pause_after_step=0,
+    )
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
+
+    # Half the run's 20 MB has landed. The honest total is the 10 MB
+    # region plus the 10 MB landed here — NOT 30 + 10, which is what the
+    # bug rendered.
+    page.wait_for_function(
+        """() => /\\b20\\.0 MB\\b/.test(
+            document.getElementById('map-frame-instruction').innerText
+        )""",
+        timeout=10000,
+    )
+    mid_run = _instruction_text(page)
+    assert "20.0 MB" in mid_run
+    assert "40.0 MB" not in mid_run
+
+    worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+
+    # And settles back to the same 30 MB it started at — a re-download of
+    # the same size adds nothing.
+    page.wait_for_function(
+        """() => /\\b30\\.0 MB\\b/.test(
+            document.getElementById('map-frame-instruction').innerText
+        )""",
+        timeout=10000,
+    )
+
+
 def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
     pwa_page: PwaPage,
 ) -> None:

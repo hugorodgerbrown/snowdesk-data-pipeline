@@ -7285,6 +7285,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // checks this and holds the pre-existing instruction text instead.
   let bannerBudgetKnown = false;
 
+  // This area's OWN share of `bannerBaselineBytes`. A run replaces that
+  // share rather than adding to it (finish records the run's own bytes —
+  // see docs/decisions/per-area-pinned-basemap-caches.md), so the live
+  // banner has to take it back out or it counts the area twice for the
+  // duration: baseline 62.6 MB + 18.4 MB landed read as 80.9 MB used
+  // when the true figure was 18.4 MB, snapping back only once `finish`
+  // re-read the records. Mirrors what `planEviction` already does for
+  // budget planning, where the incoming area is excluded from the
+  // standing total for exactly the same reason.
+  let bannerOwnAreaBytes = 0;
+
   /**
    * True when EVERY tile of the saved custom area is present in the
    * pinned cache. Returns `null` for "can't tell yet" (the active
@@ -7412,9 +7423,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
           mb: _formatBytes(bytes),
         });
         if (readoutEl.textContent !== busyText) readoutEl.textContent = busyText;
-        // The banner layers this run's own live bytes on top of the
-        // baseline cached at openFraming — no further IndexedDB read.
-        _renderBudgetBanner(bytes);
+        // The banner swaps this area's recorded share for the run's own
+        // live bytes, against the baseline cached at openFraming — no
+        // further IndexedDB read. Coerced so the opening paint('busy', 0)
+        // (no bytes yet) still counts as "a run is under way, nothing
+        // landed" rather than falling back to the un-excluded baseline.
+        _renderBudgetBanner(Number(bytes) || 0);
       }
     } else if (wasBusy && !overlayEl.hasAttribute('hidden')) {
       if (state === 'done') {
@@ -8050,8 +8064,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * `bannerBaselineBytes`/`bannerBudgetBytes`, optionally layering a live
    * run's own progress on top.
    *
-   * @param {number} [liveBytes] Bytes landed by a run in progress, added
-   *   to the cached baseline. Omitted outside a run.
+   * @param {number} [liveBytes] Bytes landed by a run in progress. The
+   *   area's own previously-recorded share is swapped out for this figure
+   *   rather than added to it — see `bannerOwnAreaBytes`. Omitted outside
+   *   a run, when the cached baseline is already the whole truth.
    * @returns {void}
    */
   function _renderBudgetBanner(liveBytes) {
@@ -8061,7 +8077,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Leave whatever instruction text is already there until the real
     // budget is known.
     if (!instructionEl || !bannerBudgetKnown) return;
-    const usedBytes = bannerBaselineBytes + (Number(liveBytes) || 0);
+    // `undefined` (no run) leaves the baseline untouched; a run swaps this
+    // area's recorded share for what it has landed so far. Floored at 0
+    // because the two figures come from different reads and a stale
+    // baseline must never render a negative total.
+    const usedBytes =
+      liveBytes === undefined
+        ? bannerBaselineBytes
+        : Math.max(0, bannerBaselineBytes - bannerOwnAreaBytes) + (Number(liveBytes) || 0);
     instructionEl.textContent = self.pwaStrings.interpolate(
       MAP_STRINGS['frame-budget-banner'],
       { used: _formatBytes(usedBytes), budget: _formatBytes(bannerBudgetBytes) },
@@ -8096,6 +8119,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         basemapDownloadBudgetBytes(),
       ]);
       bannerBaselineBytes = areas.reduce((sum, area) => sum + (Number(area.bytes) || 0), 0);
+      // Read alongside the total, from the SAME snapshot, so the two can
+      // never disagree about what this area currently contributes.
+      const core = self.pwaBasemapDownloadCore;
+      const ownArea = core ? areas.find((area) => area.id === core.CUSTOM_AREA_ID) : null;
+      bannerOwnAreaBytes = ownArea ? Number(ownArea.bytes) || 0 : 0;
       bannerBudgetBytes = budgetBytes;
       bannerBudgetKnown = true;
     } catch (_e) {
