@@ -1461,16 +1461,20 @@ async function _basemapStaleWhileRevalidate(request) {
 //
 //   1. A response declaring ``Cache-Control: no-store`` is never written.
 //      Cache Storage is not the HTTP cache and ``cache.put`` ignores the
-//      header on its own, so this is an explicit check. Django's
-//      ``@never_cache`` and the ``private, no-store`` header on the
-//      account pages (apps/accounts/views.py) are what put authenticated
-//      HTML on the right side of it; ``AdminSite.admin_view`` already
-//      applies ``never_cache`` to every Django admin view, which
-//      templates/admin/base_site.html registers this same worker on.
+//      header on its own, so this is an explicit check. It is what honours
+//      a view that has opted out entirely — ``change_email_view``'s
+//      ``@never_cache`` (apps/accounts/views.py), and
+//      ``AdminSite.admin_view``, which already applies ``never_cache`` to
+//      every Django admin view and which templates/admin/base_site.html
+//      registers this same worker on. Note that ``manage_view`` is
+//      deliberately NOT in that set: the offline favourites roster reads
+//      it out of this cache, so it relies on guard 2 instead.
 //
 //   2. Every cached navigation carries an ``X-SW-Principal`` header naming
 //      the account its HTML was rendered for, and the offline read serves
 //      an entry only when that stamp equals the principal signed in now.
+//      This is the primary mechanism, not the backstop — guard 1 only
+//      covers pages nothing needs offline.
 //      Mirrors SNOW-493's partitioning of the overlay cache
 //      (static/js/map_overlay_offline_cache.js) and SNOW-462's mutation-row
 //      principal guard (``_selfDrainMutations`` below).

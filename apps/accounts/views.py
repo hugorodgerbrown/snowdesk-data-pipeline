@@ -1405,7 +1405,6 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-@never_cache
 @require_GET
 def manage_view(request: HttpRequest) -> HttpResponse:
     """
@@ -1415,13 +1414,18 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
 
-    Decorated with ``@never_cache`` (C1,
-    ``docs/code-reviews/2026-08-03-js-review.md``): this page renders the
-    signed-in user's email address and their registered passkeys, so it must
-    never land in a shared cache — nor in the PWA shell cache, which reads
-    the resulting ``no-store`` and skips its ``cache.put`` (see
-    ``_networkFirst`` in ``static/js/sw.js``). Without it an offline
-    navigation after a sign-out replayed the previous user's rendered page.
+    Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
+    ``docs/code-reviews/2026-08-03-js-review.md``). This page renders the
+    signed-in user's email address and passkeys, so it must never be served
+    to anyone else — but the offline favourites roster is built on it being
+    in the PWA shell cache, so ``no-store`` would break a shipped feature.
+    The ``X-SW-Principal`` stamp is what makes that safe: ``_networkFirst``
+    in ``static/js/sw.js`` records the account this HTML was rendered for and
+    the offline read refuses an entry whose stamp is not the principal signed
+    in now, so a sign-out or a different user gets the offline fallback
+    instead of the previous session's page. Cache-partitioning, not
+    cache-avoidance — the same trade ``map_overlay_offline_cache.js`` makes
+    for the overlay cache under SNOW-493.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).

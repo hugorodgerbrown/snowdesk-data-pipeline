@@ -9,29 +9,32 @@ So: sign in, visit ``/account/manage/``, sign out, go offline, navigate
 back — and the worker replayed the previous user's rendered page, email
 address included.
 
-Two guards ship for it, one test each:
+The guard that ships for it is partitioning, not avoidance: every cached
+navigation carries an ``X-SW-Principal`` header naming the account its HTML
+was rendered for, and the offline read serves an entry only to the
+principal signed in now.
 
-  * ``manage_view`` is ``@never_cache`` (``apps/accounts/views.py``) and
-    ``_networkFirst`` skips ``cache.put`` for a ``Cache-Control: no-store``
-    response, so the page never enters the cache at all.
-  * Every cached navigation carries an ``X-SW-Principal`` header naming the
-    account its HTML was rendered for, and the offline read serves an entry
-    only to that same principal.
+``manage_view`` is deliberately NOT ``@never_cache``, even though it is the
+page the leak was found on. The offline favourites roster
+(``tests/e2e/test_favourites_offline.py``) repaints from the manage page
+served out of the shell cache, so a ``no-store`` response would take a
+shipped feature offline with it. ``change_email_view`` does carry
+``@never_cache`` — nothing needs that one offline.
 
 Both tests assert Cache-Storage membership directly rather than inferring
 it from a network call that fails. ``page.context.set_offline(True)``
 governs page-side network only — a request the service worker handles is
 re-issued by the worker's own ``fetch()``, which reaches the live server
 regardless of the offline flag, so "the fetch failed" proves nothing about
-what is in the cache. The absence check polls before concluding, because
-the cache write is fire-and-forget, and it runs alongside a positive
-control (``/`` IS cached in the same session) so a broken probe or a wrong
-URL cannot pass silently.
+what is in the cache. The membership checks poll before concluding, because
+the cache write is fire-and-forget.
 
-The serving path itself — a cached entry rejected because its stamp does
-not match the principal signed in now — is covered at unit level in
-``tests/js/test_sw.js``, where the worker's ``fetch`` can genuinely be made
-to fail.
+That same limitation is why the serving path — a cached entry rejected
+because its stamp does not match the principal signed in now — is covered
+at unit level in ``tests/js/test_sw.js``, where the worker's ``fetch`` can
+genuinely be made to fail. What these tests pin end to end are the two
+values that check compares: the stamp written onto the entry, and the
+principal the worker reads back after a sign-out.
 """
 
 from __future__ import annotations
@@ -40,10 +43,10 @@ from typing import Any
 
 from tests.e2e.conftest import SignedInPage
 
-# How long to keep polling before concluding a URL is absent from the shell
-# cache. ``_networkFirst``'s write is not awaited, so an immediate check can
-# pass just by being early.
-_ABSENCE_POLL_MS = 1500
+# How long to keep polling for a URL to appear in the shell cache.
+# ``_networkFirst``'s write is not awaited, so an immediate check can fail
+# just by being early.
+_CACHE_POLL_MS = 1500
 
 # Reads the shell cache for one URL and reports its principal stamp. Same
 # read path ``map_layer_sync_status.js::_probeExact`` uses.
@@ -72,18 +75,19 @@ _WAIT_FOR_CACHED_JS = """async ({ url, timeoutMs }) => {
   return { found: false, principal: null };
 }"""
 
-# Polls for the whole window, failing the moment the URL turns up.
-_ASSERT_NEVER_CACHED_JS = """async ({ url, timeoutMs }) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const keys = (await caches.keys()).filter((k) => k.startsWith('snowdesk-shell-'));
-    for (const key of keys) {
-      const cache = await caches.open(key);
-      if (await cache.match(url)) return { found: true, cacheKey: key };
-    }
-    await new Promise((r) => setTimeout(r, 100));
+# Reads ``mutations.principal`` out of ``meta:app`` — the one row
+# ``sw.js::_currentPrincipal`` consults for "who is signed in now", written
+# by the page's own ``_reconcilePrincipal()`` (static/js/mutation_queue.js).
+# Returns null both when the row is absent and when it holds an empty value,
+# which is how the worker reads an anonymous session.
+_CURRENT_PRINCIPAL_JS = """async () => {
+  if (typeof window.pwaDb !== 'object') return null;
+  const rows = await window.pwaDb.getAll('meta:app');
+  const row = rows.find((r) => r.key === 'mutations.principal');
+  if (!row || row.value === null || row.value === undefined || row.value === '') {
+    return null;
   }
-  return { found: false, cacheKey: null };
+  return String(row.value);
 }"""
 
 _SIGN_OUT_JS = """() => {
@@ -106,14 +110,20 @@ def _sign_out(signed_in_page: SignedInPage) -> None:
     page.wait_for_load_state("load")
 
 
-def test_account_page_never_enters_the_shell_cache(
+def test_account_page_is_cached_but_only_for_its_own_principal(
     signed_in_page: SignedInPage,
 ) -> None:
-    """``/account/manage/`` is never cached, so an offline visit cannot leak it.
+    """``/account/manage/`` is cached, stamped, and unmatchable after sign-out.
 
-    The positive control (``/`` cached in the same session) is what makes
-    the absence assertion mean something: without it a broken probe or a
-    worker that stopped caching entirely would pass.
+    The page stays cacheable on purpose — the offline favourites roster is
+    built on it — so what stops the leak is the stamp. This pins the two
+    values ``_networkFirst``'s offline read compares: the entry carries the
+    signed-in account's uuid, and after a sign-out the principal the worker
+    reads back is no longer that uuid, so no comparison can succeed.
+
+    The rejection itself is unit-covered (``tests/js/test_sw.js``); it
+    cannot be driven from here, because the worker re-issues the request off
+    its own thread and ``set_offline`` does not reach it.
     """
     page = signed_in_page.page
     email = signed_in_page.account.user.email
@@ -124,38 +134,24 @@ def test_account_page_never_enters_the_shell_cache(
     assert "sign-in" not in page.url
     assert email in page.content()
 
-    # Positive control: the home shell IS cached under the same worker.
-    page.goto(signed_in_page.live_server_url + "/")
-    page.wait_for_load_state("load")
-    control: dict[str, Any] = page.evaluate(
-        _WAIT_FOR_CACHED_JS,
-        {"url": signed_in_page.live_server_url + "/", "timeoutMs": _ABSENCE_POLL_MS},
+    cached: dict[str, Any] = page.evaluate(
+        _WAIT_FOR_CACHED_JS, {"url": manage_url, "timeoutMs": _CACHE_POLL_MS}
     )
-    assert control["found"] is True, (
-        "positive control failed — the shell cache holds no entry for /, so the "
-        "absence assertion below would pass for the wrong reason"
+    assert cached["found"] is True, (
+        "/account/manage/ never reached the shell cache — the offline "
+        "favourites roster (tests/e2e/test_favourites_offline.py) reads it "
+        "from there"
     )
-
-    absent: dict[str, Any] = page.evaluate(
-        _ASSERT_NEVER_CACHED_JS,
-        {"url": manage_url, "timeoutMs": _ABSENCE_POLL_MS},
-    )
-    assert absent["found"] is False, (
-        f"/account/manage/ was written to the shell cache ({absent['cacheKey']}) "
-        "despite Cache-Control: no-store"
+    assert cached["principal"] == str(signed_in_page.account.uuid), (
+        "the cached account page carries no usable principal stamp, so the "
+        "offline read has nothing to reject a different user against"
     )
 
     _sign_out(signed_in_page)
 
-    page.context.set_offline(True)
-    try:
-        page.goto(manage_url)
-        page.wait_for_load_state("load")
-    finally:
-        page.context.set_offline(False)
-
-    assert email not in page.content(), (
-        "the signed-out offline navigation rendered the previous user's email"
+    assert page.evaluate(_CURRENT_PRINCIPAL_JS) != str(signed_in_page.account.uuid), (
+        "the signed-out session still reports the previous account as the "
+        "current principal, so the stamped entry would still match"
     )
 
 
@@ -177,7 +173,7 @@ def test_cached_navigation_is_stamped_with_its_principal(
     page.goto(home_url)
     page.wait_for_load_state("load")
     signed_in: dict[str, Any] = page.evaluate(
-        _WAIT_FOR_CACHED_JS, {"url": home_url, "timeoutMs": _ABSENCE_POLL_MS}
+        _WAIT_FOR_CACHED_JS, {"url": home_url, "timeoutMs": _CACHE_POLL_MS}
     )
     assert signed_in["found"] is True
     assert signed_in["principal"] == str(signed_in_page.account.uuid)

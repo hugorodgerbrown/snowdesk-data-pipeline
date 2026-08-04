@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # Offline-first PWA compliance
@@ -38,7 +38,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
-| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page (`@never_cache` since SNOW-607, so online only) and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user; it reveals itself only once `pwa_reset.js` has loaded, which needs one entry adding to `PRECACHE_URLS` — see [Reset local data](#reset-local-data-snow-378) below. |
+| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user: the manage page is cached but partitioned per account (SNOW-607), so its copy is there only once that account has loaded it online in this browser. The offline copy reveals itself once `pwa_reset.js` has loaded, which `PRECACHE_URLS` (`static/js/sw.js`) guarantees — see [Reset local data](#reset-local-data-snow-378) below. |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
@@ -257,14 +257,14 @@ The shell cache is the one persistent store in the PWA that held page
 HTML with no record of who it was rendered for. `_networkFirst`
 (`static/js/sw.js:1652`) now partitions it by account, with two guards.
 
-**No-store responses are never written.** `_isNoStore`
-(`static/js/sw.js:1506`) reads `Cache-Control` and skips the `cache.put`
-— Cache Storage is not the HTTP cache, so nothing else in the stack
-enforces the directive. Django's `@never_cache` is what puts
-authenticated HTML on the right side of the gate: `manage_view`
-(`apps/accounts/views.py:1408`) and `change_email_view`
-(`apps/accounts/views.py:699`) carry it, and `AdminSite.admin_view`
-already applies it to every admin view.
+**No-store responses are never written.** `_isNoStore` reads
+`Cache-Control` and skips the `cache.put` — Cache Storage is not the HTTP
+cache, so nothing else in the stack enforces the directive. Django's
+`@never_cache` is the server-side half of the gate, and its scope is
+narrow by design: `change_email_view` (`apps/accounts/views.py:699`)
+carries it and `AdminSite.admin_view` applies it to every admin view.
+`manage_view` does not — see "cache-partitioned, not cache-avoided"
+below.
 
 **Everything else is stamped.** Each cached navigation carries an
 `X-SW-Principal` header naming the account its HTML was rendered for,
@@ -288,24 +288,43 @@ Mechanics, the `Vary: Cookie` dead end, and the fail-closed argument:
 **What this costs offline.** A shell entry cached under one principal is
 not served to another, so a `/` cached while anonymous falls back to
 `/static/offline.html` for a signed-in user until that page is next
-loaded online. `/account/manage/` and `/account/change-email/` are never
-available offline at all.
+loaded online. `/account/change-email/` is never available offline at
+all — it is `@never_cache`, it is a mutation form, and nothing needs it
+offline.
 
-That second consequence takes two offline-facing surfaces with it, since
-both live only on the manage page:
+**`/account/manage/` is cache-partitioned, not cache-avoided.** It IS
+written to the shell cache, stamped with the account it was rendered
+for, and served offline to that account alone. `@never_cache` on
+`manage_view` was the first shape of this fix and was backed out: the
+offline favourites roster is built on the manage page being in the shell
+cache, so `no-store` took a shipped feature offline with it — two cases
+in `tests/e2e/test_favourites_offline.py`. The stamp closes the leak on
+its own, which is why it exists: it is what makes an authenticated page
+safe to hold in a cache shared with every other account. Do not add
+`@never_cache` back;
+`tests/accounts/test_views.py::test_response_is_not_no_store` and
+`manage_view`'s own docstring pin the choice, and
+[`offline-map.md`](offline-map.md#the-manage-page-is-partitioned-not-excluded)
+carries the full argument.
+
+Partitioned is not the same as dependable, though. The manage page's
+entry is in the cache only after that account has loaded the page online
+in this browser, and it is refused to every other principal. So the two
+offline-facing surfaces the page carries land differently:
 
 - **§12.7's escape hatch** — the "Reset local data on this device"
   button (`[data-pwa-reset-trigger]`,
-  `apps/accounts/templates/accounts/manage.html:304`) no longer lives
-  only there. `static/offline.html` carries a second copy of the same
-  control, since that page is pre-cached and outside the principal
-  check. The manage-page copy is unchanged and still the online
-  surface. One entry is still missing from `PRECACHE_URLS` before the
-  offline copy reveals itself on an offline load — see
+  `apps/accounts/templates/accounts/manage.html:304`) also ships on
+  `static/offline.html`, which is precached, carries no account identity
+  and sits outside the principal check. That copy is the one that
+  reaches a user whose PWA is stuck *and* whose network is gone — the
+  state §12.7 exists for, and the state in which the manage page's own
+  copy may simply not be there. See
   [Reset local data](#reset-local-data-snow-378).
 - **The `log:sync` read-out panel** (`static/js/sync_log.js`, `sync_log`
-  waffle flag). The store keeps filling offline; the page that renders
-  it is unreachable.
+  waffle flag) has no second copy. The store keeps filling offline; the
+  page that renders it loads offline for the account it was cached
+  under, and not for anyone else.
 
 ### Sync log (SNOW-482)
 
@@ -316,7 +335,8 @@ to the newest 100. The manage page's "Sync log" panel — and a matching
 `/help/` section — read it back via `window.pwaDb.getSyncLog()`
 (`static/js/sync_log.js`), both gated on the `sync_log` waffle flag
 (see [`feature-flags.md`](feature-flags.md)). The store keeps filling
-offline; the manage page that reads it back does not load offline (see
+offline; the manage page that reads it back loads offline only for the
+account it was cached under (see
 [`X-SW-Principal`](#x-sw-principal-header-snow-607)). The SNOW-378 reset
 wipes the whole IndexedDB database, so the log clears along with
 everything else. Store shape: [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md#logsync-row-shape-snow-482).
@@ -336,12 +356,17 @@ confirmation dialogue, the six-step wipe and the telemetry all live in
 that one module:
 
 - **The manage page** (`apps/accounts/templates/accounts/manage.html`).
-  `@never_cache` since SNOW-607, so it is an online-only surface (see
-  [`X-SW-Principal`](#x-sw-principal-header-snow-607)).
+  Cached and stamped per account since SNOW-607, so it does load offline
+  — but only for the account it was cached under, and only once that
+  account has loaded it online in this browser (see
+  [`X-SW-Principal`](#x-sw-principal-header-snow-607)). Dependable
+  enough to be the everyday surface; not dependable enough to be the
+  only one.
 - **The offline fallback page** (`static/offline.html`, `#pwa-reset-panel`).
   Pre-cached on SW install and outside the principal check, so it is the
   surface that can reach a user whose PWA is stuck *and* whose network is
-  gone — the state §12.7 exists for.
+  gone — the state §12.7 exists for, and the state in which the manage
+  page's own copy may not be in the cache at all.
 
 Programmatic callers use `window.pwaResetLocalData()`;
 `data-pwa-reset-skip-confirm` skips the `window.confirm` dialogue for
