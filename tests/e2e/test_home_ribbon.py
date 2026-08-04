@@ -87,12 +87,16 @@ def test_scrub_keeps_url_on_home(
     homepage must leave ``location.pathname`` as ``/`` (not bounce to ``/map/``)
     and add a ``?d=`` date param.
 
-    We dispatch ``snowdesk:scrub-to`` directly — the exact event a ribbon-day
-    click fires — rather than clicking a cell. The ribbon's interactive cells
-    are only re-rendered (with click handlers) once the ``/api/ratings`` cache
-    has data for the selected region, which the sparse e2e ``test_data`` fixture
-    does not guarantee; the URL behaviour under test lives in ``commitDate`` and
-    is reached identically via the event, so this stays deterministic.
+    Drives the scrubber track directly with a press-and-release near its left
+    edge, which is what ``commitDate`` is actually reached by. This used to
+    dispatch ``snowdesk:scrub-to`` instead — an event no ribbon cell had
+    dispatched since the cells moved into the scrubber's own track, so the
+    test was exercising a listener that existed only for it. SNOW-615 deleted
+    the listener and pointed the test at the real control.
+
+    The press lands a few pixels in from the left edge, so the committed date
+    is near the season start and cannot be today (which is off-season) — that
+    is what makes the ``?d=`` assertion meaningful.
     """
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
@@ -100,16 +104,12 @@ def test_scrub_keeps_url_on_home(
     _navigate_home(page, live_server.url)
     page.wait_for_selector('#season-scrubber[data-state="ready"]')
 
-    # The season start is an in-season date (never today, which is off-season),
-    # so committing it must produce a ?d= param.
-    season_start = cast(
-        "str", page.get_attribute("#season-ribbon", "data-season-start")
-    )
-    page.evaluate(
-        "(d) => document.dispatchEvent("
-        "new CustomEvent('snowdesk:scrub-to', { detail: { date: d } }))",
-        season_start,
-    )
+    track = page.locator(".season-scrubber .season-scrubber-track")
+    box = track.bounding_box()
+    assert box is not None, "the scrubber track has no layout box"
+    page.mouse.move(box["x"] + 4, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.up()
     page.wait_for_timeout(150)
 
     pathname = cast("str", page.evaluate("() => location.pathname"))

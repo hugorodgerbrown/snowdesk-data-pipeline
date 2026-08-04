@@ -34,15 +34,19 @@
  *     ``url === ''``, which must not be mistaken for a real
  *     round-trip). Persisted to IndexedDB ``meta:app`` under key
  *     ``sync.last_at``.
- *   - ``freshnessLastGeneratedAt`` — newest ``X-Data-Generated-At``
- *     header seen, regardless of whether it came from the network or
- *     the cache (a cache-served response still tells the user how old
- *     the data it's showing is). Persisted under key
- *     ``freshness.last_generated_at``.
- *
- * Both are read back from ``meta:app`` on init, before the first
+ * It is read back from ``meta:app`` on init, before the first
  * ``renderBanner`` call, so a cold offline launch shows the real
- * last-known values rather than resetting to blank.
+ * last-known value rather than resetting to blank.
+ *
+ * SNOW-615: there was a second clock here, ``freshnessLastGeneratedAt``,
+ * tracking the newest ``X-Data-Generated-At`` header. It was declared,
+ * assigned on every qualifying response, persisted, and hydrated on every
+ * page boot — and never read. The banner has one ``data-role="synced-at"``
+ * cell, filled from the clock above; the template's own comment said so
+ * while this header claimed both reached the UI. Deleted rather than
+ * wired in: nothing had asked for a second timestamp in three tickets'
+ * worth of banner work, and a write-only clock costs a put per response
+ * and a read per boot to misdirect the next reader.
  *
  * Qualifying requests — ``/api/*`` and other non-static-asset
  * same-origin responses (HTML partials/navigations included) — also
@@ -61,9 +65,12 @@
   const BANNER_ID = 'pwa-offline-banner';
   const NETWORK_ATTR = 'data-network-required';
 
-  // SNOW-482: meta:app keys the two clocks are persisted under.
+  // SNOW-482: the meta:app key the last-sync clock is persisted under.
+  // A sibling ``freshness.last_generated_at`` key went with the write-only
+  // clock SNOW-615 removed. Rows already written under it on devices in
+  // the field are simply never read again — harmless, and cheaper than a
+  // migration to delete one small row.
   const SYNC_LAST_AT_KEY = 'sync.last_at';
-  const FRESHNESS_LAST_GENERATED_AT_KEY = 'freshness.last_generated_at';
 
   // SNOW-482: cadence at which the banner re-renders its relative
   // "last synced" phrase while shown, so it counts up live rather than
@@ -87,11 +94,10 @@
     '.webmanifest',
   ]);
 
-  // In-memory ledger of the two freshness clocks, hydrated from
-  // IndexedDB on init (see _hydratePersistedClocks) and kept in sync
-  // with the persisted copy on every qualifying response.
+  // In-memory copy of the last-sync clock, hydrated from IndexedDB on
+  // init (see hydratePersistedClocks) and kept in sync with the persisted
+  // copy on every qualifying response.
   let syncLastAt = null;
-  let freshnessLastGeneratedAt = null;
 
   /**
    * Coerce a Date / ISO string to a valid Date, or null on failure so
@@ -358,15 +364,6 @@
       if (navigator.onLine) renderBanner(true);
     }
 
-    const generated = getHeader('X-Data-Generated-At');
-    if (generated) {
-      const parsed = new Date(generated);
-      if (!Number.isNaN(parsed.valueOf())) {
-        freshnessLastGeneratedAt = parsed;
-        persistMeta(FRESHNESS_LAST_GENERATED_AT_KEY, parsed.toISOString());
-      }
-    }
-
     // If the banner is already open, refresh its label live so the user
     // sees the clocks update when a fresh(er) response arrives.
     if (!navigator.onLine) renderBanner(false);
@@ -485,17 +482,10 @@
   async function hydratePersistedClocks() {
     if (!window.pwaDb || typeof window.pwaDb.get !== 'function') return;
     try {
-      const [syncRow, freshnessRow] = await Promise.all([
-        window.pwaDb.get('meta:app', SYNC_LAST_AT_KEY),
-        window.pwaDb.get('meta:app', FRESHNESS_LAST_GENERATED_AT_KEY),
-      ]);
+      const syncRow = await window.pwaDb.get('meta:app', SYNC_LAST_AT_KEY);
       if (syncRow && syncRow.value) {
         const parsed = new Date(syncRow.value);
         if (!Number.isNaN(parsed.valueOf())) syncLastAt = parsed;
-      }
-      if (freshnessRow && freshnessRow.value) {
-        const parsed = new Date(freshnessRow.value);
-        if (!Number.isNaN(parsed.valueOf())) freshnessLastGeneratedAt = parsed;
       }
     } catch (_err) {
       // Best-effort — the banner falls back to "no data yet" copy.

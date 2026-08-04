@@ -99,7 +99,6 @@
   function _enterResetRequired(reason) {
     _resetRequired = true;
     try {
-      // eslint-disable-next-line no-console
       console.error('pwa.db.reset_required', reason);
     } catch (_e) {
       // Ignore.

@@ -863,9 +863,12 @@ writes to or trims any pinned bucket — that is exclusively `_warmCache`'s
 pinned path.
 
 `static/js/basemap_download_core.js` holds `rangesToTileURLs(template,
-blob)` and `centreTileURL(template, summary)` — the two functions every
-download (region or custom-area) shares — unit-tested directly without a
-MapLibre instance. The zoom-band/tile-enumeration/byte-estimate helpers it
+blob)` — the URL expansion every download (region or custom-area) shares —
+unit-tested directly without a MapLibre instance. It also held a
+`centreTileURL(template, summary)` that built a single "done-probe" URL;
+`_probeDone` reads the stored record's `centre_tile` directly rather than
+re-deriving a URL for it, so that function had no caller and SNOW-615
+deleted it. The zoom-band/tile-enumeration/byte-estimate helpers it
 used to hold (`zoomBand`, `enumerateTileURLs`, `estimateBytes`,
 `formatUpToMB`, and the underlying `_lonToTileX`/`_latToTileY` slippy-map
 math) moved server-side to `apps/regions/services/basemap_tiles.py` for

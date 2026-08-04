@@ -84,7 +84,7 @@
    * @returns {maplibregl.Map|null}
    */
   function getMap() {
-    return typeof MAP !== 'undefined' ? MAP : null; // eslint-disable-line no-undef
+    return typeof MAP !== 'undefined' ? MAP : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@
     sheet.innerHTML = '';
     sheet.appendChild(createTemplate.content.cloneNode(true));
     writeCreateCoords(lat, lon);
-    if (typeof htmx !== 'undefined') htmx.process(sheet); // eslint-disable-line no-undef
+    if (typeof htmx !== 'undefined') htmx.process(sheet);
     // SNOW-538: the name field is deliberately NOT focused. Focusing it
     // raised the on-screen keyboard the instant the sheet opened, before
     // the user had panned the map to place the pin — half the map gone,
@@ -323,7 +323,7 @@
     if (controller.isOpen()) closeSheet();
 
     container.appendChild(buildDetailRow(favUuid, detail.name || ''));
-    if (typeof htmx !== 'undefined') htmx.process(container); // eslint-disable-line no-undef
+    if (typeof htmx !== 'undefined') htmx.process(container);
   });
 
   // ---------------------------------------------------------------------------

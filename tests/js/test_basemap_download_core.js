@@ -4,11 +4,12 @@
  * client-side tile-math port for the custom-area download).
  *
  * Covers ``rangesToTileURLs`` (expanding a full basemap_download blob's
- * ``z`` tile-index ranges into ``{z}/{x}/{y}`` URLs) and
- * ``centreTileURL`` (the single "done-probe" tile URL for a download
- * summary) — the two pure functions left after SNOW-521's per-region
- * rework moved tile enumeration and byte-estimate arithmetic server-side
- * (``apps/regions/services/basemap_tiles.py``) — plus, from SNOW-522,
+ * ``z`` tile-index ranges into ``{z}/{x}/{y}`` URLs) — the one pure
+ * function left after SNOW-521's per-region rework moved tile enumeration
+ * and byte-estimate arithmetic server-side
+ * (``apps/regions/services/basemap_tiles.py``), and now the oracle the
+ * whole download path is checked against, since SNOW-615 deleted
+ * ``centreTileURL`` as dead — plus, from SNOW-522,
  * ``lonLatToTile``/``tileRangesForBBox``/``tileCount``/``centreTile``/
  * ``buildBlob``, a deliberate re-port of that same Python module's pure
  * functions for the custom-area control (a user-drawn bbox has no stable
@@ -34,8 +35,8 @@
  *
  * SNOW-569 and the tile-grid rework that followed it add the geometry
  * helpers behind the on-map download progress grid —
- * ``geometryBounds``/``bboxPolygon``/``tileBounds``/``gridZoomFor``/
- * ``tileGridPlan``. Like ``budgetScaleForBBox`` these are client-only
+ * ``bboxPolygon``/``tileBounds``/``gridZoomFor``/``tileGridPlan``. Like
+ * ``budgetScaleForBBox`` these are client-only
  * with no Python twin, and their tests are likewise property-shaped. The
  * load-bearing properties: ``tileBounds`` inverts ``lonLatToTile`` and
  * tiles a zoom level seamlessly; the grid is drawn at the band's DEEPEST
@@ -134,26 +135,6 @@ describe('rangesToTileURLs', () => {
   function rangesToTileURLs_sorted(blob) {
     return [...core.rangesToTileURLs(TEMPLATE, blob)].sort();
   }
-});
-
-describe('centreTileURL', () => {
-  it('builds the tile URL for a summary centre_tile', () => {
-    const summary = { centre_tile: { z: 14, x: 8501, y: 5820 } };
-    expect(core.centreTileURL(TEMPLATE, summary)).toBe(
-      'https://tiles.example.com/14/8501/5820.pbf',
-    );
-  });
-
-  it('returns null for a falsy template', () => {
-    const summary = { centre_tile: { z: 14, x: 1, y: 1 } };
-    expect(core.centreTileURL('', summary)).toBeNull();
-    expect(core.centreTileURL(null, summary)).toBeNull();
-  });
-
-  it('returns null for a falsy summary or a summary with no centre_tile', () => {
-    expect(core.centreTileURL(TEMPLATE, null)).toBeNull();
-    expect(core.centreTileURL(TEMPLATE, {})).toBeNull();
-  });
 });
 
 describe('lonLatToTile', () => {
@@ -578,44 +559,6 @@ describe('blobFullyCached', () => {
   });
 });
 
-describe('geometryBounds', () => {
-  it('bounds a simple polygon', () => {
-    const polygon = {
-      type: 'Polygon',
-      coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
-    };
-    expect(core.geometryBounds(polygon)).toEqual([7, 46, 8, 47]);
-  });
-
-  it('spans every part of a multipolygon', () => {
-    const geometry = {
-      type: 'MultiPolygon',
-      coordinates: [
-        [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]],
-        [[[9, 44], [10, 44], [10, 45], [9, 45], [9, 44]]],
-      ],
-    };
-    expect(core.geometryBounds(geometry)).toEqual([7, 44, 10, 47]);
-  });
-
-  it('ignores holes, which are inside the outer ring by definition', () => {
-    const geometry = {
-      type: 'Polygon',
-      coordinates: [
-        [[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]],
-        [[7.4, 46.4], [7.6, 46.4], [7.6, 46.6], [7.4, 46.6], [7.4, 46.4]],
-      ],
-    };
-    expect(core.geometryBounds(geometry)).toEqual([7, 46, 8, 47]);
-  });
-
-  it('returns null for a non-polygon or empty geometry', () => {
-    expect(core.geometryBounds(null)).toBeNull();
-    expect(core.geometryBounds({ type: 'Point', coordinates: [7, 46] })).toBeNull();
-    expect(core.geometryBounds({ type: 'Polygon', coordinates: [] })).toBeNull();
-  });
-});
-
 describe('bboxPolygon', () => {
   it('closes the ring on the south-west corner', () => {
     const polygon = core.bboxPolygon([7, 46, 8, 47]);
@@ -627,10 +570,6 @@ describe('bboxPolygon', () => {
       [7, 47],
       [7, 46],
     ]);
-  });
-
-  it('round-trips through geometryBounds', () => {
-    expect(core.geometryBounds(core.bboxPolygon([7, 46, 8, 47]))).toEqual([7, 46, 8, 47]);
   });
 });
 

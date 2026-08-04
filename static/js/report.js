@@ -178,7 +178,7 @@
     if (accuracy != null) params.set('accuracy', accuracy);
     if (gpsLat != null) params.set('gps_lat', gpsLat);
     if (gpsLon != null) params.set('gps_lon', gpsLon);
-    return htmx.ajax('GET', FORM_URL + '?' + params.toString(), { // eslint-disable-line no-undef
+    return htmx.ajax('GET', FORM_URL + '?' + params.toString(), {
       target: '#report-sheet',
       swap: 'innerHTML',
     });

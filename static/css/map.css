@@ -1296,10 +1296,12 @@
 
 /* —————————————————————————————————————————————————————————
    SNOW-314 — Season ribbon
-   A compact horizontal strip of coloured day cells docked above the
-   season scrubber. One cell per calendar day, coloured by peak danger
-   rating for the selected region. Clicking a cell dispatches
-   snowdesk:scrub-to to drive the scrubber and recolour the choropleth.
+   A compact horizontal strip of coloured day cells. One cell per calendar
+   day, coloured by peak danger rating for the selected region. The cells
+   are painted into the scrubber's own track and are decorative — the
+   thumb sitting over them is what the user drags. (They were clickable
+   once, dispatching snowdesk:scrub-to; that stopped when the cells moved
+   into the track, and SNOW-615 removed the dead listener.)
    ————————————————————————————————————————————————————————— */
 
 /* PROTOTYPE (homepage rework): the season header (#region-readout) moves
