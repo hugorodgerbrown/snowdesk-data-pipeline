@@ -1487,17 +1487,27 @@ const fetchBulletinGroupingsForDate = (dateKey) => {
   return promise;
 };
 
-// Repaint every known region's choropleth fill via MapLibre feature-state
-// for the supplied date. Missing regions in the frame fall back to
-// no_rating so colours from a previous frame don't leak through.
+// SNOW-623: the collaborators `choropleth_core.js`'s `paintRatingsFrame`
+// needs, bound once. Keeping MapLibre on this side of the boundary is what
+// lets the paint semantics be unit-tested — see that module's header for
+// why the two semantics must stay distinct.
+const choroplethDeps = () => ({
+  featureById: FEATURE_BY_REGION_ID,
+  intToRating: INT_TO_RATING,
+  setRating: (featureId, rating) =>
+    MAP.setFeatureState({ source: 'regions', id: featureId }, { rating }),
+});
+
+// Repaint every known region's choropleth fill for the supplied date.
+// `clearMissing: true` — a region with no rating on this date must go back
+// to no_rating, or the previously-scrubbed day's colour lingers on it.
 const repaintRegionsForDate = (dateKey, cache) => {
   if (!MAP) return;
-  const frame = (cache && cache[dateKey]) || {};
-  for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
-    const ratingInt = frame[regionID];
-    const rating = ratingInt == null ? 'no_rating' : INT_TO_RATING[ratingInt];
-    MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
-  }
+  self.pwaChoroplethCore.paintRatingsFrame(
+    choroplethDeps(),
+    (cache && cache[dateKey]) || {},
+    { clearMissing: true },
+  );
 };
 
 (function () {
@@ -3333,14 +3343,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
             // Mirror the paintTodayRatings guard: setFeatureState is a no-op
             // if the source has not finished loading. Gate on isSourceLoaded
             // and defer via a one-shot sourcedata listener if not yet ready.
+            // SNOW-623: `clearMissing: false` — this frame names only the
+            // newly-loaded country's regions, so clearing the ones it
+            // omits would wipe every country already on the map.
             const paintNewCountry = () => {
-              for (const [regionID, ratingInt] of Object.entries(frame)) {
-                const feature = FEATURE_BY_REGION_ID[regionID];
-                if (feature) {
-                  const rating = INT_TO_RATING[ratingInt] || 'no_rating';
-                  MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
-                }
-              }
+              self.pwaChoroplethCore.paintRatingsFrame(choroplethDeps(), frame, {
+                clearMissing: false,
+              });
             };
             if (MAP.isSourceLoaded('regions')) {
               paintNewCountry();
@@ -3995,14 +4004,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // would silently no-op. The source emits 'data' with isSourceLoaded
     // once all features are available; we register a one-shot listener
     // that fires the paint loop and then removes itself.
+    // SNOW-623: `clearMissing: false` — the boot frame covers the
+    // initially-loaded country only, and a region with no geometry yet has
+    // nothing to paint. Uses the local `map` rather than the module-scope
+    // `MAP`, which this boot path runs before.
     const paintTodayRatings = () => {
-      for (const [regionID, ratingInt] of Object.entries(todayRatings)) {
-        const feature = FEATURE_BY_REGION_ID[regionID];
-        if (feature) {
-          const rating = INT_TO_RATING[ratingInt] || 'no_rating';
-          map.setFeatureState({ source: 'regions', id: feature.id }, { rating });
-        }
-      }
+      self.pwaChoroplethCore.paintRatingsFrame(
+        {
+          featureById: FEATURE_BY_REGION_ID,
+          intToRating: INT_TO_RATING,
+          setRating: (featureId, rating) =>
+            map.setFeatureState({ source: 'regions', id: featureId }, { rating }),
+        },
+        todayRatings,
+        { clearMissing: false },
+      );
     };
     if (map.isSourceLoaded('regions')) {
       paintTodayRatings();

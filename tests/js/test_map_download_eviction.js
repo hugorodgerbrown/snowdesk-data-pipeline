@@ -282,6 +282,8 @@ beforeAll(async () => {
   // SNOW-618: map.js's search box delegates to this; home.html loads it
   // immediately before map.js, and map.js does not guard for its absence.
   await import('../../static/js/search_core.js');
+  // SNOW-623: map.js's choropleth paint delegates to this.
+  await import('../../static/js/choropleth_core.js');
   await import('../../static/js/map.js');
   // MapLibre never fires 'load' in jsdom; the main IIFE's data load (and so
   // FEATURE_BY_REGION_ID) hangs off it.

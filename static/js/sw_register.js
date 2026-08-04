@@ -461,12 +461,7 @@
         // Ignore — telemetry must never break the update banner.
       }
     }
-    if (!banner) return;
-    if (banner.dataset.fallback === '1') {
-      banner.style.display = 'flex';
-    } else {
-      banner.classList.remove('hidden');
-    }
+    revealUpdateBanner();
   }
 
   function hideUpdateBanner() {
@@ -477,6 +472,40 @@
       banner.classList.add('hidden');
     }
   }
+
+  /**
+   * Reveal the update banner, honouring the fallback markup's own idiom.
+   *
+   * Public pages ship the `_toast.html` partial, hidden with the `hidden`
+   * CLASS; the admin fallback this file synthesises is inline-styled and
+   * uses `display`. One fork, one place — see `window.pwaUpdateBanner`.
+   *
+   * @returns {void}
+   */
+  function revealUpdateBanner() {
+    if (DEV_SHELL_BYPASS_ACTIVE) return;
+    if (!banner) return;
+    if (banner.dataset.fallback === '1') {
+      banner.style.display = 'flex';
+    } else {
+      banner.classList.remove('hidden');
+    }
+  }
+
+  // SNOW-623: the banner has one owner. `pwa_version_check.js` reveals the
+  // same element when the server declares a version drift, and used to
+  // carry its own copy of the reveal — with a docstring instructing the
+  // reader to "mirror the same fork sw_register.js uses in
+  // showUpdateBanner", which describes a copy rather than a delegation.
+  //
+  // Only the DOM half is shared. `showUpdateBanner` above also latches the
+  // waiting worker and emits `pwa.sw.update_available`, neither of which
+  // the version-check path has or wants: there is no waiting worker when
+  // the drift is a server header rather than a new SW script.
+  window.pwaUpdateBanner = Object.freeze({
+    reveal: revealUpdateBanner,
+    hide: hideUpdateBanner,
+  });
 
   if (banner) {
     // Reload button is queried by ID on the public partial and on the
