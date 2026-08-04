@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+# bin/js-globals-lint — Catch reads of globals nothing ever assigns (SNOW-619).
+#
+# `static/js/map_layer_sync_status.js` read `window.MAP` for its entire life.
+# Nothing has ever assigned it — `map.js` declares a bare module-scope
+# `let MAP`, which is not a `window` property — so the read was always
+# `undefined`, every guard around it took the "no map yet" branch, and the
+# module's own unit test manufactured `window.MAP` under jsdom and passed.
+# Finding M1 in docs/code-reviews/2026-08-03-js-review.md.
+#
+# Nothing would have caught it. There is no JS linter in this project, and
+# the review's own note is that `no-undef` would not have helped anyway:
+# ESLint cannot see through a `window.X` member expression, only through a
+# bare identifier.
+#
+# So this checks the one thing that would have: every `window.X` / `self.X`
+# READ in static/js whose name is never assigned anywhere in the tree.
+#
+# Deliberately narrow. It is not a type checker and not a general linter —
+# it answers one question, the one that produced a silent bug that survived
+# a module's whole life.
+#
+# Exit code: 0 = clean; 1 = one or more unknown globals.
+#
+# Usage:
+#   bin/js-globals-lint                    # scan static/js
+#   bin/js-globals-lint path/to/file.js …  # scan specific files
+#   bin/js-globals-lint --list             # print every name it resolved
+"""Undeclared-global linter for first-party JavaScript — see module docstring."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+JS_ROOT = REPO_ROOT / "static" / "js"
+
+# Vendored bundles. Minified third-party code assigns and reads hundreds of
+# names through machinery this regex-level check cannot follow, and none of
+# it is ours to fix. Named individually rather than by a `*.min.js` glob so
+# vendoring a new file is a deliberate act that shows up in review.
+VENDORED: frozenset[str] = frozenset(
+    {
+        "htmx.min.js",
+        "maplibre-gl.min.js",
+    }
+)
+
+# Browser, worker and third-party globals reached through `window.`/`self.`.
+# Every entry is a name the platform or a vendored bundle owns, so no
+# first-party assignment will ever exist for it.
+#
+# Adding a name here says "this is provided from outside the tree". Adding
+# one to silence a real miss is the failure mode this check exists to
+# prevent, so keep it to genuine externals.
+KNOWN_EXTERNALS: frozenset[str] = frozenset(
+    {
+        # Platform
+        "addEventListener",
+        "removeEventListener",
+        "dispatchEvent",
+        "location",
+        "navigator",
+        "document",
+        "history",
+        "localStorage",
+        "sessionStorage",
+        "indexedDB",
+        "caches",
+        "fetch",
+        "crypto",
+        "performance",
+        "console",
+        "matchMedia",
+        "getComputedStyle",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "innerWidth",
+        "innerHeight",
+        "scrollY",
+        "scrollX",
+        "devicePixelRatio",
+        "isSecureContext",
+        "origin",
+        "top",
+        "parent",
+        "self",
+        "postMessage",
+        "open",
+        "close",
+        "confirm",
+        "alert",
+        "prompt",
+        "Notification",
+        "PushManager",
+        "ServiceWorkerRegistration",
+        "IntersectionObserver",
+        "MutationObserver",
+        "ResizeObserver",
+        "URL",
+        "URLSearchParams",
+        "Response",
+        "Request",
+        "Headers",
+        "Blob",
+        "FormData",
+        "AbortController",
+        "Intl",
+        "CustomEvent",
+        "Event",
+        "DOMException",
+        "TextEncoder",
+        "TextDecoder",
+        "btoa",
+        "atob",
+        # Service-worker globals (`self.` in sw.js)
+        "clients",
+        "registration",
+        "skipWaiting",
+        "importScripts",
+        "serviceWorker",
+        # Third-party, loaded from their own <script> tags
+        "htmx",
+        "maplibregl",
+        # WebAuthn, feature-detected by passkey.js
+        "PublicKeyCredential",
+    }
+)
+
+# A read: `window.foo` / `self.foo` not immediately followed by `=`.
+READ_RE = re.compile(
+    r"\b(?:window|self)\s*\.\s*(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*(?P<after>=?)"
+)
+
+# An assignment, in any of the forms this codebase actually uses:
+#   window.foo = …            self.foo = …
+#   Object.defineProperty(window, 'foo', …)
+#   window['foo'] = …
+ASSIGN_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:window|self)\s*\.\s*(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*=(?!=)"),
+    re.compile(
+        r"Object\.defineProperty\(\s*(?:window|self)\s*,\s*['\"](?P<name>[^'\"]+)['\"]"
+    ),
+    re.compile(r"\b(?:window|self)\s*\[\s*['\"](?P<name>[^'\"]+)['\"]\s*\]\s*=(?!=)"),
+)
+
+# Top-level `function` and `var` declarations in a CLASSIC script (which
+# every file here is — plain `<script src>`, never `type="module"`) become
+# properties of the global object. `let`, `const` and `class` do NOT: they
+# go into the script scope, which `window` cannot see.
+#
+# That distinction is the whole of M1. `map.js` declares `let MAP`, so
+# `window.MAP` was always undefined and the read was a bug; it also declares
+# `function activeBasemapTileTemplate(…)`, so `window.activeBasemapTileTemplate`
+# genuinely resolves and the same-looking read is fine. A check that did not
+# model this would either miss the first or condemn the second.
+#
+# Anchored at column zero: every top-level declaration in this codebase is
+# unindented, and everything inside an IIFE is indented, so the anchor is
+# what separates "global" from "closed over".
+TOP_LEVEL_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"^(?:async\s+)?function\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(", re.M
+    ),
+    re.compile(r"^var\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\b", re.M),
+)
+
+# Lines that are wholly comments — prose mentioning `window.pwaFoo` is not a
+# read. Matches the two forms this codebase uses for its long headers.
+COMMENT_RE = re.compile(r"^\s*(?://|\*|/\*)")
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One read of a global with no assignment anywhere in the tree."""
+
+    path: Path
+    line_no: int
+    line_text: str
+    name: str
+
+
+def _repo_relative(path: Path) -> Path:
+    """Return `path` relative to `REPO_ROOT`, or unchanged if outside it.
+
+    The CLI accepts arbitrary paths — a fixture under `/tmp`, an ad-hoc
+    invocation — so a path outside the repo must format rather than raise.
+    Mirrors `bin/ds-lint`'s helper of the same name.
+    """
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _js_files(args_paths: list[str]) -> list[Path]:
+    """Resolve CLI args to the concrete list of first-party .js files."""
+    paths: list[Path] = []
+    if args_paths:
+        for raw in args_paths:
+            p = Path(raw).resolve()
+            if p.is_dir():
+                paths.extend(sorted(p.rglob("*.js")))
+            elif p.suffix == ".js" and p.exists():
+                paths.append(p)
+    elif JS_ROOT.exists():
+        paths.extend(sorted(JS_ROOT.rglob("*.js")))
+    return [p for p in paths if p.name not in VENDORED]
+
+
+def _assigned_names(paths: list[Path]) -> set[str]:
+    """Every global name assigned anywhere in `paths`.
+
+    Collected across the WHOLE set before any file is checked: a module
+    routinely reads a global another module publishes, which is the entire
+    point of the `window.pwa*` convention.
+
+    Includes top-level `function`/`var` declarations, which a classic
+    script hangs off the global object — see `TOP_LEVEL_RES`.
+    """
+    names: set[str] = set()
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for pattern in (*ASSIGN_RES, *TOP_LEVEL_RES):
+            for match in pattern.finditer(text):
+                names.add(match.group("name"))
+    return names
+
+
+def _scan(path: Path, assigned: set[str]) -> list[Finding]:
+    """Find reads in `path` of names not in `assigned` or `KNOWN_EXTERNALS`."""
+    findings: list[Finding] = []
+    for idx, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if COMMENT_RE.match(raw_line):
+            continue
+        for match in READ_RE.finditer(raw_line):
+            # `after` is '=' for an assignment; those define rather than read.
+            if match.group("after") == "=":
+                continue
+            name = match.group("name")
+            if name in assigned or name in KNOWN_EXTERNALS:
+                continue
+            findings.append(
+                Finding(
+                    path=path,
+                    line_no=idx,
+                    line_text=raw_line.rstrip(),
+                    name=name,
+                )
+            )
+    return findings
+
+
+def main() -> int:
+    """CLI entry point — see module docstring for behaviour and exit codes."""
+    parser = argparse.ArgumentParser(
+        description="Fail on reads of window/self globals nothing assigns.",
+    )
+    parser.add_argument("paths", nargs="*", help="Files/dirs. Defaults to static/js.")
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Print every assigned global the scan resolved (audit aid).",
+    )
+    args = parser.parse_args()
+
+    files = _js_files(args.paths)
+    assigned = _assigned_names(files)
+
+    if args.list:
+        print("Assigned globals:")
+        for name in sorted(assigned):
+            print(f"  {name}")
+        print()
+
+    findings: list[Finding] = []
+    for path in files:
+        findings.extend(_scan(path, assigned))
+
+    for finding in findings:
+        rel = _repo_relative(finding.path)
+        snippet = finding.line_text.strip()
+        if len(snippet) > 100:
+            snippet = snippet[:97] + "..."
+        print(f"{rel}:{finding.line_no}: [unknown-global] {snippet}")
+        print(
+            f"    → Nothing in static/js assigns `{finding.name}`, so this read "
+            f"is always undefined. Either the name is wrong, or the assignment "
+            f"is missing; if it is a browser or third-party global, add it to "
+            f"KNOWN_EXTERNALS in bin/js-globals-lint."
+        )
+        print()
+
+    scanned = len(files)
+    print(f"Scanned {scanned} JS file(s) | {len(findings)} unknown global(s)")
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

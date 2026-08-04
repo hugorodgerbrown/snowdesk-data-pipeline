@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
-# bin/ds-lint — Design-system linter for Snowdesk templates.
+# bin/ds-lint — Design-system linter for Snowdesk templates and first-party JS.
 #
-# Scans every .html template under the configured template roots for
-# patterns that bypass the design tokens registered in apps/public/design_tokens.py
-# (radius literals, raw Tailwind palette utilities, inline primary-button
-# class-strings that should use a `_button` partial, etc).
+# Scans every .html template under the configured template roots, and every
+# first-party .js file under static/js, for patterns that bypass the design
+# tokens registered in apps/public/design_tokens.py (radius literals, raw
+# Tailwind palette utilities, inline primary-button class-strings that should
+# use a `_button` partial, etc).
+#
+# SNOW-619: JavaScript is in scope because class strings built in JS reach
+# the page exactly as template ones do, and were held to no rules at all.
+# `static/js/map_edit_resorts.js` used `bg-red-100`, `bg-emerald-100`,
+# `bg-amber-100`, `bg-sky-100` and `text-slate-400` — every one of which
+# would have failed this linter inside a template.
 #
 # Per-line escape hatch: a `{# ds-lint-allow: <reason> #}` template comment
-# immediately preceding a violating line suppresses that line's violations.
-# The reason is mandatory (any non-whitespace text) and is reported alongside
-# allowed lines so the suppression is visible.
+# (or `// ds-lint-allow: <reason>` in JS) immediately preceding a violating
+# line suppresses that line's violations. The reason is mandatory (any
+# non-whitespace text) and is reported alongside allowed lines so the
+# suppression is visible.
 #
 # Exit code: 0 = clean; 1 = one or more unsuppressed violations.
 #
 # Usage:
-#   bin/ds-lint                  # scan all template roots
+#   bin/ds-lint                  # scan all template roots + static/js
 #   bin/ds-lint path/to/file.html ...  # scan specific files
 #   bin/ds-lint --show-allows    # also list suppressed matches (audit aid)
 """Design-system linter — see module docstring for full behaviour."""
@@ -45,6 +53,12 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "apps" / "favourites" / "templates",
 )
 
+# SNOW-619: first-party JavaScript, scanned for the same token rules. Only
+# this one directory — the vendored bundles living in it are excluded by
+# `PATH_ALLOWLIST` below rather than by a separate root, so a newly
+# vendored file fails loudly until it is named there.
+JS_ROOTS: tuple[Path, ...] = (REPO_ROOT / "static" / "js",)
+
 # Path-glob allowlist — files whose violations are tolerated globally.
 # Used for templates that genuinely sit outside the design system (admin
 # overrides, email layouts). Prefer the per-line `ds-lint-allow` comment
@@ -55,9 +69,20 @@ PATH_ALLOWLIST: tuple[str, ...] = (
     # Country-flag colours are mandated by each country's flag spec; they
     # are not stylistic choices and cannot be tokenized.
     "templates/includes/country_flags_sprite.html",
+    # SNOW-619: vendored third-party bundles. Not ours to restyle, and a
+    # minified bundle is a single line of everything. Listed individually
+    # rather than by a `*.min.js` glob so vendoring a new file is a
+    # deliberate act that shows up in review.
+    "static/js/htmx.min.js",
+    "static/js/maplibre-gl.min.js",
 )
 
-ALLOW_COMMENT_RE = re.compile(r"\{#\s*ds-lint-allow:\s*(?P<reason>[^\n#]+?)\s*#\}")
+# Both comment syntaxes, so one regex serves templates and JS. The JS form
+# has no closing delimiter, so it runs to end of line.
+ALLOW_COMMENT_RE = re.compile(
+    r"\{#\s*ds-lint-allow:\s*(?P<reason>[^\n#]+?)\s*#\}"
+    r"|//\s*ds-lint-allow:\s*(?P<js_reason>[^\n]+?)\s*$"
+)
 
 
 @dataclass(frozen=True)
@@ -69,12 +94,18 @@ class Rule:
         pattern: Compiled regex; any match anywhere on a line is a violation.
         message: Human-readable explanation of why the pattern is forbidden
             and what to use instead.
+        applies_to: File suffixes this rule is checked against. Only
+            `hex-colour` narrows it — see that rule's own comment.
 
     """
 
     slug: str
     pattern: re.Pattern[str]
     message: str
+    # File suffixes the rule is checked against. Defaults to both, since
+    # most rules are about Tailwind class strings, which JavaScript builds
+    # exactly as templates do.
+    applies_to: frozenset[str] = frozenset({".html", ".js"})
 
 
 RULES: tuple[Rule, ...] = (
@@ -146,6 +177,19 @@ RULES: tuple[Rule, ...] = (
             "token utilities. SVG `fill`/`stroke` attributes are the only "
             "legitimate exception — annotate with `ds-lint-allow`."
         ),
+        # SNOW-619: templates only. The premise of this rule is that a
+        # colour can be expressed as a token instead, and in JavaScript it
+        # frequently cannot: MapLibre paint properties take literal values
+        # and cannot reference a CSS variable at all, which is why map.js
+        # reads `--color-sync-ok` off the document and keeps a hex literal
+        # only as the floor. The EAWS danger-scale colours are mandated by
+        # the standard in the same way the country-flag palette is
+        # (already allowlisted above).
+        #
+        # What the review actually found in JavaScript was raw Tailwind
+        # PALETTE UTILITIES in class strings — `bg-red-100` and friends in
+        # map_edit_resorts.js — and `raw-palette` above catches those.
+        applies_to=frozenset({".html"}),
     ),
 )
 
@@ -193,6 +237,30 @@ def _path_is_allowed(path: Path) -> bool:
     return any(Path(rel).match(glob) for glob in PATH_ALLOWLIST)
 
 
+def _suppressions(lines: list[str]) -> dict[int, str]:
+    """Map each suppressed line number to the reason suppressing it.
+
+    A line is suppressed iff the preceding non-blank line carries a
+    `ds-lint-allow:` comment. Walking once keeps the lookup O(1) per line.
+    """
+    suppression_for_line: dict[int, str] = {}
+    pending_reason: str | None = None
+    for idx, raw_line in enumerate(lines, start=1):
+        match = ALLOW_COMMENT_RE.search(raw_line)
+        if match:
+            raw_reason = match.group("reason") or match.group("js_reason") or ""
+            pending_reason = raw_reason.strip()
+            continue
+        if not raw_line.strip():
+            # Blank line — keep the pending reason alive across it so allow
+            # comments separated by blank lines still bind to the next code.
+            continue
+        if pending_reason is not None:
+            suppression_for_line[idx] = pending_reason
+            pending_reason = None
+    return suppression_for_line
+
+
 def _scan_file(path: Path) -> list[Violation]:
     """Return every rule-match in `path`, including suppressed ones.
 
@@ -203,27 +271,18 @@ def _scan_file(path: Path) -> list[Violation]:
     violations: list[Violation] = []
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-
-    # Pre-compute which lines carry a pending allow-comment that suppresses
-    # the *next* non-blank line. Walking once keeps the lookup O(1) per line.
-    suppression_for_line: dict[int, str] = {}
-    pending_reason: str | None = None
-    for idx, raw_line in enumerate(lines, start=1):
-        stripped = raw_line.strip()
-        match = ALLOW_COMMENT_RE.search(raw_line)
-        if match:
-            pending_reason = match.group("reason").strip()
-            continue
-        if not stripped:
-            # Blank line — keep the pending reason alive across it so allow
-            # comments separated by blank lines still bind to the next code.
-            continue
-        if pending_reason is not None:
-            suppression_for_line[idx] = pending_reason
-            pending_reason = None
+    suppression_for_line = _suppressions(lines)
+    suffix = path.suffix
 
     for idx, raw_line in enumerate(lines, start=1):
+        # A comment cannot style anything, and JS files carry long prose
+        # headers that mention class names and ticket numbers. Without this
+        # the linter fails on its own documentation.
+        if suffix == ".js" and _is_js_comment_line(raw_line):
+            continue
         for rule in RULES:
+            if suffix not in rule.applies_to:
+                continue
             if rule.pattern.search(raw_line):
                 violations.append(
                     Violation(
@@ -237,6 +296,47 @@ def _scan_file(path: Path) -> list[Violation]:
     return violations
 
 
+def _is_js_comment_line(raw_line: str) -> bool:
+    """Whether `raw_line` is wholly a JavaScript comment (SNOW-619).
+
+    Covers the two forms that carry prose in this codebase: a `//` line,
+    and a line inside a block comment, which the project's own style always
+    prefixes with `*`. A trailing comment after real code is deliberately
+    NOT matched — the code on that line still styles something.
+
+    Conservative by design: a false negative is a violation the author
+    annotates or fixes, while a false positive silently stops linting a
+    real line.
+    """
+    stripped = raw_line.strip()
+    return stripped.startswith(("//", "*", "/*"))
+
+
+def _explicit_paths(args_paths: list[str]) -> list[Path]:
+    """Expand CLI-supplied files/dirs into scannable .html/.js paths."""
+    paths: list[Path] = []
+    for raw in args_paths:
+        p = Path(raw).resolve()
+        if p.is_dir():
+            paths.extend(sorted(p.rglob("*.html")))
+            paths.extend(sorted(p.rglob("*.js")))
+        elif p.suffix in {".html", ".js"} and p.exists():
+            paths.append(p)
+    return paths
+
+
+def _default_paths() -> list[Path]:
+    """Every template under `TEMPLATE_ROOTS` plus every file in `JS_ROOTS`."""
+    paths: list[Path] = []
+    for root in TEMPLATE_ROOTS:
+        if root.exists():
+            paths.extend(sorted(root.rglob("*.html")))
+    for js_root in JS_ROOTS:
+        if js_root.exists():
+            paths.extend(sorted(js_root.rglob("*.js")))
+    return paths
+
+
 def _collect_files(args_paths: list[str]) -> list[Path]:
     """Resolve CLI args to the concrete list of template files to scan.
 
@@ -245,18 +345,7 @@ def _collect_files(args_paths: list[str]) -> list[Path]:
     Skips files in `PATH_ALLOWLIST` so the suppression is honoured even
     when the file is named explicitly.
     """
-    paths: list[Path] = []
-    if args_paths:
-        for raw in args_paths:
-            p = Path(raw).resolve()
-            if p.is_dir():
-                paths.extend(sorted(p.rglob("*.html")))
-            elif p.suffix == ".html" and p.exists():
-                paths.append(p)
-    else:
-        for root in TEMPLATE_ROOTS:
-            if root.exists():
-                paths.extend(sorted(root.rglob("*.html")))
+    paths = _explicit_paths(args_paths) if args_paths else _default_paths()
     return [p for p in paths if not _path_is_allowed(p)]
 
 
