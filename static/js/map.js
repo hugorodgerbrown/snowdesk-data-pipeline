@@ -1377,6 +1377,93 @@ let IS_PLAYING = false;
 let resolveMapReady = null;
 const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 
+// SNOW-610: the one explicit channel to this file's shared state.
+//
+// Every declaration above is a top-level `let`/`const` in a CLASSIC script.
+// That puts it in the global LEXICAL scope — another classic script can read
+// it as a bare identifier — but NOT on `window`. The distinction is invisible
+// until you rely on the wrong half of it: `map_layer_sync_status.js` read
+// `window.MAP` for its entire life and always got `undefined` (finding M1),
+// while `favourites.js` and `map_edit_resorts.js` reach the same handle
+// successfully through `typeof MAP !== 'undefined' ? MAP : null` — an idiom
+// that works, reads like defensive noise, and is impossible to grep for.
+//
+// So the state gets one named, greppable owner. Consumers use this; the 86
+// internal references in this file keep using the bare identifiers, because
+// rewriting them would be a large diff with no reader benefit — the
+// declarations are right here.
+//
+// `map_edit_resorts.js` is also deliberately left on the bare identifier: it
+// reaches `MAP` at ~30 sites, is staff-only (`edit_mode`), and has no unit
+// coverage, so a mechanical rewrite there would be churn carrying real
+// regression risk and no reader benefit. The two consumers converted are the
+// ones where it pays: `map_layer_sync_status.js`, which had the actual M1
+// bug, and `favourites.js`, which needed one line changed.
+//
+// FROZEN SURFACE, MUTABLE VALUES. `Object.freeze` stops anything replacing or
+// adding an accessor; the accessors themselves still read and write the live
+// bindings. A frozen plain-data object would have been wrong — `map` is null
+// until the style loads, and the whole point is that late writers can set it.
+//
+// Splitting this file (SNOW-610) needs this to exist FIRST. The review's plan
+// puts the state promotion in step 2, after extracting the basemap-download
+// block — but that block is where `MAP`, `FEATURE_BY_ID`, `COUNTRY_STATE`,
+// `BOOT_DATE_KEY` and `AUTOZOOM` are declared, so extracting it first would
+// take the state out of the file that still needs it and leave the remaining
+// IIFEs reading bare identifiers that no longer exist.
+window.snowdeskMapState = Object.freeze({
+  /** @returns {maplibregl.Map|null} The map, or null before the style loads. */
+  get map() {
+    return MAP;
+  },
+  set map(value) {
+    MAP = value;
+  },
+
+  /** @returns {Promise<void>} Resolves once the regions source is added. */
+  get ready() {
+    return MAP_READY_PROMISE;
+  },
+
+  /** @returns {Object} MapLibre feature id → feature, by region id. */
+  get featureById() {
+    return FEATURE_BY_ID;
+  },
+  /** @returns {Object} EAWS region id → feature. */
+  get featureByRegionId() {
+    return FEATURE_BY_REGION_ID;
+  },
+
+  /** @returns {Object} Country code → whether its regions are shown. */
+  get countryState() {
+    return COUNTRY_STATE;
+  },
+
+  /** @returns {string|null} The clamped boot date, min(today, seasonEnd). */
+  get bootDateKey() {
+    return BOOT_DATE_KEY;
+  },
+  set bootDateKey(value) {
+    BOOT_DATE_KEY = value;
+  },
+
+  /** @returns {boolean} Whether a region click auto-pans to fit. */
+  get autozoom() {
+    return AUTOZOOM;
+  },
+  set autozoom(value) {
+    AUTOZOOM = value;
+  },
+
+  /** @returns {boolean} Whether timelapse playback is running. */
+  get isPlaying() {
+    return IS_PLAYING;
+  },
+  set isPlaying(value) {
+    IS_PLAYING = value;
+  },
+});
+
 // Wire-format int → rating string. Inverse of public/api.py::_RATING_TO_INT.
 // Hoisted so the timelapse and the scrubber share one definition.
 const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
