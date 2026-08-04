@@ -132,22 +132,26 @@ Usage
             ></span>
             {% if request.user.is_authenticated %}
                 {# ── Subscriber avatar dropdown ── #}
-                <div class="relative" data-subscriber-menu>
-                    <button
-                        type="button"
+                {# SNOW-616: a native <details> disclosure, not a scripted one. #}
+                {# Sign out lives in here and is the one control a user must    #}
+                {# be able to reach without JavaScript — ending a session on a  #}
+                {# shared or borrowed device is core, not an enhancement. The   #}
+                {# script below now only ADDS click-outside and Escape; open    #}
+                {# and close work without it. `list-none` plus the marker rule  #}
+                {# suppress the default disclosure triangle.                    #}
+                <details class="relative" data-subscriber-menu>
+                    <summary
                         id="subscriber-menu-toggle"
-                        class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-text-3/15 hover:bg-text-3/25 text-text-1 text-xs font-semibold transition-colors"
+                        class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-text-3/15 hover:bg-text-3/25 text-text-1 text-xs font-semibold transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden"
                         aria-haspopup="menu"
-                        aria-expanded="false"
                         aria-controls="subscriber-menu"
                         aria-label='{% trans "Account menu" %}'
                     >
                         {{ request.user.email|first|upper }}
-                    </button>
+                    </summary>
                     <div
                         id="subscriber-menu"
                         role="menu"
-                        hidden
                         class="absolute right-0 top-full mt-1.5 min-w-[200px] rounded-card border border-border bg-card shadow-md py-1.5 z-50"
                     >
                         {# Subscribed region links from context processor #}
@@ -197,7 +201,7 @@ Usage
                             </button>
                         </form>
                     </div>
-                </div>
+                </details>
             {% else %}
                 {% trans "Sign in" as sign_in_label %}
                 {% url 'accounts:sign_in' as sign_in_href %}
@@ -206,13 +210,14 @@ Usage
 
             {% if request.user.is_staff %}
                 {# ── Staff admin dropdown (cog icon) ── #}
-                <div class="relative" data-admin-menu>
-                    <button
-                        type="button"
+                {# Same native disclosure as the account menu above (SNOW-616), #}
+                {# for consistency rather than necessity — every destination in #}
+                {# here is also a plain URL.                                    #}
+                <details class="relative" data-admin-menu>
+                    <summary
                         id="admin-menu-toggle"
-                        class="inline-flex items-center justify-center w-7 h-7 rounded-full text-text-3 hover:text-text-1 hover:bg-text-3/15 transition-colors"
+                        class="inline-flex items-center justify-center w-7 h-7 rounded-full text-text-3 hover:text-text-1 hover:bg-text-3/15 transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden"
                         aria-haspopup="menu"
-                        aria-expanded="false"
                         aria-controls="admin-menu"
                         aria-label='{% trans "Admin menu" %}'
                     >
@@ -230,11 +235,10 @@ Usage
                             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                             <circle cx="12" cy="12" r="3" />
                         </svg>
-                    </button>
+                    </summary>
                     <ul
                         id="admin-menu"
                         role="menu"
-                        hidden
                         class="absolute right-0 top-full mt-1.5 min-w-[180px] rounded-card border border-border bg-card shadow-md py-1.5 z-50"
                     >
                         <li role="none">
@@ -274,41 +278,38 @@ Usage
                             </a>
                         </li>
                     </ul>
-                </div>
+                </details>
             {% endif %}
         </div>
         {# /right-side wrapper #}
     </div>
 </nav>
+{# SNOW-616: enhancement only. Both menus are <details> elements, so      #}
+{# opening, closing, Enter/Space and focus all work with this script       #}
+{# absent — which is what makes sign out reachable without JavaScript.     #}
+{# What is added here is the two behaviours <details> does not give you:   #}
+{# click-outside to close, and Escape to close and return focus. Both are  #}
+{# conveniences; neither is load-bearing.                                  #}
 <script nonce="{{ request.csp_nonce }}">
     (function () {
-        function initDropdown(wrapperAttr, toggleId, menuId) {
-            var wrapper = document.querySelector('[' + wrapperAttr + ']');
-            if (!wrapper) return;
+        function enhanceDisclosure(wrapperAttr, toggleId) {
+            var details = document.querySelector('[' + wrapperAttr + ']');
+            if (!details) return;
             var toggle = document.getElementById(toggleId);
-            var menu = document.getElementById(menuId);
-            if (!toggle || !menu) return;
-            function setOpen(open) {
-                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-                menu.hidden = !open;
-            }
-            toggle.addEventListener('click', function (e) {
-                e.stopPropagation();
-                setOpen(menu.hidden);
-            });
+            if (!toggle) return;
             document.addEventListener('click', function (e) {
-                if (menu.hidden) return;
-                if (wrapper.contains(e.target)) return;
-                setOpen(false);
+                if (!details.open) return;
+                if (details.contains(e.target)) return;
+                details.open = false;
             });
             window.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && !menu.hidden) {
-                    setOpen(false);
+                if (e.key === 'Escape' && details.open) {
+                    details.open = false;
                     toggle.focus();
                 }
             });
         }
-        initDropdown('data-subscriber-menu', 'subscriber-menu-toggle', 'subscriber-menu');
-        initDropdown('data-admin-menu', 'admin-menu-toggle', 'admin-menu');
+        enhanceDisclosure('data-subscriber-menu', 'subscriber-menu-toggle');
+        enhanceDisclosure('data-admin-menu', 'admin-menu-toggle');
     })();
 </script>

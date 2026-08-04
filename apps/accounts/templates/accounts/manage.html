@@ -290,6 +290,35 @@ account, shown for any authenticated account.
                 </div>
 
                 {% comment %}
+                    SNOW-616: sign out, on the page as well as in the nav
+                    disclosure. The nav control is the primary one and now
+                    works without JavaScript too (templates/includes/nav.html
+                    is a native <details>), but a session-ending control is
+                    worth being able to find from the account page itself —
+                    it is the page a user lands on when they go looking for
+                    "my account", and on a borrowed device it is the one
+                    thing they need.
+                {% endcomment %}
+                <div class="border-t border-border pt-8 flex flex-col gap-2">
+                    <form method="post" action="{% url 'accounts:sign_out' %}">
+                        {% csrf_token %}
+                        <button
+                            type="submit"
+                            data-testid="manage-sign-out"
+                            class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                        >
+                            {% trans "Sign out" %}
+                        </button>
+                    </form>
+                    <p class="text-xs text-text-3">
+                        {% blocktrans trimmed %}
+                            Ends this session on this device. Anything already saved offline stays until you reset local
+                            data below.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+
+                {% comment %}
                     SNOW-378: Reset local data escape hatch.
                     Discoverable, not hidden. Wipes cached bulletins,
                     the SW, cache storage, IndexedDB, and web storage;

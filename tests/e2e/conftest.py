@@ -49,6 +49,15 @@ Fixtures defined here:
     A plain ``page`` + ``live_server`` combination (no ``pwa_page`` — the
     favourites map-surface tests don't drive the SW lifecycle) with a
     session cookie for a regular ``Account``.
+
+``no_script_page`` (SNOW-616)
+    The same, with ``java_script_enabled=False``. The project position is
+    that JavaScript is progressive enhancement and core functionality must
+    work without it; nothing tested that until this fixture, so a control
+    that only appeared once a script had run was indistinguishable from one
+    that worked without. It builds its own context because
+    ``java_script_enabled`` is a context-creation argument and cannot be
+    flipped on an existing one.
 """
 
 from __future__ import annotations
@@ -62,7 +71,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import Client
-from playwright.sync_api import BrowserContext, Page
+from playwright.sync_api import Browser, BrowserContext, Page
 from pytest_django.live_server_helper import LiveServer
 
 from apps.accounts.models import Account
@@ -593,6 +602,64 @@ def favourites_page(
         account = AccountFactory.create()
     _session_login(page.context, live_server.url, account.user)
     return FavouritesPage(page=page, live_server_url=live_server.url, account=account)
+
+
+@dataclass
+class NoScriptPage:
+    """A ``Page`` with JavaScript disabled, authenticated as a regular Account.
+
+    SNOW-616: the project position is that JavaScript is progressive
+    enhancement and core functionality must work without it. Nothing tested
+    that until this fixture — every other e2e page runs with scripts on, so
+    a control that only exists once a script has run looked identical to one
+    that does not.
+
+    The context is built by hand rather than through the ``page`` fixture,
+    because ``java_script_enabled`` is a context-creation argument: it
+    cannot be flipped on a context that already exists.
+    """
+
+    page: Page
+    live_server_url: str
+    account: Account
+
+
+@pytest.fixture()
+def no_script_page(
+    browser: Browser,
+    browser_context_args: dict[str, Any],
+    live_server: LiveServer,
+    django_db_blocker: Any,
+) -> Iterator[NoScriptPage]:
+    """A signed-in page with ``java_script_enabled=False``.
+
+    Navigated nowhere yet — the session cookie has to be added to the
+    context before the first navigation to the live-server origin, same
+    convention as ``favourites_page``.
+
+    Args:
+        browser: The Playwright browser to open a fresh context on.
+        browser_context_args: The project's own context defaults, so this
+            page differs from every other one in exactly one respect.
+        live_server: The live Django server.
+        django_db_blocker: pytest-django's DB-access guard, unblocked here
+            to create the ``Account``.
+
+    Yields:
+        A ``NoScriptPage`` bundling the page, server URL, and account.
+
+    """
+    context = browser.new_context(
+        **{**browser_context_args, "java_script_enabled": False}
+    )
+    with django_db_blocker.unblock():
+        account = AccountFactory.create()
+    _session_login(context, live_server.url, account.user)
+    page = context.new_page()
+    try:
+        yield NoScriptPage(page=page, live_server_url=live_server.url, account=account)
+    finally:
+        context.close()
 
 
 def _dismiss_home_intro(page: Page) -> None:
