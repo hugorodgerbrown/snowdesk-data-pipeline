@@ -483,13 +483,26 @@ const LEGACY_BASEMAP_PINNED_CACHE = 'snowdesk-basemap-pinned-v1';
 // offline tile read paid a full ``caches.keys()``, so a single map pan on a
 // device with several downloaded areas issued one enumeration per tile.
 //
-// The set changes on exactly two events, and both invalidate:
+// Two events invalidate it explicitly:
 //
 //   1. This worker warms a pinned bucket it has not seen before
 //      (``_warmCache`` below).
 //   2. The page deletes one — ``evictBasemapAreas`` in static/js/map.js,
 //      which posts ``pinned-buckets-changed`` after every eviction (see
 //      the message handler).
+//
+// Those two are not a closed set, and relying on them being one would be
+// the same class of trap this review is clearing out: anything that calls
+// ``caches.open(BASEMAP_PINNED_CACHE_PREFIX + id)`` outside ``_warmCache``
+// creates a bucket the memo cannot see, and the symptom is a downloaded
+// tile silently failing to serve offline.
+//
+// So a MISS re-enumerates unconditionally, and that costs nothing worth
+// saving: reaching a pinned miss means the passive basemap cache missed
+// too, so this request is already on its way to the network. One
+// ``caches.keys()`` is noise beside a network round trip. The memo earns
+// its keep on the HIT path — a device panning offline over ground it has
+// downloaded, which is thousands of reads that now share one enumeration.
 //
 // Staleness in either direction is a real fault, not just a slow path: a
 // name left in the list would be handed to ``caches.open``, which CREATES
@@ -544,6 +557,29 @@ async function _pinnedCacheNames() {
   } finally {
     _pinnedNamesInFlight = null;
   }
+}
+
+/**
+ * The pinned-bucket list, re-enumerated after a lookup the memoised one
+ * failed to answer (SNOW-613).
+ *
+ * The memo can only ever be wrong in one direction that costs anything: a
+ * bucket that exists but is not in the list, whose tiles then fail to
+ * serve offline. That shows up as a miss, so a miss is where it is worth
+ * paying to re-check — see the section comment above for why the walk is
+ * effectively free on that path.
+ *
+ * @param {string[]} tried The list the miss was computed against.
+ * @returns {Promise<string[]|null>} A fresh list when it differs from
+ *   ``tried``; ``null`` when there is nothing new to search.
+ */
+async function _pinnedCacheNamesAfterMiss(tried) {
+  _invalidatePinnedCacheNames();
+  const fresh = await _pinnedCacheNames();
+  if (fresh.length === tried.length && fresh.every((n, i) => n === tried[i])) {
+    return null;
+  }
+  return fresh;
 }
 
 // SNOW-484: the allowlist of cross-origin basemap origins it is safe to
@@ -1484,20 +1520,32 @@ async function _basemapStaleWhileRevalidate(request) {
   // identical bytes in either — so there is nothing for the ordering to
   // preserve, and `Promise.all` turns N sequential waits into one.
   try {
+    const searchPinned = async (names) => {
+      const hits = await Promise.all(
+        names.map(async (name) => {
+          try {
+            const pinnedCache = await caches.open(name);
+            return await pinnedCache.match(request);
+          } catch (_e) {
+            // One bucket failing must not lose the others.
+            return undefined;
+          }
+        }),
+      );
+      return hits.find(Boolean);
+    };
+
     const pinnedNames = await _pinnedCacheNames();
-    const hits = await Promise.all(
-      pinnedNames.map(async (name) => {
-        try {
-          const pinnedCache = await caches.open(name);
-          return await pinnedCache.match(request);
-        } catch (_e) {
-          // One bucket failing must not lose the others.
-          return undefined;
-        }
-      }),
-    );
-    const pinnedHit = hits.find(Boolean);
+    const pinnedHit = await searchPinned(pinnedNames);
     if (pinnedHit) return pinnedHit;
+
+    // Missed. The list may be the stale half of the story — re-enumerate
+    // and search again if anything has appeared since.
+    const freshNames = await _pinnedCacheNamesAfterMiss(pinnedNames);
+    if (freshNames) {
+      const freshHit = await searchPinned(freshNames);
+      if (freshHit) return freshHit;
+    }
   } catch (_err) {
     // Fall through to the network/504 path below.
   }

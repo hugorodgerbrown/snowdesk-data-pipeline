@@ -622,3 +622,43 @@ describe('offline pinned lookup (SNOW-613)', () => {
     expect(response.headers.get('X-SW-Cache')).toBe('miss');
   });
 });
+
+describe('pinned-bucket miss recheck (SNOW-613)', () => {
+  const PINNED = 'snowdesk-basemap-pinned-';
+  const TILE = 'https://tiles.example/9/1/2.png';
+
+  it('finds a bucket created without an invalidation', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub });
+
+    // Warm the memo while nothing is pinned.
+    await sw._basemapStaleWhileRevalidate(new Request(TILE));
+
+    // A bucket appears with nothing announcing it — what an e2e fixture
+    // does, and what any future caller reaching for `caches.open` directly
+    // would do. The memo alone would never see it, and the symptom would
+    // be a downloaded tile silently failing to serve offline.
+    stub.seed(`${PINNED}region-late`, TILE, new Response('late tile'));
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(TILE));
+
+    expect(await response.text()).toBe('late tile');
+  });
+
+  it('shares one enumeration across a run of hits', async () => {
+    const stub = makeCaches();
+    for (let i = 0; i < 20; i += 1) {
+      stub.seed(`${PINNED}region-a`, `${TILE}?i=${i}`, new Response('tile'));
+    }
+    const sw = loadSw({ caches: stub });
+    stub.counters.keys = 0;
+
+    // The hit path is where the memo earns its keep: a device panning
+    // offline over ground it has downloaded, thousands of reads deep.
+    for (let i = 0; i < 20; i += 1) {
+      await sw._basemapStaleWhileRevalidate(new Request(`${TILE}?i=${i}`));
+    }
+
+    expect(stub.counters.keys).toBe(1);
+  });
+});
