@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from django.test import Client
+from django.urls import reverse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JS_ROOT = REPO_ROOT / "static" / "js"
@@ -221,3 +223,68 @@ class TestMakemessages:
             # makemessages writes into the repo's own LOCALE_PATHS; the de
             # catalogue is a scratch artefact of this test, not a tracked file.
             shutil.rmtree(po_path.parent.parent, ignore_errors=True)
+
+
+class TestLoadOrder:
+    """`i18n_strings.js` must execute before every module that reads it."""
+
+    # Consumers whose <script> tag is declared inside a surface partial that
+    # renders in {% block content %} — i.e. EARLIER in the document than the
+    # script block at the end of <body>.
+    CONTENT_BLOCK_CONSUMERS = (
+        "js/report.js",
+        "js/favourites.js",
+        "js/map_downloads_manager.js",
+    )
+
+    @pytest.mark.django_db
+    def test_the_helper_is_ordered_before_every_consumer(self, client: Client) -> None:
+        """Every `pwaStrings` consumer loads after the helper, on the map page.
+
+        Deferred scripts execute in DOCUMENT order, and each consumer calls
+        `window.pwaStrings.read()` at IIFE time. A consumer that runs first
+        gets `undefined` and throws, taking its whole surface down.
+
+        This is a real regression, not a hypothetical: the helper was first
+        placed with the scripts at the end of `<body>`, below
+        `{% block content %}`. The three modules above are loaded from
+        surface partials rendered *inside* that block, so all three threw on
+        the map homepage and the e2e suite went red across the board. Vitest
+        cannot see it — those suites import the helper explicitly first.
+
+        Asserted on rendered output rather than by reading the template, so
+        it holds however the tags get moved between base, blocks and
+        partials.
+        """
+        html = client.get(reverse("public:home")).content.decode()
+
+        helper = html.find("js/i18n_strings.js")
+        assert helper != -1, "i18n_strings.js is not loaded on the map page"
+
+        for consumer in self.CONTENT_BLOCK_CONSUMERS:
+            at = html.find(consumer)
+            assert at != -1, f"{consumer} is not loaded on the map page"
+            assert helper < at, (
+                f"{consumer} is loaded BEFORE i18n_strings.js — it calls "
+                f"window.pwaStrings at IIFE time, so it will throw and take "
+                f"its surface down. Move the helper earlier, not the consumer."
+            )
+
+    @pytest.mark.django_db
+    def test_the_helper_is_ordered_before_every_consumer_sitewide(
+        self, client: Client
+    ) -> None:
+        """The same, for the consumer that loads on every page.
+
+        `favourites_offline.js` is declared in `base.html` itself rather
+        than a surface partial, so it moves independently of the three
+        above and needs its own assertion.
+        """
+        html = client.get(reverse("public:home")).content.decode()
+
+        helper = html.find("js/i18n_strings.js")
+        consumer = html.find("js/favourites_offline.js")
+
+        assert helper != -1
+        assert consumer != -1
+        assert helper < consumer

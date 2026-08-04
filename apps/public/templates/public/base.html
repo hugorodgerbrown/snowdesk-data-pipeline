@@ -157,6 +157,19 @@ extra_js        : scripts loaded at end of <body>. Used by
         <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin.woff2' %}">
         <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin-ext.woff2' %}">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {# SNOW-620: reads server-translated copy back out of the hidden strings #}
+        {# <template>s the surface partials render, so makemessages can see the  #}
+        {# strings JS is what actually puts on screen.                           #}
+        {#                                                                       #}
+        {# In <head>, NOT with the scripts at the end of <body>. Every consumer  #}
+        {# calls window.pwaStrings at IIFE time, and deferred scripts execute in #}
+        {# DOCUMENT order — so a consumer loaded from inside {% block content %} #}
+        {# (report.js, favourites.js and map_downloads_manager.js all are, via   #}
+        {# their surface partials) runs before anything in the block below it.   #}
+        {# Loading it here puts it ahead of every consumer wherever they are     #}
+        {# declared; loading it below meant those three threw at IIFE time and   #}
+        {# the map page lost its report sheet, favourites and downloads sheet.   #}
+        <script src="{% static 'js/i18n_strings.js' %}" defer></script>
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
@@ -202,13 +215,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below — loads first among them so it's registered before any   #}
         {# overlay could plausibly be revealed and clicked.                #}
         <script src="{% static 'js/overlays.js' %}" defer></script>
-        {# SNOW-620: reads server-translated copy back out of the hidden      #}
-        {# strings <template>s the surface partials render, so makemessages  #}
-        {# can see strings that JS is what actually puts on screen. Every    #}
-        {# consumer calls window.pwaStrings at IIFE time, so this must load  #}
-        {# FIRST among them — every script here is defer, so document order  #}
-        {# is execution order.                                               #}
-        <script src="{% static 'js/i18n_strings.js' %}" defer></script>
         {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}
