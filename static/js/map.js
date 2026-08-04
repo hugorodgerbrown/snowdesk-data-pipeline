@@ -4952,11 +4952,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // local — no server round-trip per keystroke, no indexing cost worth
     // worrying about (a few hundred entries total).
 
-    const MAX_RESULTS = 8;
-
-    // NFD-decompose and strip combining marks so "Évolène" matches "evolene",
-    // "Graubünden" matches "graubunden", etc.
-    const normalise = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // SNOW-618: the matching, ordering and entry-shaping live in
+    // static/js/search_core.js so they can be unit-tested without a
+    // MapLibre instance — same *_core.js split scrubber_core.js and
+    // basemap_download_core.js use. What stays here is the index itself
+    // and everything that touches the DOM or the map.
+    const searchCore = self.pwaSearchCore;
 
     const SEARCH_INDEX = [];
 
@@ -4965,31 +4966,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // after a country lazy-loads — the CH entries are already present).
     const INDEXED_REGIONS = new Set();
 
-    // Build one search entry per region. Resort names are folded into
-    // the searchable string so a query for "Verbier" still returns the
-    // parent region row, but they are deliberately not surfaced in the
-    // rendered row — the resort list is either empty (AT/IT/FR) or
-    // long enough that truncating it adds noise, so the secondary line
-    // shows just the parent L2 sub-region name.
     const indexRegion = (props) => {
-      const regionID = props.regionID;
+      const regionID = props && props.regionID;
       if (!regionID || INDEXED_REGIONS.has(regionID)) return;
+      const entry = searchCore.buildEntry(props, RESORTS_BY_REGION[regionID] || []);
+      if (!entry) return;
       INDEXED_REGIONS.add(regionID);
-      const name = props.name || regionID;
-      const resorts = RESORTS_BY_REGION[regionID] || [];
-      // subregion_name is the L2 parent's English name (e.g. "Lower
-      // Valais" for CH-4115); blank for AT/IT where the fixtures store
-      // the prefix as a placeholder, suppressed at the API boundary.
-      const subregionName = props.subregion_name || '';
-      SEARCH_INDEX.push({
-        primary: name,
-        secondary: regionID,
-        subregionName,
-        regionID,
-        // Match against the region name, EAWS ID, parent L2 name, and
-        // every resort name attached to the region.
-        searchable: normalise([name, regionID, subregionName, ...resorts].join(' ')),
-      });
+      SEARCH_INDEX.push(entry);
     };
 
     for (const props of Object.values(REGION_LOOKUP)) {
@@ -5004,17 +4987,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
     });
 
-    // Ordering: sort by EAWS region ID so results group by country
-    // (AT-… before CH-… before FR-… before IT-…) and run in numeric
-    // order within each country. Cap at MAX_RESULTS so the dropdown
-    // stays usable on narrow viewports.
-    const runSearch = (query) => {
-      const q = normalise(query).trim();
-      if (!q) return [];
-      const hits = SEARCH_INDEX.filter(item => item.searchable.includes(q));
-      hits.sort((a, b) => a.regionID.localeCompare(b.regionID));
-      return hits.slice(0, MAX_RESULTS);
-    };
+    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX, query);
 
     const inputEl = document.getElementById('search-input');
     const resultsEl = document.getElementById('search-results');
