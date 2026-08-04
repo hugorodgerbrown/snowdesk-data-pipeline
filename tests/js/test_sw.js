@@ -82,6 +82,7 @@ const SW_EXPORTS = [
   '_warmCacheCancelledIds',
   '_markWarmCacheCancelled',
   '_clearWarmCacheCancelled',
+  '_handleWarmCacheCancelMessage',
   'WARM_CACHE_CANCEL_SET_MAX',
 ];
 
@@ -1064,5 +1065,20 @@ describe('the cancelled-requestId set stays bounded (SNOW-632)', () => {
     sw._markWarmCacheCancelled(null);
 
     expect(sw._warmCacheCancelledIds.size).toBe(0);
+  });
+
+  // Vitest's sandbox stubs addEventListener as a no-op (see loadSw above),
+  // so nothing here can invoke the 'message' listener itself. This exercises
+  // the extracted handler body directly instead, proving the field name it
+  // reads off the message ('requestId') is the one _markWarmCacheCancelled
+  // ends up keyed on — a wrong field name here would leave every unit test
+  // above green while cancelling nothing in production.
+  it('wires a warm-cache-cancel message through to the cancelled set by requestId', () => {
+    const sw = loadSw();
+
+    sw._handleWarmCacheCancelMessage({ type: 'warm-cache-cancel', requestId: 'req-live' });
+
+    expect(sw._warmCacheCancelledIds.has('req-live')).toBe(true);
+    expect(sw._warmCacheCancelledIds.has('req-other')).toBe(false);
   });
 });

@@ -7204,6 +7204,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // progress tick — see _refreshBudgetBanner's own comment for why.
   let bannerBaselineBytes = 0;
   let bannerBudgetBytes = 0;
+  // SNOW-632 review finding: true once the pair above has been read from
+  // IndexedDB at least once. openFraming fires _refreshBudgetBanner()
+  // without awaiting it, so a run confirmed before that read resolves
+  // would otherwise paint against the zero bannerBudgetBytes has not yet
+  // been given a real value — "X MB / 0 MB downloaded". _renderBudgetBanner
+  // checks this and holds the pre-existing instruction text instead.
+  let bannerBudgetKnown = false;
 
   /**
    * True when EVERY tile of the saved custom area is present in the
@@ -7975,7 +7982,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * @returns {void}
    */
   function _renderBudgetBanner(liveBytes) {
-    if (!instructionEl) return;
+    // SNOW-632 review finding: bannerBudgetBytes starts at 0, and
+    // openFraming's _refreshBudgetBanner() read is unawaited — painting
+    // before it resolves would show a false "X MB / 0 MB" denominator.
+    // Leave whatever instruction text is already there until the real
+    // budget is known.
+    if (!instructionEl || !bannerBudgetKnown) return;
     const usedBytes = bannerBaselineBytes + (Number(liveBytes) || 0);
     instructionEl.textContent = self.pwaStrings.interpolate(
       MAP_STRINGS['frame-budget-banner'],
@@ -8012,8 +8024,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ]);
       bannerBaselineBytes = areas.reduce((sum, area) => sum + (Number(area.bytes) || 0), 0);
       bannerBudgetBytes = budgetBytes;
+      bannerBudgetKnown = true;
     } catch (_e) {
-      // Best-effort — the banner keeps showing its previous figures.
+      // Best-effort — the banner keeps showing its previous figures (or,
+      // if this is the first read and it fails, the pre-existing
+      // instruction text — bannerBudgetKnown stays false).
     }
     _renderBudgetBanner();
   }

@@ -57,6 +57,7 @@ along with retrying and cancelling out of that state.
 
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 import pytest
@@ -102,6 +103,26 @@ def _open_framing(page: Page) -> None:
 
 def _wait_for_overlay_closed(page: Page) -> None:
     page.wait_for_selector("#map-frame-overlay[hidden]", state="attached")
+
+
+def _wait_for_worker_flag(
+    worker: SWWorker, expression: str, *, timeout_ms: int = 5000
+) -> None:
+    """Poll ``worker.evaluate(expression)`` until it is truthy.
+
+    SNOW-632 review finding: Playwright's Python ``Worker`` has no
+    ``wait_for_function`` (unlike ``Page``), so a test that needs to observe
+    SW-side state — here, ``_stub_warm_cache``'s ``pause_after_step``
+    protocol — has no built-in way to wait for it deterministically. This is
+    the substitute: retry a short ``evaluate`` a few milliseconds apart
+    rather than sleep a fixed guess and hope the worker got there in time.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if worker.evaluate(expression):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"timed out waiting for worker condition: {expression}")
 
 
 def _close_completed_overlay(page: Page) -> None:
@@ -1207,6 +1228,15 @@ def test_cancel_mid_run_returns_to_idle_and_refreshes_the_sync_dashboard(
     The roundel must land on ``idle``, never ``done`` — a cancelled run is
     neither success nor failure, and the probe checks the WHOLE saved
     area's tile set, so claiming done here would claim more than landed.
+
+    Deterministic by construction, not by a generous wall-clock margin:
+    the stub (``pause_after_step=0``) holds the run right after the first
+    progress tick lands, this test waits for that pause to actually be in
+    effect before clicking Cancel, and waits again for the SW to have
+    genuinely recorded the cancel (``self.__snow521ShouldCancel()`` reading
+    true) before releasing the pause — closing the race a fixed
+    ``wait_for_timeout`` against the stub's own step spacing left open
+    under a loaded CI runner (SNOW-632 review finding).
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
@@ -1218,17 +1248,24 @@ def test_cancel_mid_run_returns_to_idle_and_refreshes_the_sync_dashboard(
         ok=4,
         failed=0,
         progress_steps=[(1, 4), (2, 4), (3, 4), (4, 4)],
-        step_delay_ms=250,
         cancellable=True,
+        pause_after_step=0,
     )
     page.click("#map-frame-confirm")
     _wait_for_state(page, "busy", selector=_CONTROL)
-    # Let one progress tick land so there is something genuinely in flight
-    # to cancel, rather than racing the very first paint('busy', 0).
-    page.wait_for_timeout(150)
+    # Wait for the stub to actually be paused mid-run, rather than assuming
+    # the first tick landed within some fixed window.
+    _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
 
     page.click("#map-frame-cancel")
     _wait_for_overlay_closed(page)
+    # Confirm sw.js's real 'warm-cache-cancel' listener has recorded the
+    # cancel before letting the stub's loop re-check shouldCancel() — this
+    # is the step a blind sleep was standing in for.
+    _wait_for_worker_flag(
+        worker, "() => !!(self.__snow521ShouldCancel && self.__snow521ShouldCancel())"
+    )
+    worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
 
     _wait_for_state(page, "idle", selector=_CONTROL, timeout=10000)
     assert _saved_area(page) is None
@@ -1279,6 +1316,10 @@ def test_reopening_framing_after_completion_resets_the_cta(pwa_page: PwaPage) ->
     _open_framing(page)
 
     expect(page.locator("#map-frame-confirm")).to_be_visible()
+    # SNOW-632 review finding: _updateReadout always writes
+    # confirmBtn.disabled = overCeiling || !navigator.onLine, but nothing
+    # asserted the reset actually re-enables it.
+    expect(page.locator("#map-frame-confirm")).not_to_be_disabled()
     assert page.locator("#map-frame-cancel").inner_text().strip().lower() == "cancel"
     assert "downloaded" not in _readout_text(page).lower()
 

@@ -1052,6 +1052,15 @@ const PROGRESS_FLUSH_MS = 120;
 // Set would grow one entry per stray message for the life of the worker.
 // Oldest-first eviction bounds it instead — the same trade-off
 // `_trimCache` makes for the basemap cache itself.
+//
+// That eviction order has an ordering dependency worth naming: it assumes
+// a live run's id is always among the newest ``WARM_CACHE_CANCEL_SET_MAX``
+// entries. In normal operation that holds — one slot, one cancel per slot
+// — but if ``WARM_CACHE_CANCEL_SET_MAX`` stray entries (duplicate clicks,
+// cancels for ids that never existed) arrived after a live run's id was
+// inserted, the live id would be the oldest and get evicted, silently
+// un-cancelling that run. Not reachable today; flagged so a future change
+// to how/when cancels are recorded doesn't reintroduce it unnoticed.
 const WARM_CACHE_CANCEL_SET_MAX = 32;
 const _warmCacheCancelledIds = new Set();
 
@@ -1081,6 +1090,22 @@ function _markWarmCacheCancelled(requestId) {
  */
 function _clearWarmCacheCancelled(requestId) {
   _warmCacheCancelledIds.delete(requestId);
+}
+
+/**
+ * Handle a ``'warm-cache-cancel'`` message's ``data`` payload — factored
+ * out of the ``message`` listener below so it is callable on its own, not
+ * just wired to ``addEventListener``. Vitest's sandbox stubs
+ * ``addEventListener`` as a no-op (see tests/js/test_sw.js), so a body left
+ * inline in the listener would never run under the unit suite; extracting
+ * it here lets a test exercise the exact field name (``requestId``) the
+ * listener reads off the message, not just _markWarmCacheCancelled in
+ * isolation.
+ *
+ * @param {*} data - the message event's ``data`` payload.
+ */
+function _handleWarmCacheCancelMessage(data) {
+  _markWarmCacheCancelled(data.requestId);
 }
 
 /**
@@ -2051,9 +2076,13 @@ self.addEventListener('message', (event) => {
   // cancelWarmCache() posts this for the in-flight warm-cache call's own
   // requestId. Only records the request; the run itself (if one is even
   // still in flight for this id — see the cleanup notes above) notices it
-  // the next time its pool polls shouldCancel.
+  // the next time its pool polls shouldCancel. Body lives in
+  // _handleWarmCacheCancelMessage so tests/js/test_sw.js can call the real
+  // glue directly — the message-event sandbox never invokes an
+  // addEventListener callback, so anything left inline here would be
+  // untested.
   if (event.data && event.data.type === 'warm-cache-cancel') {
-    _markWarmCacheCancelled(event.data.requestId);
+    _handleWarmCacheCancelMessage(event.data);
   }
 });
 

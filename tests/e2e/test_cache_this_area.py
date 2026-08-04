@@ -228,6 +228,7 @@ def _stub_warm_cache(
     step_delay_ms: int = 0,
     bytes_total: int | None = None,
     cancellable: bool = False,
+    pause_after_step: int | None = None,
 ) -> None:
     """Replace ``self._warmCache`` with a stub reporting a fixed outcome.
 
@@ -278,23 +279,48 @@ def _stub_warm_cache(
     this suite tests. Ignored (the loop always runs to completion) when
     left at its default ``False`` — every existing call site is
     unaffected.
+
+    ``pause_after_step``, opt-in, holds the run deterministically right
+    after that ``progress_steps`` index's ``onProgress`` call, instead of
+    relying on ``step_delay_ms`` wall-clock spacing to keep it "in flight"
+    long enough for a test to click Cancel. While paused,
+    ``self.__snow521Paused`` reads ``true`` and ``self.__snow521Resume`` is
+    the resolver a test calls (via ``worker.evaluate``) to let the loop
+    continue; ``self.__snow521ShouldCancel`` is always the live
+    ``shouldCancel`` callback, so a test can poll it to confirm the SW has
+    actually recorded a cancel before releasing the pause, rather than
+    guessing that a click's ``postMessage`` has landed by then. A dangling
+    resolver from a run nothing ever resumed is harmless — it is simply
+    never called again once the test that armed it ends. Left at its
+    default ``None``, no pause is inserted and every existing call site is
+    unaffected.
     """
     worker.evaluate(
-        """({ ok, failed, reason, progressSteps, stepDelayMs, bytesTotal, cancellable }) => {
+        """({ ok, failed, reason, progressSteps, stepDelayMs, bytesTotal, cancellable, pauseAfterStep }) => {
             self._warmCache = async (urls, options) => {
                 self.__snow521Urls = urls;
                 self.__snow521Pinned = !!(options && options.pinned);
                 self.__snow521AreaId = options && options.areaId;
                 const onProgress = options && options.onProgress;
                 const shouldCancel = options && options.shouldCancel;
+                self.__snow521ShouldCancel = shouldCancel;
                 let cancelledMidRun = false;
-                for (const [done, total] of progressSteps) {
+                for (let i = 0; i < progressSteps.length; i += 1) {
+                    const [done, total] = progressSteps[i];
                     if (cancellable && typeof shouldCancel === 'function' && shouldCancel()) {
                         cancelledMidRun = true;
                         break;
                     }
                     const bytesSoFar = total > 0 ? Math.round(bytesTotal * (done / total)) : 0;
                     if (typeof onProgress === 'function') onProgress(done, total, [], bytesSoFar);
+                    if (pauseAfterStep === i) {
+                        await new Promise((resolve) => {
+                            self.__snow521Resume = resolve;
+                            self.__snow521Paused = true;
+                        });
+                        self.__snow521Paused = false;
+                        self.__snow521Resume = null;
+                    }
                     if (stepDelayMs > 0) {
                         await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
                     }
@@ -324,6 +350,7 @@ def _stub_warm_cache(
             "stepDelayMs": step_delay_ms,
             "bytesTotal": 1024 if bytes_total is None else bytes_total,
             "cancellable": cancellable,
+            "pauseAfterStep": pause_after_step,
         },
     )
 
