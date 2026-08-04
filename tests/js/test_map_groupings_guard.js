@@ -148,6 +148,8 @@ beforeAll(async () => {
   // SNOW-618: map.js's search box delegates to this; home.html loads it
   // immediately before map.js, and map.js does not guard for its absence.
   await import('../../static/js/search_core.js');
+  // SNOW-623: map.js's choropleth paint delegates to this.
+  await import('../../static/js/choropleth_core.js');
   await import('../../static/js/map.js');
   // The picker's own bridge for "this tier was enabled and isn't loaded
   // yet" — the only route to overlayLoaded.l3, which the guard also reads.
