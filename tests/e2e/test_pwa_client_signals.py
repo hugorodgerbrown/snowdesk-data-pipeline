@@ -308,10 +308,14 @@ def test_forced_update_blocked_build_emits(live_server: LiveServer, page: Page) 
     """A server ``update_required`` verdict opens the modal and emits the event.
 
     SNOW-609: the only remaining trigger, and the only remaining value of
-    the ``trigger`` property. The route drifts ``current`` as well as
-    setting the verdict — a header drift is what schedules the
-    authoritative round trip in the first place; the body is what decides
-    the outcome.
+    the ``trigger`` property.
+
+    The route drifts the ``X-App-Version`` HEADER as well as the body.
+    Only a header drift schedules the authoritative round trip — the body
+    then decides the outcome — so a body-only route reveals nothing at
+    all. The escalation test this replaced did not need the header,
+    because ``maybeEscalateOnColdLaunch`` fetched ``/api/version``
+    directly at import time; that entry point is gone with it.
     """
     _load(page, live_server.url)
     _delete_db(page)
@@ -321,7 +325,8 @@ def test_forced_update_blocked_build_emits(live_server: LiveServer, page: Page) 
         payload = response.json()
         payload["current"] = "test-newer-build"
         payload["update_required"] = True
-        route.fulfill(response=response, json=payload)
+        headers = {**response.headers, "x-app-version": "test-newer-build"}
+        route.fulfill(response=response, headers=headers, json=payload)
 
     page.route("**/api/version", _block_this_build)
 
