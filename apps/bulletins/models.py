@@ -1104,6 +1104,25 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
             resort_count=models.Count("resorts", distinct=True),
         ).filter(models.Q(favourite_count__gt=0) | models.Q(resort_count__gt=0))
 
+    def inactive(self) -> "ForecastPointQuerySet":
+        """Return points referenced by no favourite and no resort.
+
+        The exact complement of ``active()`` — a point lands here when the
+        last favourite or resort holding it goes away (SNOW-633). Such a
+        point is already excluded from the ``fetch_weather`` point pass, so
+        its stored weather can only go stale; ``prune_forecast_points``
+        deletes it.
+
+        Returns:
+            Filtered queryset of ForecastPoints with no favourites and no
+            resorts.
+
+        """
+        return self.annotate(
+            favourite_count=models.Count("favourites", distinct=True),
+            resort_count=models.Count("resorts", distinct=True),
+        ).filter(favourite_count=0, resort_count=0)
+
 
 class ForecastPoint(BaseModel):
     """

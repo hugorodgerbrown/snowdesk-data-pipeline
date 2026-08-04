@@ -2,7 +2,7 @@
 name: resorts-are-editable-data
 description: Resort rows are editable per-environment data applied by import_resorts, not a fixture reloaded on deploy; resorts.json seeds local/CI only
 status: current
-last-reviewed: 2026-07-28
+last-reviewed: 2026-08-04
 ---
 
 # Resorts are editable data, not deploy-time reference data
@@ -48,10 +48,20 @@ deploy log.
   resort created in the admin must therefore be re-exported to the sheet,
   or reconciled with `--mode add update`, or the next full run deletes it.
   The dry-run names every deletion — read it before `--commit`.
-- `add` needs `region` and `canton` columns the editorial export does not
-  yet carry, so today a genuinely new resort is created in the admin (or
-  the map editor) and picked up by the sheet on the next export. Adding
-  those two columns to the export enables `add` with no code change.
+- `add` needs `region` and `canton`. The sheet gained both columns in
+  SNOW-544, so `add` works: the first production run (2026-08-04) reported
+  `0 to add` because every live sheet row already matched a `uuid`, not
+  because the mode was unusable. A row still missing either column is
+  reported as an error rather than guessed at, and the fix is to fill the
+  sheet — not to create the resort in the admin first.
+- The sheet carries **no coordinates**, by design. `import_resorts` never
+  writes `latitude`/`longitude`, so an added resort arrives ungeocoded and
+  gets no `ForecastPoint` until someone places it in the map editor. That is
+  also why a coordinate placed on production cannot travel back to the
+  fixture through the sheet — `dump_resorts_fixture` reads the *local* DB.
 - Deleting a resort is safe for user data: `Favourite.resort` is
   `SET_NULL`, so a favourite made from a deleted resort degrades to a plain
-  pin with its snapshotted name, coordinates and region intact.
+  pin with its snapshotted name, coordinates and region intact. It does
+  leave the resort's `ForecastPoint` unreferenced — run
+  `prune_forecast_points --commit` after a bulk deletion to clear those and
+  their cascaded weather rows (SNOW-633).
