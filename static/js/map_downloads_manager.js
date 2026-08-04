@@ -1,5 +1,6 @@
 /*
- * static/js/map_downloads_manager.js — the "Manage downloads" sheet (SNOW-588).
+ * static/js/map_downloads_manager.js — the "Manage downloads" sheet
+ * (SNOW-588; the way in rewritten by SNOW-634).
  *
  * The DOM half of the surface that answers "what have I stored offline on
  * this device, and what is it costing me". Every piece of arithmetic and
@@ -8,9 +9,16 @@
  * holds no logic worth testing without a DOM.
  *
  * Markup: apps/public/templates/public/partials/_map_downloads_sheet.html.
- * Opened from the ``[data-menu-action="manage-downloads"]`` row in the
- * layers menu (public/partials/_map_embed.html) — the menu that
- * docs/offline-map.md already calls the cache-state dashboard.
+ * Opened from ``#map-custom-download-control`` (the bottom-right roundel —
+ * public/partials/_map_custom_download_control.html), driven by that
+ * button's own click handler in map.js calling ``window.pwaDownloadsManager
+ * .open()`` (this module's own bridge — see the bridges section below).
+ * SNOW-588 through SNOW-632 reached this sheet only via a
+ * ``[data-menu-action="manage-downloads"]`` row buried in the layers menu,
+ * while the roundel opened a DIFFERENT surface directly (the "Download a
+ * custom area" framing overlay); SNOW-634 collapsed the two — that menu
+ * row is gone, and "Download a custom area" moved INTO this sheet instead,
+ * as the ``[data-downloads-add]`` trigger handled below.
  *
  * ## What it reads and writes
  *
@@ -74,22 +82,34 @@
  * shown. Rebuilding is a few dozen nodes and removes the whole class of
  * bug.
  *
- * ## Its map.js dependencies are two narrow bridges
+ * ## Its map.js dependencies are three narrow bridges
  *
  * Everything this module needs from static/js/map.js is module scope
- * there, so it reaches it through two small frozen globals that file
+ * there, so it reaches it through three small frozen globals that file
  * exposes:
  *
- *   window.pwaBasemapDownloads  ``areas()`` and ``evict(ids)`` — the read
- *                               and the delete. Without it the sheet
- *                               opens and honestly reports that it can
- *                               see nothing, which is the truthful answer
- *                               when the module that owns the records
- *                               hasn't loaded.
- *   window.pwaLayersMenu        ``close()``. Optional — without it the
- *                               menu is simply left open behind the
- *                               sheet. Mirroring its three DOM writes
- *                               here would be a duplicate free to drift.
+ *   window.pwaBasemapDownloads   ``areas()`` and ``evict(ids)`` — the read
+ *                                and the delete. Without it the sheet
+ *                                opens and honestly reports that it can
+ *                                see nothing, which is the truthful answer
+ *                                when the module that owns the records
+ *                                hasn't loaded.
+ *   window.pwaLayersMenu         ``close()``. Optional — without it the
+ *                                menu is simply left open behind the
+ *                                sheet (SNOW-634: the roundel that opens
+ *                                this sheet lives outside that menu, but
+ *                                the menu can still be open behind it —
+ *                                e.g. a user who opened it, then clicked
+ *                                the roundel without closing it first).
+ *                                Mirroring its three DOM writes here would
+ *                                be a duplicate free to drift.
+ *   window.pwaCustomAreaDownload SNOW-634's third bridge: ``openFraming()``,
+ *                                called by ``[data-downloads-add]`` below
+ *                                once this sheet has hidden itself. Optional
+ *                                — without it the trigger is a dead click,
+ *                                which is no worse than the sheet failing
+ *                                to open at all when its OWN bridge is
+ *                                missing.
  *
  * The budget row (``basemap.budgetMb``) is the one piece of storage this
  * module touches directly, because it is the only thing that ever writes
@@ -112,8 +132,6 @@
   var bodyTemplate = document.getElementById(BODY_TEMPLATE_ID);
   var rowTemplate = document.getElementById(ROW_TEMPLATE_ID);
   if (!sheet || !bodyTemplate || !rowTemplate) return;
-
-  var trigger = document.querySelector('[data-menu-action="manage-downloads"]');
 
   /**
    * Translated strings, lifted out of the strings template.
@@ -140,6 +158,8 @@
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
     'remove-failed': "That download couldn't be removed. Try again.",
+    // SNOW-634: [data-downloads-add]'s offline refusal.
+    'add-offline': "You're offline — connect to download a new area.",
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -237,6 +257,11 @@
     // basemap is available offline, which one fewer pinned bucket can
     // change.
     window.pwaLayerSyncStatus?.refresh();
+    // SNOW-634: and the roundel that opens this sheet — a delete can take
+    // the device from "done" (something downloaded) back to "idle"
+    // (nothing left), and nothing else re-probes it once this sheet is
+    // the only surface that ever changes what is on disk here.
+    window.pwaCustomAreaDownload?.refresh();
     return true;
   }
 
@@ -375,26 +400,51 @@
   async function open() {
     await render();
     sheet.hidden = false;
-    // The layers menu is the only way in, and leaving it open would cover
-    // the sheet it just opened.
+    // SNOW-634: the roundel (#map-custom-download-control) is the only way
+    // in now, but the layers menu can still be open behind it — a user who
+    // opened the menu, then clicked the roundel without closing it first —
+    // and leaving it open would cover the sheet that just opened.
     window.pwaLayersMenu?.close();
     sheet.focus();
   }
 
-  if (trigger) {
-    // Bound directly on the row rather than delegated from `document`:
-    // map.js's picker binds its own handler to every `.basemap-menu-item`
-    // and calls `stopPropagation()`, which would starve a delegated
-    // listener. (Its handler is a harmless no-op for this row — the row
-    // carries no overlay key and no basemap url, so it returns early.)
-    trigger.addEventListener('click', function () {
-      open();
-    });
-  }
-
-  // Delegated on the sheet: rows are re-cloned on every render, so a
-  // per-button listener would have to be rebound each time.
+  // Delegated on the sheet: cloned along with the body template on every
+  // render, so a per-element listener would have to be rebound each time.
+  //
+  // SNOW-634: "Download a custom area" — offline refuses with a toast (no
+  // read/write of the area list needs a connection, but STARTING a new
+  // download does, mirroring #map-frame-overlay's own Download button);
+  // online hides this sheet and hands off to map.js's own bridge, which
+  // opens framing exactly as the roundel's own click used to. Hiding
+  // directly (rather than a dismiss idiom) mirrors `open()`'s own
+  // `sheet.hidden = false` above; the sheet does not reopen when framing
+  // closes — SNOW-632 already ends a run on an in-overlay "23.4 MB
+  // downloaded" + Close, so there is nothing here for a re-open to add.
   sheet.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    const addButton = target.closest('[data-downloads-add]');
+    if (addButton) {
+      if (!navigator.onLine) {
+        window.MapSheet.toast(STRINGS['add-offline']);
+        return;
+      }
+      sheet.hidden = true;
+      window.pwaCustomAreaDownload?.openFraming();
+      return;
+    }
+    _handleDeleteClick(event);
+  });
+
+  /**
+   * The delete-button half of the sheet's delegated click handler,
+   * factored out so the listener above can dispatch to it after ruling
+   * out the add-trigger.
+   *
+   * @param {MouseEvent} event
+   * @returns {void}
+   */
+  function _handleDeleteClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
     const button = target.closest('[data-downloads-delete]');
@@ -425,7 +475,7 @@
       button.textContent = STRINGS['remove-failed'] || '';
       button.setAttribute('disabled', '');
     });
-  });
+  }
 
   // The budget is written on change, not behind a Save — there is nothing
   // to batch, and a setting that needs confirming reads as riskier than it

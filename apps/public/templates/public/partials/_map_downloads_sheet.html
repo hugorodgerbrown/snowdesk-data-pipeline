@@ -1,11 +1,23 @@
-{% load i18n static %}
+{% load i18n static components %}
 {% comment %}
-public/partials/_map_downloads_sheet.html — "Manage downloads" sheet (SNOW-588).
+public/partials/_map_downloads_sheet.html — "Manage downloads" sheet
+(SNOW-588; the way in rewritten by SNOW-634).
 
 The surface that answers "what have I stored offline, and what is it
-costing me". Opened from the ``[data-menu-action="manage-downloads"]`` row
-in the layers menu (public/partials/_map_embed.html) and driven by
+costing me". Opened from ``#map-custom-download-control`` (the bottom-right
+roundel — public/partials/_map_custom_download_control.html) and driven by
 static/js/map_downloads_manager.js.
+
+SNOW-588 through SNOW-632 reached this sheet only via a
+``[data-menu-action="manage-downloads"]`` row buried in the layers menu,
+while the roundel opened a DIFFERENT surface (the "Download a custom area"
+framing overlay) directly. SNOW-634 collapses the two: the roundel now
+opens THIS sheet, the menu row is gone, and "Download a custom area"
+became an action INSIDE the sheet instead — the ``[data-downloads-add]``
+trigger above the list, handled by map_downloads_manager.js's delegated
+click listener (offline: a toast; online: hide this sheet and call
+``window.pwaCustomAreaDownload.openFraming()``, map.js's own bridge for
+it).
 
 It lives on the map, rather than under account settings, for two reasons.
 Downloading happens here, so managing downloads belongs here; and the list
@@ -66,9 +78,25 @@ repeated here.
         >
             {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
         </p>
+        {# SNOW-634: "Download a custom area" moved here from the roundel's #}
+        {# own click — see this file's module header. Above the list, so a #}
+        {# fresh (empty) sheet leads with the one action that fills it —   #}
+        {# and where SNOW-635 can relabel/reshape this in place once more  #}
+        {# than one custom area is expressible. Handled by                 #}
+        {# map_downloads_manager.js's delegated click listener, not a      #}
+        {# dedicated one — rows are re-cloned on every render and this     #}
+        {# trigger is cloned right along with them, so binding here would  #}
+        {# have to be redone on every open too.                            #}
+        <button
+            type="button"
+            data-downloads-add
+            class='{% button_classes variant="secondary" size="compact" full_width=True %}'
+        >
+            {% trans "Download a custom area" %}
+        </button>
         <ul data-downloads-list class="flex flex-col divide-y divide-border"></ul>
         <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
-            {% trans "You haven't downloaded any areas yet. Use the download controls on the map to save an area for offline use." %}
+            {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button above for a custom area." %}
         </p>
         <div class="flex items-center justify-between gap-3 border-t border-border pt-3">
             <label for="map-downloads-budget" class="text-sm text-text-2">
@@ -120,6 +148,11 @@ repeated here.
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
             download it again when you're back online.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
+    {# SNOW-634: [data-downloads-add]'s offline refusal — Offline-integrity #}
+    {# mirrors #map-frame-overlay's own Download button: no new download    #}
+    {# can start without a connection, even though listing/deleting what is #}
+    {# already stored needs none.                                          #}
+    <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

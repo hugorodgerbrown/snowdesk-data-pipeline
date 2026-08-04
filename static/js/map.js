@@ -99,6 +99,12 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'frame-readout-done': '%(mb)s downloaded',
   'frame-budget-banner': '%(used)s / %(budget)s downloaded',
   'action-close': 'Close',
+  // SNOW-634: the custom-area roundel's own two labels — it now opens the
+  // downloads sheet rather than framing directly (see
+  // mapCustomDownloadControlInit's `_renderControl`), so its copy is about
+  // what is on THIS DEVICE generally, not this one area.
+  'custom-control-idle': 'Manage offline downloads',
+  'custom-control-done': 'Offline downloads available',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
@@ -6878,8 +6884,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   // SNOW-611: the shared retry-when-the-style-settles callback — see
-  // `makeStyleSettleRetry`, which the custom-area control also uses. Both
-  // controls carried a byte-identical copy of it.
+  // `makeStyleSettleRetry`. SNOW-522's custom-area control carried a
+  // byte-identical copy of this; SNOW-634 deleted its own use of it —
+  // that control's "done" no longer depends on the active basemap's tile
+  // template at all (see mapCustomDownloadControlInit's `_renderControl`).
   const _retryWhenStyleSettles = makeStyleSettleRetry(() => renderControl());
 
   /**
@@ -7164,17 +7172,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // savedAt} (SNOW-586 added name/bytes — see basemapDownloadedAreas's own
 // comment; SNOW-632 added template — see handleConfirm's beforeWarm)
 // — the same {key, value} row shape as basemap.origins (map.js:~450) and
-// mutations.principal. The roundel's "done" state is still PROBED, never
-// read off that row directly, exactly like the per-region control: real
-// Pinned-cache contents — checked against the saved bbox/band's WHOLE
-// tile set (_probeDone below, blobFullyCached), not merely centre_tile
-// (still stored, but no longer what the probe checks), and read across
-// EVERY per-area bucket rather than one shared cache (SNOW-586,
-// pinnedBasemapCacheURLs) — are the source of truth for whether the area
-// is actually downloaded; the meta:app row only records WHERE the frame
-// was. Clicking a 'done' roundel re-opens framing at the saved area
-// (MAP.fitBounds) rather than re-downloading outright, so the user can
-// move on from there.
+// mutations.principal. The roundel's "done" state (SNOW-634) no longer
+// probes THIS area's own bbox against the pinned cache's WHOLE tile set —
+// that was `_probeDone`, since deleted. Clicking the roundel now opens the
+// downloads sheet (public/partials/_map_downloads_sheet.html), which lists
+// EVERY downloaded area, not just this one, so "done" now means "the
+// device holds at least one downloaded area" (basemapDownloadedAreas(),
+// filtered to non-orphaned — see _renderControl below), region or custom.
+// The meta:app row still records WHERE the frame was, for openFraming's
+// own "reopen at the saved area" (MAP.fitBounds) — now reached via the
+// sheet's add-trigger ([data-downloads-add], map_downloads_manager.js)
+// rather than the roundel's own click.
 //
 // SNOW-586: two DISTINCT evictions can happen on confirm, for two
 // different reasons. (1) Confirming a NEW bbox (one that differs from the
@@ -7201,9 +7209,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // docs/decisions/per-area-pinned-basemap-caches.md). (1) now fires on
 // EITHER change, so the bucket always holds exactly one basemap's tiles.
 //
-// Offline-integrity: mirrors mapDownloadControlInit's offline handling
-// exactly — neither opening the framing overlay nor confirming a download
-// is allowed while offline.
+// Offline-integrity: SNOW-634 relaxed the first half of this — the
+// roundel now opens the downloads sheet unconditionally, which is exactly
+// where storage pressure is felt, so browsing/deleting what is already
+// downloaded needs no connection. Confirming a NEW download is still
+// refused offline, both by the sheet's own add-trigger (a toast, not the
+// overlay — map_downloads_manager.js) and by this overlay's own Download
+// button once framing is open, mirroring mapDownloadControlInit's offline
+// handling there.
 //
 // SNOW-632: a confirmed run now OWNS the overlay for its duration rather
 // than handing straight back to the map. The CTA readout shows live
@@ -7217,9 +7230,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // (window.pwaWarmCacheCancel(), posted from the overlay:dismissed
 // listener below) rather than merely hiding a run that carries on
 // unseen. A run that settles `cancelled` (basemap_download_runner.js's
-// `finish` docstring) is neither success nor failure: the roundel returns
-// to idle/offline, never done. A SUCCESSFUL run no longer closes the
-// overlay either — see setState's 'done' branch — it repaints the CTA in
+// `finish` docstring) is neither success nor failure: it records nothing,
+// so the roundel — re-derived from storage once `paintRun` (SNOW-634's
+// rename of `setState`) calls `renderControl()` on settling — reads idle,
+// never done. A SUCCESSFUL run no longer closes the overlay either — see
+// paintRun's 'done' branch — it repaints the CTA in
 // place ("23.4 MB downloaded", Download hidden, Cancel relabelled Close)
 // and leaves closing it to the user, on the same dismiss idiom Cancel
 // always used. The top instruction bar becomes a standing-budget banner
@@ -7235,7 +7250,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const readoutEl = document.getElementById('map-frame-readout');
   const confirmBtn = document.getElementById('map-frame-confirm');
   // SNOW-632: Cancel doubles as Close once a run has completed (see
-  // setState's 'done' branch) — its own click still goes through the
+  // paintRun's 'done' branch) — its own click still goes through the
   // shared data-action="dismiss" idiom, so no new listener is needed, but
   // its label has to be readable/restorable, hence the lookup and the
   // captured default below. The instruction bar becomes the standing
@@ -7250,7 +7265,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   // SNOW-632: Cancel's own translated label ({% trans "Cancel" %} in the
   // template), captured once so it can be restored after a run relabels
-  // the button to "Close" — see setState's 'done' branch and openFraming's
+  // the button to "Close" — see paintRun's 'done' branch and openFraming's
   // reset.
   const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
 
@@ -7259,6 +7274,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // The persisted saved area, or null: {bbox, band, centre_tile, name,
   // template, bytes, savedAt}.
   let savedArea = null;
+
+  // SNOW-634: is-a-run-in-flight, replacing the six `btn.dataset.
+  // downloadState === 'busy'` reads this file used to have. The roundel's
+  // own `data-download-state` is now only ever 'idle'/'done' — derived
+  // from storage by `_renderControl`, never told what to paint by a run —
+  // so it stopped being a channel a run in flight could use at all.
+  // Mirrored onto `#map-frame-overlay` as `data-run-state` by `paintRun`,
+  // which IS visible for the run's whole life (`.map-framing` hides
+  // `#map-controls-br`, the roundel's own container, for as long as the
+  // overlay is open — see this IIFE's own header comment) and is what an
+  // e2e test now reads to synchronise on a run in progress.
+  let runState = 'idle';
 
   // The live bbox/blob for whatever the frame currently covers, while the
   // overlay is open — null when it is closed.
@@ -7297,35 +7324,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let bannerOwnAreaBytes = 0;
 
   /**
-   * True when EVERY tile of the saved custom area is present in the
-   * pinned cache. Returns `null` for "can't tell yet" (the active
-   * basemap's tile template isn't resolvable), exactly like
-   * mapDownloadControlInit's own probe — which this now matches in
-   * substance too.
-   *
-   * Was a centre-tile probe, and carried the same flaw: one pinned cache
-   * shared by both download shapes means a region download that happened
-   * to cover this area's centre tile made the area read as downloaded.
-   * Eviction produced the same lie from the other direction — the area's
-   * centre tile can outlive most of the area, since the OLD pinned cache
-   * trimmed by insertion order and not by which run owned what (SNOW-586
-   * removed that shared cache/trim entirely — see
-   * pinnedBasemapCacheURLs's module-scope comment).
-   *
-   * @param {{bbox: number[], band?: number[]}} area The saved custom area.
-   * @returns {Promise<boolean | null>}
-   */
-  async function _probeDone(area) {
-    const core = self.pwaBasemapDownloadCore;
-    const template = activeBasemapTileTemplate(MAP);
-    if (!core || !template) return null;
-    if (!area || !area.bbox) return false;
-    const cached = await pinnedBasemapCacheURLs();
-    const [minZ, maxZ] = area.band || core.MICRO_BAND;
-    return core.blobFullyCached(template, core.buildBlob(area.bbox, minZ, maxZ), cached);
-  }
-
-  /**
    * `bytes` as a display string, via basemap_manage_core.js's
    * `formatMegabytes` — nearest-MB rounding, since this is always an
    * ACTUAL size already on disk, never buildBlob's round-UP estimate (see
@@ -7346,27 +7344,41 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Paint `state` onto the roundel: data-download-state, the busy fill
-   * percentage, and an aria-label/title. Also owns two things that only
-   * ever change on the busy transition EDGES — never on a call that
-   * merely repeats the current state:
+   * Drive a run: the map lock/unlock edges, the CTA's live "42% · 6.1 MB"
+   * readout, and the done/error CTA repaint. Renamed from `setState`
+   * (SNOW-634) — that function used to ALSO paint the roundel
+   * (data-download-state, the busy fill percentage, an aria-label/title
+   * drawn from a five-entry state map), but that channel was never
+   * visible: `.map-framing` hides `#map-controls-br` — the roundel's own
+   * container — for the overlay's entire open life (static/css/map.css),
+   * and since SNOW-632 a successful run leaves the overlay open, so
+   * 'busy'/'error' were painted onto an element nobody could see. The
+   * roundel's own state now comes from `_renderControl`, re-derived from
+   * storage rather than told what to paint — see its own docstring below.
+   *
+   * Two things still only change on the busy transition EDGES — never on
+   * a call that merely repeats the current state:
    *
    *   Entering busy: locks the map underneath the overlay
    *   (_lockMapForRun) and starts the CTA's live "42% · 6.1 MB" readout.
    *
-   *   Leaving busy: unlocks the map (_unlockMapAfterRun) and paints the
-   *   CTA's outcome — "23.4 MB downloaded" with Download hidden and
-   *   Cancel relabelled Close for a success, or a restored "Up to N MB"
-   *   readout (via _updateReadout) for anything else.
+   *   Leaving busy: unlocks the map (_unlockMapAfterRun), asks the
+   *   roundel to re-derive itself from storage now the run has settled
+   *   (`renderControl()`), and paints the CTA's outcome — "23.4 MB
+   *   downloaded" with Download hidden and Cancel relabelled Close for a
+   *   success, or a restored "Up to N MB" readout (via _updateReadout)
+   *   for anything else.
    *
-   * The edge check matters: this function is ALSO how the background
-   * probe (_renderControl) paints 'done'/'idle'/'offline' whenever the
-   * roundel is re-evaluated (boot, a basemap switch, a connectivity
+   * The edge check matters: this function used to ALSO be how the
+   * background probe repainted 'done'/'idle'/'offline' whenever the
+   * roundel was re-evaluated (boot, a basemap switch, a connectivity
    * flip) — which can happen while the overlay is open for an unrelated
    * reason (the user reopened an already-'done' saved area). Gating the
    * CTA-specific work on `wasBusy` — true only for the single call where
    * a REAL run just ended — keeps that background path from ever
-   * clobbering the CTA underneath it.
+   * clobbering the CTA underneath it; the same gate still matters now
+   * that the background probe is `_renderControl` calling `renderControl()`
+   * rather than this function directly.
    *
    * @param {string} state - 'idle' | 'busy' | 'done' | 'error' | 'offline'.
    * @param {number} [pct] - Only meaningful for state 'busy'.
@@ -7374,35 +7386,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *   bytes so far; for 'done', its final total. Unused otherwise.
    * @returns {void}
    */
-  function setState(state, pct, bytes) {
-    const wasBusy = btn.dataset.downloadState === 'busy';
-    btn.dataset.downloadState = state;
-    // 'idle', 'done' and 'error' all reopen framing on click (see the
-    // click handler below) — only 'busy' (a run is already going) and
-    // 'offline' are non-actionable. SNOW-568: 'error' is deliberately
-    // actionable; a failed download's whole point is that the user can
-    // try it again.
-    btn.setAttribute(
-      'aria-disabled',
-      state === 'busy' || state === 'offline' ? 'true' : 'false',
-    );
-    if (state === 'busy') {
-      btn.style.setProperty('--download-progress', `${pct || 0}%`);
-    } else {
-      btn.style.removeProperty('--download-progress');
-    }
-    const text = {
-      idle: `Download a custom area's basemap`,
-      busy: `Downloading a custom area's basemap — ${pct || 0}%`,
-      done: `Custom area basemap downloaded — available offline`,
-      // SNOW-568: the toast carries the reason; the roundel just has to
-      // say the run failed and is retryable.
-      error: `Custom area basemap download failed — tap to try again`,
-      // Offline-integrity: no downloading of layers while offline.
-      offline: `Basemap download unavailable while offline`,
-    }[state];
-    btn.setAttribute('aria-label', text);
-    btn.title = text;
+  function paintRun(state, pct, bytes) {
+    const wasBusy = runState === 'busy';
+    runState = state;
+    // SNOW-634: the run's own observable, now that the roundel is not —
+    // visible for the run's whole life (unlike #map-controls-br), which
+    // is what an e2e test (or anything else needing to observe a run in
+    // flight) reads instead of the roundel.
+    overlayEl.dataset.runState = state;
 
     // SNOW-632: lock/unlock exactly on the busy edges — every progress
     // tick repaints 'busy' but must not re-lock an already-locked map.
@@ -7410,6 +7401,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       _lockMapForRun();
     } else if (state !== 'busy' && wasBusy) {
       _unlockMapAfterRun();
+      // SNOW-634: the run has settled — ask the roundel to re-derive its
+      // own state from real storage rather than being told what to paint.
+      renderControl();
     }
 
     // The CTA sheet's own readout/button state. See the docstring above
@@ -7465,38 +7459,41 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   }
 
-  // SNOW-611: shared with mapDownloadControlInit — see `makeStyleSettleRetry`.
-  const _retryWhenStyleSettles = makeStyleSettleRetry(() => renderControl());
-
   /**
-   * (Re)probe the roundel against the current savedArea. A stale async
-   * resolution (savedArea changed, or a run started, while the probe was
-   * in flight) is discarded rather than clobbering a newer state.
+   * (Re)probe the roundel against real storage.
+   *
+   * SNOW-634: this used to probe THIS area's own saved bbox against the
+   * pinned cache's actual tile contents (`_probeDone`, now deleted) —
+   * "done" meant "the custom area is fully cached". The roundel now opens
+   * the downloads sheet rather than framing directly, and that sheet
+   * covers every downloaded area, not just this one, so "done" now means
+   * "the device holds at least one downloaded area" — a user with five
+   * downloaded regions and no custom area used to read `idle`, which was
+   * false; there IS something to manage offline. `basemapDownloadedAreas()`
+   * is the same reader `map_downloads_manager.js` lists from, so the
+   * roundel and the sheet can never disagree about what "done" means. An
+   * orphaned bucket (SNOW-612 — a failed part-download with no completed
+   * record) is excluded: it is not "you have this area offline", it is
+   * leftover quota waiting to be reclaimed from the sheet.
+   *
+   * Neither connectivity nor the active basemap affect this any more —
+   * there is no tile-template dependency left to re-probe on
+   * `snowdesk:basemap-changed`, and nothing here to grey out offline (the
+   * sheet lists and deletes offline, which is exactly when storage
+   * pressure is felt) — so this control no longer listens for either.
    *
    * @returns {Promise<void>}
    */
   async function _renderControl() {
-    if (btn.dataset.downloadState === 'busy') return;
-    // Offline-integrity: an undownloaded area can't be fetched now, so it
-    // reads offline rather than actionable idle; an already-downloaded
-    // one still reads done (available offline, no fetch needed).
-    if (!savedArea) {
-      setState(navigator.onLine ? 'idle' : 'offline');
-      return;
-    }
-    const area = savedArea;
-    const done = await _probeDone(area);
-    if (savedArea !== area || btn.dataset.downloadState === 'busy') return;
-    if (done === null) {
-      setState(navigator.onLine ? 'idle' : 'offline');
-      _retryWhenStyleSettles();
-      return;
-    }
-    if (!navigator.onLine && !done) {
-      setState('offline');
-      return;
-    }
-    setState(done ? 'done' : 'idle');
+    if (runState === 'busy') return;
+    const areas = await basemapDownloadedAreas();
+    const done = areas.some((area) => !area.orphaned);
+    btn.dataset.downloadState = done ? 'done' : 'idle';
+    const text = done
+      ? MAP_STRINGS['custom-control-done']
+      : MAP_STRINGS['custom-control-idle'];
+    btn.setAttribute('aria-label', text);
+    btn.title = text;
   }
 
   // SNOW-613: overlapping renders coalesce onto one trailing pass — see
@@ -8024,7 +8021,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * because a run has already committed to a specific tile set and must
    * not have the ground shift under it mid-fetch.
    *
-   * Called from setState on the busy transition edge, never directly —
+   * Called from paintRun on the busy transition edge, never directly —
    * see that function's docstring.
    *
    * @returns {void}
@@ -8097,7 +8094,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * Called exactly twice a run — once from openFraming, once more from
    * `finish` once the run has settled — never from the progress-tick path
-   * (setState/_renderBudgetBanner), which repaints the SAME cached numbers
+   * (paintRun/_renderBudgetBanner), which repaints the SAME cached numbers
    * plus the run's own live bytes. Each read here is two `meta:app` round
    * trips (basemapDownloadedAreas covers `basemap.regions` AND
    * `basemap.customArea`) plus a third for the budget row; a live run
@@ -8145,7 +8142,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (!MAP) return;
     overlayEl.removeAttribute('hidden');
     // SNOW-632: undo whatever the PREVIOUS session's completed run left on
-    // the CTA bar (setState's 'done' branch hides Download and relabels
+    // the CTA bar (paintRun's 'done' branch hides Download and relabels
     // Cancel to Close) — without this a Close button, and no Download at
     // all, would leak into a framing session that has not downloaded
     // anything yet. _updateReadout below repaints the readout text and
@@ -8204,7 +8201,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // programmatic 'move' (e.g. _unlockMapAfterRun's own re-anchor) can
       // land here first and re-enable Download out from under a run still
       // in flight.
-      if (btn.dataset.downloadState === 'busy') return;
+      if (runState === 'busy') return;
       _updateReadout();
     };
     MAP.on('move', moveHandler);
@@ -8238,7 +8235,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * Cancel/Close button's own job, via overlays.js's shared dismiss
    * handler, which has already hidden the overlay before dispatching
    * overlay:dismissed by the time this runs (SNOW-632: since a SUCCESSFUL
-   * run no longer closes the overlay itself — see setState's 'done'
+   * run no longer closes the overlay itself — see paintRun's 'done'
    * branch — dismissal is now the ONLY path that ever calls this).
    *
    * @returns {void}
@@ -8292,7 +8289,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * SNOW-632: a run's outcome no longer decides whether the overlay
    * closes — only the user's own Cancel/Close click does that (see
-   * setState's 'done' branch and the overlay:dismissed listener). A
+   * paintRun's 'done' branch and the overlay:dismissed listener). A
    * SUCCESSFUL run instead repaints the CTA in place: the readout becomes
    * "23.4 MB downloaded", Download hides, and Cancel relabels to Close. A
    * CANCELLED run (the user dismissed while this was in flight) is
@@ -8306,11 +8303,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // framed area survives for a retry), and it was always open during a
     // running one — so the Download button, unlike the roundel, needs its
     // own re-entrancy guard.
-    if (btn.dataset.downloadState === 'busy') return;
+    if (runState === 'busy') return;
     // Offline-integrity: never start a download offline, even if a race
     // left the button enabled at the moment of the click.
     if (!navigator.onLine) {
-      setState('offline');
+      paintRun('offline');
       return;
     }
     const blob = pendingBlob;
@@ -8336,7 +8333,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // This control's roundel carries no size, so the shared runner's
       // (state, pct, bytes) triple is passed straight through — SNOW-632:
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
-      paint: (nextState, pct, bytes) => setState(nextState, pct, bytes),
+      paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
       beforeWarm: async (_blob, areaId, template) => {
         // Unlike the budget eviction the runner has just done, this needs
@@ -8383,7 +8380,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
           // claim 'done': the probe checks the WHOLE saved area's tile
           // set, and painting done here would claim more than is true.
           await progressFill.finish(false);
-          setState(navigator.onLine ? 'idle' : 'offline');
+          paintRun(navigator.onLine ? 'idle' : 'offline');
         } else if (ok) {
           // SNOW-632: `bytes` is this run's OWN reported total, recorded
           // outright — never accumulated onto the previous record, and
@@ -8407,12 +8404,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
           // SNOW-569's pulse still plays on success; SNOW-632 removed the
           // overlay-close that used to precede it (SNOW-568 already left
           // it open on failure, and requirement 5 now does the same for a
-          // success — see setState's 'done' branch for what replaces it).
+          // success — see paintRun's 'done' branch for what replaces it).
           await progressFill.finish(true);
-          setState('done', undefined, savedArea.bytes);
+          paintRun('done', undefined, savedArea.bytes);
         } else {
           await progressFill.finish(false);
-          setState('error');
+          paintRun('error');
           // A null result means there was no active worker at all — nothing
           // ran and nothing was cached, which is still a failed download
           // from the user's point of view, just one with no reason to
@@ -8441,15 +8438,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   }
 
+  // SNOW-634: the roundel now opens the downloads sheet unconditionally —
+  // no busy guard (framing hides #map-controls-br, the roundel's own
+  // container, for as long as it is open, so this can never be clicked
+  // mid-run anyway) and no offline guard (the sheet lists and deletes
+  // offline, which is exactly when storage pressure is felt). Confirming
+  // a NEW download is still gated on connectivity, both by the sheet's own
+  // add-trigger and by this overlay's own Download button.
   btn.addEventListener('click', () => {
-    if (btn.dataset.downloadState === 'busy') return;
-    // Offline-integrity: never open framing while offline — there would
-    // be nothing useful to do once inside it.
-    if (!navigator.onLine) {
-      setState('offline');
-      return;
-    }
-    openFraming();
+    window.pwaDownloadsManager?.open();
   });
 
   confirmBtn.addEventListener('click', () => handleConfirm());
@@ -8460,11 +8457,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // header comment.
   document.addEventListener('overlay:dismissed', (e) => {
     if (e.detail && e.detail.overlay === overlayEl) {
-      // SNOW-632: capture BEFORE teardown — a busy roundel is this
-      // control's own sign that a run is in flight, and teardown below
-      // does not touch it (only setState, from the run's own eventual
-      // `finish`, does).
-      const wasBusy = btn.dataset.downloadState === 'busy';
+      // SNOW-632: capture BEFORE teardown — a busy run is this control's
+      // own sign that it is in flight, and teardown below does not touch
+      // it (only paintRun, from the run's own eventual `finish`, does).
+      const wasBusy = runState === 'busy';
       _teardownFraming();
       // SNOW-568: cancelling framing abandons the attempt the toast was
       // reporting on. Leaving it up would also strand it at the offset
@@ -8483,26 +8479,39 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   });
 
-  // Per-basemap download state — see mapDownloadControlInit's own
-  // identical listener for the full rationale (the done-probe keys off
-  // the ACTIVE basemap's tile template).
-  document.addEventListener('snowdesk:basemap-changed', () => renderControl());
-
-  // Offline-integrity: re-render the roundel, and re-validate the open
-  // CTA's Download button, on every connectivity transition. SNOW-632: a
-  // run in flight owns the CTA (see setState) — the network flapping
-  // mid-run must not re-enable Download out from under it, so this is
-  // skipped while busy, exactly like the 'move' handler above.
+  // SNOW-634: unlike mapDownloadControlInit's own copy of this listener,
+  // this control no longer listens for 'snowdesk:basemap-changed' — the
+  // roundel's "done" no longer depends on the active basemap's tile
+  // template (there is no tile-cache probe left to re-run; see
+  // _renderControl's own docstring).
+  //
+  // Offline-integrity: re-validate the open CTA's Download button on every
+  // connectivity transition — SNOW-632: a run in flight owns the CTA (see
+  // paintRun), so this is skipped while busy, exactly like the 'move'
+  // handler above. The roundel itself no longer has an offline state to
+  // re-render here either (see _renderControl).
   document.addEventListener('snowdesk:connectivity-changed', () => {
-    renderControl();
-    if (pendingBbox && btn.dataset.downloadState !== 'busy') _updateReadout();
+    if (pendingBbox && runState !== 'busy') _updateReadout();
   });
 
-  // Boot: read the persisted saved area (independent of MAP — meta:app
-  // is a plain IndexedDB read), then probe it against real cache state
-  // once the map (and so the active basemap's tile template) is ready.
+  // Boot: read the persisted saved area (openFraming's own "reopen at the
+  // saved area" convenience), then probe the roundel against real storage.
+  // SNOW-634: unlike the old tile-cache probe, `basemapDownloadedAreas()`
+  // needs neither MAP nor the active basemap's tile template, so this no
+  // longer also waits on MAP_READY_PROMISE — that used to be a SEPARATE
+  // trigger for a second, map-dependent probe.
   _loadSavedArea().then(() => renderControl());
-  MAP_READY_PROMISE.then(() => renderControl());
+
+  window.pwaCustomAreaDownload = Object.freeze({
+    // SNOW-634: the sheet's add-trigger reaches framing through this —
+    // same frozen-global idiom as pwaBasemapDownloads/pwaLayersMenu/
+    // pwaDownloadedOverlay.
+    openFraming: openFraming,
+    // So a delete in the sheet settles the roundel without waiting for
+    // the next basemap switch or connectivity flip — neither of which
+    // affect it any more.
+    refresh: renderControl,
+  });
 })();
 
 // SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers
