@@ -177,6 +177,13 @@ change the frozenset + document the property shape here.
   `properties.observation_type` (the `community-reports-point` layer's
   click handler — deliberately carries no location or identity data,
   mirroring the anonymisation contract of `api:community_reports_geojson`).
+- **Basemap download bookkeeping** (SNOW-612, same `map.*` namespace):
+  `map.basemap.record_write_failed` with `properties.region_id`
+  (`static/js/map.js`'s `_recordRegionDownload`) — a completed download
+  whose `basemap.regions` record could not be written. The run leaves a
+  pinned Cache Storage bucket behind with nothing naming it, which then
+  reads as an orphan; the bucket is reconciled and deletable either way,
+  so this only measures how often it happens.
 
 ### Server-emitted (via `emit_server_signal`)
 
@@ -365,6 +372,7 @@ below the table.
 | `static/js/map.js::basemapPickerInit` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="favourites"` |
 | `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
+| `static/js/map.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |
 
 **SNOW-585 — suppressed in dev.** `pwa.sw.update_available` (and
 `.update_applied`) never fire while `settings.SW_DEV_SHELL_BYPASS` is
