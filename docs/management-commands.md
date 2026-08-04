@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, sync_waffle_flags, fixture builders, bootstrap-dev-db
+description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # Management commands
@@ -516,6 +516,35 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`, `--delay SECONDS` (default 1.0).
+
+- `prune_forecast_points --commit` — deletes every `ForecastPoint` that no
+  `Favourite` and no `Resort` references (SNOW-633). A point becomes
+  unreferenced when the last pin holding it goes away: a favourite deleted
+  by its owner, or a resort retired by `import_resorts`. It is already
+  invisible to the pipeline at that moment — the `fetch_weather` point pass
+  iterates `ForecastPoint.objects.active()` — so its `ForecastPointWeather`
+  and `ForecastPointWeatherHistory` rows can only grow staler. Both child
+  tables are `CASCADE`, so they go with the point.
+
+  Fail-safe by FK: `Favourite.forecast_point` and `Resort.forecast_point`
+  are `PROTECT`, so a point that gains a reference between the walk and the
+  delete raises `ProtectedError` instead of taking a live favourite's
+  weather with it. That row is counted as `failed`, the batch continues, and
+  the command exits non-zero.
+
+  Run it after any bulk resort deletion. The first production
+  `import_resorts --commit` run (2026-08-04) retired 22 resorts and left 15
+  unreferenced points holding 75 weather rows.
+
+  ```bash
+  # Dry-run — reports the points, weather and history rows it would delete.
+  uv run python manage.py prune_forecast_points
+
+  # Persist the deletions.
+  uv run python manage.py prune_forecast_points --commit
+  ```
+
+  Flags: `--commit`.
 
 ### Health checks (read-only)
 

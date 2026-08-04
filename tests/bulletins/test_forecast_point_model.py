@@ -10,6 +10,8 @@ Covers:
     exercised via apps.bulletins.services.forecast_points.quantise_*.
   - ForecastPointQuerySet.active() — points with at least one favourite or
     resort (SNOW-503).
+  - ForecastPointQuerySet.inactive() — the exact complement of active()
+    (SNOW-633).
 """
 
 import pytest
@@ -163,3 +165,39 @@ class TestForecastPointActiveQuerySet:
         """A point referenced by neither a favourite nor a resort is excluded."""
         point = ForecastPointFactory.create()
         assert point not in ForecastPoint.objects.active()
+
+
+@pytest.mark.django_db
+class TestForecastPointInactiveQuerySet:
+    """ForecastPointQuerySet.inactive() — the complement of active() (SNOW-633)."""
+
+    def test_orphan_point_is_inactive(self) -> None:
+        """A point with no favourite and no resort is included in inactive()."""
+        point = ForecastPointFactory.create()
+        assert point in ForecastPoint.objects.inactive()
+
+    def test_point_with_favourite_is_not_inactive(self) -> None:
+        """A point held by a favourite is excluded from inactive()."""
+        point = ForecastPointFactory.create()
+        FavouriteFactory.create(forecast_point=point)
+        assert point not in ForecastPoint.objects.inactive()
+
+    def test_point_with_resort_is_not_inactive(self) -> None:
+        """A point held by a resort is excluded from inactive()."""
+        point = ForecastPointFactory.create()
+        ResortFactory.create(geocoded=True, forecast_point=point)
+        assert point not in ForecastPoint.objects.inactive()
+
+    def test_partitions_the_table(self) -> None:
+        """active() and inactive() together cover every row, without overlap."""
+        held = ForecastPointFactory.create()
+        FavouriteFactory.create(forecast_point=held)
+        orphan = ForecastPointFactory.create(latitude=47.9, longitude=8.9)
+
+        active = set(ForecastPoint.objects.active())
+        inactive = set(ForecastPoint.objects.inactive())
+
+        assert active == {held}
+        assert inactive == {orphan}
+        assert active | inactive == set(ForecastPoint.objects.all())
+        assert not active & inactive
