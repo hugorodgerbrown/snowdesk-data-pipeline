@@ -227,6 +227,7 @@ def _stub_warm_cache(
     progress_steps: list[tuple[int, int]] | None = None,
     step_delay_ms: int = 0,
     bytes_total: int | None = None,
+    cancellable: bool = False,
 ) -> None:
     """Replace ``self._warmCache`` with a stub reporting a fixed outcome.
 
@@ -240,10 +241,16 @@ def _stub_warm_cache(
     (``BASEMAP_PINNED_CACHE_PREFIX + options.areaId``) so a subsequent
     done-probe (real Cache Storage read) succeeds.
 
-    ``progress_steps``, if given, drives ``options.onProgress(done,
-    total)`` once per tuple, spaced ``step_delay_ms`` apart so a test can
-    reliably observe an intermediate ``busy`` state via
-    ``page.wait_for_function`` before the run resolves.
+    ``progress_steps``, if given, drives ``options.onProgress(done, total,
+    settled, bytes)`` once per tuple, spaced ``step_delay_ms`` apart so a
+    test can reliably observe an intermediate ``busy`` state via
+    ``page.wait_for_function`` before the run resolves. SNOW-632:
+    ``settled`` is always an empty array (no test in any of the four
+    suites sharing this stub inspects the on-map progress grid's cell
+    state, so there is nothing to compute it FROM) and ``bytes`` is
+    ``bytes_total`` scaled by ``done / total`` — proportional, same shape
+    the real ``_warmCache`` reports, so a test asserting the busy readout
+    shows a growing MB figure sees one.
 
     SNOW-568: ``reason`` rides back with the summary exactly as the real
     ``_warmCache`` reports it (``'quota'`` / ``'network'`` / ``'other'``),
@@ -255,21 +262,47 @@ def _stub_warm_cache(
     test's downloads approach the 500 MB default budget by accident;
     ``tests/e2e/test_basemap_download_budget.py`` passes an explicit
     value to drive the budget arithmetic deliberately.
+
+    SNOW-632: ``cancellable``, opt-in, makes the stub poll
+    ``options.shouldCancel()`` (the same callback the real ``_warmCache``
+    polls — ``sw.js``'s ``warm-cache`` message handler passes it to
+    WHICHEVER function ``self._warmCache`` currently is, stub or real)
+    between every ``progress_steps`` tuple. A test holds the run mid-flight
+    by giving it several steps with a non-zero ``step_delay_ms``, clicks
+    Cancel in that window (which posts ``warm-cache-cancel`` for this
+    run's ``requestId``, the thing ``shouldCancel`` reads), and observes
+    the stub stop early: it resolves ``{ok: 0, failed: 0, bytes: 0,
+    cancelled: true}`` and writes nothing to the pinned bucket, mirroring
+    what the real worker does when a cancel lands mid-pool (``sw.js``'s
+    ``_warmCache`` docstring) closely enough for the page-side contract
+    this suite tests. Ignored (the loop always runs to completion) when
+    left at its default ``False`` — every existing call site is
+    unaffected.
     """
     worker.evaluate(
-        """({ ok, failed, reason, progressSteps, stepDelayMs, bytesTotal }) => {
+        """({ ok, failed, reason, progressSteps, stepDelayMs, bytesTotal, cancellable }) => {
             self._warmCache = async (urls, options) => {
                 self.__snow521Urls = urls;
                 self.__snow521Pinned = !!(options && options.pinned);
                 self.__snow521AreaId = options && options.areaId;
                 const onProgress = options && options.onProgress;
+                const shouldCancel = options && options.shouldCancel;
+                let cancelledMidRun = false;
                 for (const [done, total] of progressSteps) {
-                    if (typeof onProgress === 'function') onProgress(done, total);
+                    if (cancellable && typeof shouldCancel === 'function' && shouldCancel()) {
+                        cancelledMidRun = true;
+                        break;
+                    }
+                    const bytesSoFar = total > 0 ? Math.round(bytesTotal * (done / total)) : 0;
+                    if (typeof onProgress === 'function') onProgress(done, total, [], bytesSoFar);
                     if (stepDelayMs > 0) {
                         await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
                     }
                 }
-                if (options && options.pinned && ok > 0) {
+                if (!cancelledMidRun && cancellable && typeof shouldCancel === 'function') {
+                    cancelledMidRun = shouldCancel();
+                }
+                if (options && options.pinned && ok > 0 && !cancelledMidRun) {
                     const cache = await caches.open(
                         BASEMAP_PINNED_CACHE_PREFIX + options.areaId,
                     );
@@ -277,7 +310,10 @@ def _stub_warm_cache(
                         await cache.put(url, new Response('stub-tile'));
                     }
                 }
-                return { ok, failed, reason, bytes: ok > 0 ? bytesTotal : 0 };
+                if (cancelledMidRun) {
+                    return { ok: 0, failed: 0, reason: null, bytes: 0, cancelled: true };
+                }
+                return { ok, failed, reason, bytes: ok > 0 ? bytesTotal : 0, cancelled: false };
             };
         }""",
         {
@@ -287,6 +323,7 @@ def _stub_warm_cache(
             "progressSteps": progress_steps or [],
             "stepDelayMs": step_delay_ms,
             "bytesTotal": 1024 if bytes_total is None else bytes_total,
+            "cancellable": cancellable,
         },
     )
 
