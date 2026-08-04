@@ -2204,8 +2204,14 @@ def version(request: HttpRequest) -> JsonResponse:
     entry now that the body depends on a request header.
     """
     client_version = request.headers.get("X-Client-Version", "")
-    update_required = bool(client_version) and (
-        client_version in settings.APP_BLOCKED_VERSIONS
+    # ``!= ""`` rather than ``bool(client_version)``: semgrep's
+    # nan-injection rule flags any ``bool()`` over request data, since a
+    # numeric cast of "nan" is a real hazard. It isn't one here — this is a
+    # string emptiness test — but an explicit comparison says the same
+    # thing without needing an exemption. Both operands are bool, so the
+    # ``and`` yields a bool for the JSON body either way.
+    update_required = (
+        client_version != "" and client_version in settings.APP_BLOCKED_VERSIONS
     )
     response = JsonResponse(
         {
