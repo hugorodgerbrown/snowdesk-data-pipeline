@@ -62,6 +62,23 @@
   const createTemplate = document.getElementById('favourite-create-template');
   if (!btn || !sheet || !createTemplate) return;
 
+  // SNOW-620: server-translated copy, read back from the template
+  // _favourites_surface.html renders. This module builds its whole sheet in
+  // JS, so these strings never passed through a template and makemessages
+  // could not see them. The literals are the English fallback — see
+  // static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('favourites-strings-template', {
+    // Mirrors includes/_sheet_header.html, which this module reimplements
+    // in JS rather than clones.
+    close: 'Close',
+    'sheet-title': 'Favourite',
+    'signin-prompt': 'Sign in to save a favourite.',
+    'signin-cta': 'Sign in',
+    'unnamed-pin': 'Unnamed pin',
+    'name-label': 'Favourite name',
+    remove: 'Remove',
+  });
+
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.favouriteRenameUrlTemplate;
   const DELETE_URL_TEMPLATE = btn.dataset.favouriteDeleteUrlTemplate;
@@ -125,13 +142,11 @@
     header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
     const title = document.createElement('span');
     title.className = 'text-sm font-semibold text-text-1';
-    // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
     title.textContent = titleText;
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.setAttribute('data-action', 'dismiss');
-    // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
-    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.setAttribute('aria-label', STRINGS.close);
     closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
     closeBtn.textContent = '×';
     header.appendChild(title);
@@ -181,25 +196,25 @@
       // rather than innerHTML string concatenation — the same DOM-not-markup
       // discipline the rest of this module uses for anything URL/name-bearing.
       sheet.replaceChildren();
-      sheet.appendChild(buildSheetHeader('Favourite'));
+      sheet.appendChild(buildSheetHeader(STRINGS['sheet-title']));
       if (SIGNIN_URL) {
         const wrap = document.createElement('div');
         wrap.className = 'px-2 py-4';
         const p = document.createElement('p');
         p.className = 'text-sm text-text-2 mb-3';
-        p.textContent = 'Sign in to save a favourite.';
+        p.textContent = STRINGS['signin-prompt'];
         const a = document.createElement('a');
         a.setAttribute('href', SIGNIN_URL);
         a.className =
           'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
-        a.textContent = 'Sign in';
+        a.textContent = STRINGS['signin-cta'];
         wrap.appendChild(p);
         wrap.appendChild(a);
         sheet.appendChild(wrap);
       } else {
         const p = document.createElement('p');
         p.className = 'px-2 py-4 text-sm text-text-2';
-        p.textContent = 'Sign in to save a favourite.';
+        p.textContent = STRINGS['signin-prompt'];
         sheet.appendChild(p);
       }
       return;
@@ -281,8 +296,8 @@
     nameInput.type = 'text';
     nameInput.name = 'name';
     nameInput.value = name || '';
-    nameInput.placeholder = 'Unnamed pin';
-    nameInput.setAttribute('aria-label', 'Favourite name');
+    nameInput.placeholder = STRINGS['unnamed-pin'];
+    nameInput.setAttribute('aria-label', STRINGS['name-label']);
     nameInput.className = 'w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none';
     renameForm.appendChild(nameInput);
 
@@ -295,7 +310,7 @@
     const removeBtn = document.createElement('button');
     removeBtn.type = 'submit';
     removeBtn.className = 'shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text';
-    removeBtn.textContent = 'Remove';
+    removeBtn.textContent = STRINGS.remove;
     deleteForm.appendChild(removeBtn);
 
     row.appendChild(renameForm);

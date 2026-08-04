@@ -26,3 +26,13 @@ empty placeholder and the <ul> the JS targets.
         </li>
     </ul>
 </div>
+{# SNOW-620: the three placeholder rows sync_log.js paints in place of the   #}
+{# "Loading…" row above. makemessages does not scan JavaScript, so they are  #}
+{# rendered here and read back via window.pwaStrings.read(); the module      #}
+{# keeps the English literal as the fallback. See                            #}
+{# static/js/i18n_strings.js.                                                #}
+<template id="sync-log-strings-template">
+    <span data-string="unavailable">{% trans "Sync log unavailable on this device." %}</span>
+    <span data-string="empty">{% trans "No syncs yet." %}</span>
+    <span data-string="failed">{% trans "Could not load the sync log." %}</span>
+</template>

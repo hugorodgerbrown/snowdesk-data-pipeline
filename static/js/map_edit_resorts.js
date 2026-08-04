@@ -169,6 +169,8 @@
   const renderRemaining = () => {
     const total = allResorts.length;
     const set = allResorts.reduce((acc, r) => acc + (r.has_coords ? 1 : 0), 0);
+    // i18n-allow: the resort editor is staff-only (edit_mode, superuser
+    // gate in home.html) and is never rendered for a member of the public.
     remainingEl.textContent = `${set} / ${total} set`;
   };
 

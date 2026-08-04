@@ -481,7 +481,12 @@ account, shown for any authenticated account.
                     });
                     document.addEventListener("passkey:error", function () {
                         if (regBtn) regBtn.disabled = false;
-                        showFeedback("{% trans "Passkey registration failed. Please try again." %}");
+                        {# SNOW-620: escapejs, not the default HTML autoescaping — this is a  #}
+                        {# JS string literal. A locale whose copy contains an apostrophe      #}
+                        {# would otherwise render it as &#x27; on screen, and one containing  #}
+                        {# a double quote would close the literal and break the whole script. #}
+                        {% trans "Passkey registration failed. Please try again." as passkey_reg_failed %}
+                        showFeedback("{{ passkey_reg_failed|escapejs }}");
                     });
 
                     /* Telemetry opt-in/opt-out toggle (SNOW-387). Left disabled

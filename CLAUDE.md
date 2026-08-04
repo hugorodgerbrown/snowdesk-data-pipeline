@@ -316,6 +316,18 @@ top-level `function` and `var` declarations DO become window properties;
 live in `KNOWN_EXTERNALS` in `bin/js-globals-lint`; adding a name there to
 silence a real miss defeats the check.
 
+**Third guard: `tox -e i18n-lint`.** Fails on a user-facing string literal
+reaching `textContent` / `innerHTML` / `aria-label` and friends in
+`static/js`. `makemessages` scans templates and Python, never JavaScript, so
+such a string ships as English to every locale — ~45 had accumulated across
+eight modules by SNOW-620. The fix is always the same: render it in the
+surface partial's strings `<template>` and read it back with
+`window.pwaStrings.read()` (`static/js/i18n_strings.js`), keeping the English
+literal as the fallback. Per-line `// i18n-allow: <reason>` hatch, audit-visible
+via `bin/i18n-lint --show-allows` — staff-only surfaces are the legitimate use.
+Full pattern, including the `|escapejs` rule for `{% trans %}` values
+interpolated into JS literals: [`docs/i18n.md`](docs/i18n.md).
+
 ## Local CI — always run tox
 
 **`tox` is the single entry point** for running linters, type checks, Django
@@ -326,7 +338,7 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, docs-lint, test, js)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, i18n-lint, docs-lint, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks
@@ -334,6 +346,7 @@ uv run tox -e fmt             # ruff format --check
 uv run tox -e lint            # ruff check
 uv run tox -e ds-lint         # design-system linter — templates + static/js (see "Design system" above)
 uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
+uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates

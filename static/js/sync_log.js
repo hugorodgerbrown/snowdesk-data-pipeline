@@ -22,6 +22,15 @@
 
   const LIST_ID = 'sync-log-list';
 
+  // SNOW-620: server-translated placeholder copy, read back from the
+  // template accounts/partials/_sync_log_body.html renders. The literals
+  // are the English fallback — see static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('sync-log-strings-template', {
+    unavailable: 'Sync log unavailable on this device.',
+    empty: 'No syncs yet.',
+    failed: 'Could not load the sync log.',
+  });
+
   /**
    * Format an ISO timestamp as "HH:MM DD/MM" without pulling Intl.
    * Falls back to the raw string on parse failure.
@@ -86,20 +95,20 @@
     if (!list) return;
 
     if (!window.pwaDb || typeof window.pwaDb.getSyncLog !== 'function') {
-      renderPlaceholder(list, 'Sync log unavailable on this device.');
+      renderPlaceholder(list, STRINGS.unavailable);
       return;
     }
 
     try {
       const rows = await window.pwaDb.getSyncLog();
       if (!rows || rows.length === 0) {
-        renderPlaceholder(list, 'No syncs yet.');
+        renderPlaceholder(list, STRINGS.empty);
         return;
       }
       list.textContent = '';
       rows.forEach((entry) => list.appendChild(buildRow(entry)));
     } catch (_err) {
-      renderPlaceholder(list, 'Could not load the sync log.');
+      renderPlaceholder(list, STRINGS.failed);
     }
   }
 

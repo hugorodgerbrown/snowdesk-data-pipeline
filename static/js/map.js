@@ -69,6 +69,24 @@ const OVERLAY_STORAGE_KEY = {
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
 
+// SNOW-620: the strings this file writes into the DOM itself, server-
+// translated into the template _map_embed.html renders and read back here.
+// makemessages does not scan JavaScript, so a literal written below would
+// ship as English to every locale. The literals here are the English
+// fallback — see static/js/i18n_strings.js.
+//
+// Module scope rather than per-IIFE: the popup and the timelapse transport
+// are separate IIFEs, and both need these.
+const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
+  'bulletin-link': 'Open bulletin for %(date)s →',
+  'no-bulletin': 'No bulletin available for %(date)s',
+  'season-unavailable': 'Season data unavailable',
+  'timelapse-play': 'Play season timelapse',
+  'timelapse-play-reverse': 'Play season timelapse in reverse',
+  'timelapse-stop': 'Stop season timelapse',
+  'timelapse-stop-reverse': 'Stop reverse timelapse',
+});
+
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
 // uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
 // (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
@@ -5442,13 +5460,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // Update the bulletin link text and href. formatDatePopup matches the
       // server render's ``date:"j M Y"`` so the label is unchanged in format
       // when the popup is relabelled in place.
-      // Note: this string is built in JS (not from a Django template tag) so
-      // the project is English-only pre-launch. When i18n is added, this
-      // JS-built string will need the same treatment as the #region-readout
-      // strings in seasonRibbonInit. See docs/i18n.md.
+      // SNOW-620: the date is substituted by NAME, not concatenated — a
+      // locale is free to put it anywhere in the sentence, or to need
+      // different surrounding words on either side of it.
       const link = el.querySelector('.region-tooltip-bulletin-link');
       if (link) {
-        link.textContent = 'Open bulletin for ' + formatDatePopup(dateKey) + ' →';
+        link.textContent = self.pwaStrings.interpolate(MAP_STRINGS['bulletin-link'], {
+          date: formatDatePopup(dateKey),
+        });
         link.href = '/' + regionID.toLowerCase() + '/' + slug + '/' + dateKey + '/';
       }
 
@@ -5456,10 +5475,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // for the date — the rated layout uses .region-tooltip-bulletin-link).
       // The template renders this as a plain <p> with inline text; there is no
       // child .region-tooltip-date element to update, so we set the full string.
-      // Note: same i18n caveat as the bulletin link above.
       const noBulletin = el.querySelector('.region-tooltip-no-bulletin');
       if (noBulletin) {
-        noBulletin.textContent = 'No bulletin available for ' + formatDatePopup(dateKey);
+        noBulletin.textContent = self.pwaStrings.interpolate(MAP_STRINGS['no-bulletin'], {
+          date: formatDatePopup(dateKey),
+        });
       }
     };
     // Publish to the outer-IIFE forwarding variable so the date-changed listener
@@ -5608,7 +5628,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }).catch(() => {
     scrubber.dataset.state = 'error';
     const loadingEl = scrubber.querySelector('.season-scrubber-loading');
-    if (loadingEl) loadingEl.textContent = 'Season data unavailable';
+    if (loadingEl) loadingEl.textContent = MAP_STRINGS['season-unavailable'];
   });
 
   const snapToNearestDataDay = (dateKey) => {
@@ -5947,10 +5967,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     // Reset data-state on both play transport buttons.
     playButton.dataset.state = 'stopped';
-    playButton.setAttribute('aria-label', 'Play season timelapse');
+    playButton.setAttribute('aria-label', MAP_STRINGS['timelapse-play']);
     if (reverseButton) {
       reverseButton.dataset.state = 'stopped';
-      reverseButton.setAttribute('aria-label', 'Play season timelapse in reverse');
+      reverseButton.setAttribute('aria-label', MAP_STRINGS['timelapse-play-reverse']);
     }
     // Leave the map painted on the current frame — do not clear
     // feature-state or reset the thumb. The user sees what was playing.
@@ -5990,18 +6010,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Update button states to reflect which transport is now active.
     if (directionArg === 1) {
       playButton.dataset.state = 'playing';
-      playButton.setAttribute('aria-label', 'Stop season timelapse');
+      playButton.setAttribute('aria-label', MAP_STRINGS['timelapse-stop']);
       if (reverseButton) {
         reverseButton.dataset.state = 'stopped';
-        reverseButton.setAttribute('aria-label', 'Play season timelapse in reverse');
+        reverseButton.setAttribute('aria-label', MAP_STRINGS['timelapse-play-reverse']);
       }
     } else {
       if (reverseButton) {
         reverseButton.dataset.state = 'playing';
-        reverseButton.setAttribute('aria-label', 'Stop reverse timelapse');
+        reverseButton.setAttribute('aria-label', MAP_STRINGS['timelapse-stop-reverse']);
       }
       playButton.dataset.state = 'stopped';
-      playButton.setAttribute('aria-label', 'Play season timelapse');
+      playButton.setAttribute('aria-label', MAP_STRINGS['timelapse-play']);
     }
 
     IS_PLAYING = true;

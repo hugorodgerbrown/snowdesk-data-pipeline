@@ -90,6 +90,25 @@
   const sheet = document.getElementById('report-sheet');
   if (!btn || !sheet) return;
 
+  // SNOW-620: server-translated toast copy, read back from the template
+  // _report_surface.html renders. The literals are the English fallback —
+  // see static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('report-strings-template', {
+    'no-signal-type': 'Could not submit your report — please tap a signal type.',
+    'cannot-queue': 'Could not save your report on this device — please try again.',
+    generic: 'Something went wrong — please try again.',
+    // Mirrors includes/_sheet_header.html, which these states reimplement
+    // as an HTML string rather than clone.
+    'sheet-title': 'Report',
+    close: 'Close',
+    'verify-email':
+      'Verify your email to submit a field observation. Check your inbox for the verification link.',
+    'signin-prompt': 'Sign in to submit a field observation.',
+    'signin-cta': 'Sign in',
+  });
+
+  const esc = self.pwaStrings.escapeHtml;
+
   const FORM_URL = btn.dataset.reportFormUrl;
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.reportEligible === 'true';
@@ -204,7 +223,7 @@
     // silently dropping a bodyless mutation. preventDefault above has
     // already cancelled the native submit, so there is no fallback path.
     if (!submitter || !submitter.value) {
-      showToast('Could not submit your report — please tap a signal type.');
+      showToast(STRINGS['no-signal-type']);
       return;
     }
 
@@ -241,7 +260,7 @@
     // enqueue() is defensively non-fatal — see MapSheet.canQueueMutations()
     // for why the check has to come first rather than off the promise.
     if (!window.MapSheet.canQueueMutations()) {
-      showToast('Could not save your report on this device — please try again.');
+      showToast(STRINGS['cannot-queue']);
       return;
     }
     window.pwaMutationQueue.enqueue(operation).catch(function () {});
@@ -280,7 +299,7 @@
     // message is friendlier here than the raw 403 body.
     const isFormLoad = target === sheet || (target && target.id === 'report-sheet');
     if (isFormLoad) {
-      showToast('Something went wrong — please try again.');
+      showToast(STRINGS.generic);
       closeSheet();
       return;
     }
@@ -291,7 +310,7 @@
     if (!form && elt.id !== 'report-form') return;
     const message =
       (detail.xhr && detail.xhr.responseText) ||
-      'Something went wrong — please try again.';
+      STRINGS.generic;
     showToast(message);
   });
 
@@ -365,11 +384,18 @@
   // SNOW-474: persistent × header for states built as innerHTML strings
   // (the anonymous sign-in CTA below), mirroring templates/includes/
   // _sheet_header.html and favourites.js's buildSheetHeader() exactly.
-  // i18n: hardcoded English pre-launch; mirrors _sheet_header.html.
+  // SNOW-620: the two strings are escaped on the way in — this is an HTML
+  // string, and a locale whose copy contains a quote would otherwise close
+  // aria-label="…" early and turn the rest of its own sentence into
+  // attributes.
   const SHEET_HEADER_HTML =
     '<div class="flex items-center justify-between px-2 pt-1 pb-3">' +
-    '<span class="text-sm font-semibold text-text-1">Report</span>' +
-    '<button type="button" data-action="dismiss" aria-label="Close" ' +
+    '<span class="text-sm font-semibold text-text-1">' +
+    esc(STRINGS['sheet-title']) +
+    '</span>' +
+    '<button type="button" data-action="dismiss" aria-label="' +
+    esc(STRINGS.close) +
+    '" ' +
     'class="text-text-2 hover:text-text-1 text-lg leading-none px-1">×</button>' +
     '</div>';
 
@@ -382,18 +408,26 @@
       if (IS_UNVERIFIED) {
         sheet.innerHTML =
           SHEET_HEADER_HTML +
-          '<p class="px-2 py-4 text-sm text-text-2">Verify your email to submit a field observation. Check your inbox for the verification link.</p>';
+          '<p class="px-2 py-4 text-sm text-text-2">' +
+          esc(STRINGS['verify-email']) +
+          '</p>';
       } else if (SIGNIN_URL) {
         sheet.innerHTML =
           SHEET_HEADER_HTML +
           '<div class="px-2 py-4">' +
-          '<p class="text-sm text-text-2 mb-3">Sign in to submit a field observation.</p>' +
-          '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">Sign in</a>' +
+          '<p class="text-sm text-text-2 mb-3">' +
+          esc(STRINGS['signin-prompt']) +
+          '</p>' +
+          '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">' +
+          esc(STRINGS['signin-cta']) +
+          '</a>' +
           '</div>';
       } else {
         sheet.innerHTML =
           SHEET_HEADER_HTML +
-          '<p class="px-2 py-4 text-sm text-text-2">Sign in to submit a field observation.</p>';
+          '<p class="px-2 py-4 text-sm text-text-2">' +
+          esc(STRINGS['signin-prompt']) +
+          '</p>';
       }
       return;
     }

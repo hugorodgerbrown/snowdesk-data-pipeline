@@ -26,6 +26,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
+
 const MB = 1024 * 1024;
 
 /** Markup mirroring _map_downloads_sheet.html plus the menu row. */

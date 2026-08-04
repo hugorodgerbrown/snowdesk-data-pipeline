@@ -170,7 +170,9 @@ account" always reaches the manage page.
             });
             document.addEventListener("passkey:error", function () {
                 if (regBtn) regBtn.disabled = false;
-                showFeedback("{% trans "Passkey registration failed. Please try again." %}");
+                {# SNOW-620: escapejs — this is a JS string literal, not HTML. #}
+                {% trans "Passkey registration failed. Please try again." as passkey_reg_failed %}
+                showFeedback("{{ passkey_reg_failed|escapejs }}");
             });
         })();
     </script>

@@ -98,6 +98,20 @@
   const DEV_SHELL_BYPASS_ACTIVE =
     document.querySelector('meta[name="pwa-dev-shell-bypass"]')?.getAttribute('content') === '1';
 
+  // SNOW-620: copy for the self-injected fallback banner (ensureBanner
+  // below), which is what admin pages get — they don't include the public
+  // chrome, so includes/_sw_update_banner.html and its already-translated
+  // strings aren't there. Rendered into a strings template by
+  // admin/base_site.html; the literals are the English fallback, and are
+  // deliberately the same three strings that partial already translates.
+  // See static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('sw-update-strings-template', {
+    'update-title': 'Update available',
+    'update-body': 'A newer version of Snowdesk is ready.',
+    reload: 'Reload',
+    dismiss: 'Dismiss',
+  });
+
   // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
   // e2e SW-stripping helpers define the property with ``value: undefined``
   // (key present, value nullish), and the ``navigator.serviceWorker``
@@ -412,23 +426,23 @@
     const copy = document.createElement('div');
     copy.style.cssText = 'flex:1;min-width:0;';
     const title = document.createElement('div');
-    title.textContent = 'Update available';
+    title.textContent = STRINGS['update-title'];
     title.style.cssText = 'font-weight:600;font-size:14px;';
     const sub = document.createElement('div');
-    sub.textContent = 'A newer version of Snowdesk is ready.';
+    sub.textContent = STRINGS['update-body'];
     sub.style.cssText = 'color:#475569;font-size:12px;margin-top:2px;';
     copy.append(title, sub);
     const reload = document.createElement('button');
     reload.type = 'button';
     reload.id = 'sw-update-banner-reload';
-    reload.textContent = 'Reload';
+    reload.textContent = STRINGS.reload;
     reload.style.cssText =
       'cursor:pointer;border:0;border-radius:9999px;background:#0f172a;' +
       'color:#fff;padding:.4rem .9rem;font:600 13px system-ui,sans-serif;';
     const dismiss = document.createElement('button');
     dismiss.type = 'button';
     dismiss.dataset.action = 'dismiss';
-    dismiss.setAttribute('aria-label', 'Dismiss');
+    dismiss.setAttribute('aria-label', STRINGS.dismiss);
     dismiss.textContent = '×';
     dismiss.style.cssText =
       'cursor:pointer;border:0;background:transparent;color:#64748b;' +

@@ -29,6 +29,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import '../../static/js/i18n_strings.js';
 import '../../static/js/basemap_download_core.js';
 import '../../static/js/map_layer_sync_status.js';
 

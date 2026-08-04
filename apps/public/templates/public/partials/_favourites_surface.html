@@ -113,3 +113,17 @@ Context expected:
 {# comment.                                                             #}
 {# SNOW-414: saved-pin add/rename/delete JS. #}
 <script defer src="{% static 'js/favourites.js' %}"></script>
+{# SNOW-620: favourites.js builds its whole sheet through DOM APIs — the     #}
+{# pin-detail row and the anonymous sign-in CTA have no server partial — so  #}
+{# this copy never passed through a template and makemessages could not see  #}
+{# it. Read back via window.pwaStrings.read(); the module keeps the English  #}
+{# literal as the fallback. See static/js/i18n_strings.js.                   #}
+<template id="favourites-strings-template">
+    <span data-string="sheet-title">{% trans "Favourite" %}</span>
+    <span data-string="close">{% trans "Close" %}</span>
+    <span data-string="signin-prompt">{% trans "Sign in to save a favourite." %}</span>
+    <span data-string="signin-cta">{% trans "Sign in" %}</span>
+    <span data-string="unnamed-pin">{% trans "Unnamed pin" %}</span>
+    <span data-string="name-label">{% trans "Favourite name" %}</span>
+    <span data-string="remove">{% trans "Remove" %}</span>
+</template>

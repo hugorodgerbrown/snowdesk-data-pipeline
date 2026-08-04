@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+# bin/i18n-lint — Catch user-facing strings hardcoded in JavaScript (SNOW-620).
+#
+# `makemessages` scans templates and Python. It does not scan JavaScript, so
+# a string written as a JS literal never reaches the message catalogue and
+# ships as English to every locale no matter how complete that locale is.
+# Roughly forty of them had accumulated across eight modules — the whole
+# layers-menu sync dashboard, every mutation and favourite failure toast,
+# the update banner, and all the timelapse controls. Findings C4 and M15 in
+# docs/code-reviews/2026-08-03-js-review.md.
+#
+# Nothing would have caught it, and nothing would stop it recurring: the
+# split was already visible before this check existed, with the downloads
+# sheet translating one removal-failure message while `favourites.js`
+# hardcoded its near-twin.
+#
+# So this checks one thing: a string LITERAL reaching a sink the user reads.
+# The fix is always the same — render it through a strings `<template>` and
+# read it back with `window.pwaStrings.read()` (static/js/i18n_strings.js).
+#
+# Deliberately narrow, for the same reason `bin/js-globals-lint` is. It does
+# not try to find every string that might be prose; it finds strings that
+# demonstrably reach the screen. A literal assigned to a variable and then
+# rendered is out of scope — catching that needs real dataflow, and the
+# false-positive rate would make the check ignorable, which is worse than
+# not having it.
+#
+# Escape hatch, for a string that genuinely should not be translated:
+#
+#     // i18n-allow: <reason>
+#     el.textContent = 'GPS';
+#
+# The reason is required and audit-visible (`bin/i18n-lint --show-allows`) —
+# write it for a reviewer judging it cold. Staff-only surfaces are the main
+# legitimate use: `map_edit_resorts.js` and `push_demo.js` are never shown
+# to a member of the public.
+#
+# Exit code: 0 = clean; 1 = one or more untranslatable strings.
+#
+# Usage:
+#   bin/i18n-lint                    # scan static/js
+#   bin/i18n-lint path/to/file.js …  # scan specific files
+#   bin/i18n-lint --show-allows      # print every suppression and its reason
+"""Hardcoded-user-string linter for first-party JavaScript — see module docstring."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+JS_ROOT = REPO_ROOT / "static" / "js"
+
+# Vendored bundles — not ours to translate. Named individually rather than
+# by a `*.min.js` glob so vendoring a new file is a deliberate act that
+# shows up in review. Mirrors `bin/js-globals-lint`.
+VENDORED: frozenset[str] = frozenset(
+    {
+        "htmx.min.js",
+        "maplibre-gl.min.js",
+    }
+)
+
+# Sinks a string literal reaches the user through. Each alternative ends
+# just before the literal, which the `value` group then captures.
+#
+# `innerHTML` is included even though this codebase mostly builds DOM
+# nodes: `report.js` assembles its ineligible-user states by concatenation.
+SINKS = r"""
+      \.textContent \s* (?:\+?=)
+    | \.innerText \s* (?:\+?=)
+    | \.innerHTML \s* (?:\+?=)
+    | \.title \s* =
+    | \.alt \s* =
+    | \.placeholder \s* =
+    | \.ariaLabel \s* =
+    | setAttribute \( \s* ['"] (?: aria-label | aria-valuetext | title
+                                 | placeholder | alt ) ['"] \s* ,
+"""
+
+# A quoted literal — single, double or backtick — with at least two letters
+# in it somewhere. The letter requirement is what keeps out the enormous
+# volume of non-prose strings these modules assign: ids, class names,
+# dataset keys, '', '×', ' / '.
+STRING_LITERAL = r"""
+    \s* (?P<quote>['"`])
+    (?P<value> (?: (?! (?P=quote) ) [^\\] | \\. ){1,300}? )
+    (?P=quote)
+"""
+
+SINK_RE = re.compile(f"(?:{SINKS}){STRING_LITERAL}", re.X)
+
+# Prose needs two consecutive letters somewhere, and at least one space OR
+# a capitalised word — "Reload" and "Sign in" are prose; "flex", "px-2",
+# "true" and "region-tooltip-date" are not.
+#
+# This is the one heuristic in the check, and it is tuned to under-report:
+# a missed string is a string that was already invisible, while a false
+# positive is a demand to add a suppression to code that never needed one.
+PROSE_RE = re.compile(r"[A-Za-z]{2}")
+NOT_PROSE_RE = re.compile(
+    r"""
+      ^[a-z0-9]+(?:[-_][a-z0-9]+)*$        # kebab/snake token: data keys, ids
+    | ^[A-Z0-9_]+$                          # SCREAMING_CASE constant
+    | ^[\d\s.,:/×+-]*$                      # punctuation and numbers only
+    | ^(?:true|false|null|undefined)$
+    | ^\s*<                                 # a markup fragment, not a sentence
+    | ^%\(\w+\)s$                           # a bare placeholder
+    """,
+    re.X,
+)
+
+# Template-literal interpolations. Stripped before the prose test: what
+# matters is the LITERAL text a translator would be given, not the values
+# substituted into it. `` `${digit}${subdivision}` `` is pure data and has
+# nothing to translate; `` `${set} / ${total} set` `` has the word "set" in
+# it and does.
+INTERPOLATION_RE = re.compile(r"\$\{[^}]*\}")
+
+# `// i18n-allow: <reason>` on the line before, or trailing the line itself.
+ALLOW_RE = re.compile(r"//\s*i18n-allow:\s*(?P<reason>\S.*?)\s*$")
+
+# Wholly-comment lines. Prose in a header comment is documentation.
+COMMENT_RE = re.compile(r"^\s*(?://|\*|/\*)")
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One hardcoded string reaching a user-visible sink."""
+
+    path: Path
+    line_no: int
+    line_text: str
+    value: str
+
+
+@dataclass(frozen=True)
+class Suppression:
+    """One `i18n-allow` and the reason given for it."""
+
+    path: Path
+    line_no: int
+    reason: str
+
+
+def _repo_relative(path: Path) -> Path:
+    """Return `path` relative to `REPO_ROOT`, or unchanged if outside it.
+
+    The CLI accepts arbitrary paths — a fixture under `/tmp`, an ad-hoc
+    invocation — so a path outside the repo must format rather than raise.
+    Mirrors `bin/ds-lint` and `bin/js-globals-lint`.
+    """
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _js_files(args_paths: list[str]) -> list[Path]:
+    """Resolve CLI args to the concrete list of first-party .js files."""
+    paths: list[Path] = []
+    if args_paths:
+        for raw in args_paths:
+            p = Path(raw).resolve()
+            if p.is_dir():
+                paths.extend(sorted(p.rglob("*.js")))
+            elif p.suffix == ".js" and p.exists():
+                paths.append(p)
+    elif JS_ROOT.exists():
+        paths.extend(sorted(JS_ROOT.rglob("*.js")))
+    return [p for p in paths if p.name not in VENDORED]
+
+
+def _is_prose(value: str) -> bool:
+    """Report whether `value` reads as human copy rather than a machine token."""
+    text = INTERPOLATION_RE.sub("", value).strip()
+    if not text or not PROSE_RE.search(text):
+        return False
+    return not NOT_PROSE_RE.match(text)
+
+
+def _suppressed(lines: list[str], idx: int) -> bool:
+    """Report whether line `idx` (0-based) carries or follows an `i18n-allow`.
+
+    Walks back over the whole contiguous comment block above the line, not
+    just the single line before it. A reason worth writing usually does not
+    fit in the remaining columns of one line, and requiring it to would
+    push authors towards reasons short enough to be useless.
+    """
+    if ALLOW_RE.search(lines[idx]):
+        return True
+    for prev in range(idx - 1, -1, -1):
+        if not COMMENT_RE.match(lines[prev]):
+            return False
+        if ALLOW_RE.search(lines[prev]):
+            return True
+    return False
+
+
+def _scan(path: Path) -> tuple[list[Finding], list[Suppression]]:
+    """Find hardcoded user strings in `path`, and the suppressions used."""
+    findings: list[Finding] = []
+    suppressions: list[Suppression] = []
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    for idx, raw_line in enumerate(lines):
+        match = ALLOW_RE.search(raw_line)
+        if match:
+            suppressions.append(
+                Suppression(path=path, line_no=idx + 1, reason=match.group("reason"))
+            )
+        if COMMENT_RE.match(raw_line):
+            continue
+        for hit in SINK_RE.finditer(raw_line):
+            value = hit.group("value")
+            if not _is_prose(value):
+                continue
+            if _suppressed(lines, idx):
+                continue
+            findings.append(
+                Finding(
+                    path=path,
+                    line_no=idx + 1,
+                    line_text=raw_line.rstrip(),
+                    value=value,
+                )
+            )
+    return findings, suppressions
+
+
+def _report(findings: list[Finding]) -> None:
+    """Print each finding in the `path:line: [rule] snippet` house format."""
+    for finding in findings:
+        rel = _repo_relative(finding.path)
+        snippet = finding.line_text.strip()
+        if len(snippet) > 100:
+            snippet = snippet[:97] + "..."
+        print(f"{rel}:{finding.line_no}: [hardcoded-string] {snippet}")
+        print(
+            f'    → "{finding.value}" is written into the DOM as a JS literal, '
+            f"so makemessages cannot see it and it will ship as English to "
+            f"every locale. Render it in the surface's strings <template> and "
+            f"read it back with window.pwaStrings.read() — see "
+            f"static/js/i18n_strings.js. If it genuinely should not be "
+            f"translated (a staff-only surface, a protocol token), add "
+            f"`// i18n-allow: <reason>` on the line before."
+        )
+
+
+def main() -> int:
+    """CLI entry point — see module docstring for behaviour and exit codes."""
+    parser = argparse.ArgumentParser(
+        description="Fail on user-facing strings hardcoded in JavaScript.",
+    )
+    parser.add_argument("paths", nargs="*", help="Files/dirs. Defaults to static/js.")
+    parser.add_argument(
+        "--show-allows",
+        action="store_true",
+        help="Print every i18n-allow suppression and its reason (audit aid).",
+    )
+    args = parser.parse_args()
+
+    findings: list[Finding] = []
+    suppressions: list[Suppression] = []
+    for path in _js_files(args.paths):
+        file_findings, file_suppressions = _scan(path)
+        findings.extend(file_findings)
+        suppressions.extend(file_suppressions)
+
+    if args.show_allows:
+        print("i18n-allow suppressions:")
+        for s in suppressions:
+            print(f"  {_repo_relative(s.path)}:{s.line_no}: {s.reason}")
+        if not suppressions:
+            print("  (none)")
+        print()
+
+    _report(findings)
+
+    if findings:
+        print(f"\n{len(findings)} hardcoded user-facing string(s).")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
