@@ -68,7 +68,7 @@
    *   areaId: string,
    *   mb: number,
    *   loadBlob: function(): (Object|Promise<Object>),
-   *   paint: function(string, number=): void,
+   *   paint: function(string, number=, number=): void,
    *   beforeWarm?: function(Object, string): Promise<void>,
    *   finish: function(Object|null, Object, Object): Promise<void>,
    * }} options
@@ -76,14 +76,22 @@
    *   `mb` — worst-case size estimate, for the quota and budget pre-flights.
    *   `loadBlob` — resolves the tile blob; a rejection is a failed download.
    *   `paint` — paints one roundel state, optionally with a busy
-   *     percentage. The two controls' own `setState` differ in arity, so
-   *     they adapt.
+   *     percentage and, SNOW-632, the run's on-disk bytes so far
+   *     (`paint(state, pct?, bytes?)`). The two controls' own `setState`
+   *     differ in arity, so they adapt.
    *   `beforeWarm` — optional last step after eviction, before the warm run
    *     (the custom-area control clears its own bucket when the frame
    *     moved).
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
    *     `extras` carries `core` and `progressFill`. `result` is the
-   *     worker's report, or `null` when there was no worker at all.
+   *     worker's report, or `null` when there was no worker at all. SNOW-632:
+   *     `result` can now carry `cancelled: true` — the run stopped early on
+   *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
+   *     list. A cancelled run always has `result.failed === 0` (nothing
+   *     skipped by the cancel was ever attempted, so it can't have failed),
+   *     so `finish` MUST check `cancelled` before reading a short `ok`
+   *     count as a failed download — the two `finish` implementations
+   *     (`map.js`) are the next pass's job, not this one.
    * @returns {Promise<void>} Resolves once the run has been DISPATCHED, not
    *   once it has completed — `finish` is called from the warm-cache
    *   promise, matching what both controls did before this extraction.
@@ -179,9 +187,15 @@
     // as they land.
     const progressFill = deps.progressGrid(gridPlan, feedUrls.length);
 
-    const onProgress = (done, total, settled) => {
+    // SNOW-632: `bytes` — the run's on-disk total so far — rides along as
+    // a fourth argument from `deps.warmCache`'s `onProgress` and is passed
+    // straight through to `paint` as ITS third argument, so a caller can
+    // show a live MB readout alongside the percentage. `progressFill`
+    // stays on the original three-argument shape — it fills tiles, which
+    // have nothing to do with bytes.
+    const onProgress = (done, total, settled, bytes) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      paint('busy', pct);
+      paint('busy', pct, bytes);
       progressFill.update(done, total, settled);
     };
 

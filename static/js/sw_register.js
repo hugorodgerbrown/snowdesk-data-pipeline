@@ -227,7 +227,12 @@
           // argument. An older worker still serving a cached shell won't
           // send it — callers treat ``undefined`` as "counts only" and
           // fall back to a proportional fill.
-          _warmCacheSlot.onProgress?.(data.done, data.total, data.settled);
+          //
+          // SNOW-632: ``data.bytes`` rides along as a fourth argument — the
+          // run's on-disk bytes so far, for a live MB readout. An older
+          // worker won't send it either — ``undefined`` reads the same way
+          // ``settled`` does above.
+          _warmCacheSlot.onProgress?.(data.done, data.total, data.settled, data.bytes);
         } catch (_err) {
           // A broken onProgress callback must never break the SW message
           // channel or abort the in-flight call.
@@ -255,6 +260,11 @@
           // reads as "unknown size", which callers already treat safely
           // (nothing is ever evicted on the strength of a zero).
           bytes: data.bytes || 0,
+          // SNOW-632: whether the run stopped early on a cancelWarmCache()
+          // request rather than running every URL to completion. An older
+          // worker won't send it — ``false`` is the correct read, since
+          // that worker has no cancellation protocol to have honoured.
+          cancelled: !!data.cancelled,
         });
         _warmCacheSlot = null;
       }
@@ -393,18 +403,27 @@
    * Tile-grid rework: ``settled`` is the batch of ``urls`` indices that succeeded
    * since the previous report — see ``_warmCache`` in ``sw.js``.
    *
+   * SNOW-632: ``opts.onProgress``'s fourth argument, ``bytes``, is the
+   * run's on-disk total so far — see ``_warmCache`` in ``sw.js``. The
+   * resolved summary's ``cancelled`` field is true when the run stopped
+   * early on a ``cancelWarmCache()`` request rather than running every URL
+   * to completion; a cancelled run always has ``failed: 0`` (nothing
+   * skipped by the cancel was ever attempted), so a caller MUST check
+   * ``cancelled`` before treating a short ``ok`` count as evidence of
+   * trouble.
+   *
    * @param {string[]} urls
    * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
-   *   total: number, settled?: number[]) => void}} [opts]
+   *   total: number, settled?: number[], bytes?: number) => void}} [opts]
    * @returns {Promise<{ok: number, failed: number, reason: string|null,
-   *   bytes: number} | null>}
+   *   bytes: number, cancelled: boolean} | null>}
    */
   async function warmCache(urls, opts) {
     const active = await _activeWorker();
     // SNOW-605: no controller after the wait — the page is uncontrolled and
     // will stay that way until it reloads. Report it as its own reason so
     // the user is told to reload rather than to check their connection.
-    if (!active) return { ok: 0, failed: 0, reason: 'no-worker', bytes: 0 };
+    if (!active) return { ok: 0, failed: 0, reason: 'no-worker', bytes: 0, cancelled: false };
     const options = opts || {};
     const requestId = _mintRequestId();
     return new Promise((resolve) => {
@@ -433,7 +452,7 @@
           // active worker, so there was nothing to warm" — which callers
           // treat as a non-event; a worker that went silent mid-run IS an
           // event, and the user needs telling.
-          settle({ ok: 0, failed: 0, reason: 'timeout', bytes: 0 });
+          settle({ ok: 0, failed: 0, reason: 'timeout', bytes: 0, cancelled: false });
         }, WARM_CACHE_TIMEOUT_MS);
       };
 
@@ -458,6 +477,42 @@
 
   Object.defineProperty(window, 'pwaWarmCache', {
     value: warmCache,
+    writable: false,
+    configurable: false,
+  });
+
+  /**
+   * SNOW-632: ask the worker to stop DISPATCHING further URLs for the
+   * in-flight ``warmCache()`` call, if there is one — the page-side end of
+   * the overlay's Cancel button. Posts ``{type: 'warm-cache-cancel',
+   * requestId}`` for ``_warmCacheSlot``'s own requestId, the same
+   * correlation ``warmCache()`` itself relies on, so a cancel can never be
+   * misdirected at a later, unrelated call.
+   *
+   * Not an abort: ``sw.js``'s pool can already have up to
+   * ``WARM_CACHE_CONCURRENCY`` fetches in flight, and those are left to
+   * finish and write — see ``_warmCache``'s docstring in ``sw.js`` for why.
+   * The eventual ``warm-cache-done`` reply carries ``cancelled: true``,
+   * which resolves this call's own ``warmCache()`` promise exactly as any
+   * other completion does; ``cancelWarmCache()`` itself resolves once the
+   * request has been posted, not once the run has actually stopped.
+   *
+   * A safe no-op with no run in flight (``_warmCacheSlot`` is ``null``) or
+   * on an uncontrolled page (mirrors ``warmCache()``'s own wait via
+   * ``_activeWorker()``, re-checking the slot afterwards in case the run
+   * settled while we were waiting for a controller).
+   *
+   * @returns {Promise<void>}
+   */
+  async function cancelWarmCache() {
+    if (!_warmCacheSlot) return;
+    const active = await _activeWorker();
+    if (!active || !_warmCacheSlot) return;
+    active.postMessage({ type: 'warm-cache-cancel', requestId: _warmCacheSlot.requestId });
+  }
+
+  Object.defineProperty(window, 'pwaWarmCacheCancel', {
+    value: cancelWarmCache,
     writable: false,
     configurable: false,
   });

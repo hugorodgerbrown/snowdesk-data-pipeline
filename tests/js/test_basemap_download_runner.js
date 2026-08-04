@@ -359,6 +359,9 @@ describe('the warm run', () => {
       progressGrid: vi.fn(() => ({ update, finish: vi.fn(async () => {}) })),
       warmCache: vi.fn(async (_urls, opts) => {
         onProgress = opts.onProgress;
+        // No fourth (bytes) argument — an older worker still serving a
+        // cached shell wouldn't send one; `undefined` is the expected
+        // pass-through to `paint`'s own third argument in that case.
         onProgress(1, 4, [0]);
         onProgress(2, 4, [1]);
         return { ok: 4, failed: 0, bytes: 1 };
@@ -368,8 +371,8 @@ describe('the warm run', () => {
 
     await runAndSettle(d, o);
 
-    expect(o.paint).toHaveBeenCalledWith('busy', 25);
-    expect(o.paint).toHaveBeenCalledWith('busy', 50);
+    expect(o.paint).toHaveBeenCalledWith('busy', 25, undefined);
+    expect(o.paint).toHaveBeenCalledWith('busy', 50, undefined);
     expect(update).toHaveBeenCalledWith(1, 4, [0]);
   });
 
@@ -385,5 +388,36 @@ describe('the warm run', () => {
     await runAndSettle(d, o);
 
     expect(o.paint).toHaveBeenCalledWith('busy', 0);
+  });
+
+  it('forwards the running bytes total to paint as a third argument (SNOW-632)', async () => {
+    let onProgress;
+    const d = deps({
+      warmCache: vi.fn(async (_urls, opts) => {
+        onProgress = opts.onProgress;
+        onProgress(1, 4, [0], 1024);
+        onProgress(2, 4, [1], 2048);
+        return { ok: 4, failed: 0, bytes: 2048 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.paint).toHaveBeenCalledWith('busy', 25, 1024);
+    expect(o.paint).toHaveBeenCalledWith('busy', 50, 2048);
+  });
+
+  it('hands finish a cancelled result intact (SNOW-632)', async () => {
+    const d = deps({
+      warmCache: vi.fn(async () => ({ ok: 2, failed: 0, bytes: 512, cancelled: true })),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    const [result] = o.finish.mock.calls[0];
+    expect(result).toEqual({ ok: 2, failed: 0, bytes: 512, cancelled: true });
   });
 });
