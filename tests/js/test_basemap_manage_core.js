@@ -284,3 +284,87 @@ describe('manageRows', () => {
     expect(core.manageRows(null, options)).toEqual([]);
   });
 });
+
+describe('reconcileAreas (SNOW-612)', () => {
+  const recorded = [
+    { id: 'region-ch-4115', name: 'Verbier', bytes: 40 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'custom', name: 'custom', bytes: 12 * MB, savedAt: '2026-08-02T00:00:00.000Z' },
+  ];
+
+  it('surfaces a pinned bucket with no record as an orphan', () => {
+    const areas = core.reconcileAreas(recorded, ['region-ch-4115', 'custom', 'region-ch-1000'], {
+      'region-ch-1000': 9 * MB,
+    });
+
+    const orphan = areas.find((a) => a.id === 'region-ch-1000');
+    // This is the whole point: a run that failed partway left a bucket the
+    // budget never counted and the sheet could not delete.
+    expect(orphan).toBeTruthy();
+    expect(orphan.orphaned).toBe(true);
+    expect(orphan.bytes).toBe(9 * MB);
+  });
+
+  it('does not double-count an area present in both sources', () => {
+    const areas = core.reconcileAreas(recorded, ['region-ch-4115', 'custom'], {});
+
+    expect(areas).toHaveLength(2);
+    expect(areas.map((a) => a.id)).toEqual(['region-ch-4115', 'custom']);
+    // The record wins — it carries the name and timestamp a bucket id cannot.
+    expect(areas[0].name).toBe('Verbier');
+    expect(areas[0].bytes).toBe(40 * MB);
+    expect(areas[0].orphaned).toBe(false);
+  });
+
+  it('counts an orphan toward the standing budget', () => {
+    const areas = core.reconcileAreas(recorded, ['region-ch-1000'], {
+      'region-ch-1000': 9 * MB,
+    });
+    const summary = core.budgetSummary(areas, 500 * MB);
+
+    // 40 + 12 + 9 — the stranded bucket is what SNOW-612 makes visible to
+    // the planner, so eviction can act on it.
+    expect(summary.usedBytes).toBe(61 * MB);
+  });
+
+  it('lists an unmeasurable orphan at zero rather than guessing', () => {
+    const areas = core.reconcileAreas([], ['region-ch-1000'], {});
+    expect(areas[0].bytes).toBe(0);
+    // Zero bytes, but still a row — deletable is the point.
+    expect(areas[0].orphaned).toBe(true);
+  });
+
+  it('gives an orphan no savedAt, so it cannot sort as the newest download', () => {
+    const areas = core.reconcileAreas(recorded, ['region-ch-1000'], { 'region-ch-1000': MB });
+    const orphan = areas.find((a) => a.id === 'region-ch-1000');
+    expect(orphan.savedAt).toBeUndefined();
+  });
+
+  it('renders an orphan as a deletable row carrying its bucket id', () => {
+    const areas = core.reconcileAreas([], ['region-ch-1000'], { 'region-ch-1000': 3 * MB });
+    const rows = core.manageRows(areas, { customAreaId: 'custom', customLabel: 'Custom area' });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].orphaned).toBe(true);
+    // No stored name, so the id is the label — and the id is what the
+    // delete button needs to name the bucket.
+    expect(rows[0].id).toBe('region-ch-1000');
+    expect(rows[0].label).toBe('region-ch-1000');
+  });
+
+  it('orders orphans by id for a stable render', () => {
+    const first = core.reconcileAreas([], ['region-c', 'region-a', 'region-b'], {});
+    const second = core.reconcileAreas([], ['region-b', 'region-c', 'region-a'], {});
+    expect(first.map((a) => a.id)).toEqual(['region-a', 'region-b', 'region-c']);
+    expect(first).toEqual(second);
+  });
+
+  it('degrades to the records alone when nothing is stored', () => {
+    expect(core.reconcileAreas(recorded, [], {})).toHaveLength(2);
+    expect(core.reconcileAreas(recorded, undefined, undefined)).toHaveLength(2);
+  });
+
+  it('tolerates a non-array record', () => {
+    expect(core.reconcileAreas(undefined, ['region-x'], {})).toHaveLength(1);
+    expect(core.reconcileAreas(null, null, null)).toEqual([]);
+  });
+});

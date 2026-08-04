@@ -105,6 +105,14 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # tapped event — see the geojson endpoint's anonymisation contract.
         "map.community_reports.overlay_toggled",
         "map.community_reports.marker_tapped",
+        # SNOW-612: a completed basemap download whose `basemap.regions`
+        # record could not be written. Emitted by static/js/map.js's
+        # `_recordRegionDownload`, whose failure used to be swallowed
+        # entirely — the run leaves a pinned Cache Storage bucket behind
+        # with nothing recording it, which then reads as an orphan. The
+        # bucket is now reconciled and deletable either way; this is how
+        # often it happens.
+        "map.basemap.record_write_failed",
     }
 )
 

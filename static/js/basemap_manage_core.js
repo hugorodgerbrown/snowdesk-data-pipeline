@@ -62,6 +62,10 @@
  *     Standing usage against the budget — the sheet's running total.
  *   manageRows(areas, labelFor)
  *     The ordered, labelled row model the sheet renders.
+ *   reconcileAreas(recorded, storedAreaIds, bytesById)
+ *     The recorded areas unioned with the pinned buckets actually on
+ *     disk, so a download that failed partway is visible rather than
+ *     stranded (SNOW-612).
  */
 
 (function () {
@@ -252,7 +256,12 @@
 
       rows.push({
         id: id,
+        // SNOW-612: an orphaned bucket is still a region or the custom
+        // area — `orphaned` says the record is missing, not that it is a
+        // third kind of thing, so the sheet can label it without the
+        // caller having to re-derive which it was.
         kind: isCustom ? 'custom' : 'region',
+        orphaned: !!area.orphaned,
         label: String(label),
         bytes: bytes,
         savedAt: area.savedAt || '',
@@ -271,12 +280,90 @@
     return rows;
   }
 
+
+  /**
+   * The union of what is RECORDED as downloaded and what is actually
+   * stored in Cache Storage (SNOW-612).
+   *
+   * A download that fails partway leaves its pinned bucket on disk with no
+   * ``basemap.regions`` / ``basemap.customArea`` record, because the
+   * record is only written when a run completes. The byte budget never
+   * counted that bucket and the manage sheet could not list it, so the
+   * stranded quota was invisible to the user and to the planner —
+   * accumulating silently across failed attempts until the origin ran out
+   * of room.
+   *
+   * Reading the buckets is what makes the orphan visible; this is the
+   * arithmetic half, kept here so it can be tested without Cache Storage.
+   * The recorded entry always wins for an id present in both, because it
+   * carries the name and the timestamp a bucket id cannot.
+   *
+   * @param {Array<{id: string, name?: string, bytes?: number,
+   *   savedAt?: string}>} recorded Areas derived from the stored records.
+   * @param {string[]} storedAreaIds Area ids with a pinned bucket present
+   *   in Cache Storage, as ``map.js``'s ``pinnedBucketAreaIds()`` reads
+   *   them back off ``caches.keys()``.
+   * @param {Object<string, number>} [bytesById] Measured sizes for the
+   *   orphans, keyed by area id. An orphan with no measurement counts as
+   *   0 bytes — visible and deletable, but not guessed at.
+   * @returns {Array<{id: string, name?: string, bytes: number,
+   *   savedAt?: string, orphaned: boolean}>} The recorded areas in their
+   *   original order, then any orphans, id-ascending so the sheet's own
+   *   sort has a stable input.
+   */
+  function reconcileAreas(recorded, storedAreaIds, bytesById) {
+    var list = Array.isArray(recorded) ? recorded : [];
+    var stored = Array.isArray(storedAreaIds) ? storedAreaIds : [];
+    var sizes = bytesById || {};
+
+    var out = [];
+    var known = Object.create(null);
+    for (var i = 0; i < list.length; i += 1) {
+      var area = list[i];
+      if (!area || !area.id) continue;
+      known[String(area.id)] = true;
+      out.push({
+        id: String(area.id),
+        name: area.name,
+        bytes: Number(area.bytes) || 0,
+        savedAt: area.savedAt,
+        orphaned: false,
+      });
+    }
+
+    var orphans = [];
+    for (var j = 0; j < stored.length; j += 1) {
+      var id = stored[j] ? String(stored[j]) : '';
+      if (!id || known[id]) continue;
+      known[id] = true;
+      var bytes = Number(sizes[id]);
+      orphans.push({
+        id: id,
+        // No record means no stored name — the id is all there is, and
+        // manageRows already falls back to it.
+        name: undefined,
+        bytes: Number.isFinite(bytes) && bytes > 0 ? bytes : 0,
+        // No record means no completion timestamp either. Left empty
+        // rather than stamped with "now", which would sort an orphan as
+        // the newest download on a surface ordered partly by recency.
+        savedAt: undefined,
+        orphaned: true,
+      });
+    }
+    orphans.sort(function (a, b) {
+      return a.id.localeCompare(b.id);
+    });
+
+    return out.concat(orphans);
+  }
+
   self.pwaBasemapManageCore = Object.freeze({
     megabytesToBytes: megabytesToBytes,
     formatMegabytes: formatMegabytes,
     clampBudgetMb: clampBudgetMb,
     budgetSummary: budgetSummary,
     manageRows: manageRows,
+    reconcileAreas: reconcileAreas,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,
     MIN_BUDGET_MB: MIN_BUDGET_MB,
     DEFAULT_BUDGET_MB: DEFAULT_BUDGET_MB,
