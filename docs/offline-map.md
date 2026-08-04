@@ -61,9 +61,11 @@ on an `X-App-Version` drift. The banner offers two actions:
   the SW shell caches (`snowdesk-shell-*` / `map-shell-*`) and reloads —
   otherwise the SW's `_networkFirst` handler can hand back the cached
   HTML with the stale `pwa-app-version` meta tag baked in, and the
-  version-check will re-show the banner in a loop. Also clears
-  `pwa.update.first_shown_at` so the accepted update doesn't later trip
-  the SNOW-374 §3.9 escalation modal.
+  version-check will re-show the banner in a loop. Either path leaves the
+  pinned `snowdesk-basemap-*` buckets and IndexedDB alone. The shell wipe
+  is exported as `window.pwaClearShellCachesAndReload` (SNOW-609) — the
+  forced-update modal's "Reload now" reuses it rather than carrying its
+  own.
 - **×** — dismisses the banner for the rest of the tab's lifetime.
 
 Contract, end-user-facing: *if there is an update, you see one "Reload"

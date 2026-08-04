@@ -31,7 +31,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | §    | Requirement                                        | Ticket        | Code                                                                                              |
 |------|----------------------------------------------------|---------------|---------------------------------------------------------------------------------------------------|
 | 12.2 | `X-App-Version` on every response                  | SNOW-369      | `apps.core.middleware.AppVersionHeaderMiddleware` in `config/settings/base.py::MIDDLEWARE`             |
-| 12.2 | `X-App-Min-Version` on every response              | SNOW-369      | Same middleware; reads `settings.APP_MIN_VERSION`                                                 |
+| 12.2 | Server-decided forced-update verdict              | SNOW-369 / SNOW-609 | `apps.public.api.version` returns `update_required` from `settings.APP_BLOCKED_VERSIONS` × the request's `X-Client-Version`. **Supersedes the `X-App-Min-Version` response header**, which SNOW-609 removed — see [`decisions/blocked-builds-not-a-version-floor.md`](decisions/blocked-builds-not-a-version-floor.md) |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `apps.public.api.version_view` at `/api/version/`                                                      |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
 | 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
@@ -41,26 +41,24 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user: the manage page is cached but partitioned per account (SNOW-607), so its copy is there only once that account has loaded it online in this browser. The offline copy reveals itself once `pwa_reset.js` has loaded, which `PRECACHE_URLS` (`static/js/sw.js`) guarantees — see [Reset local data](#reset-local-data-snow-378) below. |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
-| 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
+| 12.10| Client obeys server version verdict                | SNOW-374 / SNOW-609 | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html`. The client performs no version comparison — it branches on `update_required` and reveals the modal, which waits for the user's click |
 | 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `apps/analytics/views.py::telemetry_receive`, `apps/analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). **Offline:** both network paths (`flush()` fetch and the critical-event `sendBeacon`) short-circuit while `navigator.onLine === false` — events stay enqueued and drain on the next `online` flush, so offline never fires a doomed request. |
 
 ## Version + freshness contract
 
 Two response-header contracts drive every client-side check.
 
-### Version headers (SNOW-369 / SNOW-374)
+### Version headers (SNOW-369 / SNOW-374 / SNOW-609)
 
-The server stamps `X-App-Version` (the build currently running) and
-`X-App-Min-Version` (the minimum build the server will accept) on
-**every** response — not just `/api/version/` — via
+The server stamps `X-App-Version` (the build currently running) on
+**every** response — not just `/api/version` — via
 `AppVersionHeaderMiddleware`. This is deliberate: the client is
-inspecting responses continuously so a min-version bump is detected on
-the next in-flight request rather than needing a poll.
+inspecting responses continuously, so a deploy is noticed on the next
+in-flight request rather than needing a poll.
 
-The client's own build is baked into `<meta name="pwa-app-version">`
-and `<meta name="pwa-app-min-version">` at page-render time (see
-`apps.public.context_processors.pwa_version`). `pwa_version_check.js`
-compares the two on every fetch / HTMX response.
+The client's own build is baked into `<meta name="pwa-app-version">` at
+page-render time (see `apps.public.context_processors.pwa_version`).
+`pwa_version_check.js` compares the two on every fetch / HTMX response.
 
 A header drift is treated as a **hint, not a verdict**: cacheable API
 responses (`/api/ratings/`, the geo feeds) can be replayed by the
@@ -72,22 +70,37 @@ immediately). An observed drift therefore triggers one authoritative
 `fetch('/api/version', {cache: 'no-store'})`, and the verdict comes
 from the response **body**:
 
-- body `min_supported` non-empty AND differs from the shell's build →
-  open `#pwa-update-modal` (non-dismissable), wipe SW + Cache Storage,
-  wait for the user to click "Reload now".
+- body `update_required: true` → open `#pwa-update-modal`
+  (non-dismissable) and **stop**. Nothing is cleared and nothing
+  reloads until the user clicks "Reload now"; that click clears the
+  shell caches (`window.pwaClearShellCachesAndReload`, `sw_register.js`)
+  and reloads. Pinned basemaps, IndexedDB and web storage are untouched
+  — a code update does not destroy user data.
 - body `current` differs from the shell's build → reveal the soft
-  `#sw-update-banner` and stamp
-  `localStorage['pwa.update.first_shown_at']`.
+  `#sw-update-banner`.
 - body matches the shell's build → the observed header value is
   memoised as a stale-cache artefact and reveals nothing.
-- On cold launch, if the soft banner has been showing >24h, escalate
-  straight to the blocking modal — after the same `/api/version`
-  confirmation; a stamp the server disowns is cleared instead.
+- an unreachable `/api/version` reveals nothing — "cannot confirm" must
+  never read as "confirmed".
 
-Empty header content is legal — the client treats `""` as "no floor
-declared" rather than "missing / older server". This distinction is
-what makes the middleware always stamp both headers rather than
-conditionally omitting them.
+The client performs **no version comparison** of its own. SNOW-609
+removed the `X-App-Min-Version` header, the `min_supported` body field
+and the `pwa-app-min-version` meta tag: `APP_VERSION` resolves to a git
+SHA, so a floor could not be ordered against it on either side of the
+wire. `update_required` is computed server-side by membership in
+`settings.APP_BLOCKED_VERSIONS` against the request's `X-Client-Version`
+(`static/js/pwa_client_version.js`, SNOW-388), and fails open when the
+client sends no version. Removing the header also disarms shells that
+were deployed before this change: they read a missing floor as "no floor
+enforced". Rationale:
+[`decisions/blocked-builds-not-a-version-floor.md`](decisions/blocked-builds-not-a-version-floor.md).
+
+SNOW-609 also removed the §3.9 24h escalation (soft banner showing for
+>24h → blocking modal on the next cold launch). It blocked the app on
+elapsed time rather than on any server statement that the build was
+unacceptable, and fired on a `current` drift alone — a build the server
+is happy to serve. Its `localStorage['pwa.update.first_shown_at']` stamp
+had no other reader and is no longer written.
 
 ### Freshness headers (SNOW-370 / SNOW-377)
 
@@ -368,9 +381,16 @@ that one module:
   gone — the state §12.7 exists for, and the state in which the manage
   page's own copy may not be in the cache at all.
 
-Programmatic callers use `window.pwaResetLocalData()`;
-`data-pwa-reset-skip-confirm` skips the `window.confirm` dialogue for
-callers that carry their own (e.g. the Update Required modal).
+Programmatic callers use `window.pwaResetLocalData()` —
+`static/js/db.js`'s Reset Required overlay CTA is the only one;
+`data-pwa-reset-skip-confirm` skips the `window.confirm` dialogue for a
+surface that carries its own.
+
+The Update Required modal is **not** a caller (SNOW-609). It clears only
+the shell caches, via `window.pwaClearShellCachesAndReload`
+(`sw_register.js`). A blocked build is a code problem, and the mutation
+queue, the offline favourites roster and a user's pinned basemaps are
+not code.
 
 ### Why the reset script is precached
 

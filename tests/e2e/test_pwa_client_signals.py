@@ -17,10 +17,11 @@ notes on those). Specifically:
    fetch in ``sw_register.js``) via an intercepted ``/api/sw-config``.
 3. The install funnel in ``pwa_install.js``:
    ``pwa.install.prompted`` / ``.accepted`` / ``.dismissed`` / ``.completed``.
-4. ``pwa.forced_update.triggered`` via the 24h escalation path in
-   ``pwa_version_check.js`` (the min-version-mismatch path also triggers
-   a real reload via ``resetAndReload()`` and is not covered here to
-   avoid a flaky race against that reload).
+4. ``pwa.forced_update.triggered`` from ``pwa_version_check.js``'s single
+   remaining caller — the server answering ``update_required: true``.
+   SNOW-609 removed the 24h escalation this case used to drive, and made
+   the blocking modal wait for the user's click, so the event can now be
+   read off IndexedDB without racing an automatic reload.
 5. (Moved, SNOW-496) ``window.pwaMutationQueue`` behaviour. SNOW-376
    replaced the no-op stub with a real queue whose ``enqueue`` performs an
    actual network drain — coverage moved entirely to
@@ -299,38 +300,35 @@ def test_install_completed_emits_on_appinstalled(
 
 
 # ---------------------------------------------------------------------------
-# 4. pwa.forced_update.triggered — 24h escalation path (pwa_version_check.js)
+# 4. pwa.forced_update.triggered — blocked-build path (pwa_version_check.js)
 # ---------------------------------------------------------------------------
 
 
-def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> None:
-    """A soft-banner shown >24h ago escalates to the blocking modal on cold launch.
+def test_forced_update_blocked_build_emits(live_server: LiveServer, page: Page) -> None:
+    """A server ``update_required`` verdict opens the modal and emits the event.
 
-    The escalation path verifies the pending update against the
-    ``/api/version`` body before blocking (stale-cache fix), so the route
-    drifts ``current`` to model a server that genuinely moved on — a
-    stamp the server disowns is cleared instead of escalated.
+    SNOW-609: the only remaining trigger, and the only remaining value of
+    the ``trigger`` property. The route drifts ``current`` as well as
+    setting the verdict — a header drift is what schedules the
+    authoritative round trip in the first place; the body is what decides
+    the outcome.
     """
     _load(page, live_server.url)
     _delete_db(page)
 
-    def _drift_current(route: Route) -> None:
+    def _block_this_build(route: Route) -> None:
         response = route.fetch()
         payload = response.json()
         payload["current"] = "test-newer-build"
+        payload["update_required"] = True
         route.fulfill(response=response, json=payload)
 
-    page.route("**/api/version", _drift_current)
+    page.route("**/api/version", _block_this_build)
 
-    page.evaluate(
-        """() => {
-            const shownAt = Date.now() - 25 * 60 * 60 * 1000;
-            localStorage.setItem('pwa.update.first_shown_at', String(shownAt));
-          }"""
-    )
-    page.reload()
-    # The modal reveal is async now (one /api/version round trip) — wait
-    # for it rather than sampling a fixed delay after load.
+    page.evaluate("async () => { await fetch('/api/version'); }")
+    # The modal reveal is async (one /api/version round trip) — wait for
+    # it rather than sampling a fixed delay. Nothing reloads on its own,
+    # so reading the emitted row afterwards is race-free.
     page.wait_for_selector("#pwa-update-modal:not(.hidden)", timeout=5000)
 
     row = page.evaluate(
@@ -341,7 +339,7 @@ def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> 
           }"""
     )
     assert row is not None
-    assert row["properties"]["trigger"] == "escalation"
+    assert row["properties"]["trigger"] == "blocked_build"
 
 
 # ---------------------------------------------------------------------------
