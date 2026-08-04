@@ -322,3 +322,93 @@ def test_serve_sw_kill_is_not_version_substituted() -> None:
 
     assert response.status_code == 200
     assert "snowdesk-shell-" not in response.content.decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Conditional requests (SNOW-622)
+# ---------------------------------------------------------------------------
+#
+# ``Cache-Control: no-cache`` makes the browser revalidate on every page
+# load, which is the contract these workers need. Without a validator there
+# was nothing to revalidate against, so every load re-downloaded the whole
+# script — ~2,000 lines for ``sw.js``.
+
+
+def test_serve_sw_stamps_an_etag() -> None:
+    """``/sw.js`` carries an ``ETag`` to revalidate against."""
+    response = Client().get("/sw.js")
+
+    assert response["ETag"]
+    # Quoted, per RFC 9110 — an unquoted tag is not a valid entity-tag and
+    # browsers ignore it, which would silently restore the old behaviour.
+    assert response["ETag"].startswith('"')
+    assert response["ETag"].endswith('"')
+
+
+def test_serve_sw_answers_a_matching_if_none_match_with_304() -> None:
+    """A client holding the current body gets a bodyless 304."""
+    client = Client()
+    first = client.get("/sw.js")
+
+    second = client.get("/sw.js", headers={"if-none-match": first["ETag"]})
+
+    assert second.status_code == 304
+    assert second.content == b""
+
+
+def test_the_304_repeats_the_headers_that_govern_the_cached_copy() -> None:
+    """A 304 still carries the scope and revalidation rules.
+
+    A worker re-served from the browser's cache needs its root scope and
+    its revalidate-every-time rule as much as a freshly-downloaded one.
+    """
+    client = Client()
+    first = client.get("/sw.js")
+
+    second = client.get("/sw.js", headers={"if-none-match": first["ETag"]})
+
+    assert second["Service-Worker-Allowed"] == "/"
+    assert second["Cache-Control"] == "no-cache"
+    assert second["ETag"] == first["ETag"]
+
+
+def test_a_stale_if_none_match_gets_the_full_body() -> None:
+    """A client holding an older body is served the new one."""
+    response = Client().get("/sw.js", headers={"if-none-match": '"not-the-tag"'})
+
+    assert response.status_code == 200
+    assert b"addEventListener" in response.content
+
+
+def test_the_etag_covers_the_substituted_body_not_the_file_on_disk() -> None:
+    """The tag changes when the cache version does.
+
+    ``serve_sw`` rewrites ``CACHE_VERSION`` into the body per response, and
+    that substitution is exactly what makes a browser treat the worker as
+    updated. An ``ETag`` computed over the on-disk file would be stable
+    across a shell change and would serve a 304 for a worker the client
+    ought to be replacing — the opposite of what SNOW-590 arranged.
+    """
+    client = Client()
+
+    with override_settings(SW_DEV_SHELL_BYPASS=False):
+        plain = client.get("/sw.js")
+    with override_settings(SW_DEV_SHELL_BYPASS=True):
+        bypassed = client.get("/sw.js")
+
+    assert plain.content != bypassed.content, "fixture failed — bodies are identical"
+    assert plain["ETag"] != bypassed["ETag"]
+
+
+def test_serve_sw_kill_also_supports_conditional_requests() -> None:
+    """The kill-switch worker gets the same treatment.
+
+    It is served with the same no-cache contract, so it pays the same
+    re-download on every visit without a validator.
+    """
+    client = Client()
+    first = client.get("/sw-kill.js")
+    assert first["ETag"]
+
+    second = client.get("/sw-kill.js", headers={"if-none-match": first["ETag"]})
+    assert second.status_code == 304

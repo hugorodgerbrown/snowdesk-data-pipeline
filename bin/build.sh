@@ -17,6 +17,14 @@ uv sync --no-dev --frozen
 npm install
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 
+# SNOW-622: minify the first-party JS in place, before collectstatic hashes
+# it. ~23,000 lines reached the browser as written, comments and all, on a
+# map homepage that is already the heaviest page on the site. The checkout
+# is ephemeral, so rewriting the tracked sources here affects nothing
+# beyond this deploy. sw.js and sw-kill.js are deliberately excluded — see
+# the script header.
+node bin/minify-js
+
 # GeoIP — download GeoLite2-City.mmdb from MaxMind. Best-effort: retries
 # transient failures (429 rate-limit / 5xx) with backoff and never blocks
 # the deploy. When credentials are unset or MaxMind stays unreachable it

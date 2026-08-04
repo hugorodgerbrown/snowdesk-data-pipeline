@@ -257,6 +257,14 @@
   // that's still making progress past the 30s mark is never cut short.
   const WARM_CACHE_TIMEOUT_MS = 30000;
 
+  // SNOW-622: floor on how often a `visibilitychange` can trigger a
+  // `registration.update()`. That call is a network round trip for the
+  // worker script every time — `/sw.js` is served `Cache-Control: no-cache`
+  // — and the event fires on every tab switch, app switch and screen
+  // unlock. One minute is well under how often the site is deployed, so
+  // nothing is surfaced meaningfully later than before.
+  const SW_UPDATE_CHECK_INTERVAL_MS = 60000;
+
   /**
    * SNOW-492: bridge for map.js's "Download basemap" control. Posts the
    * given URL list to the active worker's ``warm-cache`` message handler
@@ -701,10 +709,21 @@
         // re-check when the tab regains focus. ``update()`` is a no-op when
         // the SW script is unchanged — so no banner means you really are
         // latest.
+        //
+        // SNOW-622: throttled. ``update()`` is a network round trip for the
+        // worker script (``/sw.js`` is ``Cache-Control: no-cache``, so it
+        // revalidates every time), and visibilitychange fires on every
+        // tab switch, every app switch on mobile, and every screen unlock.
+        // A user flicking between apps paid one request each way. A deploy
+        // the user has not noticed in the last minute is not more urgent
+        // than one they have.
+        let lastUpdateCheck = 0;
         document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') {
-            registration.update().catch(() => {});
-          }
+          if (document.visibilityState !== 'visible') return;
+          const now = Date.now();
+          if (now - lastUpdateCheck < SW_UPDATE_CHECK_INTERVAL_MS) return;
+          lastUpdateCheck = now;
+          registration.update().catch(() => {});
         });
       })
       .catch((err) => {
