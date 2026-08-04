@@ -67,6 +67,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('pwaWarmCacheCancel() with no run ever started (SNOW-632)', () => {
+  it('is a safe no-op', async () => {
+    // Runs before any other describe block in this file has called
+    // window.pwaWarmCache() — the module's `_warmCacheSlot` is still at
+    // its load-time `null`, which is the state this test means to cover.
+    await window.pwaWarmCacheCancel();
+
+    expect(posted).toHaveLength(0);
+  });
+});
+
 describe('warmCache() with a controller present', () => {
   it('posts the warm-cache message to the active worker', async () => {
     swStub.controller = makeWorker();
@@ -122,5 +133,89 @@ describe('warmCache() on an uncontrolled page', () => {
     // behind the uncontrolled-page wait.
     await vi.advanceTimersByTimeAsync(0);
     expect(posted).toHaveLength(1);
+  });
+});
+
+describe('pwaWarmCacheCancel() with a run in flight (SNOW-632)', () => {
+  it('posts a warm-cache-cancel message carrying the live requestId', async () => {
+    swStub.controller = makeWorker();
+    const promise = window.pwaWarmCache(['/a.mvt', '/b.mvt'], { pinned: true, areaId: 'x' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(posted).toHaveLength(1);
+    const { requestId } = posted[0];
+
+    await window.pwaWarmCacheCancel();
+
+    expect(posted).toHaveLength(2);
+    expect(posted[1]).toEqual({ type: 'warm-cache-cancel', requestId });
+
+    // Settle the promise this test started, so it doesn't leave a live
+    // slot behind for a later test to trip over.
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'warm-cache-done', ok: 0, failed: 0, reason: null, bytes: 0, requestId },
+      }),
+    );
+    await promise;
+  });
+
+  it('settles the warmCache() promise with cancelled: true on a cancelled done-reply', async () => {
+    swStub.controller = makeWorker();
+    const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
+    await Promise.resolve();
+    await Promise.resolve();
+    const { requestId } = posted[0];
+
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'warm-cache-done',
+          ok: 2,
+          failed: 0,
+          reason: null,
+          bytes: 4096,
+          cancelled: true,
+          requestId,
+        },
+      }),
+    );
+
+    const result = await promise;
+    expect(result.cancelled).toBe(true);
+    expect(result.ok).toBe(2);
+    expect(result.failed).toBe(0);
+  });
+
+  it('forwards the running bytes total as a fourth onProgress argument', async () => {
+    swStub.controller = makeWorker();
+    const onProgress = vi.fn();
+    const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x', onProgress });
+    await Promise.resolve();
+    await Promise.resolve();
+    const { requestId } = posted[0];
+
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'warm-cache-progress',
+          done: 1,
+          total: 4,
+          settled: [0],
+          bytes: 2048,
+          requestId,
+        },
+      }),
+    );
+
+    expect(onProgress).toHaveBeenCalledWith(1, 4, [0], 2048);
+
+    // Settle, same hygiene reason as the earlier test in this block.
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'warm-cache-done', ok: 1, failed: 0, reason: null, bytes: 2048, requestId },
+      }),
+    );
+    await promise;
   });
 });

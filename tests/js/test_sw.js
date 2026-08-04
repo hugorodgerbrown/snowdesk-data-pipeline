@@ -78,6 +78,12 @@ const SW_EXPORTS = [
   'PRINCIPAL_ANONYMOUS',
   'PRINCIPAL_UNKNOWN',
   'PRINCIPAL_HEADER',
+  // SNOW-632: cancellation-protocol state and helpers.
+  '_warmCacheCancelledIds',
+  '_markWarmCacheCancelled',
+  '_clearWarmCacheCancelled',
+  '_handleWarmCacheCancelMessage',
+  'WARM_CACHE_CANCEL_SET_MAX',
 ];
 
 /**
@@ -914,5 +920,165 @@ describe('_warmCache stamps the page HTML it writes (SNOW-624)', () => {
     expect(sw._isHtmlResponse(withType('application/json'))).toBe(false);
     expect(sw._isHtmlResponse(withType(''))).toBe(false);
     expect(sw._isHtmlResponse({ headers: new Headers() })).toBe(false);
+  });
+});
+
+describe('_warmCache reports a running byte total (SNOW-632)', () => {
+  const ORIGIN_URL = (n) => `${ORIGIN}/api/feed-${n}.json`;
+
+  it('hands onProgress the running bytes as a fourth argument', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({
+      caches: stub,
+      // Content-Length is what _warmCacheResponseBytes reads first — the
+      // fixture's Response-alike has no `.blob()` for the fallback chain
+      // to fall through to.
+      fetch: async () =>
+        basicResponse('{"a":1}', {
+          headers: { 'Content-Type': 'application/json', 'Content-Length': '7' },
+        }),
+    });
+    const calls = [];
+
+    await sw._warmCache([ORIGIN_URL(1), ORIGIN_URL(2)], {
+      onProgress: (done, total, settled, bytes) => calls.push({ done, total, bytes }),
+    });
+
+    expect(calls.length).toBeGreaterThan(0);
+    // Every response wrote the same body, so bytes only ever grows —
+    // never resets between reports.
+    const last = calls[calls.length - 1];
+    expect(last.done).toBe(2);
+    expect(last.bytes).toBeGreaterThan(0);
+    for (let i = 1; i < calls.length; i += 1) {
+      expect(calls[i].bytes).toBeGreaterThanOrEqual(calls[i - 1].bytes);
+    }
+  });
+});
+
+describe('_warmCache cancellation (SNOW-632)', () => {
+  const urls = Array.from({ length: 40 }, (_, i) => `${ORIGIN}/api/tile-${i}.json`);
+
+  /**
+   * A same-origin JSON response — cheap for `_warmCache` to accept and
+   * write, with nothing HTML-specific to trip the principal-stamping path.
+   *
+   * @returns {object}
+   */
+  function jsonResponse() {
+    return basicResponse('{}', { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  it('stops dispatching once shouldCancel answers true, well short of the full list', async () => {
+    let fetchCount = 0;
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: async () => {
+        fetchCount += 1;
+        return jsonResponse();
+      },
+    });
+    let cancelled = false;
+
+    const result = await sw._warmCache(urls, {
+      shouldCancel: () => cancelled,
+      // The first settled URL is the signal the page's Cancel click would
+      // send — everything still queued behind it in the pool must never
+      // reach a fetch.
+      onProgress: () => {
+        cancelled = true;
+      },
+    });
+
+    // WARM_CACHE_CONCURRENCY workers can already be mid-fetch when the
+    // first one reports and flips the flag, so a handful more than one is
+    // expected — but nowhere near the full 40-URL list.
+    expect(fetchCount).toBeGreaterThan(0);
+    expect(fetchCount).toBeLessThan(urls.length / 2);
+    expect(result.cancelled).toBe(true);
+  });
+
+  it('reports cancelled: false on a run that simply finishes', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: async () => jsonResponse() });
+
+    const result = await sw._warmCache(urls, { shouldCancel: () => false });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.ok).toBe(urls.length);
+  });
+
+  it('never fetches at all when already cancelled before the first URL', async () => {
+    let fetchCount = 0;
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: async () => {
+        fetchCount += 1;
+        return jsonResponse();
+      },
+    });
+
+    const result = await sw._warmCache(urls, { shouldCancel: () => true });
+
+    expect(fetchCount).toBe(0);
+    expect(result.ok).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.cancelled).toBe(true);
+  });
+});
+
+describe('the cancelled-requestId set stays bounded (SNOW-632)', () => {
+  it('does not retain an id once its run settles', () => {
+    const sw = loadSw();
+
+    sw._markWarmCacheCancelled('req-1');
+    expect(sw._warmCacheCancelledIds.has('req-1')).toBe(true);
+
+    // What the 'warm-cache' handler does once _warmCache's promise
+    // resolves, on every exit path — including the pinned-without-areaId
+    // guard, which never calls _warmCache at all.
+    sw._clearWarmCacheCancelled('req-1');
+
+    expect(sw._warmCacheCancelledIds.has('req-1')).toBe(false);
+  });
+
+  it('evicts the oldest id rather than growing without limit', () => {
+    const sw = loadSw();
+
+    // One more than the cap: a mix of duplicate clicks and cancels for
+    // requestIds whose run already settled (and so was never re-cleared)
+    // — the failure mode _markWarmCacheCancelled exists to bound.
+    for (let i = 0; i < sw.WARM_CACHE_CANCEL_SET_MAX + 1; i += 1) {
+      sw._markWarmCacheCancelled(`stray-${i}`);
+    }
+
+    expect(sw._warmCacheCancelledIds.size).toBe(sw.WARM_CACHE_CANCEL_SET_MAX);
+    // Oldest-first eviction: the very first id inserted is the one that
+    // fell off.
+    expect(sw._warmCacheCancelledIds.has('stray-0')).toBe(false);
+    expect(sw._warmCacheCancelledIds.has(`stray-${sw.WARM_CACHE_CANCEL_SET_MAX}`)).toBe(true);
+  });
+
+  it('ignores an undefined or null requestId rather than polluting the set', () => {
+    const sw = loadSw();
+
+    sw._markWarmCacheCancelled(undefined);
+    sw._markWarmCacheCancelled(null);
+
+    expect(sw._warmCacheCancelledIds.size).toBe(0);
+  });
+
+  // Vitest's sandbox stubs addEventListener as a no-op (see loadSw above),
+  // so nothing here can invoke the 'message' listener itself. This exercises
+  // the extracted handler body directly instead, proving the field name it
+  // reads off the message ('requestId') is the one _markWarmCacheCancelled
+  // ends up keyed on — a wrong field name here would leave every unit test
+  // above green while cancelling nothing in production.
+  it('wires a warm-cache-cancel message through to the cancelled set by requestId', () => {
+    const sw = loadSw();
+
+    sw._handleWarmCacheCancelMessage({ type: 'warm-cache-cancel', requestId: 'req-live' });
+
+    expect(sw._warmCacheCancelledIds.has('req-live')).toBe(true);
+    expect(sw._warmCacheCancelledIds.has('req-other')).toBe(false);
   });
 });

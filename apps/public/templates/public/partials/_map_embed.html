@@ -1043,12 +1043,15 @@ Optional context:
         aria-label='{% trans "Download a custom area" %}'
         data-overlay
     >
-        {# Instruction bar. Mirrors the CTA sheet at the foot of the overlay #}
-        {# so the two read as a matched pair bracketing the frame: what to   #}
-        {# do at the top, what it costs and the actions at the bottom.       #}
-        {# Framing mode strips the map furniture, so without this the user   #}
-        {# is handed a dimmed map and a rectangle with nothing saying what   #}
-        {# the rectangle is for.                                            #}
+        {# SNOW-632: instruction bar, repurposed as the standing download-    #}
+        {# budget banner — "39 MB / 500 MB downloaded" across every pinned   #}
+        {# area, not just this one. map.js's _refreshBudgetBanner overwrites #}
+        {# this on every openFraming (and again once a run settles), reading #}
+        {# IndexedDB best-effort and asynchronously — this server-rendered   #}
+        {# copy is only what shows for the instant before that read lands,  #}
+        {# or if pwaBasemapManageCore/pwaDb are unavailable. Framing mode    #}
+        {# strips the map furniture, so without SOME text here the user is  #}
+        {# handed a dimmed map and a rectangle with nothing above it.       #}
         <div class="map-frame-instruction" id="map-frame-instruction">
             {% trans "Download selected area for offline use." %}
         </div>
@@ -1072,9 +1075,13 @@ Optional context:
         {# Cancel uses the shared data-action="dismiss" idiom (static/js/    #}
         {# overlays.js) — map.js listens for the resulting overlay:dismissed #}
         {# to tear down its 'move' listener and clear the pending framed     #}
-        {# area. Download is NOT a dismiss trigger: map.js closes the        #}
-        {# overlay itself once the run settles, so the roundel behind it     #}
-        {# (like its per-region sibling) is what carries the outcome.        #}
+        {# area, and (SNOW-632) to stop an in-flight run if one is going.    #}
+        {# Download is NOT a dismiss trigger: SNOW-632 map.js repaints the   #}
+        {# CTA in place once a run settles rather than closing the overlay — #}
+        {# a success hides this button entirely and relabels Cancel to      #}
+        {# Close (still the same data-action="dismiss" button, reused        #}
+        {# rather than given a second, state-aware click handler), so only   #}
+        {# the user's own Cancel/Close click ever actually closes it.        #}
         <div class="map-frame-cta" id="map-frame-cta">
             <span id="map-frame-readout" class="map-frame-readout" aria-live="polite"></span>
             <div class="map-frame-cta-actions">
@@ -1211,4 +1218,16 @@ Optional context:
     <span data-string="timelapse-play-reverse">{% trans "Play season timelapse in reverse" %}</span>
     <span data-string="timelapse-stop">{% trans "Stop season timelapse" %}</span>
     <span data-string="timelapse-stop-reverse">{% trans "Stop reverse timelapse" %}</span>
+    {# SNOW-632: the custom-area framing overlay's CTA readout and top      #}
+    {# banner. "frame-up-to"/"frame-over-ceiling" replace two literals that #}
+    {# used to be assembled in JS — see mapCustomDownloadControlInit's      #}
+    {# _updateReadout. "frame-readout-busy" carries no literal '%' in its   #}
+    {# msgid; the caller appends it to the interpolated pct value itself.  #}
+    <span data-string="frame-up-to">{% blocktrans %}Up to %(mb)s MB{% endblocktrans %}</span>
+    <span data-string="frame-over-ceiling">{% blocktrans %}Area too large to download (over %(mb)s
+            MB){% endblocktrans %}</span>
+    <span data-string="frame-readout-busy">{% blocktrans %}%(pct)s · %(mb)s{% endblocktrans %}</span>
+    <span data-string="frame-readout-done">{% blocktrans %}%(mb)s downloaded{% endblocktrans %}</span>
+    <span data-string="frame-budget-banner">{% blocktrans %}%(used)s / %(budget)s downloaded{% endblocktrans %}</span>
+    <span data-string="action-close">{% trans "Close" %}</span>
 </template>

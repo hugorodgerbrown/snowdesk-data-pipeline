@@ -314,6 +314,21 @@ describe('the warm run', () => {
     expect(calls.indexOf('beforeWarm')).toBeLessThan(calls.indexOf('warmCache'));
   });
 
+  it('hands beforeWarm the blob, the area id and the resolved template (SNOW-632)', async () => {
+    const d = deps();
+    const o = options({
+      beforeWarm: vi.fn(async () => {}),
+    });
+
+    await runAndSettle(d, o);
+
+    expect(o.beforeWarm).toHaveBeenCalledWith(
+      { z: 12, band: 'micro', mb: 12 },
+      'region:ch-4115',
+      'https://tiles/{z}/{x}/{y}.png',
+    );
+  });
+
   it('hands finish the worker result, the blob and the core', async () => {
     const d = deps();
     const o = options();
@@ -326,6 +341,9 @@ describe('the warm run', () => {
     expect(blob).toEqual({ z: 12, band: 'micro', mb: 12 });
     expect(extras.core).toBeTruthy();
     expect(extras.progressFill).toBeTruthy();
+    // SNOW-632: the same template beforeWarm saw, so a caller recording
+    // what was downloaded can never disagree with what was fetched.
+    expect(extras.template).toBe('https://tiles/{z}/{x}/{y}.png');
   });
 
   it('finishes with null when there is no active worker', async () => {
@@ -359,6 +377,9 @@ describe('the warm run', () => {
       progressGrid: vi.fn(() => ({ update, finish: vi.fn(async () => {}) })),
       warmCache: vi.fn(async (_urls, opts) => {
         onProgress = opts.onProgress;
+        // No fourth (bytes) argument — an older worker still serving a
+        // cached shell wouldn't send one; `undefined` is the expected
+        // pass-through to `paint`'s own third argument in that case.
         onProgress(1, 4, [0]);
         onProgress(2, 4, [1]);
         return { ok: 4, failed: 0, bytes: 1 };
@@ -368,8 +389,8 @@ describe('the warm run', () => {
 
     await runAndSettle(d, o);
 
-    expect(o.paint).toHaveBeenCalledWith('busy', 25);
-    expect(o.paint).toHaveBeenCalledWith('busy', 50);
+    expect(o.paint).toHaveBeenCalledWith('busy', 25, undefined);
+    expect(o.paint).toHaveBeenCalledWith('busy', 50, undefined);
     expect(update).toHaveBeenCalledWith(1, 4, [0]);
   });
 
@@ -385,5 +406,36 @@ describe('the warm run', () => {
     await runAndSettle(d, o);
 
     expect(o.paint).toHaveBeenCalledWith('busy', 0);
+  });
+
+  it('forwards the running bytes total to paint as a third argument (SNOW-632)', async () => {
+    let onProgress;
+    const d = deps({
+      warmCache: vi.fn(async (_urls, opts) => {
+        onProgress = opts.onProgress;
+        onProgress(1, 4, [0], 1024);
+        onProgress(2, 4, [1], 2048);
+        return { ok: 4, failed: 0, bytes: 2048 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.paint).toHaveBeenCalledWith('busy', 25, 1024);
+    expect(o.paint).toHaveBeenCalledWith('busy', 50, 2048);
+  });
+
+  it('hands finish a cancelled result intact (SNOW-632)', async () => {
+    const d = deps({
+      warmCache: vi.fn(async () => ({ ok: 2, failed: 0, bytes: 512, cancelled: true })),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    const [result] = o.finish.mock.calls[0];
+    expect(result).toEqual({ ok: 2, failed: 0, bytes: 512, cancelled: true });
   });
 });

@@ -198,8 +198,11 @@
   // (z10-14), so the two produce directly-comparable size estimates.
   var MICRO_BAND = [10, 14];
 
-  // Mirrors apps/regions/services/basemap_tiles.py::WORST_CASE_BYTES_PER_TILE.
-  var WORST_CASE_BYTES_PER_TILE = 100 * 1024;
+  // Mirrors apps/regions/services/basemap_tiles.py::WORST_CASE_BYTES_PER_TILE
+  // — calibrated against seven real max-size custom-area downloads
+  // (SNOW-631), not a worst-case guess; see that constant's comment for
+  // the measured ratios.
+  var WORST_CASE_BYTES_PER_TILE = 50 * 1024;
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;

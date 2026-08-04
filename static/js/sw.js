@@ -1023,7 +1023,7 @@ async function _trimCache(cache, max) {
 // matches the per-host connection limit every major browser applies to
 // HTTP/1.1, so the pool keeps the pipe full without queueing work the
 // network stack would only stall on. The previous unbounded fan-out
-// issued the whole list in one tick — up to 2048 fetches for a
+// issued the whole list in one tick — up to 4096 fetches for a
 // full-ceiling area download — and Chrome answered with
 // ERR_INSUFFICIENT_RESOURCES on every one of them.
 const WARM_CACHE_CONCURRENCY = 6;
@@ -1035,6 +1035,78 @@ const WARM_CACHE_CONCURRENCY = 6;
 // reports a second is under a frame's worth of work and still faster than
 // the eye resolves individual squares appearing.
 const PROGRESS_FLUSH_MS = 120;
+
+// SNOW-632: requestIds the page has asked to cancel. Module-level rather
+// than closed over by one 'message' handler invocation, because the
+// 'warm-cache' and its later 'warm-cache-cancel' arrive as two independent
+// `message` events — the handler runs fresh each time, with no shared
+// closure between them — so this Set is the only channel connecting a
+// cancel request to the run it names. Cleared of an id the moment that
+// run's own promise settles (see the 'warm-cache' handler below), so the
+// common case never grows it past one entry.
+//
+// A cap on top of that prompt cleanup: a cancel can arrive for a
+// requestId whose run has already settled (a duplicate click, a message
+// racing the done reply) or that never existed (a typo, a stale page).
+// Neither is ever cleaned up by the settle path above, so an append-only
+// Set would grow one entry per stray message for the life of the worker.
+// Oldest-first eviction bounds it instead — the same trade-off
+// `_trimCache` makes for the basemap cache itself.
+//
+// That eviction order has an ordering dependency worth naming: it assumes
+// a live run's id is always among the newest ``WARM_CACHE_CANCEL_SET_MAX``
+// entries. In normal operation that holds — one slot, one cancel per slot
+// — but if ``WARM_CACHE_CANCEL_SET_MAX`` stray entries (duplicate clicks,
+// cancels for ids that never existed) arrived after a live run's id was
+// inserted, the live id would be the oldest and get evicted, silently
+// un-cancelling that run. Not reachable today; flagged so a future change
+// to how/when cancels are recorded doesn't reintroduce it unnoticed.
+const WARM_CACHE_CANCEL_SET_MAX = 32;
+const _warmCacheCancelledIds = new Set();
+
+/**
+ * Record a cancellation request for ``requestId``, evicting the oldest
+ * entry first if that would push the set past ``WARM_CACHE_CANCEL_SET_MAX``
+ * — see the constants' own comment for why the set needs a cap at all.
+ *
+ * @param {*} requestId
+ */
+function _markWarmCacheCancelled(requestId) {
+  if (requestId === undefined || requestId === null) return;
+  _warmCacheCancelledIds.add(requestId);
+  if (_warmCacheCancelledIds.size > WARM_CACHE_CANCEL_SET_MAX) {
+    const oldest = _warmCacheCancelledIds.values().next().value;
+    _warmCacheCancelledIds.delete(oldest);
+  }
+}
+
+/**
+ * Drop ``requestId`` from the cancelled set — called once a run's promise
+ * settles (or, for the ``pinned`` guard path, once it is refused outright)
+ * so a finished run's id doesn't sit in the set for the rest of the
+ * worker's life.
+ *
+ * @param {*} requestId
+ */
+function _clearWarmCacheCancelled(requestId) {
+  _warmCacheCancelledIds.delete(requestId);
+}
+
+/**
+ * Handle a ``'warm-cache-cancel'`` message's ``data`` payload — factored
+ * out of the ``message`` listener below so it is callable on its own, not
+ * just wired to ``addEventListener``. Vitest's sandbox stubs
+ * ``addEventListener`` as a no-op (see tests/js/test_sw.js), so a body left
+ * inline in the listener would never run under the unit suite; extracting
+ * it here lets a test exercise the exact field name (``requestId``) the
+ * listener reads off the message, not just _markWarmCacheCancelled in
+ * isolation.
+ *
+ * @param {*} data - the message event's ``data`` payload.
+ */
+function _handleWarmCacheCancelMessage(data) {
+  _markWarmCacheCancelled(data.requestId);
+}
 
 /**
  * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
@@ -1187,20 +1259,40 @@ async function _warmCacheResponseBytes(response) {
  * pinned run costs a non-pinned caller nothing). The page records this
  * against the area's standing budget entry once the run settles.
  *
+ * SNOW-632: ``onProgress`` is also handed the running ``bytes`` total as a
+ * fourth argument, so a caller can show live on-disk MB rather than only a
+ * fraction of ``total``. And ``options.shouldCancel``, if supplied, is
+ * polled once at the START of every pool worker — before that URL's fetch
+ * is dispatched — and a truthy answer skips the fetch entirely rather than
+ * aborting one already under way. That is a deliberate half-measure, not
+ * an oversight: up to ``WARM_CACHE_CONCURRENCY`` fetches can already be
+ * in flight when cancellation lands, and letting them finish and write is
+ * simpler and cheaper than tearing a partial cache write back out, at the
+ * cost of a handful of tiles the user technically asked to stop. The
+ * returned summary's ``cancelled`` flag is true the moment ``shouldCancel``
+ * is first seen to return true, so a caller can tell a cancelled run apart
+ * from one that simply finished — a cancelled run is never treated as a
+ * failure (``failed`` only counts URLs that were actually attempted and
+ * did not succeed).
+ *
  * @param {string[]} urls
  * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
- *   total: number) => void}} [options] ``areaId`` is REQUIRED when
+ *   total: number, settled: number[], bytes: number) => void,
+ *   shouldCancel?: () => boolean}} [options] ``areaId`` is REQUIRED when
  *   ``pinned`` is true — the caller (the ``message`` handler below)
  *   refuses the run rather than calling this with ``pinned`` and no
  *   ``areaId``, so this function can assume the pair is already valid.
  * @returns {Promise<{ok: number, failed: number, reason: string|null,
- *   bytes: number}>}
+ *   bytes: number, cancelled: boolean}>}
  */
 async function _warmCache(urls, options) {
   const opts = options || {};
   const pinned = !!opts.pinned;
   const areaId = opts.areaId;
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  // SNOW-632: see the docstring's cancellation note — polled once per pool
+  // worker, before that URL's fetch.
+  const shouldCancel = typeof opts.shouldCancel === 'function' ? opts.shouldCancel : null;
   const shellCache = await caches.open(CACHE_VERSION);
   // SNOW-613: `caches.open` CREATES a pinned bucket that did not exist, so
   // a pinned run can add a name the memoised list below has not seen. Drop
@@ -1225,6 +1317,9 @@ async function _warmCache(urls, options) {
   // TILES landed rather than only how many — see the ``settled`` note on
   // ``onProgress`` in this function's docstring.
   let settledSince = [];
+  // SNOW-632: true from the moment ``shouldCancel`` is first seen to
+  // return true — see the docstring's cancellation note.
+  let cancelled = false;
   const reportProgress = () => {
     if (!onProgress || total === 0) return;
     const final = done === total;
@@ -1241,7 +1336,9 @@ async function _warmCache(urls, options) {
     lastReportedAt = Date.now();
     const settled = settledSince;
     settledSince = [];
-    onProgress(done, total, settled);
+    // SNOW-632: the running byte total rides along as a fourth argument so
+    // a caller can show live on-disk MB, not just a done/total fraction.
+    onProgress(done, total, settled, bytes);
   };
   // SNOW-568: the most actionable failure seen so far, or null.
   let reason = null;
@@ -1319,6 +1416,16 @@ async function _warmCache(urls, options) {
   };
 
   await _warmCacheRunPool(list, WARM_CACHE_CONCURRENCY, async (rawUrl, index) => {
+    // SNOW-632: the cancellation point — checked before this URL's fetch
+    // is dispatched, never after. `runPool`'s shared cursor (see
+    // basemap_cache_core.js) keeps advancing through the rest of the list
+    // regardless — each remaining worker call lands here, sees the same
+    // answer, and returns immediately, so the pool still drains normally
+    // and quickly rather than needing its own abort path.
+    if (shouldCancel && shouldCancel()) {
+      cancelled = true;
+      return;
+    }
     let why = await warmOne(rawUrl);
     // One retry for a transient failure. A quota failure is never
     // retried — the disk will not have grown between the two attempts,
@@ -1350,7 +1457,7 @@ async function _warmCache(urls, options) {
     _basemapPutsSinceTrim = 0;
     await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
   }
-  return { ok, failed, reason, bytes };
+  return { ok, failed, reason, bytes, cancelled };
 }
 
 /**
@@ -1901,6 +2008,11 @@ self.addEventListener('message', (event) => {
     const pinned = !!event.data.pinned;
     const areaId = event.data.areaId;
     if (pinned && !areaId) {
+      // SNOW-632: no run was ever dispatched under this requestId, but a
+      // cancel for it can still have arrived (or arrive later) — clear it
+      // from the same set the dispatched path settles below, so a stray
+      // entry doesn't sit there for the rest of the worker's life.
+      _clearWarmCacheCancelled(requestId);
       event.source?.postMessage({
         type: 'warm-cache-done',
         ok: 0,
@@ -1910,7 +2022,11 @@ self.addEventListener('message', (event) => {
         requestId,
       });
     } else {
-      const onProgress = (done, total, settled) => {
+      // SNOW-632: polled once per pool worker inside _warmCache — see its
+      // docstring and the 'warm-cache-cancel' handler below, which is the
+      // only thing that ever adds to this set.
+      const shouldCancel = () => _warmCacheCancelledIds.has(requestId);
+      const onProgress = (done, total, settled, bytes) => {
         event.source?.postMessage({
           type: 'warm-cache-progress',
           done,
@@ -1918,10 +2034,22 @@ self.addEventListener('message', (event) => {
           // Tile-grid rework: indices into the posted URL list that succeeded since
           // the last message — the page turns them back into tiles.
           settled,
+          // SNOW-632: the run's on-disk bytes so far, so the page can show
+          // a live MB readout without waiting for the final summary.
+          bytes,
           requestId,
         });
       };
-      const warm = _warmCache(event.data.urls, { pinned, areaId, onProgress }).then((result) => {
+      const warm = _warmCache(event.data.urls, {
+        pinned,
+        areaId,
+        onProgress,
+        shouldCancel,
+      }).then((result) => {
+        // SNOW-632: this requestId's run has settled one way or another —
+        // drop it from the cancelled set now rather than waiting for the
+        // cap in _markWarmCacheCancelled to age it out.
+        _clearWarmCacheCancelled(requestId);
         event.source?.postMessage({
           type: 'warm-cache-done',
           ok: result.ok,
@@ -1933,11 +2061,28 @@ self.addEventListener('message', (event) => {
           // SNOW-586: the run's total on-disk bytes, so the page can
           // record it against the area's standing budget entry.
           bytes: result.bytes,
+          // SNOW-632: true when the run stopped early on a cancel request
+          // rather than running every URL to completion — see
+          // _warmCache's docstring for what this does and doesn't
+          // guarantee.
+          cancelled: result.cancelled,
           requestId,
         });
       });
       if (typeof event.waitUntil === 'function') event.waitUntil(warm);
     }
+  }
+  // SNOW-632: the page's Cancel control — static/js/sw_register.js's
+  // cancelWarmCache() posts this for the in-flight warm-cache call's own
+  // requestId. Only records the request; the run itself (if one is even
+  // still in flight for this id — see the cleanup notes above) notices it
+  // the next time its pool polls shouldCancel. Body lives in
+  // _handleWarmCacheCancelMessage so tests/js/test_sw.js can call the real
+  // glue directly — the message-event sandbox never invokes an
+  // addEventListener callback, so anything left inline here would be
+  // untested.
+  if (event.data && event.data.type === 'warm-cache-cancel') {
+    _handleWarmCacheCancelMessage(event.data);
   }
 });
 

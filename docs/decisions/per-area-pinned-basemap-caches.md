@@ -1,8 +1,8 @@
 ---
 name: per-area-pinned-basemap-caches
-description: One Cache Storage bucket per downloaded basemap area (snowdesk-basemap-pinned-<areaId>) plus a byte budget, replacing entry-count FIFO trim
+description: One Cache Storage bucket per downloaded basemap area; a run records its own bytes; evicted on bbox OR basemap-template change (SNOW-632)
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
 ---
 
 # One pinned Cache Storage bucket per downloaded area
@@ -97,24 +97,69 @@ information the old design never recorded.
   **Candidate future optimisation, not built:** source an already-held
   tile from a sibling bucket rather than re-fetching it, while still
   keeping a copy in each bucket that needs it (so eviction stays safe).
-- **A region downloaded under two different basemaps shares one bucket**
-  (the bucket is keyed on area id alone, not on basemap), so its recorded
-  `bytes` accumulates across both runs rather than being replaced by the
-  latest one — see `static/js/map.js`'s `_recordRegionDownload`. That is
-  correct for budgeting (it is what is actually on disk) and an eviction
-  of that area removes both basemaps' tiles together, but the roundel's
-  `done` state stays per-basemap (a real, unrelated probe against the
-  active template) — downloading on Standard and switching to Swisstopo
-  still reads `idle` even though the bucket now holds both. A comment,
-  not a behaviour change.
-- **Byte totals are page-recorded, not re-derived from the cache.** A
-  `meta:app` write that fails after a successful `_warmCache` run leaves
-  an orphan bucket the budget doesn't know about. Mitigation: a future
-  reconciliation pass at read time (drop recorded areas with no bucket
-  behind them; treat a bucket with no record as evictable-first) is
-  noted in `evictBasemapAreas`'s own comment but not built — SNOW-588's
-  managed-downloads list is where this becomes visible enough to a user
-  to matter.
+- **A bucket is evicted outright on a bbox OR a basemap-template change,
+  so it always holds exactly one basemap's tiles (SNOW-632, amending this
+  decision's original design).** The bucket is keyed on area id alone, not
+  on basemap, so a region or custom area re-downloaded under a DIFFERENT
+  basemap at the SAME ground would otherwise leave the previous basemap's
+  tiles sitting in the bucket alongside the new run's — bloating it, and
+  leaving whatever gets recorded for it wrong either way (see the next
+  bullet). Both download controls' `beforeWarm` (run by
+  `basemap_download_runner.js` as the last step before the warm-cache
+  call — see its own module header for why the ordering lives there)
+  compares the ACTIVE tile template against the one the existing record
+  was downloaded with, stored alongside it as `template`, and calls
+  `evictBasemapAreas` first when they differ — the same unconditional,
+  no-confirmation bucket delete the custom-area control already used for a
+  bbox change alone, now covering a template change too and extended to
+  the region control, which previously had no `beforeWarm` at all. A
+  record with no `template` (written before this ticket) is treated as a
+  mismatch — "unknown" reads safer as "different", costing one redundant
+  re-download rather than an unaccounted-for stale bucket. This doesn't
+  change what the roundel's `done` state means (it was always a real probe
+  against the active template, per-basemap already); it changes what the
+  bucket holds and what gets recorded for it.
+- **Byte totals are a run's own reported figure, recorded outright —
+  never accumulated onto the previous record, and never re-measured from
+  the bucket.** An earlier version of this fix tried the latter:
+  `previousBytes + result.bytes` on every successful run doubled the
+  recorded total on every same-bbox, same-basemap RETRY (identical URLs
+  land in the identical bucket — `cache.put` OVERWRITES each key rather
+  than adding to it, so the bucket does not grow) — `planBasemapDownloadBudget`
+  plans evictions off that recorded total, so the inflation was not
+  cosmetic: an 8× same-basemap repeat of one 61 MB area was observed
+  reading as 488 MB used against the 500 MB default budget. The fix that
+  shipped instead — `measurePinnedBucketBytes` reading the bucket's real
+  Cache Storage size once a run settled — looked exact but was inert in
+  production: a browser always sends `Accept-Encoding: gzip`, so a live
+  tile response carries NO `Content-Length` header at all —
+
+      curl -sS -D - -o /dev/null --compressed <tile-url>
+        content-encoding: gzip          # no content-length
+
+      curl -sS -D - -o /dev/null -H "Accept-Encoding:" <same tile-url>
+        content-length: 45896           # only with compression off
+
+  — and `measurePinnedBucketBytes` sums `Content-Length` only (deliberately:
+  `cache.match()` hands back a Response without reading it, so a header sum
+  is N cheap lookups where a `blob()` sum would be N decompressions — see
+  that function's own docstring). It therefore measured 0 for every real
+  bucket and fell back to the run's own reported `bytes` on every single
+  run, which is a more roundabout way of arriving at exactly the figure
+  this design now records directly. Eviction on a bbox OR template change
+  (previous bullet) is what makes recording the run's own figure exact
+  rather than merely convenient: since a bucket only ever holds ONE run's
+  worth of tiles by the time `finish` runs, that run's own reported total
+  IS the bucket's whole total, with no arithmetic needed to reconcile it
+  against anything left over from before. A `meta:app` write that still
+  fails after a successful `_warmCache` run still leaves an orphan bucket
+  the budget doesn't know about until `basemap_manage_core.js`'s
+  reconciliation measures it — via the same `Content-Length`-only
+  `measurePinnedBucketBytes`, so an orphaned bucket of gzipped tiles reads
+  ~0 MB there too. That under-report is real and pre-existing, not
+  introduced by this ticket; fixing it would need a blob-based fallback
+  the way `responseBytes` (`basemap_cache_core.js`) already has, which is
+  future work, not this decision.
 - **`Content-Length` under-reads a gzipped tile's true on-disk size** —
   `responseBytes` falls back to measuring a cloned blob when the header
   is absent, which is exact, but the header (when present) reports the

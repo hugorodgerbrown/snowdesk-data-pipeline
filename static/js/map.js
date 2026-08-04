@@ -85,6 +85,20 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'timelapse-play-reverse': 'Play season timelapse in reverse',
   'timelapse-stop': 'Stop season timelapse',
   'timelapse-stop-reverse': 'Stop reverse timelapse',
+  // SNOW-632: the custom-area framing overlay's CTA readout and top
+  // banner. 'frame-up-to' and 'frame-over-ceiling' replace two literals
+  // that used to be assembled in JS (bin/i18n-lint does not catch a
+  // literal assigned to a variable before being rendered, which is a gap
+  // in that check, not a licence — see mapCustomDownloadControlInit's
+  // _updateReadout). 'frame-readout-busy' deliberately has no literal '%'
+  // in the msgid — the caller appends it to the interpolated `pct` value
+  // itself, so there is nothing here for a translation to get wrong.
+  'frame-up-to': 'Up to %(mb)s MB',
+  'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
+  'frame-readout-busy': '%(pct)s · %(mb)s',
+  'frame-readout-done': '%(mb)s downloaded',
+  'frame-budget-banner': '%(used)s / %(budget)s downloaded',
+  'action-close': 'Close',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
@@ -360,15 +374,27 @@ function forgetPinnedBucketMeasurement(areaId) {
  *
  * Only ever called for an ORPHANED bucket — one with no stored record to
  * read a byte total off. Every other area's size comes from the figure its
- * completed run recorded, because an area is thousands of entries and
- * measuring them all on every render is precisely what
+ * completed run recorded (SNOW-632: the run's own reported total, not a
+ * re-measurement — see `_recordRegionDownload` and
+ * `mapCustomDownloadControlInit`'s `finish`), because an area is thousands
+ * of entries and measuring them all on every render is precisely what
  * `basemap_manage_core.js`'s header rules out.
  *
  * `Content-Length` rather than the body: `cache.match()` hands back a
  * Response without reading it, so a header sum is N cheap lookups where a
  * `blob()` sum would be N decompressions. An entry with no such header
  * contributes nothing — under-reporting a stranded bucket is better than
- * paying to decode it, and the row is deletable either way.
+ * paying to decode it, and the row is deletable either way. In production
+ * this is not a rare edge case for a tile entry specifically: the browser
+ * always sends `Accept-Encoding: gzip`, so a live tile response carries NO
+ * `Content-Length` at all (curl against the origin confirms it — the
+ * header only appears with compression explicitly disabled), and this
+ * function has no blob fallback the way `responseBytes`
+ * (`basemap_cache_core.js`) does. An orphaned bucket therefore reads ~0
+ * bytes here even when it holds real tiles — acceptable for what this is
+ * used for (a deletable orphan still needs deleting at 0 MB as much as at
+ * its true size), but not a general-purpose measurement. Not fixed here;
+ * see this ticket's decision doc for why.
  *
  * @param {string} areaId
  * @returns {Promise<number>} Bytes, or 0 if the bucket cannot be read.
@@ -6574,21 +6600,38 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * fetch in `_probeDone` below still answers correctly, just over the
    * network instead of from IndexedDB.
    *
-   * SNOW-586: `bytes` accumulates onto whatever was previously recorded
-   * rather than replacing it. A region's pinned bucket is keyed on the
-   * region id ALONE, not per-basemap, so downloading the same region
-   * under a SECOND basemap adds genuinely new tiles (different URLs,
-   * different origin) to the one shared bucket — the recorded total has
-   * to grow with it to stay honest against what `planEviction` actually
-   * has to budget for. The trade-off: a same-basemap RETRY re-fetches
-   * every URL in the run (not just the ones that failed previously), so
-   * it re-counts bytes already on disk and over-states this area's size
-   * until a later change corrects it. That is a conservative direction —
-   * it can only make eviction MORE eager, never let the recorded total
-   * drift under what is genuinely on disk — so it is accepted rather than
-   * tracked more precisely (see docs/decisions/per-area-pinned-basemap-caches.md).
+   * SNOW-632: `bytes` is this run's OWN reported total — from
+   * `_warmCache`'s ``warm-cache-done`` reply — recorded outright, never
+   * accumulated onto the previous record and never re-measured from the
+   * bucket. A same-bbox, same-basemap RETRY re-fetches identical URLs into
+   * the same bucket (`cache.put` OVERWRITES each key rather than adding to
+   * it, so the bucket doesn't grow), so replacing the record with this
+   * run's own figure already lands on the right answer without reading
+   * the bucket at all. Re-measuring the bucket after every run (an earlier
+   * version of this fix) looked more exact, but a live tile response
+   * carries no `Content-Length` under the gzip encoding every browser
+   * requests, so it measured 0 in production and silently fell back to
+   * this same figure anyway — see
+   * docs/decisions/per-area-pinned-basemap-caches.md for the curl
+   * evidence.
+   *
+   * A basemap SWITCH at the same region used to need accumulation,
+   * because the bucket is keyed on region id alone and a switch adds
+   * genuinely new tiles (different URLs, different origin) to it — but
+   * that arithmetic couldn't tell a switch apart from a retry, doubling
+   * the recorded total on every repeat. `mapDownloadControlInit`'s
+   * `handleClick` now sidesteps the ambiguity instead of resolving it
+   * numerically: its `beforeWarm` deletes the bucket outright whenever the
+   * `template` this run is about to fetch differs from the one recorded
+   * for it, so by the time this function runs the bucket always holds
+   * exactly one basemap's tiles and this run's own total is the bucket's
+   * whole total.
    *
    * @param {string} regionId
+   * @param {string} template The tile URL template this run fetched
+   *   (`basemap_download_runner.js`'s `run` resolves it once and hands it
+   *   to both `beforeWarm` and `finish`'s `extras`) — stored so a LATER
+   *   run can tell whether the bucket still matches the active basemap.
    * @param {Object | null} z The downloaded blob's own tile ranges
    *   (`blob.z` — rectangle or clipped row spans), or null when the run's
    *   blob carried none — in which case nothing is recorded, since an
@@ -6598,12 +6641,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *   ``warm-cache-done`` reply.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, z, band, bytes) {
+  async function _recordRegionDownload(regionId, template, z, band, bytes) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const existing = Array.isArray(row && row.value) ? row.value : [];
-      const previous = existing.find((entry) => entry && entry.region_id === regionId);
       const next = existing.filter((entry) => entry && entry.region_id !== regionId);
       const feature = FEATURE_BY_REGION_ID[regionId];
       const name = (feature && feature.properties && feature.properties.name) || regionId;
@@ -6612,7 +6654,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
         band: band,
         z: z,
         name: name,
-        bytes: (Number(previous && previous.bytes) || 0) + (Number(bytes) || 0),
+        template: template,
+        bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
@@ -6644,7 +6687,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
    *
    * @param {string} regionId
    * @returns {Promise<{region_id: string, band: number[], z: Object,
-   *   savedAt: string} | null>}
+   *   template?: string, savedAt: string} | null>} `template` is absent on
+   *   a record written before SNOW-632 — callers deciding whether to evict
+   *   the region's bucket on a template mismatch treat that absence as
+   *   "unknown, so different" (see `handleClick`'s `beforeWarm`).
    */
   async function _storedRegionRecord(regionId) {
     try {
@@ -6951,7 +6997,37 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (!response.ok) throw new Error(`region-basemap-tiles ${response.status}`);
         return response.json();
       },
-      finish: async (result, blob, { core: runCore, progressFill }) => {
+      // SNOW-632: a region's pinned bucket is keyed on the region id ALONE
+      // (see `_recordRegionDownload`'s docstring), so downloading the same
+      // region under a DIFFERENT basemap would otherwise leave the old
+      // basemap's tiles sitting in the bucket alongside the new run's —
+      // the bucket's real size stops matching what gets recorded, and
+      // `planBasemapDownloadBudget` under-charges the area for it. No
+      // confirmation needed: this replaces the user's own prior download
+      // of the SAME region, not another area — same reasoning as the
+      // custom-area control's own `beforeWarm`, which this mirrors.
+      // `template` is what the runner is about to build THIS run's URLs
+      // from, so the comparison and the fetch can never disagree about
+      // which basemap is active.
+      //
+      // Accepted trade-off: evicting BEFORE the warm means a run that
+      // then fails leaves the user with neither the old download nor a
+      // new one. Bucket and record go together, so the state stays
+      // consistent (empty bucket, no record, roundel on 'error') rather
+      // than stale — and the evicted tiles were the previous basemap's,
+      // which the done-probe already ignored under the new one, so there
+      // was nothing usable to lose.
+      beforeWarm: async (_blob, evictAreaId, template) => {
+        const previous = await _storedRegionRecord(data.regionId);
+        // No usable record (never downloaded, or a pre-SNOW-632 record
+        // with no `template`) is treated the same as a mismatch — the
+        // safe direction, since it costs one redundant eviction rather
+        // than risking a stale bucket read as bigger than it is.
+        if (!previous || previous.template !== template) {
+          await evictBasemapAreas([evictAreaId]);
+        }
+      },
+      finish: async (result, blob, { core: runCore, progressFill, template }) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -6959,7 +7035,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // SNOW-568: a run that didn't succeed paints 'error' and raises the
         // shared toast, rather than reverting to 'idle' — which was
         // indistinguishable from never having clicked.
-        const ok = !!(result && result.ok > 0 && result.failed === 0);
+        //
+        // SNOW-632: `result.cancelled` is checked here too, even though
+        // this control has no Cancel affordance of its own to trigger it
+        // — the shared runner's contract now permits a cancelled result
+        // from ANY caller (basemap_download_runner.js's `finish`
+        // docstring), and a cancelled run's `failed` is always 0, which
+        // would otherwise misread as a clean success.
+        const ok = !!(result && !result.cancelled && result.ok > 0 && result.failed === 0);
         // SNOW-570: record what was downloaded before anything is painted.
         // SNOW-583: records the blob's own `z` (the clipped tile set the run
         // actually fetched) rather than a bbox — `_probeDone` reads this
@@ -6968,6 +7051,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (ok) {
           await _recordRegionDownload(
             data.regionId,
+            template,
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,
@@ -7076,8 +7160,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // Persistence — exactly one custom area exists at a time. A confirmed
 // download is saved to IndexedDB's meta:app store under
-// 'basemap.customArea', {bbox, band, centre_tile, name, bytes, savedAt}
-// (SNOW-586 added name/bytes — see basemapDownloadedAreas's own comment)
+// 'basemap.customArea', {bbox, band, centre_tile, name, template, bytes,
+// savedAt} (SNOW-586 added name/bytes — see basemapDownloadedAreas's own
+// comment; SNOW-632 added template — see handleConfirm's beforeWarm)
 // — the same {key, value} row shape as basemap.origins (map.js:~450) and
 // mutations.principal. The roundel's "done" state is still PROBED, never
 // read off that row directly, exactly like the per-region control: real
@@ -7093,23 +7178,55 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //
 // SNOW-586: two DISTINCT evictions can happen on confirm, for two
 // different reasons. (1) Confirming a NEW bbox (one that differs from the
-// saved one) deletes the OLD area's own bucket outright before warming
-// the new set — a plain `caches.delete()`, since the custom area's bucket
-// is keyed on its area id ('custom') alone, not its geometry; this needs
-// no confirmation, because it is replacing the user's own prior choice
-// with the new one they just made. (2) Making room under the standing
-// byte budget may require evicting OTHER areas entirely — planned by
-// `planBasemapDownloadBudget`/`planEviction` and, unlike (1), always
-// confirmed first (`confirmBasemapEviction`) naming what would be
-// removed. Before SNOW-586 there was only (1), driven by re-deriving the
-// stale tile URLs against the CURRENT template and deleting them
-// one-by-one — which silently deleted nothing after a basemap switch,
-// since the tiles it computed no longer matched what was actually on
-// disk; a bucket delete has no such dependency.
+// saved one) OR a DIFFERENT basemap template (SNOW-632 — see the
+// `sameTemplate` note below) deletes the OLD area's own bucket outright
+// before warming the new set — a plain `caches.delete()`, since the custom
+// area's bucket is keyed on its area id ('custom') alone, not its
+// geometry or its basemap; this needs no confirmation, because it is
+// replacing the user's own prior choice with the new one they just made.
+// (2) Making room under the standing byte budget may require evicting
+// OTHER areas entirely — planned by `planBasemapDownloadBudget`/
+// `planEviction` and, unlike (1), always confirmed first
+// (`confirmBasemapEviction`) naming what would be removed. Before SNOW-586
+// there was only (1), driven by re-deriving the stale tile URLs against
+// the CURRENT template and deleting them one-by-one — which silently
+// deleted nothing after a basemap switch, since the tiles it computed no
+// longer matched what was actually on disk; a bucket delete has no such
+// dependency.
+//
+// SNOW-632: (1) used to fire on a bbox change alone. A basemap switch AT
+// THE SAME bbox fell through it — the old basemap's tiles stayed in the
+// bucket, the new run's tiles landed alongside them, and the bucket's
+// real size stopped matching what got recorded (see the bytes bullet in
+// docs/decisions/per-area-pinned-basemap-caches.md). (1) now fires on
+// EITHER change, so the bucket always holds exactly one basemap's tiles.
 //
 // Offline-integrity: mirrors mapDownloadControlInit's offline handling
 // exactly — neither opening the framing overlay nor confirming a download
 // is allowed while offline.
+//
+// SNOW-632: a confirmed run now OWNS the overlay for its duration rather
+// than handing straight back to the map. The CTA readout shows live
+// progress by BOTH measures — "42% · 6.1 MB", tile count and actual
+// on-disk bytes — Download disables, and dragPan plus every zoom handler
+// freeze (extending _anchorZoomOnTheFrame/_releaseZoomAnchor's own
+// anchor/release pair — see _lockMapForRun/_unlockMapAfterRun) so neither
+// gesture can shift the selection out from under tiles already being
+// fetched. Cancel stays live throughout — it is the one thing NOT
+// disabled — and, mid-run, actually stops the download
+// (window.pwaWarmCacheCancel(), posted from the overlay:dismissed
+// listener below) rather than merely hiding a run that carries on
+// unseen. A run that settles `cancelled` (basemap_download_runner.js's
+// `finish` docstring) is neither success nor failure: the roundel returns
+// to idle/offline, never done. A SUCCESSFUL run no longer closes the
+// overlay either — see setState's 'done' branch — it repaints the CTA in
+// place ("23.4 MB downloaded", Download hidden, Cancel relabelled Close)
+// and leaves closing it to the user, on the same dismiss idiom Cancel
+// always used. The top instruction bar becomes a standing-budget banner
+// while framing is open — "39 MB / 500 MB downloaded" across every
+// pinned area, not just this one (_renderBudgetBanner) — read from
+// IndexedDB once per framing session and once more when a run settles,
+// never per progress tick.
 (function mapCustomDownloadControlInit() {
   const btn = document.getElementById('map-custom-download-control');
   const overlayEl = document.getElementById('map-frame-overlay');
@@ -7117,14 +7234,30 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const frameRectEl = document.getElementById('map-frame-rect');
   const readoutEl = document.getElementById('map-frame-readout');
   const confirmBtn = document.getElementById('map-frame-confirm');
-  if (!btn || !overlayEl || !frameAreaEl || !frameRectEl || !readoutEl || !confirmBtn) {
+  // SNOW-632: Cancel doubles as Close once a run has completed (see
+  // setState's 'done' branch) — its own click still goes through the
+  // shared data-action="dismiss" idiom, so no new listener is needed, but
+  // its label has to be readable/restorable, hence the lookup and the
+  // captured default below. The instruction bar becomes the standing
+  // download-budget banner while framing is open (see
+  // _renderBudgetBanner) — optional, since a missing element degrades to
+  // "no banner", never a hard failure.
+  const cancelBtn = document.getElementById('map-frame-cancel');
+  const instructionEl = document.getElementById('map-frame-instruction');
+  if (!btn || !overlayEl || !frameAreaEl || !frameRectEl || !readoutEl || !confirmBtn || !cancelBtn) {
     return;
   }
+
+  // SNOW-632: Cancel's own translated label ({% trans "Cancel" %} in the
+  // template), captured once so it can be restored after a run relabels
+  // the button to "Close" — see setState's 'done' branch and openFraming's
+  // reset.
+  const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
 
   const CUSTOM_AREA_KEY = 'basemap.customArea';
 
   // The persisted saved area, or null: {bbox, band, centre_tile, name,
-  // bytes, savedAt}.
+  // template, bytes, savedAt}.
   let savedArea = null;
 
   // The live bbox/blob for whatever the frame currently covers, while the
@@ -7136,6 +7269,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // be removed on close. Null when not framing.
   let moveHandler = null;
   let resizeHandler = null;
+
+  // SNOW-632: the standing download-budget banner's cached inputs — the
+  // total bytes already recorded across every pinned area, and the
+  // effective budget, both in bytes. Read once per framing session
+  // (openFraming) and once more when a run settles (finish), never per
+  // progress tick — see _refreshBudgetBanner's own comment for why.
+  let bannerBaselineBytes = 0;
+  let bannerBudgetBytes = 0;
+  // SNOW-632 review finding: true once the pair above has been read from
+  // IndexedDB at least once. openFraming fires _refreshBudgetBanner()
+  // without awaiting it, so a run confirmed before that read resolves
+  // would otherwise paint against the zero bannerBudgetBytes has not yet
+  // been given a real value — "X MB / 0 MB downloaded". _renderBudgetBanner
+  // checks this and holds the pre-existing instruction text instead.
+  let bannerBudgetKnown = false;
+
+  // This area's OWN share of `bannerBaselineBytes`. A run replaces that
+  // share rather than adding to it (finish records the run's own bytes —
+  // see docs/decisions/per-area-pinned-basemap-caches.md), so the live
+  // banner has to take it back out or it counts the area twice for the
+  // duration: baseline 62.6 MB + 18.4 MB landed read as 80.9 MB used
+  // when the true figure was 18.4 MB, snapping back only once `finish`
+  // re-read the records. Mirrors what `planEviction` already does for
+  // budget planning, where the incoming area is excluded from the
+  // standing total for exactly the same reason.
+  let bannerOwnAreaBytes = 0;
 
   /**
    * True when EVERY tile of the saved custom area is present in the
@@ -7167,14 +7326,56 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
+   * `bytes` as a display string, via basemap_manage_core.js's
+   * `formatMegabytes` — nearest-MB rounding, since this is always an
+   * ACTUAL size already on disk, never buildBlob's round-UP estimate (see
+   * that module's header for why the two must not be conflated).
+   * Defensive: `pwaBasemapManageCore` is loaded on the map page (SNOW-570
+   * put it there for the layers-menu sync dashboard), but map.js already
+   * treats it as optional elsewhere (see basemapDownloadedAreas) — follow
+   * suit rather than assume.
+   *
+   * @param {number} bytes
+   * @returns {string}
+   */
+  function _formatBytes(bytes) {
+    const manage = self.pwaBasemapManageCore;
+    return manage && typeof manage.formatMegabytes === 'function'
+      ? manage.formatMegabytes(bytes)
+      : '0 MB';
+  }
+
+  /**
    * Paint `state` onto the roundel: data-download-state, the busy fill
-   * percentage, and an aria-label/title.
+   * percentage, and an aria-label/title. Also owns two things that only
+   * ever change on the busy transition EDGES — never on a call that
+   * merely repeats the current state:
+   *
+   *   Entering busy: locks the map underneath the overlay
+   *   (_lockMapForRun) and starts the CTA's live "42% · 6.1 MB" readout.
+   *
+   *   Leaving busy: unlocks the map (_unlockMapAfterRun) and paints the
+   *   CTA's outcome — "23.4 MB downloaded" with Download hidden and
+   *   Cancel relabelled Close for a success, or a restored "Up to N MB"
+   *   readout (via _updateReadout) for anything else.
+   *
+   * The edge check matters: this function is ALSO how the background
+   * probe (_renderControl) paints 'done'/'idle'/'offline' whenever the
+   * roundel is re-evaluated (boot, a basemap switch, a connectivity
+   * flip) — which can happen while the overlay is open for an unrelated
+   * reason (the user reopened an already-'done' saved area). Gating the
+   * CTA-specific work on `wasBusy` — true only for the single call where
+   * a REAL run just ended — keeps that background path from ever
+   * clobbering the CTA underneath it.
    *
    * @param {string} state - 'idle' | 'busy' | 'done' | 'error' | 'offline'.
    * @param {number} [pct] - Only meaningful for state 'busy'.
+   * @param {number} [bytes] - SNOW-632: for 'busy', the run's on-disk
+   *   bytes so far; for 'done', its final total. Unused otherwise.
    * @returns {void}
    */
-  function setState(state, pct) {
+  function setState(state, pct, bytes) {
+    const wasBusy = btn.dataset.downloadState === 'busy';
     btn.dataset.downloadState = state;
     // 'idle', 'done' and 'error' all reopen framing on click (see the
     // click handler below) — only 'busy' (a run is already going) and
@@ -7202,6 +7403,66 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
+
+    // SNOW-632: lock/unlock exactly on the busy edges — every progress
+    // tick repaints 'busy' but must not re-lock an already-locked map.
+    if (state === 'busy' && !wasBusy) {
+      _lockMapForRun();
+    } else if (state !== 'busy' && wasBusy) {
+      _unlockMapAfterRun();
+    }
+
+    // The CTA sheet's own readout/button state. See the docstring above
+    // for why this is gated on the busy edges rather than on `state`
+    // alone.
+    if (state === 'busy') {
+      if (!overlayEl.hasAttribute('hidden')) {
+        confirmBtn.disabled = true;
+        const busyText = self.pwaStrings.interpolate(MAP_STRINGS['frame-readout-busy'], {
+          pct: `${pct || 0}%`,
+          mb: _formatBytes(bytes),
+        });
+        if (readoutEl.textContent !== busyText) readoutEl.textContent = busyText;
+        // The banner swaps this area's recorded share for the run's own
+        // live bytes, against the baseline cached at openFraming — no
+        // further IndexedDB read. Coerced so the opening paint('busy', 0)
+        // (no bytes yet) still counts as "a run is under way, nothing
+        // landed" rather than falling back to the un-excluded baseline.
+        _renderBudgetBanner(Number(bytes) || 0);
+      }
+    } else if (wasBusy && !overlayEl.hasAttribute('hidden')) {
+      if (state === 'done') {
+        // Hidden via an inline style, not the `hidden` attribute:
+        // .map-frame-btn sets `display: inline-flex` at the same
+        // specificity as the UA's `[hidden]` rule, and — unlike
+        // #map-frame-overlay, which has its own `[hidden]` override in
+        // map.css — nothing here would win that tie.
+        confirmBtn.style.display = 'none';
+        cancelBtn.textContent = MAP_STRINGS['action-close'];
+        readoutEl.classList.remove('map-frame-readout--over-ceiling');
+        readoutEl.textContent = self.pwaStrings.interpolate(MAP_STRINGS['frame-readout-done'], {
+          mb: _formatBytes(bytes),
+        });
+      } else {
+        // Error, or (defensively) a cancelled run settling while the
+        // overlay is somehow still open — in practice a cancel has
+        // always torn framing down (and hidden the overlay) before this
+        // runs. pendingBbox/pendingBlob are untouched by an error (SNOW-
+        // 568 keeps the frame up for a retry).
+        //
+        // A ground-locked selection (the common case away from the
+        // default zoomed-out view — see _updateSelection's two-regimes
+        // comment) hasn't moved during a run that locked pan/zoom, so
+        // _updateSelection's own "bbox unchanged, nothing to repaint"
+        // optimisation (SNOW-567) would otherwise return null here and
+        // leave the busy state's disabled Download/percentage text
+        // sitting on screen forever. Clearing lockedBbox first forces a
+        // genuine repaint of the SAME bbox — the same trick openFraming
+        // itself uses before its own first paint, for the same reason.
+        lockedBbox = null;
+        _updateReadout();
+      }
+    }
   }
 
   // SNOW-611: shared with mapDownloadControlInit — see `makeStyleSettleRetry`.
@@ -7266,7 +7527,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * there before — exactly one custom area exists at a time.
    *
    * @param {{bbox: number[], band: number[], centre_tile: Object, name:
-   *   string, bytes: number, savedAt: string}} area
+   *   string, template: string, bytes: number, savedAt: string}} area
    * @returns {void}
    */
   function _persistSavedArea(area) {
@@ -7655,8 +7916,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     pendingBlob = fitted.blob;
     const overCeiling = pendingBlob.over_ceiling;
     const text = overCeiling
-      ? `Area too large to download (over ${core.DOWNLOAD_CEILING_MB} MB)`
-      : `Up to ${pendingBlob.mb} MB`;
+      ? self.pwaStrings.interpolate(MAP_STRINGS['frame-over-ceiling'], {
+          mb: core.DOWNLOAD_CEILING_MB,
+        })
+      : self.pwaStrings.interpolate(MAP_STRINGS['frame-up-to'], { mb: pendingBlob.mb });
     // Same no-op guard as the frame's own size write above: the estimate
     // holds still across most 'move's, and rewriting identical text still
     // costs a layout of the CTA bar.
@@ -7742,6 +8005,133 @@ const repaintRegionsForDate = (dateKey, cache) => {
     MAP.scrollZoom.enable();
     MAP.touchZoomRotate.enable();
     MAP.doubleClickZoom.enable();
+    // SNOW-632: also the safety net for _lockMapForRun's dragPan.disable()
+    // — a Cancel click mid-run tears framing (and this) down synchronously,
+    // well before the run's own settle reaches _unlockMapAfterRun, so
+    // without this dragPan would stay frozen for however long the
+    // cancellation round trip takes. Idempotent the rest of the time:
+    // dragPan is never disabled outside a run, so this is a harmless no-op
+    // on every other call site.
+    MAP.dragPan.enable();
+  }
+
+  /**
+   * Freeze every map gesture — pan and all three zoom handlers — for the
+   * duration of a confirmed run (SNOW-632, requirement 3). Framing itself
+   * leaves dragPan enabled (panning is how the user re-aims a ground-
+   * locked selection — see _updateSelection's header comment); this is
+   * stricter and applies only while a download is actually in flight,
+   * because a run has already committed to a specific tile set and must
+   * not have the ground shift under it mid-fetch.
+   *
+   * Called from setState on the busy transition edge, never directly —
+   * see that function's docstring.
+   *
+   * @returns {void}
+   */
+  function _lockMapForRun() {
+    if (!MAP) return;
+    MAP.dragPan.disable();
+    MAP.scrollZoom.disable();
+    MAP.touchZoomRotate.disable();
+    MAP.doubleClickZoom.disable();
+  }
+
+  /**
+   * Undo _lockMapForRun once a run settles. Re-anchors to the frame
+   * (_anchorZoomOnTheFrame) only if framing is STILL open — a run that
+   * settles after the user has already cancelled finds the overlay
+   * hidden and _teardownFraming/_releaseZoomAnchor already run, and
+   * re-anchoring here would resurrect the padding and handlers that
+   * teardown just cleared. dragPan is re-enabled unconditionally either
+   * way — _releaseZoomAnchor also does this defensively (see its own
+   * comment), but the settle path is this function's own responsibility
+   * whenever framing is still up.
+   *
+   * @returns {void}
+   */
+  function _unlockMapAfterRun() {
+    if (!MAP) return;
+    MAP.dragPan.enable();
+    if (!overlayEl.hasAttribute('hidden')) {
+      _anchorZoomOnTheFrame();
+    }
+  }
+
+  /**
+   * Render #map-frame-instruction as the standing download total against
+   * the budget — "39 MB / 500 MB downloaded" — from the cached
+   * `bannerBaselineBytes`/`bannerBudgetBytes`, optionally layering a live
+   * run's own progress on top.
+   *
+   * @param {number} [liveBytes] Bytes landed by a run in progress. The
+   *   area's own previously-recorded share is swapped out for this figure
+   *   rather than added to it — see `bannerOwnAreaBytes`. Omitted outside
+   *   a run, when the cached baseline is already the whole truth.
+   * @returns {void}
+   */
+  function _renderBudgetBanner(liveBytes) {
+    // SNOW-632 review finding: bannerBudgetBytes starts at 0, and
+    // openFraming's _refreshBudgetBanner() read is unawaited — painting
+    // before it resolves would show a false "X MB / 0 MB" denominator.
+    // Leave whatever instruction text is already there until the real
+    // budget is known.
+    if (!instructionEl || !bannerBudgetKnown) return;
+    // `undefined` (no run) leaves the baseline untouched; a run swaps this
+    // area's recorded share for what it has landed so far. Floored at 0
+    // because the two figures come from different reads and a stale
+    // baseline must never render a negative total.
+    const usedBytes =
+      liveBytes === undefined
+        ? bannerBaselineBytes
+        : Math.max(0, bannerBaselineBytes - bannerOwnAreaBytes) + (Number(liveBytes) || 0);
+    instructionEl.textContent = self.pwaStrings.interpolate(
+      MAP_STRINGS['frame-budget-banner'],
+      { used: _formatBytes(usedBytes), budget: _formatBytes(bannerBudgetBytes) },
+    );
+  }
+
+  /**
+   * (Re)read the standing download total and budget from IndexedDB, cache
+   * them, and repaint the banner.
+   *
+   * Called exactly twice a run — once from openFraming, once more from
+   * `finish` once the run has settled — never from the progress-tick path
+   * (setState/_renderBudgetBanner), which repaints the SAME cached numbers
+   * plus the run's own live bytes. Each read here is two `meta:app` round
+   * trips (basemapDownloadedAreas covers `basemap.regions` AND
+   * `basemap.customArea`) plus a third for the budget row; a live run
+   * repaints its percentage roughly once per tile, so doing this on every
+   * tick would be dozens of IndexedDB reads a second for no visible gain
+   * — the banner already tracks the run via `liveBytes`.
+   *
+   * Best-effort and async: never blocks the overlay's own appearance on
+   * IndexedDB, and a failed read just leaves the previous figures in
+   * place.
+   *
+   * @returns {Promise<void>}
+   */
+  async function _refreshBudgetBanner() {
+    if (!instructionEl) return;
+    try {
+      const [areas, budgetBytes] = await Promise.all([
+        basemapDownloadedAreas(),
+        basemapDownloadBudgetBytes(),
+      ]);
+      bannerBaselineBytes = areas.reduce((sum, area) => sum + (Number(area.bytes) || 0), 0);
+      // Read alongside the total, from the SAME snapshot, so the two can
+      // never disagree about what this area currently contributes.
+      const core = self.pwaBasemapDownloadCore;
+      const ownArea = core ? areas.find((area) => area.id === core.CUSTOM_AREA_ID) : null;
+      bannerOwnAreaBytes = ownArea ? Number(ownArea.bytes) || 0 : 0;
+      bannerBudgetBytes = budgetBytes;
+      bannerBudgetKnown = true;
+    } catch (_e) {
+      // Best-effort — the banner keeps showing its previous figures (or,
+      // if this is the first read and it fails, the pre-existing
+      // instruction text — bannerBudgetKnown stays false).
+    }
+    _renderBudgetBanner();
   }
 
   /**
@@ -7754,6 +8144,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
   function openFraming() {
     if (!MAP) return;
     overlayEl.removeAttribute('hidden');
+    // SNOW-632: undo whatever the PREVIOUS session's completed run left on
+    // the CTA bar (setState's 'done' branch hides Download and relabels
+    // Cancel to Close) — without this a Close button, and no Download at
+    // all, would leak into a framing session that has not downloaded
+    // anything yet. _updateReadout below repaints the readout text and
+    // confirmBtn's disabled state from the CURRENT selection, so nothing
+    // further is needed for those.
+    confirmBtn.style.removeProperty('display');
+    cancelBtn.textContent = CANCEL_LABEL_DEFAULT;
+    // The standing download-budget banner — read once here (never per
+    // progress tick; see _refreshBudgetBanner's own comment) and rendered
+    // as soon as the numbers arrive, without making the overlay's own
+    // appearance wait on IndexedDB.
+    _refreshBudgetBanner();
     // Strip the map furniture that has nothing to do with the area being
     // framed — the region readout names a region the download does not
     // follow, and the date ribbon/scrubber describe a day. Both would
@@ -7793,7 +8197,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // event; that cost is gone now the gutter box is cached, leaving this
     // path a handful of projections and a style write with no layout read
     // at all.
-    moveHandler = () => _updateReadout();
+    moveHandler = () => {
+      // SNOW-632, requirement 2: the map is locked during a run (see
+      // _lockMapForRun) so this should never fire from a user gesture
+      // while busy — but guard it anyway rather than trust that no
+      // programmatic 'move' (e.g. _unlockMapAfterRun's own re-anchor) can
+      // land here first and re-enable Download out from under a run still
+      // in flight.
+      if (btn.dataset.downloadState === 'busy') return;
+      _updateReadout();
+    };
     MAP.on('move', moveHandler);
     if (typeof ResizeObserver === 'function') {
       frameAreaObserver = new ResizeObserver(() => {
@@ -7821,18 +8234,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   /**
    * Stop tracking the frame (removes the 'move' listener) and clear the
-   * pending bbox/blob. Does NOT hide the overlay itself — the Cancel path
-   * (overlays.js's shared dismiss handler) already hid it before
-   * dispatching overlay:dismissed; the post-download path hides it
-   * explicitly in _closeFramingAfterRun below.
+   * pending bbox/blob. Does NOT hide the overlay itself — that is the
+   * Cancel/Close button's own job, via overlays.js's shared dismiss
+   * handler, which has already hidden the overlay before dispatching
+   * overlay:dismissed by the time this runs (SNOW-632: since a SUCCESSFUL
+   * run no longer closes the overlay itself — see setState's 'done'
+   * branch — dismissal is now the ONLY path that ever calls this).
    *
    * @returns {void}
    */
   function _teardownFraming() {
-    // Restores the furniture openFraming stripped. Lives here rather than
-    // beside each hide because BOTH close paths (the shared overlays.js
-    // dismiss handler and _closeFramingAfterRun) funnel through this
-    // function — putting it anywhere else leaves one of them stripped.
+    // Restores the furniture openFraming stripped.
     document.body.classList.remove('map-framing');
     if (moveHandler && MAP) {
       MAP.off('move', moveHandler);
@@ -7852,19 +8264,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     lockedBbox = null;
     pendingBbox = null;
     pendingBlob = null;
-  }
-
-  /**
-   * Close the overlay once a confirmed download run has settled (success
-   * or failure) — the roundel itself carries the outcome (mirroring
-   * mapDownloadControlInit's "no toast" convention), so there is nothing
-   * further for the CTA bar to show.
-   *
-   * @returns {void}
-   */
-  function _closeFramingAfterRun() {
-    overlayEl.setAttribute('hidden', '');
-    _teardownFraming();
   }
 
   /**
@@ -7891,6 +8290,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * SW's warm-cache handler — mirrors mapDownloadControlInit's
    * handleClick, sharing its assembleBasemapDownloadFeedURLs helper.
    *
+   * SNOW-632: a run's outcome no longer decides whether the overlay
+   * closes — only the user's own Cancel/Close click does that (see
+   * setState's 'done' branch and the overlay:dismissed listener). A
+   * SUCCESSFUL run instead repaints the CTA in place: the readout becomes
+   * "23.4 MB downloaded", Download hides, and Cancel relabels to Close. A
+   * CANCELLED run (the user dismissed while this was in flight) is
+   * neither success nor failure — see the `cancelled` branch below.
+   *
    * @returns {Promise<void>}
    */
   async function handleConfirm() {
@@ -7912,9 +8319,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // A REPLACEMENT of the same area at a NEW bbox — the frame moved since
     // the last confirm — clears the old tiles first: they belong to ground
     // this run doesn't cover, and leaving them would both bloat this area's
-    // one shared bucket and inflate its recorded byte total. Computed here
-    // because `finish` needs the answer too, to decide whether bytes
-    // accumulate onto the previous record.
+    // one shared bucket and inflate its recorded byte total.
     const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
 
     const core = self.pwaBasemapDownloadCore;
@@ -7929,10 +8334,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // copy against itself.
       mb: blob.mb,
       // This control's roundel carries no size, so the shared runner's
-      // (state, pct) pair is narrowed here.
-      paint: (nextState, pct) => setState(nextState, pct),
+      // (state, pct, bytes) triple is passed straight through — SNOW-632:
+      // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
+      paint: (nextState, pct, bytes) => setState(nextState, pct, bytes),
       loadBlob: () => blob,
-      beforeWarm: async (_blob, areaId) => {
+      beforeWarm: async (_blob, areaId, template) => {
         // Unlike the budget eviction the runner has just done, this needs
         // no confirmation — it is replacing the user's OWN prior choice
         // with a new one they just made, not touching another area.
@@ -7940,47 +8346,70 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // against buildBlob — which also fixes a latent bug, since that
         // re-derivation used the CURRENT template and so deleted nothing
         // after a basemap switch.
-        if (savedArea && !sameBbox) {
+        //
+        // SNOW-632: also evicts on a TEMPLATE change at the SAME bbox — a
+        // basemap switch with the frame left untouched. Without this the
+        // old basemap's tiles stayed in the bucket alongside the new run's,
+        // so the bucket's real size stopped matching its recorded total
+        // (see docs/decisions/per-area-pinned-basemap-caches.md). A saved
+        // area with no `template` (a pre-SNOW-632 record) is treated as a
+        // mismatch too — the safe direction, since it costs one redundant
+        // eviction rather than an unaccounted-for stale bucket.
+        const sameTemplate = !!savedArea && savedArea.template === template;
+        if (savedArea && (!sameBbox || !sameTemplate)) {
           await evictBasemapAreas([areaId]);
         }
       },
-      finish: async (result, runBlob, { core, progressFill }) => {
+      finish: async (result, runBlob, { core, progressFill, template }) => {
+        // SNOW-632: a cancelled run is neither success nor failure — the
+        // user asked it to stop, not for it to fail — so this is checked
+        // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
+        // the cancel skipped was ever attempted), which would otherwise
+        // read as a clean success; see basemap_download_runner.js's
+        // `finish` docstring for why the check has to come first.
+        const cancelled = !!(result && result.cancelled);
         // "done" requires at least one success and no failures; a partial,
         // vacuous, or absent result must not claim the area is downloaded.
         //
         // SNOW-568: a run that didn't succeed now says so. It used to fall
-        // back to 'idle' and close the overlay — indistinguishable from
-        // never having clicked Download, which is exactly what a failing
-        // download looked like from the outside. The overlay stays open on
-        // failure so the framed area (and the Download button) survive for
-        // a retry; only success closes it.
-        const ok = !!(result && result.ok > 0 && result.failed === 0);
-        if (ok) {
-          // SNOW-586: bytes accumulate onto the PREVIOUS record only when
-          // this is the same area at the same bbox (a same-basemap retry,
-          // or a redownload after switching basemap) — the "shares one
-          // bucket across basemaps" accumulation mapDownloadControlInit's
-          // _recordRegionDownload documents. A bbox change already had its
-          // old bucket/record wiped above, so there is nothing to add onto.
-          const previousBytes = sameBbox && savedArea ? Number(savedArea.bytes) || 0 : 0;
+        // back to 'idle' silently, indistinguishable from never having
+        // clicked Download.
+        const ok = !cancelled && !!(result && result.ok > 0 && result.failed === 0);
+        if (cancelled) {
+          // Overlay teardown already ran synchronously when the user
+          // dismissed (see the overlay:dismissed listener below) — this
+          // just settles the roundel. Partial tiles may have landed
+          // before the worker honoured the cancel, so this can never
+          // claim 'done': the probe checks the WHOLE saved area's tile
+          // set, and painting done here would claim more than is true.
+          await progressFill.finish(false);
+          setState(navigator.onLine ? 'idle' : 'offline');
+        } else if (ok) {
+          // SNOW-632: `bytes` is this run's OWN reported total, recorded
+          // outright — never accumulated onto the previous record, and
+          // never re-measured from the bucket (a live tile response
+          // carries no `Content-Length` under gzip, so a bucket
+          // measurement reads ~0 in production; see the decision doc for
+          // the curl evidence). `beforeWarm` above has already cleared the
+          // bucket on either a bbox or a template change, so by the time
+          // this runs the bucket holds exactly this run's own tiles and
+          // its own total is the bucket's whole total.
           savedArea = {
             bbox: bbox,
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
             name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
-            bytes: previousBytes + (Number(result.bytes) || 0),
+            template: template,
+            bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };
           _persistSavedArea(savedArea);
-          // SNOW-569: close the framing overlay BEFORE the pulse — the CTA
-          // bar and the dimmed surround are the framing UI, and the pulse is
-          // the map's own confirmation, so it should play on a clean map
-          // rather than behind the furniture that set it up. Only on
-          // success: SNOW-568 deliberately keeps the overlay open after a
-          // failure, and the fill is cleared without a pulse there anyway.
-          _closeFramingAfterRun();
+          // SNOW-569's pulse still plays on success; SNOW-632 removed the
+          // overlay-close that used to precede it (SNOW-568 already left
+          // it open on failure, and requirement 5 now does the same for a
+          // success — see setState's 'done' branch for what replaces it).
           await progressFill.finish(true);
-          setState('done');
+          setState('done', undefined, savedArea.bytes);
         } else {
           await progressFill.finish(false);
           setState('error');
@@ -7993,12 +8422,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // SNOW-505/522: the warm-cache run has just warmed the shell +
         // pinned basemap caches; re-probe every sync dot against real
         // cache state, mirroring mapDownloadControlInit's own post-run
-        // refresh — the layers menu is a live cache-state dashboard.
+        // refresh — the layers menu is a live cache-state dashboard. A
+        // cancelled run needs this exactly as much as a completed one:
+        // partial tiles may have landed before the worker honoured the
+        // cancel, and stale dots would misreport them.
         window.pwaLayerSyncStatus?.refresh();
         // SNOW-570/SNOW-587: and the cached-tiles overlay, so tiles that
         // just finished downloading appear immediately rather than at the
         // next basemap swap or reload.
         window.pwaDownloadedOverlay?.refresh();
+        // SNOW-632: the standing total on disk has changed (a success
+        // adds this run's bytes; a cancel or a partial failure may have
+        // landed some tiles too), so the banner's cached baseline is
+        // stale — re-read it once, rather than trying to derive the new
+        // figure from what `finish` already knows.
+        _refreshBudgetBanner();
       },
     });
   }
@@ -8016,17 +8454,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
   confirmBtn.addEventListener('click', () => handleConfirm());
 
-  // Cancel goes through overlays.js's shared [data-action="dismiss"]
+  // Cancel/Close both go through overlays.js's shared [data-action="dismiss"]
   // handler (it already hid the overlay and dispatched this event by the
   // time this listener runs) — teardown-only here, matching this IIFE's
   // header comment.
   document.addEventListener('overlay:dismissed', (e) => {
     if (e.detail && e.detail.overlay === overlayEl) {
+      // SNOW-632: capture BEFORE teardown — a busy roundel is this
+      // control's own sign that a run is in flight, and teardown below
+      // does not touch it (only setState, from the run's own eventual
+      // `finish`, does).
+      const wasBusy = btn.dataset.downloadState === 'busy';
       _teardownFraming();
       // SNOW-568: cancelling framing abandons the attempt the toast was
       // reporting on. Leaving it up would also strand it at the offset
       // that cleared the CTA sheet which has just gone away.
       clearBasemapDownloadError();
+      // SNOW-632: a Cancel click while a run is in flight asks the worker
+      // to stop dispatching further URLs. A safe no-op otherwise — this
+      // is the SAME dismiss idiom an idle Cancel (nothing running) or a
+      // post-completion Close (already settled) also go through, and
+      // `pwaWarmCacheCancel` is itself a no-op with no run in flight — but
+      // the check avoids posting to a service worker that isn't waiting
+      // for anything.
+      if (wasBusy) {
+        window.pwaWarmCacheCancel?.();
+      }
     }
   });
 
@@ -8036,10 +8489,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
 
   // Offline-integrity: re-render the roundel, and re-validate the open
-  // CTA's Download button, on every connectivity transition.
+  // CTA's Download button, on every connectivity transition. SNOW-632: a
+  // run in flight owns the CTA (see setState) — the network flapping
+  // mid-run must not re-enable Download out from under it, so this is
+  // skipped while busy, exactly like the 'move' handler above.
   document.addEventListener('snowdesk:connectivity-changed', () => {
     renderControl();
-    if (pendingBbox) _updateReadout();
+    if (pendingBbox && btn.dataset.downloadState !== 'busy') _updateReadout();
   });
 
   // Boot: read the persisted saved area (independent of MAP — meta:app

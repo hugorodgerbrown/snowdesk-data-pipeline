@@ -44,7 +44,9 @@ roundel re-opens framing at the saved area; moving the frame then
 Cancelling leaves the saved area untouched; moving the frame then
 confirming deletes the custom area's OWN pinned bucket outright before
 warming the new set (SNOW-586's whole-bucket evict-on-confirm, replacing
-the old per-URL re-derivation).
+the old per-URL re-derivation) — and (SNOW-632) so does confirming again
+at the SAME bbox under a DIFFERENT basemap, which a bbox-only eviction
+check would miss.
 
 SNOW-568 adds the failure path, which had no coverage because it had no
 behaviour: every failed run reverted the roundel to ``idle`` and closed
@@ -57,6 +59,7 @@ along with retrying and cancelling out of that state.
 
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 import pytest
@@ -102,6 +105,63 @@ def _open_framing(page: Page) -> None:
 
 def _wait_for_overlay_closed(page: Page) -> None:
     page.wait_for_selector("#map-frame-overlay[hidden]", state="attached")
+
+
+def _wait_for_worker_flag(
+    worker: SWWorker, expression: str, *, timeout_ms: int = 5000
+) -> None:
+    """Poll ``worker.evaluate(expression)`` until it is truthy.
+
+    SNOW-632 review finding: Playwright's Python ``Worker`` has no
+    ``wait_for_function`` (unlike ``Page``), so a test that needs to observe
+    SW-side state — here, ``_stub_warm_cache``'s ``pause_after_step``
+    protocol — has no built-in way to wait for it deterministically. This is
+    the substitute: retry a short ``evaluate`` a few milliseconds apart
+    rather than sleep a fixed guess and hope the worker got there in time.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if worker.evaluate(expression):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"timed out waiting for worker condition: {expression}")
+
+
+def _close_completed_overlay(page: Page) -> None:
+    """Click a completed run's Close (the relabelled Cancel button) and wait for it to hide.
+
+    SNOW-632: framing hides ``#map-controls-br`` — the roundel's own
+    container — for as long as the overlay is open (``.map-framing`` in
+    static/css/map.css), which now includes the whole of a completed run
+    (the overlay no longer auto-closes on success). A test wanting a
+    SECOND framing session therefore has to close the first one via the
+    CTA itself before ``_open_framing`` can click the roundel again — that
+    click is simply not there to hit otherwise.
+    """
+    page.click("#map-frame-cancel")
+    _wait_for_overlay_closed(page)
+
+
+def _wait_for_budget_banner(page: Page) -> None:
+    """Wait for #map-frame-instruction to become the standing-budget banner.
+
+    SNOW-632: map.js's ``_refreshBudgetBanner`` overwrites the server-
+    rendered "Download selected area…" copy asynchronously (an IndexedDB
+    round trip) once framing opens, and deliberately does not block the
+    overlay's own reveal on it — so a test has to wait for the real text
+    to land rather than read whatever placeholder is there the instant
+    ``_open_framing`` returns.
+    """
+    page.wait_for_function(
+        """() => {
+            const el = document.getElementById('map-frame-instruction');
+            return !!el && el.innerText.includes('/') && el.innerText.includes('MB');
+        }"""
+    )
+
+
+def _instruction_text(page: Page) -> str:
+    return str(page.locator("#map-frame-instruction").inner_text())
 
 
 def _readout_text(page: Page) -> str:
@@ -379,13 +439,17 @@ def test_opening_framing_dims_the_map_and_shows_the_frame(pwa_page: PwaPage) -> 
     assert "9999px" in box_shadow, "the dim mask is a 9999px box-shadow spread"
     assert "MB" in _readout_text(page)
 
-    # The instruction bar names the task. It precedes the frame in DOM
-    # order, so it needs its own stacking context to escape the frame's
-    # box-shadow mask — assert it is lifted, since a silently-dimmed
-    # instruction still "renders" and would pass a bare visibility check.
+    # SNOW-632: the instruction bar becomes the standing download-budget
+    # banner while framing is open — "0 MB / 500 MB downloaded" against
+    # the default budget, since a fresh session has nothing downloaded
+    # yet. It precedes the frame in DOM order, so it needs its own
+    # stacking context to escape the frame's box-shadow mask — assert it
+    # is lifted, since a silently-dimmed banner still "renders" and would
+    # pass a bare visibility check.
+    _wait_for_budget_banner(page)
     instruction = page.locator("#map-frame-instruction")
     assert instruction.is_visible()
-    assert "offline" in instruction.inner_text().lower()
+    assert "500 MB" in _instruction_text(page)
     assert (
         page.evaluate(
             "() => getComputedStyle(document.getElementById('map-frame-instruction')).zIndex"
@@ -882,11 +946,16 @@ def test_frame_shrinks_to_hold_the_area_at_the_download_ceiling(
 def test_download_warms_pinned_and_notifies_the_sync_dashboard(
     pwa_page: PwaPage,
 ) -> None:
-    """Confirming warms with pinned:true, reaches done, and closes the overlay.
+    """Confirming warms with pinned:true and reaches done.
 
     Also covers the "notify the layers sync dashboard" invariant —
     ``window.pwaLayerSyncStatus?.refresh()`` must run after every completed
     download, region or custom-area alike.
+
+    SNOW-632: a completed download no longer closes the overlay — the CTA
+    repaints in place instead ("X MB downloaded", Download hidden, Cancel
+    relabelled Close). That is asserted here too; the dedicated completion
+    tests below cover the shape of it in more depth.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
@@ -895,7 +964,9 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
 
     _confirm_download(page, worker)
 
-    _wait_for_overlay_closed(page)
+    assert page.locator("#map-frame-overlay").is_visible()
+    assert "downloaded" in _readout_text(page).lower()
+    assert page.locator("#map-frame-confirm").is_hidden()
     urls = cast("list[str]", worker.evaluate("() => self.__snow521Urls || []"))
     assert any(url.startswith(_STUB_TEMPLATE.split("{")[0]) for url in urls)
     assert any("country=ch" in url for url in urls)
@@ -910,12 +981,16 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
 def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> None:
     """A completed download survives reload; clicking the green roundel
     re-opens framing with the map recentred on the saved area.
+
+    SNOW-632: no longer waits for the overlay to close after confirming —
+    it stays open showing the completion state now. Irrelevant here either
+    way: the very next step is a full page reload (`_boot`), which wipes
+    all client-side state regardless of what the overlay was doing.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    _wait_for_overlay_closed(page)
     area = _saved_area(page)
     assert area is not None
 
@@ -936,17 +1011,24 @@ def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> N
 
 
 def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> None:
-    """Moving the frame and Cancelling touches neither the saved row nor the cache."""
+    """Moving the frame and Cancelling touches neither the saved row nor the cache.
+
+    SNOW-632: the setup download no longer closes the overlay on its own —
+    ``_close_completed_overlay`` below closes THAT session explicitly
+    (via the CTA's own Close) before the second ``_open_framing`` can
+    click the roundel, which framing hides for as long as its own
+    overlay stays open.
+    """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    _wait_for_overlay_closed(page)
     area_before = _saved_area(page)
     assert area_before is not None
     url_before = _centre_tile_url(page, area_before["centre_tile"])
     assert _pinned_cache_has(page, url_before)
 
+    _close_completed_overlay(page)
     _open_framing(page)
     _move_the_frame(page)
     page.click("#map-frame-cancel")
@@ -957,21 +1039,26 @@ def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> Non
 
 
 def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None:
-    """Confirming a moved frame evicts the previous area's pinned tiles first."""
+    """Confirming a moved frame evicts the previous area's pinned tiles first.
+
+    SNOW-632: a completed download no longer closes the overlay on its
+    own, so each re-open below first closes the previous session via the
+    CTA's own Close — the roundel ``_open_framing`` clicks is hidden for
+    as long as framing's own overlay is up.
+    """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    _wait_for_overlay_closed(page)
     area_before = _saved_area(page)
     assert area_before is not None
     url_before = _centre_tile_url(page, area_before["centre_tile"])
     assert _pinned_cache_has(page, url_before)
 
+    _close_completed_overlay(page)
     _open_framing(page)
     _move_the_frame(page)
     _confirm_download(page, worker)
-    _wait_for_overlay_closed(page)
 
     area_after = _saved_area(page)
     assert area_after is not None
@@ -980,6 +1067,57 @@ def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None
 
     assert not _pinned_cache_has(page, url_before), (
         "the old area's tiles should have been evicted before the new set warmed"
+    )
+    assert _pinned_cache_has(page, url_after)
+
+
+_TEMPLATE_B = "https://tiles-b.example.invalid/{z}/{x}/{y}.pbf"
+
+
+def test_switching_basemap_then_confirming_evicts_the_old_bucket(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: confirming at the SAME bbox under a DIFFERENT basemap evicts first.
+
+    ``test_move_then_confirm_evicts_the_old_areas_tiles`` above covers a
+    bbox change; this covers the other half of the eviction condition — the
+    frame never moves (so ``sameBbox`` alone would say "nothing to evict"),
+    only the ACTIVE basemap template does, as a basemap switch with the
+    custom area still framed on the same ground would produce. Without
+    evicting here too, the old basemap's tiles would sit in the bucket
+    alongside the new run's — bloating it, and leaving the recorded byte
+    total wrong either way (see
+    docs/decisions/per-area-pinned-basemap-caches.md).
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _confirm_download(page, worker)
+    area_before = _saved_area(page)
+    assert area_before is not None
+    assert area_before["template"] == _STUB_TEMPLATE
+    url_before = _centre_tile_url(page, area_before["centre_tile"])
+    assert _pinned_cache_has(page, url_before)
+
+    # Close this session, switch the ACTIVE basemap, and re-open framing
+    # without moving the map — the frame lands back on the SAME ground, so
+    # any eviction below can only be explained by the template change.
+    _close_completed_overlay(page)
+    _stub_active_basemap_template(page, template=_TEMPLATE_B)
+    _open_framing(page)
+    _confirm_download(page, worker)
+
+    area_after = _saved_area(page)
+    assert area_after is not None
+    assert area_after["template"] == _TEMPLATE_B
+    url_after = (
+        _TEMPLATE_B.replace("{z}", str(area_after["centre_tile"]["z"]))
+        .replace("{x}", str(area_after["centre_tile"]["x"]))
+        .replace("{y}", str(area_after["centre_tile"]["y"]))
+    )
+
+    assert not _pinned_cache_has(page, url_before), (
+        "the old basemap's tiles should have been evicted before the new set warmed"
     )
     assert _pinned_cache_has(page, url_after)
 
@@ -1050,7 +1188,9 @@ def test_retry_after_a_failure_completes_the_download(pwa_page: PwaPage) -> None
 
     _confirm_download(page, worker, ok=1, failed=0)
 
-    _wait_for_overlay_closed(page)
+    # SNOW-632: the retry's own success no longer closes the overlay —
+    # it repaints the CTA in place instead.
+    assert page.locator("#map-frame-overlay").is_visible()
     expect(page.locator("#map-download-error-toast")).to_be_hidden()
     assert _saved_area(page) is not None
 
@@ -1067,3 +1207,359 @@ def test_cancelling_after_a_failure_clears_the_message(pwa_page: PwaPage) -> Non
 
     _wait_for_overlay_closed(page)
     expect(page.locator("#map-download-error-toast")).to_be_hidden()
+
+
+# SNOW-632: live progress readout, Download/pan/zoom locked while busy,
+# Cancel actually cancelling, and the completed-run CTA state that
+# replaced the old "success closes the overlay" behaviour.
+
+
+def test_busy_readout_shows_percentage_and_megabytes(pwa_page: PwaPage) -> None:
+    """The CTA readout carries both the tile-count percentage and actual MB."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _stub_warm_cache(
+        worker,
+        ok=1,
+        failed=0,
+        progress_steps=[(1, 4), (2, 4), (3, 4), (4, 4)],
+        step_delay_ms=150,
+        bytes_total=4 * 1024 * 1024,
+    )
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+
+    page.wait_for_function(
+        """() => {
+            const t = document.getElementById('map-frame-readout').innerText;
+            return /%/.test(t) && /MB/.test(t);
+        }"""
+    )
+    text = _readout_text(page)
+    assert "%" in text
+    assert "MB" in text
+
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+
+
+def test_download_disabled_and_map_inert_while_busy(pwa_page: PwaPage) -> None:
+    """SNOW-632 requirements 2/3: Download disables, pan/zoom freeze, Cancel stays live."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _stub_warm_cache(
+        worker,
+        ok=1,
+        failed=0,
+        progress_steps=[(1, 3), (2, 3), (3, 3)],
+        step_delay_ms=200,
+    )
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+
+    assert page.locator("#map-frame-confirm").is_disabled()
+    assert page.evaluate("() => MAP.dragPan.isEnabled()") is False
+    assert page.evaluate("() => MAP.scrollZoom.isEnabled()") is False
+    assert page.evaluate("() => MAP.touchZoomRotate.isEnabled()") is False
+    # Requirement 4: Cancel is the one thing NOT disabled mid-run.
+    assert page.locator("#map-frame-cancel").is_enabled()
+
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    # The run settled with framing still open — pan/zoom are handed back
+    # to framing's own anchored state (_unlockMapAfterRun), not left inert.
+    assert page.evaluate("() => MAP.dragPan.isEnabled()") is True
+
+
+def test_cancel_mid_run_returns_to_idle_and_refreshes_the_sync_dashboard(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632 requirement 4: Cancel mid-run actually stops the download.
+
+    The roundel must land on ``idle``, never ``done`` — a cancelled run is
+    neither success nor failure, and the probe checks the WHOLE saved
+    area's tile set, so claiming done here would claim more than landed.
+
+    Deterministic by construction, not by a generous wall-clock margin:
+    the stub (``pause_after_step=0``) holds the run right after the first
+    progress tick lands, this test waits for that pause to actually be in
+    effect before clicking Cancel, and waits again for the SW to have
+    genuinely recorded the cancel (``self.__snow521ShouldCancel()`` reading
+    true) before releasing the pause — closing the race a fixed
+    ``wait_for_timeout`` against the stub's own step spacing left open
+    under a loaded CI runner (SNOW-632 review finding).
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _arm_sync_dashboard_probe(page)
+
+    _stub_warm_cache(
+        worker,
+        ok=4,
+        failed=0,
+        progress_steps=[(1, 4), (2, 4), (3, 4), (4, 4)],
+        cancellable=True,
+        pause_after_step=0,
+    )
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    # Wait for the stub to actually be paused mid-run, rather than assuming
+    # the first tick landed within some fixed window.
+    _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
+
+    page.click("#map-frame-cancel")
+    _wait_for_overlay_closed(page)
+    # Confirm sw.js's real 'warm-cache-cancel' listener has recorded the
+    # cancel before letting the stub's loop re-check shouldCancel() — this
+    # is the step a blind sleep was standing in for.
+    _wait_for_worker_flag(
+        worker, "() => !!(self.__snow521ShouldCancel && self.__snow521ShouldCancel())"
+    )
+    worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
+
+    _wait_for_state(page, "idle", selector=_CONTROL, timeout=10000)
+    assert _saved_area(page) is None
+    _assert_sync_dashboard_refreshed(page)
+
+
+def test_completed_download_leaves_overlay_open_with_a_working_close(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632 requirement 5: overlay stays open, "X MB downloaded", Close works."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=6 * 1024 * 1024)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+
+    assert page.locator("#map-frame-overlay").is_visible()
+    text = _readout_text(page)
+    assert "downloaded" in text.lower()
+    assert "6.0 MB" in text
+    assert page.locator("#map-frame-confirm").is_hidden()
+    close_btn = page.locator("#map-frame-cancel")
+    assert close_btn.is_enabled()
+    assert close_btn.inner_text().strip().lower() == "close"
+
+    close_btn.click()
+    _wait_for_overlay_closed(page)
+
+
+def test_reopening_framing_after_completion_resets_the_cta(pwa_page: PwaPage) -> None:
+    """A Close-relabelled/hidden CTA must not leak into the next framing session."""
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _confirm_download(page, worker, ok=1, failed=0)
+    assert page.locator("#map-frame-confirm").is_hidden()
+
+    # Close this session (framing hides the roundel's own container for as
+    # long as its overlay is up — SNOW-632's completed run no longer
+    # closes it automatically, so the roundel is not there to click until
+    # this happens), then re-click the (now 'done') roundel — openFraming
+    # must reset the CTA back to its pre-download shape, not carry the
+    # previous run's Close state into this new session.
+    _close_completed_overlay(page)
+    _open_framing(page)
+
+    expect(page.locator("#map-frame-confirm")).to_be_visible()
+    # SNOW-632 review finding: _updateReadout always writes
+    # confirmBtn.disabled = overCeiling || !navigator.onLine, but nothing
+    # asserted the reset actually re-enables it.
+    expect(page.locator("#map-frame-confirm")).not_to_be_disabled()
+    assert page.locator("#map-frame-cancel").inner_text().strip().lower() == "cancel"
+    assert "downloaded" not in _readout_text(page).lower()
+
+
+def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
+    pwa_page: PwaPage,
+) -> None:
+    """The top banner reports the total across every pinned area against the budget."""
+    page, worker = _boot(pwa_page)
+
+    # Seed a pre-existing REGION download (a distinct area from the custom
+    # one this test downloads below) so the standing total starts
+    # non-zero — basemapDownloadedAreas() unions basemap.regions with
+    # basemap.customArea (map.js), so a region-shaped row is enough.
+    page.evaluate(
+        """() => window.pwaDb.put('meta:app', {
+            key: 'basemap.regions',
+            value: [{
+                region_id: 'CH-9999',
+                name: 'Seed',
+                bytes: 10 * 1024 * 1024,
+                savedAt: new Date().toISOString(),
+            }],
+        })"""
+    )
+
+    _open_framing(page)
+    _wait_for_budget_banner(page)
+    before = _instruction_text(page)
+    assert "10.0 MB" in before
+    assert "500 MB" in before
+
+    _frame_a_downloadable_area(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=5 * 1024 * 1024)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+
+    page.wait_for_function(
+        """(before) => document.getElementById('map-frame-instruction').innerText !== before""",
+        arg=before,
+    )
+    after = _instruction_text(page)
+    assert "15.0 MB" in after
+    assert "500 MB" in after
+
+
+def test_budget_banner_does_not_double_count_this_area_mid_run(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: a re-download's live banner replaces this area's share, not adds to it.
+
+    The bug: the banner rendered ``bannerBaselineBytes + liveBytes``, and
+    the baseline already contained the very area being re-downloaded. A
+    62.6 MB custom area re-downloading with 18.4 MB landed read as
+    "80.9 MB / 500 MB" — the area counted twice — and only snapped back to
+    the truth when ``finish`` re-read the records, which made it look
+    self-healing rather than wrong.
+
+    The run REPLACES that recorded share (see the sibling test below), so
+    the live figure has to take it back out first — the same exclusion
+    ``planEviction`` already applies when budgeting an incoming area
+    against the standing total.
+
+    Held mid-run via the stub's ``pause_after_step`` handshake so the
+    assertion lands on a known progress tick rather than a sleep.
+    """
+    page, worker = _boot(pwa_page)
+
+    # A pre-existing download of ANOTHER area (a region), so the baseline
+    # has a component the run must NOT remove — a naive "show only the
+    # live bytes" fix would pass a test that seeded nothing else.
+    page.evaluate(
+        """() => window.pwaDb.put('meta:app', {
+            key: 'basemap.regions',
+            value: [{
+                region_id: 'CH-9999',
+                name: 'Seed',
+                bytes: 10 * 1024 * 1024,
+                savedAt: new Date().toISOString(),
+            }],
+        })"""
+    )
+
+    # Now give the CUSTOM area its own prior record — this is the share
+    # that must be swapped out, not stacked on.
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=20 * 1024 * 1024)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    _close_completed_overlay(page)
+
+    # Baseline is now 10 MB (region) + 20 MB (custom) = 30 MB.
+    _open_framing(page)
+    _wait_for_budget_banner(page)
+    assert "30.0 MB" in _instruction_text(page)
+
+    # Re-download the SAME area, paused after the first progress tick.
+    _stub_warm_cache(
+        worker,
+        ok=1,
+        failed=0,
+        bytes_total=20 * 1024 * 1024,
+        progress_steps=[(1, 2), (2, 2)],
+        pause_after_step=0,
+    )
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
+
+    # Half the run's 20 MB has landed. The honest total is the 10 MB
+    # region plus the 10 MB landed here — NOT 30 + 10, which is what the
+    # bug rendered.
+    page.wait_for_function(
+        """() => /\\b20\\.0 MB\\b/.test(
+            document.getElementById('map-frame-instruction').innerText
+        )""",
+        timeout=10000,
+    )
+    mid_run = _instruction_text(page)
+    assert "20.0 MB" in mid_run
+    assert "40.0 MB" not in mid_run
+
+    worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+
+    # And settles back to the same 30 MB it started at — a re-download of
+    # the same size adds nothing.
+    page.wait_for_function(
+        """() => /\\b30\\.0 MB\\b/.test(
+            document.getElementById('map-frame-instruction').innerText
+        )""",
+        timeout=10000,
+    )
+
+
+def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: a same-bbox repeat records the run's own bytes, so its total does not double.
+
+    The bug: confirming Download twice at the SAME bbox re-fetches the
+    identical tile URLs into the SAME pinned bucket each time —
+    ``cache.put`` OVERWRITES each key, so the bucket never grows — but the
+    original code accumulated the run's reported ``bytes`` onto the
+    previous record regardless, doubling the figure with nothing new on
+    disk to show for it. ``planBasemapDownloadBudget`` then evicted other
+    areas against that inflated total.
+
+    The fix records each run's own reported ``bytes_total`` outright,
+    replacing rather than accumulating onto the previous record — no
+    bucket measurement involved (an earlier version of the fix tried
+    measuring the bucket's ``Content-Length`` total instead, but a real
+    tile response carries no such header under the gzip encoding every
+    browser requests, so that measurement always read 0 in production and
+    silently fell back to this same run-reported figure anyway; see
+    docs/decisions/per-area-pinned-basemap-caches.md). Recording the same
+    reported figure twice, rather than summing it, is what stops the
+    double-count.
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    bytes_total = 60 * 1024 * 1024
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    first = _saved_area(page)
+    assert first is not None
+    assert first["bytes"] == bytes_total
+
+    # Close this session and re-open framing without moving the map — the
+    # frame lands back on the SAME ground, so this confirm is the
+    # same-bbox repeat the bug describes, not the bbox-moved replacement
+    # `test_move_then_confirm_evicts_before_warming_the_new_set` covers.
+    _close_completed_overlay(page)
+    _open_framing(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    second = _saved_area(page)
+    assert second is not None
+
+    assert second["bytes"] == bytes_total, (
+        "a same-bbox repeat inflated the recorded total: "
+        f"{first['bytes']} -> {second['bytes']}"
+    )
