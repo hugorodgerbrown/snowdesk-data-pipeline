@@ -62,6 +62,13 @@ control triggers a reload that lands them on the same unidentified state.
 - A stale `APP_MIN_VERSION` left set in a Render environment group is
   inert, but should be deleted so it does not read as live
   configuration.
+- The forced update clears the shell caches; it does **not** unregister the
+  service worker. That is right for the common case — a blocked page build
+  is replaced once its shell cache is gone — but it means blocking a build
+  will not replace a faulty `sw.js`, because the existing worker keeps
+  controlling the page. A bug inside the worker itself is what the
+  Mechanism-A kill switch (`SW_KILL` / `SW_URL`, spec §6.4) is for; reach
+  for that, not for `APP_BLOCKED_VERSIONS`.
 
 **Related.** The wipe that a confirmed block triggers is scoped to the
 shell caches, not to all local data — see the SNOW-609 comment block on

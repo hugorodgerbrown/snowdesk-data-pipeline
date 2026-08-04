@@ -20,7 +20,7 @@ import json
 import pytest
 from django.test import Client, override_settings
 
-from config.settings.base import _comma_separated_frozenset
+from config.settings.base import comma_separated_frozenset
 
 
 @pytest.mark.django_db
@@ -110,7 +110,7 @@ def test_update_required_fails_open_without_a_client_version_header() -> None:
 def test_update_required_fails_open_against_an_empty_blocked_entry() -> None:
     """An empty string in the blocked set cannot match a header-less client.
 
-    ``_comma_separated_frozenset`` already drops empty entries, so this
+    ``comma_separated_frozenset`` already drops empty entries, so this
     state is unreachable from env config; the guard is asserted here
     directly because it is what makes the fail-open promise unconditional.
     """
@@ -137,7 +137,7 @@ def test_blocked_versions_env_parsing(raw: str, expected: frozenset[str]) -> Non
     empty string a header-less request resolves to, silently blocking every
     unidentified client.
     """
-    assert _comma_separated_frozenset(raw) == expected
+    assert comma_separated_frozenset(raw) == expected
 
 
 @pytest.mark.django_db

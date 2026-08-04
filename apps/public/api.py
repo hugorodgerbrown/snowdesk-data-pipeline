@@ -2188,7 +2188,7 @@ def version(request: HttpRequest) -> JsonResponse:
       that must not keep running — see
       ``docs/decisions/blocked-builds-not-a-version-floor.md``.
     * **Fail open on an unidentified client.** No header means an empty
-      string, which is never a member (``_comma_separated_frozenset`` in
+      string, which is never a member (``comma_separated_frozenset`` in
       ``config/settings/base.py`` drops empty entries), so a client we
       cannot identify is never blocked. A blocking modal on a client whose
       build we do not know has no recovery path.

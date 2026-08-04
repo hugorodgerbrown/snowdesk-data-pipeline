@@ -74,7 +74,7 @@ RELEASE_VERSION = config(
 #                              registering a new one.
 
 
-def _comma_separated_frozenset(raw: str) -> frozenset[str]:
+def comma_separated_frozenset(raw: str) -> frozenset[str]:
     """Parse a comma-separated env value into a frozenset of trimmed entries.
 
     Empty entries (from a trailing comma, or an entirely empty value) are
@@ -96,7 +96,7 @@ APP_VERSION: str = RELEASE_VERSION
 APP_BLOCKED_VERSIONS: frozenset[str] = config(
     "APP_BLOCKED_VERSIONS",
     default="",
-    cast=_comma_separated_frozenset,
+    cast=comma_separated_frozenset,
 )
 APP_RELEASED_AT: str = config(
     "APP_RELEASED_AT",

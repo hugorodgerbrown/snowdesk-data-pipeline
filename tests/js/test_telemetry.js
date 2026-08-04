@@ -21,9 +21,9 @@
  * tests/e2e/test_pwa_client_signals.py that exercise telemetry.js's OWN
  * sample-rate/critical-event/enqueue logic directly, rather than another
  * module's wiring INTO telemetry.js (sw_register.js's message bridge,
- * pwa_install.js's funnel, pwa_version_check.js's escalation timer, and
- * pwa_client_version.js's header-stamping test other modules' behaviour,
- * not telemetry.js's — those stay in Playwright; see
+ * pwa_install.js's funnel, and pwa_client_version.js's header-stamping
+ * test other modules' behaviour, not telemetry.js's — those stay in
+ * Playwright; see
  * test_pwa_client_signals.py's updated module docstring):
  *   - the freshness-indicator sample-rate gate (3 cases: fresh/stale/
  *     unsafe) — calls `emit()` directly with the same event
