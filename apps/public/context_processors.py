@@ -44,29 +44,29 @@ def site_base_url(request: HttpRequest) -> dict[str, Any]:
 
 def pwa_version(request: HttpRequest) -> dict[str, Any]:
     """
-    Inject the PWA version pair into every template context (SNOW-374).
+    Inject the PWA build identifier into every template context (SNOW-374).
 
-    Exposes ``APP_VERSION`` (the build the server is serving) and
-    ``APP_MIN_VERSION`` (the minimum build the server will accept) so
-    ``base.html`` can bake them into ``<meta>`` tags. The client-side
-    version check (``static/js/pwa_version_check.js``) reads the meta
-    tags at page load to know the version the current shell was
-    delivered on, then compares against ``X-App-Version`` /
-    ``X-App-Min-Version`` on every response.
+    Exposes ``APP_VERSION`` (the build the server is serving) so
+    ``base.html`` can bake it into a ``<meta>`` tag. The client-side
+    version check (``static/js/pwa_version_check.js``) reads that tag at
+    page load to know the version the current shell was delivered on,
+    then compares it against ``X-App-Version`` on every response.
+
+    SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
+    ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
+    a server decision (``update_required`` in the ``/api/version`` body),
+    not a comparison the client can perform.
 
     Args:
         request: The incoming HTTP request (unused — value comes from settings).
 
     Returns:
-        ``{"APP_VERSION": str, "APP_MIN_VERSION": str}``. Empty strings
-        are passed through unchanged — the client treats them as "no
-        constraint declared" rather than as a missing header.
+        ``{"APP_VERSION": str}``. An empty string is passed through
+        unchanged — the client treats it as "no build declared" and makes
+        the whole version check a no-op.
 
     """
-    return {
-        "APP_VERSION": str(getattr(settings, "APP_VERSION", "")),
-        "APP_MIN_VERSION": str(getattr(settings, "APP_MIN_VERSION", "")),
-    }
+    return {"APP_VERSION": str(getattr(settings, "APP_VERSION", ""))}
 
 
 def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:

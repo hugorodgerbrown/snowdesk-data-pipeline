@@ -107,12 +107,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# ds-lint-allow: meta tag does not resolve CSS variables; mobile browser chrome requires a literal hex #}
         <meta name="theme-color" content="{{ PWA_THEME_COLOR }}">
         {# SNOW-374: PWA version-check contract. Bake the current build      #}
-        {# into the shell so the client can compare against X-App-Version /  #}
-        {# X-App-Min-Version on every response and trigger a forced-update   #}
-        {# modal when it falls behind. Empty content strings are safe — the  #}
-        {# client treats them as "no constraint declared".                    #}
+        {# into the shell so the client can spot an X-App-Version drift on   #}
+        {# any response and verify it against /api/version. An empty content #}
+        {# string is safe — the client treats it as "no build declared" and  #}
+        {# skips the check entirely. SNOW-609 removed the companion          #}
+        {# pwa-app-min-version tag: the forced-update verdict is a server    #}
+        {# decision (update_required), never a client-side comparison.       #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
-        <meta name="pwa-app-min-version" content="{{ APP_MIN_VERSION }}">
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
         {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
         {# PK leaks user count and growth rate and is trivially guessable. #}
@@ -189,9 +190,9 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# an X-App-Version drift (SNOW-374 soft-update path).                  #}
         {% include "includes/_sw_update_banner.html" %}
         {# SNOW-374: forced-update modal. Hidden by default; opened by       #}
-        {# pwa_version_check.js when the server declares an X-App-Min-Version #}
-        {# above the shell's build, or when the soft banner has escalated    #}
-        {# past its 24h grace window on cold launch.                          #}
+        {# pwa_version_check.js when /api/version returns update_required —  #}
+        {# i.e. the server has listed this build in APP_BLOCKED_VERSIONS     #}
+        {# (SNOW-609). It stays open until the user clicks "Reload now".     #}
         {% include "includes/_pwa_update_modal.html" %}
         {# SNOW-379: install-prompt banners. Two hidden divs (Android /     #}
         {# iOS); pwa_install.js reveals the platform-appropriate one once   #}
@@ -248,12 +249,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# load AFTER pwa_client_version.js above so that fetch is wrapped. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-378: the local-data wipe (window.pwaResetLocalData). Loaded  #}
-        {# here rather than only on the manage page since SNOW-615: BOTH its #}
-        {# programmatic callers live on every page — db.js's Reset Required  #}
-        {# overlay CTA (db.js:117), and pwa_version_check.js's forced-update #}
-        {# path below. Off the manage page neither could reach it, so the    #}
-        {# overlay's only control silently did nothing and the forced update #}
-        {# reloaded without wiping anything. Must load before both.          #}
+        {# here rather than only on the manage page since SNOW-615: its     #}
+        {# programmatic caller lives on every page — db.js's Reset Required #}
+        {# overlay CTA (db.js:117). Off the manage page that CTA could not  #}
+        {# reach it, so the overlay's only control silently did nothing.    #}
+        {# Must load before db.js binds the CTA. SNOW-609: the forced-      #}
+        {# update path is no longer a caller — it clears only the shell     #}
+        {# caches (window.pwaClearShellCachesAndReload, sw_register.js).    #}
         <script src="{% static 'js/pwa_reset.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
         <script src="{% static 'js/pwa_version_check.js' %}" defer></script>

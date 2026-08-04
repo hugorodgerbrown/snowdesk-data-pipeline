@@ -43,32 +43,61 @@ RELEASE_VERSION = config(
 )
 
 # ---------------------------------------------------------------------------
-# PWA version + kill-switch contract (SNOW-369, SNOW-372)
+# PWA version + kill-switch contract (SNOW-369, SNOW-372, SNOW-609)
 # ---------------------------------------------------------------------------
 # Server-authoritative version + kill-switch state consumed by the PWA:
 #
-#   ``APP_VERSION``     — current build the server is serving. Reuses
-#                         ``RELEASE_VERSION`` so an existing deploy pipeline
-#                         only has to set one env var.
-#   ``APP_MIN_VERSION`` — minimum client build the server will accept.
-#                         Any client below this must force-update. Empty
-#                         string disables the check (default), which is
-#                         the correct behaviour until we have a client
-#                         population to gate against.
-#   ``APP_RELEASED_AT`` — ISO-8601 timestamp of when the current build was
-#                         released. Defaults to process boot time on Render
-#                         (matching deploy time within seconds); an explicit
-#                         env var can override for deterministic tests.
-#   ``SW_URL``          — path the client registers as its service worker.
-#                         Flipping to ``/sw-kill.js`` swaps every client
-#                         onto the kill-switch SW without a deploy
-#                         (spec §6.4 Mechanism A escalation).
-#   ``SW_KILL``         — when true, ``/api/sw-config`` returns kill=true
-#                         and the client unregisters its SW without
-#                         registering a new one.
+#   ``APP_VERSION``          — current build the server is serving. Reuses
+#                              ``RELEASE_VERSION`` so an existing deploy
+#                              pipeline only has to set one env var.
+#   ``APP_BLOCKED_VERSIONS`` — comma-separated set of build identifiers the
+#                              server refuses to serve. A client whose
+#                              ``X-Client-Version`` is a member is told to
+#                              force-update via ``/api/version``'s
+#                              ``update_required``. Empty (the default) blocks
+#                              nobody. SNOW-609 replaced the previous
+#                              ``APP_MIN_VERSION`` floor: ``APP_VERSION``
+#                              resolves to a git SHA, and SHAs have no
+#                              ordering, so a minimum version was not
+#                              expressible on either side of the wire — see
+#                              docs/decisions/blocked-builds-not-a-version-floor.md.
+#   ``APP_RELEASED_AT``      — ISO-8601 timestamp of when the current build was
+#                              released. Defaults to process boot time on Render
+#                              (matching deploy time within seconds); an explicit
+#                              env var can override for deterministic tests.
+#   ``SW_URL``               — path the client registers as its service worker.
+#                              Flipping to ``/sw-kill.js`` swaps every client
+#                              onto the kill-switch SW without a deploy
+#                              (spec §6.4 Mechanism A escalation).
+#   ``SW_KILL``              — when true, ``/api/sw-config`` returns kill=true
+#                              and the client unregisters its SW without
+#                              registering a new one.
+
+
+def comma_separated_frozenset(raw: str) -> frozenset[str]:
+    """Parse a comma-separated env value into a frozenset of trimmed entries.
+
+    Empty entries (from a trailing comma, or an entirely empty value) are
+    dropped, so ``""`` yields an empty frozenset rather than ``{""}`` —
+    which matters for ``APP_BLOCKED_VERSIONS``, where a stray empty-string
+    member would match a client that sent no version at all.
+
+    Args:
+        raw: The raw env value, e.g. ``"abc123, def456"``.
+
+    Returns:
+        The trimmed, de-duplicated entries.
+
+    """
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
 
 APP_VERSION: str = RELEASE_VERSION
-APP_MIN_VERSION: str = config("APP_MIN_VERSION", default="")
+APP_BLOCKED_VERSIONS: frozenset[str] = config(
+    "APP_BLOCKED_VERSIONS",
+    default="",
+    cast=comma_separated_frozenset,
+)
 APP_RELEASED_AT: str = config(
     "APP_RELEASED_AT",
     default=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -174,9 +203,11 @@ MIDDLEWARE = [
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
     "apps.core.middleware.SecurityHeadersMiddleware",
-    # Stamps X-App-Version and X-App-Min-Version on every response so the
-    # PWA client can detect a forced-update state on any response, not just
-    # a poll of /api/version (SNOW-369, spec §5.3).
+    # Stamps X-App-Version on every response so the PWA client can notice a
+    # new build on any response, not just a poll of /api/version (SNOW-369,
+    # spec §5.3). SNOW-609 dropped the companion X-App-Min-Version header —
+    # the forced-update verdict is now a server decision returned by
+    # /api/version, never a client-side version comparison.
     "apps.core.middleware.AppVersionHeaderMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
@@ -209,9 +240,9 @@ TEMPLATES = [
                 "apps.accounts.context_processors.pwa_user_identity",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
                 "apps.public.context_processors.site_base_url",
-                # Injects APP_VERSION / APP_MIN_VERSION into every template so
-                # base.html can bake them into <meta> tags for the client-side
-                # version check (SNOW-374).
+                # Injects APP_VERSION into every template so base.html can
+                # bake it into a <meta> tag for the client-side version
+                # check (SNOW-374; SNOW-609 removed APP_MIN_VERSION).
                 "apps.public.context_processors.pwa_version",
                 # Injects PWA_TELEMETRY_ENABLED so base.html can bake the
                 # telemetry master switch into a <meta> tag read by

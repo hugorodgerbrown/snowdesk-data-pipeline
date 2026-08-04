@@ -15,6 +15,10 @@ exists, otherwise clears the SW shell cache and reloads — see
 ``sw_register.js``. Clicking × dismisses for the rest of this page's
 lifetime.
 
+SNOW-609: the body copy names what the reload keeps. Both reload paths
+touch only the ``snowdesk-shell-*`` / ``map-shell-*`` caches, so a user
+weighing "will this cost me my downloads?" should not have to guess.
+
 SNOW-486: markup delegated to the shared banner primitive
 (includes/_overlay_banner.html, "floating" variant) — this file now only
 supplies the copy/ids. ``sw_register.js`` keeps its own dedicated ×
@@ -25,6 +29,6 @@ hide idiom differs, and one listener covering both keeps that contract
 in one place.
 {% endcomment %}
 {% trans "Update available" as sw_update_banner_title %}
-{% trans "A newer version of Snowdesk is ready." as sw_update_banner_body %}
+{% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." as sw_update_banner_body %}
 {% trans "Reload" as sw_update_banner_cta_label %}
 {% include "includes/_overlay_banner.html" with id="sw-update-banner" variant="floating" aria_live="polite" icon="refresh" title_id="sw-update-banner-title" title=sw_update_banner_title body=sw_update_banner_body cta_id="sw-update-banner-reload" cta_label=sw_update_banner_cta_label dismissible=True bottom_offset="calc(5.5rem + env(safe-area-inset-bottom))" %}

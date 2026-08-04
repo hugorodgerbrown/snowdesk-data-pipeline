@@ -520,7 +520,7 @@ the scenario.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | With the tab open, DevTools → Application → Service workers → click **Update** (top right) | A second SW appears in state `installed, waiting to activate` alongside the still-`activated` prior worker |
-| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready.", and a "Reload" primary CTA + `×` |
+| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept.", and a "Reload" primary CTA + `×` |
 | 3 | Click "Reload" on the banner | The banner button briefly disables; the waiting worker activates (Service workers panel: the new SW becomes `activated and is running`, the old one disappears); the page reloads exactly once onto the new shell (URL and content preserved) |
 | 4 | Reload one more time | No banner appears — you are already on the latest version |
 
@@ -558,32 +558,39 @@ reveals nothing (automated:
 This is the fix for the staging stuck-banner bug, where Reload could
 never clear a banner triggered by stale cached headers.
 
-### Scenario P6: Forced update via APP_MIN_VERSION
+### Scenario P6: Forced update via APP_BLOCKED_VERSIONS
 
-> Automated: [test_pwa_lifecycle_update.py::test_min_version_shows_modal_and_resets_cleanly](../tests/e2e/test_pwa_lifecycle_update.py)
-> — correction from implementation: `pwa_version_check.js` calls
-> `resetAndReload()` automatically the moment the mismatch is confirmed
-> against the `/api/version` body, it does not wait for a "Reload now" click
-> (that handler is a redundant, idempotent fallback). In practice the
-> modal is visible only very briefly before the automatic reset lands —
-> step 2 below describes the button as the trigger, which is not what
-> the shipped code does.
+> Automated: [test_pwa_lifecycle_update.py::test_blocked_build_shows_modal_and_waits_for_the_click](../tests/e2e/test_pwa_lifecycle_update.py)
 
-**Goal**: Verify the blocking modal appears when the server declares a
-minimum client version that the shell does not meet, and that Reload
-now performs a full SW-unregister + cache-wipe + reload.
+**Goal**: Verify the blocking modal appears when the server names this
+build as blocked, that it *waits* for the click, and that the click
+refreshes the app without destroying downloaded data (SNOW-609).
 
-**Preconditions**: Scenario P1 completed. Restart the server with:
+**Preconditions**: Scenario P1 completed, plus one downloaded region
+(Scenario P9's "Download area" flow) so there is something to lose.
+
+`APP_BLOCKED_VERSIONS` is a comma-separated set of build identifiers,
+matched against the `X-Client-Version` the page sends on every
+same-origin request — which is the `APP_VERSION` the shell was delivered
+on, i.e. `dev` locally. Since the check needs an `X-App-Version` drift
+to schedule its `/api/version` round trip, restart with a *different*
+current build than the loaded tab was served:
 
 ```bash
-APP_MIN_VERSION=test-force-update uv run python manage.py runserver
+# Terminal: the tab is already open on a shell served with APP_VERSION=dev
+APP_VERSION=test-newer-build APP_BLOCKED_VERSIONS=dev uv run python manage.py runserver
 ```
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Reload the tab (or trigger any request) | `pwa_version_check.js` sees `X-App-Min-Version: test-force-update` != the shell's baked build → `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
-| 2 | Observe the tab | The reset (SW-unregister + cache-wipe) and reload happen automatically, within about a second of step 1 — the "Reload now" button is a fallback for whenever the automatic path doesn't run, not the primary trigger |
-| 3 | Restart the server without `APP_MIN_VERSION` and reload | No modal; the app operates normally |
+| 1 | In the still-open tab, trigger any request (scroll the timeline, tap a region) | DevTools → Network: one `no-store` request to `/api/version` whose body reads `"update_required": true`; `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy naming what the reload keeps, and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
+| 2 | Wait 30 seconds without touching anything | The modal is still open and the page has not reloaded. Application → Cache storage still shows every bucket, including `snowdesk-basemap-*` |
+| 3 | Click "Reload now" | The `snowdesk-shell-*` / `map-shell-*` buckets are cleared and the page reloads once. The `snowdesk-basemap-*` buckets, IndexedDB (`snowdesk-pwa-v1`) and `localStorage` are all still there — the downloaded region is still available offline |
+| 4 | Restart the server without `APP_BLOCKED_VERSIONS` and reload | `/api/version` reads `"update_required": false`; no modal; the app operates normally |
+
+A client that sends no `X-Client-Version` at all is never blocked, by
+design — there is no recovery path from a blocking modal on a build the
+server cannot identify.
 
 ### Scenario P7: Offline reload of a cached page (incl. /?d=YYYY-MM-DD)
 

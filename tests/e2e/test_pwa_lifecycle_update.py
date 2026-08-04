@@ -4,10 +4,11 @@ tests/e2e/test_pwa_lifecycle_update.py — SNOW-389 real-SW update journeys.
 Covers Scenarios P4, P5, P6 (docs/testing-scenarios.md §"PWA Shell"): the
 three ways a client learns it's out of date — a new ``sw.js`` (SW-driven),
 a server ``X-App-Version`` drift with an unchanged ``sw.js`` (header path),
-and a server ``X-App-Min-Version`` floor the shell doesn't meet (forced
-update). All three assert the central SNOW-389 invariant: the service
-worker converges to a single, clean, active registration — never a
-lingering ``waiting`` worker, never two active workers, never orphaned.
+and a server ``update_required`` verdict naming this build as blocked
+(forced update, SNOW-609). All three assert the central SNOW-389
+invariant: the service worker converges to a single, clean, active
+registration — never a lingering ``waiting`` worker, never two active
+workers, never orphaned.
 
 P5b covers the inverse of P5 — the staging stuck-banner regression: a
 header drift replayed from a stale cache, which the authoritative
@@ -166,9 +167,6 @@ def test_header_drift_shows_banner_and_clears_shell_caches(pwa_page: PwaPage) ->
     assert "hidden" in (
         page.eval_on_selector("#sw-update-banner", "(el) => el.className") or ""
     )
-    assert (
-        page.evaluate("() => localStorage.getItem('pwa.update.first_shown_at')") is None
-    )
 
     marker_survived = page.evaluate(
         """async () => {
@@ -217,118 +215,96 @@ def test_stale_cached_header_does_not_show_banner(pwa_page: PwaPage) -> None:
     assert "hidden" in (
         page.eval_on_selector("#sw-update-banner", "(el) => el.className") or ""
     )
-    # No first-shown stamp either — a phantom banner must not arm the 24h
-    # escalation timer.
-    assert (
-        page.evaluate("() => localStorage.getItem('pwa.update.first_shown_at')") is None
-    )
-
-
-def test_stale_escalation_stamp_clears_when_server_current(pwa_page: PwaPage) -> None:
-    """A >24h first-shown stamp the server disowns clears without a modal.
-
-    Pre-fix sessions could stamp ``pwa.update.first_shown_at`` off a
-    stale-cache false positive; escalating that to the blocking modal on
-    cold launch would hard-block users who are already on the latest
-    build. The escalation path now confirms with ``/api/version`` first
-    and clears a stamp the server does not back.
-    """
-    page = pwa_page.page
-
-    page.evaluate(
-        """() => {
-            const shownAt = Date.now() - 25 * 60 * 60 * 1000;
-            localStorage.setItem('pwa.update.first_shown_at', String(shownAt));
-          }"""
-    )
-    page.reload()
-    page.wait_for_load_state("load")
-
-    # The stamp is cleared once the (real, un-routed) /api/version verdict
-    # comes back matching the shell build.
-    page.wait_for_function(
-        "() => localStorage.getItem('pwa.update.first_shown_at') === null",
-        timeout=5000,
-    )
+    # The modal stays shut too — a phantom drift must never block the app.
+    # (SNOW-609 removed the 24h escalation these tests also used to assert
+    # against; there is no longer a localStorage stamp for a phantom banner
+    # to arm. tests/js/test_pwa_version_check.js pins that it stays unwritten.)
     assert "hidden" in (
         page.eval_on_selector("#pwa-update-modal", "(el) => el.className") or ""
     )
 
 
 # ---------------------------------------------------------------------------
-# P6 — forced update (X-App-Min-Version floor not met)
+# P6 — forced update (the server says this build is blocked)
 # ---------------------------------------------------------------------------
 
 
-def test_min_version_shows_modal_and_resets_cleanly(pwa_page: PwaPage) -> None:
-    """An X-App-Min-Version mismatch opens the blocking modal and resets.
+def test_blocked_build_shows_modal_and_waits_for_the_click(
+    pwa_page: PwaPage,
+) -> None:
+    """``update_required`` opens the blocking modal, and nothing moves until clicked.
 
-    ``pwa_version_check.js``'s ``inspectHeaders`` calls ``resetAndReload()``
-    automatically the moment the mismatch is detected — it does not wait
-    for the modal's own "Reload now" click (that handler is a redundant,
-    idempotent fallback for whenever the automatic path didn't run). This
-    test asserts what the shipped code actually does: the modal becomes
-    visible and the page scroll locks, then the automatic reset (SW
-    unregister + full cache wipe) and reload land the client cleanly —
-    never stuck on the old worker.
+    Both halves are SNOW-609 behaviour changes and both are the point of
+    the ticket.
+
+    The modal used to be decorative: ``pwa_version_check.js`` reset and
+    reloaded the moment the verdict came back, so the page was gone before
+    the copy explaining what was about to happen could be read. It now
+    reveals and waits.
+
+    The wipe used to take everything — SNOW-615 had routed it through
+    ``window.pwaResetLocalData(true)``, which deletes IndexedDB and every
+    Cache Storage bucket including the user's pinned basemaps. It is now
+    scoped to the shell caches, so a downloaded area survives a code
+    update. Both markers below are planted before the click; only the
+    shell one is expected to be gone afterwards.
+
+    Note the planted basemap bucket is asserted against by name rather
+    than by stubbing ``window.pwaClearShellCachesAndReload`` — the PWA
+    globals are defined non-writable, so a page-side stub silently no-ops.
     """
     page = pwa_page.page
 
-    # Plant a marker so we can prove the automatic reset actually wiped
-    # Cache Storage, not just relied on a coincidental repopulation.
+    # Two markers: one in a shell cache (must be wiped), one in a pinned
+    # basemap bucket standing in for a downloaded region (must survive).
     page.evaluate(
         """async () => {
             const keys = await caches.keys();
             const shellKey = keys.find((k) => k.startsWith('snowdesk-shell-'));
-            const cache = await caches.open(shellKey);
-            await cache.put('/__min-version-marker__', new Response('x'));
+            const shell = await caches.open(shellKey);
+            await shell.put('/__blocked-build-shell-marker__', new Response('x'));
+            const basemap = await caches.open('snowdesk-basemap-e2e-marker');
+            await basemap.put('/__blocked-build-basemap-marker__', new Response('x'));
           }"""
     )
 
-    def _drift_min_version(route: Route) -> None:
+    def _block_this_build(route: Route) -> None:
         response = route.fetch()
         payload = response.json()
-        payload["min_supported"] = "test-force-update"
-        headers = {**response.headers, "x-app-min-version": "test-force-update"}
+        payload["update_required"] = True
+        # The header drift is what schedules the verification round trip
+        # at all; the body is what decides the outcome.
+        payload["current"] = "test-newer-build"
+        headers = {**response.headers, "x-app-version": "test-newer-build"}
         route.fulfill(response=response, headers=headers, json=payload)
 
-    page.route("**/api/version", _drift_min_version)
+    page.route("**/api/version", _block_this_build)
+    page.evaluate("async () => { await fetch('/api/version'); }")
 
-    # The modal now opens one authoritative /api/version round trip after
-    # the triggering response (stale-cache fix), and resetAndReload() —
-    # which can complete (and navigate) within milliseconds when there's
-    # little to wipe — starts in the same task as the reveal. A
-    # MutationObserver armed BEFORE the triggering fetch resolves at the
-    # microtask the class flips, which is the only way to observe the
-    # modal reliably before the reload tears the page down.
+    page.wait_for_selector("#pwa-update-modal:not(.hidden)", timeout=5000)
+    assert page.evaluate("() => document.documentElement.style.overflow") == "hidden"
+
+    # The reveal is inert. Give the old auto-reset path time to have run,
+    # then assert it did not: the shell marker is still there and no
+    # navigation happened.
+    page.wait_for_timeout(1000)
+    assert page.evaluate(
+        """async () => {
+            const keys = await caches.keys();
+            const shellKey = keys.find((k) => k.startsWith('snowdesk-shell-'));
+            const cache = await caches.open(shellKey);
+            return !!(await cache.match('/__blocked-build-shell-marker__'));
+          }"""
+    )
+    assert "hidden" not in (
+        page.eval_on_selector("#pwa-update-modal", "(el) => el.className") or ""
+    )
+
     with page.expect_navigation(timeout=10000):
-        modal_state = page.evaluate(
-            """async () => {
-                const modal = document.getElementById('pwa-update-modal');
-                const shown = new Promise((resolve) => {
-                  const obs = new MutationObserver(() => {
-                    if (!modal.classList.contains('hidden')) {
-                      obs.disconnect();
-                      resolve();
-                    }
-                  });
-                  obs.observe(modal, {
-                    attributes: true,
-                    attributeFilter: ['class'],
-                  });
-                });
-                await fetch('/api/version');
-                await shown;
-                return {
-                  hidden: modal.classList.contains('hidden'),
-                  overflow: document.documentElement.style.overflow,
-                };
-              }"""
-        )
-    assert modal_state == {"hidden": False, "overflow": "hidden"}
+        page.click("#pwa-update-modal-reload")
+    page.wait_for_load_state("load")
 
-    # SW invariant: converges cleanly on a fresh registration — never
-    # stuck on the old (now-unregistered) worker.
+    # SW invariant: converges cleanly on a single active registration.
     page.wait_for_function(
         "() => navigator.serviceWorker.controller?.state === 'activated'",
         timeout=5000,
@@ -338,14 +314,19 @@ def test_min_version_shows_modal_and_resets_cleanly(pwa_page: PwaPage) -> None:
     )
     assert registration_count == 1
 
-    marker_survived = page.evaluate(
+    markers = page.evaluate(
         """async () => {
-            const keys = await caches.keys();
-            for (const k of keys) {
+            const found = { shell: false, basemap: false };
+            for (const k of await caches.keys()) {
               const cache = await caches.open(k);
-              if (await cache.match('/__min-version-marker__')) return true;
+              if (await cache.match('/__blocked-build-shell-marker__')) {
+                found.shell = true;
+              }
+              if (await cache.match('/__blocked-build-basemap-marker__')) {
+                found.basemap = true;
+              }
             }
-            return false;
+            return found;
           }"""
     )
-    assert marker_survived is False
+    assert markers == {"shell": False, "basemap": True}

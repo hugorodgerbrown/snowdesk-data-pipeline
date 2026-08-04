@@ -360,7 +360,7 @@ below the table.
 | `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` (default) / `pwa.reset.forced` (called with `forced=true`) |
 | `static/js/db.js::_enterResetRequired` (Reset Required overlay CTA) | Calls `resetLocalData(true)` → `pwa.reset.forced` |
 | `static/js/push_demo.js::reverifyPushSubscription` | `pwa.push.subscription_lost` |
-| `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `apps.analytics.schema` §16.2, fired from both the min-version-mismatch and 24h-escalation callers; `properties.trigger` distinguishes them |
+| `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `apps.analytics.schema` §16.2. One caller since SNOW-609 (`/api/version` answering `update_required: true`), so `properties.trigger` is always `'blocked_build'`; the previous `'min_version'` and `'escalation'` values are retired and will only appear on historic rows |
 | `static/js/pwa_install.js` | `pwa.install.prompted` (`revealBanner`) / `.accepted` (accepted `userChoice`) / `.dismissed` (`dismissBanner`) / `.completed` (`onInstalled`) / `.notifications_granted` (the iOS `Notification.permission` check inside `onInstalled`) |
 | `templates/includes/_freshness_indicator.html` (inline `<script>`) | `pwa.freshness.fresh` / `.stale` / `.unsafe` — sourced from the partial's own `state` render context (server-computed by `apps.core.freshness.freshness_state`); the partial isn't included on a live page yet (design-system component), so the hook fires wherever/whenever a future template adopts it |
 | `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
@@ -429,8 +429,8 @@ wire-ups that DO need a real page/DOM (other modules calling INTO
 telemetry.js, not telemetry.js's own logic) and don't require a real
 installed + activated service worker: the message bridge itself
 (simulated via a `MessageEvent` dispatched on `navigator.serviceWorker`),
-Mechanism-A kill switch, the install funnel, forced-update escalation, and
-`pwa_client_version.js`'s `X-Client-Version` header stamping.
+Mechanism-A kill switch, the install funnel, the blocked-build forced
+update, and `pwa_client_version.js`'s `X-Client-Version` header stamping.
 
 SNOW-389 added a second class of test that DOES drive a real, undisabled
 service worker (the `pwa_page` fixture in `tests/e2e/conftest.py`),

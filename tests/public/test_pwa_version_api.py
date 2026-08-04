@@ -1,9 +1,16 @@
 """tests/public/test_pwa_version_api.py — /api/version and /api/sw-config.
 
 Covers the PWA-shell contract endpoints (SNOW-369 + SNOW-372, spec §5.2 /
-§5.10). Both are settings-driven read-only views, so the tests are shape
-checks — the fixed JSON keys, the Cache-Control headers, and that the
+§5.10). Both are settings-driven read-only views, so most of the tests are
+shape checks — the fixed JSON keys, the Cache-Control headers, and that the
 values flow through from ``config/settings/base.py``.
+
+The exception is ``update_required`` (SNOW-609), which is a real decision
+rather than a passthrough: it is the server's whole forced-update verdict,
+computed from the request's ``X-Client-Version`` against
+``settings.APP_BLOCKED_VERSIONS``. The membership matrix below — including
+the fail-open case for a client that sends no version — is the test of
+record for it, since the client now performs no version comparison at all.
 """
 
 from __future__ import annotations
@@ -13,22 +20,24 @@ import json
 import pytest
 from django.test import Client, override_settings
 
+from config.settings.base import comma_separated_frozenset
+
 
 @pytest.mark.django_db
 @override_settings(
     APP_VERSION="2026.07.15.testabc",
-    APP_MIN_VERSION="2026.07.01.baseln",
+    APP_BLOCKED_VERSIONS=frozenset(),
     APP_RELEASED_AT="2026-07-15T09:00:00+00:00",
     SW_KILL=False,
 )
 def test_version_endpoint_returns_expected_shape() -> None:
-    """``/api/version`` returns ``{current, min_supported, released_at, kill}``."""
+    """``/api/version`` returns ``{current, update_required, released_at, kill}``."""
     response = Client().get("/api/version")
     assert response.status_code == 200
     body = json.loads(response.content)
     assert body == {
         "current": "2026.07.15.testabc",
-        "min_supported": "2026.07.01.baseln",
+        "update_required": False,
         "released_at": "2026-07-15T09:00:00+00:00",
         "kill": False,
     }
@@ -40,6 +49,95 @@ def test_version_endpoint_cacheable_for_60_seconds() -> None:
     response = Client().get("/api/version")
     assert response.status_code == 200
     assert response["Cache-Control"] == "public, max-age=60"
+
+
+@pytest.mark.django_db
+def test_version_endpoint_varies_on_client_version() -> None:
+    """The verdict depends on a request header, so the response must Vary on it.
+
+    ``update_required`` is per-client; without ``Vary: X-Client-Version`` a
+    shared cache could replay one blocked client's ``true`` to every other
+    client for the full 60-second window.
+    """
+    response = Client().get("/api/version")
+    assert "X-Client-Version" in response["Vary"]
+
+
+# ---------------------------------------------------------------------------
+# update_required — the blocked-build membership matrix (SNOW-609)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@override_settings(APP_BLOCKED_VERSIONS=frozenset({"badbuild", "worsebuild"}))
+def test_update_required_true_for_a_blocked_client() -> None:
+    """A client whose build is in the blocked set is told to force-update."""
+    response = Client().get("/api/version", headers={"x-client-version": "badbuild"})
+    assert json.loads(response.content)["update_required"] is True
+
+
+@pytest.mark.django_db
+@override_settings(APP_BLOCKED_VERSIONS=frozenset({"badbuild"}))
+def test_update_required_false_for_an_unblocked_client() -> None:
+    """A client outside the blocked set is left alone."""
+    response = Client().get("/api/version", headers={"x-client-version": "goodbuild"})
+    assert json.loads(response.content)["update_required"] is False
+
+
+@pytest.mark.django_db
+@override_settings(APP_BLOCKED_VERSIONS=frozenset())
+def test_update_required_false_when_no_build_is_blocked() -> None:
+    """An empty blocked set — the default — blocks nobody."""
+    response = Client().get("/api/version", headers={"x-client-version": "anybuild"})
+    assert json.loads(response.content)["update_required"] is False
+
+
+@pytest.mark.django_db
+@override_settings(APP_BLOCKED_VERSIONS=frozenset({"badbuild"}))
+def test_update_required_fails_open_without_a_client_version_header() -> None:
+    """An unidentified client is never blocked.
+
+    A blocking modal on a client whose build we cannot read has no recovery
+    path — it would sit there through every reload. Absent header means
+    absent verdict.
+    """
+    response = Client().get("/api/version")
+    assert json.loads(response.content)["update_required"] is False
+
+
+@pytest.mark.django_db
+@override_settings(APP_BLOCKED_VERSIONS=frozenset({""}))
+def test_update_required_fails_open_against_an_empty_blocked_entry() -> None:
+    """An empty string in the blocked set cannot match a header-less client.
+
+    ``comma_separated_frozenset`` already drops empty entries, so this
+    state is unreachable from env config; the guard is asserted here
+    directly because it is what makes the fail-open promise unconditional.
+    """
+    response = Client().get("/api/version")
+    assert json.loads(response.content)["update_required"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", frozenset()),
+        ("abc123", frozenset({"abc123"})),
+        ("abc123,def456", frozenset({"abc123", "def456"})),
+        (" abc123 , def456 ", frozenset({"abc123", "def456"})),
+        ("abc123,,", frozenset({"abc123"})),
+        (",", frozenset()),
+        ("abc123,abc123", frozenset({"abc123"})),
+    ],
+)
+def test_blocked_versions_env_parsing(raw: str, expected: frozenset[str]) -> None:
+    """``APP_BLOCKED_VERSIONS`` parses to a trimmed, empty-free frozenset.
+
+    The empty-entry cases matter most: a ``""`` member would match the
+    empty string a header-less request resolves to, silently blocking every
+    unidentified client.
+    """
+    assert comma_separated_frozenset(raw) == expected
 
 
 @pytest.mark.django_db
