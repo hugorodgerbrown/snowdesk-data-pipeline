@@ -415,20 +415,31 @@
   // its _favourite.html (carrying [data-favourite-uuid]) back into
   // #favourite-<uuid> inside the container; a delete empties it, and we close
   // the popup.
+  //
+  // The mark is stamped on the request's own XMLHttpRequest, not on a
+  // module-level variable: both listeners are document-level, so every HTMX
+  // request on the page runs through them — report.js's form-load
+  // htmx.ajax() shares the map homepage with this surface — and a shared
+  // variable is rewritten by whichever request fires last, with no way to
+  // correlate an afterRequest back to the beforeRequest that set it. htmx
+  // carries the same xhr object on both events, so the mark rides the
+  // request it describes.
   // ---------------------------------------------------------------------------
 
-  let detailRequestPending = false;
+  const DETAIL_REQUEST_MARK = 'snowdeskFavouriteDetailRequest';
 
   document.addEventListener('htmx:beforeRequest', function (event) {
-    const elt = event.detail && event.detail.elt;
-    detailRequestPending = !!(
+    const detail = event.detail || {};
+    if (!detail.xhr) return;
+    const elt = detail.elt;
+    detail.xhr[DETAIL_REQUEST_MARK] = !!(
       elt && elt.closest && elt.closest('[data-favourite-detail]')
     );
   });
 
   document.addEventListener('htmx:afterRequest', function (event) {
-    if (!detailRequestPending) return;
-    detailRequestPending = false;
+    const xhr = event.detail && event.detail.xhr;
+    if (!xhr || !xhr[DETAIL_REQUEST_MARK]) return;
     if (!event.detail.successful) return; // errors handled by responseError below
 
     const container = document.querySelector('[data-favourite-detail]');

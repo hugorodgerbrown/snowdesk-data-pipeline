@@ -4,10 +4,13 @@
  * Ships spec §3.5, §10.1, §10.2, §10.4, §10.7 non-negotiables:
  *
  *   (1) Persistent offline banner — top-anchored, revealed when
- *       ``navigator.onLine === false`` or when a fetch just failed,
- *       hidden on ``online``. Shows the freshness of the most recent
- *       successful response so the user can judge whether the cached
- *       data is trustworthy right now.
+ *       ``navigator.onLine === false`` or when a fetch just failed
+ *       (an ``AbortError`` is a caller cancelling its own request, not
+ *       a connectivity failure, so it is excluded), hidden on
+ *       ``online`` and on the next successful same-origin response
+ *       received while ``navigator.onLine`` is true. Shows the
+ *       freshness of the most recent successful response so the user
+ *       can judge whether the cached data is trustworthy right now.
  *   (2) Freshness update — every ``X-Data-Generated-At`` header seen
  *       (fetch or HTMX) updates the banner's timestamp so the user sees
  *       the same number the page-level indicator did on last refresh.
@@ -315,6 +318,10 @@
    * status — a cache-served response still tells the user how old the
    * data it's showing is.
    *
+   * That same qualifying-response condition doubles as the banner's
+   * ``online``-independent recovery path — see the call to
+   * ``renderBanner(true)`` below.
+   *
    * @param {(name: string) => string | null} getHeader
    * @param {string} responseUrl
    * @param {number} status
@@ -342,6 +349,13 @@
       if (!isStaticAssetPath(pathname)) {
         appendSyncLogEntry(now, pathname);
       }
+      // A real same-origin round-trip proves the connection works, so it
+      // is also the banner's recovery path. Without this the only hide
+      // path is the ``online`` event, which never fires when
+      // connectivity never actually changed — a single failed request on
+      // an online page would pin the banner open for the life of that
+      // page.
+      if (navigator.onLine) renderBanner(true);
     }
 
     const generated = getHeader('X-Data-Generated-At');
@@ -360,7 +374,8 @@
 
   /**
    * Wrap ``window.fetch`` so every response participates in the
-   * freshness ledger and every network failure flips the banner.
+   * freshness ledger and every network failure flips the banner. An
+   * ``AbortError`` is excluded — see the ``catch`` below.
    */
   function wrapFetch() {
     if (typeof window.fetch !== 'function') return;
@@ -379,6 +394,14 @@
         }
         return response;
       } catch (err) {
+        // An abort is the caller cancelling its own request, not a
+        // connectivity failure, so it must not reveal the banner. The
+        // sign-in page hits this on every visit: the WebAuthn
+        // conditional ceremony starts on email-input focus
+        // (static/js/passkey.js) and is aborted on the first keystroke,
+        // which on a fully-online page would otherwise pin the banner
+        // open — nothing would fire ``online`` to hide it again.
+        if (err && err.name === 'AbortError') throw err;
         // Network failure — reveal the banner. Rethrow so callers can
         // still handle the failure themselves.
         renderBanner(false);
@@ -406,6 +429,12 @@
         // Ignore.
       }
     });
+    // No ``AbortError`` guard needed here, unlike the fetch wrapper:
+    // htmx raises ``htmx:sendError`` from ``xhr.onerror`` only, and
+    // routes a cancelled request to a separate ``htmx:sendAbort`` event
+    // we do not listen for. The recovery path is the ``afterOnLoad``
+    // handler above, whose ``absorbFreshness`` call re-hides the banner
+    // on the next successful same-origin response.
     document.body?.addEventListener('htmx:sendError', () => {
       renderBanner(false);
     });

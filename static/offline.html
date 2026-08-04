@@ -8,8 +8,9 @@
 
   Constraints (must hold to keep this page useful in the offline case):
 
-    - No external assets. No <link rel="stylesheet">, no @font-face URLs,
-      no <img src="…">. Every byte is inline.
+    - No external assets, with one deliberate exception (below). No
+      <link rel="stylesheet">, no @font-face URLs, no <img src="…">.
+      Every other byte is inline.
     - No JavaScript that depends on a network request.
     - Brand colours match ``static/manifest.webmanifest`` so the page
       reads as Snowdesk even with the rest of the shell unavailable.
@@ -25,6 +26,30 @@
   offline" — the map page keeps working fully offline once it has been
   opened at least once, and blanket "you're offline" copy here would
   wrongly suggest otherwise.
+
+  SNOW-607 follow-up — the "Reset local data" escape hatch (spec §12.7,
+  SNOW-378). The manage page carries the only other copy of this control,
+  and it is ``@never_cache`` since SNOW-607, so it never loads offline.
+  This page does, which makes it the one surface that can reach a user in
+  the broken-and-offline state §12.7 exists for. The control here is the
+  same mechanism, not a second one: the markup carries
+  ``data-pwa-reset-trigger`` and the binding, the confirmation dialogue,
+  the six-step wipe and the telemetry all come from
+  ``static/js/pwa_reset.js`` — the one external asset this page loads.
+
+  That script is the reason the panel ships hidden. The reset itself is
+  purely local (service workers, Cache Storage, IndexedDB, web storage —
+  no request), but *delivering* the script is not: it is a subresource,
+  and the SW pre-caches only this HTML file
+  (``PRECACHE_URLS = [OFFLINE_FALLBACK]``, static/js/sw.js). Production
+  serves hashed static URLs (``CompressedManifestStaticFilesStorage``),
+  so the unhashed path below is one no other page ever requests and the
+  shell cache therefore never holds it — offline it answers with the
+  SW's synthesized 504. Rather than show a button that does nothing, the
+  panel stays hidden until ``window.pwaResetLocalData`` is actually
+  present. Adding '/static/js/pwa_reset.js' to ``PRECACHE_URLS`` is what
+  makes it appear offline; until that lands the control is reachable only
+  on an online load of this page.
 -->
 <html lang="en">
     <head>
@@ -99,6 +124,43 @@
                 outline: 2px solid #1a1a1a;
                 outline-offset: 2px;
             }
+            /* Recovery panel — the SNOW-378 escape hatch. Quiet by
+               design: a destructive action that most visitors to this
+               page do not need, sat well below the primary Retry. Its
+               button opts out of the pill treatment above. */
+            .recovery {
+                width: 100%;
+                max-width: 28rem;
+                margin-top: 3rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid currentColor;
+            }
+            .recovery[hidden] {
+                display: none;
+            }
+            .recovery button {
+                padding: 0;
+                border-radius: 0;
+                background: none;
+                color: inherit;
+                font-weight: 400;
+                font-size: 0.8125rem;
+                text-decoration: underline;
+                text-underline-offset: 2px;
+                opacity: 0.7;
+            }
+            .recovery button:hover {
+                opacity: 1;
+            }
+            .recovery button:focus-visible {
+                outline: 2px solid currentColor;
+                outline-offset: 2px;
+            }
+            .recovery p {
+                margin: 0.5rem 0 0;
+                font-size: 0.75rem;
+                opacity: 0.55;
+            }
             @media (prefers-color-scheme: dark) {
                 html, body {
                     background-color: #1a1a1a;
@@ -110,6 +172,10 @@
                 }
                 button:focus-visible {
                     outline-color: #f4f1e8;
+                }
+                .recovery button {
+                    background: none;
+                    color: inherit;
                 }
             }
         </style>
@@ -123,5 +189,33 @@
             without a signal. Reconnect and try this page again.
         </p>
         <button type="button" onclick="location.reload()">Retry</button>
+        <div class="recovery" id="pwa-reset-panel" hidden>
+            <button type="button" data-pwa-reset-trigger>Reset local data on this device</button>
+            <p>
+                Use this if Snowdesk is stuck. It clears cached pages, offline data, and saved preferences on this
+                device, then reloads. Your account and subscription are stored on the server and are not affected.
+            </p>
+        </div>
+        <script src="/static/js/pwa_reset.js" defer></script>
+        <script>
+            /*
+             * Reveal the reset panel only once pwa_reset.js has run. The
+             * script is this page's one subresource and it is not
+             * pre-cached (see the header comment), so an offline load can
+             * fail to deliver it — in which case the trigger would sit
+             * there bound to nothing. A control that does nothing is worse
+             * than no control on a recovery page, so the panel waits for
+             * proof the mechanism is present.
+             *
+             * DOMContentLoaded is the right moment: the deferred script
+             * above has already executed and bound the trigger by then, or
+             * has already failed to load.
+             */
+            document.addEventListener('DOMContentLoaded', function () {
+                if (typeof window.pwaResetLocalData !== 'function') return;
+                var panel = document.getElementById('pwa-reset-panel');
+                if (panel) panel.hidden = false;
+            });
+        </script>
     </body>
 </html>

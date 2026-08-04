@@ -28,8 +28,9 @@
  *                                ``sw.js`` (the ``sync`` event listener)
  *                                key off.
  *   backoffDelayMs(attempts)    Exponential backoff schedule in
- *                                milliseconds: 2/4/8/16/32s, capped at 300s
- *                                from there on.
+ *                                milliseconds: ``min(2**attempts, 300)`` —
+ *                                2/4/8/16/32/64/128/256s, capped at 300s
+ *                                from attempt 9 on.
  *   classifyStatus(status)      Classifies an HTTP response status into
  *                                ``'success' | 'permanent' | 'retry'``.
  *                                Network errors have no status code to
@@ -60,7 +61,8 @@
   /**
    * Exponential backoff schedule for a given attempt count.
    *
-   * attempts=1 → 2s, 2 → 4s, 3 → 8s, 4 → 16s, 5 → 32s, 6+ → capped at 300s.
+   * attempts=1 → 2s, 2 → 4s, 3 → 8s, 4 → 16s, 5 → 32s, 6 → 64s, 7 → 128s,
+   * 8 → 256s, 9+ → capped at 300s (2**9 = 512 is the first to exceed it).
    *
    * @param {number} attempts
    * @returns {number} delay in milliseconds

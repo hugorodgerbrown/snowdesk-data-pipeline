@@ -10,8 +10,15 @@ rename / delete + the geojson layer), so the create form and the CSRF token
 it carries are rendered once, here, and reused by the JS for both the
 create flow and the pin-detail (rename/delete) flow.
 
-htmx.min.js is loaded once by home.html (shared with _report_surface.html)
-before this partial — not repeated here.
+Two shared modules are loaded once each by home.html (shared with
+_report_surface.html) before this partial — neither is repeated here:
+
+  htmx.min.js       used by the report surface's HTMX-swapped form.
+  place_picker.js   favourites.js drives window.PlacePicker. Both partials
+                    used to carry their own tag, which loaded the file
+                    twice on one page and left the second IIFE's
+                    window.PlacePicker overwriting the first (C5,
+                    2026-08-03 JS review).
 
 Context expected:
   favourite_create_url        — str: POST endpoint for favourites:create.
@@ -98,9 +105,8 @@ Context expected:
         </button>
     </div>
 </template>
-{# SNOW-475: shared touch-friendly place-picker — must precede           #}
-{# favourites.js in document order (both are defer, so document-order   #}
-{# defer execution guarantees window.PlacePicker exists first).         #}
-<script defer src="{% static 'js/place_picker.js' %}"></script>
+{# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
+{# _report_surface.html) — not repeated here; see this partial's header #}
+{# comment.                                                             #}
 {# SNOW-414: saved-pin add/rename/delete JS. #}
 <script defer src="{% static 'js/favourites.js' %}"></script>

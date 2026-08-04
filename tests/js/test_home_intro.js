@@ -220,4 +220,31 @@ describe('Escape key', () => {
     expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
     expect(localStorage.getItem(STORAGE_KEY)).toBe(DISMISSED_VALUE);
   });
+
+  it('runs the same teardown as a click, so ?intro=1 is stripped', async () => {
+    // The teardown (hash clear + force-param strip) hangs off
+    // 'overlay:dismissed', which only overlays.js's delegated CLICK handler
+    // used to dispatch — so the keyboard path left ?intro=1 in the address
+    // bar and the next reload forced the panel straight back open.
+    history.replaceState(null, '', '/?d=2026-01-15&intro=1');
+    buildFixture();
+    await loadModules();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    const params = new URLSearchParams(location.search);
+    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
+    expect(params.has('intro')).toBe(false);
+    expect(params.get('d')).toBe('2026-01-15');
+  });
+
+  it('clears an #about hash so back/forward does not re-open the panel', async () => {
+    window.location.hash = '#about';
+    buildFixture();
+    await loadModules();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(location.hash).toBe('');
+  });
 });

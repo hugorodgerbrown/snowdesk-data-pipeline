@@ -75,19 +75,62 @@ def test_serve_sw_contains_notificationclick_handler() -> None:
     assert b"addEventListener('notificationclick'" in response.content
 
 
-def test_offline_fallback_page_exists_on_disk() -> None:
-    """``static/offline.html`` ships and contains the expected heading (SNOW-118)."""
+def _offline_page_source() -> str:
+    """Return ``static/offline.html`` with its HTML comments stripped.
+
+    The file's own rationale comment quotes the markup it forbids (``no
+    <link rel=stylesheet>``), so every content assertion below matches
+    against the comment-free source rather than the raw bytes.
+    """
     path = Path(settings.BASE_DIR) / "static" / "offline.html"
     assert path.exists()
     content = path.read_text(encoding="utf-8")
-    assert "This page isn't available offline" in content
-    # The page must NOT pull external CSS/JS — its job is to render with
-    # zero network access. Strip HTML comments before matching so the
-    # rationale comment in the file (which spells out "no
-    # <link rel=stylesheet>") doesn't trip the assertion.
-    stripped = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    return re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+
+
+def test_offline_fallback_page_exists_on_disk() -> None:
+    """``static/offline.html`` ships and contains the expected heading (SNOW-118)."""
+    stripped = _offline_page_source()
+    assert "This page isn't available offline" in stripped
+    # The page must not pull external CSS — its job is to render with zero
+    # network access.
     assert '<link rel="stylesheet"' not in stripped
-    assert "<script src=" not in stripped
+
+
+def test_offline_fallback_page_loads_only_the_reset_script() -> None:
+    """The one permitted subresource is ``pwa_reset.js`` (SNOW-378 / SNOW-607).
+
+    The page originally carried no external asset at all. It now carries
+    exactly one, because §12.7's escape hatch has to reach a user whose
+    only reachable page is this one, and the escape hatch is
+    ``pwa_reset.js`` — restating the six-step wipe inline would be a
+    second implementation to keep in step with the first.
+
+    The list is asserted exhaustively so a future edit can't quietly add a
+    second subresource: anything beyond the reset script is an asset the
+    page has no way to fetch when it is doing its job.
+    """
+    stripped = _offline_page_source()
+    assert re.findall(r'<script[^>]+src="([^"]+)"', stripped) == [
+        "/static/js/pwa_reset.js"
+    ]
+
+
+def test_offline_fallback_page_carries_the_reset_trigger() -> None:
+    """The escape hatch ships on the offline page, hidden until it is wired.
+
+    ``data-pwa-reset-trigger`` is ``pwa_reset.js``'s binding contract — the
+    same one the manage page uses (which since SNOW-607 is ``@never_cache``
+    and so never loads offline). The panel ships ``hidden``: the reset
+    itself needs no network, but the script that runs it is a subresource,
+    and a trigger bound to nothing is worse than no trigger on a recovery
+    page. See the header comment in ``static/offline.html``.
+    """
+    stripped = _offline_page_source()
+    assert "data-pwa-reset-trigger" in stripped
+    assert re.search(r'<div[^>]+id="pwa-reset-panel"[^>]+hidden', stripped)
+    # The wipe belongs to pwa_reset.js alone.
+    assert "deleteDatabase" not in stripped
 
 
 # ---------------------------------------------------------------------------

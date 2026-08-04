@@ -8,10 +8,18 @@ The roundel button lives in _map_embed.html (inside #map so it floats above
 the season scrubber). This partial owns the viewport-anchored sheet panel
 that report.js opens, and the script tag required to drive it.
 
-htmx.min.js is loaded by home.html (shared with _favourites_surface.html,
-SNOW-414) — not repeated here; report.js calls htmx.ajax and the
-swapped-in form submits via hx-post, so htmx.min.js must precede it in
-document order, which home.html's include ordering guarantees.
+Two shared modules are loaded by home.html, once each, ahead of both this
+partial and _favourites_surface.html (SNOW-414) — neither is repeated here,
+and home.html's include ordering guarantees both precede report.js in
+document order:
+
+  htmx.min.js       report.js calls htmx.ajax and the swapped-in form
+                    submits via hx-post, so htmx must be defined first.
+  place_picker.js   report.js drives window.PlacePicker. Both partials
+                    used to carry their own tag, which loaded the file
+                    twice on one page and left the second IIFE's
+                    window.PlacePicker overwriting the first (C5,
+                    2026-08-03 JS review).
 
 Context expected:
   (No context keys are required here; report.js reads data-* attributes
@@ -21,10 +29,9 @@ Context expected:
 {# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
 {% trans "Field observation report" as report_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
-{# SNOW-475: shared touch-friendly place-picker — must precede          #}
-{# report.js in document order (both are defer, so document-order      #}
-{# defer execution guarantees window.PlacePicker exists first).        #}
-<script defer src="{% static 'js/place_picker.js' %}"></script>
+{# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
+{# _favourites_surface.html) — not repeated here; see this partial's    #}
+{# header comment.                                                      #}
 {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
 {# Deferred so it executes in document order after the map assets.      #}
 <script defer src="{% static 'js/report.js' %}"></script>

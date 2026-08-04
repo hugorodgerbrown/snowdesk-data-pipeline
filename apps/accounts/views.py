@@ -74,6 +74,7 @@ from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django_ratelimit.core import get_usage
 from django_ratelimit.decorators import ratelimit
@@ -695,6 +696,7 @@ def _process_email_change_request(
     send_email_change_confirmation(user, new_email, request=request)
 
 
+@never_cache
 @require_http_methods(["GET", "POST"])
 def change_email_view(request: HttpRequest) -> HttpResponse:
     """
@@ -706,6 +708,10 @@ def change_email_view(request: HttpRequest) -> HttpResponse:
     account email does **not** change until the new address's link is
     confirmed.  A new address that already belongs to another account is a
     silent no-op — the response is identical, so nothing is leaked.
+
+    ``@never_cache`` for the same reason as ``manage_view``: the GET form
+    renders the account's current email address, and the POST response
+    renders the address the change was sent to.
 
     Args:
         request: Incoming HTTP request.
@@ -1407,6 +1413,19 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     Unauthenticated visitors are redirected to the sign-in page.  A registered
     user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
+
+    Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
+    ``docs/code-reviews/2026-08-03-js-review.md``). This page renders the
+    signed-in user's email address and passkeys, so it must never be served
+    to anyone else — but the offline favourites roster is built on it being
+    in the PWA shell cache, so ``no-store`` would break a shipped feature.
+    The ``X-SW-Principal`` stamp is what makes that safe: ``_networkFirst``
+    in ``static/js/sw.js`` records the account this HTML was rendered for and
+    the offline read refuses an entry whose stamp is not the principal signed
+    in now, so a sign-out or a different user gets the offline fallback
+    instead of the previous session's page. Cache-partitioning, not
+    cache-avoidance — the same trade ``map_overlay_offline_cache.js`` makes
+    for the overlay cache under SNOW-493.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).

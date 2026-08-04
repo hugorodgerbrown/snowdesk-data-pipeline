@@ -138,6 +138,19 @@
  * against the page's own URL — belt and braces against a synthesized
  * fallback ever being counted as a successful sync (SNOW-490).
  *
+ * X-SW-Principal header (C1, docs/code-reviews/2026-08-03-js-review.md)
+ * ---------------------------------------------------------------------
+ * The shell cache is the one persistent store in the PWA that held page
+ * HTML with no record of who it was rendered for, so an offline
+ * navigation after a sign-out replayed the previous user's
+ * ``/account/manage/`` page. ``_networkFirst`` now refuses to cache a
+ * ``Cache-Control: no-store`` response at all, and stamps every other
+ * navigation with ``X-SW-Principal`` — the account its HTML was rendered
+ * for, read from the response's own ``<meta name="pwa-user-id">``. The
+ * offline read serves an entry only to that same principal. Full
+ * rationale, and why the stamp comes from the body rather than IndexedDB,
+ * sits above ``_networkFirst`` below.
+ *
  * Scope
  * -----
  * Registered from /sw.js (root path) so the SW controls the whole
@@ -521,11 +534,28 @@ let _devShellCacheHydration = null;
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
-// loses connectivity. Keep this list short — anything hashed by
-// ManifestStaticFilesStorage can't be precached by stable URL, and
-// stale-while-revalidate already handles the shell on the second visit.
+// loses connectivity. Keep this list short — stale-while-revalidate
+// already handles the shell on the second visit.
+//
+// Both entries are unhashed paths, and that is deliberate rather than an
+// oversight. ``collectstatic`` under ``CompressedManifestStaticFilesStorage``
+// writes the original filename alongside the hashed one, so the stable URL
+// resolves in production. What a stable URL cannot do is serve a page that
+// references its assets through ``{% static %}`` — those request the hashed
+// name, so a precached unhashed entry would never be matched. Neither entry
+// here is reached that way: the worker asks for ``OFFLINE_FALLBACK`` by this
+// exact constant, and ``offline.html`` is a plain static file that hardcodes
+// ``RESET_SCRIPT`` in its own markup. Precache and request agree, so both
+// are hits.
+//
+// RESET_SCRIPT carries spec §12.7's "Reset local data" escape hatch onto the
+// offline page (SNOW-607). The hatch exists for the state where the app is
+// broken and the network is gone, so the script that binds it has to survive
+// exactly that — without it the control renders bound to nothing, which is
+// worse than absent.
 const OFFLINE_FALLBACK = '/static/offline.html';
-const PRECACHE_URLS = [OFFLINE_FALLBACK];
+const RESET_SCRIPT = '/static/js/pwa_reset.js';
+const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
 
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
@@ -1087,8 +1117,21 @@ function _warmCacheClassifyFailure(err) {
   return 'other';
 }
 
+// D3 (docs/code-reviews/2026-08-03-js-review.md): the precedence order the
+// inline fallback below ranks by. A hand-copy of
+// ``basemap_cache_core.js``'s own ``REASON_PRECEDENCE`` — most actionable
+// first — kept in step with it by tests/js/test_sw.js, which runs both
+// implementations over one shared input table. The previous fallback was
+// ``a || b || null``, which returns whichever reason arrived first; a run
+// that hit one storage-quota failure among a thousand network failures
+// reported "network error" on the degraded-startup path, hiding the one
+// reason with a distinct remedy and the only one a retry cannot clear.
+const WARM_CACHE_REASON_PRECEDENCE = ['quota', 'network', 'other'];
+
 /**
  * SNOW-568: thin delegator — see basemap_cache_core.js's module header.
+ * The inline fallback mirrors ``worseReason``'s ranking, not just its
+ * signature — see ``WARM_CACHE_REASON_PRECEDENCE`` above.
  *
  * @param {string|null} a
  * @param {string|null} b
@@ -1098,7 +1141,12 @@ function _warmCacheWorseReason(a, b) {
   if (self.pwaBasemapCacheCore && self.pwaBasemapCacheCore.worseReason) {
     return self.pwaBasemapCacheCore.worseReason(a, b);
   }
-  return a || b || null;
+  const rankA = WARM_CACHE_REASON_PRECEDENCE.indexOf(a);
+  const rankB = WARM_CACHE_REASON_PRECEDENCE.indexOf(b);
+  if (rankA === -1 && rankB === -1) return null;
+  if (rankA === -1) return b;
+  if (rankB === -1) return a;
+  return rankA <= rankB ? a : b;
 }
 
 /**
@@ -1397,6 +1445,203 @@ async function _basemapStaleWhileRevalidate(request) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Navigation principal partitioning (C1, docs/code-reviews/2026-08-03-js-review.md)
+// ---------------------------------------------------------------------------
+//
+// ``_networkFirst`` used to write every 2xx same-origin navigation into the
+// shell cache with nothing recording who it was rendered for. Sign-out
+// purges neither the cache nor the session's trace in it, so the next
+// offline navigation to ``/account/manage/`` replayed the previous user's
+// rendered page — their email address included. ``Vary: Cookie`` cannot
+// help: ``Cookie`` is a forbidden header name, invisible to the Cache
+// API's Vary comparison, so the match succeeds whoever is signed in.
+//
+// Two independent guards, in the order they apply:
+//
+//   1. A response declaring ``Cache-Control: no-store`` is never written.
+//      Cache Storage is not the HTTP cache and ``cache.put`` ignores the
+//      header on its own, so this is an explicit check. It is what honours
+//      a view that has opted out entirely — ``change_email_view``'s
+//      ``@never_cache`` (apps/accounts/views.py), and
+//      ``AdminSite.admin_view``, which already applies ``never_cache`` to
+//      every Django admin view and which templates/admin/base_site.html
+//      registers this same worker on. Note that ``manage_view`` is
+//      deliberately NOT in that set: the offline favourites roster reads
+//      it out of this cache, so it relies on guard 2 instead.
+//
+//   2. Every cached navigation carries an ``X-SW-Principal`` header naming
+//      the account its HTML was rendered for, and the offline read serves
+//      an entry only when that stamp equals the principal signed in now.
+//      This is the primary mechanism, not the backstop — guard 1 only
+//      covers pages nothing needs offline.
+//      Mirrors SNOW-493's partitioning of the overlay cache
+//      (static/js/map_overlay_offline_cache.js) and SNOW-462's mutation-row
+//      principal guard (``_selfDrainMutations`` below).
+//
+// The stamp is read out of the response's own
+// ``<meta name="pwa-user-id">`` (public/base.html, populated by
+// apps/accounts/context_processors.py) rather than out of IndexedDB. A
+// worker has no ``window.pwaDb``, and the durable ``mutations.principal``
+// row lags by one page load — it is written by the page's own
+// ``_reconcilePrincipal()`` AFTER the navigation that carried the HTML has
+// already been cached, so stamping from it would stamp a signed-in page
+// with the previous session's principal. The response body is the only
+// source that is right at write time.
+//
+// The read side has no such choice: ``mutations.principal`` is the one
+// signal a worker has for "who is signed in now", and by read time it has
+// settled. An entry whose stamp is missing (written before this fix, or a
+// page with no meta tag at all, e.g. Django admin) never matches, so it is
+// never served — the same fail-closed direction SNOW-493 takes for a
+// principal-less favourites row.
+
+const PRINCIPAL_HEADER = 'X-SW-Principal';
+
+// Stamped for a response rendered for an anonymous visitor — the meta tag
+// is present with an empty ``content``. A distinct literal rather than the
+// empty string so the stamp is legible in devtools and can't be confused
+// with an absent header.
+const PRINCIPAL_ANONYMOUS = 'anonymous';
+
+// Stamped when the response carries no ``pwa-user-id`` meta tag at all, so
+// the worker cannot tell whose page it is. Never equal to any principal
+// the read side can produce, which is what keeps such an entry out of the
+// offline path.
+const PRINCIPAL_UNKNOWN = 'unknown';
+
+// Matches base.html's ``<meta name="pwa-user-id" content="…">``. Both
+// quote styles are accepted so a djangofmt reflow of the attribute cannot
+// silently turn every navigation into PRINCIPAL_UNKNOWN.
+const PWA_USER_ID_META = /<meta\s+name=["']pwa-user-id["']\s+content=["']([^"']*)["']/i;
+
+/**
+ * True when ``response`` declares ``Cache-Control: no-store``. Uses the
+ * same token-split/trim/includes match as ``shouldPersist``'s
+ * ``immutable`` check rather than a bare substring test, so a directive
+ * that merely contains the word (``no-store-foo``) cannot match.
+ *
+ * @param {Response} response
+ * @returns {boolean}
+ */
+function _isNoStore(response) {
+  const header = (response.headers && response.headers.get('Cache-Control')) || '';
+  return header
+    .toLowerCase()
+    .split(',')
+    .map((token) => token.trim())
+    .includes('no-store');
+}
+
+/**
+ * The principal a navigation response was rendered for, read out of its
+ * own ``pwa-user-id`` meta tag.
+ *
+ * @param {string} html
+ * @returns {string} An account uuid, ``PRINCIPAL_ANONYMOUS``, or
+ *   ``PRINCIPAL_UNKNOWN`` when the tag is absent.
+ */
+function _principalFromHtml(html) {
+  const match = PWA_USER_ID_META.exec(html || '');
+  if (!match) return PRINCIPAL_UNKNOWN;
+  return match[1] === '' ? PRINCIPAL_ANONYMOUS : match[1];
+}
+
+/**
+ * The principal signed in right now, read from the durable ``meta:app``
+ * row (key ``mutations.principal``) the page maintains in
+ * ``static/js/mutation_queue.js``'s ``_reconcilePrincipal()``. Same row
+ * ``_selfDrainMutations()`` reads for its own SNOW-462 guard.
+ *
+ * Falls back to ``PRINCIPAL_ANONYMOUS`` whenever the row cannot be read —
+ * a fresh worker-created DB has no ``meta:app`` store, and a browser with
+ * IndexedDB unavailable has no row at all. That keeps the ordinary
+ * anonymous offline experience intact (public pages stamp
+ * ``PRINCIPAL_ANONYMOUS`` too, so they still match) while refusing to
+ * serve any page rendered for a named account.
+ *
+ * @returns {Promise<string>}
+ */
+async function _currentPrincipal() {
+  let db;
+  try {
+    db = await _openMutationsDb();
+    const meta = await _idbGetAll(db, 'meta:app');
+    const row = meta.find((r) => r.key === 'mutations.principal');
+    if (!row || row.value === null || row.value === undefined || row.value === '') {
+      return PRINCIPAL_ANONYMOUS;
+    }
+    return String(row.value);
+  } catch (_err) {
+    return PRINCIPAL_ANONYMOUS;
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch (_e) {
+        // Non-fatal.
+      }
+    }
+  }
+}
+
+/**
+ * Rebuild ``response`` with its ``X-SW-Principal`` stamp, ready for
+ * ``cache.put``. Cached ``Response`` objects have immutable headers, so
+ * the only way to add one is to build a new ``Response`` around the same
+ * body/status/headers — the same construction ``_stampCacheHit()`` uses.
+ *
+ * @param {Response} response
+ * @param {string} principal
+ * @returns {Response}
+ */
+function _stampPrincipal(response, principal) {
+  const headers = new Headers(response.headers);
+  headers.set(PRINCIPAL_HEADER, principal);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * True when a cached navigation may be served to ``current``. An entry
+ * with no stamp, or one stamped ``PRINCIPAL_UNKNOWN``, never matches.
+ *
+ * @param {Response} cached
+ * @param {string} current
+ * @returns {boolean}
+ */
+function _principalMatches(cached, current) {
+  const stamped = cached.headers.get(PRINCIPAL_HEADER);
+  if (!stamped || stamped === PRINCIPAL_UNKNOWN) return false;
+  return stamped === current;
+}
+
+/**
+ * Stamp and write one navigation into the shell cache, off the response
+ * path. Reading the principal out of the body means buffering it, which
+ * must not delay the response the page is waiting on — so this is
+ * deliberately not awaited, matching the fire-and-forget
+ * ``cache.put(...).catch(() => {})`` the caller already used.
+ *
+ * ``forCache`` and ``forSniff`` are two clones of the same response: one
+ * body for the cache write, one to read the meta tag from. Both must be
+ * cloned by the caller before either is consumed.
+ *
+ * @param {Cache} cache
+ * @param {Request} request
+ * @param {Response} forCache
+ * @param {Response} forSniff
+ */
+function _cacheNavigation(cache, request, forCache, forSniff) {
+  forSniff
+    .text()
+    .then((html) => cache.put(request, _stampPrincipal(forCache, _principalFromHtml(html))))
+    .catch(() => {});
+}
+
 /**
  * Network-first: try the network, fall back to cache on failure, then
  * to the offline fallback page if the request is a navigation. Use for
@@ -1415,21 +1660,33 @@ async function _basemapStaleWhileRevalidate(request) {
  * back off ``location.search`` by page-level JS) has been cached since
  * the first visit. Matching with ``ignoreSearch: true`` returns that
  * cached shell, and the page reinitialises to the requested date.
+ *
+ * C1 (docs/code-reviews/2026-08-03-js-review.md): the write skips a
+ * ``no-store`` response and stamps everything else with the principal its
+ * HTML was rendered for; the two request-matched reads serve an entry only
+ * to that same principal. See the section comment above for the full
+ * argument. ``OFFLINE_FALLBACK`` is deliberately outside the check — it is
+ * precached by the ``install`` handler, carries no account identity, and
+ * is the branded page whose whole purpose is to be shown when nothing else
+ * can be.
  */
 async function _networkFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
   try {
     const response = await fetch(request);
-    if (response && response.ok && response.type === 'basic') {
-      cache.put(request, response.clone()).catch(() => {});
+    if (response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+      _cacheNavigation(cache, request, response.clone(), response.clone());
     }
     return response;
   } catch (err) {
+    const current = await _currentPrincipal();
     const cached = await cache.match(request);
-    if (cached) return _stampCacheHit(cached);
+    if (cached && _principalMatches(cached, current)) return _stampCacheHit(cached);
     if (request.mode === 'navigate' || request.destination === 'document') {
       const searchless = await cache.match(request, { ignoreSearch: true });
-      if (searchless) return _stampCacheHit(searchless);
+      if (searchless && _principalMatches(searchless, current)) {
+        return _stampCacheHit(searchless);
+      }
       const fallback = await cache.match(OFFLINE_FALLBACK);
       if (fallback) return _stampCacheHit(fallback);
     }

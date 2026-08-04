@@ -1305,6 +1305,32 @@ class TestManageViewAuthenticated:
         assert response.status_code == 302
         assert reverse("accounts:sign_in") in response["Location"]
 
+    def test_response_is_not_no_store(self) -> None:
+        """The dashboard stays cacheable — C1, docs/code-reviews/2026-08-03-js-review.md.
+
+        Pins a deliberate choice rather than an accident. This page renders
+        the signed-in user's email address and passkeys, so the obvious move
+        is ``@never_cache`` — but the offline favourites roster is built on
+        the manage page being in the PWA shell cache
+        (``tests/e2e/test_favourites_offline.py``), and ``no-store`` would
+        take that feature offline with it.
+
+        What keeps it safe is partitioning, not avoidance: ``_networkFirst``
+        in ``static/js/sw.js`` stamps the cached entry with the account it
+        was rendered for and refuses to serve it to any other principal, so
+        a sign-out or a second user gets the offline fallback instead of the
+        previous session's page. ``change_email_view`` keeps ``@never_cache``
+        — nothing needs it offline.
+
+        If this assertion is ever flipped to ``no-store``, the two offline
+        favourites e2e cases go with it.
+        """
+        account = AccountFactory.create()
+        client = _make_session_client(account)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert "no-store" not in response.get("Cache-Control", "")
+
     def test_get_shows_map_cta_link(self) -> None:
         """Authenticated manage page contains the 'Choose more regions on the map' link.
 

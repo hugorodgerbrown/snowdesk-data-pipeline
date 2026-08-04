@@ -1,8 +1,8 @@
 ---
 name: mutation-queue
-description: Client mutation queue — window.pwaMutationQueue, queue:mutations shape, Idempotency-Key, backoff, Background Sync, principal partitioning
+description: Client mutation queue — window.pwaMutationQueue, queue:mutations, Idempotency-Key, backoff, offline drain guard, Background Sync, principal
 status: current
-last-reviewed: 2026-07-20
+last-reviewed: 2026-08-03
 ---
 
 # Client mutation queue
@@ -121,9 +121,11 @@ classified differently depending on which one processes it.
 
 ## Backoff schedule
 
-`backoffDelayMs(attempts)` (`mutation_queue_core.js`): `2^attempts`
-seconds, capped at 300s — 2s, 4s, 8s, 16s, 32s, then 300s from attempt 6
-onward. `MAX_ATTEMPTS = 20`.
+`backoffDelayMs(attempts)` (`mutation_queue_core.js:68`): `2^attempts`
+seconds, capped at 300s — 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, then 300s
+from attempt 9 onward. `MAX_ATTEMPTS = 20` (`mutation_queue_core.js:53`), so
+a row that only ever classifies `retry` exhausts its budget after 63 minutes
+of accumulated backoff.
 
 ## Permanent failure — toast + nav badge
 
@@ -234,11 +236,43 @@ is what `report_submit`'s `CsrfViewMiddleware` check needs.
 
 ## Drain triggers
 
-Mirrors `static/js/telemetry.js`'s `_wireLifecycle` pattern: `online`,
-`visibilitychange` → visible, a periodic timer (30s, only while the tab is
-visible), and immediately after `enqueue()` when `navigator.onLine` is
-true. All triggers funnel through one in-flight guard (`_drainInFlight`)
-so concurrent triggers can never double-POST the same row.
+`_wireLifecycle()` (`mutation_queue.js:751`) wires four, mirroring the
+function of the same name in `static/js/telemetry.js`: `online`,
+`visibilitychange` → visible, a 30s timer that runs only while the tab is
+visible (`DRAIN_INTERVAL_MS`), and `pagehide`. `enqueue()` is the fifth — it
+drains inline once the row is persisted, when `navigator.onLine` is true
+(`mutation_queue.js:580`). All of them funnel through one in-flight guard
+(`_drainInFlight`) so concurrent triggers can never double-POST the same
+row, and one pass replays at most `BATCH_SIZE` (50) rows.
+
+`pagehide` is the only trigger that fires regardless of visibility. Unlike
+telemetry.js's mirror of it, the replay fetch carries no `keepalive` flag: a
+replay sends a body and an `Idempotency-Key`, so a fetch cut short by the
+teardown leaves the row queued for the next load or for the Background Sync
+registration made at enqueue time, and the server deduplicates a replay that
+did reach the view.
+
+### Offline guard
+
+`drain()` returns an already-resolved promise when `navigator.onLine` is
+false (`mutation_queue.js:603`) — ahead of the in-flight guard, so no row is
+read and no request is made. It is the same guard `telemetry.js`'s `flush()`
+carries (`telemetry.js:372`).
+
+The service worker cannot absorb an offline replay. Classification returns
+`'network'` for every non-GET request — `basemap_cache_core.js:84`, and the
+inline fallback at `sw.js:888` — and the `'network'` branch of the `fetch`
+listener makes no `event.respondWith()` call (`sw.js:1734`), so a replay
+POST is never seen by the SW's caching layer. The browser handles it, and
+`fetch` rejects while offline. `_processRow()` treats a thrown `fetch()` as
+`'retry'` (`mutation_queue.js:512`), which increments `attempts` and pushes
+`next_attempt_at` out by the backoff above. Without the guard, the
+visible-tab timer re-triggering every 30s spends that budget against a
+network that isn't there: at `MAX_ATTEMPTS` of 20 and a 300s backoff cap, a
+row queued offline reaches `status: 'failed'` after about 70 minutes of
+foregrounded offline use — 63 minutes of accumulated backoff plus the
+timer's granularity — before the user reconnects. With it, rows hold their
+current `attempts` until the `online` trigger drains them.
 
 ## Background Sync (Android Chromium)
 
@@ -263,8 +297,14 @@ relying entirely on the page-lifecycle drain triggers above instead.
   `window.pwaMutationQueue.drain()`, reusing its already-wired
   `window.pwaDb` / `window.pwaTelemetry`.
 - **No tab is open** (the actual Background Sync case) — the worker
-  self-drains directly against IndexedDB (`indexedDB.open('snowdesk-pwa-v1', 1)`,
-  no `window.pwaDb` available in a worker), reusing the same
+  self-drains directly against IndexedDB (`sw.js::_openMutationsDb`, no
+  `window.pwaDb` available in a worker). It opens `snowdesk-pwa-v1` with no
+  version number, so it attaches to whatever schema version a page last
+  migrated to — `db.js` owns `DB_VERSION` (4) and a hardcoded version here
+  would throw `VersionError` the moment `db.js` moved ahead. Its
+  `onupgradeneeded` branch fires only when a sync beats every page to the
+  DB, creating a v1 database holding `queue:mutations` alone; the next page
+  load upgrades it to the full schema. The drain itself reuses the same
   classification/backoff helpers via `importScripts('/static/js/mutation_queue_core.js')`.
   If any row still needs a further retry after the pass, the handler
   throws so `event.waitUntil` rejects — a fulfilled `waitUntil` tells the
@@ -289,14 +329,23 @@ relying entirely on the page-lifecycle drain triggers above instead.
 [`client-side-tests.md`](client-side-tests.md)) covers the queue's own
 logic: offline enqueue → online replay, identical Idempotency-Key across
 retries, permanent-4xx immediate failure (toast + telemetry), backoff
-scheduling and the 20-attempt ceiling, the nav badge, and feature-detected
-Background Sync registration. The SNOW-462 principal-stamping and
+scheduling and the 20-attempt ceiling, the nav badge, feature-detected
+Background Sync registration, the offline guard (`attempts` holds across
+repeated drains while `navigator.onLine` is false) and the `pagehide`
+trigger. `test_mutation_queue_core.js` unit-tests `backoffDelayMs` /
+`classifyStatus` / `isRowEligible` against the shared core directly, with no
+IndexedDB row or HTTP round trip. The SNOW-462 principal-stamping and
 reconcile-on-load scenarios (account change / uninitialised baseline)
 live in their own files —
 `test_mutation_queue_principal.js` / `_reconcile_account_change.js` /
 `_reconcile_uninitialised.js` — because `db.js`'s `context()` memoises
 `<meta name="pwa-user-id">` once per module instance; see
-`test_mutation_queue.js`'s own docstring. `tests/templates/includes/test_toast_banner.py`
+`test_mutation_queue.js`'s own docstring.
+`test_mutation_queue_toast_dismiss.js` is split off for a parallel reason:
+`_wireToast()` binds the "×" click listener once, at module load, to
+whichever `#mutation-queue-toast` element is in the DOM at that moment, so
+the fixture has to be built before the import.
+`tests/templates/includes/test_toast_banner.py`
 covers the toast partial's render contract. `tests/e2e/test_offline_observation_submit.py`
 (SNOW-420) and `test_offline_favourite_submit.py` (SNOW-479) cover the
 real consumers end to end: an offline tap enqueues with no network

@@ -92,6 +92,19 @@ class TestChangeEmailRequestView:
         assert response.status_code == 200
         assert 'name="email"' in response.content.decode()
 
+    def test_get_is_no_store(self, client: Client) -> None:
+        """The form renders the account's current address, so it is never cached.
+
+        C1, docs/code-reviews/2026-08-03-js-review.md — same argument as
+        ``manage_view``: ``no-store`` is what keeps authenticated HTML out
+        of the PWA shell cache (``_networkFirst`` in ``static/js/sw.js``).
+        """
+        account = AccountFactory.create()
+        client.force_login(account.user)
+        response = client.get(self.URL)
+        assert response.status_code == 200
+        assert "no-store" in response["Cache-Control"]
+
     def test_post_sets_pending_and_mails_both(self, client: Client) -> None:
         account = AccountFactory.create(user__email="old@example.com")
         client.force_login(account.user)

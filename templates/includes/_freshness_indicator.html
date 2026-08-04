@@ -44,17 +44,35 @@ Spec §10.2 / §10.7 — no lying green tick on unverified data.
 {# ``currentScript.previousElementSibling`` rather than an id lookup so   #}
 {# multiple instances of this partial on one page (e.g. several map       #}
 {# tooltips) each report their own state correctly.                      #}
+{# M2 (2026-08-03 JS review): on a server-rendered page this script runs  #}
+{# at parse time, before base.html's deferred telemetry.js has installed  #}
+{# window.pwaTelemetry — the optional chain short-circuited and the       #}
+{# signal was dropped. The emit now waits for DOMContentLoaded, by which  #}
+{# point every deferred script has run. ``document.currentScript`` is     #}
+{# only readable while this script executes, so the element is captured   #}
+{# first and the closure carries it: one capture per rendered instance,   #}
+{# which is what keeps several indicators on one page distinct.          #}
 <script nonce="{{ request.csp_nonce }}">
     (function () {
-      try {
-        var el = document.currentScript.previousElementSibling;
-        var state = el && el.getAttribute('data-freshness-state');
-        if (state !== 'fresh' && state !== 'stale' && state !== 'unsafe') return;
-        window.pwaTelemetry?.emit('pwa.freshness.' + state, {
-          generated_at: el.getAttribute('data-generated-at'),
-        });
-      } catch (_err) {
-        // Telemetry must never break the freshness indicator.
+      var script = document.currentScript;
+      function emitFreshness() {
+        try {
+          var el = script && script.previousElementSibling;
+          var state = el && el.getAttribute('data-freshness-state');
+          if (state !== 'fresh' && state !== 'stale' && state !== 'unsafe') return;
+          window.pwaTelemetry?.emit('pwa.freshness.' + state, {
+            generated_at: el.getAttribute('data-generated-at'),
+          });
+        } catch (_err) {
+          // Telemetry must never break the freshness indicator.
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', emitFreshness);
+      } else {
+        // HTMX-swapped render: the document is already loaded, so
+        // window.pwaTelemetry is installed and the emit can run now.
+        emitFreshness();
       }
     })();
 </script>
