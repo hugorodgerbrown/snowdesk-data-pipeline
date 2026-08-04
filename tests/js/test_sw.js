@@ -15,6 +15,12 @@
  *        ``REASON_PRECEDENCE``. The table below runs both implementations
  *        over the same inputs, so a future drift in either fails here.
  *
+ * Plus SNOW-613's pinned-bucket memoisation: the enumeration is now cached
+ * with an explicit invalidation contract, and the offline lookup searches
+ * the buckets in parallel. Both are covered here, including the invariant
+ * that matters most — an invalidated list is re-read, because a stale name
+ * handed to ``caches.open`` would recreate a bucket the user deleted.
+ *
  * Loading strategy
  * ----------------
  * ``sw.js`` is a classic worker script, not a module: its helpers are
@@ -59,6 +65,9 @@ const SW_EXPORTS = [
   '_networkFirst',
   '_principalFromHtml',
   '_isNoStore',
+  '_pinnedCacheNames',
+  '_invalidatePinnedCacheNames',
+  '_basemapStaleWhileRevalidate',
   'PRINCIPAL_ANONYMOUS',
   'PRINCIPAL_UNKNOWN',
   'PRINCIPAL_HEADER',
@@ -141,6 +150,7 @@ function basicResponse(body, init = {}) {
  */
 function makeCaches() {
   const buckets = new Map();
+  const counters = { keys: 0 };
   const entriesFor = (name) => {
     if (!buckets.has(name)) buckets.set(name, new Map());
     return buckets.get(name);
@@ -172,11 +182,24 @@ function makeCaches() {
         },
       };
     },
+    // SNOW-613: counted, because "how many times was the bucket list
+    // enumerated?" is the property the memo exists to change.
+    async keys() {
+      counters.keys += 1;
+      return [...buckets.keys()];
+    },
+    async delete(name) {
+      return buckets.delete(name);
+    },
     seed(name, url, response) {
       entriesFor(name).set(url, response);
     },
     size(name) {
       return entriesFor(name).size;
+    },
+    counters,
+    has(name) {
+      return buckets.has(name);
     },
   };
 }
@@ -456,5 +479,146 @@ describe('_networkFirst principal partitioning (C1)', () => {
     const body = await offline.text();
     expect(body).not.toContain('a@example.com');
     expect(body).toContain("This page isn't available offline");
+  });
+});
+
+describe('pinned-bucket enumeration (SNOW-613)', () => {
+  const PINNED = 'snowdesk-basemap-pinned-';
+
+  /**
+   * A CacheStorage stub pre-populated with `n` pinned buckets plus one
+   * unrelated cache, so the prefix filter has something to reject.
+   *
+   * @param {number} n
+   * @returns {object}
+   */
+  function cachesWithBuckets(n) {
+    const stub = makeCaches();
+    stub.seed('snowdesk-shell-abc', `${ORIGIN}/`, new Response('shell'));
+    for (let i = 0; i < n; i += 1) {
+      stub.seed(`${PINNED}region-${i}`, `https://tiles/${i}.png`, new Response('tile'));
+    }
+    stub.counters.keys = 0;
+    return stub;
+  }
+
+  it('enumerates once across many lookups', async () => {
+    const stub = cachesWithBuckets(3);
+    const sw = loadSw({ caches: stub });
+
+    for (let i = 0; i < 10; i += 1) await sw._pinnedCacheNames();
+
+    // The whole point: an offline pan is thousands of tile reads, and each
+    // one used to pay a full caches.keys().
+    expect(stub.counters.keys).toBe(1);
+  });
+
+  it('shares one enumeration between concurrent callers', async () => {
+    const stub = cachesWithBuckets(2);
+    const sw = loadSw({ caches: stub });
+
+    await Promise.all([
+      sw._pinnedCacheNames(),
+      sw._pinnedCacheNames(),
+      sw._pinnedCacheNames(),
+    ]);
+
+    expect(stub.counters.keys).toBe(1);
+  });
+
+  it('re-enumerates after an invalidation', async () => {
+    const stub = cachesWithBuckets(1);
+    const sw = loadSw({ caches: stub });
+
+    expect(await sw._pinnedCacheNames()).toHaveLength(1);
+    stub.seed(`${PINNED}region-new`, 'https://tiles/new.png', new Response('tile'));
+
+    // Still the memo — the worker has not been told anything changed.
+    expect(await sw._pinnedCacheNames()).toHaveLength(1);
+
+    sw._invalidatePinnedCacheNames();
+    expect(await sw._pinnedCacheNames()).toHaveLength(2);
+    expect(stub.counters.keys).toBe(2);
+  });
+
+  it('drops a bucket the page deleted, so it is never reopened', async () => {
+    const stub = cachesWithBuckets(2);
+    const sw = loadSw({ caches: stub });
+    await sw._pinnedCacheNames();
+
+    await stub.delete(`${PINNED}region-0`);
+    sw._invalidatePinnedCacheNames();
+
+    const names = await sw._pinnedCacheNames();
+    // Handing a deleted name to caches.open would CREATE it — resurrecting
+    // a bucket the user just evicted, and one SNOW-612's reconciliation
+    // would then report back to them as an orphaned download.
+    expect(names).not.toContain(`${PINNED}region-0`);
+    expect(stub.has(`${PINNED}region-0`)).toBe(false);
+  });
+
+  it('excludes the legacy shared bucket and any non-pinned cache', async () => {
+    const stub = makeCaches();
+    stub.seed('snowdesk-shell-abc', `${ORIGIN}/`, new Response('shell'));
+    stub.seed('snowdesk-basemap-tiles', 'https://tiles/x.png', new Response('tile'));
+    stub.seed(`${PINNED}region-1`, 'https://tiles/1.png', new Response('tile'));
+    const sw = loadSw({ caches: stub });
+
+    expect(await sw._pinnedCacheNames()).toEqual([`${PINNED}region-1`]);
+  });
+
+  it('does not memoise a result an invalidation raced past', async () => {
+    const stub = cachesWithBuckets(1);
+    const sw = loadSw({ caches: stub });
+
+    const inFlight = sw._pinnedCacheNames();
+    // Landing mid-enumeration: the answer about to resolve predates it, so
+    // writing it into the memo would silently undo the invalidation.
+    sw._invalidatePinnedCacheNames();
+    await inFlight;
+
+    stub.seed(`${PINNED}region-late`, 'https://tiles/late.png', new Response('tile'));
+    expect(await sw._pinnedCacheNames()).toHaveLength(2);
+  });
+});
+
+describe('offline pinned lookup (SNOW-613)', () => {
+  const PINNED = 'snowdesk-basemap-pinned-';
+  const TILE = 'https://tiles.example/9/1/2.png';
+
+  it('serves a tile held in any bucket, whichever answers first', async () => {
+    const stub = makeCaches();
+    stub.seed(`${PINNED}region-a`, 'https://tiles.example/other.png', new Response('other'));
+    stub.seed(`${PINNED}region-b`, TILE, new Response('the tile'));
+    const sw = loadSw({ caches: stub });
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(TILE));
+
+    expect(await response.text()).toBe('the tile');
+  });
+
+  it('serves the same bytes when two overlapping areas both hold it', async () => {
+    const stub = makeCaches();
+    stub.seed(`${PINNED}region-a`, TILE, new Response('shared tile'));
+    stub.seed(`${PINNED}region-b`, TILE, new Response('shared tile'));
+    const sw = loadSw({ caches: stub });
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(TILE));
+
+    // Parallel search means the winner is no longer the first bucket in
+    // enumeration order — which is fine precisely because a tile in two
+    // areas is identical bytes in either.
+    expect(await response.text()).toBe('shared tile');
+  });
+
+  it('falls through to the 504 when no bucket holds it and the network is down', async () => {
+    const stub = makeCaches();
+    stub.seed(`${PINNED}region-a`, 'https://tiles.example/other.png', new Response('other'));
+    const sw = loadSw({ caches: stub });
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(TILE));
+
+    expect(response.status).toBe(504);
+    expect(response.headers.get('X-SW-Cache')).toBe('miss');
   });
 });

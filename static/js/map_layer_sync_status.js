@@ -570,6 +570,13 @@
     }
   }
 
+  // SNOW-613: the pass currently running, and the single trailing pass
+  // queued behind it. See ``refresh``.
+  /** @type {Promise<void>|null} */
+  let _refreshInFlight = null;
+  /** @type {Promise<void>|null} */
+  let _refreshQueued = null;
+
   /**
    * Re-probe every resource in ``OVERLAY_RESOURCES`` plus the basemap
    * indicator, and paint the resolved state onto each row's dot.
@@ -579,9 +586,47 @@
    * concurrently and is individually guarded, so one throwing probe can't
    * stop the others from resolving — this promise itself NEVER rejects.
    *
+   * SNOW-613: concurrent callers coalesce onto at most one QUEUED pass
+   * rather than sharing the one already running. The triggers are all
+   * interactive and all bunched — a layers-menu open, a region tap, a
+   * connectivity flip, the end of a download run — and each pass is a
+   * dozen Cache Storage probes, so a burst used to issue that work several
+   * times over for one answer.
+   *
+   * Trailing rather than leading, because this menu is a live cache-state
+   * dashboard: a caller arriving mid-pass is usually reporting a change
+   * the running pass has already probed past — a download that has just
+   * written its tiles, say — so handing back the in-flight promise would
+   * settle its dots against state from before the thing it is reacting to.
+   * At most one extra pass is ever queued, however many callers arrive.
+   *
    * @returns {Promise<void>}
    */
-  async function refresh() {
+  function refresh() {
+    if (!_refreshInFlight) {
+      _refreshInFlight = _refresh().finally(() => {
+        _refreshInFlight = null;
+      });
+      return _refreshInFlight;
+    }
+    if (!_refreshQueued) {
+      _refreshQueued = _refreshInFlight.then(() => {
+        // Cleared before recursing: by now the `finally` above has already
+        // dropped `_refreshInFlight`, so this call starts the fresh pass
+        // rather than queueing behind itself.
+        _refreshQueued = null;
+        return refresh();
+      });
+    }
+    return _refreshQueued;
+  }
+
+  /**
+   * The pass itself — see ``refresh`` above, which is what callers use.
+   *
+   * @returns {Promise<void>}
+   */
+  async function _refresh() {
     if (!('caches' in window)) return;
 
     // SNOW-524: a full re-probe supersedes any pending state — including a

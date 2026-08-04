@@ -769,3 +769,73 @@ describe('markCached (optimistic live update)', () => {
     expect(() => window.pwaLayerSyncStatus.markCached('nonsense')).not.toThrow();
   });
 });
+
+describe('refresh coalescing (SNOW-613)', () => {
+  it('runs one pass when a single caller asks', async () => {
+    const caches = fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] });
+    vi.stubGlobal('caches', caches);
+
+    await window.pwaLayerSyncStatus.refresh();
+    expect(caches.match.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('collapses a burst of concurrent calls onto two passes, not five', async () => {
+    const caches = fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] });
+    vi.stubGlobal('caches', caches);
+
+    // Measure one pass first, so the assertion is in passes rather than in
+    // a probe count that would move whenever a row is added.
+    await window.pwaLayerSyncStatus.refresh();
+    const perPass = caches.match.mock.calls.length;
+    caches.match.mockClear();
+
+    // A layers-menu open, a region tap and a connectivity flip can all land
+    // in the same tick.
+    await Promise.all([
+      window.pwaLayerSyncStatus.refresh(),
+      window.pwaLayerSyncStatus.refresh(),
+      window.pwaLayerSyncStatus.refresh(),
+      window.pwaLayerSyncStatus.refresh(),
+      window.pwaLayerSyncStatus.refresh(),
+    ]);
+
+    // The leading pass plus ONE trailing pass for everyone who arrived
+    // during it — not five passes, and not one (see the next case).
+    expect(caches.match.mock.calls.length).toBe(perPass * 2);
+  });
+
+  it('gives a caller arriving mid-pass a result probed after it asked', async () => {
+    // Trailing, not leading, is the whole point: a download that has just
+    // written its tiles calls refresh(), and handing back the pass already
+    // running would settle its dots against state from before the write.
+    const caches = fakeCaches({ hitPaths: [] });
+    vi.stubGlobal('caches', caches);
+
+    const first = window.pwaLayerSyncStatus.refresh();
+    // Cache the resource while the first pass is in flight.
+    caches.match.mockImplementation(async (request) => {
+      return new URL(request.url).pathname === MAJOR_REGIONS_PATH
+        ? new Response('{}')
+        : undefined;
+    });
+    const second = window.pwaLayerSyncStatus.refresh();
+
+    await Promise.all([first, second]);
+
+    expect(dotState('l1')).toBe('cached');
+  });
+
+  it('starts a fresh pass once the previous burst has settled', async () => {
+    const caches = fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] });
+    vi.stubGlobal('caches', caches);
+
+    await window.pwaLayerSyncStatus.refresh();
+    const perPass = caches.match.mock.calls.length;
+    caches.match.mockClear();
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    // The guard is not a one-shot latch — a later menu open still re-probes.
+    expect(caches.match.mock.calls.length).toBe(perPass);
+  });
+});
