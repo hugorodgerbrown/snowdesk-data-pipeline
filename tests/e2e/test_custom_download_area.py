@@ -1364,3 +1364,56 @@ def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
     after = _instruction_text(page)
     assert "15.0 MB" in after
     assert "500 MB" in after
+
+
+def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-632: a same-bbox repeat measures the bucket, so its total does not double.
+
+    The bug: confirming Download twice at the SAME bbox re-fetches the
+    identical tile URLs into the SAME pinned bucket each time —
+    ``cache.put`` OVERWRITES each key, so the bucket never grows — but the
+    pre-SNOW-632 code accumulated the run's reported ``bytes`` onto the
+    previous record regardless, doubling the figure with nothing new on
+    disk to show for it. ``planBasemapDownloadBudget`` then evicted other
+    areas against that inflated total.
+
+    ``_stub_warm_cache`` writes headerless stub ``Response`` objects into
+    the real pinned bucket (see its own docstring), so
+    ``measurePinnedBucketBytes`` genuinely reads the real bucket here — it
+    reads back 0 (no ``Content-Length`` header on a bare ``new
+    Response(...)``), and the fix's fallback then records the run's own
+    reported ``bytes_total``. That fallback is exactly what stops the
+    double-count: the SAME figure both times, never the sum.
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+
+    bytes_total = 60 * 1024 * 1024
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    first = _saved_area(page)
+    assert first is not None
+    assert first["bytes"] == bytes_total
+
+    # Close this session and re-open framing without moving the map — the
+    # frame lands back on the SAME ground, so this confirm is the
+    # same-bbox repeat the bug describes, not the bbox-moved replacement
+    # `test_move_then_confirm_evicts_before_warming_the_new_set` covers.
+    _close_completed_overlay(page)
+    _open_framing(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    page.click("#map-frame-confirm")
+    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    second = _saved_area(page)
+    assert second is not None
+
+    assert second["bytes"] == bytes_total, (
+        "a same-bbox repeat inflated the recorded total: "
+        f"{first['bytes']} -> {second['bytes']}"
+    )

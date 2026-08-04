@@ -1,8 +1,8 @@
 ---
 name: per-area-pinned-basemap-caches
-description: One Cache Storage bucket per downloaded basemap area (snowdesk-basemap-pinned-<areaId>) plus a byte budget, replacing entry-count FIFO trim
+description: One Cache Storage bucket per downloaded basemap area; recorded bytes are a post-run measurement (SNOW-632), not an accumulation
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
 ---
 
 # One pinned Cache Storage bucket per downloaded area
@@ -98,23 +98,38 @@ information the old design never recorded.
   tile from a sibling bucket rather than re-fetching it, while still
   keeping a copy in each bucket that needs it (so eviction stays safe).
 - **A region downloaded under two different basemaps shares one bucket**
-  (the bucket is keyed on area id alone, not on basemap), so its recorded
-  `bytes` accumulates across both runs rather than being replaced by the
-  latest one — see `static/js/map.js`'s `_recordRegionDownload`. That is
-  correct for budgeting (it is what is actually on disk) and an eviction
-  of that area removes both basemaps' tiles together, but the roundel's
-  `done` state stays per-basemap (a real, unrelated probe against the
-  active template) — downloading on Standard and switching to Swisstopo
-  still reads `idle` even though the bucket now holds both. A comment,
-  not a behaviour change.
-- **Byte totals are page-recorded, not re-derived from the cache.** A
-  `meta:app` write that fails after a successful `_warmCache` run leaves
-  an orphan bucket the budget doesn't know about. Mitigation: a future
-  reconciliation pass at read time (drop recorded areas with no bucket
-  behind them; treat a bucket with no record as evictable-first) is
-  noted in `evictBasemapAreas`'s own comment but not built — SNOW-588's
-  managed-downloads list is where this becomes visible enough to a user
-  to matter.
+  (the bucket is keyed on area id alone, not on basemap), so a basemap
+  switch genuinely adds new tiles (different URLs, different origin) to
+  it, and an eviction of that area removes both basemaps' tiles together.
+  The roundel's `done` state still stays per-basemap (a real, unrelated
+  probe against the active template) — downloading on Standard and
+  switching to Swisstopo still reads `idle` even though the bucket now
+  holds both. How the bucket's *recorded* size reflects that sharing is
+  the next bullet, amended by SNOW-632.
+- **Byte totals are measured off the bucket after every completed run,
+  not accumulated (SNOW-632, amending this decision's original design).**
+  The original design recorded `previousBytes + result.bytes` on every
+  successful run — reasoning that a basemap switch, per the bullet above,
+  genuinely adds new tiles to the shared bucket, so the recorded total
+  had to grow with it. That arithmetic could not tell a basemap switch
+  apart from a same-basemap RETRY, which re-fetches the identical URLs
+  into the SAME bucket — `cache.put` OVERWRITES each key rather than
+  adding to it, so the bucket does not grow — and so it doubled the
+  recorded total on every such repeat with nothing new on disk to show
+  for it. `planBasemapDownloadBudget` plans evictions off that recorded
+  total, so the inflation was not cosmetic: it evicted other areas
+  early — an 8× same-basemap repeat of one 61 MB area was observed
+  reading as 488 MB used against the 500 MB default budget.
+  `measurePinnedBucketBytes` (`static/js/map.js`) fixes this by reading
+  the bucket's real on-disk size once the run settles, which gets every
+  case right for free — a same-basemap retry's unchanged bucket measures
+  unchanged, a basemap switch's real new bytes are measured — falling
+  back to the run's own reported `bytes` only when the measurement reads
+  0 (an unreadable bucket, not an empty one; see that function's
+  docstring). A `meta:app` write that still fails after a successful
+  `_warmCache` run still leaves an orphan bucket the budget doesn't know
+  about until `basemap_manage_core.js`'s reconciliation measures it the
+  same way — that gap is unchanged by this amendment.
 - **`Content-Length` under-reads a gzipped tile's true on-disk size** —
   `responseBytes` falls back to measuring a cloned blob when the header
   is absent, which is exact, but the header (when present) reports the

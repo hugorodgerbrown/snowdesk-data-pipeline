@@ -345,18 +345,22 @@ async function pinnedBucketAreaIds() {
   }
 }
 
-// SNOW-612: measured sizes for orphaned buckets, keyed by area id. Held
-// for the page's lifetime only — a reload re-measures, which is cheap
-// enough given an orphan is by definition a rare leftover, and avoids a
-// persisted record that would itself need invalidating when the bucket is
-// finally deleted.
+// SNOW-612, widened SNOW-632: measured pinned-bucket sizes, keyed by area
+// id. Held for the page's lifetime only — a reload re-measures, which is
+// cheap enough given how rarely this runs (an orphan is a rare leftover;
+// a completed-download measurement happens once per run, not per render —
+// see `measurePinnedBucketBytes`'s docstring) — and avoids a persisted
+// record that would itself need invalidating when the bucket is deleted.
 //
-// Only two things can change a bucket's size — a download run writing into
-// it, and an eviction deleting it — and both call
-// `forgetPinnedBucketMeasurement` below. Without that, a run that failed
-// twice in one page session would report the first attempt's size for the
-// bucket the second attempt had since grown.
-const ORPHAN_BUCKET_BYTES = new Map();
+// Three things can change a bucket's size — a download run writing into
+// it, an eviction deleting it, and (SNOW-632) a completed run reading its
+// OWN bucket to record what actually landed — and all three call
+// `forgetPinnedBucketMeasurement` immediately beforehand. Without that, a
+// run that failed twice in one page session would report the first
+// attempt's size for the bucket the second attempt had since grown, and a
+// completed run would record whatever the bucket measured BEFORE it wrote
+// anything.
+const PINNED_BUCKET_BYTES = new Map();
 
 /**
  * Drop the cached measurement for `areaId` (SNOW-612).
@@ -365,18 +369,24 @@ const ORPHAN_BUCKET_BYTES = new Map();
  * @returns {void}
  */
 function forgetPinnedBucketMeasurement(areaId) {
-  ORPHAN_BUCKET_BYTES.delete(areaId);
+  PINNED_BUCKET_BYTES.delete(areaId);
 }
 
 /**
  * Measure one pinned bucket by summing its entries' `Content-Length`
  * (SNOW-612).
  *
- * Only ever called for an ORPHANED bucket — one with no stored record to
- * read a byte total off. Every other area's size comes from the figure its
- * completed run recorded, because an area is thousands of entries and
- * measuring them all on every render is precisely what
- * `basemap_manage_core.js`'s header rules out.
+ * Two callers, both narrow. The first is an ORPHANED bucket — one with no
+ * stored record to read a byte total off — reconciled by
+ * `basemap_manage_core.js`. The second (SNOW-632) is a download control's
+ * `finish` handler, measuring the area it just finished writing to, so the
+ * RECORDED total is ground truth against the bucket rather than an
+ * accumulation that cannot tell an overwritten retry from a genuine
+ * addition. Neither is "every render" — the header in
+ * `basemap_manage_core.js` that rules out measuring on every render is
+ * about the READ path (rendering the managed-downloads list from whatever
+ * is already recorded); this runs once per completed download or once per
+ * orphan discovered, not once per paint.
  *
  * `Content-Length` rather than the body: `cache.match()` hands back a
  * Response without reading it, so a header sum is N cheap lookups where a
@@ -388,7 +398,7 @@ function forgetPinnedBucketMeasurement(areaId) {
  * @returns {Promise<number>} Bytes, or 0 if the bucket cannot be read.
  */
 async function measurePinnedBucketBytes(areaId) {
-  if (ORPHAN_BUCKET_BYTES.has(areaId)) return ORPHAN_BUCKET_BYTES.get(areaId);
+  if (PINNED_BUCKET_BYTES.has(areaId)) return PINNED_BUCKET_BYTES.get(areaId);
   let total = 0;
   try {
     const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
@@ -402,7 +412,7 @@ async function measurePinnedBucketBytes(areaId) {
     // A bucket that cannot be read is still worth listing at 0 bytes —
     // the user can delete it, which is the point.
   }
-  ORPHAN_BUCKET_BYTES.set(areaId, total);
+  PINNED_BUCKET_BYTES.set(areaId, total);
   return total;
 }
 
@@ -6588,36 +6598,50 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * fetch in `_probeDone` below still answers correctly, just over the
    * network instead of from IndexedDB.
    *
-   * SNOW-586: `bytes` accumulates onto whatever was previously recorded
-   * rather than replacing it. A region's pinned bucket is keyed on the
-   * region id ALONE, not per-basemap, so downloading the same region
-   * under a SECOND basemap adds genuinely new tiles (different URLs,
-   * different origin) to the one shared bucket — the recorded total has
-   * to grow with it to stay honest against what `planEviction` actually
-   * has to budget for. The trade-off: a same-basemap RETRY re-fetches
-   * every URL in the run (not just the ones that failed previously), so
-   * it re-counts bytes already on disk and over-states this area's size
-   * until a later change corrects it. That is a conservative direction —
-   * it can only make eviction MORE eager, never let the recorded total
-   * drift under what is genuinely on disk — so it is accepted rather than
-   * tracked more precisely (see docs/decisions/per-area-pinned-basemap-caches.md).
+   * SNOW-632: `bytes` is a fresh measurement of the pinned bucket, not an
+   * accumulation onto whatever was previously recorded. Accumulating used
+   * to be necessary because a region's pinned bucket is keyed on the
+   * region id ALONE, not per-basemap — downloading the same region under
+   * a SECOND basemap genuinely adds new tiles (different URLs, different
+   * origin) to the one shared bucket. But arithmetic couldn't tell that
+   * case apart from a same-basemap RETRY, which re-fetches identical URLs
+   * into the same bucket — `cache.put` OVERWRITES each key rather than
+   * adding to it, so the bucket doesn't grow, yet the old code counted the
+   * bytes again anyway, doubling the recorded total on every repeat.
+   * Measuring the bucket after the run settles gets both cases right for
+   * free: a basemap switch's real new bytes are measured, and a retry's
+   * unchanged bucket measures unchanged.
    *
    * @param {string} regionId
+   * @param {string} areaId This region's pinned-bucket id
+   *   (`core.areaIdForRegion(regionId)`), used to measure the bucket's
+   *   real on-disk size.
    * @param {Object | null} z The downloaded blob's own tile ranges
    *   (`blob.z` — rectangle or clipped row spans), or null when the run's
    *   blob carried none — in which case nothing is recorded, since an
    *   entry with no `z` could never be verified against the cache.
    * @param {number[]} band The zoom band the run actually fetched.
    * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
-   *   ``warm-cache-done`` reply.
+   *   ``warm-cache-done`` reply — used only as a fallback when the bucket
+   *   measurement comes back 0 (see `measurePinnedBucketBytes`).
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, z, band, bytes) {
+  async function _recordRegionDownload(regionId, areaId, z, band, bytes) {
     if (!z || !window.pwaDb) return;
+    // SNOW-632: whatever this run wrote is on disk now, so a measurement
+    // taken before it (e.g. by a render mid-run) is stale from here on —
+    // same invalidate-then-measure pairing `runPinnedDownload` uses before
+    // a run, mirrored here after one.
+    forgetPinnedBucketMeasurement(areaId);
+    const measured = await measurePinnedBucketBytes(areaId);
+    // A 0 measurement means the bucket couldn't be read, not that it's
+    // empty (see measurePinnedBucketBytes's docstring) — falling back to
+    // this run's own reported total keeps a real area visible to budget
+    // planning rather than recording it as empty.
+    const recordedBytes = Number.isFinite(measured) && measured > 0 ? measured : Number(bytes) || 0;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const existing = Array.isArray(row && row.value) ? row.value : [];
-      const previous = existing.find((entry) => entry && entry.region_id === regionId);
       const next = existing.filter((entry) => entry && entry.region_id !== regionId);
       const feature = FEATURE_BY_REGION_ID[regionId];
       const name = (feature && feature.properties && feature.properties.name) || regionId;
@@ -6626,7 +6650,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         band: band,
         z: z,
         name: name,
-        bytes: (Number(previous && previous.bytes) || 0) + (Number(bytes) || 0),
+        bytes: recordedBytes,
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
@@ -6989,6 +7013,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (ok) {
           await _recordRegionDownload(
             data.regionId,
+            areaId,
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,
@@ -8218,9 +8243,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // A REPLACEMENT of the same area at a NEW bbox — the frame moved since
     // the last confirm — clears the old tiles first: they belong to ground
     // this run doesn't cover, and leaving them would both bloat this area's
-    // one shared bucket and inflate its recorded byte total. Computed here
-    // because `finish` needs the answer too, to decide whether bytes
-    // accumulate onto the previous record.
+    // one shared bucket and inflate its measured byte total. SNOW-632: this
+    // used to also decide whether `finish` accumulated bytes onto the
+    // previous record; that arithmetic is gone (finish now measures the
+    // bucket directly), so eviction here is its only remaining use.
     const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
 
     const core = self.pwaBasemapDownloadCore;
@@ -8276,19 +8302,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
           await progressFill.finish(false);
           setState(navigator.onLine ? 'idle' : 'offline');
         } else if (ok) {
-          // SNOW-586: bytes accumulate onto the PREVIOUS record only when
-          // this is the same area at the same bbox (a same-basemap retry,
-          // or a redownload after switching basemap) — the "shares one
-          // bucket across basemaps" accumulation mapDownloadControlInit's
-          // _recordRegionDownload documents. A bbox change already had its
-          // old bucket/record wiped above, so there is nothing to add onto.
-          const previousBytes = sameBbox && savedArea ? Number(savedArea.bytes) || 0 : 0;
+          // SNOW-632: measure the pinned bucket for a real total instead
+          // of accumulating this run's reported bytes onto the previous
+          // record. Accumulation couldn't tell a same-basemap RETRY (which
+          // re-fetches identical URLs into the same bucket — cache.put
+          // OVERWRITES each key, so the bucket doesn't grow) from a
+          // basemap SWITCH (which genuinely adds new URLs to the shared
+          // bucket) — it double-counted the former on every repeat.
+          // Measuring gets both right: a switch's real new bytes are
+          // measured, a retry's unchanged bucket measures unchanged. A
+          // bbox change already had its old bucket wiped above (see
+          // `beforeWarm`), so there is nothing stale left to measure.
+          const areaId = core.CUSTOM_AREA_ID;
+          forgetPinnedBucketMeasurement(areaId);
+          const measured = await measurePinnedBucketBytes(areaId);
+          // A 0 measurement means the bucket couldn't be read (see
+          // measurePinnedBucketBytes's docstring), not that it's empty —
+          // fall back to this run's own reported total so a real area
+          // stays visible to budget planning rather than reading as empty.
+          const bytes =
+            Number.isFinite(measured) && measured > 0 ? measured : Number(result.bytes) || 0;
           savedArea = {
             bbox: bbox,
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
             name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
-            bytes: previousBytes + (Number(result.bytes) || 0),
+            bytes: bytes,
             savedAt: new Date().toISOString(),
           };
           _persistSavedArea(savedArea);
