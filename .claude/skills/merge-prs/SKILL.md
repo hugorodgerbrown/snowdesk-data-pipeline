@@ -2,8 +2,8 @@
 name: merge-prs
 description: |
   Land a batch of pull requests one at a time, keeping each one green:
-  order the batch, sync every PR onto the advancing `main`, resolve merge
-  conflicts, block on CI, and squash-merge. Use when the user says "merge
+  order the batch, sync onto `main` only the PRs that need it (conflicts,
+  unsigned commits), block on CI, and squash-merge. Use when the user says "merge
   these PRs", "land PRs #12 #15 #18", "clear the merge backlog", "merge the
   batch", or gives a list of PRs to get in. Do NOT use for opening a single
   PR from a ticket (that is the `implement` skill), or for fast-forwarding
@@ -13,18 +13,34 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, AskUserQuestion
 
 # Merge a batch of PRs
 
-Drive a list of pull requests to **merged**, sequentially, keeping each one
-green as `main` moves underneath it. Every merge advances `main`, which
-invalidates the mergeability and CI verdict of every PR still in the queue —
-so this is a strict one-at-a-time loop, not a fan-out. The unit of progress
-is "one PR fully landed"; the loop only starts the next PR once the current
-one is merged.
+Drive a list of pull requests to **merged**, sequentially. Every merge
+advances `main`, which can turn a queued PR `DIRTY` (conflicting) — so this
+is a strict one-at-a-time loop, not a fan-out. The unit of progress is "one
+PR fully landed"; the loop only starts the next PR once the current one is
+merged.
+
+**Sync is the exception, not the rule.** The ruleset does not require a PR
+to be up to date with `main` (`strict_required_status_checks_policy: false`),
+so a PR that went green once stays mergeable as `main` moves — merging it
+does not re-run its CI, and re-syncing it would. A batch of N PRs should
+cost ~N CI runs, not N². A PR is rebased onto `main` only when something
+actually forces it: a merge conflict (`DIRTY`), unsigned commits
+(`required_signatures`), or a red check whose fix already landed on `main`
+(4a). Never sync a PR merely because it is `BEHIND`.
+
+The trade-off: a stale PR merges against a `main` it was never tested with,
+so two individually-green PRs can break in combination. That is caught, not
+missed — every push to `main` runs the full required workflow set (the same
+checks the release fast-forward requires), so a cross-PR semantic conflict
+surfaces on `main`'s post-merge run and blocks the release until fixed.
+Step 7 checks that run before declaring the batch done.
 
 ## What this skill owns vs. what CI owns
 
-- **Sequencing, syncing, conflict resolution, and the merge call** are
-  yours. You decide the order, bring each PR up to date with `main`, resolve
-  conflicts, and issue the squash-merge.
+- **Sequencing, conflict resolution, and the merge call** are yours. You
+  decide the order, rebase the PRs that need it (conflicts, unsigned
+  commits — see the sync policy above), resolve conflicts, and issue the
+  squash-merge.
 - **The pass/fail verdict is CI's.** Required checks are enforced by the
   repository **ruleset** ("Main branch rules", id `19141641`), not classic
   branch protection — GitHub will reject a merge whose required checks are
@@ -115,6 +131,10 @@ Order matters because each merge rebases the problem for the rest.
 3. **Float trivially-clean, low-conflict PRs earlier** only if it reduces
    total conflict work and violates no dependency. Do not over-optimise;
    oldest-first is a fine default.
+4. **Keep overlapping PRs consecutive.** Since only conflicting PRs get
+   rebased, PRs touching the same files should land back-to-back — one
+   rebase then absorbs all the accumulated drift instead of the same PR
+   conflicting repeatedly as unrelated merges interleave.
 
 ## Step 3 — Confirm the batch (hard gate)
 
@@ -130,7 +150,7 @@ Present the ordered queue as a table and state the plan explicitly:
 | # | PR | Title | State | Notes |
 |---|----|-------|-------|-------|
 | 1 | #12 | SNOW-40: … | CLEAN | ready |
-| 2 | #15 | SNOW-41: … | BEHIND | will sync onto main, re-run CI |
+| 2 | #15 | SNOW-41: … | BEHIND | merges as-is — no sync, no CI re-run |
 | 3 | #18 | SNOW-42: … | DIRTY | merge conflict — will resolve, may pause |
 ```
 
@@ -140,10 +160,13 @@ Then, via `AskUserQuestion`, confirm:
   `SNOW-xx` in the git log after merge). Only offer merge-commit/rebase if
   the user asks.
 - whether to **delete each head branch** after merge (default yes).
-- **verification depth** (see step 4): **safe** (re-sync + re-test every PR
-  against the `main` it will actually merge into — default) or **fast**
-  (only sync/test PRs GitHub reports as `BEHIND`/`DIRTY`; trust an already-
-  green `CLEAN` PR even though earlier merges moved `main`).
+
+State the sync policy in the confirmation: only conflicting or unsigned PRs
+will be rebased; everything else merges on its existing green run, with
+`main`'s post-merge push CI as the integration check. If the user asks for
+every PR to be re-tested against the advancing `main` (e.g. a batch of PRs
+that all touch the same subsystem), honour that — sync each PR via 4d before
+its merge — but it is not the default.
 
 Also state plainly that landing these will **force-push** each PR branch:
 re-signing unsigned commits and rebasing onto `main` both rewrite history
@@ -167,8 +190,11 @@ Branch on `mergeStateStatus`:
   and re-fetch. Do not act on `UNKNOWN`.
 - **`DIRTY`** — merge conflict. Go to **step 5**. After resolution and a
   green re-run, come back through the loop.
-- **`BEHIND`** — head is behind `main`. **Sync and sign** (step 4d), which
-  re-triggers CI. A conflict during the rebase drops it to `DIRTY` → step 5.
+- **`BEHIND`** — head is behind `main`, but that alone is **not a blocker**
+  (the ruleset's strict policy is off) and is **not a reason to sync**.
+  Treat it as `CLEAN`: confirm signatures and checks, then merge as-is. Only
+  a rebase forced for another reason (unsigned commits, a fixed-upstream red
+  check) brings it up to date as a side effect.
 - **`BLOCKED`** — mergeable but not allowed yet. Distinguish why:
   - commits **unsigned** (`required_signatures`) → **sync and sign** (4d).
   - required checks still **pending** → wait for checks (4a), then re-loop.
@@ -180,10 +206,9 @@ Branch on `mergeStateStatus`:
   merging past them — do not silently merge over a red check.
 - **`HAS_HOOKS` / `CLEAN`** — ready, **but confirm every commit is signed
   first** (`gh api …/pulls/<pr>/commits --jq '[.[].commit.verification.verified]|all'`).
-  If not signed → sync and sign (4d). In **safe** mode, if an earlier PR in
-  this batch merged since this PR last ran CI — or `main` gained a fix this
-  PR needs (see 4a) — sync and sign so it is tested against the `main` it
-  will merge into. In **fast** mode, merge directly. Then **step 4c**.
+  If not signed → sync and sign (4d). If signed and the required checks are
+  green on the head commit, **merge directly** (step 4c) — do not re-sync
+  just because earlier PRs in this batch have moved `main`.
 
 ### 4a. Wait for checks, and tell a flake from a real failure
 
@@ -340,7 +365,23 @@ skip the PR and carry on silently unless the user pre-authorised skipping.
 When stopping, say which PRs merged, which is blocked and why, and which are
 still queued, so the user can act and re-run the skill to continue.
 
-## Step 7 — Report
+## Step 7 — Check `main`, then report
+
+Because merged PRs were not re-tested against each other, `main`'s
+post-merge push runs are the integration check for the batch. Don't block
+on them between merges — but before declaring the batch done, wait for the
+push run on the final merge commit and confirm it is green (per-job, not by
+a watcher's exit code):
+
+```bash
+gh run list --branch main --event push --limit 5 \
+    --json headSha,workflowName,status,conclusion
+```
+
+If a required workflow on `main` is red, the batch introduced a cross-PR
+break: report which merge commit went red and which check failed, and treat
+the fix as the immediate next task — the release fast-forward is blocked
+until `main` is green again.
 
 When the batch is exhausted (all merged, or the loop hit a stop):
 
