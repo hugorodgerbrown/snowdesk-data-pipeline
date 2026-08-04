@@ -321,15 +321,20 @@ def _saved_area(page: Page) -> dict[str, Any] | None:
 
 
 def _centre_tile_url(page: Page, centre_tile: dict[str, Any]) -> str:
-    """The done-probe URL for `centre_tile`, under the stubbed template."""
-    return cast(
-        str,
-        page.evaluate(
-            """({ template, centreTile }) =>
-                self.pwaBasemapDownloadCore.centreTileURL(template, { centre_tile: centreTile })
-            """,
-            {"template": _STUB_TEMPLATE, "centreTile": centre_tile},
-        ),
+    """The done-probe URL for `centre_tile`, under the stubbed template.
+
+    SNOW-615: substituted here rather than through
+    ``pwaBasemapDownloadCore.centreTileURL``. That function had no
+    production caller — ``_probeDone`` reads the stored record's
+    ``centre_tile`` directly instead of re-deriving a URL — so this test
+    was the only thing keeping it alive, and a three-token substitution is
+    not worth a shipped export.
+    """
+    del page  # No longer needs the browser; kept for call-site symmetry.
+    return (
+        _STUB_TEMPLATE.replace("{z}", str(centre_tile["z"]))
+        .replace("{x}", str(centre_tile["x"]))
+        .replace("{y}", str(centre_tile["y"]))
     )
 
 
