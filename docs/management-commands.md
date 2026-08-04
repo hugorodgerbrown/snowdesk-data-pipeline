@@ -862,10 +862,26 @@ into the same `failed` total that triggers the command's non-zero exit;
 `created`/`updated` counters sum across every day of every point's window,
 not one count per point.
 
-**Forecast history (SNOW-575)** — each day of the point pass also writes a
+**Short model horizons are not failures (SNOW-628)** — a day whose
+`weather_code`, `sunrise` or `sunset` comes back null is dropped before the
+write loop opens its transaction, and the days that did resolve are stored.
+ICON-CH2 runs ~5 days into the 7-day window, so an alpine point stores ~5
+rows and a point on the default chain stores 7. This is the normal outcome
+and is not counted as `failed`. A payload where *no* day resolves is
+malformed rather than short, and still counts. Before this, one null day
+raised `NotNullViolation` inside the SNOW-546 transaction and rolled back
+the whole window — every alpine point wrote nothing at all.
+
+**Forecast history (SNOW-575, opt-in since SNOW-629)** — with
+`--add-history`, each stored day of the point pass also writes a
 `ForecastPointWeatherHistory` row keyed on `(forecast_point,
 valid_for_date, issued_date)`, in the same transaction as its
-`ForecastPointWeather` twin. Because `ForecastPointWeather` is upserted on
+`ForecastPointWeather` twin. It is **off by default**: nothing user-facing
+reads the table, so retention is switchable without touching the
+operational write. The scheduled run passes the flag when
+`FETCH_WEATHER_ADD_HISTORY` is set in the environment (read at fire time,
+so flipping the Render variable and restarting `snowdesk-scheduler` is
+enough — no deploy). Because `ForecastPointWeather` is upserted on
 `(point, date)`, a forecast day is overwritten on every run and only the
 final day-of view survives; the history table retains the earlier ones, so
 how a forecast moved as its day approached can be read back
@@ -918,6 +934,9 @@ uv run python manage.py fetch_weather \
 # Region weather only — skip the active-ForecastPoint pass.
 uv run python manage.py fetch_weather --commit --skip-points
 
+# Also retain the per-issue point-forecast history (SNOW-575).
+uv run python manage.py fetch_weather --commit --add-history
+
 # Flags:
 #   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
 #   --start        YYYY-MM-DD  start of window (inclusive); defaults to DB-derived
@@ -933,6 +952,9 @@ uv run python manage.py fetch_weather --commit --skip-points
 #                              (region weather only — points never participate)
 #   --skip-points              skip the active-ForecastPoint forecast pass; fetch
 #                              region weather only
+#   --add-history              also retain a ForecastPointWeatherHistory row per
+#                              stored day (SNOW-575); off by default, and passed
+#                              by the scheduler when FETCH_WEATHER_ADD_HISTORY is set
 ```
 
 ## Development & one-shot setup commands

@@ -676,25 +676,46 @@ def _is_alpine_point(latitude: float, longitude: float) -> bool:
     return min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
 
 
+def _day_is_complete(daily: dict[str, Any], idx: int) -> bool:
+    """
+    Return True when every required field carries a value for one day.
+
+    ``_build_point_defaults`` treats ``weather_code``, ``sunrise`` and
+    ``sunset`` as required — it indexes them directly rather than through
+    its degrade-to-``None`` helper — and ``ForecastPointWeather`` declares
+    all three non-null. A day missing any of them cannot be stored, so
+    callers drop the day rather than let ``update_or_create`` raise
+    (SNOW-628).
+
+    Args:
+        daily: The ``"daily"`` block of an Open-Meteo forecast response.
+        idx: Index of the day to check.
+
+    Returns:
+        True when all three fields are present and non-null at ``idx``.
+
+    """
+    for key in ("weather_code", "sunrise", "sunset"):
+        values = daily.get(key)
+        if not values or idx >= len(values) or values[idx] is None:
+            return False
+    return True
+
+
 def _day_zero_is_degraded(data: dict[str, Any]) -> bool:
     """
     Return True when day 0 of a forecast payload is missing required fields.
 
-    ``_build_point_defaults`` treats ``weather_code``, ``sunrise`` and
-    ``sunset`` as required — it indexes them directly rather than using
-    ``.get()``. ``ForecastPointWeather.weather_code`` is a
-    ``PositiveSmallIntegerField`` with no ``null=True``, so a ``None``
-    from a partial ICON-CH payload raises at ``update_or_create`` rather
-    than skipping the row. This check is what keeps that from happening:
-    a dead day 0 means fall back to the default chain and persist that
-    instead.
+    A dead day 0 means fall back to the default chain and persist that
+    instead — the near-term day is the one the resort and favourite cards
+    read, so it is worth a second request.
 
-    Only day 0 is examined. Later days going ``None`` beyond the model's
-    horizon (ICON-CH2 runs ~5 days into a 7-day window) is expected and
-    already handled by the degrade-to-``None`` pattern in
-    ``_build_point_defaults``; falling back for that would throw away four
-    good high-resolution days to rescue two the default chain barely
-    resolves either.
+    Only day 0 decides the fallback. Later days going ``None`` beyond the
+    model's horizon (ICON-CH2 runs ~5 days into a 7-day window) is
+    expected, and ``fetch_weather_for_point`` handles it by storing the
+    short window; falling back for that would throw away five good
+    high-resolution days to rescue two the default chain barely resolves
+    either.
 
     Args:
         data: The parsed Open-Meteo JSON response.
@@ -703,12 +724,7 @@ def _day_zero_is_degraded(data: dict[str, Any]) -> bool:
         True when any required day-0 field is absent or null.
 
     """
-    daily = data.get("daily") or {}
-    for key in ("weather_code", "sunrise", "sunset"):
-        values = daily.get(key)
-        if not values or values[0] is None:
-            return True
-    return False
+    return not _day_is_complete(data.get("daily") or {}, 0)
 
 
 def _get_point_forecast(url: str, params: dict[str, str]) -> dict[str, Any]:
@@ -791,6 +807,7 @@ def fetch_weather_for_point(
     commit: bool,
     base_url: str | None = None,
     on_fetched: Callable[[dict[str, Any]], None] | None = None,
+    add_history: bool = False,
 ) -> list[tuple[ForecastPointWeather, bool]]:
     """
     Fetch and optionally persist a 7-day comprehensive forecast for one ForecastPoint.
@@ -803,6 +820,14 @@ def fetch_weather_for_point(
     (``POINT_HOURLY_VARIABLES``) spanning the same window, then persists one
     ForecastPointWeather row per day via update_or_create — ``idx=0`` is
     ``target_date``, ``idx=6`` is ``target_date + 6 days``.
+
+    Days the backing model did not resolve are dropped before anything is
+    written: a day whose ``weather_code``, ``sunrise`` or ``sunset`` is
+    null cannot be stored against those non-null columns. ICON-CH2 runs
+    ~5 days into the 7-day window, so an alpine point stores ~5 rows and a
+    point on the default chain stores 7. A short window is the normal
+    outcome, not a failure — the tail is analysis-only data and must never
+    cost the near-term days the resort and favourite cards read (SNOW-628).
 
     Each row's ``freezing_level_height`` is derived as the daily maximum of
     that day's hourly values (Open-Meteo has no daily freezing-level
@@ -826,10 +851,12 @@ def fetch_weather_for_point(
     Points are forecast-only — there is no archive/backfill equivalent of
     this function.
 
-    Each day also writes a ``ForecastPointWeatherHistory`` row keyed on
-    ``(point, day, target_date)``, inside the same transaction, retaining
-    this issue's view of the day before a later run overwrites the row
-    above (SNOW-575).
+    When ``add_history`` is set, each day also writes a
+    ``ForecastPointWeatherHistory`` row keyed on ``(point, day,
+    target_date)``, inside the same transaction, retaining this issue's
+    view of the day before a later run overwrites the row above
+    (SNOW-575). It defaults to off: history is analysis-only, so it is
+    switchable independently of the operational write (SNOW-629).
 
     Args:
         point: The ForecastPoint to fetch weather for.
@@ -844,15 +871,17 @@ def fetch_weather_for_point(
             ``f"{base_url}/forecast"``. Defaults to ``None``, which falls
             back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once after the response is
-            parsed, with a dict for ``target_date`` (day 0) —
+            parsed, with a dict for the first stored day —
             ``{forecast_point_id, date, weather_code, sunrise, sunset,
             captured_at}``. Defaults to ``None`` (no-op).
+        add_history: If True, also retain a ForecastPointWeatherHistory
+            row per stored day. Defaults to False.
 
     Returns:
-        A list of ``(ForecastPointWeather, created)`` tuples — one per day
-        in the forecast window — when ``commit=True``, where ``created`` is
-        True for a new row or False for an update. Returns an empty list
-        when ``commit=False``.
+        A list of ``(ForecastPointWeather, created)`` tuples — one per
+        stored day, which is at most one per day in the forecast window —
+        when ``commit=True``, where ``created`` is True for a new row or
+        False for an update. Returns an empty list when ``commit=False``.
 
     Raises:
         requests.HTTPError: If the Open-Meteo API returns a non-2xx status.
@@ -860,7 +889,9 @@ def fetch_weather_for_point(
             from the API response.
         ValueError: If ``daily.time`` is empty or a required per-day array
             does not align 1:1 with it — the batch is rejected rather than
-            stored under invented dates (SNOW-466).
+            stored under invented dates (SNOW-466); or if no day in the
+            window carries a complete set of required fields, which is a
+            malformed payload rather than a short model horizon (SNOW-628).
 
     """
     url = open_meteo.request_url(open_meteo.FORECAST, base_url)
@@ -895,27 +926,63 @@ def fetch_weather_for_point(
     # Key rows off the provider's own dates, validated to align with the
     # per-day arrays — never target_date + idx (SNOW-466).
     dates = _point_daily_dates(daily, point.pk)
-    num_days = len(dates)
 
-    weather_code: int = daily["weather_code"][0]
-    sunrise_str: str = daily["sunrise"][0]
-    sunset_str: str = daily["sunset"][0]
+    # Drop the days the model did not resolve. ICON-CH2 runs ~5 days into
+    # the 7-day window, so its tail carries a null weather_code while
+    # sunrise/sunset — astronomical, not modelled — stay populated. Those
+    # days cannot be stored against a non-null column, and the tail is
+    # analysis-only data: storing the short window is the correct outcome,
+    # not a failure. Filtering here rather than inside the loop is what
+    # keeps the transaction below from rolling back the near-term days
+    # that a skier actually reads (SNOW-628).
+    storable = [idx for idx in range(len(dates)) if _day_is_complete(daily, idx)]
+    if not storable:
+        raise ValueError(
+            f"Open-Meteo point forecast for point={point.pk}: no day carries a "
+            f"complete weather_code/sunrise/sunset — refusing to store."
+        )
+    if len(storable) < len(dates):
+        logger.info(
+            "Open-Meteo point forecast for point=%s: storing %d of %d day(s) — "
+            "the rest fall beyond the model's horizon",
+            point.pk,
+            len(storable),
+            len(dates),
+        )
+
+    first = storable[0]
+    if first != 0:
+        # Losing the tail is routine; losing day 0 is not. The near-term day
+        # is what the resort and favourite cards render, so it is worth a
+        # warning of its own — but not worth discarding the days that did
+        # resolve, which is what raising here would do.
+        logger.warning(
+            "Open-Meteo point forecast for point=%s: day 0 (%s) carries no "
+            "usable data — storing from %s instead",
+            point.pk,
+            dates[0],
+            dates[first],
+        )
+
+    weather_code: int = daily["weather_code"][first]
+    sunrise_str: str = daily["sunrise"][first]
+    sunset_str: str = daily["sunset"][first]
 
     logger.debug(
         "Open-Meteo forecast: point=%s date=%s code=%d sunrise=%s sunset=%s days=%d",
         point.pk,
-        dates[0],
+        dates[first],
         weather_code,
         sunrise_str,
         sunset_str,
-        num_days,
+        len(storable),
     )
 
     if on_fetched is not None:
         on_fetched(
             {
                 "forecast_point_id": point.pk,
-                "date": dates[0].isoformat(),
+                "date": dates[first].isoformat(),
                 "weather_code": weather_code,
                 "sunrise": sunrise_str,
                 "sunset": sunset_str,
@@ -933,7 +1000,7 @@ def fetch_weather_for_point(
     # malformed timestamp on day 4 of 7 would otherwise leave days 0-3 written
     # and days 4-6 missing, while fetch_all_points counted the point as failed.
     with transaction.atomic():
-        for idx in range(num_days):
+        for idx in storable:
             day = dates[idx]
             defaults = _build_point_defaults(daily, idx)
             defaults["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
@@ -959,16 +1026,19 @@ def fetch_weather_for_point(
             # Retain this issue's view of the day before the next run
             # overwrites the row above (SNOW-575). Keyed on issued_date, so
             # the four runs within a day collapse to one row and a forecast
-            # day accrues one row per day of its window.
-            ForecastPointWeatherHistory.objects.update_or_create(
-                forecast_point=point,
-                valid_for_date=day,
-                issued_date=target_date,
-                defaults={
-                    **_build_history_defaults(defaults),
-                    "lead_days": (day - target_date).days,
-                },
-            )
+            # day accrues one row per day of its window. Opt-in: nothing
+            # user-facing reads history, so the retention is switchable
+            # without touching the operational write above (SNOW-629).
+            if add_history:
+                ForecastPointWeatherHistory.objects.update_or_create(
+                    forecast_point=point,
+                    valid_for_date=day,
+                    issued_date=target_date,
+                    defaults={
+                        **_build_history_defaults(defaults),
+                        "lead_days": (day - target_date).days,
+                    },
+                )
 
             results.append((weather, created))
 
@@ -981,6 +1051,7 @@ def fetch_all_points(
     commit: bool,
     base_url: str | None = None,
     on_fetched: Callable[[dict[str, Any]], None] | None = None,
+    add_history: bool = False,
 ) -> dict[str, int]:
     """
     Fetch weather for every active ForecastPoint (referenced by a Favourite).
@@ -1004,6 +1075,9 @@ def fetch_all_points(
         on_fetched: Optional callback forwarded to each per-point call.
             Called once per fetched point, for day 0 of its window. Defaults
             to ``None`` (no-op).
+        add_history: Forwarded to each per-point call — retain a
+            ForecastPointWeatherHistory row per stored day. Defaults to
+            False.
 
     Returns:
         A dict with integer counters:
@@ -1037,6 +1111,7 @@ def fetch_all_points(
                 commit=commit,
                 base_url=base_url,
                 on_fetched=on_fetched,
+                add_history=add_history,
             )
             if commit:
                 for _, created in results:

@@ -26,7 +26,15 @@ altitude. Points are forecast-only — there is no archive/backfill path for
 them, and they do not participate in ``--local-mirror`` (skipped cleanly).
 Pass ``--skip-points`` to fetch region weather only. Point failures are
 merged into the same ``failed`` total that triggers the command's non-zero
-exit.
+exit — but a point whose backing model runs short of the 7-day window is
+not a failure: it stores the days that resolved (SNOW-628).
+
+``--add-history`` additionally retains a ``ForecastPointWeatherHistory``
+row per stored day (SNOW-575) — this issue's view of each forecast day,
+kept for convergence analysis. Off by default, because nothing
+user-facing reads it. The scheduled run passes the flag when
+``settings.FETCH_WEATHER_ADD_HISTORY`` is set, so retention is an
+environment change rather than a deploy (SNOW-629).
 
 ``--local-mirror`` replaces the old ``--source local-mirror`` flag. It switches
 all fetches to the development-only view that replays
@@ -59,6 +67,9 @@ Usage:
 
     # Region weather only — skip the active-ForecastPoint pass.
     python manage.py fetch_weather --commit --skip-points
+
+    # Also retain the per-issue point-forecast history (SNOW-575).
+    python manage.py fetch_weather --commit --add-history
 
     # Capture the default window to the archive without DB writes.
     python manage.py fetch_weather --stash
@@ -222,6 +233,19 @@ class Command(BaseCommand):
                 "weather only."
             ),
         )
+        parser.add_argument(
+            "--add-history",
+            action="store_true",
+            help=(
+                "Also retain a ForecastPointWeatherHistory row per stored day "
+                "(SNOW-575) — this issue's view of each forecast day, for "
+                "convergence analysis. Off by default: nothing user-facing "
+                "reads it. The scheduled run passes this flag when "
+                "settings.FETCH_WEATHER_ADD_HISTORY is set, so retention can be "
+                "toggled by environment variable without a deploy. No effect "
+                "with --skip-points, or without --commit."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
@@ -233,6 +257,7 @@ class Command(BaseCommand):
         delay: float = options["delay"]
         stash: bool = options["stash"]
         skip_points: bool = options["skip_points"]
+        add_history: bool = options["add_history"]
         verbosity: int = options["verbosity"]
 
         today = timezone.localdate()
@@ -259,6 +284,7 @@ class Command(BaseCommand):
             stash=stash,
             local_mirror=local_mirror,
             skip_points=skip_points,
+            add_history=add_history,
         )
 
         total_counts = self._fetch(
@@ -277,7 +303,12 @@ class Command(BaseCommand):
         # on-disk archive contract: the pass never forwards on_fetched, so point
         # data never reaches the --stash file even when the pass itself runs.
         if end >= today and not skip_points and not local_mirror:
-            point_counts = fetch_all_points(today, commit=commit, base_url=base_url)
+            point_counts = fetch_all_points(
+                today,
+                commit=commit,
+                base_url=base_url,
+                add_history=add_history,
+            )
             for key in total_counts:
                 total_counts[key] += point_counts[key]
 
@@ -461,6 +492,7 @@ class Command(BaseCommand):
         stash: bool,
         local_mirror: bool,
         skip_points: bool,
+        add_history: bool,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
@@ -474,6 +506,8 @@ class Command(BaseCommand):
             flags.append("STASH")
         if skip_points:
             flags.append("SKIP-POINTS")
+        if add_history:
+            flags.append("ADD-HISTORY")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
         if start == end:
@@ -492,7 +526,8 @@ class Command(BaseCommand):
         )
         logger.info(
             "fetch_weather started: start=%s end=%s days=%d regions=%d points=%d "
-            "commit=%s local_mirror=%s delay=%s stash=%s skip_points=%s",
+            "commit=%s local_mirror=%s delay=%s stash=%s skip_points=%s "
+            "add_history=%s",
             start,
             end,
             days,
@@ -503,6 +538,7 @@ class Command(BaseCommand):
             delay,
             stash,
             skip_points,
+            add_history,
         )
 
     def _report_outcome(

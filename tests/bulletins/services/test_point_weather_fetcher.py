@@ -30,6 +30,11 @@ Covers:
   - atomic window (SNOW-546) — a malformed timestamp or a failed write
     part-way through the 7-day loop leaves zero rows, not a partial
     window that reports as a failed point.
+  - truncated model horizon (SNOW-628) — a payload whose tail carries a
+    null weather_code (ICON-CH2 runs ~5 days into the 7-day window)
+    stores the days that resolved instead of rolling the whole window
+    back, and is not counted as a failure; a payload resolving no day at
+    all still is.
 
 All outbound HTTP calls are mocked via unittest.mock.patch so no network
 traffic is required, mirroring test_weather_fetcher.py's pattern.
@@ -924,23 +929,203 @@ class TestIconChModelSelection:
     def test_out_of_domain_degraded_payload_is_not_retried(self) -> None:
         """The fallback belongs to ICON-CH; the default chain gets no second go.
 
-        A null day-0 weather_code from the default chain stays fatal, as it
-        was before SNOW-443 — the point surfaces in fetch_all_points'
-        failed counter rather than being silently retried against the
-        same model that just produced it.
+        A null day-0 weather_code from the default chain is not retried
+        against the same model that just produced it. Since SNOW-628 it is
+        no longer fatal either: the six days that did resolve are stored
+        and day 0 is logged, rather than the whole window being discarded
+        for the one day that failed.
         """
         point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        target = datetime.date(2026, 5, 1)
         degraded = _make_full_point_response()
         degraded["daily"]["weather_code"][0] = None
         mock = _mock_get(degraded)
 
-        with (
-            patch("apps.bulletins.services.weather_fetcher.requests.get", mock),
-            pytest.raises((TypeError, IntegrityError)),
-        ):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            results = fetch_weather_for_point(point, target, commit=True)
 
         assert mock.call_count == 1
+        assert len(results) == POINT_FORECAST_DAYS - 1
+        stored = ForecastPointWeather.objects.filter(forecast_point=point)
+        assert stored.count() == POINT_FORECAST_DAYS - 1
+        assert not stored.filter(valid_for_date=target).exists()
+
+
+@pytest.mark.django_db
+class TestHistoryIsOptIn:
+    """History retention is off unless asked for (SNOW-629).
+
+    Nothing user-facing reads ForecastPointWeatherHistory — it exists for
+    future convergence analysis — so it is switchable independently of the
+    operational ForecastPointWeather write, which must never be affected
+    by the setting either way.
+    """
+
+    def test_history_not_written_by_default(self) -> None:
+        """Without add_history, the weather rows land and no history does."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        assert (
+            ForecastPointWeather.objects.filter(forecast_point=point).count()
+            == POINT_FORECAST_DAYS
+        )
+        assert not ForecastPointWeatherHistory.objects.exists()
+
+    def test_history_written_when_requested(self) -> None:
+        """add_history=True restores the SNOW-575 retention."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
+
+        assert (
+            ForecastPointWeatherHistory.objects.filter(forecast_point=point).count()
+            == POINT_FORECAST_DAYS
+        )
+
+    def test_fetch_all_points_threads_the_flag(self) -> None:
+        """The batch entry point forwards add_history to each point."""
+        FavouriteFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            counts = fetch_all_points(target, commit=True, add_history=True)
+
+        assert counts["created"] == POINT_FORECAST_DAYS
+        assert ForecastPointWeatherHistory.objects.count() == POINT_FORECAST_DAYS
+
+    def test_weather_rows_are_unaffected_by_the_flag(self) -> None:
+        """Turning history off changes nothing about the operational rows."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(_make_full_point_response()),
+        ):
+            without = fetch_weather_for_point(point, target, commit=True)
+            with_history = fetch_weather_for_point(
+                point, target, commit=True, add_history=True
+            )
+
+        assert [row.valid_for_date for row, _ in without] == [
+            row.valid_for_date for row, _ in with_history
+        ]
+
+
+@pytest.mark.django_db
+class TestTruncatedModelHorizon:
+    """A model that runs short of the window stores what it resolved (SNOW-628).
+
+    ICON-CH2 covers ~5 days of the 7-day request. Its last days come back
+    with a null ``weather_code`` while ``sunrise``/``sunset`` — astronomical
+    rather than modelled — stay populated, which is what made this look
+    like a well-formed payload right up to the write. Against a non-null
+    column that raised, and SNOW-546's transaction then discarded the good
+    days with it, so every alpine point wrote nothing at all.
+    """
+
+    @staticmethod
+    def _truncated(days_resolved: int = 5) -> dict[str, Any]:
+        """Return a 7-day payload whose tail carries no weather_code."""
+        payload = _make_full_point_response()
+        for idx in range(days_resolved, POINT_FORECAST_DAYS):
+            payload["daily"]["weather_code"][idx] = None
+        return payload
+
+    def test_short_window_is_stored_not_rejected(self) -> None:
+        """Five resolved days persist five rows; the null tail is dropped."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(self._truncated()),
+        ):
+            results = fetch_weather_for_point(point, target, commit=True)
+
+        assert len(results) == 5
+        rows = ForecastPointWeather.objects.filter(forecast_point=point).order_by(
+            "valid_for_date"
+        )
+        assert list(rows.values_list("valid_for_date", flat=True)) == [
+            target + datetime.timedelta(days=idx) for idx in range(5)
+        ]
+
+    def test_near_term_days_survive_the_null_tail(self) -> None:
+        """Day 0 is written — the regression was the tail rolling it back."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(self._truncated()),
+        ):
+            fetch_weather_for_point(point, target, commit=True)
+
+        day_zero = ForecastPointWeather.objects.get(
+            forecast_point=point, valid_for_date=target
+        )
+        assert day_zero.weather_code == 1
+        assert day_zero.hourly_series is not None
+
+    def test_history_follows_the_short_window(self) -> None:
+        """History rows are written for the stored days only."""
+        point = ForecastPointFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(self._truncated()),
+        ):
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
+
+        history = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        assert history.count() == 5
+        assert sorted(history.values_list("lead_days", flat=True)) == [0, 1, 2, 3, 4]
+
+    def test_short_window_is_not_a_batch_failure(self) -> None:
+        """fetch_all_points counts the rows, not a failure — so the command exits 0."""
+        FavouriteFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(self._truncated()),
+        ):
+            counts = fetch_all_points(target, commit=True)
+
+        assert counts["failed"] == 0
+        assert counts["created"] == 5
+
+    def test_payload_with_no_usable_day_is_still_a_failure(self) -> None:
+        """A window resolving nothing is malformed, not short — it stays counted."""
+        FavouriteFactory.create()
+        target = datetime.date(2026, 5, 1)
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(self._truncated(days_resolved=0)),
+        ):
+            counts = fetch_all_points(target, commit=True)
+
+        assert counts["failed"] == 1
+        assert counts["created"] == 0
+        assert ForecastPointWeather.objects.count() == 0
 
 
 class TestIsAlpinePoint:
@@ -987,7 +1172,7 @@ class TestForecastHistoryCapture:
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_full_point_response()),
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
         assert rows.count() == POINT_FORECAST_DAYS
@@ -1002,7 +1187,7 @@ class TestForecastHistoryCapture:
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_full_point_response()),
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         leads = sorted(
             ForecastPointWeatherHistory.objects.filter(
@@ -1027,12 +1212,12 @@ class TestForecastHistoryCapture:
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_full_point_response(start_date="2026-05-01")),
         ):
-            fetch_weather_for_point(point, first_run, commit=True)
+            fetch_weather_for_point(point, first_run, commit=True, add_history=True)
         with patch(
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_full_point_response(start_date="2026-05-02")),
         ):
-            fetch_weather_for_point(point, second_run, commit=True)
+            fetch_weather_for_point(point, second_run, commit=True, add_history=True)
 
         series = ForecastPointWeatherHistory.objects.convergence_for(point, shared_day)
         assert [(row.issued_date, row.lead_days) for row in series] == [
@@ -1057,11 +1242,11 @@ class TestForecastHistoryCapture:
         with patch(
             "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(first)
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
         with patch(
             "apps.bulletins.services.weather_fetcher.requests.get", _mock_get(second)
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
         assert rows.count() == POINT_FORECAST_DAYS
@@ -1077,7 +1262,7 @@ class TestForecastHistoryCapture:
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_full_point_response()),
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         row = ForecastPointWeatherHistory.objects.get(
             forecast_point=point, valid_for_date=target
@@ -1101,7 +1286,7 @@ class TestForecastHistoryCapture:
             "apps.bulletins.services.weather_fetcher.requests.get",
             _mock_get(_make_partial_point_response()),
         ):
-            fetch_weather_for_point(point, target, commit=True)
+            fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         row = ForecastPointWeatherHistory.objects.get(
             forecast_point=point, valid_for_date=target
@@ -1116,25 +1301,36 @@ class TestForecastHistoryCapture:
         mock = _mock_get(_make_full_point_response())
 
         with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
+            fetch_weather_for_point(
+                point, datetime.date(2026, 5, 1), commit=False, add_history=True
+            )
 
         assert mock.call_count == 1
         assert not ForecastPointWeatherHistory.objects.exists()
 
     def test_history_rolls_back_with_its_partner_row(self) -> None:
-        """A mid-window failure leaves no history rows behind (SNOW-546)."""
+        """A mid-window failure leaves no history rows behind (SNOW-546).
+
+        The trigger is a malformed timestamp rather than a null
+        weather_code: since SNOW-628 a null required field marks the day
+        unstorable and drops it before the loop, so it no longer reaches
+        the write at all. A value that is present but unparseable still
+        raises inside the transaction, which is what this asserts.
+        """
         point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
         degraded = _make_full_point_response()
-        degraded["daily"]["weather_code"][3] = None
+        degraded["daily"]["sunrise"][3] = "not-a-timestamp"
 
         with (
             patch(
                 "apps.bulletins.services.weather_fetcher.requests.get",
                 _mock_get(degraded),
             ),
-            pytest.raises((TypeError, IntegrityError)),
+            pytest.raises(ValueError),
         ):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
+            fetch_weather_for_point(
+                point, datetime.date(2026, 5, 1), commit=True, add_history=True
+            )
 
         assert not ForecastPointWeatherHistory.objects.exists()
         assert not ForecastPointWeather.objects.exists()
