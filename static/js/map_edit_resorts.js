@@ -178,12 +178,12 @@
   // (when active, the same rows render with the same pills).
   const statusBadge = (m) => {
     if (m.needs_review) {
-      return { label: 'Review', cls: 'bg-red-100 text-red-800' };
+      return { label: 'Review', cls: 'bg-status-error-bg text-status-error-text' };
     }
     if (m.has_coords) {
-      return { label: 'Set', cls: 'bg-emerald-100 text-emerald-800' };
+      return { label: 'Set', cls: 'bg-status-success-bg text-status-success-text' };
     }
-    return { label: 'Unset', cls: 'bg-amber-100 text-amber-800' };
+    return { label: 'Unset', cls: 'bg-status-warning-bg text-status-warning-text' };
   };
 
   // L2 prefix — the first 5 chars of an SLF region_id (e.g.
@@ -220,7 +220,7 @@
     });
     if (rows.length === 0) {
       const empty = document.createElement('li');
-      empty.className = 'italic text-slate-400';
+      empty.className = 'italic text-text-3';
       let msg = 'No resorts loaded.';
       if (filter && hideSet) msg = 'No unset matches.';
       else if (filter)       msg = 'No matches.';
@@ -240,12 +240,12 @@
         // with the list label.
         const label = subRegionLabels[l2] || l2;
         const header = document.createElement('li');
-        header.className = 'mt-3 flex items-baseline justify-between border-t border-slate-200 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 first:mt-0 first:border-t-0 first:pt-0';
+        header.className = 'mt-3 flex items-baseline justify-between border-t border-border px-2 pt-1 text-chip font-semibold uppercase tracking-wider text-text-3 first:mt-0 first:border-t-0 first:pt-0';
         const labelSpan = document.createElement('span');
         labelSpan.textContent = label;
         header.appendChild(labelSpan);
         const codeSpan = document.createElement('span');
-        codeSpan.className = 'font-mono text-[9px] text-slate-300';
+        codeSpan.className = 'font-mono text-chip text-text-3';
         codeSpan.textContent = l2;
         header.appendChild(codeSpan);
         queueListEl.appendChild(header);
@@ -256,7 +256,7 @@
       const isCurrent = currentTarget && currentTarget.id === entry.id;
       li.className = [
         'flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1',
-        isCurrent ? 'bg-sky-100 font-semibold text-sky-900' : 'hover:bg-slate-100',
+        isCurrent ? 'bg-status-info-bg font-semibold text-status-info-text' : 'hover:bg-tag',
       ].join(' ');
       li.dataset.resortId = String(entry.id);
 
@@ -267,14 +267,14 @@
       name.textContent = entry.name;
       left.appendChild(name);
       const region = document.createElement('span');
-      region.className = 'shrink-0 text-xs text-slate-400';
+      region.className = 'shrink-0 text-xs text-text-3';
       region.textContent = entry.region_id;
       left.appendChild(region);
       li.appendChild(left);
 
       const badge = statusBadge(entry);
       const right = document.createElement('span');
-      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`;
+      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-chip font-medium ${badge.cls}`;
       right.textContent = badge.label;
       li.appendChild(right);
 
@@ -309,13 +309,13 @@
       ? `Needs ${missing.join(' and ')}.`
       : 'Ready to save.';
     targetEl.innerHTML = `
-      <p class="font-semibold text-slate-900">${escapeHtml(typedName || 'New resort')}</p>
-      <p class="text-xs text-slate-500">Region from the pin${typedCanton ? ` · ${escapeHtml(typedCanton.toUpperCase())}` : ' · canton from the region'}</p>
+      <p class="font-semibold text-text-1">${escapeHtml(typedName || 'New resort')}</p>
+      <p class="text-xs text-text-2">Region from the pin${typedCanton ? ` · ${escapeHtml(typedCanton.toUpperCase())}` : ' · canton from the region'}</p>
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-        <dt class="text-slate-500">Draft</dt>
-        <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoordsText())}</dd>
+        <dt class="text-text-2">Draft</dt>
+        <dd class="font-mono ${draftMarker ? 'text-status-warning-text' : 'text-text-3'}">${escapeHtml(draftCoordsText())}</dd>
       </dl>
-      <p class="mt-1 text-xs ${missing.length > 0 ? 'text-slate-500' : 'text-emerald-700'}">${escapeHtml(hint)}</p>
+      <p class="mt-1 text-xs ${missing.length > 0 ? 'text-text-2' : 'text-status-success-text'}">${escapeHtml(hint)}</p>
     `;
     // Name is the only input the endpoint cannot source elsewhere, so it
     // and the pin are what Save waits for.
@@ -331,7 +331,7 @@
       return;
     }
     if (!currentTarget) {
-      targetEl.innerHTML = '<p class="italic text-slate-400">No resort selected.</p>';
+      targetEl.innerHTML = '<p class="italic text-text-3">No resort selected.</p>';
       saveBtn.disabled = true;
       cancelBtn.disabled = true;
       return;
@@ -342,13 +342,13 @@
       : '(none)';
     const draftCoords = draftCoordsText();
     targetEl.innerHTML = `
-      <p class="font-semibold text-slate-900">${escapeHtml(t.name)}</p>
-      <p class="text-xs text-slate-500">${escapeHtml(t.region_name)} (${escapeHtml(t.region_id)}) · ${escapeHtml(t.canton)}</p>
+      <p class="font-semibold text-text-1">${escapeHtml(t.name)}</p>
+      <p class="text-xs text-text-2">${escapeHtml(t.region_name)} (${escapeHtml(t.region_id)}) · ${escapeHtml(t.canton)}</p>
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-        <dt class="text-slate-500">Current</dt>
-        <dd class="font-mono text-slate-700">${escapeHtml(currentCoords)}</dd>
-        <dt class="text-slate-500">Draft</dt>
-        <dd class="font-mono ${draftMarker ? 'text-amber-700' : 'text-slate-400'}">${escapeHtml(draftCoords)}</dd>
+        <dt class="text-text-2">Current</dt>
+        <dd class="font-mono text-text-2">${escapeHtml(currentCoords)}</dd>
+        <dt class="text-text-2">Draft</dt>
+        <dd class="font-mono ${draftMarker ? 'text-status-warning-text' : 'text-text-3'}">${escapeHtml(draftCoords)}</dd>
       </dl>
     `;
     saveBtn.disabled = saveInFlight || !draftMarker;

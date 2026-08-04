@@ -1,10 +1,19 @@
 # .github/workflows/lint-guards.yml — Design-system, documentation and
 # template-formatting linters.
 #
-# Runs ``tox -e ds-lint`` (template design-token guard), ``tox -e docs-lint``
-# (docs frontmatter + CLAUDE.md routing guard) and ``tox -e djangofmt``
-# (template formatting — the CI backstop for the bypassable pre-commit
-# hook).
+# Runs ``tox -e ds-lint`` (design-token guard over templates AND
+# static/js), ``tox -e js-globals-lint`` (reads of globals nothing
+# assigns), ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing
+# guard) and ``tox -e djangofmt`` (template formatting — the CI backstop
+# for the bypassable pre-commit hook).
+#
+# SNOW-619 added the JavaScript half. The project has deliberately avoided
+# a JS toolchain, so rather than adopt ESLint these extend the guards
+# already here to cover what the 2026-08-03 review actually found: class
+# strings built in JS were held to no token rules at all, and a
+# ``window.X`` read against a name nothing assigns survived a module's
+# whole life with no linter able to see it (ESLint's ``no-undef`` cannot
+# look through a member expression either).
 #
 # The SW shell cache-version guard (``tox -e sw-version``, SNOW-517) used to
 # run here too. SNOW-590 derives the cache version from the shell content
@@ -55,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, docs-lint, djangofmt]
+        toxenv: [ds-lint, js-globals-lint, docs-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

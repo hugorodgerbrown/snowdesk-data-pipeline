@@ -268,8 +268,10 @@ The canonical reference is the staff-only **component library at `/_components/`
 (source: [`apps/public/design_tokens.py`](apps/public/design_tokens.py), variant fixtures in
 [`apps/public/_component_fixtures.py`](apps/public/_component_fixtures.py)). Read it before
 adding any new visual surface. Rules for any change that adds or touches
-templates — enforced by `bin/ds-lint` (`tox -e ds-lint`, and the `lint-guards`
-CI workflow), which blocks every PR that introduces a violation:
+templates **or `static/js/*.js`** (SNOW-619 — a class string built in
+JavaScript reaches the page exactly as a template one does) — enforced by
+`bin/ds-lint` (`tox -e ds-lint`, and the `lint-guards` CI workflow), which
+blocks every PR that introduces a violation:
 
 1. **Reuse first, extract second, inline never.** Use an existing partial
    (`_card`, `_button`, `_status_page`, `_collapsible_panel`, `_eyebrow`, …)
@@ -283,7 +285,11 @@ CI workflow), which blocks every PR that introduces a violation:
    inline class strings.
 3. **Hex colours belong in `src/css/main.css` `@theme`.** The only legitimate
    template-side hex values are SVG `fill`/`stroke` attributes and the PWA
-   `theme-color` meta tag (which can't resolve CSS variables).
+   `theme-color` meta tag (which can't resolve CSS variables). This rule is
+   **templates only** — MapLibre paint properties take literal colours and
+   cannot reference a CSS variable at all, and the EAWS danger-scale palette
+   is mandated by the standard, so in JS the token rules above apply and
+   this one does not.
 
 Per-line escape hatch, only when a token genuinely can't express the
 constraint. The reason is required and audit-visible
@@ -293,6 +299,22 @@ constraint. The reason is required and audit-visible
 {# ds-lint-allow: <reason> #}
 <element class="rounded-[16px]">…</element>
 ```
+
+```js
+// ds-lint-allow: <reason>
+el.className = 'rounded-[16px]';
+```
+
+**Second guard: `tox -e js-globals-lint`.** Fails on any `window.X` /
+`self.X` read in `static/js` whose name is never assigned anywhere in the
+tree. `map_layer_sync_status.js` read `window.MAP` for its entire life —
+`map.js` declares a bare `let MAP`, which is not a window property, so the
+read was always `undefined` and every guard around it took the "no map yet"
+branch. The check models the classic-script rule that makes this subtle:
+top-level `function` and `var` declarations DO become window properties;
+`let`, `const` and `class` do not. Genuine browser and third-party globals
+live in `KNOWN_EXTERNALS` in `bin/js-globals-lint`; adding a name there to
+silence a real miss defeats the check.
 
 ## Local CI — always run tox
 
@@ -304,13 +326,14 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, docs-lint, test, js)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, docs-lint, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks
 uv run tox -e fmt             # ruff format --check
 uv run tox -e lint            # ruff check
-uv run tox -e ds-lint         # design-system template linter (see "Design system" above)
+uv run tox -e ds-lint         # design-system linter — templates + static/js (see "Design system" above)
+uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
