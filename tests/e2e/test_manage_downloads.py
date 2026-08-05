@@ -673,6 +673,15 @@ def test_two_custom_areas_are_both_listed_and_each_independently_deletable(
     page.on("dialog", lambda dialog: dialog.accept())
     page.locator(f"{_SHEET} [data-downloads-delete]").first.click()
 
+    # SNOW-635 review: the delete is async (evict() awaits a cache delete
+    # and an IndexedDB write before `render()` rebuilds the list), and
+    # ``.click()`` only waits for the click action itself — a raw
+    # ``_row_texts`` read straight after it can catch the DOM mid-rebuild.
+    # ``to_have_count`` is the auto-retrying gate the rest of this file
+    # already uses for exactly this (see
+    # ``test_removing_an_area_deletes_its_whole_cache_bucket``).
+    expect(page.locator(f"{_SHEET} [data-row-label]")).to_have_count(2)
+
     assert _row_texts(page, "[data-row-label]") == ["Aletsch", "Custom area 2"]
     assert sorted(_stored_area_ids(page)) == sorted(["region-CH-4115", "custom-b2"])
     assert _pinned_buckets(page) == sorted(
@@ -724,6 +733,10 @@ def test_renaming_one_custom_area_leaves_a_second_one_untouched(
     page.on("dialog", lambda dialog: dialog.accept("Home run"))
     # Rows are largest-first, so the first Rename is custom-a1's.
     page.locator(f"{_SHEET} [data-downloads-rename]").first.click()
+
+    # SNOW-635 review: rename() + render() are async; a raw _row_texts read
+    # straight after .click() can catch the DOM before the rebuild lands.
+    expect(page.locator(f"{_SHEET} [data-row-label]").first).to_have_text("Home run")
 
     assert _row_texts(page, "[data-row-label]") == ["Home run", "Custom area 2"]
     stored = page.evaluate(

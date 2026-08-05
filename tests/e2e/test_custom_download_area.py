@@ -449,21 +449,27 @@ def _centre_tile_url(page: Page, centre_tile: dict[str, Any]) -> str:
 
 
 def _pinned_cache_has(page: Page, url: str) -> bool:
-    """Whether `url` is present in a prefix-matched pinned bucket.
+    """Whether `url` is present in ANY prefix-matched pinned bucket.
 
-    SNOW-586: there are potentially several per-area pinned buckets now,
-    but this file only ever downloads the custom area, so exactly one
-    (``snowdesk-basemap-pinned-custom``) exists at a time here — finding
-    the first prefix match is still correct for what these tests exercise.
+    SNOW-586 gave every downloaded area its own bucket. Through SNOW-634
+    this file only ever downloaded ONE custom area at a time, so checking
+    the first prefix match was equivalent to checking the only one that
+    existed. SNOW-635 lets this file hold several at once — checking only
+    the first (``caches.keys()``'s own, unspecified, order) made a real
+    second area's tiles invisible to this helper whenever its bucket
+    happened to sort after another's. Unions across every matching bucket
+    instead, mirroring how production itself reads pinned tiles
+    (``pinnedBasemapCacheURLs`` in static/js/map.js).
     """
     return bool(
         page.evaluate(
             """async ({ url, prefix }) => {
-                const names = await caches.keys();
-                const name = names.find((n) => n.startsWith(prefix));
-                if (!name) return false;
-                const cache = await caches.open(name);
-                return !!(await cache.match(url));
+                const names = (await caches.keys()).filter((n) => n.startsWith(prefix));
+                for (const name of names) {
+                    const cache = await caches.open(name);
+                    if (await cache.match(url)) return true;
+                }
+                return false;
             }""",
             {"url": url, "prefix": _PINNED_CACHE_PREFIX},
         )
@@ -1568,7 +1574,17 @@ def test_budget_banner_adds_a_new_areas_live_progress_cleanly(
     )
 
     worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
-    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    # SNOW-635 review: the ROUNDEL's own "done" (``_CONTROL``) already read
+    # done throughout this run — the first two areas kept it there — so it
+    # is not a valid "this run has settled" signal for a second-or-later
+    # confirm; nor, it turns out, is the banner text alone: a live "50.0 MB"
+    # progress readout can coincidentally match the SAME text the settled
+    # total renders, before `finish()` has actually appended the record.
+    # The overlay's own run-state is the one signal that genuinely
+    # transitions busy -> done exactly once per run (set synchronously by
+    # `paintRun`, strictly after `_appendCustomArea` has been awaited) —
+    # the same thing `_confirm_download` already waits for.
+    _wait_for_run_state(page, "done", timeout=10000)
 
     # Settles at 30 + 20 = 50 MB — a genuinely new area's full total added,
     # never replacing anything.
@@ -1621,7 +1637,13 @@ def test_confirming_twice_at_the_same_bbox_records_two_independent_totals(
     _stub_warm_cache(worker, ok=1, failed=0, bytes_total=second_bytes)
     page.click("#map-frame-confirm")
     _wait_for_run_state(page, "busy")
-    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    # SNOW-635 review: NOT `_wait_for_state(page, "done", selector=_CONTROL)`
+    # — the roundel already reads "done" from the FIRST area and never
+    # stops doing so, so that wait is a same-instant no-op here, not a
+    # genuine "this run has settled" signal. The overlay's own run-state
+    # is what actually transitions busy -> done exactly once per run,
+    # strictly after `_appendCustomArea` has been awaited inside `finish`.
+    _wait_for_run_state(page, "done", timeout=10000)
 
     areas = _custom_areas(page)
     assert len(areas) == 2
@@ -1695,7 +1717,12 @@ def test_confirming_a_second_area_over_a_full_budget_evicts_the_first(
     assert (body.text_content() or "").strip() != ""
 
     page.click("#map-download-evict-confirm-cta")
-    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    # SNOW-635 review: the roundel (`_CONTROL`) reads "done" throughout —
+    # the first area is on disk for the whole exchange, eviction included
+    # — so waiting on it here would resolve immediately, before the second
+    # run (and the eviction that preceded it) has actually settled. The
+    # overlay's own run-state is the genuine per-run busy -> done signal.
+    _wait_for_run_state(page, "done", timeout=10000)
 
     areas = _custom_areas(page)
     assert len(areas) == 1, (
