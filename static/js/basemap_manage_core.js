@@ -315,7 +315,7 @@
    * stored in Cache Storage (SNOW-612).
    *
    * A download that fails partway leaves its pinned bucket on disk with no
-   * ``basemap.regions`` / ``basemap.customArea`` record, because the
+   * ``basemap.regions`` / ``basemap.customAreas`` record, because the
    * record is only written when a run completes. The byte budget never
    * counted that bucket and the manage sheet could not list it, so the
    * stranded quota was invisible to the user and to the planner —

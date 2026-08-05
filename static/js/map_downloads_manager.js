@@ -259,7 +259,7 @@
    *
    * Delegates to map.js's ``evictBasemapAreas``, which already knows how
    * to take an area id back to the right half of the right record (the
-   * ``basemap.regions`` array or the ``basemap.customArea`` row). It is
+   * ``basemap.regions`` array or the ``basemap.customAreas`` array). It is
    * best-effort and returns nothing, so the outcome is confirmed by
    * re-reading the area list — verifying the state rather than trusting
    * the attempt.

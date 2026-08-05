@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal navigation partitioning, Download basemap, custom-area download, layers
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # PWA shell
@@ -1060,53 +1060,72 @@ supports map rotation, which turns the frame into a non-axis-aligned quad
 on the ground. The readout recomputes on every MapLibre `'move'` event,
 with no debounce, since it is pure local arithmetic.
 
-**Persistence — exactly one custom area at a time.** A confirmed download
-is saved to IndexedDB's `meta:app` store under the key
-`basemap.customArea` (see
-[`indexeddb-scaffolding.md`](indexeddb-scaffolding.md) for the row
-shape) — the same `{key, value}` shape as `basemap.origins` and
-`mutations.principal`. The roundel's `done` state is still **probed**,
-never read off that row directly: exactly like the per-region control,
-real pinned-cache contents — every per-area bucket, unioned (SNOW-586) —
-are the source of truth for whether the area is actually downloaded: every
-tile of the area's blob is checked (`blobFullyCached`), not just its
-`centre_tile`, because a neighbouring download can cache that one tile
-without covering the area. The `meta:app` row only records *where* the
-frame was. Clicking a `done`
-roundel re-opens framing at the saved area (`MAP.fitBounds`, padded to
-land the saved bbox under the frame) rather than re-downloading outright.
+**Persistence — any number of custom areas (SNOW-635).** A confirmed
+download is APPENDED to IndexedDB's `meta:app` store under the key
+`basemap.customAreas` — an ARRAY, one entry per downloaded custom area
+(see [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md) for the row
+shape). Through SNOW-634 this was a single `{key, value}` row,
+`basemap.customArea`, the same shape as `basemap.origins` and
+`mutations.principal` — so a second confirmed download silently replaced
+the first, sharing its bucket under the one fixed area id `'custom'`.
+SNOW-635 mints a fresh id per confirm (`generateCustomAreaId`, a
+`'custom-<uuid>'` string) instead, so a second download is a second,
+independent area with its own bucket. A pre-SNOW-635 device's one area is
+lazily migrated into the array on first read (`map.js`'s
+`_readCustomAreas`, inside the same `basemapDownloadedAreas()` the
+roundel already calls on boot), keeping id `'custom'` — Cache Storage has
+no rename, so that id has to survive unchanged for its existing bucket to
+keep resolving.
 
-**Evict-on-confirm (bbox replacement).** Moving the frame and clicking
-Cancel touches nothing. Confirming a bbox that differs from the
-currently-saved one deletes the custom area's OWN bucket outright
-(`caches.delete('snowdesk-basemap-pinned-custom')`, via
-`evictBasemapAreas` — see "Download budget and whole-area eviction"
-below) before warming the new set: the custom area's bucket is keyed on
-its area id (`custom`) alone, not its geometry, so the OLD bbox's tiles
-would otherwise sit in the same bucket as the new bbox's, bloating it and
-inflating its recorded size for ground the run no longer covers. This
-needs no confirmation — it is replacing the user's own prior choice with
-the one they just made, not touching another area. (Before SNOW-586 this
-was a per-URL re-derivation against `buildBlob` and the CURRENT tile
-template, which silently deleted nothing after a basemap switch — a
-whole-bucket delete has no such dependency.) This is entirely separate
-from the standing-budget eviction below, which can also run on confirm
-but targets OTHER areas and always asks first.
+The roundel's `done` state is still **probed**, never read off the record
+directly: exactly like the per-region control, real pinned-cache
+contents — every per-area bucket, unioned (SNOW-586) — are the source of
+truth for whether an area is actually downloaded: every tile of an area's
+own recorded `z`/`bbox` is checked (`blobFullyCached`), not just its
+`centre_tile`, because a neighbouring download can cache that one tile
+without covering the area. `done` now means "the device holds at least
+one downloaded custom area", not "this one specific area is cached" —
+there is no longer a single canonical area for that question to be about.
+Opening framing no longer re-centres the map on any previously-downloaded
+area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
+when there was exactly one area to jump to. With any number of areas
+possibly on disk, jumping to one of them would be arbitrary, so framing
+always starts from wherever the map already is.
+
+**No more evict-on-confirm.** Through SNOW-634, confirming a bbox that
+differed from the currently-saved one (or the same bbox under a different
+basemap) deleted the custom area's OWN bucket outright before warming the
+new set — the area's bucket was keyed on its id (`custom`) alone, not its
+geometry or basemap, so the old bbox's or basemap's tiles would otherwise
+sit in the same bucket as the new run's. SNOW-635 removes this entirely: a
+fresh id never collides with an existing bucket, so a confirmed run has
+nothing of the user's own left to replace — moving the frame or switching
+basemap before re-confirming now downloads a genuinely separate area. The
+standing-budget eviction below is unaffected and is the only eviction a
+confirm can still trigger, whether the areas competing for room are a
+region and a custom area or (newly possible) two custom areas of the
+user's own.
 
 On completion (success or failure), `window.pwaLayerSyncStatus?.refresh()`
 runs — same as the per-region control — so the layers-menu sync dots
-reflect the newly-warmed (or unchanged) cache state, and the framing
-overlay closes: the roundel itself carries the outcome, no toast.
-Offline-integrity mirrors the per-region control exactly: neither opening
-framing nor confirming a download is allowed while offline.
+reflect the newly-warmed (or unchanged) cache state. SNOW-632 changed what
+happens to the overlay itself: a completed run no longer closes it — the
+CTA repaints in place ("23.4 MB downloaded", Download hidden, Cancel
+relabelled Close) and the user dismisses it explicitly, which is also the
+only way to start a second framing session (the roundel that would open a
+fresh one is hidden for as long as the overlay is up). Offline-integrity
+mirrors the per-region control exactly: neither opening framing nor
+confirming a download is allowed while offline.
 
 ### Download budget and whole-area eviction (SNOW-586)
 
 Both download controls write into their own dedicated Cache Storage
 bucket per area — `snowdesk-basemap-pinned-<areaId>`
 (`pwaBasemapDownloadCore.pinnedCacheName`), where `areaId` is
-`region-<region_id>` for a region download or the fixed `custom` for the
-one custom-area download — **replacing** the single shared
+`region-<region_id>` for a region download or (SNOW-635) a freshly minted
+`custom-<uuid>` for a custom-area download — `'custom'` on its own
+survives only as one reserved legacy id, a pre-SNOW-635 device's single
+migrated area — **replacing** the single shared
 `snowdesk-basemap-pinned-v1` cache SNOW-521/522 used, and the
 `BASEMAP_PINNED_CACHE_MAX_ENTRIES` (5000) entry-count FIFO trim that
 capped it. Full rationale, including why this is a bucket per area
@@ -1139,7 +1158,7 @@ per-run ceiling check and still be impossible to keep.
 storage-quota pre-flight (SNOW-568), call
 `planBasemapDownloadBudget(areaId, mb)` — which reads every recorded
 area (`basemapDownloadedAreas()`, the union of `basemap.regions` and
-`basemap.customArea`) and the current budget, then asks
+`basemap.customAreas`) and the current budget, then asks
 `basemap_download_core.js`'s `planEviction` for a plan:
 
 - **`impossible`** — the incoming run alone (at its worst-case `mb`
@@ -1230,9 +1249,16 @@ cost*, but neither is ever allowed to answer *whether the tiles are still
 there*. That stays a live cache probe, which is exactly what the removed
 rings got wrong.
 
-`basemap.customArea` itself is unaffected, since `mapCustomDownloadControlInit`
-still reads it at boot to hydrate the saved-area lifecycle (framing,
-evict-on-confirm) independently of this overlay.
+`basemap.customAreas` (SNOW-635 — the array that replaced the single
+`basemap.customArea` row referenced above) is unaffected by the ring
+removal for the same reason `basemap.regions` is: `basemapDownloadedAreas()`
+still reads it, independently of this overlay, for the eviction planner
+and the manage sheet. `mapCustomDownloadControlInit` itself no longer has
+a saved-area lifecycle to hydrate at boot — SNOW-635 dropped the
+single-saved-area reopen/evict-on-confirm behaviour entirely (see
+"Custom-area basemap control" above) — so this record's only remaining
+readers outside this overlay are the roundel's own `done` probe and the
+manage sheet.
 
 **One `cache.keys()` pass.** The roundel probes one region and can afford
 `cache.match()`; this checks every tile in the pinned cache at once, so it
@@ -1309,12 +1335,18 @@ someone revisiting that decision should know it has expired.
 
 **It reads no storage of its own.** A download is recorded in **two**
 places — `basemap.regions` (an array, one entry per downloaded region,
-keyed by `region_id`) and `basemap.customArea` (at most one row, the
-user-framed area) — and neither key is the Cache Storage bucket id, which
-is `areaIdForRegion(region_id)` or `CUSTOM_AREA_ID`. So the sheet does not
-read either. It calls `map.js`'s `basemapDownloadedAreas()`, the same
-normaliser the eviction planner uses, which returns the union as
-`{id, name, bytes, savedAt}` already keyed by bucket id.
+keyed by `region_id`) and (SNOW-635) `basemap.customAreas` (an array too
+now, one entry per user-framed area, keyed by its own minted id) — and
+neither key is the Cache Storage bucket id, which is
+`areaIdForRegion(region_id)` for a region or the area's own `id` for a
+custom area. So the sheet does not read either. It calls `map.js`'s
+`basemapDownloadedAreas()`, the same normaliser the eviction planner
+uses, which returns the union as `{id, name?, ordinal?, bytes, savedAt}`
+already keyed by bucket id — `name` absent for a custom area that has
+never been renamed (SNOW-635's Rename control, next section, is the only
+writer of it), and `ordinal` present only for a custom area, which is
+what lets the sheet build its numbered "Custom area N" default without
+this module needing a translation catalogue of its own.
 
 That is not merely tidiness. The first version of this surface read a
 `basemap.areas` row that no writer has ever produced, and its whole test
@@ -1330,9 +1362,15 @@ download itself recorded, never a live sum over Cache Storage: an area is
 thousands of entries, so measuring would mean a `cache.match()` per entry
 on every open. SNOW-586 already keeps that standing total for
 `planEviction`, so this consumes it rather than deriving a second, subtly
-different number for the same download. Names come from the record too —
-stored at download time — which is why the sheet needs no region lookup and
-works offline without one.
+different number for the same download. A REGION's name comes from the
+record too — stored at download time — which is why the sheet needs no
+region lookup and works offline without one. A CUSTOM area's name is
+different (SNOW-635): it is set ONLY by a rename, so an unrenamed area's
+row instead shows the numbered "Custom area N" default, built at render
+time from the record's `ordinal` (`map_downloads_manager.js`'s `buildRow`,
+where the translation catalogue for that string actually is) — storing
+the interpolated string at download time the way a region's name is would
+have frozen it in whatever language was active then.
 
 **Deleting is a bucket delete.** With one cache per area
 (`snowdesk-basemap-pinned-<areaId>`), removal is a single
@@ -1372,11 +1410,12 @@ reconciles it.
 **Two narrow bridges into `map.js`.** Everything the sheet needs from that
 file is module scope there, so it is reached through two frozen globals:
 
-- `window.pwaBasemapDownloads` — `areas()` and `evict(ids)`, i.e. the read
-  and the delete, both delegating to the functions described above.
-  Without it the sheet opens and honestly reports that it can see nothing,
-  which is the truthful answer when the module owning the records has not
-  loaded.
+- `window.pwaBasemapDownloads` — `areas()`, `evict(ids)` and (SNOW-635)
+  `rename(areaId, name)`, i.e. the read, the delete and the rename, all
+  delegating to the functions described above (`rename` is a no-op for a
+  region id — regions are never renameable). Without it the sheet opens
+  and honestly reports that it can see nothing, which is the truthful
+  answer when the module owning the records has not loaded.
 - `window.pwaLayersMenu` — `close()`. Optional; without it the menu is
   simply left open behind the sheet. Its open state is three DOM writes
   held in the picker IIFE's closure, and mirroring them in the sheet would
