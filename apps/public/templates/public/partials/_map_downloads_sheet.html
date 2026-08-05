@@ -1,7 +1,8 @@
 {% load i18n static components %}
 {% comment %}
 public/partials/_map_downloads_sheet.html — "Manage downloads" sheet
-(SNOW-588; the way in rewritten by SNOW-634).
+(SNOW-588; the way in rewritten by SNOW-634; SNOW-635 lets more than one
+custom area be listed, and adds Rename).
 
 The surface that answers "what have I stored offline, and what is it
 costing me". Opened from ``#map-custom-download-control`` (the bottom-right
@@ -81,8 +82,9 @@ repeated here.
         {# SNOW-634: "Download a custom area" moved here from the roundel's #}
         {# own click — see this file's module header. Above the list, so a #}
         {# fresh (empty) sheet leads with the one action that fills it —   #}
-        {# and where SNOW-635 can relabel/reshape this in place once more  #}
-        {# than one custom area is expressible. Handled by                 #}
+        {# unchanged in label/position by SNOW-635, which is what lets it  #}
+        {# be clicked again to add a SECOND (or third, …) custom area      #}
+        {# without leaving the sheet. Handled by                           #}
         {# map_downloads_manager.js's delegated click listener, not a      #}
         {# dedicated one — rows are re-cloned on every render and this     #}
         {# trigger is cloned right along with them, so binding here would  #}
@@ -116,6 +118,10 @@ repeated here.
 </template>
 {# One list row. ``data-downloads-delete`` carries the area id so the       #}
 {# delegated click handler needs no closure over the rendered row.          #}
+{# ``data-downloads-rename`` (SNOW-635) is removed outright by              #}
+{# map_downloads_manager.js's ``buildRow`` for a row that isn't renameable  #}
+{# (a region, or an orphaned bucket) — only a custom area with a real       #}
+{# record behind it ever keeps it.                                         #}
 <template id="map-downloads-row-template">
     <li class="flex items-center justify-between gap-3 py-2">
         <span class="flex min-w-0 flex-col">
@@ -124,6 +130,13 @@ repeated here.
         </span>
         <span class="flex shrink-0 items-center gap-3">
             <span data-row-size class="text-sm text-text-2"></span>
+            <button
+                type="button"
+                data-downloads-rename
+                class="rounded-tag border border-border px-3 py-1 text-xs font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
+            >
+                {% trans "Rename" %}
+            </button>
             <button
                 type="button"
                 data-downloads-delete
@@ -153,6 +166,14 @@ repeated here.
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
     <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
+    {# SNOW-635: an unrenamed custom area's default "Custom area N" label   #}
+    {# is filled in by static/js/map.js's basemapDownloadedAreas() itself, #}
+    {# reading `default-custom-name` off _map_embed.html's                 #}
+    {# map-strings-template — kept in that ONE template rather than        #}
+    {# duplicated here, since every consumer (this sheet included) now     #}
+    {# just reads `area.name` uniformly.                                   #}
+    <span data-string="rename-prompt">{% trans "Name this area" %}</span>
+    <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

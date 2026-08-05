@@ -1,6 +1,7 @@
 /*
  * static/js/map_downloads_manager.js — the "Manage downloads" sheet
- * (SNOW-588; the way in rewritten by SNOW-634).
+ * (SNOW-588; the way in rewritten by SNOW-634; SNOW-635 adds Rename and
+ * lets more than one custom area be listed).
  *
  * The DOM half of the surface that answers "what have I stored offline on
  * this device, and what is it costing me". Every piece of arithmetic and
@@ -30,20 +31,22 @@
  * reads NEITHER directly — it goes through ``map.js``'s
  * ``basemapDownloadedAreas()`` (see the bridges section below):
  *
- *   basemap.regions     An array, one entry per downloaded region, keyed
- *                       by ``region_id``. Written by the per-region
- *                       download control.
- *   basemap.customArea  At most one row, for the user-framed area.
- *                       Written by the custom-area control.
+ *   basemap.regions      An array, one entry per downloaded region, keyed
+ *                        by ``region_id``. Written by the per-region
+ *                        download control.
+ *   basemap.customAreas  An array (SNOW-635 — was a single row through
+ *                        SNOW-634), one entry per user-framed area.
+ *                        Written by the custom-area control.
  *
  * Neither key is the Cache Storage bucket id — that is
- * ``areaIdForRegion(region_id)`` or ``CUSTOM_AREA_ID`` — which is the
- * single most important reason not to read them here. An earlier version
- * of this module read a ``basemap.areas`` row that no writer has ever
- * produced, and every test passed, because the tests seeded that row
- * themselves. The area list and the delete now both go through the code
- * the download controls and the eviction planner already use, so this
- * surface cannot disagree with them about what is on disk.
+ * ``areaIdForRegion(region_id)`` or the custom area's own minted id
+ * (``generateCustomAreaId`` / ``isCustomAreaId``) — which is the single
+ * most important reason not to read them here. An earlier version of this
+ * module read a ``basemap.areas`` row that no writer has ever produced,
+ * and every test passed, because the tests seeded that row themselves. The
+ * area list and the delete now both go through the code the download
+ * controls and the eviction planner already use, so this surface cannot
+ * disagree with them about what is on disk.
  *
  *   basemap.budgetMb    The standing budget, read by SNOW-586's eviction
  *                       planner. This surface is the only thing that ever
@@ -63,7 +66,7 @@
  * Both halves are ``map.js``'s ``evictBasemapAreas``, which this module
  * calls rather than reimplements. Deleting an area means taking an area
  * id back to the right half of the right record — the region array or the
- * custom-area row — and the eviction path already does exactly that, for
+ * custom-area array — and the eviction path already does exactly that, for
  * the budget planner. A second implementation here would be the same
  * decision made twice, and the one that ran less often would be the one
  * that rotted.
@@ -72,6 +75,28 @@
  * the outcome is confirmed by re-reading the area list and checking the
  * id is gone — which is a stronger check than a return value anyway: it
  * verifies the state, not the attempt.
+ *
+ * ## Renaming (SNOW-635)
+ *
+ * A custom area's default label is "Custom area N" — filled into
+ * ``area.name`` by ``map.js``'s ``basemapDownloadedAreas()`` itself, from
+ * the record's ``ordinal``, in memory only and never persisted (storing
+ * the interpolated string would freeze the user's language at download
+ * time). By the time a row reaches this module, ``row.label`` is already
+ * the right text to show — stored name or numbered default, uniformly —
+ * so this module needs no ``ordinal``-aware fallback of its own; it just
+ * renders ``row.label``. The Rename control next to a renameable row's
+ * own Remove uses ``window.prompt``, pre-filled with that same label,
+ * matching the sheet's existing ``window.confirm`` for delete (itself
+ * following ``pwa_reset.js``'s destructive-action idiom): no new markup,
+ * no focus trap, no Escape handling — a richer inline editor is a
+ * deliberate non-goal. The handler writes the trimmed result back onto
+ * the area's record via ``window.pwaBasemapDownloads.rename(areaId,
+ * name)`` (map.js's own bridge — see the bridges section below) and
+ * re-renders. Only a ``renameable`` row (a custom area with a real record
+ * behind it, per ``basemap_manage_core.js``'s ``manageRows``) ever shows
+ * the control — a region's name is its real name, and an orphaned bucket
+ * has no record entry left to write one onto.
  *
  * ## Why it re-clones its body on every open
  *
@@ -88,12 +113,13 @@
  * there, so it reaches it through three small frozen globals that file
  * exposes:
  *
- *   window.pwaBasemapDownloads   ``areas()`` and ``evict(ids)`` — the read
- *                                and the delete. Without it the sheet
- *                                opens and honestly reports that it can
- *                                see nothing, which is the truthful answer
- *                                when the module that owns the records
- *                                hasn't loaded.
+ *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)`` and (SNOW-635)
+ *                                ``rename(areaId, name)`` — the read, the
+ *                                delete, and the rename. Without it the
+ *                                sheet opens and honestly reports that it
+ *                                can see nothing, which is the truthful
+ *                                answer when the module that owns the
+ *                                records hasn't loaded.
  *   window.pwaLayersMenu         ``close()``. Optional — without it the
  *                                menu is simply left open behind the
  *                                sheet (SNOW-634: the roundel that opens
@@ -160,6 +186,12 @@
     'remove-failed': "That download couldn't be removed. Try again.",
     // SNOW-634: [data-downloads-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
+    // SNOW-635: the Rename control's own prompt/failure copy. The default
+    // "Custom area N" label itself lives in map.js's MAP_STRINGS
+    // (_map_embed.html), not here — see this module's "Renaming" header
+    // note for why.
+    'rename-prompt': 'Name this area',
+    'rename-failed': "That name couldn't be saved. Try again.",
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -233,7 +265,7 @@
    *
    * Delegates to map.js's ``evictBasemapAreas``, which already knows how
    * to take an area id back to the right half of the right record (the
-   * ``basemap.regions`` array or the ``basemap.customArea`` row). It is
+   * ``basemap.regions`` array or the ``basemap.customAreas`` array). It is
    * best-effort and returns nothing, so the outcome is confirmed by
    * re-reading the area list — verifying the state rather than trusting
    * the attempt.
@@ -305,8 +337,10 @@
     const chosenMb = core.clampBudgetMb(budgetMb);
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
     const rows = core.manageRows(list, {
-      customAreaId: downloadCore()?.CUSTOM_AREA_ID,
-      customLabel: STRINGS['kind-custom'],
+      // SNOW-635: a predicate, not a single id — see manageRows's own
+      // docstring for why. No `customLabel` any more either — a custom
+      // row's label is `area.name`, already filled by the reader.
+      isCustomAreaId: downloadCore()?.isCustomAreaId,
     });
 
     // Re-clone rather than update in place — see the module header.
@@ -351,13 +385,18 @@
    * Build one list row.
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   size: string}} row
+   *   renameable?: boolean, size: string}} row
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
     const fragment = /** @type {DocumentFragment} */ (
       rowTemplate.content.cloneNode(true)
     );
+
+    // SNOW-635 review: `row.label` is already the right text — a stored
+    // name, or an unrenamed custom area's numbered default, filled in
+    // upstream by map.js's basemapDownloadedAreas() — so this module has
+    // no ordinal-aware fallback of its own to build any more.
     const label = fragment.querySelector('[data-row-label]');
     if (label) label.textContent = row.label;
 
@@ -388,6 +427,22 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
+    }
+
+    // SNOW-635: only a renameable row (a custom area with a real record
+    // behind it — see manageRows's own docstring) shows the control. A
+    // region's name is its real name, and an orphaned bucket has no
+    // record entry left to write one onto.
+    const renameBtn = fragment.querySelector('[data-downloads-rename]');
+    if (renameBtn) {
+      if (row.renameable) {
+        renameBtn.setAttribute('data-downloads-rename', row.id);
+        // Pre-fills window.prompt with whatever is currently showing, so
+        // accepting it unchanged is a no-op rather than blanking the name.
+        renameBtn.setAttribute('data-downloads-current-name', row.label);
+      } else {
+        renameBtn.remove();
+      }
     }
     return fragment;
   }
@@ -433,13 +488,55 @@
       window.pwaCustomAreaDownload?.openFraming();
       return;
     }
+    if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
   });
 
   /**
+   * The Rename-button half of the sheet's delegated click handler
+   * (SNOW-635), factored out so the listener above can dispatch to it
+   * after ruling out the add-trigger.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether a rename button was the click's target —
+   *   tells the caller not to also try the delete handler.
+   */
+  function _handleRenameClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-rename]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-rename');
+    if (!areaId) return true;
+
+    // window.prompt, matching the sheet's own window.confirm for delete —
+    // see this module's "Renaming" header note for why no richer editor.
+    if (typeof window.prompt !== 'function') return true;
+    const current = button.getAttribute('data-downloads-current-name') || '';
+    const next = window.prompt(STRINGS['rename-prompt'], current);
+    // null means Cancel; an unchanged or blank result is treated the same
+    // way — nothing to write, so no write is made.
+    if (next === null) return true;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === current) return true;
+
+    if (!window.pwaBasemapDownloads) return true;
+    window.pwaBasemapDownloads.rename(areaId, trimmed).then(function (ok) {
+      if (ok) {
+        render();
+        return;
+      }
+      button.textContent = STRINGS['rename-failed'] || '';
+      button.setAttribute('disabled', '');
+    });
+    return true;
+  }
+
+  /**
    * The delete-button half of the sheet's delegated click handler,
    * factored out so the listener above can dispatch to it after ruling
-   * out the add-trigger.
+   * out the add-trigger and the rename button.
    *
    * @param {MouseEvent} event
    * @returns {void}

@@ -1928,8 +1928,11 @@ self.addEventListener('message', (event) => {
   }
   // SNOW-613: the page has deleted one or more pinned basemap buckets —
   // `evictBasemapAreas` in static/js/map.js posts this after every
-  // eviction, whether a confirmed budget eviction, a "Remove" from the
-  // manage-downloads sheet, or a custom area being replaced at a new bbox.
+  // eviction: a confirmed budget eviction, or a "Remove" from the
+  // manage-downloads sheet. (SNOW-635: a custom-area download used to also
+  // trigger this by replacing its own single bucket at a new bbox — that
+  // scenario no longer exists, since every confirmed custom-area download
+  // now mints a fresh id and bucket rather than replacing one.)
   //
   // The worker cannot see those deletions any other way, and a stale name
   // in its memoised list is not merely a slow path: it would be handed to
@@ -1991,9 +1994,10 @@ self.addEventListener('message', (event) => {
   // distinct from the final ``warm-cache-done`` reply, which is unchanged.
   //
   // SNOW-586: ``event.data.areaId`` (the id of the area being downloaded
-  // — see ``basemap_download_core.js``'s ``areaIdForRegion``/
-  // ``CUSTOM_AREA_ID``) selects WHICH pinned bucket a pinned run writes
-  // into. ``pinned`` with no ``areaId`` is a programming error, not a
+  // — see ``basemap_download_core.js``'s ``areaIdForRegion`` for a region,
+  // or (SNOW-635) ``generateCustomAreaId``/``CUSTOM_AREA_ID`` for a custom
+  // area) selects WHICH pinned bucket a pinned run writes into. ``pinned``
+  // with no ``areaId`` is a programming error, not a
   // runtime condition to route around silently: writing to some fallback
   // shared bucket would resurrect exactly the perforation bug this ticket
   // exists to fix, so the run is refused outright with the same shape

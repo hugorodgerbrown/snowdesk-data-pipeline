@@ -212,20 +212,27 @@ describe('budgetSummary', () => {
 
 describe('manageRows', () => {
   // Areas as map.js's basemapDownloadedAreas() hands them over: the union
-  // of the basemap.regions array and the optional basemap.customArea row,
-  // each already keyed by the id that names its Cache Storage bucket, with
-  // the name the download itself recorded.
+  // of the basemap.regions array and (SNOW-635) the basemap.customAreas
+  // array, each already keyed by the id that names its Cache Storage
+  // bucket. SNOW-635 review: `name` is always populated for a non-orphan —
+  // a region's is stored; a custom area's is either a rename or the
+  // numbered default `basemapDownloadedAreas()` fills in from `ordinal` —
+  // so `custom-b2` here (never renamed) already carries "Custom area 2",
+  // exactly as that upstream reader would hand it over.
   const areas = [
     { id: 'region-CH-2101', name: 'Aletsch', bytes: 40 * MB, savedAt: '2026-08-01T10:00:00.000Z' },
-    { id: 'custom', name: 'custom', bytes: 120 * MB, savedAt: '2026-08-02T10:00:00.000Z' },
+    { id: 'custom-a1', name: 'Home run', bytes: 120 * MB, savedAt: '2026-08-02T10:00:00.000Z' },
     { id: 'region-CH-2102', name: 'Gotthard', bytes: 80 * MB, savedAt: '2026-07-30T10:00:00.000Z' },
+    { id: 'custom-b2', name: 'Custom area 2', bytes: 90 * MB, savedAt: '2026-08-03T10:00:00.000Z' },
   ];
-  const options = { customAreaId: 'custom', customLabel: 'Custom area' };
+  const isCustomAreaId = (id) => id === 'custom' || String(id).startsWith('custom-');
+  const options = { isCustomAreaId };
 
   it('orders largest first — the axis the user is deciding along', () => {
     const rows = core.manageRows(areas, options);
     expect(rows.map((r) => r.id)).toEqual([
-      'custom',
+      'custom-a1',
+      'custom-b2',
       'region-CH-2102',
       'region-CH-2101',
     ]);
@@ -237,26 +244,56 @@ describe('manageRows', () => {
     expect(aletsch.label).toBe('Aletsch');
     expect(aletsch.size).toBe('40.0 MB');
     expect(aletsch.kind).toBe('region');
+    expect(aletsch.renameable).toBe(false);
   });
 
-  it('gives the custom area its translated label, not its stored id', () => {
-    // The record's own "name" for the framed area is the literal 'custom'
-    // — an id, not something to show a person.
+  it("uses a renamed custom area's stored name", () => {
+    // SNOW-635: the custom branch used to ALWAYS render a generic
+    // "Custom area" label, because the one custom area's stored name was
+    // the literal 'custom'. Now that a rename writes a REAL name, that
+    // name must win — uniformly with how a region's name already does.
     const rows = core.manageRows(areas, options);
-    const custom = rows.find((r) => r.id === 'custom');
-    expect(custom.kind).toBe('custom');
-    expect(custom.label).toBe('Custom area');
+    const renamed = rows.find((r) => r.id === 'custom-a1');
+    expect(renamed.kind).toBe('custom');
+    expect(renamed.label).toBe('Home run');
+    expect(renamed.renameable).toBe(true);
   });
 
-  it('identifies the custom area by the shared constant, not the id shape', () => {
+  it("shows an unrenamed custom area's numbered default, read straight off name", () => {
+    // The "Custom area N" text itself is built upstream, by
+    // basemapDownloadedAreas() (map.js), from `ordinal` — this module
+    // never sees `ordinal` at all any more, only the already-defaulted
+    // `name` (see manageRows' own docstring for why the defaulting moved).
+    const rows = core.manageRows(areas, options);
+    const unrenamed = rows.find((r) => r.id === 'custom-b2');
+    expect(unrenamed.kind).toBe('custom');
+    expect(unrenamed.label).toBe('Custom area 2');
+    expect(unrenamed.renameable).toBe(true);
+  });
+
+  it('identifies a custom area via the predicate, not the id shape', () => {
     // A region whose id merely LOOKS custom-ish must not be mistaken for
-    // it; equality against CUSTOM_AREA_ID is the only test applied.
+    // it — only what isCustomAreaId itself accepts is.
     const rows = core.manageRows(
       [{ id: 'region-custom-valley', name: 'Custom Valley', bytes: MB }],
       options,
     );
     expect(rows[0].kind).toBe('region');
     expect(rows[0].label).toBe('Custom Valley');
+    expect(rows[0].renameable).toBe(false);
+  });
+
+  it('marks an orphaned custom bucket as not renameable', () => {
+    // SNOW-612: an orphan has no record entry left to write a name onto,
+    // and reconcileAreas never fills a default name for one either — so
+    // unlike a real custom area it falls all the way back to its id.
+    const rows = core.manageRows(
+      [{ id: 'custom-orphan', bytes: MB, orphaned: true }],
+      options,
+    );
+    expect(rows[0].kind).toBe('custom');
+    expect(rows[0].renameable).toBe(false);
+    expect(rows[0].label).toBe('custom-orphan');
   });
 
   it('still lists a row whose record stored no name', () => {
@@ -267,19 +304,15 @@ describe('manageRows', () => {
     expect(rows[0].label).toBe('region-CH-9999');
   });
 
-  it('falls back to the id when no custom label is supplied', () => {
-    const rows = core.manageRows([{ id: 'custom', bytes: MB }], { customAreaId: 'custom' });
-    expect(rows[0].label).toBe('custom');
-  });
-
-  it('treats every area as a region when no custom id is supplied', () => {
-    const rows = core.manageRows([{ id: 'custom', name: 'custom', bytes: MB }]);
+  it('treats every area as a region when no predicate is supplied', () => {
+    const rows = core.manageRows([{ id: 'custom-a1', name: 'Home run', bytes: MB }]);
     expect(rows[0].kind).toBe('region');
+    expect(rows[0].renameable).toBe(false);
   });
 
   it('skips entries with no id, which nothing could delete', () => {
-    const rows = core.manageRows([{ bytes: MB }, { id: 'custom', bytes: MB }], options);
-    expect(rows.map((r) => r.id)).toEqual(['custom']);
+    const rows = core.manageRows([{ bytes: MB }, { id: 'custom-a1', bytes: MB }], options);
+    expect(rows.map((r) => r.id)).toEqual(['custom-a1']);
   });
 
   it('orders equal-sized areas stably across renders', () => {
@@ -357,7 +390,7 @@ describe('reconcileAreas (SNOW-612)', () => {
 
   it('renders an orphan as a deletable row carrying its bucket id', () => {
     const areas = core.reconcileAreas([], ['region-ch-1000'], { 'region-ch-1000': 3 * MB });
-    const rows = core.manageRows(areas, { customAreaId: 'custom', customLabel: 'Custom area' });
+    const rows = core.manageRows(areas, { isCustomAreaId: (id) => id === 'custom' });
 
     expect(rows).toHaveLength(1);
     expect(rows[0].orphaned).toBe(true);

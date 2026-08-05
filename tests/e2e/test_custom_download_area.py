@@ -1,7 +1,7 @@
 """
 tests/e2e/test_custom_download_area.py — Playwright regression tests for the
 "Download a custom area" basemap control (SNOW-522; the way in rewritten by
-SNOW-634).
+SNOW-634; SNOW-635 lets more than one custom area exist).
 
 Companion to ``test_cache_this_area.py``'s per-region control: this one has
 no fixed region to size ahead of time. SNOW-634 changed how framing is
@@ -42,14 +42,21 @@ while the map pans beneath it (SNOW-566); and, from SNOW-567, that a
 capped frame stays over the same ground while zooming, never lags the
 canvas mid-gesture, stays centred however far off the pointer is, and
 releases again on the way back in. A confirmed download warms with
-``pinned: true`` and (SNOW-586) ``areaId: 'custom'``, reaches ``done``,
-and notifies the layers sync dashboard; reload + reopening framing
-re-centres on the saved area; moving the frame then Cancelling leaves the
-saved area untouched; moving the frame then confirming deletes the custom
-area's OWN pinned bucket outright before warming the new set (SNOW-586's
-whole-bucket evict-on-confirm, replacing the old per-URL re-derivation) —
-and (SNOW-632) so does confirming again at the SAME bbox under a DIFFERENT
-basemap, which a bbox-only eviction check would miss.
+``pinned: true`` and a freshly-minted (SNOW-635) ``areaId`` — never the
+single fixed ``'custom'`` every download used to share — reaches ``done``,
+and notifies the layers sync dashboard.
+
+SNOW-635 removed the single-saved-area behaviour SNOW-586/632 built here:
+opening framing no longer re-centres on any previously-downloaded area
+(there is no longer one canonical area to jump to), and confirming a
+SECOND download — whether the frame moved, the basemap changed, or
+neither — no longer evicts the first custom area's bucket. It downloads a
+genuinely SEPARATE area instead, covered below
+(``test_two_confirmed_areas_are_both_available_offline`` and its
+neighbours) alongside the one case that still evicts something: the
+standing BYTE BUDGET, which can still make one of the user's own custom
+areas the oldest thing on disk
+(``test_confirming_a_second_area_over_a_full_budget_evicts_the_first``).
 
 SNOW-568 adds the failure path, which had no coverage because it had no
 behaviour: every failed run reverted the roundel to ``idle`` and closed
@@ -64,6 +71,7 @@ along with retrying and cancelling out of that state.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, cast
 
@@ -71,6 +79,7 @@ import pytest
 from playwright.sync_api import Page, Worker as SWWorker, expect
 
 from tests.e2e.conftest import PwaPage
+from tests.e2e.test_basemap_download_budget import _set_budget_mb
 from tests.e2e.test_cache_this_area import (
     _STUB_TEMPLATE,
     _reload_home,
@@ -402,10 +411,23 @@ def _display(page: Page, selector: str) -> str:
     )
 
 
-def _saved_area(page: Page) -> dict[str, Any] | None:
-    """The persisted ``basemap.customArea`` meta:app row's value, or None."""
-    row = page.evaluate("() => window.pwaDb.get('meta:app', 'basemap.customArea')")
-    return cast("dict[str, Any] | None", row["value"] if row else None)
+def _custom_areas(page: Page) -> list[dict[str, Any]]:
+    """The persisted ``basemap.customAreas`` array.
+
+    SNOW-635 replaced the single ``basemap.customArea`` row this used to
+    read.
+    """
+    row = page.evaluate("() => window.pwaDb.get('meta:app', 'basemap.customAreas')")
+    value = row["value"] if row else None
+    return cast("list[dict[str, Any]]", value or [])
+
+
+def _last_custom_area(page: Page) -> dict[str, Any] | None:
+    """The most recently confirmed custom area (highest ``ordinal``), or None."""
+    areas = _custom_areas(page)
+    if not areas:
+        return None
+    return max(areas, key=lambda a: a["ordinal"])
 
 
 def _centre_tile_url(page: Page, centre_tile: dict[str, Any]) -> str:
@@ -427,21 +449,27 @@ def _centre_tile_url(page: Page, centre_tile: dict[str, Any]) -> str:
 
 
 def _pinned_cache_has(page: Page, url: str) -> bool:
-    """Whether `url` is present in a prefix-matched pinned bucket.
+    """Whether `url` is present in ANY prefix-matched pinned bucket.
 
-    SNOW-586: there are potentially several per-area pinned buckets now,
-    but this file only ever downloads the custom area, so exactly one
-    (``snowdesk-basemap-pinned-custom``) exists at a time here — finding
-    the first prefix match is still correct for what these tests exercise.
+    SNOW-586 gave every downloaded area its own bucket. Through SNOW-634
+    this file only ever downloaded ONE custom area at a time, so checking
+    the first prefix match was equivalent to checking the only one that
+    existed. SNOW-635 lets this file hold several at once — checking only
+    the first (``caches.keys()``'s own, unspecified, order) made a real
+    second area's tiles invisible to this helper whenever its bucket
+    happened to sort after another's. Unions across every matching bucket
+    instead, mirroring how production itself reads pinned tiles
+    (``pinnedBasemapCacheURLs`` in static/js/map.js).
     """
     return bool(
         page.evaluate(
             """async ({ url, prefix }) => {
-                const names = await caches.keys();
-                const name = names.find((n) => n.startsWith(prefix));
-                if (!name) return false;
-                const cache = await caches.open(name);
-                return !!(await cache.match(url));
+                const names = (await caches.keys()).filter((n) => n.startsWith(prefix));
+                for (const name of names) {
+                    const cache = await caches.open(name);
+                    if (await cache.match(url)) return true;
+                }
+                return false;
             }""",
             {"url": url, "prefix": _PINNED_CACHE_PREFIX},
         )
@@ -1001,14 +1029,23 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
     assert worker.evaluate("() => self.__snow521Pinned") is True
     _assert_sync_dashboard_refreshed(page)
 
-    area = _saved_area(page)
+    area = _last_custom_area(page)
     assert area is not None
     assert "bbox" in area and "band" in area and "centre_tile" in area
+    assert area["ordinal"] == 1
+    # SNOW-635: unrenamed, so no name was ever written for it.
+    assert "name" not in area
 
 
-def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> None:
-    """A completed download survives reload; the roundel's add-trigger
-    re-opens framing with the map recentred on the saved area.
+def test_reload_and_reopening_framing_does_not_recentre_on_a_prior_area(
+    pwa_page: PwaPage,
+) -> None:
+    """A completed download survives reload; re-opening framing does not move the map.
+
+    SNOW-635: dropped the old "reopen at the saved area" convenience —
+    with any number of custom areas possibly on disk, jumping to one of
+    them on open would be arbitrary. Framing now always starts from
+    wherever the map already is, exactly like a first-ever open.
 
     SNOW-632: no longer waits for the overlay to close after confirming —
     it stays open showing the completion state now. Irrelevant here either
@@ -1026,26 +1063,28 @@ def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> N
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    area = _saved_area(page)
+    area = _last_custom_area(page)
     assert area is not None
 
     page, worker = _boot(pwa_page)
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
 
-    _open_framing(page)
-
-    west, south, east, north = area["bbox"]
-    centre = page.evaluate(
+    centre_before = page.evaluate(
         "() => { const c = MAP.getCenter(); return [c.lng, c.lat]; }"
     )
-    # fitBounds is not pixel-exact, but the map's centre after re-opening
-    # at the saved area must land inside (or very near) its footprint.
-    assert west - 0.01 <= centre[0] <= east + 0.01
-    assert south - 0.01 <= centre[1] <= north + 0.01
+    _open_framing(page)
+    centre_after = page.evaluate(
+        "() => { const c = MAP.getCenter(); return [c.lng, c.lat]; }"
+    )
+
+    # The map's centre is exactly what it was before framing opened — not
+    # merely "near" the downloaded area's bbox, which a small default view
+    # could coincidentally satisfy.
+    assert centre_after == pytest.approx(centre_before)
 
 
-def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> None:
-    """Moving the frame and Cancelling touches neither the saved row nor the cache.
+def test_move_then_cancel_leaves_the_only_area_intact(pwa_page: PwaPage) -> None:
+    """Moving the frame and Cancelling touches neither the recorded area nor the cache.
 
     SNOW-632: the setup download no longer closes the overlay on its own —
     ``_close_completed_overlay`` below closes THAT session explicitly
@@ -1057,7 +1096,7 @@ def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> Non
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    area_before = _saved_area(page)
+    area_before = _last_custom_area(page)
     assert area_before is not None
     url_before = _centre_tile_url(page, area_before["centre_tile"])
     assert _pinned_cache_has(page, url_before)
@@ -1068,23 +1107,24 @@ def test_move_then_cancel_leaves_the_saved_area_intact(pwa_page: PwaPage) -> Non
     page.click("#map-frame-cancel")
     _wait_for_overlay_closed(page)
 
-    assert _saved_area(page) == area_before
+    assert _custom_areas(page) == [area_before]
     assert _pinned_cache_has(page, url_before)
 
 
-def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None:
-    """Confirming a moved frame evicts the previous area's pinned tiles first.
+def test_two_confirmed_areas_are_both_available_offline(pwa_page: PwaPage) -> None:
+    """SNOW-635: confirming a MOVED frame downloads a SECOND, independent area.
 
-    SNOW-632: a completed download no longer closes the overlay on its
-    own, so each re-open below first closes the previous session via the
-    CTA's own Close — the roundel ``_open_framing`` clicks is hidden for
-    as long as framing's own overlay is up.
+    Through SNOW-632 this evicted the first area's pinned tiles before
+    warming the new set — there was only ever one custom area, keyed on
+    one shared bucket id. That eviction is gone: every confirmed download
+    now mints its own id (``generateCustomAreaId``), so a second download
+    is a second AREA, not a replacement, and both remain fully cached.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    area_before = _saved_area(page)
+    area_before = _last_custom_area(page)
     assert area_before is not None
     url_before = _centre_tile_url(page, area_before["centre_tile"])
     assert _pinned_cache_has(page, url_before)
@@ -1094,55 +1134,57 @@ def test_move_then_confirm_evicts_the_old_areas_tiles(pwa_page: PwaPage) -> None
     _move_the_frame(page)
     _confirm_download(page, worker)
 
-    area_after = _saved_area(page)
+    areas = _custom_areas(page)
+    assert len(areas) == 2
+    area_after = _last_custom_area(page)
     assert area_after is not None
-    assert area_after != area_before
+    assert area_after["id"] != area_before["id"]
+    assert area_after["ordinal"] == area_before["ordinal"] + 1
     url_after = _centre_tile_url(page, area_after["centre_tile"])
 
-    assert not _pinned_cache_has(page, url_before), (
-        "the old area's tiles should have been evicted before the new set warmed"
-    )
+    # BOTH areas' tiles remain — nothing was evicted by this confirm.
+    assert _pinned_cache_has(page, url_before)
     assert _pinned_cache_has(page, url_after)
 
 
 _TEMPLATE_B = "https://tiles-b.example.invalid/{z}/{x}/{y}.pbf"
 
 
-def test_switching_basemap_then_confirming_evicts_the_old_bucket(
+def test_switching_basemap_then_confirming_creates_a_second_area(
     pwa_page: PwaPage,
 ) -> None:
-    """SNOW-632: confirming at the SAME bbox under a DIFFERENT basemap evicts first.
+    """SNOW-635: confirming at the SAME bbox under a DIFFERENT basemap also adds, not replaces.
 
-    ``test_move_then_confirm_evicts_the_old_areas_tiles`` above covers a
-    bbox change; this covers the other half of the eviction condition — the
-    frame never moves (so ``sameBbox`` alone would say "nothing to evict"),
-    only the ACTIVE basemap template does, as a basemap switch with the
-    custom area still framed on the same ground would produce. Without
-    evicting here too, the old basemap's tiles would sit in the bucket
-    alongside the new run's — bloating it, and leaving the recorded byte
-    total wrong either way (see
-    docs/decisions/per-area-pinned-basemap-caches.md).
+    ``test_two_confirmed_areas_are_both_available_offline`` above covers a
+    bbox change; this covers a basemap change with the frame left
+    untouched — through SNOW-632 that used to evict the old basemap's
+    tiles from the ONE shared bucket. There is no shared bucket left to
+    protect: this confirm downloads its own fresh area under the new
+    basemap, and the first area (still holding the OLD basemap's tiles)
+    is untouched.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _confirm_download(page, worker)
-    area_before = _saved_area(page)
+    area_before = _last_custom_area(page)
     assert area_before is not None
     assert area_before["template"] == _STUB_TEMPLATE
     url_before = _centre_tile_url(page, area_before["centre_tile"])
     assert _pinned_cache_has(page, url_before)
 
     # Close this session, switch the ACTIVE basemap, and re-open framing
-    # without moving the map — the frame lands back on the SAME ground, so
-    # any eviction below can only be explained by the template change.
+    # without moving the map — the frame lands back on the SAME ground.
     _close_completed_overlay(page)
     _stub_active_basemap_template(page, template=_TEMPLATE_B)
     _open_framing(page)
     _confirm_download(page, worker)
 
-    area_after = _saved_area(page)
+    areas = _custom_areas(page)
+    assert len(areas) == 2
+    area_after = _last_custom_area(page)
     assert area_after is not None
+    assert area_after["id"] != area_before["id"]
     assert area_after["template"] == _TEMPLATE_B
     url_after = (
         _TEMPLATE_B.replace("{z}", str(area_after["centre_tile"]["z"]))
@@ -1150,9 +1192,10 @@ def test_switching_basemap_then_confirming_evicts_the_old_bucket(
         .replace("{y}", str(area_after["centre_tile"]["y"]))
     )
 
-    assert not _pinned_cache_has(page, url_before), (
-        "the old basemap's tiles should have been evicted before the new set warmed"
-    )
+    # The first area's OLD-basemap tiles survive; the second area's
+    # NEW-basemap tiles are there too — neither bucket was touched by the
+    # other's confirm.
+    assert _pinned_cache_has(page, url_before)
     assert _pinned_cache_has(page, url_after)
 
 
@@ -1177,7 +1220,7 @@ def test_failed_download_keeps_the_frame_up_and_says_why(pwa_page: PwaPage) -> N
     # Retrying is one click on the still-live CTA bar, not a re-frame.
     assert page.locator("#map-frame-confirm").is_enabled()
     # Nothing was downloaded, so nothing may claim to have been saved.
-    assert _saved_area(page) is None
+    assert _last_custom_area(page) is None
 
 
 def test_failed_download_toast_clears_the_cta_bar(pwa_page: PwaPage) -> None:
@@ -1226,7 +1269,7 @@ def test_retry_after_a_failure_completes_the_download(pwa_page: PwaPage) -> None
     # it repaints the CTA in place instead.
     assert page.locator("#map-frame-overlay").is_visible()
     expect(page.locator("#map-download-error-toast")).to_be_hidden()
-    assert _saved_area(page) is not None
+    assert _last_custom_area(page) is not None
 
 
 def test_cancelling_after_a_failure_clears_the_message(pwa_page: PwaPage) -> None:
@@ -1355,7 +1398,7 @@ def test_cancel_mid_run_returns_to_idle_and_refreshes_the_sync_dashboard(
     worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
 
     _wait_for_state(page, "idle", selector=_CONTROL, timeout=10000)
-    assert _saved_area(page) is None
+    assert _last_custom_area(page) is None
     _assert_sync_dashboard_refreshed(page)
 
 
@@ -1420,7 +1463,7 @@ def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
     # Seed a pre-existing REGION download (a distinct area from the custom
     # one this test downloads below) so the standing total starts
     # non-zero — basemapDownloadedAreas() unions basemap.regions with
-    # basemap.customArea (map.js), so a region-shaped row is enough.
+    # basemap.customAreas (map.js), so a region-shaped row is enough.
     page.evaluate(
         """() => window.pwaDb.put('meta:app', {
             key: 'basemap.regions',
@@ -1453,22 +1496,24 @@ def test_budget_banner_shows_the_standing_total_and_grows_on_completion(
     assert "500 MB" in after
 
 
-def test_budget_banner_does_not_double_count_this_area_mid_run(
+def test_budget_banner_adds_a_new_areas_live_progress_cleanly(
     pwa_page: PwaPage,
 ) -> None:
-    """SNOW-632: a re-download's live banner replaces this area's share, not adds to it.
+    """SNOW-635: a brand-new area's live progress adds to the baseline, excluding nothing.
 
-    The bug: the banner rendered ``bannerBaselineBytes + liveBytes``, and
-    the baseline already contained the very area being re-downloaded. A
-    62.6 MB custom area re-downloading with 18.4 MB landed read as
-    "80.9 MB / 500 MB" — the area counted twice — and only snapped back to
-    the truth when ``finish`` re-read the records, which made it look
-    self-healing rather than wrong.
-
-    The run REPLACES that recorded share (see the sibling test below), so
-    the live figure has to take it back out first — the same exclusion
-    ``planEviction`` already applies when budgeting an incoming area
-    against the standing total.
+    Through SNOW-632 this covered a bug in the opposite direction — a
+    RE-download of the single existing custom area double-counted its own
+    recorded share, since the live banner rendered
+    ``bannerBaselineBytes + liveBytes`` without first taking the area's own
+    existing bytes back out. SNOW-635 removes the scenario that bug needed
+    (there is no longer a single existing custom area a confirm could ever
+    be "re-downloading" — every confirm mints a fresh id): `handleConfirm`
+    keys the exclusion off the run's OWN generated id
+    (``currentRunAreaId``), which a brand-new area never has an existing
+    record under, so it always resolves to "nothing to exclude" — see
+    ``_refreshBudgetBanner``'s own comment. This asserts that side directly:
+    a new area's live bytes land cleanly ON TOP of the standing baseline,
+    with nothing subtracted.
 
     Held mid-run via the stub's ``pause_after_step`` handshake so the
     assertion lands on a known progress tick rather than a sleep.
@@ -1476,8 +1521,7 @@ def test_budget_banner_does_not_double_count_this_area_mid_run(
     page, worker = _boot(pwa_page)
 
     # A pre-existing download of ANOTHER area (a region), so the baseline
-    # has a component the run must NOT remove — a naive "show only the
-    # live bytes" fix would pass a test that seeded nothing else.
+    # has a component this run must not touch.
     page.evaluate(
         """() => window.pwaDb.put('meta:app', {
             key: 'basemap.regions',
@@ -1490,8 +1534,8 @@ def test_budget_banner_does_not_double_count_this_area_mid_run(
         })"""
     )
 
-    # Now give the CUSTOM area its own prior record — this is the share
-    # that must be swapped out, not stacked on.
+    # And a pre-existing CUSTOM area, so the baseline this run's own
+    # progress must add on top of already has a custom component too.
     _open_framing(page)
     _frame_a_downloadable_area(page)
     _stub_warm_cache(worker, ok=1, failed=0, bytes_total=20 * 1024 * 1024)
@@ -1504,7 +1548,9 @@ def test_budget_banner_does_not_double_count_this_area_mid_run(
     _wait_for_budget_banner(page)
     assert "30.0 MB" in _instruction_text(page)
 
-    # Re-download the SAME area, paused after the first progress tick.
+    # Confirm a THIRD, brand-new area (the frame has not moved, but that no
+    # longer matters — see the module docstring), paused after the first
+    # progress tick.
     _stub_warm_cache(
         worker,
         ok=1,
@@ -1517,83 +1563,169 @@ def test_budget_banner_does_not_double_count_this_area_mid_run(
     _wait_for_run_state(page, "busy")
     _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
 
-    # Half the run's 20 MB has landed. The honest total is the 10 MB
-    # region plus the 10 MB landed here — NOT 30 + 10, which is what the
-    # bug rendered.
+    # Half the run's 20 MB has landed, on top of the untouched 30 MB
+    # baseline — 40 MB, not 20 MB (which the old re-download exclusion
+    # would have wrongly produced here).
     page.wait_for_function(
-        """() => /\\b20\\.0 MB\\b/.test(
+        """() => /\\b40\\.0 MB\\b/.test(
             document.getElementById('map-frame-instruction').innerText
         )""",
         timeout=10000,
     )
-    mid_run = _instruction_text(page)
-    assert "20.0 MB" in mid_run
-    assert "40.0 MB" not in mid_run
 
     worker.evaluate("() => { if (self.__snow521Resume) self.__snow521Resume(); }")
-    _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    # SNOW-635 review: the ROUNDEL's own "done" (``_CONTROL``) already read
+    # done throughout this run — the first two areas kept it there — so it
+    # is not a valid "this run has settled" signal for a second-or-later
+    # confirm; nor, it turns out, is the banner text alone: a live "50.0 MB"
+    # progress readout can coincidentally match the SAME text the settled
+    # total renders, before `finish()` has actually appended the record.
+    # The overlay's own run-state is the one signal that genuinely
+    # transitions busy -> done exactly once per run (set synchronously by
+    # `paintRun`, strictly after `_appendCustomArea` has been awaited) —
+    # the same thing `_confirm_download` already waits for.
+    _wait_for_run_state(page, "done", timeout=10000)
 
-    # And settles back to the same 30 MB it started at — a re-download of
-    # the same size adds nothing.
+    # Settles at 30 + 20 = 50 MB — a genuinely new area's full total added,
+    # never replacing anything.
     page.wait_for_function(
-        """() => /\\b30\\.0 MB\\b/.test(
+        """() => /\\b50\\.0 MB\\b/.test(
             document.getElementById('map-frame-instruction').innerText
         )""",
         timeout=10000,
     )
+    assert len(_custom_areas(page)) == 2
 
 
-def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
+def test_confirming_twice_at_the_same_bbox_records_two_independent_totals(
     pwa_page: PwaPage,
 ) -> None:
-    """SNOW-632: a same-bbox repeat records the run's own bytes, so its total does not double.
+    """SNOW-635: a same-bbox repeat is a SECOND independent area, not a re-record.
 
-    The bug: confirming Download twice at the SAME bbox re-fetches the
-    identical tile URLs into the SAME pinned bucket each time —
-    ``cache.put`` OVERWRITES each key, so the bucket never grows — but the
-    original code accumulated the run's reported ``bytes`` onto the
-    previous record regardless, doubling the figure with nothing new on
-    disk to show for it. ``planBasemapDownloadBudget`` then evicted other
-    areas against that inflated total.
+    Through SNOW-632 this covered a bug where confirming Download twice at
+    the SAME bbox — re-fetching identical tile URLs into the ONE shared
+    bucket every custom-area download used before this ticket — doubled
+    the recorded byte total, because the original code accumulated the
+    run's reported ``bytes`` onto the previous record regardless.
 
-    The fix records each run's own reported ``bytes_total`` outright,
-    replacing rather than accumulating onto the previous record — no
-    bucket measurement involved (an earlier version of the fix tried
-    measuring the bucket's ``Content-Length`` total instead, but a real
-    tile response carries no such header under the gzip encoding every
-    browser requests, so that measurement always read 0 in production and
-    silently fell back to this same run-reported figure anyway; see
-    docs/decisions/per-area-pinned-basemap-caches.md). Recording the same
-    reported figure twice, rather than summing it, is what stops the
-    double-count.
+    That bucket is no longer shared: every confirm mints its own id
+    (``generateCustomAreaId``) and its own bucket, so a same-bbox repeat
+    downloads a second area from scratch rather than re-recording the
+    first. The regression this now guards is the same shape one level up
+    — each area's own reported total must stand on its own, neither
+    summed with nor overwritten by the other's.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
     _frame_a_downloadable_area(page)
 
-    bytes_total = 60 * 1024 * 1024
-    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    first_bytes = 60 * 1024 * 1024
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=first_bytes)
     page.click("#map-frame-confirm")
     _wait_for_run_state(page, "busy")
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
-    first = _saved_area(page)
+    first = _last_custom_area(page)
     assert first is not None
-    assert first["bytes"] == bytes_total
+    assert first["bytes"] == first_bytes
 
     # Close this session and re-open framing without moving the map — the
     # frame lands back on the SAME ground, so this confirm is the
-    # same-bbox repeat the bug describes, not the bbox-moved replacement
-    # `test_move_then_confirm_evicts_before_warming_the_new_set` covers.
+    # same-bbox repeat the original bug describes.
     _close_completed_overlay(page)
     _open_framing(page)
-    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
+    second_bytes = 25 * 1024 * 1024
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=second_bytes)
+    page.click("#map-frame-confirm")
+    _wait_for_run_state(page, "busy")
+    # SNOW-635 review: NOT `_wait_for_state(page, "done", selector=_CONTROL)`
+    # — the roundel already reads "done" from the FIRST area and never
+    # stops doing so, so that wait is a same-instant no-op here, not a
+    # genuine "this run has settled" signal. The overlay's own run-state
+    # is what actually transitions busy -> done exactly once per run,
+    # strictly after `_appendCustomArea` has been awaited inside `finish`.
+    _wait_for_run_state(page, "done", timeout=10000)
+
+    areas = _custom_areas(page)
+    assert len(areas) == 2
+    second = _last_custom_area(page)
+    assert second is not None
+    assert second["id"] != first["id"]
+    # Each area's own figure — neither summed nor overwritten by the other.
+    assert second["bytes"] == second_bytes
+    assert next(a for a in areas if a["id"] == first["id"])["bytes"] == first_bytes
+
+
+def _readout_mb(page: Page) -> int:
+    """The "Up to N MB" estimate currently shown in the frame readout."""
+    match = re.search(r"Up to (\d+) MB", _readout_text(page))
+    assert match, f"unexpected readout text: {_readout_text(page)!r}"
+    return int(match.group(1))
+
+
+def test_confirming_a_second_area_over_a_full_budget_evicts_the_first(
+    pwa_page: PwaPage,
+) -> None:
+    """SNOW-635: the standing BUDGET can still evict one of the user's OWN custom areas.
+
+    Every bbox/template-driven eviction the custom-area control used to run
+    on its own confirm is gone (see the module docstring) — but the shared
+    standing byte budget (SNOW-586) is not, and two GENUINE custom areas
+    can now compete for it in a way that was structurally impossible
+    before this ticket (there was never more than one to compete). This
+    forces exactly that: download one area under a budget sized to hold
+    only it, then confirm a second — the pre-flight for the second finds
+    the first already on disk and cannot fit both, raising the SAME
+    whole-area-eviction confirm banner the region control uses
+    (``#map-download-evict-confirm`` — ``confirmBasemapEviction`` is
+    shared), naming the first area and choosing to evict it to make room
+    for the second.
+    """
+    page, worker = _boot(pwa_page)
+    _open_framing(page)
+    _frame_a_downloadable_area(page)
+    estimate_mb = _readout_mb(page)
+    estimate_bytes = estimate_mb * 1024 * 1024
+
+    # The first area's own reported bytes match its estimate exactly, so
+    # the budget below can be pinned to precisely that figure.
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=estimate_bytes)
     page.click("#map-frame-confirm")
     _wait_for_run_state(page, "busy")
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
-    second = _saved_area(page)
-    assert second is not None
+    first = _last_custom_area(page)
+    assert first is not None
+    assert first["bytes"] == estimate_bytes
 
-    assert second["bytes"] == bytes_total, (
-        "a same-bbox repeat inflated the recorded total: "
-        f"{first['bytes']} -> {second['bytes']}"
+    # A budget sized to hold exactly the first area, and nothing else.
+    _set_budget_mb(page, estimate_mb)
+
+    # Re-open framing without moving the map, so the second area's own
+    # estimate is the SAME figure — the standing total (first area alone)
+    # already exactly fills the budget, so a second, same-sized area can
+    # only fit by evicting the first.
+    _close_completed_overlay(page)
+    _open_framing(page)
+    _wait_for_budget_banner(page)
+    _stub_warm_cache(worker, ok=1, failed=0, bytes_total=estimate_bytes)
+    page.click("#map-frame-confirm")
+
+    banner = page.locator("#map-download-evict-confirm")
+    banner.wait_for(state="visible", timeout=10000)
+    body = page.locator("#map-download-evict-confirm-body")
+    # The banner names the user's OWN prior custom area — the only thing
+    # old enough to be picked, and the only area on disk at all.
+    assert (body.text_content() or "").strip() != ""
+
+    page.click("#map-download-evict-confirm-cta")
+    # SNOW-635 review: the roundel (`_CONTROL`) reads "done" throughout —
+    # the first area is on disk for the whole exchange, eviction included
+    # — so waiting on it here would resolve immediately, before the second
+    # run (and the eviction that preceded it) has actually settled. The
+    # overlay's own run-state is the genuine per-run busy -> done signal.
+    _wait_for_run_state(page, "done", timeout=10000)
+
+    areas = _custom_areas(page)
+    assert len(areas) == 1, (
+        "the first area should have been evicted, not kept alongside the second"
     )
+    assert areas[0]["id"] != first["id"]

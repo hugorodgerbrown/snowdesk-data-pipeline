@@ -1,8 +1,8 @@
 ---
 name: per-area-pinned-basemap-caches
-description: One Cache Storage bucket per downloaded basemap area; a run records its own bytes; evicted on bbox OR basemap-template change (SNOW-632)
+description: One Cache Storage bucket per downloaded basemap area; custom areas are an array with a reserved legacy id (SNOW-635)
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # One pinned Cache Storage bucket per downloaded area
@@ -80,6 +80,38 @@ its contents up after the fact — there is no way to recover which tiles
 in that cache belonged to which download, since that is exactly the
 information the old design never recorded.
 
+**Amendment (SNOW-635): a custom area's `meta:app` shape was the real
+constraint, not this bucket-per-area design.** Through SNOW-634 the
+custom-area control could still only ever have ONE downloaded area at a
+time — not because two custom areas couldn't each hold their own pinned
+bucket (they always could, exactly like two regions already did), but
+because the meta:app record that named a custom area's bucket,
+`basemap.customArea`, was a single `{key, value}` row rather than a list.
+A second confirmed download overwrote that one row — and, since the
+bucket name was the single fixed `CUSTOM_AREA_ID` ('custom'), silently
+replaced the first area's tiles too. SNOW-635 fixes the actual
+constraint: `basemap.customAreas` is now an array (one entry per
+downloaded area, `{id, ordinal, name?, bbox, band, centre_tile, template,
+bytes, savedAt}`), and `generateCustomAreaId()` mints a fresh
+`'custom-<uuid>'` id — and so a fresh bucket — per confirmed download,
+mirroring how a region download was already keyed on its own
+`region_id`-derived id all along. `CUSTOM_AREA_ID` ('custom') survives as
+one RESERVED legacy id: a device with a pre-SNOW-635 download has that
+area lazily migrated in place (`map.js`'s `_readCustomAreas`, run inside
+the same boot-path read the roundel already used) keeping id `'custom'`
+and ordinal `1`, because Cache Storage has no rename and copying an
+existing bucket's thousands of entries to a new name would be real CPU
+cost for zero user benefit. Every reference to "the custom area" as a
+single thing — `manageRows`'s `customAreaId` string comparison, the
+custom-area control's own `savedArea` closure variable and its
+bbox/template-driven `beforeWarm` bucket-replace — is gone with it:
+a fresh id never collides with an existing bucket, so a confirmed run has
+nothing of the user's own left to replace. The REGION control's own
+bbox/template-driven `beforeWarm` (next section) is unaffected — a region
+genuinely is keyed on one fixed id (its `region_id`) for the device's
+whole lifetime, so re-downloading it under a different basemap really is
+the same area, unlike a custom area which can now simply be a new one.
+
 ## Consequences
 
 - **Overlapping areas duplicate tiles on disk, deliberately.** A tile
@@ -97,28 +129,32 @@ information the old design never recorded.
   **Candidate future optimisation, not built:** source an already-held
   tile from a sibling bucket rather than re-fetching it, while still
   keeping a copy in each bucket that needs it (so eviction stays safe).
-- **A bucket is evicted outright on a bbox OR a basemap-template change,
-  so it always holds exactly one basemap's tiles (SNOW-632, amending this
+- **A REGION's bucket is evicted outright on a basemap-template change, so
+  it always holds exactly one basemap's tiles (SNOW-632, amending this
   decision's original design).** The bucket is keyed on area id alone, not
-  on basemap, so a region or custom area re-downloaded under a DIFFERENT
-  basemap at the SAME ground would otherwise leave the previous basemap's
-  tiles sitting in the bucket alongside the new run's — bloating it, and
-  leaving whatever gets recorded for it wrong either way (see the next
-  bullet). Both download controls' `beforeWarm` (run by
-  `basemap_download_runner.js` as the last step before the warm-cache
-  call — see its own module header for why the ordering lives there)
-  compares the ACTIVE tile template against the one the existing record
-  was downloaded with, stored alongside it as `template`, and calls
-  `evictBasemapAreas` first when they differ — the same unconditional,
-  no-confirmation bucket delete the custom-area control already used for a
-  bbox change alone, now covering a template change too and extended to
-  the region control, which previously had no `beforeWarm` at all. A
-  record with no `template` (written before this ticket) is treated as a
-  mismatch — "unknown" reads safer as "different", costing one redundant
-  re-download rather than an unaccounted-for stale bucket. This doesn't
-  change what the roundel's `done` state means (it was always a real probe
-  against the active template, per-basemap already); it changes what the
-  bucket holds and what gets recorded for it.
+  on basemap, so a region re-downloaded under a DIFFERENT basemap at the
+  SAME ground would otherwise leave the previous basemap's tiles sitting
+  in the bucket alongside the new run's — bloating it, and leaving
+  whatever gets recorded for it wrong either way (see the next bullet).
+  The region control's `beforeWarm` (run by `basemap_download_runner.js`
+  as the last step before the warm-cache call — see its own module header
+  for why the ordering lives there) compares the ACTIVE tile template
+  against the one the existing record was downloaded with, stored
+  alongside it as `template`, and calls `evictBasemapAreas` first when
+  they differ. A record with no `template` (written before SNOW-632) is
+  treated as a mismatch — "unknown" reads safer as "different", costing
+  one redundant re-download rather than an unaccounted-for stale bucket.
+  This doesn't change what the roundel's `done` state means (it was
+  always a real probe against the active template, per-basemap already);
+  it changes what the bucket holds and what gets recorded for it.
+  **SNOW-635:** the custom-area control had an analogous `beforeWarm` —
+  evicting on EITHER a bbox change or a template change, since it (unlike
+  a region) had no fixed geometry of its own to distinguish "the same
+  area" from "a different one" at a shared id. That eviction is gone: a
+  moved frame or a changed basemap no longer replaces anything, because
+  every confirmed custom-area download now gets its own fresh id and
+  bucket regardless (see the amendment above) — there is no longer a
+  single prior download of the user's own left to replace.
 - **Byte totals are a run's own reported figure, recorded outright —
   never accumulated onto the previous record, and never re-measured from
   the bucket.** An earlier version of this fix tried the latter:
