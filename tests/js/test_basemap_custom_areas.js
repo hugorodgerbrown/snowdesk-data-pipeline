@@ -2,7 +2,9 @@
  * tests/js/test_basemap_custom_areas.js — Vitest DOM tests for SNOW-635's
  * storage layer in static/js/map.js: the lazy migration of the legacy
  * single-row `basemap.customArea` into the array-shaped
- * `basemap.customAreas`, and the array's own read/evict/rename operations.
+ * `basemap.customAreas`, the array's own read/evict/rename operations, and
+ * (review fixes) batched multi-id eviction plus the default display name
+ * an unrenamed custom area is given.
  *
  * Booting map.js in jsdom follows the same pattern as
  * test_map_download_eviction.js (see its header for why: one script of
@@ -17,6 +19,23 @@
  * best-effort like everything else that sits there: a failed write
  * degrades to reading the legacy row, never throws. That is asserted
  * directly here by making `pwaDb.put` reject.
+ *
+ * Review fix (blocker): `evictBasemapAreas` used to run a per-id
+ * read-filter-write inside `Promise.all`, a read-modify-write race the
+ * moment two ids of the SAME record type were evicted in one call — only
+ * reachable since this ticket let more than one custom area exist. The
+ * "evicts TWO … in one call" tests below are the regression coverage; see
+ * `evictBasemapAreas`'s own comment for the fix.
+ *
+ * Review fix (minor, user-facing): an unrenamed custom area used to reach
+ * the whole-area-eviction confirm banner with no `name` at all, so a
+ * destructive confirmation read a raw `custom-<uuid>` id.
+ * `basemapDownloadedAreas()` now fills the numbered "Custom area N"
+ * default into `name` itself (from `default-custom-name` in
+ * `_map_embed.html`'s `map-strings-template`, in memory only, never
+ * persisted), so every downstream reader — this banner included — can
+ * read `area.name` uniformly. See the "default display name" describe
+ * block below.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -324,6 +343,124 @@ describe('deleting a custom area', () => {
 
     expect(cachesStub.delete).toHaveBeenCalledWith('snowdesk-basemap-pinned-custom-a1');
     expect(cachesStub.buckets.has('snowdesk-basemap-pinned-region-CH-9999')).toBe(true);
+  });
+
+  it('evicts TWO custom areas in one call without a read-modify-write race', async () => {
+    // SNOW-635 review (blocker): a per-id read-filter-write inside
+    // Promise.all is a race the moment two ids of the SAME record type
+    // are evicted together — both read the identical snapshot, each
+    // writes back a record missing only its own id, and the last write
+    // wins, leaving the OTHER "evicted" id's entry alive with no bucket
+    // behind it. Reachable only since this ticket: before SNOW-635 there
+    // was never more than one custom area, so planEviction could never
+    // return two custom ids in one plan.
+    const rows = installDbStub({
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, bbox: [1, 2, 3, 4], bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'custom-b2', ordinal: 2, bbox: [1, 2, 3, 4], bytes: 9 * MB, savedAt: '2026-08-02T00:00:00.000Z' },
+        { id: 'custom-c3', ordinal: 3, bbox: [1, 2, 3, 4], bytes: 3 * MB, savedAt: '2026-08-03T00:00:00.000Z' },
+      ],
+    });
+    await cachesStub.open('snowdesk-basemap-pinned-custom-a1');
+    await cachesStub.open('snowdesk-basemap-pinned-custom-b2');
+    await cachesStub.open('snowdesk-basemap-pinned-custom-c3');
+
+    await window.pwaBasemapDownloads.evict(['custom-a1', 'custom-b2']);
+
+    // Both targeted ids gone; the third, untouched one survives.
+    expect(rows.get('basemap.customAreas').map((a) => a.id)).toEqual(['custom-c3']);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-custom-a1')).toBe(false);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-custom-b2')).toBe(false);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-custom-c3')).toBe(true);
+  });
+
+  it('evicts TWO regions in one call without the same race', async () => {
+    // The region branch has the identical read-filter-write shape, so it
+    // carries the same latent race — fixed the same way.
+    const rows = installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-1000', bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+        { region_id: 'CH-2000', bytes: 9 * MB, savedAt: '2026-08-02T00:00:00.000Z' },
+        { region_id: 'CH-3000', bytes: 3 * MB, savedAt: '2026-08-03T00:00:00.000Z' },
+      ],
+    });
+    await cachesStub.open('snowdesk-basemap-pinned-region-CH-1000');
+    await cachesStub.open('snowdesk-basemap-pinned-region-CH-2000');
+    await cachesStub.open('snowdesk-basemap-pinned-region-CH-3000');
+
+    await window.pwaBasemapDownloads.evict(['region-CH-1000', 'region-CH-2000']);
+
+    expect(rows.get('basemap.regions').map((r) => r.region_id)).toEqual(['CH-3000']);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-region-CH-1000')).toBe(false);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-region-CH-2000')).toBe(false);
+    expect(cachesStub.buckets.has('snowdesk-basemap-pinned-region-CH-3000')).toBe(true);
+  });
+
+  it('evicts a mix of region and custom ids in one call, each from its own record', async () => {
+    const rows = installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-1000', bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, bbox: [1, 2, 3, 4], bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+    });
+    await cachesStub.open('snowdesk-basemap-pinned-region-CH-1000');
+    await cachesStub.open('snowdesk-basemap-pinned-custom-a1');
+
+    await window.pwaBasemapDownloads.evict(['region-CH-1000', 'custom-a1']);
+
+    expect(rows.get('basemap.regions')).toEqual([]);
+    expect(rows.get('basemap.customAreas')).toEqual([]);
+  });
+});
+
+describe("an unrenamed custom area's default display name (SNOW-635 review)", () => {
+  it('fills "Custom area N" from ordinal, in the returned area — never persisted', async () => {
+    const rows = installDbStub({
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, bbox: [1, 2, 3, 4], bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'custom-b2', ordinal: 2, bbox: [1, 2, 3, 4], bytes: 9 * MB, savedAt: '2026-08-02T00:00:00.000Z' },
+      ],
+    });
+
+    const areas = await window.pwaBasemapDownloads.areas();
+
+    expect(areas.find((a) => a.id === 'custom-a1').name).toBe('Custom area 1');
+    expect(areas.find((a) => a.id === 'custom-b2').name).toBe('Custom area 2');
+    // Never written back — the stored record itself carries no `name`.
+    expect(rows.get('basemap.customAreas').every((a) => !('name' in a))).toBe(true);
+  });
+
+  it("does not override a real rename with the numbered default", async () => {
+    installDbStub({
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, name: 'Home run', bbox: [1, 2, 3, 4], bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+    });
+
+    const areas = await window.pwaBasemapDownloads.areas();
+
+    expect(areas[0].name).toBe('Home run');
+  });
+
+  it('is what the eviction confirm banner would read, never a raw id', async () => {
+    // SNOW-635 review (minor, user-facing): confirmBasemapEviction labels
+    // areas `a.name || a.id` — this is the regression test for the report
+    // that an unnamed custom area used to have no `name` at all, so a
+    // destructive confirmation read "delete custom-<uuid>…". `.areas()`
+    // is exactly what feeds that banner (via basemapDownloadedAreas), so
+    // asserting `.name` is a legible string here is the load-bearing check.
+    installDbStub({
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, bbox: [1, 2, 3, 4], bytes: 5 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+    });
+
+    const areas = await window.pwaBasemapDownloads.areas();
+
+    expect(areas[0].name).not.toContain('custom-');
+    expect(areas[0].name).toBe('Custom area 1');
   });
 });
 

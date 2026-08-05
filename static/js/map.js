@@ -105,6 +105,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // what is on THIS DEVICE generally, not this one area.
   'custom-control-idle': 'Manage offline downloads',
   'custom-control-done': 'Offline downloads available',
+  // SNOW-635: an unrenamed custom area's default display name, filled in
+  // by basemapDownloadedAreas() itself — see that function's own comment.
+  'default-custom-name': 'Custom area %(n)s',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
@@ -603,12 +606,16 @@ async function renameCustomArea(areaId, name) {
 // `basemap.regions` (mapDownloadControlInit's record, one entry per
 // downloaded region) and (SNOW-635) `basemap.customAreas`
 // (mapCustomDownloadControlInit's record, now an array — see
-// `_readCustomAreas`). Best-effort: a failed read contributes nothing
-// rather than throwing — eviction planning degrades to "nothing recorded,
-// so nothing to evict", never to blocking a download outright over a
-// transient IndexedDB error.
+// `_readCustomAreas`). `name` is always populated for a non-orphaned area
+// — stored for a region, stored-or-defaulted-from-ordinal for a custom
+// area (see the inline comment below) — so every downstream reader can
+// treat it uniformly; only `reconcileAreas`' orphan entries (no record at
+// all) ever leave it unset. Best-effort: a failed read contributes
+// nothing rather than throwing — eviction planning degrades to "nothing
+// recorded, so nothing to evict", never to blocking a download outright
+// over a transient IndexedDB error.
 //
-// @returns {Promise<Array<{id: string, name?: string, ordinal?: number, bytes: number, savedAt: string}>>}
+// @returns {Promise<Array<{id: string, name?: string, bytes: number, savedAt: string}>>}
 async function basemapDownloadedAreas() {
   const core = self.pwaBasemapDownloadCore;
   const areas = [];
@@ -634,15 +641,25 @@ async function basemapDownloadedAreas() {
       if (!entry || !entry.id || !Array.isArray(entry.bbox)) continue;
       areas.push({
         id: entry.id,
-        // SNOW-635: `name` is set ONLY by a rename (map_downloads_manager.js's
-        // Rename control) — left undefined here when unrenamed, rather than
-        // defaulted, so a downstream reader (manageRows) can tell "never
-        // renamed" apart from "renamed to something". The default display
-        // name ("Custom area N") is derived from `ordinal` at render time,
-        // which is what keeps it translatable rather than frozen in
-        // whatever language was active at download time.
-        name: entry.name,
-        ordinal: entry.ordinal,
+        // SNOW-635 (review): `name` is set by a rename
+        // (map_downloads_manager.js's Rename control) when present; an
+        // unrenamed area's default display name ("Custom area N") is
+        // filled in HERE, from `ordinal`, in memory only — never
+        // persisted, so it stays translatable rather than freezing in
+        // whatever language was active at download time. Filling it at
+        // THIS single normalising layer, rather than at every
+        // downstream reader, is what let the eviction confirm banner's
+        // fallback regress to a raw id: the banner (and the sheet, and
+        // the rename prompt's pre-fill) can all just read `area.name`
+        // uniformly now, with nothing left to distinguish "stored" from
+        // "defaulted".
+        name:
+          entry.name ||
+          (Number.isFinite(entry.ordinal)
+            ? self.pwaStrings.interpolate(MAP_STRINGS['default-custom-name'], {
+                n: entry.ordinal,
+              })
+            : entry.id),
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
       });
@@ -712,6 +729,19 @@ async function planBasemapDownloadBudget(areaId, mb) {
  * per area: one failure doesn't abort the rest, and a record whose bucket
  * is already gone (or vice versa) still gets its other half cleaned up.
  *
+ * The bucket deletes are independent per id and still run in parallel.
+ * The RECORD writes do NOT — SNOW-635 review: `basemap.customAreas` (and,
+ * latently, `basemap.regions`) is one shared row, so a per-id
+ * read-filter-write run inside `Promise.all` is a read-modify-write race
+ * the moment two ids of the SAME record type are evicted in one call.
+ * Both tasks read the identical snapshot, each writes back a record
+ * missing only its OWN id, and whichever write lands last wins — leaving
+ * the other "evicted" id's entry alive in the record with no bucket
+ * behind it. This was unreachable before this ticket (there was only
+ * ever one custom area, so `planEviction` could never return two custom
+ * ids); it is reachable now. Read once per record type, filter out every
+ * targeted id from THAT type in one pass, write once.
+ *
  * @param {string[]} areaIds
  * @returns {Promise<void>}
  */
@@ -719,6 +749,7 @@ async function evictBasemapAreas(areaIds) {
   const core = self.pwaBasemapDownloadCore;
   const ids = Array.isArray(areaIds) ? areaIds : [];
   if (!core || !ids.length) return;
+
   await Promise.all(
     ids.map(async (areaId) => {
       try {
@@ -728,37 +759,48 @@ async function evictBasemapAreas(areaIds) {
       }
       // SNOW-612: the bucket is gone, so any measurement of it is too.
       forgetPinnedBucketMeasurement(areaId);
-      try {
-        // SNOW-635: `core.isCustomAreaId` — a custom area's own bucket-id
-        // FAMILY, not the single legacy `CUSTOM_AREA_ID` — see that
-        // predicate's own comment.
-        if (core.isCustomAreaId(areaId)) {
-          const existing = await _readCustomAreas();
-          const next = existing.filter((entry) => !entry || entry.id !== areaId);
-          if (next.length !== existing.length) {
-            // Always a `put`, even when `next` is `[]` — see
-            // `_writeCustomAreas`'s docstring for why deleting the LAST
-            // custom area must not delete the key itself.
-            await _writeCustomAreas(next);
-          }
-        } else {
-          const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
-          const existing = Array.isArray(row && row.value) ? row.value : [];
-          const next = existing.filter(
-            (entry) => !(entry && core.areaIdForRegion(entry.region_id) === areaId),
-          );
-          if (next.length !== existing.length) {
-            await window.pwaDb?.put('meta:app', { key: 'basemap.regions', value: next });
-          }
-        }
-      } catch (_e) {
-        // Best-effort — a stale record with no bucket behind it is
-        // treated as evictable-first the next time budget planning runs
-        // (see the "byte totals are page-recorded" risk note in
-        // docs/decisions/per-area-pinned-basemap-caches.md).
-      }
     }),
   );
+
+  // SNOW-635: `core.isCustomAreaId` — a custom area's own bucket-id
+  // FAMILY, not the single legacy `CUSTOM_AREA_ID` — see that predicate's
+  // own comment.
+  const customIds = new Set(ids.filter((id) => core.isCustomAreaId(id)));
+  const regionIds = new Set(ids.filter((id) => !core.isCustomAreaId(id)));
+
+  try {
+    if (customIds.size) {
+      const existing = await _readCustomAreas();
+      const next = existing.filter((entry) => !entry || !customIds.has(entry.id));
+      if (next.length !== existing.length) {
+        // Always a `put`, even when `next` is `[]` — see
+        // `_writeCustomAreas`'s docstring for why deleting the LAST
+        // custom area must not delete the key itself.
+        await _writeCustomAreas(next);
+      }
+    }
+  } catch (_e) {
+    // Best-effort — a stale record with no bucket behind it is treated as
+    // evictable-first the next time budget planning runs (see the "byte
+    // totals are page-recorded" risk note in
+    // docs/decisions/per-area-pinned-basemap-caches.md).
+  }
+
+  try {
+    if (regionIds.size) {
+      const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+      const existing = Array.isArray(row && row.value) ? row.value : [];
+      const next = existing.filter(
+        (entry) => !(entry && regionIds.has(core.areaIdForRegion(entry.region_id))),
+      );
+      if (next.length !== existing.length) {
+        await window.pwaDb?.put('meta:app', { key: 'basemap.regions', value: next });
+      }
+    }
+  } catch (_e) {
+    // Best-effort — see the comment above.
+  }
+
   // SNOW-613: tell the worker its memoised pinned-bucket list is stale.
   // It has no other way to learn about a page-side deletion, and a stale
   // name there would be handed to `caches.open`, recreating the bucket the
@@ -842,12 +884,14 @@ function confirmBasemapEviction(evictAreas) {
       resolve(false);
       return;
     }
-    // SNOW-635: `name` is unset on a custom area that has never been
-    // renamed (see `basemapDownloadedAreas`'s own comment) — falling back
-    // to `id` here keeps this banner out of the numbered-default-name
-    // business (that lives in map_downloads_manager.js, where the
-    // translation catalogue actually is) while still never rendering the
-    // literal string "undefined".
+    // SNOW-635 review: `name` is populated for every non-orphaned area —
+    // stored for a region, stored-or-defaulted-from-ordinal for a custom
+    // area (see `basemapDownloadedAreas`'s own comment) — so this banner
+    // never has to know how to build a default itself. The `|| a.id`
+    // fallback exists only for the one case that still has no name at
+    // all: an orphaned bucket (SNOW-612) with no record behind it, which
+    // `planEviction` can legitimately pick (its missing `savedAt` sorts
+    // it as the oldest thing on disk).
     if (body) {
       body.textContent = (evictAreas || []).map((a) => a.name || a.id).join(', ');
     }
@@ -7367,9 +7411,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // second download used to silently replace the first. `name` is written
 // ONLY by a rename (map_downloads_manager.js's Rename control); an
 // unrenamed area's default label ("Custom area N") is derived from
-// `ordinal` at render time rather than stored, which is what keeps it
-// translatable instead of frozen in whatever language was active at
-// download time.
+// `ordinal` on every READ instead — `basemapDownloadedAreas()` fills it
+// into the in-memory result, never onto this stored record — which is
+// what keeps it translatable instead of frozen in whatever language was
+// active at download time.
 //
 // The roundel's "done" state (SNOW-634) does not probe any one area's own
 // bbox against the pinned cache's WHOLE tile set — that was `_probeDone`,
