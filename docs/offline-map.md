@@ -929,11 +929,18 @@ download's grid is unaffected in substance.
 A second, distinct control — `#map-custom-download-control`, rendered by
 `public/partials/_map_custom_download_control.html` into the bottom-right
 stack the per-region control vacated (above). Unlike that control, there
-is no fixed region to size ahead of time: clicking it opens a **framing
-overlay** (`#map-frame-overlay`, `public/partials/_map_embed.html`) — a
-Google-Maps-style dim mask with a fixed frame that the user pans/zooms the
-map underneath, with a live "up to N MB" readout and a Cancel/Download CTA
-sheet.
+is no fixed region to size ahead of time, so a custom download starts by
+**framing** one: a `#map-frame-overlay`
+(`public/partials/_map_embed.html`) Google-Maps-style dim mask with a
+fixed frame that the user pans/zooms the map underneath, with a live "up
+to N MB" readout and a Cancel/Download CTA sheet.
+
+**SNOW-634 moved the way in.** Through SNOW-632 the roundel opened that
+overlay directly. It now opens the **downloads sheet** instead
+(`window.pwaDownloadsManager.open()` — see "Manage downloads" below), and
+framing is entered from that sheet's `[data-downloads-add]` trigger, so
+one surface answers both "what have I got?" and "give me another".
+Everything below the entry point is unchanged once framing is open.
 
 **Layout.** The overlay is `position: absolute` inside `#map`, not fixed to
 the viewport: that scopes the frame, the dim mask and the sheet to the map,
@@ -1030,9 +1037,11 @@ applies.
 answers, both on the sheet, so every control that steers the map for some
 other purpose is noise — and each one would otherwise sit lit inside the
 cutout, reading as part of the area being chosen. The class is removed in
-`_teardownFraming`, which both close paths (the shared `overlays.js`
-dismiss handler and `_closeFramingAfterRun`) funnel through, so the
-furniture cannot be left stripped. Pan and zoom are untouched — they are
+`_teardownFraming`, which the one close path funnels through — the shared
+`overlays.js` dismiss handler. (SNOW-632 removed the second,
+`_closeFramingAfterRun`: a completed run no longer closes the overlay, so
+an explicit dismiss is the only way out.) The furniture therefore cannot
+be left stripped. Pan and zoom are untouched — they are
 the whole interaction. Covered by
 `tests/e2e/test_custom_download_area.py::test_framing_strips_the_map_furniture_and_cancel_restores_it`.
 
@@ -1077,15 +1086,27 @@ roundel already calls on boot), keeping id `'custom'` — Cache Storage has
 no rename, so that id has to survive unchanged for its existing bucket to
 keep resolving.
 
-The roundel's `done` state is still **probed**, never read off the record
-directly: exactly like the per-region control, real pinned-cache
-contents — every per-area bucket, unioned (SNOW-586) — are the source of
-truth for whether an area is actually downloaded: every tile of an area's
-own recorded `z`/`bbox` is checked (`blobFullyCached`), not just its
-`centre_tile`, because a neighbouring download can cache that one tile
-without covering the area. `done` now means "the device holds at least
-one downloaded custom area", not "this one specific area is cached" —
-there is no longer a single canonical area for that question to be about.
+The roundel's `done` state is **read from storage, not probed** — this is
+where it stops resembling the per-region control. SNOW-634 deleted the
+custom control's `_probeDone` (which checked every tile of the one saved
+bbox against the pinned caches via `blobFullyCached`) along with the
+single saved area it was about. `done` now means "the device holds at
+least one downloaded area", region **or** custom, counted straight off
+`basemapDownloadedAreas()` — the same reader the downloads sheet lists
+from, so the roundel and the sheet can never disagree. A user with five
+downloaded regions and no custom area used to read `idle`, which was
+false: there is plainly something to manage offline. Orphaned buckets
+(SNOW-612 — a failed part-download with no completed record) are excluded;
+they are reclaimable quota, not an area you have offline.
+
+Two consequences worth naming. Neither connectivity nor the active
+basemap affects the roundel any more, so its `snowdesk:basemap-changed`
+listener and style-settle retry are gone. And switching basemap no longer
+flips it back to `idle` — the bucket still holds the *previous* basemap's
+tiles, so the device does hold an offline area, just not one for the
+basemap now selected. That per-basemap detail lives in the sheet; the
+roundel's signal is deliberately coarser.
+
 Opening framing no longer re-centres the map on any previously-downloaded
 area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
 when there was exactly one area to jump to. With any number of areas
@@ -1113,9 +1134,16 @@ happens to the overlay itself: a completed run no longer closes it — the
 CTA repaints in place ("23.4 MB downloaded", Download hidden, Cancel
 relabelled Close) and the user dismisses it explicitly, which is also the
 only way to start a second framing session (the roundel that would open a
-fresh one is hidden for as long as the overlay is up). Offline-integrity
-mirrors the per-region control exactly: neither opening framing nor
-confirming a download is allowed while offline.
+fresh one is hidden for as long as the overlay is up).
+
+**Offline-integrity no longer sits on the roundel.** SNOW-634 moved the
+guard inward: the roundel opens the downloads sheet online *or* offline,
+because listing and deleting what is already stored is exactly what a
+user needs when storage is under pressure and the network is not there.
+What is refused offline is *starting a new download* — the sheet's
+`[data-downloads-add]` trigger declines with a toast
+(`MapSheet.toast()`), and this overlay's own Download button stays gated
+on connectivity as before, the same rule the per-region control applies.
 
 ### Download budget and whole-area eviction (SNOW-586)
 
