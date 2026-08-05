@@ -1,15 +1,19 @@
 """
 tests/e2e/test_custom_download_area.py — Playwright regression tests for the
-"Download a custom area" basemap control (SNOW-522).
+"Download a custom area" basemap control (SNOW-522; the way in rewritten by
+SNOW-634).
 
 Companion to ``test_cache_this_area.py``'s per-region control: this one has
-no fixed region to size ahead of time, so clicking
-``#map-custom-download-control`` opens a framing overlay
-(``#map-frame-overlay``) instead of downloading immediately — a
+no fixed region to size ahead of time. SNOW-634 changed how framing is
+reached: clicking ``#map-custom-download-control`` now opens the downloads
+sheet (``#map-downloads-sheet``), and its own ``[data-downloads-add]``
+trigger is what opens the framing overlay (``#map-frame-overlay``) — a
 Google-Maps-style dim mask with a fixed, centred frame the user pans/zooms
 the map underneath, with a live "up to N MB" readout (computed entirely
 client-side — ``static/js/basemap_download_core.js``, no network round
-trip) and a docked Cancel/Download CTA bar.
+trip) and a docked Cancel/Download CTA bar. ``_open_framing`` below
+centralises that two-click path so the rest of this file reads exactly as
+it did when one click sufficed.
 
 Reuses ``test_cache_this_area.py``'s helpers (``_reload_home``,
 ``_stub_warm_cache``, ``_stub_active_basemap_template``,
@@ -39,19 +43,20 @@ capped frame stays over the same ground while zooming, never lags the
 canvas mid-gesture, stays centred however far off the pointer is, and
 releases again on the way back in. A confirmed download warms with
 ``pinned: true`` and (SNOW-586) ``areaId: 'custom'``, reaches ``done``,
-and notifies the layers sync dashboard; reload + click the (probed) green
-roundel re-opens framing at the saved area; moving the frame then
-Cancelling leaves the saved area untouched; moving the frame then
-confirming deletes the custom area's OWN pinned bucket outright before
-warming the new set (SNOW-586's whole-bucket evict-on-confirm, replacing
-the old per-URL re-derivation) — and (SNOW-632) so does confirming again
-at the SAME bbox under a DIFFERENT basemap, which a bbox-only eviction
-check would miss.
+and notifies the layers sync dashboard; reload + reopening framing
+re-centres on the saved area; moving the frame then Cancelling leaves the
+saved area untouched; moving the frame then confirming deletes the custom
+area's OWN pinned bucket outright before warming the new set (SNOW-586's
+whole-bucket evict-on-confirm, replacing the old per-URL re-derivation) —
+and (SNOW-632) so does confirming again at the SAME bbox under a DIFFERENT
+basemap, which a bbox-only eviction check would miss.
 
 SNOW-568 adds the failure path, which had no coverage because it had no
 behaviour: every failed run reverted the roundel to ``idle`` and closed
 the overlay, indistinguishable from a Cancel. A failed run now holds the
-frame up, paints ``error``, and raises a toast (lifted clear of the CTA
+frame up, paints ``error`` (SNOW-634: on the overlay's own
+``data-run-state`` — the roundel itself settles back to ``idle``, since a
+failed run records nothing), and raises a toast (lifted clear of the CTA
 sheet it shares the foot of the viewport with) whose copy depends on
 whether the cause was the storage quota or anything else — covered here
 along with retrying and cancelling out of that state.
@@ -98,13 +103,39 @@ def _boot(pwa_page: PwaPage) -> tuple[Page, SWWorker]:
 
 
 def _open_framing(page: Page) -> None:
-    """Click the roundel and wait for the overlay to reveal itself."""
+    """Open the downloads sheet via the roundel, then its add-trigger opens framing.
+
+    SNOW-634: the roundel opens ``#map-downloads-sheet`` now (the same
+    surface "Manage downloads…" used to reach, before that layers-menu row
+    was removed) rather than jumping straight into framing — "Download a
+    custom area" is an action inside the sheet
+    (``[data-downloads-add]``), not the roundel's own click.
+    """
     page.click(_CONTROL)
+    page.wait_for_selector("#map-downloads-sheet:not([hidden])")
+    page.click("[data-downloads-add]")
     page.wait_for_selector("#map-frame-overlay:not([hidden])")
 
 
 def _wait_for_overlay_closed(page: Page) -> None:
     page.wait_for_selector("#map-frame-overlay[hidden]", state="attached")
+
+
+def _wait_for_run_state(page: Page, state: str, timeout: int = 10000) -> None:
+    """Wait for ``#map-frame-overlay``'s ``data-run-state`` to read ``state``.
+
+    SNOW-634: replaces waiting on the roundel's own ``data-download-state``
+    for a run in flight. That attribute is now derived from storage
+    (``_renderControl``) and only ever reads ``idle``/``done`` — it stopped
+    tracking a run at all — and the roundel itself is hidden for the whole
+    time the overlay covering it is open (``.map-framing`` hides
+    ``#map-controls-br``, static/css/map.css) anyway. ``data-run-state`` is
+    map.js's own replacement observable, mirrored by ``paintRun`` onto the
+    overlay — see that template's own comment in _map_embed.html.
+    """
+    page.wait_for_selector(
+        f'#map-frame-overlay[data-run-state="{state}"]', timeout=timeout
+    )
 
 
 def _wait_for_worker_flag(
@@ -229,22 +260,6 @@ def _assert_sync_dashboard_refreshed(page: Page) -> None:
     )
 
 
-def _force_done_reprobe(page: Page) -> None:
-    """Re-run the control's done-probe now that the tile template is stubbed.
-
-    The probe keys off the ACTIVE basemap's tile template, which ``_boot``
-    only stubs *after* the map is ready — by which point the control has
-    already painted from a probe that had no template to look up. The real
-    app re-probes on ``snowdesk:basemap-changed`` (the download is
-    per-basemap), and the control listens for it, so dispatching it is the
-    supported way to ask for a fresh probe. ``test_cache_this_area.py``
-    gets the same effect for the region control by re-selecting the region.
-    """
-    page.evaluate(
-        "() => document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'))"
-    )
-
-
 def _frame_a_downloadable_area(page: Page) -> None:
     """Zoom in until the framed area is under the download ceiling.
 
@@ -352,12 +367,25 @@ def _confirm_download(
     SNOW-568: a run that doesn't cleanly succeed settles on ``error``
     (with a toast and the framing overlay still open), not the ``idle``
     it used to revert to.
+
+    SNOW-634: a run in flight is now observed on the overlay's own
+    ``data-run-state`` (``_wait_for_run_state``), not the roundel — see
+    that helper's own docstring. A SUCCESSFUL run still lands on the
+    roundel too (``_renderControl`` re-derives ``done`` from storage once
+    the run settles); a FAILED one does not — nothing was recorded, so the
+    roundel reads ``idle``, not an ``error`` state it no longer has. This
+    only waits for the roundel on success; callers asserting a failure's
+    own reporting check the CTA/toast directly (SNOW-568/632), not the
+    roundel.
     """
     _stub_warm_cache(worker, ok=ok, failed=failed, reason=reason)
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
-    expected = "done" if (ok > 0 and failed == 0) else "error"
-    _wait_for_state(page, expected, selector=_CONTROL, timeout=10000)
+    _wait_for_run_state(page, "busy")
+    if ok > 0 and failed == 0:
+        _wait_for_run_state(page, "done", timeout=10000)
+        _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
+    else:
+        _wait_for_run_state(page, "error", timeout=10000)
 
 
 def _display(page: Page, selector: str) -> str:
@@ -979,13 +1007,20 @@ def test_download_warms_pinned_and_notifies_the_sync_dashboard(
 
 
 def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> None:
-    """A completed download survives reload; clicking the green roundel
+    """A completed download survives reload; the roundel's add-trigger
     re-opens framing with the map recentred on the saved area.
 
     SNOW-632: no longer waits for the overlay to close after confirming —
     it stays open showing the completion state now. Irrelevant here either
     way: the very next step is a full page reload (`_boot`), which wipes
     all client-side state regardless of what the overlay was doing.
+
+    SNOW-634: the roundel's ``done`` no longer depends on the active
+    basemap's tile template (there is nothing left to re-probe on
+    ``snowdesk:basemap-changed`` — see ``_renderControl``), so unlike the
+    per-region control this needs no forced re-probe after ``_boot`` stubs
+    the template; ``basemapDownloadedAreas()`` answers straight from
+    IndexedDB on boot.
     """
     page, worker = _boot(pwa_page)
     _open_framing(page)
@@ -995,7 +1030,6 @@ def test_reload_and_click_done_reopens_at_the_saved_area(pwa_page: PwaPage) -> N
     assert area is not None
 
     page, worker = _boot(pwa_page)
-    _force_done_reprobe(page)
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
 
     _open_framing(page)
@@ -1229,7 +1263,7 @@ def test_busy_readout_shows_percentage_and_megabytes(pwa_page: PwaPage) -> None:
         bytes_total=4 * 1024 * 1024,
     )
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
 
     page.wait_for_function(
         """() => {
@@ -1258,7 +1292,7 @@ def test_download_disabled_and_map_inert_while_busy(pwa_page: PwaPage) -> None:
         step_delay_ms=200,
     )
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
 
     assert page.locator("#map-frame-confirm").is_disabled()
     assert page.evaluate("() => MAP.dragPan.isEnabled()") is False
@@ -1305,7 +1339,7 @@ def test_cancel_mid_run_returns_to_idle_and_refreshes_the_sync_dashboard(
         pause_after_step=0,
     )
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
     # Wait for the stub to actually be paused mid-run, rather than assuming
     # the first tick landed within some fixed window.
     _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
@@ -1335,7 +1369,7 @@ def test_completed_download_leaves_overlay_open_with_a_working_close(
 
     _stub_warm_cache(worker, ok=1, failed=0, bytes_total=6 * 1024 * 1024)
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
 
     assert page.locator("#map-frame-overlay").is_visible()
@@ -1480,7 +1514,7 @@ def test_budget_banner_does_not_double_count_this_area_mid_run(
         pause_after_step=0,
     )
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
     _wait_for_worker_flag(worker, "() => self.__snow521Paused === true")
 
     # Half the run's 20 MB has landed. The honest total is the 10 MB
@@ -1540,7 +1574,7 @@ def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
     bytes_total = 60 * 1024 * 1024
     _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
     first = _saved_area(page)
     assert first is not None
@@ -1554,7 +1588,7 @@ def test_redownloading_the_same_area_does_not_inflate_the_recorded_total(
     _open_framing(page)
     _stub_warm_cache(worker, ok=1, failed=0, bytes_total=bytes_total)
     page.click("#map-frame-confirm")
-    _wait_for_state(page, "busy", selector=_CONTROL)
+    _wait_for_run_state(page, "busy")
     _wait_for_state(page, "done", selector=_CONTROL, timeout=10000)
     second = _saved_area(page)
     assert second is not None

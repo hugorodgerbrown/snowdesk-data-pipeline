@@ -1,47 +1,51 @@
 {% load i18n %}
 {% comment %}
-public/partials/_map_custom_download_control.html — "Download a custom
-area" control (SNOW-522).
+public/partials/_map_custom_download_control.html — offline-downloads
+roundel (SNOW-522; behaviour rewritten by SNOW-634).
 
 Takes the bottom-right utility-stack slot the per-region download control
 (_map_download_control.html) vacated when it moved back into the ribbon
-header. Clicking this roundel opens the framing overlay in _map_embed.html
-(#map-frame-overlay) — a Google-Maps-style dim mask with a fixed centred
-frame the user pans/zooms the map under, with a live "up to N MB" readout
-— rather than downloading immediately like its per-region sibling: there
-is no fixed area to size until the user has framed one.
+header. The glyph is unchanged from SNOW-522 (a viewfinder/frame, distinct
+from the per-region control's plain download arrow) and the roundel is
+still NOT hidden-until-focused — unlike the per-region control it has no
+dependency on a focused region, so it is always present in the
+bottom-right stack (matching every other roundel there).
 
-Same roundel/state-machine markup idiom as _map_download_control.html
-(data-download-state, per-state SVG glyphs, --download-progress fill) and
-the same .map-download-control CSS class for the shared glass-circle
-chrome (static/css/map.css) — but a distinct glyph (a viewfinder/frame,
-not a plain download arrow) so the two controls read as different
-affordances at a glance, and it is NOT hidden-until-focused: unlike the
-per-region control it has no dependency on a focused region, so it is
-always present in the bottom-right stack (matching every other roundel
-there).
+SNOW-522 through SNOW-632 had this roundel open the "Download a custom
+area" framing overlay (#map-frame-overlay, _map_embed.html) directly, with
+its own five-state machine (idle/busy/done/error/offline) painted onto it
+by map.js. SNOW-588 then added a SEPARATE "Manage downloads…" row in the
+layers menu, opening a sheet that listed every downloaded area (regions
+AND this custom one) — the same subject reachable two ways, one of them
+buried in a menu about map layers.
 
-States (data-download-state): idle | busy | done | error | offline — no
-"no-region" (there is always a map area to frame) and no persistent
-"disabled" (the over_ceiling backstop applies to the CURRENT framed area,
-shown live in the overlay's CTA bar instead, not to this roundel).
-"error" (SNOW-568) means the last run failed and the area is NOT available
-offline; unlike the region control's inert states it is clickable, and the
-framing overlay is left open behind it so the framed area survives for a
-retry.
-static/js/map.js's mapCustomDownloadControlInit drives the state and
-rewrites the title/aria-label to match — exactly like its per-region
-sibling, "done" is probed from real pinned-cache contents (every per-area
-bucket, unioned — SNOW-586) against the persisted saved-area's centre
-tile, never a stored flag.
+SNOW-634 collapses them: clicking this roundel now opens the downloads
+sheet (public/partials/_map_downloads_sheet.html) — the layers-menu row
+is gone, this IS the way in — and "Download a custom area" is an action
+inside that sheet ([data-downloads-add]) rather than the roundel's own
+click. The roundel is therefore reduced to two states (data-download-
+state: idle | done), driven by static/js/map.js's
+mapCustomDownloadControlInit's `_renderControl`: "done" means the DEVICE
+holds at least one downloaded area (region or custom, excluding an
+orphaned/incomplete bucket), not that this one custom area is fully
+cached — a user with five downloaded regions and no custom area now reads
+`done`, correctly, rather than the old per-area probe's `idle`. Clicking
+is unconditional — no busy state to guard (framing hides
+#map-controls-br, this roundel's own container, for as long as it is
+open, so it can never be clicked mid-run) and no offline guard (the sheet
+lists and deletes offline, which is exactly when storage pressure is
+felt). aria-controls points at the sheet it now opens, not the overlay.
 
 data-area-label (SNOW-586): the translated display name recorded onto the
 custom area's meta:app row (`basemap.customArea.name`) and shown in the
 whole-area-eviction confirm banner naming areas that would be removed to
-make room for a new download. A JS-assembled string would be permanently
-English (no JS i18n catalogue in this project — see
+make room for a new download, and read back by `handleConfirm`'s `finish`
+when a run completes. A JS-assembled string would be permanently English
+(no JS i18n catalogue in this project — see
 docs/decisions/per-area-pinned-basemap-caches.md); this is a template
-attribute precisely so {% trans %} can reach it.
+attribute precisely so {% trans %} can reach it. Unrelated to the
+roundel's own two-state label above, which now describes the DEVICE's
+downloads, not this area.
 
 Takes no context.
 {% endcomment %}
@@ -52,12 +56,14 @@ Takes no context.
     data-download-state="idle"
     data-area-label='{% trans "Custom area" %}'
     aria-haspopup="dialog"
-    aria-controls="map-frame-overlay"
-    aria-label="{% trans "Download a custom area's basemap" %}"
-    title="{% trans "Download a custom area's basemap" %}"
+    aria-controls="map-downloads-sheet"
+    aria-label='{% trans "Manage offline downloads" %}'
+    title='{% trans "Manage offline downloads" %}'
 >
     {# Viewfinder/frame glyph — four corner brackets — distinct from the   #}
-    {# plain download-arrow glyph the per-region control uses.             #}
+    {# plain download-arrow glyph the per-region control uses. Unchanged   #}
+    {# by SNOW-634: only this roundel's labels and behaviour changed, not  #}
+    {# its icon.                                                           #}
     <svg
         class="map-download-control-icon map-download-control-icon--idle"
         width="18"
@@ -75,38 +81,4 @@ Takes no context.
         <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
         <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
     </svg>
-    <svg
-        class="map-download-control-icon map-download-control-icon--busy"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        aria-hidden="true"
-    >
-        <path d="M12 3a9 9 0 1 0 9 9" />
-    </svg>
-    {# SNOW-568: the download failed and the area is NOT available         #}
-    {# offline. Same glyph as the per-region control's error state — the   #}
-    {# two roundels differ in their idle affordance, not in what a failure #}
-    {# looks like.                                                         #}
-    <svg
-        class="map-download-control-icon map-download-control-icon--error"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 8v4" />
-        <path d="M12 16h.01" />
-    </svg>
-    <span class="map-download-control-percent" aria-hidden="true"></span>
 </button>

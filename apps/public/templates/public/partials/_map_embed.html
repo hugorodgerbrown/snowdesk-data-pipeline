@@ -380,32 +380,25 @@ Optional context:
                         {% trans "Available offline" %}
                     </button>
                 </li>
-                {# SNOW-588: opens the "Manage downloads" sheet             #}
-                {# (public/partials/_map_downloads_sheet.html) — what is    #}
-                {# stored offline on this device, what it costs, and a      #}
-                {# delete. It sits directly under "Available offline"       #}
-                {# because that row is the same subject seen from the map;  #}
-                {# this is the same subject as a list you can act on.       #}
+                {# SNOW-588 added a "Manage downloads…" row here, opening   #}
+                {# the sheet that lists what is stored offline on this      #}
+                {# device (public/partials/_map_downloads_sheet.html). That #}
+                {# gave the same subject two ways in — this menu row, and   #}
+                {# #map-custom-download-control (the bottom-right roundel), #}
+                {# which opened a DIFFERENT surface (the "Download a custom #}
+                {# area" framing overlay) — one of them buried inside a     #}
+                {# menu nominally about map layers.                        #}
                 {#                                                          #}
-                {# The first plain action row in this menu: every other is  #}
-                {# a checkbox or a radio, so it takes role="menuitem" and   #}
-                {# never sets aria-checked. .basemap-menu-item--action      #}
-                {# (static/css/map.css) hides the glyph that would          #}
-                {# otherwise sit permanently empty beside it — the class    #}
-                {# SNOW-492 left behind when its own action row went.       #}
-                {# It carries no sync dot for the same reason it carries no #}
-                {# glyph: it has no cache state of its own to report, it is #}
-                {# the way in to the surface that reports all of them.      #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-item basemap-menu-item--action"
-                        data-menu-action="manage-downloads"
-                    >
-                        {% trans "Manage downloads…" %}
-                    </button>
-                </li>
+                {# SNOW-634 reverses that: the roundel now opens THIS same  #}
+                {# sheet (public/partials/_map_custom_download_control.html #}
+                {# — its behaviour, not its glyph, changed), and "Download  #}
+                {# a custom area" moved INTO the sheet as its own action    #}
+                {# ([data-downloads-add], _map_downloads_sheet.html) rather #}
+                {# than the roundel's own click. This row is therefore      #}
+                {# gone — the roundel is the way in now, matching every     #}
+                {# other roundel-opens-its-own-surface pattern on the map   #}
+                {# (favourites, field reports) instead of routing through a #}
+                {# menu about something else.                               #}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Base map" %}
@@ -1020,21 +1013,34 @@ Optional context:
             </div>
         </div>
     {% endif %}
-    {# SNOW-522: framing overlay for the "Download a custom area" control    #}
-    {# (public/partials/_map_custom_download_control.html). A Google-Maps-   #}
-    {# style dim mask with a fixed, centred frame — the user pans/zooms the  #}
-    {# map underneath it; mapCustomDownloadControlInit (map.js) recomputes   #}
-    {# the "up to N MB" readout on every MapLibre 'move', with no network    #}
-    {# round trip (the tile math is ported client-side —                    #}
-    {# static/js/basemap_download_core.js). Position: fixed, inset: 0, like  #}
-    {# #map-help-overlay above, on #map's own local z-index band (static/    #}
-    {# css/map.css) rather than the --z-* chrome scale — same reasoning as   #}
-    {# that overlay's header comment: it is positioned against #map's own    #}
-    {# controls, not the page chrome. aria-modal="false" for the same reason #}
-    {# #map-help-overlay uses it: nothing here traps focus or blocks         #}
-    {# pointer events on the map underneath (the mask is pointer-events:     #}
-    {# none throughout, see .map-frame-rect below), so it would misstate     #}
-    {# the actual behaviour to claim otherwise.                              #}
+    {# SNOW-522: framing overlay for "Download a custom area" — reached      #}
+    {# (SNOW-634) via [data-downloads-add] inside the downloads sheet        #}
+    {# (public/partials/_map_downloads_sheet.html), not directly from        #}
+    {# #map-custom-download-control any more — that roundel opens the sheet  #}
+    {# itself now. A Google-Maps-style dim mask with a fixed, centred frame  #}
+    {# — the user pans/zooms the map underneath it; mapCustomDownload-       #}
+    {# ControlInit (map.js) recomputes the "up to N MB" readout on every     #}
+    {# MapLibre 'move', with no network round trip (the tile math is ported  #}
+    {# client-side — static/js/basemap_download_core.js). Position: fixed,   #}
+    {# inset: 0, like #map-help-overlay above, on #map's own local z-index   #}
+    {# band (static/css/map.css) rather than the --z-* chrome scale — same   #}
+    {# reasoning as that overlay's header comment: it is positioned against  #}
+    {# #map's own controls, not the page chrome. aria-modal="false" for the  #}
+    {# same reason #map-help-overlay uses it: nothing here traps focus or    #}
+    {# blocks pointer events on the map underneath (the mask is              #}
+    {# pointer-events: none throughout, see .map-frame-rect below), so it    #}
+    {# would misstate the actual behaviour to claim otherwise.               #}
+    {#                                                                       #}
+    {# data-run-state (SNOW-634): mirrors the run in flight — 'idle' |       #}
+    {# 'busy' | 'done' | 'error' | 'offline' — written by map.js's           #}
+    {# `paintRun`. It exists because #map-custom-download-control's own      #}
+    {# `data-download-state` stopped tracking a run in flight at all (it is  #}
+    {# now derived from storage and only ever reads 'idle'/'done'), and that #}
+    {# roundel is hidden for the overlay's entire open life anyway           #}
+    {# (.map-framing hides #map-controls-br, static/css/map.css) — so a run  #}
+    {# needed an observable surface that IS visible while it runs. Not       #}
+    {# decoration: an e2e test reads this to synchronise on a run in         #}
+    {# progress, in place of the roundel state it used to poll.              #}
     <div
         id="map-frame-overlay"
         hidden
@@ -1042,6 +1048,7 @@ Optional context:
         aria-modal="false"
         aria-label='{% trans "Download a custom area" %}'
         data-overlay
+        data-run-state="idle"
     >
         {# SNOW-632: instruction bar, repurposed as the standing download-    #}
         {# budget banner — "39 MB / 500 MB downloaded" across every pinned   #}
@@ -1230,4 +1237,10 @@ Optional context:
     <span data-string="frame-readout-done">{% blocktrans %}%(mb)s downloaded{% endblocktrans %}</span>
     <span data-string="frame-budget-banner">{% blocktrans %}%(used)s / %(budget)s downloaded{% endblocktrans %}</span>
     <span data-string="action-close">{% trans "Close" %}</span>
+    {# SNOW-634: #map-custom-download-control's own two labels. It now      #}
+    {# opens the downloads sheet rather than framing directly, so its copy #}
+    {# is about what is on THIS DEVICE generally, not this one area — see  #}
+    {# mapCustomDownloadControlInit's `_renderControl`.                    #}
+    <span data-string="custom-control-idle">{% trans "Manage offline downloads" %}</span>
+    <span data-string="custom-control-done">{% trans "Offline downloads available" %}</span>
 </template>

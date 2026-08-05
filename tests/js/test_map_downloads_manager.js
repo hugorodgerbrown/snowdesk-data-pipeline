@@ -1,13 +1,20 @@
 /*
  * tests/js/test_map_downloads_manager.js — Vitest DOM tests for
- * static/js/map_downloads_manager.js (SNOW-588).
+ * static/js/map_downloads_manager.js (SNOW-588; the way in rewritten by
+ * SNOW-634).
  *
  * The "Manage downloads" sheet: what it lists, what delete actually
- * removes, and what the budget control persists. Follows the established
- * fixture convention (test_map_help.js, test_overlays.js) — write the real
- * template's markup into ``document.body``, then ``vi.resetModules()`` +
- * ``await import()`` so each test runs the module's IIFE fresh against its
- * own DOM and its own IndexedDB state.
+ * removes, what the budget control persists, and (SNOW-634) the
+ * "Download a custom area" add-trigger now inside the sheet. Follows the
+ * established fixture convention (test_map_help.js, test_overlays.js) —
+ * write the real template's markup into ``document.body``, then
+ * ``vi.resetModules()`` + ``await import()`` so each test runs the
+ * module's IIFE fresh against its own DOM and its own IndexedDB state.
+ *
+ * The sheet itself is opened via ``window.pwaDownloadsManager.open()``
+ * directly, not a DOM click — SNOW-634 moved the trigger
+ * (``#map-custom-download-control``) into map.js, a module this file does
+ * not load, so there is no DOM element here for a click to reach any more.
  *
  * The fixture below mirrors
  * apps/public/templates/public/partials/_map_downloads_sheet.html. It is a
@@ -30,12 +37,9 @@ import '../../static/js/i18n_strings.js';
 
 const MB = 1024 * 1024;
 
-/** Markup mirroring _map_downloads_sheet.html plus the menu row. */
+/** Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row). */
 function buildFixture() {
   document.body.innerHTML = `
-    <button type="button" role="menuitem"
-            class="basemap-menu-item basemap-menu-item--action"
-            data-menu-action="manage-downloads">Manage downloads…</button>
     <div id="map-downloads-sheet" hidden tabindex="-1" data-overlay
          aria-label="Downloads on this device"></div>
     <template id="map-downloads-body-template">
@@ -47,6 +51,7 @@ function buildFixture() {
           <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
         </div>
         <p data-downloads-over hidden>You're over your budget.</p>
+        <button type="button" data-downloads-add>Download a custom area</button>
         <ul data-downloads-list></ul>
         <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
         <div>
@@ -74,6 +79,7 @@ function buildFixture() {
       <span data-string="confirm-remove">Remove the offline map for %(name)s? This
             frees %(size)s. You can download it again when you're back online.</span>
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
+      <span data-string="add-offline">You're offline — connect to download a new area.</span>
     </template>
   `;
 }
@@ -218,7 +224,16 @@ function seed(initial) {
 }
 
 function openSheet() {
-  document.querySelector('[data-menu-action="manage-downloads"]').click();
+  // SNOW-634: the trigger that used to live in this module's own DOM
+  // fixture is now #map-custom-download-control in map.js, which this
+  // file does not load — its click handler is nothing but
+  // `window.pwaDownloadsManager?.open()`, so calling the bridge directly
+  // is the equivalent entry point.
+  window.pwaDownloadsManager.open();
+}
+
+function setOnline(value) {
+  Object.defineProperty(window.navigator, 'onLine', { value, configurable: true });
 }
 
 /** Let the module's async render settle. */
@@ -241,14 +256,23 @@ beforeEach(() => {
   window.pwaLayersMenu = { close: vi.fn() };
   window.pwaDownloadedOverlay = { refresh: vi.fn() };
   window.pwaLayerSyncStatus = { refresh: vi.fn() };
+  // SNOW-634: window.pwaCustomAreaDownload — map.js's own bridge, the
+  // add-trigger's online path calls it. window.MapSheet.toast — its
+  // offline path calls that instead.
+  window.pwaCustomAreaDownload = { openFraming: vi.fn(), refresh: vi.fn() };
+  window.MapSheet = { toast: vi.fn() };
   vi.stubGlobal('confirm', vi.fn(() => true));
+  setOnline(true);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setOnline(true);
   delete window.pwaDb;
   delete window.pwaDownloadsManager;
   delete window.pwaBasemapDownloads;
+  delete window.pwaCustomAreaDownload;
+  delete window.MapSheet;
 });
 
 describe('opening the sheet', () => {
@@ -420,6 +444,57 @@ describe('the budget readout', () => {
   });
 });
 
+describe('the add-trigger', () => {
+  // SNOW-634: "Download a custom area" moved from the roundel's own click
+  // into this sheet, as [data-downloads-add] above the list.
+
+  it('hides the sheet and opens framing when online', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-add]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+
+  it('toasts and leaves the sheet open when offline', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    document.querySelector('[data-downloads-add]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      "You're offline — connect to download a new area.",
+    );
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+  });
+
+  it('does nothing when the custom-area bridge has not loaded', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+    delete window.pwaCustomAreaDownload;
+
+    document.querySelector('[data-downloads-add]').click();
+    await settle();
+
+    // Optional chaining swallows the missing bridge; the sheet still
+    // hides, same as the online path above — nothing here throws.
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+  });
+});
+
 describe('deleting an area', () => {
   async function openAndDeleteFirst() {
     openSheet();
@@ -473,6 +548,9 @@ describe('deleting an area', () => {
 
     expect(window.pwaDownloadedOverlay.refresh).toHaveBeenCalled();
     expect(window.pwaLayerSyncStatus.refresh).toHaveBeenCalled();
+    // SNOW-634: and the roundel that opens this sheet — a delete can take
+    // the device from "done" back to "idle".
+    expect(window.pwaCustomAreaDownload.refresh).toHaveBeenCalled();
   });
 
   it('names the area and the space freed in its confirmation', async () => {

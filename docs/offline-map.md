@@ -1268,16 +1268,28 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 `static/js/map_downloads_manager.js` over the pure
 `static/js/basemap_manage_core.js`) lists every stored area with its name
 and size, a running total against the budget, an explicit delete, and the
-budget control itself. It opens from a `Manage downloads…` row in the
-layers menu and uses the shared sheet primitive
+budget control itself. It opens from `#map-custom-download-control` — the
+bottom-right roundel — and uses the shared sheet primitive
 (`includes/_overlay_sheet.html` + `_sheet_header.html`), so
 `overlays.js`'s delegated dismiss handler closes it.
 
+SNOW-634 rewired the way in. Through SNOW-632 the roundel opened the
+"Download a custom area" framing overlay directly, and a SEPARATE `Manage
+downloads…` row in the layers menu was the only way to reach this sheet —
+the same subject reachable two ways, one of them buried in a menu about
+map layers. Now the roundel opens this sheet, the menu row is gone, and
+"Download a custom area" is an action inside the sheet instead
+(`[data-downloads-add]`, above the list): offline it toasts; online it
+hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()` —
+map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
+are driven by `_renderControl` reading `basemapDownloadedAreas()` — "done"
+means the device holds at least one downloaded area, region or custom, not
+that this one custom area is fully cached.
+
 **Why it lives on the map, not under account settings.** Downloading
-happens here, and the layers menu is already the cache-state dashboard, so
-managing downloads belongs beside it. It also has to be reachable
-**offline**, which is when storage pressure is actually felt, and the map
-is the one page guaranteed to be in the shell cache.
+happens here, so managing downloads belongs here too. It also has to be
+reachable **offline**, which is when storage pressure is actually felt,
+and the map is the one page guaranteed to be in the shell cache.
 
 The decisive argument, though, is that the budget is **device-local**.
 Cache Storage is per-browser, so a signed-in user with a phone and a

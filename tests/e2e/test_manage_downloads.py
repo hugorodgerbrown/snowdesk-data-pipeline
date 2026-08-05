@@ -1,18 +1,28 @@
 """
 tests/e2e/test_manage_downloads.py — Playwright tests for the "Manage
-downloads" sheet (SNOW-588).
+downloads" sheet (SNOW-588; the way in rewritten by SNOW-634).
 
 The surface that lists what this device has stored offline, what each area
 costs, and lets the user delete any of it or change the standing budget.
-Opened from the ``Manage downloads…`` row in the layers menu; markup in
-``public/partials/_map_downloads_sheet.html``, driven by
+Opened from ``#map-custom-download-control`` — the bottom-right roundel —
+markup in ``public/partials/_map_downloads_sheet.html``, driven by
 ``static/js/map_downloads_manager.js`` over
 ``static/js/basemap_manage_core.js``.
+
+SNOW-588 through SNOW-632 reached this sheet only via a
+``[data-menu-action="manage-downloads"]`` row in the layers menu, while the
+roundel opened a DIFFERENT surface (the "Download a custom area" framing
+overlay) directly. SNOW-634 collapsed the two: the roundel now opens this
+sheet — unconditionally, online or off, since browsing/deleting what is
+already stored needs no connection — and the menu row is gone.
+"Download a custom area" moved INTO the sheet instead, as the
+``[data-downloads-add]`` trigger, which DOES gate on connectivity (there is
+nothing useful to start a new download with while offline).
 
 **What these cover that the Vitest suites cannot.**
 ``tests/js/test_map_downloads_manager.js`` exercises the same behaviours
 against a hand-copied fixture, because Vitest cannot render a Django
-template. These run against the REAL template, the real layers menu and a
+template. These run against the REAL template, the real roundel and a
 real Cache Storage — so they are what catches the fixture and the template
 drifting apart, and what proves the two ``<template>`` elements the module
 clones are actually served with the ids it looks them up by.
@@ -69,8 +79,10 @@ from tests.e2e.test_cache_this_area import (
 pytestmark = pytest.mark.usefixtures("_load_test_data")
 
 _MENU_TOGGLE = "#basemap-toggle"
-_MENU_ROW = '[data-menu-action="manage-downloads"]'
+_ROUNDEL = "#map-custom-download-control"
 _SHEET = "#map-downloads-sheet"
+_ADD_TRIGGER = "[data-downloads-add]"
+_OVERLAY = "#map-frame-overlay"
 _PINNED_PREFIX = "snowdesk-basemap-pinned-"
 # The pre-SNOW-586 single pinned cache. SNOW-586 retired it — sw.js now
 # deletes it on activate — but a page whose worker has not yet swept can
@@ -115,18 +127,22 @@ def _custom_area(mb: int = 123) -> dict[str, Any]:
 
 
 def _boot(page: Page, live_server: LiveServer) -> None:
-    """Navigate and wait for the sheet module and map.js's records bridge.
+    """Navigate and wait for the sheet module and map.js's two records bridges.
 
     No wait on ``FEATURE_BY_REGION_ID`` any more: names are stored in the
     download record itself, so the sheet needs no region lookup and cannot
     race the regions fetch.
+
+    SNOW-634: also waits on ``window.pwaCustomAreaDownload`` — the roundel's
+    own bridge, which the sheet's ``[data-downloads-add]`` trigger calls.
     """
     page.goto(f"{live_server.url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_function(
         """() => typeof window.pwaDownloadsManager === 'object'
             && typeof window.pwaDb === 'object'
-            && typeof window.pwaBasemapDownloads === 'object'""",
+            && typeof window.pwaBasemapDownloads === 'object'
+            && typeof window.pwaCustomAreaDownload === 'object'""",
         timeout=30000,
     )
 
@@ -175,9 +191,8 @@ def _seed(
 
 
 def _open_sheet(page: Page) -> None:
-    """Open the sheet the way a user does — through the layers menu."""
-    page.click(_MENU_TOGGLE)
-    page.click(_MENU_ROW)
+    """Open the sheet the way a user does now — the roundel's own click."""
+    page.click(_ROUNDEL)
     expect(page.locator(_SHEET)).to_be_visible()
 
 
@@ -219,23 +234,43 @@ def _row_texts(page: Page, selector: str) -> list[str]:
     ]
 
 
-def test_the_layers_menu_offers_the_manage_downloads_row(
-    page: Page, live_server: LiveServer
-) -> None:
-    """The only way in — and it is an action row, not a toggle.
+def test_the_roundel_opens_the_sheet(page: Page, live_server: LiveServer) -> None:
+    """SNOW-634: the only way in now — no busy/offline guard on the click.
 
-    Every other row in this menu is a ``menuitemcheckbox`` or
-    ``menuitemradio``. This one performs a one-shot action and must never
-    carry ``aria-checked``, or a screen reader would announce a checked
-    state that means nothing.
+    Through SNOW-632 this roundel opened the "Download a custom area"
+    framing overlay directly, and a SEPARATE layers-menu row was the only
+    way to reach this sheet. That row is gone; this is it now.
     """
     _boot(page, live_server)
-    page.click(_MENU_TOGGLE)
 
-    row = page.locator(_MENU_ROW)
-    expect(row).to_be_visible()
-    expect(row).to_have_attribute("role", "menuitem")
-    assert row.get_attribute("aria-checked") is None
+    page.click(_ROUNDEL)
+
+    expect(page.locator(_SHEET)).to_be_visible()
+    expect(page.locator(_OVERLAY)).to_be_hidden()
+
+
+def test_the_roundel_still_opens_the_sheet_while_offline(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Offline is exactly when storage pressure is felt.
+
+    Through SNOW-632 the roundel carried an ``offline`` state that refused
+    the click outright. SNOW-634 dropped that guard — listing and deleting
+    what is already stored needs no connection, only STARTING a new
+    download does (covered by the add-trigger's own offline test below).
+    What the sheet then LISTS while offline is
+    ``test_the_sheet_opens_and_lists_correctly_while_offline``'s own
+    concern, not this test's — this one is only about the click reaching
+    the sheet at all.
+    """
+    _boot(page, live_server)
+
+    page.context.set_offline(True)
+    try:
+        page.click(_ROUNDEL)
+        expect(page.locator(_SHEET)).to_be_visible()
+    finally:
+        page.context.set_offline(False)
 
 
 def test_opening_the_sheet_lists_each_area_with_its_name_and_size(
@@ -269,12 +304,21 @@ def test_the_sheet_states_the_running_total_against_the_budget(
     )
 
 
-def test_opening_the_sheet_closes_the_layers_menu(
+def test_opening_the_sheet_closes_an_already_open_layers_menu(
     page: Page, live_server: LiveServer
 ) -> None:
-    """The menu would otherwise sit over the sheet it just opened."""
+    """The roundel is outside the menu now, but the menu can still be open behind it.
+
+    SNOW-634: the sheet no longer opens FROM the layers menu, but a user
+    who opened the menu first, then clicked the roundel without closing it,
+    would otherwise have it sit over the sheet that just opened —
+    ``map_downloads_manager.js``'s ``open()`` still defensively closes it.
+    """
     _boot(page, live_server)
     _seed(page, _regions(), _custom_area())
+    page.click(_MENU_TOGGLE)
+    expect(page.locator("#basemap-menu")).to_be_visible()
+
     _open_sheet(page)
 
     expect(page.locator("#basemap-menu")).to_be_hidden()
@@ -450,6 +494,50 @@ def test_the_sheet_opens_and_lists_correctly_while_offline(
         page.locator(f"{_SHEET} [data-downloads-delete]").first.click()
         expect(page.locator(f"{_SHEET} [data-row-label]")).to_have_count(1)
         assert _pinned_buckets(page) == [f"{_PINNED_PREFIX}region-CH-4115"]
+    finally:
+        page.context.set_offline(False)
+
+
+def test_the_add_trigger_hides_the_sheet_and_opens_framing(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-634: "Download a custom area" moved from the roundel's own click.
+
+    It now lives inside this sheet, above the list. Online, it hides this
+    sheet (mirroring ``open()``'s own reveal, not a dismiss) and hands off
+    to ``window.pwaCustomAreaDownload.openFraming()`` — the same overlay
+    the roundel used to open directly.
+    """
+    _boot(page, live_server)
+    _open_sheet(page)
+
+    page.click(f"{_SHEET} {_ADD_TRIGGER}")
+
+    expect(page.locator(_OVERLAY)).to_be_visible()
+    expect(page.locator(_SHEET)).to_be_hidden()
+
+
+def test_the_add_trigger_toasts_and_stays_put_while_offline(
+    page: Page, live_server: LiveServer
+) -> None:
+    """Listing/deleting needs no connection; STARTING a new download does.
+
+    Mirrors ``#map-frame-overlay``'s own Download button, which refuses the
+    same way once framing is already open.
+    """
+    _boot(page, live_server)
+    _open_sheet(page)
+
+    page.context.set_offline(True)
+    try:
+        page.click(f"{_SHEET} {_ADD_TRIGGER}")
+
+        expect(page.locator("#map-sheet-toast")).to_be_visible()
+        expect(page.locator("#map-sheet-toast [data-toast-body]")).to_have_text(
+            "You're offline — connect to download a new area."
+        )
+        expect(page.locator(_OVERLAY)).to_be_hidden()
+        expect(page.locator(_SHEET)).to_be_visible()
     finally:
         page.context.set_offline(False)
 
