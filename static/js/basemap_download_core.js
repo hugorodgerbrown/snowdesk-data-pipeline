@@ -134,9 +134,29 @@
  *     kept honest by ``tests/js/test_basemap_download_core.js``'s
  *     round-trip assertion against ``pinnedCacheName``).
  *   CUSTOM_AREA_ID
- *     The fixed area id for the one custom-area download
- *     (``'custom'``) — formalises the literal every custom-area call site
- *     used to synthesise for itself.
+ *     SNOW-586 formalised this as "the fixed area id for the one
+ *     custom-area download" (``'custom'``). SNOW-635 lets more than one
+ *     custom area exist, so this is no longer that — it is now one
+ *     RESERVED legacy id: the area a pre-SNOW-635 device already had
+ *     downloaded keeps it (and the ``snowdesk-basemap-pinned-custom``
+ *     bucket it names) when ``map.js``'s lazy migration wraps it into the
+ *     new ``basemap.customAreas`` array, because Cache Storage has no
+ *     rename. Every custom area downloaded since is minted a fresh id by
+ *     ``generateCustomAreaId`` below and is never ``CUSTOM_AREA_ID``
+ *     itself. Code asking "is this id a custom area" must call
+ *     ``isCustomAreaId``, never compare against this constant directly.
+ *   generateCustomAreaId()
+ *     SNOW-635: a fresh id for a NEW custom-area download
+ *     (``'custom-' + a random UUID``), minted once per confirmed run so
+ *     more than one custom area can be downloaded and kept at once — a
+ *     second download used to collide with the first on this very id.
+ *   isCustomAreaId(areaId)
+ *     SNOW-635: whether ``areaId`` names a custom-area download — the
+ *     legacy ``CUSTOM_AREA_ID`` or one of the ``generateCustomAreaId``
+ *     family. Every caller that used to compare against ``CUSTOM_AREA_ID``
+ *     directly to mean "is this a custom area" (``manageRows``,
+ *     ``evictBasemapAreas``, …) goes through this instead, so the
+ *     ``'custom-<uuid>'`` id format stays private to this module.
  *   areaIdForRegion(regionId)
  *     The area id for a region download (``'region-' + regionId``) —
  *     formalises the id a region-download area is keyed under; there was
@@ -240,10 +260,65 @@
   // three need the same change.
   var PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
-  // SNOW-586: the fixed area id for the one custom-area download.
-  // Formalises the literal every custom-area call site used to
-  // synthesise for itself before this ticket.
+  // SNOW-586: originally "the fixed area id for the one custom-area
+  // download". SNOW-635 lets more than one exist, so this is now a
+  // RESERVED legacy id only — the area a pre-SNOW-635 device already had
+  // downloaded keeps it (see this module's header for why: Cache Storage
+  // has no rename). Never mint this for a NEW area (generateCustomAreaId
+  // never returns it) and never compare an id against it directly to mean
+  // "is this a custom area" (use isCustomAreaId).
   var CUSTOM_AREA_ID = 'custom';
+
+  /**
+   * A fresh id for a new custom-area download.
+   *
+   * SNOW-635: every confirmed custom-area download mints its own id rather
+   * than sharing the single ``CUSTOM_AREA_ID`` — that single id is why a
+   * second download silently replaced the first before this ticket. The
+   * ``crypto.randomUUID`` fallback mirrors ``mutation_queue.js``'s
+   * ``_mintIdempotencyKey`` (and, ultimately, ``db.js``'s ``_randomHex``)
+   * for the rare runtime without it.
+   *
+   * @returns {string}
+   */
+  function generateCustomAreaId() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return 'custom-' + crypto.randomUUID();
+      }
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      var out = '';
+      for (var i = 0; i < bytes.length; i++) {
+        out += bytes[i].toString(16).padStart(2, '0');
+      }
+      return 'custom-' + out;
+    } catch (_e) {
+      // No crypto at all — a low-entropy but still-unique-enough value so
+      // the download keeps working rather than throwing.
+      return (
+        'custom-' + Date.now().toString(16) + '-' + Math.floor(Math.random() * 1e9).toString(16)
+      );
+    }
+  }
+
+  /**
+   * Whether ``areaId`` names a custom-area download.
+   *
+   * SNOW-635: true for the legacy ``CUSTOM_AREA_ID`` (a pre-SNOW-635
+   * device's one area, migrated in place — see ``CUSTOM_AREA_ID``'s own
+   * comment) OR any id ``generateCustomAreaId`` mints. Every caller that
+   * used to test ``areaId === CUSTOM_AREA_ID`` to mean "is this a custom
+   * area" goes through this instead, so the ``'custom-<uuid>'`` shape
+   * stays private to this module — mirrors how ``areaIdForRegion``'s
+   * ``'region-'`` prefix is never parsed out of an id elsewhere either.
+   *
+   * @param {string} areaId
+   * @returns {boolean}
+   */
+  function isCustomAreaId(areaId) {
+    return areaId === CUSTOM_AREA_ID || (typeof areaId === 'string' && areaId.indexOf('custom-') === 0);
+  }
 
   /**
    * The area id for a region download.
@@ -1091,6 +1166,8 @@
     tileGridPlan: tileGridPlan,
     blobFullyCached: blobFullyCached,
     areaIdForRegion: areaIdForRegion,
+    generateCustomAreaId: generateCustomAreaId,
+    isCustomAreaId: isCustomAreaId,
     pinnedCacheName: pinnedCacheName,
     planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,
