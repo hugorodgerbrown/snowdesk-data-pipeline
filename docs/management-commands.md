@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # Management commands
@@ -213,7 +213,7 @@ missing, and exits non-zero if any record fails to ingest. Re-running is
 idempotent — `upsert_bulletin` keys on `bulletinID`.
 
 Week selection and per-provider target-day resolution live in
-[`apps/bulletins/services/golden_week.py`](../bulletins/services/golden_week.py); see
+[`apps/bulletins/services/golden_week.py`](../apps/bulletins/services/golden_week.py); see
 [`decisions/golden-week-derived-not-committed.md`](decisions/golden-week-derived-not-committed.md)
 for why the corpus is derived at seed time rather than committed as a fixture.
 
@@ -241,6 +241,35 @@ reloading the fixture on every deploy would silently revert every edit.
 The fixture seeds fresh local/CI databases only, and bulk editorial changes
 are applied by hand with `import_resorts` (below). Rationale:
 [`resorts-are-editable-data`](decisions/resorts-are-editable-data.md).
+
+### `compute_basemap_download` — precompute per-region offline tile coverage
+
+Populates `basemap_download` on every `MicroRegion` via
+`apps.regions.services.basemap_tiles.build_region_blob`, at the download's
+single zoom band (`MICRO_BAND`), clipped to the region's real boundary plus one
+margin tile rather than its bounding-box rectangle (SNOW-583).
+
+Region boundaries are static reference data and the basemap tile grid never
+changes, so this is a pure function of geometry — there is no incremental or
+dirty-tracking state, and a full recompute on every run is safe and idempotent.
+`MicroRegion` has no stored `bbox`, so it is derived on the fly from `boundary`;
+a region with no `boundary` is skipped and **counted as a failure**, so the
+command exits non-zero rather than silently under-covering the map.
+
+`build.sh` runs it with `--commit` on every deploy (SNOW-521), after the
+`loaddata` step above. The `eaws_CH` fixture already ships `basemap_download`
+for Switzerland; this is what backfills the FR/AT/IT fixtures, which don't —
+see [`docs/offline-map.md`](offline-map.md).
+
+```bash
+# Preview what would change (default — no writes).
+uv run python manage.py compute_basemap_download
+
+# Persist the computed blobs (the deploy shape).
+uv run python manage.py compute_basemap_download --commit
+```
+
+Read-only by default; `--commit` is the only flag.
 
 ### `import_resorts` — reconcile Resort against the curated sheet
 

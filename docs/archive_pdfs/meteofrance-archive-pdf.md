@@ -14,9 +14,9 @@ How to derive the public PDF URL for a historical Météo-France BRA
 > [`donneespubliques.meteofrance.fr`](https://donneespubliques.meteofrance.fr/)
 > portal is being retired in favour of a new Confluence portal. Once that
 > migration is complete these URLs stop serving. The committed fixtures under
-> [`tests/scripts/meteofrance_archive/fixtures/`](../tests/scripts/meteofrance_archive/fixtures/)
+> [`tests/scripts/meteofrance_archive/fixtures/`](../../tests/scripts/meteofrance_archive/fixtures/)
 > are the only long-term guarantee. See
-> [`scripts/meteofrance-archive/README.md`](../scripts/meteofrance-archive/README.md)
+> [`scripts/meteofrance-archive/README.md`](../../scripts/meteofrance-archive/README.md)
 > for the wider backfill pipeline that depends on these URLs.
 
 ---
@@ -80,8 +80,8 @@ exist.
 
 A self-contained function that resolves the PDF URL for a given
 `(date, massif)` and downloads the bytes. Mirrors the conventions used
-by [`mf_bra_index_archive.py`](../scripts/meteofrance-archive/mf_bra_index_archive.py)
-and [`mf_bra_url_discover.py`](../scripts/meteofrance-archive/mf_bra_url_discover.py):
+by [`mf_bra_index_archive.py`](../../scripts/meteofrance-archive/mf_bra_index_archive.py)
+and [`mf_bra_url_discover.py`](../../scripts/meteofrance-archive/mf_bra_url_discover.py):
 shared `User-Agent`, 30 s timeout, polite 0.2 s delay between requests.
 
 ```python
@@ -167,10 +167,10 @@ if __name__ == "__main__":
 
 If you need to pull a whole season, **don't** loop this snippet — use the
 existing four-stage pipeline in
-[`scripts/meteofrance-archive/`](../scripts/meteofrance-archive/). It is
+[`scripts/meteofrance-archive/`](../../scripts/meteofrance-archive/). It is
 resumable, splits index fetching from PDF download, and hands the heavy
 work to `aria2c` for parallel transfer. See its
-[`README.md`](../scripts/meteofrance-archive/README.md) for the full
+[`README.md`](../../scripts/meteofrance-archive/README.md) for the full
 sequence.
 
 The snippet above is for **ad-hoc lookups** — debugging a single

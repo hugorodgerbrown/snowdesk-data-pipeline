@@ -58,7 +58,8 @@ which is what `_posthog_request_filter` implements.
 **Consequences.** PostHog receives no page-view events for requests to these
 paths. That is acceptable — these are anonymous data or infrastructure
 endpoints, not page views; analytics attribution of map interactions comes from
-the page-load event on `/map/`, not from individual data-layer requests. The
+the page-load event on the map page itself (`/`), not from individual
+data-layer requests. The
 exempt set must be kept in sync with the `@cache_control(public=True)` GET
 endpoints in `apps/public/api_urls.py` and the `Cache-Control: public` static routes
 in `config/urls.py`. The behaviour is regression-tested with

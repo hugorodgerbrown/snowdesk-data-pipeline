@@ -1,105 +1,93 @@
 ---
 name: nav_implementation_spec
-description: templates/includes/nav.html partial — back_url/back_label/calendar_region_id parameters and per-page usage
+description: templates/includes/nav.html partial — back_url/back_label/season_trigger parameters, auth and staff dropdowns, sync badge, full-width layout
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-08-05
 ---
 
 # Navigation implementation spec
 
-## Structure
+Single Django template partial at
+[`templates/includes/nav.html`](../templates/includes/nav.html), included on
+every public page via `public/base.html`.
 
-Single Django template partial at `templates/includes/nav.html`, included on
-every public page. The partial renders the Snowdesk wordmark (always linking
-home), an optional chevron-back link, and — on bulletin pages — an optional
-right-aligned calendar toggle button.
+**The partial's own `{% comment %}` docstring is the source of truth for its
+parameters and usage.** This page carries only what the docstring can't: the
+layout rationale, and the decisions about what deliberately isn't in the nav.
+Earlier revisions of this doc embedded a copy of the markup, which silently
+drifted from the template — don't reintroduce one.
 
-## Partial
+## What it renders
 
-Tailwind-styled version of the partial as implemented. Tokens come from
-`src/css/main.css` (`text-text-1`, `text-text-2`, `border-border`) so the
-bar picks up theme changes for free.
+Left to right:
 
-```html
-<nav class="border-b border-border">
-  <div class="mx-auto max-w-[640px] flex items-center gap-3 px-4 py-2.5">
-    {% if back_url %}
-      <a
-        href="{{ back_url }}"
-        class="flex items-center gap-1.5 text-text-2 text-sm hover:text-text-1"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m15 18-6-6 6-6" />
-        </svg>
-        {{ back_label|default:"Back" }}
-      </a>
-      <div class="h-4 w-px bg-border" aria-hidden="true"></div>
-    {% endif %}
-    <a
-      href="{% url 'public:home' %}"
-      class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80
-             {% if back_url %}text-[15px]{% else %}text-[18px]{% endif %}"
-    >
-      Snowdesk
-    </a>
-    {% if calendar_region_id and calendar_partial_url %}
-      <button
-        type="button"
-        class="ml-auto p-1.5 text-text-2 hover:text-text-1 rounded"
-        hx-get="{{ calendar_partial_url }}"
-        hx-target="#bulletin-calendar-host"
-        hx-swap="innerHTML"
-        hx-indicator="#calendar-spinner"
-        aria-label='{% trans "Show monthly calendar" %}'
-      >
-        {# calendar SVG glyph #}
-      </button>
-      <span id="calendar-spinner" class="htmx-indicator text-text-3 text-xs"
-            aria-live="polite">{% trans "Loading…" %}</span>
-    {% endif %}
-  </div>
-</nav>
-```
+1. Optional back-chevron link + a thin vertical divider (`back_url`).
+2. The Snowdesk wordmark, always linking home. It renders at `text-lg`
+   standalone and drops to `text-label` when sharing the row with a back link.
+3. Optional right-aligned **Season** button (`season_trigger`), on bulletin
+   pages only.
+4. The right-side cluster: sync badge, then subscriber auth, then staff admin.
+
+### Right-side cluster
+
+- **Sync badge** (SNOW-376) — a `[data-sync-badge]` pill, hidden at rest.
+  `static/js/mutation_queue.js` reveals it with the live non-`failed`
+  `queue:mutations` depth and swaps it to the `status-error` tokens once a
+  queued mutation has permanently failed. It carries only `hidden` at rest;
+  `inline-flex` is added by the script, so a count-zero badge never leaks a
+  stray pill (SNOW-445). See [`docs/mutation-queue.md`](mutation-queue.md).
+- **Authenticated subscriber** — an avatar button (first letter of the email)
+  opens a dropdown with up to three subscribed region links (from the
+  `nav_subscriptions` context processor in
+  `apps/accounts/context_processors.py`), "My account", and "Sign out".
+- **Not authenticated** — a single "Sign in" button to `/account/sign-in/`,
+  which itself carries the "Create an account" link.
+- **Staff overlay** — a cog button opens an admin dropdown (Component library,
+  Push demo, Edit map, Django admin). It is rendered *in addition to* the
+  subscriber avatar, so a staff user who is also a subscriber sees both.
+
+Both dropdowns are native `<details>` disclosures (SNOW-616), not scripted
+ones. Opening, closing, Enter/Space and focus all work with JavaScript
+disabled — which is what makes **Sign out** reachable without it, the one
+control a user must be able to reach on a shared or borrowed device. The
+inline script adds only click-outside and Escape-to-close; neither is
+load-bearing.
 
 ## Parameters
 
-| Parameter              | Type | Description                                                                              |
-|------------------------|------|------------------------------------------------------------------------------------------|
-| `back_url`             | str  | Optional. URL for the chevron-back link. Omit on pages where "back" has no obvious target (home, map). |
-| `back_label`           | str  | Optional. Label shown next to the chevron. Defaults to "Back" — prefer a destination-specific label ("Map", "Season"). |
-| `calendar_region_id`   | str  | Optional. SLF region identifier (e.g. `CH-4115`). When set with `calendar_partial_url`, a calendar glyph button is rendered right-aligned. Bulletin pages only. |
-| `calendar_partial_url` | str  | Optional. HTMX endpoint URL for the calendar fragment (required when `calendar_region_id` is set). Clicking the button issues an `hx-get` and swaps the response into `#bulletin-calendar-host`. |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `back_url` | str | Optional. URL for the chevron-back link. Omit where "back" has no obvious target (home/map). |
+| `back_label` | str | Optional. Defaults to a translated "Back" — prefer a destination-specific label ("Map") so the user knows where the arrow leads. |
+| `season_trigger` | dict | Optional. The `season_header()` context — `{"season_label": "<NN/NN>"}`, or `None` before the season starts. When truthy a labelled "SEASON" button renders right-aligned. Bulletin pages only. (The partial's docstring calls this a bool; it is read as `season_trigger.season_label`.) |
 
 ## Usage per page
 
 ```html
-{# Homepage — logo only, no back link #}
+{# Most pages (via public/base.html) — wordmark only #}
 {% include "includes/nav.html" %}
 
-{# Map — logo only, logo links home #}
-{% include "includes/nav.html" %}
-
-{# Bulletin page — back to map + calendar toggle #}
-{% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=region.region_id calendar_partial_url=calendar_partial_url %}
+{# Bulletin page — back to the map, plus the season trigger #}
+{% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=season_calendar %}
 ```
 
-## Behaviour
+## Layout rationale (SNOW-445)
 
-- Logo always links to `/` (homepage).
-- Logo renders at 18px when standalone, 15px when sharing the row with a back link.
-- Back link: chevron-left SVG icon + text label. Only rendered when `back_url` is passed.
-- A thin vertical divider separates the back link from the logo.
-- Calendar button: rendered right-aligned (`ml-auto`) when both
-  `calendar_region_id` and `calendar_partial_url` are passed. Bulletin
-  pages only — the map, homepage, season and history pages don't host a
-  calendar.
-- `<nav>` spans the full page width so its `border-bottom` forms an
-  edge-to-edge rule. The inner row is also full-width, constrained only by
-  its `px-4` gutter, so the wordmark pins to the left viewport gutter and the
-  auth cluster to the right (SNOW-445). This deliberately no longer matches
-  the 640px bulletin column: capping the row at `max-w-narrow` left the
-  wordmark floating at the left edge of a centred column on wide screens,
-  which read as a drift bug.
-- No hamburger menu, no secondary links.
+The `<nav>` spans the full page width so its `border-bottom` forms an
+edge-to-edge rule, **and so does the inner row** — constrained only by its
+`px-4` gutter. This deliberately no longer matches the 640px bulletin column:
+capping the row at `max-w-narrow` left the wordmark floating at the left edge
+of a centred column on wide screens, which read as a drift bug. The wordmark
+now pins to the left viewport gutter and the auth cluster to the right.
+
+## Deliberately absent
+
+- **No hamburger menu and no secondary link list.** Everything in the bar is
+  either wayfinding (wordmark, back) or account state.
+- **No Help link.** Help lives in the footer
+  (`apps/public/templates/public/_site_footer.html`) only — it was removed
+  from the header to declutter the bar (SNOW-445).
+- **No calendar button.** Earlier revisions took `calendar_region_id` /
+  `calendar_partial_url` and rendered an HTMX calendar toggle here. That was
+  replaced by the `season_trigger` button above; the calendar partial is now
+  reached from the season overlay. See [`docs/calendar.md`](calendar.md).

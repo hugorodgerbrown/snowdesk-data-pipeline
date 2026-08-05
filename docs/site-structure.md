@@ -1,101 +1,122 @@
 ---
 name: site-structure
-description: Snowdesk site architecture — home and bulletin-viewer routes, AI-generated summary fields (overallVerdict, activity ratings, weather)
+description: Public route map — home is the map page, bulletin/resort/favourites/observations URLs, HTMX partial prefixes, retired AI-summary design
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-05
 ---
 
-# Snowdesk Site Structure
+# Snowdesk site structure
 
-## Site Architecture
+The public URL surface, as routed. Route tables live in
+[`config/urls.py`](../config/urls.py) (project level) and
+[`apps/public/urls.py`](../apps/public/urls.py),
+[`apps/accounts/urls.py`](../apps/accounts/urls.py),
+[`apps/favourites/urls.py`](../apps/favourites/urls.py) and
+[`apps/observations/urls.py`](../apps/observations/urls.py) — this page is the
+map of them, not a second source of truth.
 
-Two routes, server-rendered, reading from a database of avalanche bulletins.
+## Route ordering constraint
 
-### Route: `/` (Home)
+`apps.public.urls` is included at the project root (`""`), and its last three
+patterns match `<region_id:region_id>/…`. That generic pattern would swallow
+any single-segment path registered after it, so **every literal public route
+must be registered before it**. The `/map/` redirect and the `partials/…`
+prefixes depend on this ordering — don't reorder
+(see [`docs/calendar.md`](calendar.md) and [`docs/map-and-api.md`](map-and-api.md)).
 
-- Queries the DB for the most recent bulletin issue date
-- Fetches all regions from that issue
-- Redirects to a random region's bulletin page — acts purely as an entry point
+## Full-page routes
 
-### Route: `/{zone}` (Bulletin Viewer)
+| Route | View | Notes |
+|-------|------|-------|
+| `/` | `public.views.home` | **The interactive map.** Not a marketing landing — the map is the homepage (SNOW-314), with a dismissable `#home-intro` overlay on first visit. CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` opens the resort-coordinate editor when the `edit_map` waffle flag is active (SNOW-74/86). |
+| `/map/` | redirect | Permanent 301 to `/`, query string forwarded, kept for old bookmarks (SNOW-344). |
+| `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
+| `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
+| `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
+| `/resorts/<resort_id>/<slug>/` | `resort_detail` | Resort page — region weather snapshot plus a point-local field-observations panel. |
+| `/favourites/<uuid>/` | `favourites.views.favourite_detail` | A saved map pin or resort. |
+| `/observations/` | `public.views.observations_list` | Community field reports. |
+| `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
+| `/help/` | `help_page` | Help, including the PWA/offline sections. |
+| `/examples/random/` | `examples_random` | A sample bulletin; `/random/` is a deprecated redirect to it. |
+| `/examples/category/<danger_level>/` | `examples_category` | A sample bulletin at a given danger level. |
+| `/s/<token>/` | `share_redirect` | Short share links. |
+| `/privacy/`, `/terms/`, `/terms-of-service/`, `/colophon/` | static pages | Legal and attribution. |
 
-- Dynamic route accepting a URL slug (e.g. `/valais`, `/haut-val-de-bagnes`)
-- Optional query param `?id=<bulletinId>` to view a specific historical bulletin
-- Fetches up to 60 recent bulletins (≈30 days) for the zone, newest first
-- Renders the selected (or latest) bulletin, with prev/next navigation links
+Account routes (`/account/…` — register, verify, setup, sign-in, manage,
+change-email, unsubscribe, WebAuthn, push) are documented in
+[`docs/accounts.md`](accounts.md).
 
-## Page Layout (Bulletin Viewer)
+## Staff-only routes
 
-Top-to-bottom, a single bulletin page renders:
+Mounted unconditionally and **staff-gated in the view** — these are not behind
+a `DEBUG` check, so they exist in production and must stay staff-only.
 
-1. **Masthead** — wordmark ("Snowdesk"), issued date/time, region name as large headline, tagline, prev/next navigation with timestamps
-2. **Verdict Banner** — colour-coded card (green/amber/red) showing danger level, overall verdict (GO / CAUTION / AVOID), and summary paragraph
-3. **Outlook** — left-bordered card with a 24h+ forecast paragraph
-4. **Activity Ratings** — 3-column grid (collapses to 1 on mobile): On Piste, Off Piste, Ski Touring — each with a rating label + notes
-5. **Key Hazards** — bulleted list of hazard descriptions
-6. **Weather** — two grids:
-   - **Temps**: 4-column (Summit, Mid, Resort, Freezing Level)
-   - **Details**: 2-column (Wind, Visibility, New Snow 24h, Base Depth)
-7. **Related Regions** — inline list of other regions covered by the same bulletin
-8. **Footer** — copyright + data source attribution
+| Route | Purpose |
+|-------|---------|
+| `/_components/` | Component library — the canonical design-system reference ([`docs/design-system.md`](design-system.md)). |
+| `/_sw-version/` | Deployed `CACHE_VERSION` / `APP_VERSION` vs the live service-worker version ([`docs/offline-map.md`](offline-map.md)). |
+| `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
 
-## Data Shape (per bulletin)
+## HTMX partial routes
 
-Each bulletin view expects this structure from the AI-generated summary:
+Fragment endpoints return an inner HTML snippet, not a full page, and are
+guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
+[`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
 
-| Field                                | Type             | Notes                                                                                       |
-| ------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------- |
-| `date`, `validFrom`, `validTo`, `nextUpdate` | string   | Temporal metadata                                                                           |
-| `overallVerdict`                     | string           | e.g. "GO", "CAUTION", "AVOID"                                                              |
-| `verdictColour`                      | enum             | `green` / `amber` / `red`                                                                   |
-| `dangerLevel`                        | string           | e.g. "Level 3"                                                                              |
-| `summary`                            | string           | Paragraph overview                                                                          |
-| `outlook`                            | string           | 24h+ forecast                                                                               |
-| `onPiste`, `offPiste`, `skiTouring`  | `{ rating, notes }` | Activity ratings                                                                         |
-| `keyHazards`                         | string[]         | Bulleted list                                                                               |
-| `bestBets`                           | string[]         | Present in data, not currently rendered                                                     |
-| `weather`                            | object           | `summitTemp`, `midTemp`, `resortTemp`, `freezingLevel`, `wind`, `visibility`, `newSnow24h`, `baseDepth` |
+- `/partials/weather/<region_id>/<date_str>/` — weather snippet
+  ([`docs/weather-header.md`](weather-header.md), [`docs/async-operations.md`](async-operations.md))
+- `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
+- `/partials/report/`, `/partials/report/form/` — field-report submission
+- `/favourites/partials/…` — create, rename, delete, toggle, card, list
+- `/partials/_components/<slug>/` — component-library panels
 
-## Navigation Model
+## Non-HTML routes
 
-```
-/ (home) → redirect → /{randomZone}
-/{zone} ← prev/next → /{zone}?id={bulletinId}
-```
+`/api/…` JSON endpoints ([`docs/map-and-api.md`](map-and-api.md)),
+`/api/mcp/` ([`docs/mcp-server.md`](mcp-server.md)),
+`/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
+`/favourites/favourites.geojson`, plus the PWA and crawler surface served from
+`config/urls.py`: `/sw.js`, `/sw-kill.js`, `/manifest.webmanifest`,
+`/robots.txt`, `/sitemap.xml` (`BulletinSitemap`), `/llms.txt`,
+`/llms-full.txt`, `/favicon.ico`, and the `/livez` + `/healthz` probes
+([`docs/deployment.md`](deployment.md)).
 
-No cross-zone navigation in the UI — users change zone by editing the URL.
+## Page metadata
 
-## Design System
+Every template extending `public/base.html` must override
+`{% block page_meta %}` exactly once, or opt out explicitly with `sharing=False`
+plus a reason. `tests/public/test_page_meta.py` walks every public URL above and
+fails a page in neither state — so a new route here needs a metadata decision
+before it can merge. See
+[`docs/decisions/page-metadata-is-explicit-or-opted-out.md`](decisions/page-metadata-is-explicit-or-opted-out.md).
 
-### Colour Palette (warm earth tones)
+---
 
-- Background: `#f5f0e8` (cream)
-- Text: `#1a1612` (ink), `#4a4035` (mid), `#8a7d6e` (light), `#c5b9a8` (faint/borders)
-- Accent: `#c4722a` (burnt orange)
-- Risk colours: `#2d4a3e` (green/safe), `#7a5c1e` (gold/warn), `#8b2e2e` (red/danger)
+## Historical: the AI-generated summary design (superseded)
 
-### Typography (3 fonts)
+The original design for this site rendered an **AI-generated summary** of each
+bulletin rather than the bulletin itself: a home route that redirected to a
+random region, a single bulletin-viewer route, and a summary payload shaped
+like this:
 
-- Display/headings: Playfair Display (serif)
-- Body: DM Sans (sans-serif)
-- Labels/timestamps: DM Mono (monospace, small-caps, uppercase)
+`overallVerdict` (GO / CAUTION / AVOID), `verdictColour`, `dangerLevel`,
+`summary`, `outlook`, activity ratings (`onPiste`, `offPiste`, `skiTouring`,
+each `{rating, notes}`), `keyHazards[]`, `bestBets[]`, and a structured
+`weather` object (`summitTemp`, `midTemp`, `resortTemp`, `freezingLevel`,
+`wind`, `visibility`, `newSnow24h`, `baseDepth`).
 
-### Layout
+**None of these fields exist in the codebase.** The pipeline stores normalised
+CAAML v6 and renders it through the versioned render model
+([`docs/render-model.md`](render-model.md)); where a summary field had a
+CAAML-derivable equivalent it was derived, and sections with no available data
+are omitted from the template context so the template hides them. The module
+docstring of [`apps/public/views.py`](../apps/public/views.py) still points here
+to explain that gap — that reference is the reason this section is retained.
 
-- Max content width: 780px, centred
-- Responsive padding via `clamp()`
-- Grids collapse from multi-column to single-column at 540px breakpoint
-- Full-viewport-height flex wrapper to pin footer to bottom
-
-### Background Decorations (fixed, low-opacity, non-interactive)
-
-- Topographic grid: repeating 40px lines in alpine green
-- Mountain silhouette: SVG path pinned to bottom of viewport
-
-### Styling Notes
-
-- No external images or icon fonts — all visuals are CSS + inline SVG
-- Cards: 16px padding, 1px border, 2px border-radius, semi-transparent cream background
-- Verdict banner backgrounds use the risk colour at ~6% opacity with a left border
-- Labels use monospace font in small-caps / uppercase at 9–11px
-- Region headline uses responsive sizing: `clamp(26px, 5vw, 40px)`
+The prototype's visual identity (warm earth tones, Playfair Display headings,
+a 780px centred column) is likewise retired. The site is built with Tailwind v4
+design tokens; the canonical reference is the component library at
+`/_components/` and [`docs/design-system.md`](design-system.md). DM Sans and
+DM Mono survive from that palette and are still the body and label faces
+(`src/css/main.css`).

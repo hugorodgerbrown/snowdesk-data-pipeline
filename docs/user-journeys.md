@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-08-05
 ---
 
 # User personas and core journeys
@@ -94,14 +94,17 @@ visitor being able to look up today's bulletin for a region in under
 ten seconds.
 
 **Entry points:**
-- Homepage `/` for first-time visitors.
-- Map page `/map/` for returning visitors who land directly.
+- Homepage `/` — the interactive map itself, for both first-time visitors
+  (who meet the dismissable `#home-intro` overlay) and returning visitors
+  (who land straight on the map).
 - Deep link to a specific region (`/<region_id>/<slug>/`) from search
   engines, shared messages, or the PWA shortcut.
 
 **URL surface:**
-- `/` — marketing landing.
-- `/map/` — interactive region-choropleth map.
+- `/` — interactive region-choropleth map, with a dismissable landing
+  overlay on first visit (SNOW-314). There is no separate marketing page.
+- `/map/` — permanent 301 redirect to `/`, kept for old bookmarks
+  (SNOW-344).
 - `/<region_id>/` and `/<region_id>/<slug>/` — today's bulletin in
   place, never redirecting away.
 - `/api/…` — JSON endpoints consumed by the map. Not a user-visible

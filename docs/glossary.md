@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-05
 ---
 
 # Glossary — domain terms to code symbols

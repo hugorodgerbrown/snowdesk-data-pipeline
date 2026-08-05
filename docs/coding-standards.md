@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-05
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -21,7 +21,8 @@ is probably wrong — fix it rather than relaxing the rule.
 ## 1. Repository layout
 
 ```
-config/          Django project: split settings (base/development/production), urls, wsgi
+config/          Django project: split settings (base + development/staging/
+                 production/perf overlays), urls, wsgi
 apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  here without changing any app label)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -41,7 +42,18 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  weather_display / geoip), the dev-only SLF / Open-Meteo
                  mirror endpoints, and the bulletin and weather management
                  commands
-  accounts/      Signed-token email subscription flow — Subscriber, Subscription
+  accounts/      Signed-token email subscription flow — Account, Subscription,
+                 PasskeyCredential, PushSubscription
+  favourites/    Saved map pins and resorts — Favourite, its relevance
+                 scoring, and the /favourites/ HTMX partials
+  observations/  Community field reports — FieldObservation and the
+                 /partials/report/ submission endpoints
+  analytics/     PostHog wiring and the /api/telemetry receiver. No models.
+                 (signals.py here is *telemetry* signals, not
+                 django.db.models.signals — it does not contradict
+                 docs/decisions/no-signals-for-side-effects.md)
+  mcp_server/    JSON-RPC MCP tools at POST /api/mcp/. No models — reads the
+                 bulletins/regions tables
   public/        Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
