@@ -354,7 +354,7 @@ An earlier design iteration rendered variable days as two side-by-side period co
 1. It doesn't scale past two periods. Real bulletins occasionally have three (e.g. dry / wet morning / wet afternoon).
 2. It doesn't match the SLF mental model the user is graduating toward. Stacked rating blocks do.
 
-The pattern is preserved here in case a future surface (e.g. a comparison view between two adjacent regions) genuinely benefits from horizontal side-by-side layout. The CSS is in `bulletin_cards.html` under the `.split-wrapper` and `.period-col` classes. Don't reuse it for the daily bulletin page.
+Only the *rationale* is preserved here, so the approach isn't re-proposed without the two objections above being answered. The implementation is gone: the `bulletin_cards.html` template and its `.split-wrapper` / `.period-col` classes no longer exist anywhere in the tree. A future surface that genuinely wants a horizontal side-by-side layout (e.g. a comparison view between two adjacent regions) starts from the design-system partials, not from a revival of that markup.
 
 ## Archived: the previous 17-task list
 

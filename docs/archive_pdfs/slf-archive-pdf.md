@@ -11,7 +11,7 @@ How to derive the URL of an archived SLF bulletin PDF from a date and a
 language, plus the JSON listing endpoint that drives the public archive
 page. Probed on **2026-06-09**.
 
-Companion to [`slf-api-history.md`](slf-api-history.md), which covers the
+Companion to [`slf-api-history.md`](../slf-api-history.md), which covers the
 machine-readable CAAML feed. This doc covers the human-readable PDF
 artefact instead.
 

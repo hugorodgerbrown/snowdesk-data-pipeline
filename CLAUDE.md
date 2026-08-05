@@ -17,7 +17,8 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ## Architecture
 
 ```
-config/          Django project settings (split base/development/production)
+config/          Django project settings (base + development/staging/
+                 production/perf overlays — see "Conventions → Code")
 apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
@@ -37,7 +38,17 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  owns the ``Subscriber`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself) and ``PasskeyCredential`` (FK
                  to auth.User — any authenticated user can register passkeys)
-  public/        Public-facing bulletin site
+  favourites/    Saved map pins and resorts — the ``Favourite`` model, its
+                 relevance scoring, and the HTMX partials under /favourites/
+  observations/  Community field reports — the ``FieldObservation`` model and
+                 the /partials/report/ submission endpoints
+  analytics/     PostHog wiring and the /api/telemetry receiver (see
+                 docs/telemetry-pipeline.md). NOTE: signals.py here means
+                 *telemetry* signals, not django.db.models.signals — it does
+                 not contradict the no-signals-for-side-effects rule below
+  mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
+                 no models of its own — it reads the bulletins/regions tables
+  public/        Public-facing bulletin site (route map: docs/site-structure.md)
     api.py       Plain JsonResponse endpoints consumed by the map page
     api_urls.py  URL routing for /api/ (namespace: api:)
     debug_views.py Staff-only design-debug pages (mounted unconditionally, staff-gated — not a DEBUG gate)
@@ -119,7 +130,10 @@ matching purpose-scoped group in `pyproject.toml`'s `[dependency-groups]`
   over deep class hierarchies.
 - **Simple over complex** — no abstractions until they are needed by at least two
   callers.
-- Settings are split: `config/settings/base.py`, `development.py`, `production.py`.
+- Settings are split: `config/settings/base.py` plus four overlays —
+  `development.py`, `production.py`, `staging.py` (inherits production
+  hardening, but runs one web dyno with no task worker) and `perf.py`
+  (Lighthouse/query-count runs).
   Set `DJANGO_SETTINGS_MODULE` in the environment.
 - Use `python-decouple` for secrets; never hard-code credentials.
 - Logging is configured in `base.py` under `LOGGING`. Use `logging.getLogger(__name__)`
@@ -432,10 +446,12 @@ drift against this list on every PR.
    `email = email.lower()` at every entry point.
 3. **Subscription emails are always async** — never block the request cycle
    with a synchronous SMTP send. Use `django_tasks.task` + `.enqueue()` to
-   dispatch email work off the request. The `ImmediateBackend` (dev/test) runs
-   tasks inline; `DatabaseBackend` (production) persists and dispatches via
-   `db_worker`. Direct `send_mail()` calls outside a `@task` worker are
-   prohibited on the hot request path.
+   dispatch email work off the request. The `ImmediateBackend` (dev/test **and
+   staging** — staging has no `db_worker` dyno, so a `DatabaseBackend` enqueue
+   there would persist a task row and never send) runs tasks inline;
+   `DatabaseBackend` (production) persists and dispatches via `db_worker`.
+   Direct `send_mail()` calls outside a `@task` worker are prohibited on the
+   hot request path.
 4. **HTMX partial views guarded by `require_htmx`** — every fragment endpoint
    must reject plain HTTP requests with a 400.
 5. **No secrets in source** — all credentials via `python-decouple`; `.env`

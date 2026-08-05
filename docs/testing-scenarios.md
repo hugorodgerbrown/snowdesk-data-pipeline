@@ -512,7 +512,7 @@ and clicking Reload lands cleanly on the new shell in a single reload.
 
 **Preconditions**: Complete Scenario P1 first so an SW is already
 controlling the page. Touch any shell source (e.g. add a comment to
-[static/js/sw.js](static/js/sw.js)) — the derived `CACHE_VERSION` changes with it (SNOW-590)
+[static/js/sw.js](../static/js/sw.js)) — the derived `CACHE_VERSION` changes with it (SNOW-590)
 (e.g. `'snowdesk-shell-v8'` → `'snowdesk-shell-v99-test'`) — this is
 the change that causes the browser to detect a new SW. Revert after
 the scenario.
