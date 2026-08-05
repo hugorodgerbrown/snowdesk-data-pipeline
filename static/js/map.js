@@ -327,7 +327,7 @@ async function pinnedBasemapCacheURLs() {
  * Every area id with a pinned bucket present in Cache Storage (SNOW-612).
  *
  * The bucket is the ground truth for what is actually stored; the
- * `basemap.regions` / `basemap.customArea` records are only what COMPLETED
+ * `basemap.regions` / `basemap.customAreas` records are only what COMPLETED
  * runs left behind. A download that failed partway leaves the former
  * without the latter, which is exactly the stranded quota this reader
  * exists to surface — see `basemapDownloadedAreas` below.
@@ -445,16 +445,170 @@ async function basemapDownloadBudgetBytes() {
   return mb * 1024 * 1024;
 }
 
+// SNOW-635: the array-shaped record replacing the old single-row
+// `basemap.customArea` — see `_readCustomAreas`'s docstring for the lazy
+// migration between the two. Top-level constants because `basemapDownloadedAreas`,
+// `evictBasemapAreas` and `mapCustomDownloadControlInit`'s IIFE (all of
+// which read or write this record) need to agree on the same key.
+const CUSTOM_AREAS_KEY = 'basemap.customAreas';
+const LEGACY_CUSTOM_AREA_KEY = 'basemap.customArea';
+
+/**
+ * SNOW-635: read `basemap.customAreas`, migrating the legacy single-row
+ * `basemap.customArea` into it on first read if the new key is absent.
+ *
+ * Lazy rather than a one-off migration command, because this runs inside
+ * `basemapDownloadedAreas()` — the boot-path probe the roundel calls on
+ * every page load (post-SNOW-634) — so every existing device reaches it
+ * without a separate step. Best-effort throughout, and this MUST degrade
+ * to "read the legacy row as a one-entry list" rather than throw: a device
+ * that cannot write here would otherwise take both the roundel and the
+ * manage sheet down with it, since both sit on this same boot-path read.
+ *
+ * The legacy area keeps id `CUSTOM_AREA_ID` ('custom') and ordinal `1` —
+ * its existing `snowdesk-basemap-pinned-custom` Cache Storage bucket has
+ * no rename, so the id has to survive unchanged for that bucket to keep
+ * resolving (docs/decisions/per-area-pinned-basemap-caches.md).
+ *
+ * @returns {Promise<Array<Object>>} `[]` when nothing is stored and there
+ *   is no legacy row to migrate.
+ */
+async function _readCustomAreas() {
+  if (!window.pwaDb) return [];
+  let row;
+  try {
+    row = await window.pwaDb.get('meta:app', CUSTOM_AREAS_KEY);
+  } catch (_e) {
+    row = undefined;
+  }
+  // An empty array is a legitimate "already migrated, nothing left" —
+  // return it as-is rather than falling through to the legacy read, or a
+  // device that deleted its last custom area would have it re-created
+  // from a legacy row that (by then) no longer exists anyway.
+  if (Array.isArray(row && row.value)) return row.value;
+
+  let legacyRow;
+  try {
+    legacyRow = await window.pwaDb.get('meta:app', LEGACY_CUSTOM_AREA_KEY);
+  } catch (_e) {
+    legacyRow = undefined;
+  }
+  const legacy = legacyRow && legacyRow.value;
+  if (!legacy || !Array.isArray(legacy.bbox)) return [];
+
+  const core = self.pwaBasemapDownloadCore;
+  const migrated = [{ ...legacy, id: core ? core.CUSTOM_AREA_ID : 'custom', ordinal: 1 }];
+  try {
+    await window.pwaDb.put('meta:app', { key: CUSTOM_AREAS_KEY, value: migrated });
+    await window.pwaDb.delete('meta:app', LEGACY_CUSTOM_AREA_KEY);
+  } catch (_e) {
+    // Best-effort — see docstring above. The legacy row is untouched, so
+    // the next read tries the migration again; this call still returns the
+    // migrated shape for ITS OWN caller even though the write didn't land.
+  }
+  return migrated;
+}
+
+/**
+ * SNOW-635: persist `areas` to `basemap.customAreas`. Best-effort — see
+ * `_readCustomAreas`'s docstring for why this must never throw.
+ *
+ * Always a `put`, even for an empty array — never a `delete` — so removing
+ * the last custom area leaves the key present with value `[]`, not absent.
+ * An absent key is exactly what `_readCustomAreas` treats as "try the
+ * legacy migration", and that legacy row is long gone by the time a device
+ * has ever HAD a custom area to delete.
+ *
+ * @param {Array<Object>} areas
+ * @returns {Promise<boolean>} Whether the write landed.
+ */
+async function _writeCustomAreas(areas) {
+  if (!window.pwaDb) return false;
+  try {
+    await window.pwaDb.put('meta:app', { key: CUSTOM_AREAS_KEY, value: areas });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
+ * SNOW-635: the ordinal for a NEW custom area — one above the highest
+ * currently stored (`0` when there are none, so the first area is `1`).
+ *
+ * No persisted counter to keep in sync: deriving it fresh from what is
+ * actually on disk means two areas can never collide on it. Gappy after a
+ * delete (deleting 1 of {1, 2} leaves the next add at 3, not 2) is the
+ * correct trade — reusing a freed number would put two different areas
+ * under the same default name in the user's memory across sessions.
+ *
+ * @returns {Promise<number>}
+ */
+async function _nextCustomAreaOrdinal() {
+  const areas = await _readCustomAreas();
+  let max = 0;
+  for (const entry of areas) {
+    const n = Number(entry && entry.ordinal);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+/**
+ * SNOW-635: append `area` to `basemap.customAreas`, replacing any existing
+ * entry with the same id — mirrors `_recordRegionDownload`'s
+ * filter-then-push. A collision is not expected (every add mints a fresh
+ * id via `generateCustomAreaId`), but this keeps the write idempotent
+ * rather than assuming it.
+ *
+ * @param {{id: string, ordinal: number, name?: string, bbox: number[],
+ *   band: number[], centre_tile: Object, template: string, bytes: number,
+ *   savedAt: string}} area
+ * @returns {Promise<void>}
+ */
+async function _appendCustomArea(area) {
+  const existing = await _readCustomAreas();
+  const next = existing.filter((entry) => !entry || entry.id !== area.id);
+  next.push(area);
+  await _writeCustomAreas(next);
+}
+
+/**
+ * SNOW-635: rename a custom area, writing `name` onto its
+ * `basemap.customAreas` entry.
+ *
+ * Regions are never renameable (see `basemap_manage_core.js`'s
+ * `manageRows` — a region's name is its real name), so this only ever
+ * touches a custom-area entry, identified by the SAME id its pinned
+ * bucket uses. Best-effort: the manage sheet's own re-render, not a
+ * return value here, is what tells the user whether it landed.
+ *
+ * @param {string} areaId
+ * @param {string} name
+ * @returns {Promise<boolean>} Whether the write landed.
+ */
+async function renameCustomArea(areaId, name) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !core.isCustomAreaId(areaId)) return false;
+  const existing = await _readCustomAreas();
+  if (!existing.some((entry) => entry && entry.id === areaId)) return false;
+  const next = existing.map((entry) =>
+    entry && entry.id === areaId ? { ...entry, name: name } : entry,
+  );
+  return _writeCustomAreas(next);
+}
+
 // SNOW-586: every area currently recorded as downloaded, normalised into
 // planEviction's `[{id, name, bytes, savedAt}]` shape — the union of
 // `basemap.regions` (mapDownloadControlInit's record, one entry per
-// downloaded region) and `basemap.customArea` (mapCustomDownloadControlInit's
-// record, at most one). Best-effort: a failed read contributes nothing
+// downloaded region) and (SNOW-635) `basemap.customAreas`
+// (mapCustomDownloadControlInit's record, now an array — see
+// `_readCustomAreas`). Best-effort: a failed read contributes nothing
 // rather than throwing — eviction planning degrades to "nothing recorded,
 // so nothing to evict", never to blocking a download outright over a
 // transient IndexedDB error.
 //
-// @returns {Promise<Array<{id: string, name: string, bytes: number, savedAt: string}>>}
+// @returns {Promise<Array<{id: string, name?: string, ordinal?: number, bytes: number, savedAt: string}>>}
 async function basemapDownloadedAreas() {
   const core = self.pwaBasemapDownloadCore;
   const areas = [];
@@ -475,14 +629,22 @@ async function basemapDownloadedAreas() {
     // Best-effort — see docstring.
   }
   try {
-    const row = await window.pwaDb.get('meta:app', 'basemap.customArea');
-    const area = row && row.value;
-    if (area && Array.isArray(area.bbox)) {
+    const customAreas = await _readCustomAreas();
+    for (const entry of customAreas) {
+      if (!entry || !entry.id || !Array.isArray(entry.bbox)) continue;
       areas.push({
-        id: core.CUSTOM_AREA_ID,
-        name: area.name || core.CUSTOM_AREA_ID,
-        bytes: Number(area.bytes) || 0,
-        savedAt: area.savedAt,
+        id: entry.id,
+        // SNOW-635: `name` is set ONLY by a rename (map_downloads_manager.js's
+        // Rename control) — left undefined here when unrenamed, rather than
+        // defaulted, so a downstream reader (manageRows) can tell "never
+        // renamed" apart from "renamed to something". The default display
+        // name ("Custom area N") is derived from `ordinal` at render time,
+        // which is what keeps it translatable rather than frozen in
+        // whatever language was active at download time.
+        name: entry.name,
+        ordinal: entry.ordinal,
+        bytes: Number(entry.bytes) || 0,
+        savedAt: entry.savedAt,
       });
     }
   } catch (_e) {
@@ -567,8 +729,18 @@ async function evictBasemapAreas(areaIds) {
       // SNOW-612: the bucket is gone, so any measurement of it is too.
       forgetPinnedBucketMeasurement(areaId);
       try {
-        if (areaId === core.CUSTOM_AREA_ID) {
-          await window.pwaDb?.delete('meta:app', 'basemap.customArea');
+        // SNOW-635: `core.isCustomAreaId` — a custom area's own bucket-id
+        // FAMILY, not the single legacy `CUSTOM_AREA_ID` — see that
+        // predicate's own comment.
+        if (core.isCustomAreaId(areaId)) {
+          const existing = await _readCustomAreas();
+          const next = existing.filter((entry) => !entry || entry.id !== areaId);
+          if (next.length !== existing.length) {
+            // Always a `put`, even when `next` is `[]` — see
+            // `_writeCustomAreas`'s docstring for why deleting the LAST
+            // custom area must not delete the key itself.
+            await _writeCustomAreas(next);
+          }
         } else {
           const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
           const existing = Array.isArray(row && row.value) ? row.value : [];
@@ -605,11 +777,11 @@ async function evictBasemapAreas(areaIds) {
 //
 // Both are module scope, so the sheet cannot reach them directly, and
 // both are exactly what it needs — which is why it delegates rather than
-// reading `basemap.regions` / `basemap.customArea` for itself. Downloads
-// live in TWO records (one array of regions, one optional custom area),
-// each keyed differently from the Cache Storage bucket it owns, and
-// `evictBasemapAreas` already knows how to take an area id back to the
-// right half of the right record. A second reader would have to
+// reading `basemap.regions` / `basemap.customAreas` for itself. Downloads
+// live in TWO records (an array of regions, and — SNOW-635 — an array of
+// custom areas), each keyed differently from the Cache Storage bucket it
+// owns, and `evictBasemapAreas` already knows how to take an area id back
+// to the right half of the right record. A second reader would have to
 // re-derive all of that and would be free to drift from the eviction
 // path, which is the same state seen from the other side: the budget
 // this sheet edits is spent by the planner these functions feed.
@@ -635,6 +807,16 @@ window.pwaBasemapDownloads = Object.freeze({
    *   re-reading `areas()` rather than trusting this to report.
    */
   evict: (areaIds) => evictBasemapAreas(areaIds),
+
+  /**
+   * SNOW-635: rename a custom area. A no-op (resolving `false`) for a
+   * region id — regions are never renameable.
+   *
+   * @param {string} areaId
+   * @param {string} name
+   * @returns {Promise<boolean>} Whether the write landed.
+   */
+  rename: (areaId, name) => renameCustomArea(areaId, name),
 });
 
 /**
@@ -647,7 +829,7 @@ window.pwaBasemapDownloads = Object.freeze({
  * silence this ticket exists to remove; refusing the run is the safe
  * direction, not evicting anyway.
  *
- * @param {Array<{id: string, name: string}>} evictAreas
+ * @param {Array<{id: string, name?: string}>} evictAreas
  * @returns {Promise<boolean>} `true` = proceed (the caller still has to
  *   call `evictBasemapAreas` itself — this only asks), `false` = cancel.
  */
@@ -660,7 +842,15 @@ function confirmBasemapEviction(evictAreas) {
       resolve(false);
       return;
     }
-    if (body) body.textContent = (evictAreas || []).map((a) => a.name).join(', ');
+    // SNOW-635: `name` is unset on a custom area that has never been
+    // renamed (see `basemapDownloadedAreas`'s own comment) — falling back
+    // to `id` here keeps this banner out of the numbered-default-name
+    // business (that lives in map_downloads_manager.js, where the
+    // translation catalogue actually is) while still never rendering the
+    // literal string "undefined".
+    if (body) {
+      body.textContent = (evictAreas || []).map((a) => a.name || a.id).join(', ');
+    }
     let settled = false;
     const onConfirm = () => {
       if (settled) return;
@@ -6592,7 +6782,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // never that the tiles are still there. The probe still checks real
   // cache contents before claiming `done`, so an evicted download reads
   // `idle` again. That is exactly the split the custom area has always
-  // had, where 'basemap.customArea' records WHERE the frame was and the
+  // had, where 'basemap.customAreas' records WHERE each frame was and the
   // done state is probed; the region download simply never had the first
   // half.
   const DOWNLOADED_REGIONS_KEY = 'basemap.regions';
@@ -7166,48 +7356,47 @@ const repaintRegionsForDate = (dateKey, cache) => {
 //   while the estimate holds still. Panning is what re-aims a locked
 //   selection, moving it back under the frame at the same size.
 //
-// Persistence — exactly one custom area exists at a time. A confirmed
-// download is saved to IndexedDB's meta:app store under
-// 'basemap.customArea', {bbox, band, centre_tile, name, template, bytes,
-// savedAt} (SNOW-586 added name/bytes — see basemapDownloadedAreas's own
-// comment; SNOW-632 added template — see handleConfirm's beforeWarm)
-// — the same {key, value} row shape as basemap.origins (map.js:~450) and
-// mutations.principal. The roundel's "done" state (SNOW-634) no longer
-// probes THIS area's own bbox against the pinned cache's WHOLE tile set —
-// that was `_probeDone`, since deleted. Clicking the roundel now opens the
-// downloads sheet (public/partials/_map_downloads_sheet.html), which lists
-// EVERY downloaded area, not just this one, so "done" now means "the
-// device holds at least one downloaded area" (basemapDownloadedAreas(),
-// filtered to non-orphaned — see _renderControl below), region or custom.
-// The meta:app row still records WHERE the frame was, for openFraming's
-// own "reopen at the saved area" (MAP.fitBounds) — now reached via the
-// sheet's add-trigger ([data-downloads-add], map_downloads_manager.js)
-// rather than the roundel's own click.
+// Persistence — SNOW-635: any number of custom areas can exist at once.
+// A confirmed download is appended to IndexedDB's meta:app store under
+// 'basemap.customAreas' (an ARRAY — see `_appendCustomArea`/
+// `_readCustomAreas`, and their docstrings for the lazy migration from the
+// old single-row 'basemap.customArea'), each entry {id, ordinal, name?,
+// bbox, band, centre_tile, template, bytes, savedAt}. `id` is minted fresh
+// per download (`generateCustomAreaId`) rather than the single fixed
+// `CUSTOM_AREA_ID` every earlier version shared — that shared id is why a
+// second download used to silently replace the first. `name` is written
+// ONLY by a rename (map_downloads_manager.js's Rename control); an
+// unrenamed area's default label ("Custom area N") is derived from
+// `ordinal` at render time rather than stored, which is what keeps it
+// translatable instead of frozen in whatever language was active at
+// download time.
 //
-// SNOW-586: two DISTINCT evictions can happen on confirm, for two
-// different reasons. (1) Confirming a NEW bbox (one that differs from the
-// saved one) OR a DIFFERENT basemap template (SNOW-632 — see the
-// `sameTemplate` note below) deletes the OLD area's own bucket outright
-// before warming the new set — a plain `caches.delete()`, since the custom
-// area's bucket is keyed on its area id ('custom') alone, not its
-// geometry or its basemap; this needs no confirmation, because it is
-// replacing the user's own prior choice with the new one they just made.
-// (2) Making room under the standing byte budget may require evicting
-// OTHER areas entirely — planned by `planBasemapDownloadBudget`/
-// `planEviction` and, unlike (1), always confirmed first
-// (`confirmBasemapEviction`) naming what would be removed. Before SNOW-586
-// there was only (1), driven by re-deriving the stale tile URLs against
-// the CURRENT template and deleting them one-by-one — which silently
-// deleted nothing after a basemap switch, since the tiles it computed no
-// longer matched what was actually on disk; a bucket delete has no such
-// dependency.
+// The roundel's "done" state (SNOW-634) does not probe any one area's own
+// bbox against the pinned cache's WHOLE tile set — that was `_probeDone`,
+// deleted before this ticket. Clicking the roundel opens the downloads
+// sheet (public/partials/_map_downloads_sheet.html), which lists EVERY
+// downloaded area, so "done" means "the device holds at least one
+// downloaded area" (basemapDownloadedAreas(), filtered to non-orphaned —
+// see _renderControl below), region or custom, of however many there are.
 //
-// SNOW-632: (1) used to fire on a bbox change alone. A basemap switch AT
-// THE SAME bbox fell through it — the old basemap's tiles stayed in the
-// bucket, the new run's tiles landed alongside them, and the bucket's
-// real size stopped matching what got recorded (see the bytes bullet in
-// docs/decisions/per-area-pinned-basemap-caches.md). (1) now fires on
-// EITHER change, so the bucket always holds exactly one basemap's tiles.
+// openFraming no longer re-centres the map on a saved area on open — with
+// several custom areas possibly on disk, picking one to jump to would be
+// arbitrary, so framing always starts from wherever the map currently
+// sits. The "Download a custom area" trigger lives in the sheet
+// ([data-downloads-add], map_downloads_manager.js), not the roundel's own
+// click.
+//
+// SNOW-586 gave a confirmed run TWO distinct evictions it might trigger:
+// (1) replacing the single saved area's own bucket outright when the frame
+// moved or the basemap changed, and (2) making room under the standing
+// byte budget by evicting OTHER areas entirely (`planBasemapDownloadBudget`
+// / `planEviction`, always confirmed first via `confirmBasemapEviction`).
+// SNOW-635 removes (1): a fresh id never collides with an existing bucket,
+// so a confirmed run has nothing of the user's own left to replace —
+// moving the frame or switching basemap before re-confirming now downloads
+// a SECOND, independent area rather than replacing the first. Only (2)
+// remains, exactly as mapDownloadControlInit's own region `beforeWarm`
+// already works for a genuine same-region re-download.
 //
 // Offline-integrity: SNOW-634 relaxed the first half of this — the
 // roundel now opens the downloads sheet unconditionally, which is exactly
@@ -7269,11 +7458,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // reset.
   const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
 
-  const CUSTOM_AREA_KEY = 'basemap.customArea';
-
-  // The persisted saved area, or null: {bbox, band, centre_tile, name,
-  // template, bytes, savedAt}.
-  let savedArea = null;
+  // SNOW-635: the id `handleConfirm` mints for the run currently in
+  // flight, or null between runs — see `_refreshBudgetBanner`'s own
+  // comment for why this replaces a `CUSTOM_AREA_ID` lookup there.
+  let currentRunAreaId = null;
 
   // SNOW-634: is-a-run-in-flight, replacing the six `btn.dataset.
   // downloadState === 'busy'` reads this file used to have. The roundel's
@@ -7499,43 +7687,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // SNOW-613: overlapping renders coalesce onto one trailing pass — see
   // `coalesceRenders`. Every trigger below calls this, not `_renderControl`.
   const renderControl = coalesceRenders(_renderControl);
-
-  /**
-   * Best-effort read of the persisted saved area from meta:app. Never
-   * throws — a read failure just leaves savedArea null, same as a first
-   * visit with nothing saved yet.
-   *
-   * @returns {Promise<void>}
-   */
-  async function _loadSavedArea() {
-    if (!window.pwaDb || typeof window.pwaDb.get !== 'function') return;
-    try {
-      const row = await window.pwaDb.get('meta:app', CUSTOM_AREA_KEY);
-      if (row && row.value && Array.isArray(row.value.bbox)) {
-        savedArea = row.value;
-      }
-    } catch (_err) {
-      // Best-effort — the control simply starts as if nothing were saved.
-    }
-  }
-
-  /**
-   * Best-effort persistence of `area` to meta:app, replacing whatever was
-   * there before — exactly one custom area exists at a time.
-   *
-   * @param {{bbox: number[], band: number[], centre_tile: Object, name:
-   *   string, template: string, bytes: number, savedAt: string}} area
-   * @returns {void}
-   */
-  function _persistSavedArea(area) {
-    if (!window.pwaDb || typeof window.pwaDb.put !== 'function') return;
-    try {
-      window.pwaDb.put('meta:app', { key: CUSTOM_AREA_KEY, value: area }).catch(() => {});
-    } catch (_err) {
-      // Best-effort — the download itself already succeeded; only the
-      // "reopen at the saved area" convenience is lost this session.
-    }
-  }
 
   /**
    * Pixel padding (top/right/bottom/left) that fits MAP.fitBounds() to
@@ -8097,7 +8248,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
    * (paintRun/_renderBudgetBanner), which repaints the SAME cached numbers
    * plus the run's own live bytes. Each read here is two `meta:app` round
    * trips (basemapDownloadedAreas covers `basemap.regions` AND
-   * `basemap.customArea`) plus a third for the budget row; a live run
+   * `basemap.customAreas`) plus a third for the budget row; a live run
    * repaints its percentage roughly once per tile, so doing this on every
    * tick would be dozens of IndexedDB reads a second for no visible gain
    * — the banner already tracks the run via `liveBytes`.
@@ -8118,8 +8269,18 @@ const repaintRegionsForDate = (dateKey, cache) => {
       bannerBaselineBytes = areas.reduce((sum, area) => sum + (Number(area.bytes) || 0), 0);
       // Read alongside the total, from the SAME snapshot, so the two can
       // never disagree about what this area currently contributes.
-      const core = self.pwaBasemapDownloadCore;
-      const ownArea = core ? areas.find((area) => area.id === core.CUSTOM_AREA_ID) : null;
+      //
+      // SNOW-635: keyed off THIS RUN's own generated id
+      // (`currentRunAreaId`), not the legacy `CUSTOM_AREA_ID` — every
+      // confirm downloads a NEW area now, so a run's id never has an
+      // existing record to exclude until it has actually recorded one.
+      // Called from openFraming, before any run this session has minted an
+      // id, `currentRunAreaId` is null and this always misses — resolving
+      // to 0 bytes, correctly: a session that has confirmed nothing yet
+      // owns no bytes to exclude from the baseline.
+      const ownArea = currentRunAreaId
+        ? areas.find((area) => area.id === currentRunAreaId)
+        : null;
       bannerOwnAreaBytes = ownArea ? Number(ownArea.bytes) || 0 : 0;
       bannerBudgetBytes = budgetBytes;
       bannerBudgetKnown = true;
@@ -8132,9 +8293,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Open the framing overlay: reveal it, move the map so the saved area
-   * (if one exists) lands under the frame, and start tracking the live
+   * Open the framing overlay: reveal it, and start tracking the live
    * readout on every 'move'.
+   *
+   * SNOW-635: no longer moves the map to a saved area first — with any
+   * number of custom areas possibly on disk, picking one to jump to would
+   * be arbitrary. Framing always starts from wherever the map currently
+   * sits, exactly like the very first time this control is ever opened.
    *
    * @returns {void}
    */
@@ -8150,6 +8315,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // further is needed for those.
     confirmBtn.style.removeProperty('display');
     cancelBtn.textContent = CANCEL_LABEL_DEFAULT;
+    // SNOW-635: a fresh session has downloaded nothing (yet) of its own —
+    // see _refreshBudgetBanner's own comment for why this is what makes
+    // its "own area" lookup correctly resolve to 0 bytes below.
+    currentRunAreaId = null;
     // The standing download-budget banner — read once here (never per
     // progress tick; see _refreshBudgetBanner's own comment) and rendered
     // as soon as the numbers arrive, without making the overlay's own
@@ -8163,23 +8332,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // attributes so each owner module keeps sole control of its own
     // visibility state (see .map-framing in static/css/map.css).
     document.body.classList.add('map-framing');
-    // Drop any cap left on the frame by the previous open, so _framePadding
-    // below measures the natural gutter rather than a shrunken frame from a
-    // zoom level the map is no longer at. _updateReadout re-applies the cap
-    // for the view we actually land on. The ground lock goes with it: a
-    // fresh open aims from wherever the map is now, never from the area
-    // the last one happened to leave locked.
+    // Drop any cap left on the frame by the previous open, so the frame
+    // measures the natural gutter rather than a shrunken frame from a zoom
+    // level the map is no longer at. _updateReadout re-applies the cap for
+    // the view we actually land on. The ground lock goes with it: a fresh
+    // open aims from wherever the map is now, never from the area the last
+    // one happened to leave locked.
     lockedSize = null;
     lockedBbox = null;
     _invalidateNaturalFrameBox();
     _releaseFrame();
     _anchorZoomOnTheFrame();
-    if (savedArea && Array.isArray(savedArea.bbox)) {
-      // No explicit padding: _anchorZoomOnTheFrame has just told the map
-      // that the frame IS its centre, so fitBounds already lands the saved
-      // area under the frame rather than in the middle of the viewport.
-      MAP.fitBounds(_boundsFromBBox(savedArea.bbox), { animate: false });
-    }
     _updateReadout();
     // Synchronously, on every 'move' — NOT deferred to the next animation
     // frame. MapLibre fires 'move' from inside its own render loop, so a
@@ -8282,10 +8445,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 
   /**
-   * Run the confirmed download: evict the previous saved area's tiles if
-   * the framed bbox has moved, assemble the URL list, and hand it to the
+   * Run the confirmed download: assemble the URL list and hand it to the
    * SW's warm-cache handler — mirrors mapDownloadControlInit's
    * handleClick, sharing its assembleBasemapDownloadFeedURLs helper.
+   *
+   * SNOW-635: every confirm mints a FRESH area id (`generateCustomAreaId`)
+   * and downloads it as a new, independent area — there is no longer a
+   * single saved area a moved frame or a changed basemap could replace, so
+   * this no longer runs a `beforeWarm` eviction of its own before warming;
+   * only the runner's own budget-driven eviction (of OTHER areas,
+   * confirmed first) can still remove anything.
    *
    * SNOW-632: a run's outcome no longer decides whether the overlay
    * closes — only the user's own Cancel/Close click does that (see
@@ -8313,50 +8482,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const blob = pendingBlob;
     const bbox = pendingBbox;
 
-    // A REPLACEMENT of the same area at a NEW bbox — the frame moved since
-    // the last confirm — clears the old tiles first: they belong to ground
-    // this run doesn't cover, and leaving them would both bloat this area's
-    // one shared bucket and inflate its recorded byte total.
-    const sameBbox = _bboxesEqual(savedArea && savedArea.bbox, bbox);
-
     const core = self.pwaBasemapDownloadCore;
-    // `runPinnedDownload` re-reads the core itself and fails the run
-    // properly if it is missing; this only needs it for the area id, so a
-    // missing core simply yields none and the runner handles the rest.
+    // SNOW-635: a fresh id per run — never CUSTOM_AREA_ID — is what lets
+    // more than one custom area exist at once; see this function's own
+    // docstring. `runPinnedDownload` re-reads the core itself and fails
+    // the run properly if it is missing; this only needs it for the area
+    // id, so a missing core simply yields none and the runner handles the
+    // rest.
+    const areaId = core ? core.generateCustomAreaId() : '';
+    currentRunAreaId = areaId;
+
     await runPinnedDownload({
-      areaId: core ? core.CUSTOM_AREA_ID : '',
-      // `planEviction` already excludes THIS area's own existing record
-      // from the standing total (incoming.id matches it), so a re-download
-      // of the same custom area — moved or not — never counts its own old
-      // copy against itself.
+      areaId: areaId,
       mb: blob.mb,
       // This control's roundel carries no size, so the shared runner's
       // (state, pct, bytes) triple is passed straight through — SNOW-632:
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      beforeWarm: async (_blob, areaId, template) => {
-        // Unlike the budget eviction the runner has just done, this needs
-        // no confirmation — it is replacing the user's OWN prior choice
-        // with a new one they just made, not touching another area.
-        // SNOW-586: a bucket delete, not the old URL-by-URL re-derivation
-        // against buildBlob — which also fixes a latent bug, since that
-        // re-derivation used the CURRENT template and so deleted nothing
-        // after a basemap switch.
-        //
-        // SNOW-632: also evicts on a TEMPLATE change at the SAME bbox — a
-        // basemap switch with the frame left untouched. Without this the
-        // old basemap's tiles stayed in the bucket alongside the new run's,
-        // so the bucket's real size stopped matching its recorded total
-        // (see docs/decisions/per-area-pinned-basemap-caches.md). A saved
-        // area with no `template` (a pre-SNOW-632 record) is treated as a
-        // mismatch too — the safe direction, since it costs one redundant
-        // eviction rather than an unaccounted-for stale bucket.
-        const sameTemplate = !!savedArea && savedArea.template === template;
-        if (savedArea && (!sameBbox || !sameTemplate)) {
-          await evictBasemapAreas([areaId]);
-        }
-      },
       finish: async (result, runBlob, { core, progressFill, template }) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
@@ -8383,30 +8526,32 @@ const repaintRegionsForDate = (dateKey, cache) => {
           paintRun(navigator.onLine ? 'idle' : 'offline');
         } else if (ok) {
           // SNOW-632: `bytes` is this run's OWN reported total, recorded
-          // outright — never accumulated onto the previous record, and
-          // never re-measured from the bucket (a live tile response
-          // carries no `Content-Length` under gzip, so a bucket
-          // measurement reads ~0 in production; see the decision doc for
-          // the curl evidence). `beforeWarm` above has already cleared the
-          // bucket on either a bbox or a template change, so by the time
-          // this runs the bucket holds exactly this run's own tiles and
-          // its own total is the bucket's whole total.
-          savedArea = {
+          // outright — never accumulated onto anything, and never
+          // re-measured from the bucket (a live tile response carries no
+          // `Content-Length` under gzip, so a bucket measurement reads ~0
+          // in production; see the decision doc for the curl evidence).
+          // SNOW-635: this is always a brand-new bucket under a fresh id
+          // (no prior run ever shared it), so the run's own total is
+          // trivially the bucket's whole total — there is no prior-basemap
+          // or prior-bbox leftover to have cleared first, unlike the
+          // single shared area this replaces.
+          const area = {
+            id: areaId,
+            ordinal: await _nextCustomAreaOrdinal(),
             bbox: bbox,
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
-            name: btn.dataset.areaLabel || core.CUSTOM_AREA_ID,
             template: template,
             bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };
-          _persistSavedArea(savedArea);
+          await _appendCustomArea(area);
           // SNOW-569's pulse still plays on success; SNOW-632 removed the
           // overlay-close that used to precede it (SNOW-568 already left
           // it open on failure, and requirement 5 now does the same for a
           // success — see paintRun's 'done' branch for what replaces it).
           await progressFill.finish(true);
-          paintRun('done', undefined, savedArea.bytes);
+          paintRun('done', undefined, area.bytes);
         } else {
           await progressFill.finish(false);
           paintRun('error');
@@ -8494,13 +8639,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (pendingBbox && runState !== 'busy') _updateReadout();
   });
 
-  // Boot: read the persisted saved area (openFraming's own "reopen at the
-  // saved area" convenience), then probe the roundel against real storage.
-  // SNOW-634: unlike the old tile-cache probe, `basemapDownloadedAreas()`
-  // needs neither MAP nor the active basemap's tile template, so this no
-  // longer also waits on MAP_READY_PROMISE — that used to be a SEPARATE
-  // trigger for a second, map-dependent probe.
-  _loadSavedArea().then(() => renderControl());
+  // Boot: probe the roundel against real storage. SNOW-634: unlike the old
+  // tile-cache probe, `basemapDownloadedAreas()` needs neither MAP nor the
+  // active basemap's tile template, so this doesn't wait on
+  // MAP_READY_PROMISE — that used to be a SEPARATE trigger for a second,
+  // map-dependent probe. SNOW-635: no longer preceded by loading a saved
+  // area either — see openFraming's own docstring for why there is none
+  // left to load.
+  renderControl();
 
   window.pwaCustomAreaDownload = Object.freeze({
     // SNOW-634: the sheet's add-trigger reaches framing through this —
