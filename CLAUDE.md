@@ -372,7 +372,9 @@ uv run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
 Template formatting is enforced by `djangofmt`, which runs as a pre-commit
-hook. Always run `pre-commit run djangofmt --files <path>` after editing
+hook **and** as `tox -e djangofmt` in the `lint-guards` CI workflow — the
+backstop for the bypassable hook, so a skipped commit hook still fails the
+PR. Always run `pre-commit run djangofmt --files <path>` after editing
 templates so the hook doesn't reformat on commit.
 
 **Before opening a PR**, run `uv run tox` and fix every failure. For any

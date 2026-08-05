@@ -2,7 +2,7 @@
 name: design-system
 description: Bulletin page design handover — editorial principles, WhiteRisk replicate-then-subtract plan, design tokens, field guidance
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-05
 ---
 
 # SnowDesk — Design Handover

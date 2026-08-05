@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # Management commands

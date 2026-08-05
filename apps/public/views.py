@@ -743,8 +743,10 @@ def home(request: HttpRequest) -> HttpResponse:
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
     region's season into the track. The intro overlay provides identity, a
-    factual one-liner, an off-season note when today is past the season end,
-    and a sample-bulletin link so first-time visitors can explore.
+    factual one-liner naming the three providers, an off-season note when today
+    is past the season end, and a "Register" link. Its "Explore the map" button
+    dismisses the overlay and opens the map-help tour (SNOW-535); the "x"
+    dismisses without the tour.
 
     Context:
       ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.

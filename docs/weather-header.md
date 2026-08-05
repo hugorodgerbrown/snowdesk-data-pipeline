@@ -2,7 +2,7 @@
 name: weather-header
 description: Weather bulletin header and resort weather panel — build_weather_display buckets, is_day, shared _weather_panel.html, ForecastPanel
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-08-05
 ---
 
 # Weather-driven bulletin header

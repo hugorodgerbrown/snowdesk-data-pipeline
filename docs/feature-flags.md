@@ -2,7 +2,7 @@
 name: feature-flags
 description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-07-25
+last-reviewed: 2026-08-05
 ---
 
 # Feature flags (django-waffle)

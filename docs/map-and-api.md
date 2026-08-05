@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, region-basemap-tiles)
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-05
 ---
 
 # Map page and JSON API
@@ -31,8 +31,10 @@ routes through the same `selectFeature` helper used by the map click handler.
 The homepage *is* the map, so there is no "go to the map" link: the
 "Explore the map" button inside the `#home-intro` overlay
 (`public/partials/_map_embed.html`) is a **dismiss** control — it clears the
-landing overlay to reveal the map already mounted behind it, alongside the
-sample-bulletin link.
+landing overlay to reveal the map already mounted behind it, and additionally
+opens the map-help coachmark tour (SNOW-535), which the overlay's "×" does
+not. The overlay's only outbound link is "Register"; `/examples/random/` is
+reachable by URL but is not linked from here.
 
 **Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers
 pill in the top-right utility cluster opens a popover of basemap radio

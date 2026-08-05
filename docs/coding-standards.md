@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-05
 ---
 
 # Coding Standards — Snowdesk Data Pipeline

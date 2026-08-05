@@ -2,7 +2,7 @@
 name: render-model
 description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, day character
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-08-05
 ---
 
 # Render model

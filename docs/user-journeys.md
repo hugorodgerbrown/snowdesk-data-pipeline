@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-08-05
 ---
 
 # User personas and core journeys
