@@ -23,25 +23,33 @@ last-reviewed: 2026-08-04
 
 ## Public Bulletin Site
 
-### Scenario 1: View the marketing homepage
+### Scenario 1: View the homepage (the map, with its intro overlay)
 
-**Goal**: Verify the landing page loads and describes the product.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | Page loads with heading "Snowdesk" and subtitle "Avalanche bulletins for backcountry skiers." |
-| 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the content |
-| 3 | Read the feature descriptions on the page | Three features listed: "Daily bulletins", "Per-region detail", and "Season archives" |
-| 4 | Locate the call-to-action buttons | Two side-by-side buttons are visible: "View a sample bulletin →" (dark fill) and "Explore the map →" (light fill, outlined) |
-
-### Scenario 2: View a random sample bulletin from the homepage
-
-**Goal**: Verify the "View a sample bulletin" link shows a random bulletin inline.
+**Goal**: Verify the homepage loads as the interactive map behind a
+dismissable landing overlay. There is no separate marketing page — the map
+*is* the homepage (SNOW-314).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | Homepage loads |
-| 2 | Click "View a sample bulletin" | A bulletin page loads at `http://localhost:8000/examples/random/` (URL stays the same, no redirect) |
+| 1 | Clear `localStorage` for the site, then navigate to http://localhost:8000/ | The full-frame map loads, with the `#home-intro` card centred over it |
+| 2 | Read the intro card | It shows "Welcome to Snowdesk", a tagline naming SLF (Switzerland), ALBINA (Austria, Italy) and Météo-France (France), and a "Register" inline link |
+| 3 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the map |
+| 4 | Locate the intro card's controls | A "×" close button (top-right of the card) and an "Explore the map" button at the foot of it |
+| 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
+
+Out of season (today past the season end) the card also carries an
+off-season note naming the archived season's start month.
+
+### Scenario 2: View a random sample bulletin
+
+**Goal**: Verify `/examples/random/` serves a random bulletin inline.
+
+> Reach this URL directly — no template links to it. The homepage is the map,
+> and its intro overlay carries only the Register link and the dismiss button.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/examples/random/ | A bulletin page loads (URL stays the same, no redirect) |
 | 3 | Verify the bulletin page content | Page shows a region name as heading, a date label ("Today" or a formatted date), and an "issued HH:MM UTC" timestamp |
 | 4 | Check for danger level | A danger level indicator is visible (e.g. "Level 2 -- Moderate") with a coloured badge |
 | 5 | Refresh the page (F5 / Cmd+R) | A different region's bulletin loads (URL remains `http://localhost:8000/examples/random/`) |
@@ -264,14 +272,24 @@ both hits appear and the badge makes the distinction obvious.
 | 1 | Click into the search input and clear any existing text | Dropdown is hidden |
 | 2 | Type `xyznonexistent` | Dropdown does not open (no results, no error message shown) |
 
-### Scenario MS7: Homepage CTA opens the map
+### Scenario MS7: "Explore the map" dismisses the intro overlay
 
-**Goal**: Verify the "Explore the map" homepage CTA routes to the map page.
+**Goal**: Verify the intro overlay's CTA is a *dismiss* control, not a link —
+the map is already mounted behind it — and that the dismissal persists.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | Homepage loads with two CTAs side by side |
-| 2 | Click "Explore the map →" | Browser navigates to http://localhost:8000/ and the choropleth loads |
+| 1 | Clear `localStorage`, navigate to http://localhost:8000/ | Map loads with the `#home-intro` card over it |
+| 2 | Click "Explore the map" | The card clears in place. **No navigation occurs** — the URL stays `http://localhost:8000/` and the map is not reloaded. The map-help coachmark tour then opens (SNOW-535) |
+| 3 | Inspect `localStorage` | `snowdesk.home.intro` is set to `dismissed` |
+| 4 | Reload the page | The map loads with no intro card |
+| 5 | Repeat from step 1, but click the "×" close button (or press Escape) | The card dismisses and persists the same way — but the map-help tour does **not** open. That extra step is what distinguishes the CTA from the "×" |
+
+To bring the overlay back without clearing `localStorage`, load
+`http://localhost:8000/?intro=1` — it forces the panel open, survives a server
+round-trip (unlike `#about`), and is stripped from the address bar on dismissal
+so the panel stays dismissed across a reload. It is the handle to use in QA,
+screenshots and bug reports.
 
 ---
 

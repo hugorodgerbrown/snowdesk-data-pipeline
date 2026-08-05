@@ -55,7 +55,7 @@ recorded `bytes` (measured as `_warmCache` writes, via
 `basemap_cache_core.js`'s `responseBytes`) against the budget, the same
 arithmetic shape the ceiling already uses.
 
-**Why the budget is device-local, not on `Subscriber`.** Cache Storage is
+**Why the budget is device-local, not on `Account`.** Cache Storage is
 per-browser — a value on the account would describe storage that does
 not exist on every device the account is used from. `meta:app`'s
 `basemap.budgetMb` (read, never written, by this ticket — SNOW-588's
