@@ -1,7 +1,8 @@
 {% load i18n static components %}
 {% comment %}
 public/partials/_map_downloads_sheet.html — "Manage downloads" sheet
-(SNOW-588; the way in rewritten by SNOW-634).
+(SNOW-588; the way in rewritten by SNOW-634; SNOW-635 lets more than one
+custom area be listed, and adds Rename).
 
 The surface that answers "what have I stored offline, and what is it
 costing me". Opened from ``#map-custom-download-control`` (the bottom-right
@@ -81,8 +82,9 @@ repeated here.
         {# SNOW-634: "Download a custom area" moved here from the roundel's #}
         {# own click — see this file's module header. Above the list, so a #}
         {# fresh (empty) sheet leads with the one action that fills it —   #}
-        {# and where SNOW-635 can relabel/reshape this in place once more  #}
-        {# than one custom area is expressible. Handled by                 #}
+        {# unchanged in label/position by SNOW-635, which is what lets it  #}
+        {# be clicked again to add a SECOND (or third, …) custom area      #}
+        {# without leaving the sheet. Handled by                           #}
         {# map_downloads_manager.js's delegated click listener, not a      #}
         {# dedicated one — rows are re-cloned on every render and this     #}
         {# trigger is cloned right along with them, so binding here would  #}
@@ -116,6 +118,10 @@ repeated here.
 </template>
 {# One list row. ``data-downloads-delete`` carries the area id so the       #}
 {# delegated click handler needs no closure over the rendered row.          #}
+{# ``data-downloads-rename`` (SNOW-635) is removed outright by              #}
+{# map_downloads_manager.js's ``buildRow`` for a row that isn't renameable  #}
+{# (a region, or an orphaned bucket) — only a custom area with a real       #}
+{# record behind it ever keeps it.                                         #}
 <template id="map-downloads-row-template">
     <li class="flex items-center justify-between gap-3 py-2">
         <span class="flex min-w-0 flex-col">
@@ -124,6 +130,13 @@ repeated here.
         </span>
         <span class="flex shrink-0 items-center gap-3">
             <span data-row-size class="text-sm text-text-2"></span>
+            <button
+                type="button"
+                data-downloads-rename
+                class="rounded-tag border border-border px-3 py-1 text-xs font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
+            >
+                {% trans "Rename" %}
+            </button>
             <button
                 type="button"
                 data-downloads-delete
@@ -136,7 +149,8 @@ repeated here.
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
-{# from here. ``%(name)s`` / ``%(size)s`` are substituted by the module.    #}
+{# from here. ``%(name)s`` / ``%(size)s`` / ``%(n)s`` are substituted by     #}
+{# the module.                                                              #}
 <template id="map-downloads-strings-template">
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
@@ -153,6 +167,14 @@ repeated here.
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
     <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
+    {# SNOW-635: a custom area's default label — "Custom area 1", "Custom  #}
+    {# area 2", … — built from its stored `ordinal` rather than shown as    #}
+    {# the literal id, and kept out of `manageRows` (basemap_manage_core.js #}
+    {# has no translation catalogue) so it stays translatable rather than   #}
+    {# frozen in whatever language was active at download time.            #}
+    <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    <span data-string="rename-prompt">{% trans "Name this area" %}</span>
+    <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

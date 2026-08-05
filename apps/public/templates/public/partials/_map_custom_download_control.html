@@ -1,7 +1,7 @@
 {% load i18n %}
 {% comment %}
 public/partials/_map_custom_download_control.html — offline-downloads
-roundel (SNOW-522; behaviour rewritten by SNOW-634).
+roundel (SNOW-522; behaviour rewritten by SNOW-634 and SNOW-635).
 
 Takes the bottom-right utility-stack slot the per-region download control
 (_map_download_control.html) vacated when it moved back into the ribbon
@@ -36,16 +36,13 @@ open, so it can never be clicked mid-run) and no offline guard (the sheet
 lists and deletes offline, which is exactly when storage pressure is
 felt). aria-controls points at the sheet it now opens, not the overlay.
 
-data-area-label (SNOW-586): the translated display name recorded onto the
-custom area's meta:app row (`basemap.customArea.name`) and shown in the
-whole-area-eviction confirm banner naming areas that would be removed to
-make room for a new download, and read back by `handleConfirm`'s `finish`
-when a run completes. A JS-assembled string would be permanently English
-(no JS i18n catalogue in this project — see
-docs/decisions/per-area-pinned-basemap-caches.md); this is a template
-attribute precisely so {% trans %} can reach it. Unrelated to the
-roundel's own two-state label above, which now describes the DEVICE's
-downloads, not this area.
+SNOW-635: dropped the `data-area-label` attribute this element used to
+carry ("Custom area", the display name a completed download recorded onto
+its own `basemap.customArea.name` at download time). Every custom area now
+gets its own sequential default label ("Custom area N", derived from
+`ordinal` at render time — see _map_downloads_sheet.html's
+`default-custom-name` string) rather than a single frozen-at-download-time
+one, so this element no longer has a name to hand it.
 
 Takes no context.
 {% endcomment %}
@@ -54,7 +51,6 @@ Takes no context.
     id="map-custom-download-control"
     class="map-custom-download-control map-download-control"
     data-download-state="idle"
-    data-area-label='{% trans "Custom area" %}'
     aria-haspopup="dialog"
     aria-controls="map-downloads-sheet"
     aria-label='{% trans "Manage offline downloads" %}'
