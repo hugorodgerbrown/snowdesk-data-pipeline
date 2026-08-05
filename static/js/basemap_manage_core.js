@@ -12,8 +12,11 @@
  * the DOM half and does nothing this module could do instead.
  *
  * It works on areas as ``static/js/map.js``'s ``basemapDownloadedAreas()``
- * hands them over — ``{id, name?, ordinal?, bytes, savedAt}``, keyed by the
- * id that also names the area's Cache Storage bucket.
+ * hands them over — ``{id, name?, bytes, savedAt}``, keyed by the id that
+ * also names the area's Cache Storage bucket. ``name`` is always present
+ * except for an orphaned bucket with no record at all (SNOW-612) —
+ * SNOW-635 review: an unrenamed custom area's numbered default is filled
+ * in there too, so this module never has to special-case it.
  *
  * That normalising step is SNOW-586's, and this surface consumes it rather
  * than reading storage itself, because a download is recorded in **two**
@@ -63,11 +66,12 @@
  *   budgetSummary(areas, budgetBytes)
  *     Standing usage against the budget — the sheet's running total.
  *   manageRows(areas, options)
- *     The ordered, labelled row model the sheet renders. SNOW-635: a
- *     custom row's ``label`` is empty when unrenamed — the ``ordinal`` /
- *     ``renameable`` fields it carries are what the DOM layer
- *     (``map_downloads_manager.js``) builds the "Custom area N" default
- *     from, since this module has no translation catalogue.
+ *     The ordered, labelled row model the sheet renders. SNOW-635: every
+ *     row's ``label`` is ``area.name || id`` uniformly — an unrenamed
+ *     custom area's numbered "Custom area N" default is filled into
+ *     ``name`` upstream, by ``map.js``'s ``basemapDownloadedAreas()``
+ *     (which has the translation catalogue this module does not), not
+ *     built here.
  *   reconcileAreas(recorded, storedAreaIds, bytesById)
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
@@ -219,34 +223,33 @@
    * equal-sized areas renders in a stable order across re-opens rather
    * than reshuffling on every render.
    *
-   * @param {Array<{id: string, name?: string, ordinal?: number,
-   *   bytes?: number, savedAt?: string}>} areas Areas as ``map.js``'s
+   * @param {Array<{id: string, name?: string, bytes?: number,
+   *   savedAt?: string}>} areas Areas as ``map.js``'s
    *   ``basemapDownloadedAreas()`` normalises them — the union of the
    *   ``basemap.regions`` array and (SNOW-635) the ``basemap.customAreas``
    *   array, each already keyed by the id that names its Cache Storage
-   *   bucket. A region's ``name`` is always stored by the download itself;
-   *   a custom area's is set ONLY by a rename and is otherwise absent (see
-   *   the ``label``/``renameable`` fields below).
-   * @param {{isCustomAreaId?: function(string): boolean,
-   *   customLabel?: string}} [options] ``isCustomAreaId`` is
-   *   ``pwaBasemapDownloadCore.isCustomAreaId`` — an area whose id it
-   *   accepts is a user-framed download rather than a region. A predicate
-   *   rather than a single id (SNOW-586's ``customAreaId`` string) because
-   *   SNOW-635 gives every custom area its OWN id
-   *   (``generateCustomAreaId``); asking the core rather than comparing
-   *   against one fixed value keeps that id family private to the module
-   *   that mints it, the same way the ``region-<id>`` format is never
-   *   parsed out elsewhere either. ``customLabel`` is the translated
-   *   "Custom area" string — used only as a documented fallback callers
-   *   may render alongside an orphaned custom row (see ``renameable``
-   *   below); never as a display label any more, now that a custom area
-   *   can carry its own stored name.
+   *   bucket. ``name`` is always populated for a non-orphaned area — a
+   *   region's is stored by the download itself; an unrenamed custom
+   *   area's default "Custom area N" is filled in by
+   *   ``basemapDownloadedAreas()`` itself (SNOW-635 review — see that
+   *   function's own comment for why the defaulting lives there and not
+   *   here or in the DOM layer). Only ``reconcileAreas``' orphan entries
+   *   (SNOW-612 — a bucket with no record at all) ever leave it unset.
+   * @param {{isCustomAreaId?: function(string): boolean}} [options]
+   *   ``isCustomAreaId`` is ``pwaBasemapDownloadCore.isCustomAreaId`` — an
+   *   area whose id it accepts is a user-framed download rather than a
+   *   region. A predicate rather than a single id (SNOW-586's
+   *   ``customAreaId`` string) because SNOW-635 gives every custom area
+   *   its OWN id (``generateCustomAreaId``); asking the core rather than
+   *   comparing against one fixed value keeps that id family private to
+   *   the module that mints it, the same way the ``region-<id>`` format
+   *   is never parsed out elsewhere either. There is no ``customLabel``
+   *   option any more (SNOW-635 review) — a custom area's label comes
+   *   from ``area.name`` like every other row's does, so this module no
+   *   longer needs a caller-supplied fallback string for it.
    * @returns {Array<{id: string, kind: string, orphaned: boolean,
-   *   label: string, ordinal?: number, renameable: boolean,
-   *   bytes: number, savedAt: string, size: string}>} ``label`` is the
-   *   empty string for an unrenamed, non-orphaned custom row — see the
-   *   inline comment below for why building its numbered default lives
-   *   outside this module.
+   *   label: string, renameable: boolean, bytes: number, savedAt: string,
+   *   size: string}>}
    */
   function manageRows(areas, options) {
     var list = Array.isArray(areas) ? areas : [];
@@ -261,22 +264,18 @@
 
       var id = String(area.id);
       var isCustom = typeof opts.isCustomAreaId === 'function' && opts.isCustomAreaId(id);
-      // SNOW-635: a region's name is its real name; a custom area's name
-      // is a user's own rename — REGIONS are never renameable, and
-      // neither is an ORPHANED custom bucket (SNOW-612): there is no
-      // record entry left to write a name onto, only a bare bucket id.
+      // SNOW-635: a region's name is its real name; a custom area's own
+      // name (stored or defaulted — see this function's own docstring) is
+      // still something the user can override — REGIONS are never
+      // renameable, and neither is an ORPHANED custom bucket (SNOW-612):
+      // there is no record entry left to write a name onto, only a bare
+      // bucket id.
       var renameable = isCustom && !area.orphaned;
 
-      // Stored name first, uniformly. A region (or an orphan of either
-      // kind) with no name falls back to its id — the only identifier a
-      // person could use to describe it. A renameable custom area with no
-      // name (never renamed) has no such fallback HERE: its default
-      // display name is "Custom area N", built from `ordinal` — this
-      // module has no translation catalogue, only the DOM layer that
-      // renders it does (map_downloads_manager.js's `buildRow`, where
-      // `pwaStrings.interpolate` already lives) — so an unrenamed
-      // renameable row's label is left empty for that caller to fill in.
-      var label = area.name || (renameable ? '' : id);
+      // Uniform for every row now: the record's own name (always present
+      // except for an orphan — see the docstring) falls back to the id,
+      // the only identifier left for something with no name at all.
+      var label = area.name || id;
 
       var bytes = Number(area.bytes);
       if (!Number.isFinite(bytes) || bytes < 0) bytes = 0;
@@ -290,7 +289,6 @@
         kind: isCustom ? 'custom' : 'region',
         orphaned: !!area.orphaned,
         label: String(label),
-        ordinal: area.ordinal,
         renameable: renameable,
         bytes: bytes,
         savedAt: area.savedAt || '',

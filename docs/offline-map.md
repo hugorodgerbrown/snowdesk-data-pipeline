@@ -1341,12 +1341,11 @@ neither key is the Cache Storage bucket id, which is
 `areaIdForRegion(region_id)` for a region or the area's own `id` for a
 custom area. So the sheet does not read either. It calls `map.js`'s
 `basemapDownloadedAreas()`, the same normaliser the eviction planner
-uses, which returns the union as `{id, name?, ordinal?, bytes, savedAt}`
-already keyed by bucket id — `name` absent for a custom area that has
-never been renamed (SNOW-635's Rename control, next section, is the only
-writer of it), and `ordinal` present only for a custom area, which is
-what lets the sheet build its numbered "Custom area N" default without
-this module needing a translation catalogue of its own.
+uses, which returns the union as `{id, name?, bytes, savedAt}` already
+keyed by bucket id — `name` populated for every non-orphaned area (SNOW-635
+review: a region's is stored, a custom area's is stored-or-defaulted, see
+below), so this module reads it uniformly and never needs to know which
+kind of area a row is when building its label.
 
 That is not merely tidiness. The first version of this surface read a
 `basemap.areas` row that no writer has ever produced, and its whole test
@@ -1365,12 +1364,19 @@ on every open. SNOW-586 already keeps that standing total for
 different number for the same download. A REGION's name comes from the
 record too — stored at download time — which is why the sheet needs no
 region lookup and works offline without one. A CUSTOM area's name is
-different (SNOW-635): it is set ONLY by a rename, so an unrenamed area's
-row instead shows the numbered "Custom area N" default, built at render
-time from the record's `ordinal` (`map_downloads_manager.js`'s `buildRow`,
-where the translation catalogue for that string actually is) — storing
-the interpolated string at download time the way a region's name is would
-have frozen it in whatever language was active then.
+different (SNOW-635): it is set by a rename, but an area that has never
+been renamed carries no stored name of its own — its record only has
+`ordinal`. Rather than leave every downstream reader to know how to build
+"Custom area N" from that, `map.js`'s `basemapDownloadedAreas()` fills it
+into `name` itself, in memory only, reading the `default-custom-name`
+string off `_map_embed.html`'s `map-strings-template` (`MAP_STRINGS`) —
+the ONE template it lives in. Storing the interpolated string at download
+time the way a region's name is would have frozen it in whatever language
+was active then; computing it fresh on every read is what keeps it
+translatable, and doing it at this single normalising layer, rather than
+in this module or the eviction confirm banner, is what keeps every reader
+of `area.name` honest without each having to know the difference between
+"stored" and "defaulted".
 
 **Deleting is a bucket delete.** With one cache per area
 (`snowdesk-basemap-pinned-<areaId>`), removal is a single

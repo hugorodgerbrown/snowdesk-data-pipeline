@@ -78,20 +78,25 @@
  *
  * ## Renaming (SNOW-635)
  *
- * A custom area's default label is "Custom area N", derived from its
- * ``ordinal`` at render time (see ``buildRow`` below) rather than stored —
- * storing an interpolated string would freeze the user's language at
- * download time. The Rename control next to a renameable row's own Remove
- * uses ``window.prompt``, matching the sheet's existing ``window.confirm``
- * for delete (itself following ``pwa_reset.js``'s destructive-action
- * idiom): no new markup, no focus trap, no Escape handling — a richer
- * inline editor is a deliberate non-goal. The handler writes the trimmed
- * result back onto the area's record via ``window.pwaBasemapDownloads
- * .rename(areaId, name)`` (map.js's own bridge — see the bridges section
- * below) and re-renders. Only a ``renameable`` row (a custom area with a
- * real record behind it, per ``basemap_manage_core.js``'s ``manageRows``)
- * ever shows the control — a region's name is its real name, and an
- * orphaned bucket has no record entry left to write one onto.
+ * A custom area's default label is "Custom area N" — filled into
+ * ``area.name`` by ``map.js``'s ``basemapDownloadedAreas()`` itself, from
+ * the record's ``ordinal``, in memory only and never persisted (storing
+ * the interpolated string would freeze the user's language at download
+ * time). By the time a row reaches this module, ``row.label`` is already
+ * the right text to show — stored name or numbered default, uniformly —
+ * so this module needs no ``ordinal``-aware fallback of its own; it just
+ * renders ``row.label``. The Rename control next to a renameable row's
+ * own Remove uses ``window.prompt``, pre-filled with that same label,
+ * matching the sheet's existing ``window.confirm`` for delete (itself
+ * following ``pwa_reset.js``'s destructive-action idiom): no new markup,
+ * no focus trap, no Escape handling — a richer inline editor is a
+ * deliberate non-goal. The handler writes the trimmed result back onto
+ * the area's record via ``window.pwaBasemapDownloads.rename(areaId,
+ * name)`` (map.js's own bridge — see the bridges section below) and
+ * re-renders. Only a ``renameable`` row (a custom area with a real record
+ * behind it, per ``basemap_manage_core.js``'s ``manageRows``) ever shows
+ * the control — a region's name is its real name, and an orphaned bucket
+ * has no record entry left to write one onto.
  *
  * ## Why it re-clones its body on every open
  *
@@ -181,9 +186,10 @@
     'remove-failed': "That download couldn't be removed. Try again.",
     // SNOW-634: [data-downloads-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
-    // SNOW-635: an unrenamed custom area's default label, and the Rename
-    // control's own prompt/fallback copy.
-    'default-custom-name': 'Custom area %(n)s',
+    // SNOW-635: the Rename control's own prompt/failure copy. The default
+    // "Custom area N" label itself lives in map.js's MAP_STRINGS
+    // (_map_embed.html), not here — see this module's "Renaming" header
+    // note for why.
     'rename-prompt': 'Name this area',
     'rename-failed': "That name couldn't be saved. Try again.",
   });
@@ -332,9 +338,9 @@
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
     const rows = core.manageRows(list, {
       // SNOW-635: a predicate, not a single id — see manageRows's own
-      // docstring for why.
+      // docstring for why. No `customLabel` any more either — a custom
+      // row's label is `area.name`, already filled by the reader.
       isCustomAreaId: downloadCore()?.isCustomAreaId,
-      customLabel: STRINGS['kind-custom'],
     });
 
     // Re-clone rather than update in place — see the module header.
@@ -379,7 +385,7 @@
    * Build one list row.
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   ordinal?: number, renameable?: boolean, size: string}} row
+   *   renameable?: boolean, size: string}} row
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -387,20 +393,12 @@
       rowTemplate.content.cloneNode(true)
     );
 
-    // SNOW-635: an unrenamed, renameable row (a custom area never renamed)
-    // carries no `label` of its own — `manageRows` leaves it empty
-    // precisely so the numbered default is built HERE, where the
-    // translation catalogue actually is (see this module's "Renaming"
-    // header note). Every other row already has a real label
-    // (`manageRows`'s own id fallback for a region or an orphan).
-    const displayLabel = row.label
-      ? row.label
-      : row.renameable
-        ? interpolate(STRINGS['default-custom-name'], { n: row.ordinal })
-        : row.id;
-
+    // SNOW-635 review: `row.label` is already the right text — a stored
+    // name, or an unrenamed custom area's numbered default, filled in
+    // upstream by map.js's basemapDownloadedAreas() — so this module has
+    // no ordinal-aware fallback of its own to build any more.
     const label = fragment.querySelector('[data-row-label]');
-    if (label) label.textContent = displayLabel;
+    if (label) label.textContent = row.label;
 
     const kind = fragment.querySelector('[data-row-kind]');
     if (kind) {
@@ -427,7 +425,7 @@
       button.setAttribute('data-downloads-delete', row.id);
       // Carried on the element so the delegated handler can name the area
       // in its confirmation without re-reading the record.
-      button.setAttribute('data-downloads-label', displayLabel);
+      button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
     }
 
@@ -441,7 +439,7 @@
         renameBtn.setAttribute('data-downloads-rename', row.id);
         // Pre-fills window.prompt with whatever is currently showing, so
         // accepting it unchanged is a no-op rather than blanking the name.
-        renameBtn.setAttribute('data-downloads-current-name', displayLabel);
+        renameBtn.setAttribute('data-downloads-current-name', row.label);
       } else {
         renameBtn.remove();
       }

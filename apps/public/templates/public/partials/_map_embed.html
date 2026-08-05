@@ -1243,4 +1243,12 @@ Optional context:
     {# mapCustomDownloadControlInit's `_renderControl`.                    #}
     <span data-string="custom-control-idle">{% trans "Manage offline downloads" %}</span>
     <span data-string="custom-control-done">{% trans "Offline downloads available" %}</span>
+    {# SNOW-635: an unrenamed custom area's default display name — filled  #}
+    {# in by basemapDownloadedAreas() itself (in memory only, never        #}
+    {# persisted) so every downstream reader (the eviction confirm banner, #}
+    {# the manage sheet, the rename prompt's pre-fill) can read `name`     #}
+    {# uniformly rather than each having to know how to build a default.   #}
+    {# Kept in this one template rather than duplicated into              #}
+    {# _map_downloads_sheet.html's own strings template.                  #}
+    <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
 </template>

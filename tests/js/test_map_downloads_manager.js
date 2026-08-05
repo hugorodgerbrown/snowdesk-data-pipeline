@@ -45,6 +45,12 @@ import '../../static/js/i18n_strings.js';
 
 const MB = 1024 * 1024;
 
+// Mirrors map.js's MAP_STRINGS['default-custom-name'] English fallback
+// (_map_embed.html's map-strings-template) — this fixture has no template
+// of its own to read it from, so the literal is duplicated here the same
+// way the other seeded records mirror the real writer's shape.
+const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
+
 /** Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row; SNOW-635: Rename). */
 function buildFixture() {
   document.body.innerHTML = `
@@ -89,7 +95,6 @@ function buildFixture() {
             frees %(size)s. You can download it again when you're back online.</span>
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
       <span data-string="add-offline">You're offline — connect to download a new area.</span>
-      <span data-string="default-custom-name">Custom area %(n)s</span>
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
     </template>
@@ -155,11 +160,12 @@ function installDownloadsBridge(rows, cachesStub) {
       if (!entry || !entry.id || !Array.isArray(entry.bbox)) continue;
       out.push({
         id: entry.id,
-        // SNOW-635: NOT defaulted — a custom area's name is set only by a
-        // rename, so an unrenamed one carries none, matching map.js's own
-        // basemapDownloadedAreas.
-        name: entry.name,
-        ordinal: entry.ordinal,
+        // SNOW-635 review: a rename's stored name wins; an unrenamed
+        // area's numbered default is filled in HERE, from `ordinal`, in
+        // memory only — mirroring map.js's own basemapDownloadedAreas so
+        // every downstream reader (the sheet, the eviction banner, the
+        // rename prompt's pre-fill) can read `name` uniformly.
+        name: entry.name || self.pwaStrings.interpolate(DEFAULT_CUSTOM_NAME, { n: entry.ordinal }),
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
       });

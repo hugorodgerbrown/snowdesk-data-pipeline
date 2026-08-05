@@ -95,11 +95,12 @@ area can exist at once:
       name,         // SNOW-635 — set ONLY by a rename
                     // (static/js/map_downloads_manager.js's Rename
                     // control, via window.pwaBasemapDownloads.rename()).
-                    // ABSENT until then — the sheet's default label
-                    // ("Custom area N") is derived from `ordinal` at
-                    // render time instead, which is what keeps it
-                    // translatable. (Through SNOW-634 this was always
-                    // set at download time, off the control's own
+                    // ABSENT on the STORED record until then — the default
+                    // "Custom area N" label is filled in on every READ
+                    // instead (map.js's basemapDownloadedAreas(), from
+                    // `ordinal`), never written back here, which is what
+                    // keeps it translatable. (Through SNOW-634 this was
+                    // always set at download time, off the control's own
                     // data-area-label attribute — that attribute is gone.)
       template,     // SNOW-632 — the tile URL template this run actually
                     // fetched, recorded so a later run can tell whether
