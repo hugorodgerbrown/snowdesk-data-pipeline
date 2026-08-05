@@ -7,7 +7,7 @@ pinned basemap caches — the ``cached-tiles`` source, fed straight from a
 Cache Storage read, with no stored record of any kind involved. It is off by
 default. SNOW-587 removed the overlay's earlier "downloaded areas" rings
 (``regions-line-downloaded`` / ``downloaded-area-line``, derived from the
-stored ``basemap.regions`` / ``basemap.customArea`` records and then
+stored ``basemap.regions`` / ``basemap.customAreas`` records and then
 validated against the cache) — the tiles alone answer "where is the basemap
 I already have?" without needing a second, driftable derivation path.
 
