@@ -219,6 +219,15 @@ transition is answering the right question in the wrong layer — that test
 belongs in `tests/js/`. Full rules, the exclusion list, and the current
 journey inventory: [`docs/client-side-tests.md`](docs/client-side-tests.md).
 
+The cap is enforced, not advisory: **`tox -e e2e-lint`** (`bin/e2e-lint`)
+fails on more than 15 test functions, on any test longer than 40 lines,
+and on a test module whose docstring doesn't carry a `Scenario:` line
+naming a real heading in `docs/testing-scenarios.md`. Conventions did not
+hold this line twice; a failing build does. Raising `MAX_TESTS` is a
+deliberate edit in a ticket that says why — not a way to land a PR. The
+opt-out for a journey with no manual scenario is
+`Scenario: none — <reason>`, audit-visible via `bin/e2e-lint --show-scenarios`.
+
 ## Data sources
 
 Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
@@ -400,6 +409,7 @@ uv run tox -e ds-lint         # design-system linter — templates + static/js (
 uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
 uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
+uv run tox -e e2e-lint        # Playwright cap: ~15 tests, ≤40 lines each, scenario-mapped
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)

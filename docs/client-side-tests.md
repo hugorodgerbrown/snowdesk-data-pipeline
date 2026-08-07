@@ -54,6 +54,49 @@ flaky to trust. SNOW-494 cut it to 110 tests on 22 July 2026; by 7 August
 it was 280 across 18,309 lines, because every UI ticket bundled an e2e
 test and nothing said stop.
 
+### The cap is a lint, not a convention (`tox -e e2e-lint`)
+
+`bin/e2e-lint` enforces three invariants, and blocks any PR that breaks
+one:
+
+1. **At most 15 test functions** across the whole suite. The message names
+   how many need to go.
+2. **No test function over 40 lines.** A long browser test is one
+   asserting things a unit test should own.
+3. **Every test module declares the scenario family it mirrors**, as a
+   `Scenario:` line in its module docstring, and the ID must be a real
+   heading in [`testing-scenarios.md`](testing-scenarios.md). This keeps
+   the suite honest in both directions — a test with no scenario is not a
+   smoke test, and a renamed scenario surfaces as a lint failure rather
+   than rotting quietly.
+
+```python
+"""tests/e2e/test_map_search.py — search for a region and land on it.
+
+Scenario: MS1, MS2
+"""
+```
+
+A journey with genuinely no manual scenario opts out with a reason, which
+is audit-visible via `bin/e2e-lint --show-scenarios`:
+
+```python
+"""Scenario: none — clipboard ceremony, no manual scenario covers it."""
+```
+
+Raising `MAX_TESTS` in `bin/e2e-lint` is a deliberate edit in a ticket that
+says why. It is not a way to land a PR — the two previous overruns both
+happened one reasonable-looking test at a time.
+
+**Current wiring status (SNOW-649):** the env exists (`tox -e e2e-lint`)
+but is deliberately outside the default `tox` envlist and the `lint-guards`
+CI matrix, because it fails by design while the suite is still 280 tests
+against a cap of 15. Both are switched on in the same PR that performs the
+deletion — the commit that makes the guard pass is the commit that makes
+it required. If you are reading this after that PR landed and the env is
+still not in `tox.ini`'s `envlist` and
+`.github/workflows/lint-guards.yml`'s matrix, that is the bug.
+
 ### Does not belong in `tests/e2e/` — send it down a layer
 
 If a proposed test asserts any of the following, it is a Vitest or pytest
