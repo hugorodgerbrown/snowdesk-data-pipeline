@@ -285,3 +285,41 @@ class TestResortTier:
         tiers = {entry["fields"]["tier"] for entry in data}
         assert tiers
         assert tiers <= set(Resort.Tier.values)
+
+    def test_imported_coordinates_fall_inside_their_own_region(self) -> None:
+        """Sheet-sourced pins are checked by the suite, not just by eye.
+
+        Rows stamped ``geocode_source="import"`` (SNOW-544) got their
+        coordinate from a reference rather than from an operator placing a
+        pin, and their ``region`` was derived from that coordinate. If a
+        coordinate were wrong, the resort would show a neighbouring
+        region's bulletin — the one failure mode that is invisible on the
+        map but wrong in the product.
+        """
+        import json
+        from pathlib import Path
+
+        from apps.regions.services.point_match import region_for_point
+
+        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+
+        data = json.loads(
+            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
+        )
+        imported = [
+            entry for entry in data if entry["fields"].get("geocode_source") == "import"
+        ]
+        assert imported, "expected the fixture to carry sheet-imported rows"
+
+        mismatched = []
+        for entry in imported:
+            fields = entry["fields"]
+            matched = region_for_point(fields["latitude"], fields["longitude"])
+            expected = fields["region"][0]
+            if matched is None or matched.region_id != expected:
+                found = matched.region_id if matched else None
+                mismatched.append(f"{fields['name']}: {expected} != {found}")
+
+        assert not mismatched, "coordinate/region disagreement: " + "; ".join(
+            mismatched
+        )
