@@ -8,9 +8,9 @@ Covers:
     ``home.html`` includes back-to-back. Browsers do not deduplicate
     script elements by URL, so the IIFE ran twice and the second
     ``window.PlacePicker`` overwrote the first, orphaning its closure.
-  - every ``*_core.js`` module ``map.js`` dereferences is actually loaded
-    on ``/``, ahead of ``map.js`` (SNOW-573). See
-    ``TestMapCoreModulesLoaded`` for the bug that motivated it.
+  - every ``*_core.js`` module a ``map*.js`` module dereferences is
+    actually loaded on ``/`` (SNOW-573). See ``TestMapCoreModulesLoaded``
+    for the bug that motivated it.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ class TestHomeScriptTags:
 
 @pytest.mark.django_db
 class TestMapCoreModulesLoaded:
-    """Every ``*_core.js`` map.js depends on must actually be on the page.
+    """Every ``*_core.js`` a map module depends on must be on the page first.
 
     SNOW-573 shipped ``static/js/map_weather_core.js`` and the ``map.js``
     code that dereferences ``window.pwaWeatherCore``, but no ``<script>``
@@ -69,70 +69,101 @@ class TestMapCoreModulesLoaded:
     ``js-globals-lint`` only asks whether *some* file in the tree assigns
     the name, not whether the page loads that file.
 
-    The dependency set is derived, not enumerated, so a future core module
-    is covered the moment map.js starts using it.
+    Scoped to every ``map*.js`` consumer rather than ``map.js`` alone,
+    because SNOW-610 split ``map.js`` eleven ways: the scrubber's
+    ``window.pwaScrubberCore`` use now lives in ``map_scrubber.js``, so a
+    map.js-only check silently stopped covering it — and would go on
+    thinning out with each further extraction.
+
+    Both the consumers and their dependencies are derived, not enumerated,
+    so a new module or a new core dependency is covered the moment it lands.
     """
 
     @staticmethod
-    def _map_core_dependencies() -> list[tuple[str, str]]:
-        """Return ``(filename, global_name)`` for each core module map.js uses.
-
-        Reads ``static/js/*_core.js`` for the ``window``/``self`` global each
-        assigns, then keeps the ones ``map.js`` actually mentions.
-        """
+    def _core_globals() -> dict[str, str]:
+        """Return ``{global_name: filename}`` for every ``*_core.js`` module."""
         js_dir = Path(settings.BASE_DIR) / "static" / "js"
-        # Comment lines are excluded deliberately: map.js name-checks
-        # ``self.pwaBasemapCacheCore`` in prose while that module is loaded by
-        # sw.js via importScripts, never by the page — a real dereference and
-        # a mention in a comment must not read the same here.
-        code_lines = [
-            line
-            for line in (js_dir / "map.js").read_text().splitlines()
-            if not line.lstrip().startswith(("//", "*", "/*"))
-        ]
-        map_source = "\n".join(code_lines)
-        deps: list[tuple[str, str]] = []
+        globals_by_name: dict[str, str] = {}
         for path in sorted(js_dir.glob("*_core.js")):
             match = re.search(r"(?:window|self)\.(pwa[A-Za-z]+)\s*=", path.read_text())
-            if match and re.search(rf"(?:window|self)\.{match.group(1)}\b", map_source):
-                deps.append((path.name, match.group(1)))
-        return deps
+            if match:
+                globals_by_name[match.group(1)] = path.name
+        return globals_by_name
 
-    def test_dependency_discovery_finds_the_known_modules(self) -> None:
+    @staticmethod
+    def _code_of(path: Path) -> str:
+        """Return ``path``'s source with comment lines stripped.
+
+        Comment lines are excluded deliberately: ``map.js`` name-checks
+        ``self.pwaBasemapCacheCore`` in prose while that module is loaded by
+        ``sw.js`` via ``importScripts``, never by the page — a real
+        dereference and a mention in a comment must not read the same here.
+        """
+        return "\n".join(
+            line
+            for line in path.read_text().splitlines()
+            if not line.lstrip().startswith(("//", "*", "/*"))
+        )
+
+    @classmethod
+    def _dependencies(cls) -> list[tuple[str, str, str]]:
+        """Return ``(consumer, core_filename, global_name)`` triples.
+
+        One per ``map*.js`` module that dereferences a ``*_core.js`` global
+        outside a comment. Vendored ``maplibre-gl.min.js`` and the
+        ``*_core.js`` modules themselves are not consumers.
+        """
+        js_dir = Path(settings.BASE_DIR) / "static" / "js"
+        core_globals = cls._core_globals()
+        found: list[tuple[str, str, str]] = []
+        for consumer in sorted(js_dir.glob("map*.js")):
+            if consumer.name.endswith("_core.js") or ".min." in consumer.name:
+                continue
+            source = cls._code_of(consumer)
+            for global_name, core_filename in core_globals.items():
+                if re.search(rf"(?:window|self)\.{global_name}\b", source):
+                    found.append((consumer.name, core_filename, global_name))
+        return found
+
+    def test_dependency_discovery_finds_the_known_pairs(self) -> None:
         """The derivation itself works — guards against a silently empty set.
 
-        A regex that stopped matching would make every assertion below
+        A regex that stopped matching would make the assertions below
         vacuously pass, which is the failure mode this class exists to
-        prevent.
+        prevent. ``map_scrubber.js`` is named explicitly because it is the
+        pair a ``map.js``-only check would miss.
         """
-        names = [name for name, _ in self._map_core_dependencies()]
-        assert "map_weather_core.js" in names
-        # SNOW-610 split the scrubber IIFE (and its window.pwaScrubberCore
-        # use) out of map.js into map_scrubber.js, so map.js itself no
-        # longer dereferences scrubber_core.js — search_core.js is one of
-        # the *_core.js modules map.js's own (unsplit) search box still
-        # uses directly.
-        assert "search_core.js" in names
-        assert "choropleth_core.js" in names
+        pairs = {(consumer, core) for consumer, core, _ in self._dependencies()}
+        assert ("map.js", "map_weather_core.js") in pairs
+        assert ("map_scrubber.js", "scrubber_core.js") in pairs
 
-    def test_every_map_core_dependency_is_loaded_before_map_js(self) -> None:
-        """Each core module map.js uses is script-tagged ahead of map.js.
+    def test_every_core_dependency_is_loaded(self) -> None:
+        """Each core module a map module uses is script-tagged on ``/``.
 
-        Every tag is ``defer``, so document order is execution order — a
-        module loaded after map.js is as absent as one not loaded at all
-        for anything map.js touches during its own initialisation.
+        Presence, deliberately not document order. The convention across
+        these modules is that cross-file globals are read lazily — SNOW-610
+        spells it out for the extracted blocks ("objects of arrow values, so
+        every reference resolves when the user triggers a download, long
+        after all files have run"), and the overlay path is the same: nothing
+        dereferences ``window.pwaWeatherCore`` until the first toggle. Under
+        that convention a core module loaded *after* its consumer still works,
+        and ``map_downloads_manager.js`` / ``basemap_download_core.js`` is a
+        live example of the pair sitting in that order today.
+
+        What is never survivable is the file being absent altogether, which
+        is exactly what SNOW-573 shipped. So that is what this asserts.
+
+        A consumer the homepage does not load at all is skipped: it belongs
+        to another page, and this test only speaks for ``/``.
         """
         client = Client()
         content = client.get(reverse("public:home")).content.decode()
-        map_js = content.index("js/map.js")
 
-        for filename, global_name in self._map_core_dependencies():
-            assert f"js/{filename}" in content, (
-                f"map.js dereferences window.{global_name}, but "
-                f"static/js/{filename} (which assigns it) is never loaded on /"
-            )
-            assert content.index(f"js/{filename}") < map_js, (
-                f"static/js/{filename} must load before map.js — both are "
-                f"defer, so a later tag leaves window.{global_name} undefined "
-                f"while map.js initialises"
+        for consumer, core_filename, global_name in self._dependencies():
+            if f"js/{consumer}" not in content:
+                continue
+            assert f"js/{core_filename}" in content, (
+                f"static/js/{consumer} dereferences window.{global_name}, but "
+                f"static/js/{core_filename} (which assigns it) is never "
+                f"loaded on /"
             )
