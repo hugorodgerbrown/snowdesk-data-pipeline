@@ -17,6 +17,7 @@ dependency, unlike ``test_resort_favourite.py``.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -133,3 +134,49 @@ def test_resort_page_shows_region_weather_panel(
 
     # No per-point weather surface — that stays a favourite-page feature.
     assert page.locator('[data-testid="favourite-forecast-panel"]').count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_resort_page_weather_retry_swap_shows_temp_and_snowfall(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """SNOW-571: the HTMX retry swap renders the enriched temp/snowfall strip.
+
+    No ``WeatherSnapshot`` exists for Verbier's region today, so the
+    server-rendered page carries the no-snapshot fallback and the
+    belt-and-braces ``hx-post`` retry (``?variant=panel``) fires on load.
+    ``fetch_weather_for_region`` is patched to avoid a live Open-Meteo call
+    and return a fully-populated (unsaved) snapshot, so the fragment HTMX
+    swaps in carries the enriched temperature and snowfall groups —
+    exercising the same code path a real fetch would populate.
+    """
+    with django_db_blocker.unblock():
+        resort = Resort.objects.get(name="Verbier")
+        # Deliberately no WeatherSnapshot — forces the HTMX retry path.
+        snapshot = WeatherSnapshotFactory.build(
+            region=resort.region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,  # clear sky
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+        resort_url = resort.get_absolute_url()
+
+    with patch(
+        "apps.public.views.fetch_weather_for_region",
+        return_value=(snapshot, True),
+    ):
+        page.goto(f"{live_server.url}{resort_url}")
+        page.wait_for_load_state("networkidle")
+
+        panel = page.locator('[data-testid="resort-weather"]')
+        panel.wait_for(state="visible")
+        assert panel.get_attribute("data-weather-bucket") == "clear"
+        panel_text = panel.inner_text()
+        assert "4°" in panel_text
+        assert "-3°" in panel_text
+        assert "12 cm" in panel_text
