@@ -60,13 +60,25 @@ class _ElevationBounds:
         return bool(self.display)
 
 
-def synthetic_weather_display(code: int, time_of_day: str) -> dict[str, Any]:
+def synthetic_weather_display(
+    code: int,
+    time_of_day: str,
+    *,
+    temp_max: float | None = 4.0,
+    temp_min: float | None = -2.0,
+    snowfall_sum: float | None = 12.0,
+) -> dict[str, Any]:
     """Build a fake ``WeatherDisplay`` dict for a given WMO code and time-of-day.
 
     Mirrors the shape that ``build_weather_display`` returns at runtime,
     but without going through the database — the inner ``weather`` field
     is a :class:`SimpleNamespace` with just the ``weather_code`` attribute
     the partial reads.
+
+    ``temp_max``/``temp_min``/``snowfall_sum`` (SNOW-571) default to sample
+    values so the matrix panels show the enriched meta strip out of the
+    box; pass ``None`` for any of them to exercise the omit-individually
+    behaviour (see ``WEATHER_PANEL_VARIANTS``'s "partially populated" entry).
 
     Lifted from the now-retired ``_synthetic_weather_display`` in
     ``apps/public/debug_views.py`` (which fed the ``/debug/header/`` matrix
@@ -88,6 +100,9 @@ def synthetic_weather_display(code: int, time_of_day: str) -> dict[str, Any]:
         "icon_bucket": icon_bucket,
         "condition_label": _ICON_BUCKET_LABEL[icon_bucket],
         "icon_filename": icon_filename,
+        "temp_max": temp_max,
+        "temp_min": temp_min,
+        "snowfall_sum": snowfall_sum,
     }
 
 
@@ -243,6 +258,25 @@ def _build_weather_panel_variants() -> tuple[dict[str, Any], ...]:
                     },
                 }
             )
+
+    # Partially-populated snapshot (SNOW-571) — temps present, snowfall NULL.
+    # Demonstrates the omit-individually behaviour: the temperature group
+    # renders while the snowfall group is silently absent, rather than the
+    # whole meta strip falling back.
+    entries.append(
+        {
+            "caption": "Clear · day · temps only (snowfall NULL)",
+            "context": {
+                "weather_display": synthetic_weather_display(
+                    0, "day", snowfall_sum=None
+                ),
+                "region_name": "",
+                "subregion_name": "",
+                "page_date": today,
+            },
+            "solo": True,
+        }
+    )
 
     entries.append(
         {
