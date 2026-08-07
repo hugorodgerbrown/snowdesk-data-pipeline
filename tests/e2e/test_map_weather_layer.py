@@ -24,6 +24,7 @@ import datetime
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
@@ -33,6 +34,29 @@ from tests.factories import (
     ForecastPointWeatherFactory,
     ResortFactory,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_forecast_weather_cache() -> Any:
+    """Drop the endpoint's server-side payload cache around every test.
+
+    ``forecast_weather_geojson`` memoises its whole FeatureCollection under
+    ``forecast-weather:v1:<d|all>`` for 300s. That cache lives in the
+    LiveServer process and is **not** reset between tests, while
+    ``django_db(transaction=True)`` truncates the tables that built it — so
+    a payload assembled while another test's fixtures were in place (or
+    while there were none at all) outlives the data it described and is
+    served to the next test. An empty payload read back that way has no
+    feature carrying an icon and no dates in the forecast window, which
+    fails as "the icon was never registered" and "the row is disabled on
+    today's date" — two symptoms a long way from the cause.
+
+    Clearing on the way in and out keeps each test's page fetching a
+    payload built from its own fixtures.
+    """
+    cache.clear()
+    yield
+    cache.clear()
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
@@ -182,7 +206,14 @@ def test_row_disables_on_out_of_window_date(
     # Wait for the row to reach a settled (non out-of-window) state before
     # jumping to a date outside the window, so the assertion below is
     # attributable to the date change rather than a boot-time default.
-    assert toggle.get_attribute("aria-disabled") is None
+    # This has to be a wait, not a bare read: the comment above claimed to
+    # wait while the assertion sampled once, so on a loaded machine it could
+    # catch the row still carrying its pre-payload disabled state and fail
+    # with "assert 'true' is None" — a race in the test, not in the layer.
+    page.wait_for_function(
+        "() => document.querySelector('[data-overlay-key=\"weather\"]')"
+        ".getAttribute('aria-disabled') === null"
+    )
 
     page.evaluate(
         "() => document.dispatchEvent(new CustomEvent('snowdesk:date-changed', "
