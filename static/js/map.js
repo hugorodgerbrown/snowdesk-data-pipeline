@@ -4416,8 +4416,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ]);
     if (!geojson) {
       // No geometry to install — fail safe instead of leaving an uncaught
-      // rejection. This correlates honestly with a red sync dot rather
-      // than throwing while the dot (which probes this same URL) is green.
+      // rejection. The sync dot probes this same URL, so a failure here
+      // means it is not showing green either: the two agree, which is the
+      // whole point of the ticket.
       return;
     }
     Object.assign(RESORTS_BY_REGION, resorts);
