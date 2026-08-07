@@ -47,6 +47,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import { loadMapBundle } from './_load_map_bundle.js';
 
 const REGION_ID = 'CH-4115';
 const TEMPLATE_A = 'https://tiles-a.example.invalid/{z}/{x}/{y}.pbf';
@@ -335,7 +336,7 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   // SNOW-623: map.js's choropleth paint delegates to this.
   await import('../../static/js/choropleth_core.js');
-  await import('../../static/js/map.js');
+  loadMapBundle();
   core = window.pwaBasemapDownloadCore;
   // MapLibre never fires 'load' in jsdom; the main IIFE's data load (and so
   // FEATURE_BY_REGION_ID) hangs off it.

@@ -25,6 +25,7 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import { loadMapBundle } from './_load_map_bundle.js';
 
 const GROUPINGS_URL = '/api/bulletin-groupings.geojson';
 const L4_STORAGE_KEY = 'snowdesk.map.overlay.l4';
@@ -152,7 +153,7 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   // SNOW-623: map.js's choropleth paint delegates to this.
   await import('../../static/js/choropleth_core.js');
-  await import('../../static/js/map.js');
+  loadMapBundle();
   // The picker's own bridge for "this tier was enabled and isn't loaded
   // yet" — the only route to overlayLoaded.l3, which the guard also reads.
   document.dispatchEvent(
