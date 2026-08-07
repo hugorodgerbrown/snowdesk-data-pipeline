@@ -26,6 +26,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from apps.core.freshness import GENERATED_AT_HEADER, MAX_AGE_HEADER, UNSAFE_AFTER_HEADER
@@ -124,6 +125,10 @@ class TestForecastWeatherGeojsonPrivacy:
 class TestForecastWeatherGeojsonShape:
     """Response shape and property contents."""
 
+    # Frozen inside the 06:00–20:00 sunrise/sunset window set up below:
+    # ``is_day`` compares wall-clock time-of-day, so the asserted
+    # ``-day.svg`` icon is only correct while the real clock agrees.
+    @freeze_time("2026-08-07T12:00:00Z")
     def test_feature_shape(self) -> None:
         """[lon, lat] ordering and resort_id/name/region_id/days properties."""
         point = ForecastPointFactory.create()
