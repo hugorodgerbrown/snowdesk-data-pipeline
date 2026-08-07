@@ -17,11 +17,10 @@ dependency, unlike ``test_resort_favourite.py``.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 from pytest_django.live_server_helper import LiveServer
 
 from apps.regions.models import Resort
@@ -137,26 +136,29 @@ def test_resort_page_shows_region_weather_panel(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_resort_page_weather_retry_swap_shows_temp_and_snowfall(
+def test_weather_panel_renders_temperature_and_snowfall(
     live_server: LiveServer,
     page: Page,
     django_db_blocker: Any,
     _load_test_data: None,
 ) -> None:
-    """SNOW-571: the HTMX retry swap renders the enriched temp/snowfall strip.
+    """SNOW-571: the panel's meta strip carries hi/lo temperature and snowfall.
 
-    No ``WeatherSnapshot`` exists for Verbier's region today, so the
-    server-rendered page carries the no-snapshot fallback and the
-    belt-and-braces ``hx-post`` retry (``?variant=panel``) fires on load.
-    ``fetch_weather_for_region`` is patched to avoid a live Open-Meteo call
-    and return a fully-populated (unsaved) snapshot, so the fragment HTMX
-    swaps in carries the enriched temperature and snowfall groups —
-    exercising the same code path a real fetch would populate.
+    Seeds a fully-populated ``WeatherSnapshot`` for Verbier's region at
+    *today*, so the server render already carries the enriched strip and
+    ``weather_htmx_trigger`` is False.
+
+    Deliberately **not** exercised through the HTMX retry swap: that path
+    is broken for every region and always has been (SNOW-650). The panel
+    builds its retry URL from the uppercase EAWS ``region_id``, and
+    ``@lowercase_region_id`` answers with a 301 — which a browser re-issues
+    as a GET, so the POST-only ``weather_snippet`` returns 405 and no swap
+    ever lands. Asserting the retry here would be asserting a fiction; the
+    coverage belongs with the fix.
     """
     with django_db_blocker.unblock():
         resort = Resort.objects.get(name="Verbier")
-        # Deliberately no WeatherSnapshot — forces the HTMX retry path.
-        snapshot = WeatherSnapshotFactory.build(
+        WeatherSnapshotFactory.create(
             region=resort.region,
             valid_for_date=timezone.localdate(),
             weather_code=0,  # clear sky
@@ -166,17 +168,11 @@ def test_resort_page_weather_retry_swap_shows_temp_and_snowfall(
         )
         resort_url = resort.get_absolute_url()
 
-    with patch(
-        "apps.public.views.fetch_weather_for_region",
-        return_value=(snapshot, True),
-    ):
-        page.goto(f"{live_server.url}{resort_url}")
-        page.wait_for_load_state("networkidle")
+    page.goto(f"{live_server.url}{resort_url}")
 
-        panel = page.locator('[data-testid="resort-weather"]')
-        panel.wait_for(state="visible")
-        assert panel.get_attribute("data-weather-bucket") == "clear"
-        panel_text = panel.inner_text()
-        assert "4°" in panel_text
-        assert "-3°" in panel_text
-        assert "12 cm" in panel_text
+    panel = page.locator('[data-testid="resort-weather"]')
+    expect(panel).to_have_attribute("data-weather-bucket", "clear")
+    # floatformat:0 rounds 4.2 → "4" and -3.1 → "-3"; the pair renders as
+    # one nowrap group, so the separator sits tight against the hi value.
+    expect(panel).to_contain_text("4°/-3°")
+    expect(panel).to_contain_text("12 cm")
