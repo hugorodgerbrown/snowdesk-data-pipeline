@@ -44,16 +44,22 @@ Optional context:
     {# the header and the map. Replaces the old bottom-left #map-offseason-note #}
     {# chip: same honesty guarantee (the danger shown is archive, not live)     #}
     {# but far more legible. Server-rendered whenever today is past the season  #}
-    {# end and not dismissable, so a returning off-season visitor always sees   #}
-    {# it. Mirrors the offline banner's status-warning treatment               #}
+    {# end, so a returning off-season visitor always sees it. Mirrors the       #}
+    {# offline banner's status-warning treatment                               #}
     {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
     {# the map down rather than overlaying it.                                  #}
     {# SNOW-486: markup delegated to the shared banner primitive               #}
     {# (includes/_overlay_banner.html, "strip" variant).                        #}
+    {# SNOW-639: dismissable, and deliberately NOT persisted — overlays.js      #}
+    {# adds the `hidden` class to this one live element and a reload brings     #}
+    {# the bar back. Do not "fix" that into a stored dismissal: the bar exists  #}
+    {# to say the danger on screen is an archive rather than today's forecast,  #}
+    {# and that is still true on the next visit. Dismissing clears it from a    #}
+    {# session once it has been read; it does not settle the question forever.  #}
     {% blocktrans asvar map_offseason_bar_body trimmed with start_month=archived_season_start|date:"F" %}
         New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
     {% endblocktrans %}
-    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body %}
+    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body dismissible=True %}
 {% endif %}
 {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
 {# fetch to the last populated date when today is past the season end.       #}

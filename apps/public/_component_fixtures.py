@@ -1092,6 +1092,20 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        # SNOW-639: `dismissible` used to be honoured by the floating branch
+        # only, so a strip caller passing it got no × and no complaint. Both
+        # strip states are shown side by side here so that asymmetry cannot
+        # come back unnoticed.
+        "caption": "Strip — dismissible (off-season bar)",
+        "context": {
+            "variant": "strip",
+            "body": "Archive bulletins are shown outside the winter season.",
+            "icon": "calendar",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
         "caption": "Floating — no dismiss, no CTA",
         "context": {
             "variant": "floating",

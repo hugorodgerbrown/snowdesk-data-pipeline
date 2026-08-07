@@ -5,7 +5,8 @@ Covers:
   - GET / returns 200 with the map container (#map).
   - The intro overlay (#home-intro) is rendered (show_intro=True).
   - The season ribbon (#season-ribbon) is present when data exists.
-  - Off-season note present when is_offseason is True.
+  - Off-season note present when is_offseason is True, and (SNOW-639) the
+    persistent bar carries the shared overlays.js dismiss hooks.
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
   - #season-ribbon carries data-default-region-name and -slug on homepage
     (CH-4115 pre-selection, retained — SNOW-342).
@@ -259,6 +260,36 @@ class TestHomePageOffseason:
         assert "New season starts in November" in content
         # The old chip is gone.
         assert 'id="map-offseason-note"' not in content
+
+    @freeze_time("2026-06-15")  # past the May 31 season end
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_bar_is_dismissable(self) -> None:
+        """SNOW-639: the bar carries the shared overlays.js dismiss hooks.
+
+        The banner primitive implemented ``dismissible`` in its floating
+        branch only, so this strip silently ignored the flag. Both the
+        ``data-overlay`` marker and the ``×`` are asserted on the bar's own
+        element, since the flag being accepted is worth nothing if the
+        markup it should produce is missing.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+
+        bar_idx = content.index('id="map-offseason-bar"')
+        # Scope to the bar's own opening tag — a data-overlay anywhere else
+        # on this page (there are several) must not satisfy this.
+        opening_tag = content[bar_idx : content.index(">", bar_idx)]
+        assert "data-overlay" in opening_tag
+        assert 'data-overlay-hide="class"' in opening_tag
+
+        # The × itself, inside the bar rather than merely somewhere after it.
+        bar_markup = content[bar_idx : content.index("</div>", bar_idx)]
+        assert 'data-action="dismiss"' in bar_markup
+
+        # Dismissal is deliberately not persisted — a reload brings the bar
+        # back, because the archive it warns about is still an archive.
+        assert "data-overlay-persist" not in bar_markup
 
     @freeze_time("2026-07-20")  # summer — past the data window
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
