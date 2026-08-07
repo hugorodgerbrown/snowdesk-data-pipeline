@@ -8,6 +8,8 @@ Covers:
   - unique_together constraint raises IntegrityError on duplicate (region, date).
   - ordering: newest date first, then region_id ascending.
   - Deleting the linked MicroRegion cascades to WeatherSnapshot.
+  - temperature_2m_max / temperature_2m_min / snowfall_sum (SNOW-571): default
+    to None, accept explicit values.
 """
 
 import datetime
@@ -42,6 +44,37 @@ class TestWeatherSnapshotFactory:
         """weather_code can be overridden at factory call time."""
         snapshot = WeatherSnapshotFactory.create(weather_code=61)
         assert snapshot.weather_code == 61
+
+
+@pytest.mark.django_db
+class TestWeatherSnapshotDailyExtras:
+    """temperature_2m_max / temperature_2m_min / snowfall_sum (SNOW-571)."""
+
+    def test_default_to_none(self) -> None:
+        """The factory leaves the three fields unset, so they default to None."""
+        snapshot = WeatherSnapshotFactory.create()
+        assert snapshot.temperature_2m_max is None
+        assert snapshot.temperature_2m_min is None
+        assert snapshot.snowfall_sum is None
+
+    def test_accept_explicit_values(self) -> None:
+        """Explicit values are persisted and read back unchanged."""
+        snapshot = WeatherSnapshotFactory.create(
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+        snapshot.refresh_from_db()
+        assert snapshot.temperature_2m_max == 4.2
+        assert snapshot.temperature_2m_min == -3.1
+        assert snapshot.snowfall_sum == 12.0
+
+    def test_snowfall_sum_zero_is_distinct_from_none(self) -> None:
+        """A zero snowfall total round-trips as 0.0, not None."""
+        snapshot = WeatherSnapshotFactory.create(snowfall_sum=0.0)
+        snapshot.refresh_from_db()
+        assert snapshot.snowfall_sum == 0.0
+        assert snapshot.snowfall_sum is not None
 
 
 @pytest.mark.django_db
