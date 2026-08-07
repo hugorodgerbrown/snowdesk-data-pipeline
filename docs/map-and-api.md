@@ -47,6 +47,15 @@ scope but **not** on `window`, which is how `map_layer_sync_status.js` read
 would otherwise evaluate each file as an ES module and module-scope every
 one of those shared bindings.
 
+**The order is enforced, not hand-maintained** (SNOW-647).
+`tests/public/test_map_script_order.py` renders the homepage and asserts its
+script sequence matches `MAP_BUNDLE`, that the bundle loads as one
+uninterrupted run, and that declarations precede `map.js` while surfaces
+follow it. Adding a map module therefore means editing two places — the
+template and `MAP_BUNDLE` — and forgetting either is a failing test rather
+than a map that stops booting. `map.js`'s header list is prose and is
+deliberately not asserted.
+
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
 so `{% url %}` in the template remains the single source of truth for all three
 API paths.

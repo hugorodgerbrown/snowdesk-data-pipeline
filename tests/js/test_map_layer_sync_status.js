@@ -286,6 +286,25 @@ describe('GeoJSON overlay rows (l1/l2/l4/resorts) — online', () => {
     expect(probed).not.toContain('/api/bulletin-groupings.geojson');
     window.history.pushState({}, '', '/');
   });
+
+  // SNOW-638: the `resorts` row probes RESORTS_PATH (`/api/resorts.geojson`)
+  // ONLY. map.js's boot handler separately fetches the plain-JSON sibling
+  // `/api/resorts.json` (search-index metadata, not geometry) to populate
+  // RESORTS_BY_REGION — that fetch is deliberately absent from sw.js's
+  // STATIC_PATHS, so it always rejects offline. This dot must not claim
+  // anything about that feed: don't "fix" its absence here by adding a
+  // probe for it — the two paths serve different purposes and the .json
+  // one is intentionally uncacheable (see map.js's boot handler comment).
+  it('never probes /api/resorts.json — only the .geojson sibling has a row', async () => {
+    const caches = fakeCaches({ hitPaths: [RESORTS_PATH] });
+    vi.stubGlobal('caches', caches);
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('resorts')).toBe('cached');
+    const probed = caches.match.mock.calls.map((call) => new URL(call[0].url).pathname);
+    expect(probed).not.toContain('/api/resorts.json');
+  });
 });
 
 describe('country rows (SNOW-524)', () => {

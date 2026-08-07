@@ -24,7 +24,15 @@
  * Order is not cosmetic — it is home.html's order, and the reason the
  * declaration files come before map.js is that map.js's boot IIFE runs at
  * parse time and would otherwise read a binding still in its temporal dead
- * zone. Keep this list and the template's script tags in step.
+ * zone.
+ *
+ * SNOW-647: this list and the template's script tags have to agree, and
+ * `tests/public/test_map_script_order.py` now enforces that rather than
+ * asking. It renders the homepage, filters the scripts down to the entries
+ * below, and fails if the two sequences differ — in either direction, and
+ * including a new map module tagged in the template but never added here.
+ * So adding a module means editing exactly two places, and forgetting one
+ * of them is a red test rather than a map that silently stops booting.
  */
 
 import { readFileSync } from 'node:fs';

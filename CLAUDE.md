@@ -416,6 +416,29 @@ name or PR body.
 Full lifecycle, entry points, scoping-comment contract, and PR body template:
 [`docs/linear-workflow.md`](docs/linear-workflow.md).
 
+### Commit authorship
+
+Claude commits as itself, with Hugo as committer. Pass `--author` on **every**
+commit:
+
+```bash
+git commit --author="Claude <noreply@anthropic.com>" -m "SNOW-xxx: subject"
+```
+
+Git records author and committer separately, and GitHub checks the signature
+against the **committer** — so the commit reads as "Claude authored, Hugo
+committed" and stays Verified under the `main` ruleset's `required_signatures`
+rule. No `-S` flag is needed; `commit.gpgsign` is true globally.
+
+Do **not** generate a separate GPG key for `noreply@anthropic.com`. No GitHub
+account can verify that address, so a commit whose *committer* is Claude shows
+**Unverified** and the ruleset rejects the merge. Signing as Hugo is the point:
+Claude wrote the change, Hugo vouches for it.
+
+Squash-merge collapses the branch — GitHub takes the sole author when a branch
+has one and the PR opener when authors are mixed, so `main` shows both over
+time. The `Co-Authored-By: Claude …` trailer survives the squash either way.
+
 ## Path to live
 
 Deploys are split across two branches (hosted on Render):

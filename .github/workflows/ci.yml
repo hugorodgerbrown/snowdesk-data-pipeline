@@ -12,6 +12,11 @@
 # Unlike a workflow-level path filter, a job-level skip still reports a
 # check run — with conclusion "skipped", which satisfies the ruleset — so
 # this does not reintroduce the SNOW-435 "Expected" trap.
+#
+# That holds for a single job whose ``name:`` *is* its required context. It
+# does NOT hold for a job with a ``matrix``, whose required contexts carry a
+# ``(suffix)`` the skipped check run never has — see the ``static`` job
+# below, which is gated per-step for exactly that reason.
 
 name: Python / Django
 
@@ -74,11 +79,26 @@ jobs:
           echo "docs-only filter -> code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
+  # This job is gated at STEP level, not job level — the one place in the
+  # repo where that distinction matters, because it is the only gated job
+  # with a `matrix`. A job-level `if:` is evaluated *before* matrix
+  # expansion, so a skipped matrix job reports a single check run named
+  # "Static analysis" — never the three suffixed contexts
+  # "Static analysis (fmt|lint|mypy)" that the "Main branch rules" ruleset
+  # actually requires. Those contexts then never report, and the PR sits at
+  # "Expected" forever: the SNOW-435 trap, reintroduced through the side
+  # door by the SNOW-481 docs-only gate. It went unnoticed because no PR
+  # between the two was docs-only — the first one that was (#605) could not
+  # be merged.
+  #
+  # Gating each step instead keeps the matrix expanded, so all three
+  # contexts report success having done no work. The sibling jobs below are
+  # single jobs whose `name:` is exactly their required context, so a
+  # job-level skip reports under the right name and is correct as written.
   static:
     name: Static analysis
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         toxenv: [fmt, lint, mypy]
@@ -87,19 +107,23 @@ jobs:
 
     steps:
       - name: Check out the repository
+        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Python (3.14)
+        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
       - name: Create .env
+        if: needs.changes.outputs.code == 'true'
         run: |
           echo "SECRET_KEY=ci-test-secret-key" > .env
           echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
 
       - name: Install and run tox
+        if: needs.changes.outputs.code == 'true'
         run: |
           pip install tox tox-uv
           tox

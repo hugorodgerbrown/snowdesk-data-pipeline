@@ -23,9 +23,15 @@ the next full run. Use ``--mode update`` (or ``add update``) to reconcile
 without that risk, and read the dry-run diff either way.
 
 Adding requires ``region`` (a MicroRegion ``region_id`` such as
-``CH-4115``) and ``canton`` columns, which the editorial export does not
-currently carry — a row that must be created without them is reported as
-an error rather than guessed at. Every other column is optional.
+``CH-4115``) and ``canton`` columns, which the editorial export carries —
+a row that must be created without them is reported as an error rather
+than guessed at. Every other column is optional.
+
+``region``, ``canton`` and the ``latitude``/``longitude`` pair are
+**creation-time only**: they are read when a row is first created and
+never written again. A resort re-pinned in the map editor owns its own
+position afterwards, so re-running the import cannot drag it back to
+whatever the sheet happened to say (SNOW-544).
 
 Deliberately *not* wired into ``build.sh`` — see
 ``docs/decisions/resorts-are-editable-data.md``. Resort rows are editable
@@ -61,6 +67,7 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.regions.models import MicroRegion, Resort
 
@@ -83,10 +90,9 @@ class Mode(enum.StrEnum):
 
 _MODE_CHOICES = [mode.value for mode in Mode]
 
-# Sheet column -> model field. The sheet owns only these; every geocoding
-# field stays under the database's control. ``region`` and ``canton`` are
-# read separately: they are needed to create a resort but never overwritten
-# on one that already exists.
+# Sheet column -> model field. The sheet owns only these. ``region``,
+# ``canton`` and the coordinate pair are read separately: they are needed to
+# create a resort but are never overwritten on one that already exists.
 TEXT_FIELDS = (
     "name",
     "name_alt",
@@ -98,6 +104,9 @@ TEXT_FIELDS = (
 )
 INT_FIELDS = ("top_elevation_m", "base_elevation_m", "num_runs", "num_lifts")
 FLOAT_FIELDS = ("total_piste_km",)
+
+# Read only when a row is created — see ``_coordinates_from_row``.
+COORDINATE_COLUMNS = ("latitude", "longitude")
 
 # Without these the sheet cannot be keyed or read at all.
 REQUIRED_COLUMNS = ("uuid", "name", "note")
@@ -319,7 +328,14 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
             f"{path} is missing required column(s): {', '.join(sorted(missing))}"
         )
 
-    optional = (*TEXT_FIELDS, *INT_FIELDS, *FLOAT_FIELDS, "region", "canton")
+    optional = (
+        *TEXT_FIELDS,
+        *INT_FIELDS,
+        *FLOAT_FIELDS,
+        "region",
+        "canton",
+        *COORDINATE_COLUMNS,
+    )
     rows = []
     for row in reader:
         if not (row.get("uuid") or "").strip():
@@ -402,6 +418,17 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
 
     resort = Resort(uuid=uuid, region=region, canton=canton)
     try:
+        coordinates = _coordinates_from_row(row)
+        if coordinates is not None:
+            # Stamped ``import``, never ``manual``: the panel's ``manual`` /
+            # ``confidence=1.0`` / ``needs_review=False`` stamp asserts that an
+            # operator placed this pin on a map, which is not true of a
+            # coordinate that arrived as sheet data. Flagging it for review is
+            # the honest record, and the panel re-stamps it on the first save.
+            resort.latitude, resort.longitude = coordinates
+            resort.geocode_source = "import"
+            resort.geocoded_at = timezone.now()
+            resort.needs_review = True
         _apply_row(resort, row)
         resort.full_clean(validate_unique=False, validate_constraints=False)
     except ValueError as exc:
@@ -411,6 +438,46 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
         plan.errors.append(f"{row['name'].strip() or uuid}: {exc.message_dict}")
         return
     plan.additions.append(resort)
+
+
+def _coordinates_from_row(row: dict[str, str]) -> tuple[float, float] | None:
+    """
+    Read the sheet's ``latitude``/``longitude`` pair, if it carries one (SNOW-544).
+
+    Coordinates are optional: the sheet spent most of its life without them,
+    and a row that omits them still creates a resort — one with no pin, which
+    then needs placing in the edit-resorts panel before it appears on the map.
+
+    A **half-filled** pair is an error rather than a silent single-axis
+    value, because a resort at latitude-only is not a location; it would
+    save as a null coordinate and look, from every consumer's side,
+    identical to a row that never supplied one.
+
+    Args:
+        row: One sheet row.
+
+    Returns:
+        The ``(latitude, longitude)`` pair, or ``None`` when the row omits
+        both.
+
+    Raises:
+        ValueError: If exactly one of the two is filled, or either does not
+            parse as a float.
+
+    """
+    raw_lat = (row.get("latitude") or "").strip()
+    raw_lon = (row.get("longitude") or "").strip()
+    if not raw_lat and not raw_lon:
+        return None
+    if not raw_lat or not raw_lon:
+        missing = "longitude" if raw_lat else "latitude"
+        raise ValueError(f"has a latitude/longitude pair with no {missing}")
+    try:
+        return float(raw_lat), float(raw_lon)
+    except ValueError as exc:
+        raise ValueError(
+            f"has a non-numeric coordinate ({raw_lat!r}, {raw_lon!r})"
+        ) from exc
 
 
 def _plan_update(plan: _Plan, resort: Resort, row: dict[str, str], uuid: str) -> None:
@@ -497,8 +564,12 @@ def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]
     """Assign the sheet's editorial values onto ``resort`` in memory.
 
     The resort is not saved — the caller validates first and persists the
-    whole plan in one transaction. ``region`` and ``canton`` are not touched
-    here: they are set once at creation and owned by the database after that.
+    whole plan in one transaction. ``region``, ``canton`` and the
+    ``latitude``/``longitude`` pair are not touched here: they are set once
+    at creation and owned by the database after that. Coordinates in
+    particular must never reach this path — it runs on every update, so
+    assigning them here would drag a resort that had been re-pinned in the
+    map editor back to the sheet's value on the next import (SNOW-544).
 
     Args:
         resort: The resort the row keys on — existing or newly constructed.

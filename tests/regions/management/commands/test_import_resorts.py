@@ -4,8 +4,9 @@ tests/regions/management/commands/test_import_resorts.py.
 Covers ``import_resorts``: read-only by default, the three ``--mode``
 operations in isolation and combination, deletion of rows the sheet does
 not list (marked NOT_A_SKI_RESORT or absent altogether), the region/canton
-requirement that blocks creation from the editorial export, and the
-all-or-nothing behaviour on a malformed sheet.
+values a row needs to be created at all, the creation-time-only
+``latitude``/``longitude`` pair, and the all-or-nothing behaviour on a
+malformed sheet.
 """
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ COLUMNS = [
     "note",
     "kind",
     "tier",
+    "latitude",
+    "longitude",
 ]
 
 
@@ -217,7 +220,7 @@ class TestImportResortsAdd:
         assert resort.num_lifts == 4
 
     def test_row_without_region_is_an_error(self, tmp_path: Path) -> None:
-        """The editorial export carries no region/canton, so it cannot create."""
+        """A row missing region/canton is reported rather than guessed at."""
         sheet = _sheet(
             tmp_path,
             [{"uuid": str(uuid_module.uuid4()), "name": "Brand new resort"}],
@@ -497,6 +500,186 @@ class TestImportResortsAgainstCommittedSheet:
         # The fixture is dumped from a database the sheet has been applied
         # to, so a full reconciliation finds nothing to do.
         assert "No changes" in out.getvalue()
+
+
+@pytest.mark.django_db
+class TestImportResortsCoordinates:
+    """The ``latitude``/``longitude`` columns, read only on create (SNOW-544)."""
+
+    def test_creation_stores_the_pin_and_flags_it_for_review(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A sheet-supplied pin is stamped ``import``, never ``manual``."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        new_uuid = str(uuid_module.uuid4())
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": new_uuid,
+                    "name": "Brand new resort",
+                    "region": "CH-4115",
+                    "canton": "VS",
+                    "latitude": "46.68",
+                    "longitude": "8.777",
+                }
+            ],
+        )
+
+        call_command(
+            "import_resorts", "--file", sheet, "--mode", "add", "--commit", verbosity=0
+        )
+
+        resort = Resort.objects.get(uuid=new_uuid)
+        assert (resort.latitude, resort.longitude) == (46.68, 8.777)
+        # ``manual`` would claim an operator placed this pin on a map.
+        assert resort.geocode_source == "import"
+        assert resort.geocode_confidence is None
+        assert resort.needs_review is True
+        assert resort.geocoded_at is not None
+
+    def test_creation_without_coordinates_still_works(self, tmp_path: Path) -> None:
+        """The pair stays optional — a row without one creates an unpinned row."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        new_uuid = str(uuid_module.uuid4())
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": new_uuid,
+                    "name": "Brand new resort",
+                    "region": "CH-4115",
+                    "canton": "VS",
+                }
+            ],
+        )
+
+        call_command(
+            "import_resorts", "--file", sheet, "--mode", "add", "--commit", verbosity=0
+        )
+
+        resort = Resort.objects.get(uuid=new_uuid)
+        assert resort.latitude is None
+        assert resort.longitude is None
+        assert resort.geocode_source == ""
+        assert resort.needs_review is False
+
+    def test_an_existing_pin_is_never_overwritten(self, tmp_path: Path) -> None:
+        """The regression this carve-out exists to prevent (SNOW-544).
+
+        Coordinates are read on create only. Were they read on update too,
+        every re-run would drag a resort that had been re-pinned in the map
+        editor back to whatever the sheet said, silently undoing the
+        curation the panel exists to capture.
+        """
+        resort = ResortFactory.create(
+            name="Verbier",
+            latitude=46.0955,
+            longitude=7.2203,
+            geocode_source="manual",
+            geocode_confidence=1.0,
+            needs_review=False,
+        )
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Verbier",
+                    "latitude": "47.0",
+                    "longitude": "9.0",
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
+
+        resort.refresh_from_db()
+        assert (resort.latitude, resort.longitude) == (46.0955, 7.2203)
+        assert resort.geocode_source == "manual"
+        assert resort.geocode_confidence == 1.0
+        assert resort.needs_review is False
+
+    @pytest.mark.parametrize(
+        ("latitude", "longitude"),
+        [("46.68", ""), ("", "8.777")],
+        ids=["longitude-missing", "latitude-missing"],
+    )
+    def test_half_a_pair_is_an_error_and_writes_nothing(
+        self,
+        tmp_path: Path,
+        latitude: str,
+        longitude: str,
+    ) -> None:
+        """One axis is not a location — it would save as no location at all."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(uuid_module.uuid4()),
+                    "name": "Brand new resort",
+                    "region": "CH-4115",
+                    "canton": "VS",
+                    "latitude": latitude,
+                    "longitude": longitude,
+                }
+            ],
+        )
+
+        with pytest.raises(CommandError, match="1 sheet row"):
+            call_command("import_resorts", "--file", sheet, "--mode", "add", "--commit")
+
+        assert Resort.objects.count() == 0
+
+    def test_non_numeric_coordinate_is_an_error(self, tmp_path: Path) -> None:
+        """A junk coordinate cell fails the row rather than saving a null pin."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(uuid_module.uuid4()),
+                    "name": "Brand new resort",
+                    "region": "CH-4115",
+                    "canton": "VS",
+                    "latitude": "not-a-number",
+                    "longitude": "8.777",
+                }
+            ],
+        )
+
+        with pytest.raises(CommandError, match="1 sheet row"):
+            call_command("import_resorts", "--file", sheet, "--mode", "add", "--commit")
+
+        assert Resort.objects.count() == 0
+
+    def test_export_without_the_columns_still_loads(self, tmp_path: Path) -> None:
+        """An export predating the columns imports unchanged."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        new_uuid = str(uuid_module.uuid4())
+        columns = [
+            column for column in COLUMNS if column not in {"latitude", "longitude"}
+        ]
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": new_uuid,
+                    "name": "Brand new resort",
+                    "region": "CH-4115",
+                    "canton": "VS",
+                }
+            ],
+            columns=columns,
+        )
+
+        call_command(
+            "import_resorts", "--file", sheet, "--mode", "add", "--commit", verbosity=0
+        )
+
+        assert Resort.objects.get(uuid=new_uuid).latitude is None
 
 
 @pytest.mark.django_db

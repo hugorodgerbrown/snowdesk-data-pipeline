@@ -45,14 +45,25 @@ the failure the column exists to prevent.
 
 The export carries `region` (a `MicroRegion.region_id`) and `canton`,
 which are both required to create a resort — so `--mode add` works
-(SNOW-544). They are creation-time values only: `import_resorts` never
-overwrites them on a row that already exists, because a resort moved in
-the map editor owns its own region afterwards.
+(SNOW-544). It also carries `latitude` and `longitude`, so a row can
+arrive with its pin already placed instead of needing one added by hand
+afterwards. The pair is optional: a row that omits both still creates a
+resort, one with no pin, which then needs placing in the edit-resorts
+panel before it appears on the map. Supplying only one of the two is an
+error rather than a single-axis value.
 
-It still carries **no geocoding columns**. Coordinates are placed on the
-map and owned by the database, so a row added by `--mode add` arrives
-without them and needs a pin placing in the edit-resorts panel before it
-appears on the map.
+All four are **creation-time values only** — `import_resorts` reads them
+when it creates a row and never writes them again. That carve-out is what
+makes the sheet safe to re-run: a resort re-pinned in the map editor owns
+its own position and region afterwards, and a later import cannot drag it
+back to whatever the sheet happened to say.
+
+A sheet-supplied coordinate is stamped `geocode_source="import"` with
+`needs_review=True`, never `manual`. The edit-resorts panel's `manual` /
+`geocode_confidence=1.0` / `needs_review=False` stamp records that an
+operator placed that pin on a map, which is not true of a coordinate that
+arrived as data — so imported rows stay flagged for a confirming pass, and
+the panel re-stamps one the first time it is saved.
 
 Each environment's database is the source of truth for `Resort` once the
 import has run — later edits happen in the admin or the map editor, not
