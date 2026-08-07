@@ -2536,17 +2536,54 @@
     // setFeatureState — no more property-based rating on features.
     // SNOW-236: fetch using bootDateKey (clamped to season end) so the
     // choropleth paints the last populated date when today is post-season.
+    //
+    // SNOW-638: these three fetches used to share this one Promise.all with
+    // no guards on the regions/resorts legs, so a single always-rejecting
+    // sibling took the whole boot handler down with it. /api/resorts.json
+    // is deliberately NOT in sw.js's STATIC_PATHS (only the .geojson
+    // sibling is) — offline, that fetch rejects on every single load,
+    // which meant installRegionsLayers/applyCountryFilters/the choropleth
+    // paint below never ran even though the regions feed itself was fine
+    // and the sync dot (which only probes regions.geojson) showed green.
+    // The three legs still run in parallel in ONE Promise.all — SNOW-235
+    // trimmed this exact critical path, and serialising the regions fetch
+    // ahead of ratings/resorts would silently reintroduce that cost. Each
+    // leg now carries its own .catch() so a failing leg degrades on its
+    // own instead of rejecting its siblings — the danger was never the
+    // shared Promise.all, it was the unguarded legs; don't re-collapse
+    // them into a single failure domain by dropping a .catch(), and don't
+    // pull any leg out of this Promise.all to "fix" this again.
     const [geojson, todayRatingsPayload, resorts] =
       await Promise.all([
-        fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
+        fetch(REGIONS_URL + '?country=ch').then(r => {
+          if (!r.ok) throw new Error('regions fetch failed');
+          return r.json();
+        }).catch((err) => {
+          console.warn('[map] regions fetch failed', err);
+          return null;
+        }),
         RATINGS_URL
           ? fetch(RATINGS_URL + '?d=' + bootDateKey + '&country=ch').then(r => {
               if (!r.ok) throw new Error('ratings fetch failed');
               return r.json();
             }).catch(() => ({}))
           : Promise.resolve({}),
-        fetch(RESORTS_URL).then(r => r.json()),
+        // SNOW-638: guarded like the ratings leg above — RESORTS_BY_REGION
+        // only feeds searchCore.buildEntry, which already falls back to []
+        // for a region with no resorts data, so degrading here just means
+        // search entries list no resorts while offline.
+        fetch(RESORTS_URL).then(r => {
+          if (!r.ok) throw new Error('resorts fetch failed');
+          return r.json();
+        }).catch(() => ({})),
       ]);
+    if (!geojson) {
+      // No geometry to install — fail safe instead of leaving an uncaught
+      // rejection. The sync dot probes this same URL, so a failure here
+      // means it is not showing green either: the two agree, which is the
+      // whole point of the ticket.
+      return;
+    }
     Object.assign(RESORTS_BY_REGION, resorts);
     // todayRatingsPayload shape: { "YYYY-MM-DD": { region_id: rating_int } }
     const todayRatings = todayRatingsPayload[bootDateKey] || {};
