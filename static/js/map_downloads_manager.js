@@ -227,35 +227,19 @@
     return window.pwaBasemapDownloadCore || null;
   }
 
-  // SNOW-645: lazily built {key: label} map, read off the basemap picker's
-  // own buttons rather than duplicating apps/public/views.py's
-  // _BASEMAP_LABELS here — that keeps the sheet's row using the SAME
-  // server-translated string the popover shows, with no new JS literal for
-  // tox -e i18n-lint to flag. Built once and cached: the picker's markup is
-  // static for the life of the page, it never re-renders.
-  var basemapLabelsByKey = null;
-
-  /**
-   * The picker's basemap label for `key`, or '' if the picker has no
-   * matching row (an unknown key, or a picker-invisible one like
-   * ``swisstopo_light`` — see ``_BASEMAP_LABELS``'s own docstring).
-   *
-   * @param {string} key
-   * @returns {string}
-   */
-  function basemapLabel(key) {
-    if (!basemapLabelsByKey) {
-      basemapLabelsByKey = {};
-      var menu = document.getElementById('basemap-menu');
-      if (menu) {
-        menu.querySelectorAll('[data-basemap-key]').forEach(function (btn) {
-          var btnKey = btn.dataset.basemapKey;
-          if (btnKey) basemapLabelsByKey[btnKey] = self.pwaStrings.collapse(btn.textContent);
-        });
-      }
-    }
-    return basemapLabelsByKey[key] || '';
-  }
+  // SNOW-645: `basemapLabel` (the picker-label lookup used by `buildRow`
+  // below) now lives in static/js/map_basemap_downloads.js, shared with
+  // the region roundel's "downloaded under another basemap" state
+  // (map_region_download.js) — a second copy here would be the same
+  // lookup written twice. Called lazily (only once the sheet is actually
+  // opened), so it is safe to reference as a bare identifier regardless of
+  // this file's own position in the document relative to that one's
+  // <script> tag: by the time a user can open this sheet, every deferred
+  // script on the page — including map_basemap_downloads.js — has already
+  // run. tests/public/test_map_script_order.py's own docstring lists this
+  // file as one of the eight map*.js modules deliberately outside
+  // MAP_BUNDLE's load-order contract, which only binds modules that need
+  // each other AT PARSE TIME.
 
   /**
    * Read a ``meta:app`` row's value (the budget row — see ``BUDGET_KEY``).
@@ -502,7 +486,9 @@
     // an unknown or mismatched basemap.
     const basemapRow = fragment.querySelector('[data-row-basemap]');
     if (basemapRow) {
-      const label = row.basemapKey ? basemapLabel(row.basemapKey) : '';
+      const label = row.basemapKey
+        ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
+        : '';
       if (label) {
         const swatch = basemapRow.querySelector('[data-row-basemap-swatch]');
         if (swatch) swatch.dataset.basemapKey = row.basemapKey;

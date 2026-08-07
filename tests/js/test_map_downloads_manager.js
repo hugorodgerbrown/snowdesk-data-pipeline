@@ -238,6 +238,20 @@ function installDownloadsBridge(rows, cachesStub) {
       );
       return true;
     }),
+    // SNOW-645: mirrors map_basemap_downloads.js's basemapLabel — this
+    // bridge is what map_downloads_manager.js reaches it through, since
+    // that module is deliberately outside the map bundle's load-order
+    // contract (see buildRow's own comment). Reads the SAME picker markup
+    // buildFixture() renders, never interpolating the key into a selector.
+    basemapLabel: vi.fn((key) => {
+      const menu = document.getElementById('basemap-menu');
+      if (!menu) return '';
+      let label = '';
+      menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+        if (btn.dataset.basemapKey === key) label = btn.textContent.trim();
+      });
+      return label;
+    }),
   };
 }
 

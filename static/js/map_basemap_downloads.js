@@ -71,6 +71,43 @@ function activeBasemapKey() {
   return (checked && checked.dataset.basemapKey) || null;
 }
 
+// SNOW-645: lazily built {key: label} map, read off the basemap picker's
+// own rendered buttons rather than duplicating apps/public/views.py's
+// _BASEMAP_LABELS in JS — that keeps every caller showing the SAME
+// server-translated string the popover itself shows, with no new JS
+// literal for tox -e i18n-lint to flag. Built once and cached: the
+// picker's markup is static for the life of the page, it never re-renders.
+// Shared module scope rather than a per-caller copy — the Manage downloads
+// sheet (map_downloads_manager.js) and the region roundel's "downloaded
+// under another basemap" state (map_region_download.js) both need it, and
+// a second implementation would be the same lookup written twice.
+let _basemapLabelsByKey = null;
+
+/**
+ * The picker's basemap label for `key`, or '' if the picker has no
+ * matching row (an unrecognised key, or a picker-invisible one like
+ * `swisstopo_light` — see `_BASEMAP_LABELS`'s own docstring).
+ *
+ * @param {string} key
+ * @returns {string}
+ */
+function basemapLabel(key) {
+  if (!_basemapLabelsByKey) {
+    _basemapLabelsByKey = {};
+    const menu = document.getElementById('basemap-menu');
+    if (menu) {
+      // Iterates every [data-basemap-key] row and compares dataset.basemapKey
+      // — never interpolates a stored key into a CSS selector, which would
+      // be an injection risk if a key ever contained selector syntax.
+      menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+        const btnKey = btn.dataset.basemapKey;
+        if (btnKey) _basemapLabelsByKey[btnKey] = self.pwaStrings.collapse(btn.textContent);
+      });
+    }
+  }
+  return _basemapLabelsByKey[key] || '';
+}
+
 // Hex floor for basemapIdentityColour below — the SAME green
 // --color-sync-ok resolves to in light mode (src/css/main.css @theme).
 // MapLibre paint values can't reference a CSS custom property at all, so
@@ -773,6 +810,19 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {Promise<boolean>} Whether the write landed.
    */
   rename: (areaId, name) => renameCustomArea(areaId, name),
+
+  /**
+   * SNOW-645: the picker's translated label for a basemap key — see
+   * `basemapLabel`'s own docstring above. Exposed here (rather than left
+   * as a bare identifier) because this bridge is specifically for modules
+   * OUTSIDE the map bundle's load-order contract, which map_downloads_manager.js
+   * is: unlike map_region_download.js (inside the bundle, so it calls
+   * `basemapLabel` bare), it cannot assume this script has already run.
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  basemapLabel: (key) => basemapLabel(key),
 });
 
 /**
