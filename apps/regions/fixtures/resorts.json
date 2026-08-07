@@ -5,9 +5,10 @@
     "fields": {
       "uuid": "f12cecf9-def8-43d3-b9df-80f93472f16f",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-24T08:22:35.549Z",
+      "updated_at": "2026-08-07T09:47:25.661Z",
       "name": "Verbier",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -39,9 +40,10 @@
     "fields": {
       "uuid": "5d64fb14-e65e-4c89-bad0-ffebe0fb8eb4",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.392Z",
+      "updated_at": "2026-08-07T09:47:25.662Z",
       "name": "Nendaz",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -76,6 +78,7 @@
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Veysonnaz",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -110,6 +113,7 @@
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Thyon",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -144,6 +148,7 @@
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Champex",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-4113"
@@ -178,6 +183,7 @@
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "La Fouly",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-4113"
@@ -209,9 +215,10 @@
     "fields": {
       "uuid": "699f832d-b7d8-457b-98ad-2e234ed23c01",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.394Z",
+      "updated_at": "2026-08-07T09:47:25.662Z",
       "name": "Zermatt",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Matterhorn",
       "region": [
         "CH-4222"
@@ -243,9 +250,10 @@
     "fields": {
       "uuid": "1f5470a5-1aae-4577-a8dd-31bef8e7a961",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.394Z",
+      "updated_at": "2026-08-07T09:47:25.663Z",
       "name": "Saas-Fee",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -280,6 +288,7 @@
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Saas-Grund",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -314,6 +323,7 @@
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Saas-Almagell",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -345,9 +355,10 @@
     "fields": {
       "uuid": "28c56f6f-ecdd-4b64-8709-bf588230d2ea",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.394Z",
+      "updated_at": "2026-08-07T09:47:25.663Z",
       "name": "Crans-Montana",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-4121"
@@ -382,6 +393,7 @@
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Leukerbad",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-4211"
@@ -413,9 +425,10 @@
     "fields": {
       "uuid": "c8c3de47-8ec3-45c3-9a3b-647d96f880c5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.394Z",
+      "updated_at": "2026-08-07T09:47:25.664Z",
       "name": "Grimentz",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -447,9 +460,10 @@
     "fields": {
       "uuid": "b2b8ceb0-4b0f-455c-8d32-7dcc413e82f8",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.394Z",
+      "updated_at": "2026-08-07T09:47:25.664Z",
       "name": "Zinal",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -484,6 +498,7 @@
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Vercorin",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -518,6 +533,7 @@
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "St-Luc",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -552,6 +568,7 @@
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Chandolin",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -583,9 +600,10 @@
     "fields": {
       "uuid": "32765e7a-1146-466a-9c07-1efbdac7958f",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.395Z",
+      "updated_at": "2026-08-07T09:47:25.664Z",
       "name": "Arolla",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-4123"
@@ -617,9 +635,10 @@
     "fields": {
       "uuid": "18fbdc9c-531d-41a0-93ac-7ac24b11c99c",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.395Z",
+      "updated_at": "2026-08-07T09:47:25.665Z",
       "name": "Les Haudères",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Val d'Hérens",
       "region": [
         "CH-4122"
@@ -654,6 +673,7 @@
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Evolène",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val d'Hérens",
       "region": [
         "CH-4122"
@@ -685,9 +705,10 @@
     "fields": {
       "uuid": "f5d9412f-3d79-4c20-9e42-9d9d7feda5f1",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.395Z",
+      "updated_at": "2026-08-07T09:47:25.665Z",
       "name": "Riederalp",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -719,9 +740,10 @@
     "fields": {
       "uuid": "60794e7d-402d-495b-831d-cc878b7c6477",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.395Z",
+      "updated_at": "2026-08-07T09:47:25.665Z",
       "name": "Bettmeralp",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -756,6 +778,7 @@
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Fiescheralp",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -787,9 +810,10 @@
     "fields": {
       "uuid": "9eb3d919-1c3e-48c1-86d8-cf821f3c213f",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
+      "updated_at": "2026-08-07T09:47:25.666Z",
       "name": "Reckingen",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Goms",
       "region": [
         "CH-4244"
@@ -821,9 +845,10 @@
     "fields": {
       "uuid": "36503a41-8ed0-492d-af8a-0a4ce135223e",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
+      "updated_at": "2026-08-07T09:47:25.666Z",
       "name": "Münster",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Goms",
       "region": [
         "CH-4243"
@@ -855,9 +880,10 @@
     "fields": {
       "uuid": "34361709-215a-48a6-a0e6-336836d97c76",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
+      "updated_at": "2026-08-07T09:47:25.667Z",
       "name": "Obergoms",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Goms upper",
       "region": [
         "CH-4244"
@@ -889,9 +915,10 @@
     "fields": {
       "uuid": "e1b57e17-6684-4e16-94e3-a613fea77165",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
+      "updated_at": "2026-08-07T09:47:25.667Z",
       "name": "Champéry",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Portes du Soleil",
       "region": [
         "CH-1312"
@@ -926,6 +953,7 @@
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Morgins",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Portes du Soleil",
       "region": [
         "CH-1312"
@@ -960,6 +988,7 @@
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Torgon",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-1311"
@@ -994,6 +1023,7 @@
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Val d'Entremont",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Grand-St-Bernard",
       "region": [
         "CH-4113"
@@ -1025,9 +1055,10 @@
     "fields": {
       "uuid": "1e056210-9479-4673-a6c3-368e7c15f1bb",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.396Z",
+      "updated_at": "2026-08-07T09:47:25.667Z",
       "name": "St. Moritz",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1062,6 +1093,7 @@
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Pontresina",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1096,6 +1128,7 @@
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Sils-Maria",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1130,6 +1163,7 @@
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Silvaplana",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1164,6 +1198,7 @@
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Celerina",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1195,9 +1230,10 @@
     "fields": {
       "uuid": "f2629ed9-dd68-4f70-bfef-4b2a0d184108",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.397Z",
+      "updated_at": "2026-08-07T09:47:25.668Z",
       "name": "Corvatsch",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7111"
@@ -1229,9 +1265,10 @@
     "fields": {
       "uuid": "921ae01c-f7ec-4c11-a78d-bcdcf4c5f03e",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.397Z",
+      "updated_at": "2026-08-07T09:47:25.668Z",
       "name": "Diavolezza",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7112"
@@ -1266,6 +1303,7 @@
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Zuoz",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7113"
@@ -1297,9 +1335,10 @@
     "fields": {
       "uuid": "0b70683f-96d6-41d7-82c6-d83d17aed6f4",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.397Z",
+      "updated_at": "2026-08-07T09:47:25.668Z",
       "name": "La Punt",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7113"
@@ -1331,9 +1370,10 @@
     "fields": {
       "uuid": "04f0cd24-b0d4-4289-8c32-4184cc725dc6",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.397Z",
+      "updated_at": "2026-08-07T09:47:25.669Z",
       "name": "Scuol",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7123"
@@ -1368,6 +1408,7 @@
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Ftan",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7123"
@@ -1399,9 +1440,10 @@
     "fields": {
       "uuid": "95f516ff-b882-4fc3-8471-32e020104339",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.669Z",
       "name": "Samnaun",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-7121"
@@ -1436,6 +1478,7 @@
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Münstertal",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val Müstair",
       "region": [
         "CH-7231"
@@ -1470,6 +1513,7 @@
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Santa Maria VM",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Val Müstair",
       "region": [
         "CH-7231"
@@ -1501,9 +1545,10 @@
     "fields": {
       "uuid": "a28c35ce-b660-422b-b3f2-9af56b2f8144",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.669Z",
       "name": "Poschiavo",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Valposchiavo",
       "region": [
         "CH-7222"
@@ -1535,9 +1580,10 @@
     "fields": {
       "uuid": "c68d26de-f28f-4cf5-8c4b-025209568bba",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.670Z",
       "name": "Bergell",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Val Bregaglia",
       "region": [
         "CH-7211"
@@ -1569,9 +1615,10 @@
     "fields": {
       "uuid": "47a8493c-1e5a-47ac-b8c5-d47846c5f357",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.670Z",
       "name": "Maloja",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Bergell",
       "region": [
         "CH-7211"
@@ -1603,9 +1650,10 @@
     "fields": {
       "uuid": "cfb1b956-4051-4c28-b5b9-88a0067cc6e5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.670Z",
       "name": "Davos",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5123"
@@ -1637,9 +1685,10 @@
     "fields": {
       "uuid": "e2b9b0bc-c32d-4118-8a61-0b6fb338bc35",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.398Z",
+      "updated_at": "2026-08-07T09:47:25.671Z",
       "name": "Klosters",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5112"
@@ -1671,9 +1720,10 @@
     "fields": {
       "uuid": "6c9af0f7-a50c-4a03-8eb3-c63958aa13fa",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.671Z",
       "name": "Parsenn",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5123"
@@ -1705,9 +1755,10 @@
     "fields": {
       "uuid": "b636f01d-9ea0-4bc0-b64b-e7cd144faaf7",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.671Z",
       "name": "Arosa",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Arosa Lenzerheide",
       "region": [
         "CH-5122"
@@ -1739,9 +1790,10 @@
     "fields": {
       "uuid": "2c2224c1-489f-465f-9af5-88f6bd3239d5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.672Z",
       "name": "Lenzerheide",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Arosa Lenzerheide",
       "region": [
         "CH-5221"
@@ -1776,6 +1828,7 @@
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Churwalden",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-5221"
@@ -1807,9 +1860,10 @@
     "fields": {
       "uuid": "34693526-1076-4f89-8a58-06ad1a54d88b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.672Z",
       "name": "Flims",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5124"
@@ -1841,9 +1895,10 @@
     "fields": {
       "uuid": "4d8ef9bc-8222-4d75-be92-2aff7f444897",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.672Z",
       "name": "Laax",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5124"
@@ -1878,6 +1933,7 @@
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Falera",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5211"
@@ -1909,9 +1965,10 @@
     "fields": {
       "uuid": "83a7bf69-1971-4f7e-a110-994c4e90fe36",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.673Z",
       "name": "Disentis",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Disentis/Mustér",
       "region": [
         "CH-5212"
@@ -1946,6 +2003,7 @@
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Obersaxen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-5214"
@@ -1977,9 +2035,10 @@
     "fields": {
       "uuid": "5ac9177a-51c2-486c-b4d3-899e61248a38",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.399Z",
+      "updated_at": "2026-08-07T09:47:25.673Z",
       "name": "Safiental",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "",
       "region": [
         "CH-5214"
@@ -2014,6 +2073,7 @@
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Vals",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-5215"
@@ -2048,6 +2108,7 @@
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Splügen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Rheinwald",
       "region": [
         "CH-5223"
@@ -2079,9 +2140,10 @@
     "fields": {
       "uuid": "0d1aa0d2-de02-446f-bf0a-cefd87faf7a7",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.400Z",
+      "updated_at": "2026-08-07T09:47:25.673Z",
       "name": "Bivio",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-5234"
@@ -2113,9 +2175,10 @@
     "fields": {
       "uuid": "cb5977be-952a-463a-84df-a331efafd26a",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.400Z",
+      "updated_at": "2026-08-07T09:47:25.673Z",
       "name": "Avers",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Cresta",
       "region": [
         "CH-5233"
@@ -2150,6 +2213,7 @@
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Savognin",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Surses",
       "region": [
         "CH-5232"
@@ -2184,6 +2248,7 @@
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Bergün",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Albulatal",
       "region": [
         "CH-5231"
@@ -2215,9 +2280,10 @@
     "fields": {
       "uuid": "7ba892a8-e129-46f5-9c95-fe1391e56efc",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.400Z",
+      "updated_at": "2026-08-07T09:47:25.674Z",
       "name": "Grindelwald",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1242"
@@ -2249,9 +2315,10 @@
     "fields": {
       "uuid": "10f80c71-bc57-4b07-8e79-9affe54a51ac",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.400Z",
+      "updated_at": "2026-08-07T09:47:25.674Z",
       "name": "Wengen",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1233"
@@ -2283,9 +2350,10 @@
     "fields": {
       "uuid": "1b199d73-600d-4921-9b15-4b45a6d67d9b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.401Z",
+      "updated_at": "2026-08-07T09:47:25.674Z",
       "name": "Mürren",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1233"
@@ -2317,9 +2385,10 @@
     "fields": {
       "uuid": "797f974b-b55f-46cf-8244-3d1248682c34",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.401Z",
+      "updated_at": "2026-08-07T09:47:25.675Z",
       "name": "Gstaad",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "Saanenland",
       "region": [
         "CH-1222"
@@ -2354,6 +2423,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Saanen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Saanenland",
       "region": [
         "CH-1112"
@@ -2388,6 +2458,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Schönried",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Saanenland",
       "region": [
         "CH-1222"
@@ -2422,6 +2493,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Zweisimmen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Simmental",
       "region": [
         "CH-1228"
@@ -2456,6 +2528,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Lenk",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Simmental",
       "region": [
         "CH-1224"
@@ -2487,9 +2560,10 @@
     "fields": {
       "uuid": "0791db43-d986-42ef-a247-46b0da5b8021",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.401Z",
+      "updated_at": "2026-08-07T09:47:25.675Z",
       "name": "Adelboden",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-1226"
@@ -2524,6 +2598,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Kandersteg",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Kandertal",
       "region": [
         "CH-1231"
@@ -2558,6 +2633,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Meiringen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Haslital",
       "region": [
         "CH-1244"
@@ -2592,6 +2668,7 @@
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Hasliberg",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Haslital",
       "region": [
         "CH-1244"
@@ -2626,6 +2703,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Grimmialp",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Niedersimmental",
       "region": [
         "CH-1228"
@@ -2660,6 +2738,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Frutigen",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-1226"
@@ -2694,6 +2773,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Beatenberg",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-1213"
@@ -2725,9 +2805,10 @@
     "fields": {
       "uuid": "9e2f63b5-5f8e-4114-ac86-c1c9e643fe1b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.402Z",
+      "updated_at": "2026-08-07T09:47:25.675Z",
       "name": "Lötschental",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-4211"
@@ -2762,6 +2843,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Leysin",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1113"
@@ -2796,6 +2878,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Villars-sur-Ollon",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2830,6 +2913,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Gryon",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2864,6 +2948,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Les Diablerets",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2898,6 +2983,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Glacier 3000",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2932,6 +3018,7 @@
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Moléson",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Gruyères",
       "region": [
         "CH-1121"
@@ -2966,6 +3053,7 @@
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Charmey",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Gruyères",
       "region": [
         "CH-1121"
@@ -3000,6 +3088,7 @@
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Jaun",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Jaunbach",
       "region": [
         "CH-1121"
@@ -3031,9 +3120,10 @@
     "fields": {
       "uuid": "fd30b251-fe78-4591-9645-60fbb7b71ae5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.403Z",
+      "updated_at": "2026-08-07T09:47:25.676Z",
       "name": "Rochers-de-Naye",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Montreux area",
       "region": [
         "CH-1111"
@@ -3065,9 +3155,10 @@
     "fields": {
       "uuid": "fe02a2d3-d79b-4098-b6ac-54646f855742",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.403Z",
+      "updated_at": "2026-08-07T09:47:25.676Z",
       "name": "Andermatt",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "SkiArena",
       "region": [
         "CH-2224"
@@ -3099,9 +3190,10 @@
     "fields": {
       "uuid": "2d190485-600b-4424-a1b7-68584ac82e91",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.403Z",
+      "updated_at": "2026-08-07T09:47:25.676Z",
       "name": "Realp",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Andermatt area",
       "region": [
         "CH-2223"
@@ -3133,9 +3225,10 @@
     "fields": {
       "uuid": "2a92771f-c4dc-4a64-8ec9-950f1afcd952",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.403Z",
+      "updated_at": "2026-08-07T09:47:25.677Z",
       "name": "Engelberg",
       "kind": "RESORT",
+      "tier": "CORE",
       "name_alt": "",
       "region": [
         "CH-2122"
@@ -3170,6 +3263,7 @@
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Melchsee-Frutt",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-2123"
@@ -3204,6 +3298,7 @@
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Elm",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Glarnerland",
       "region": [
         "CH-3113"
@@ -3238,6 +3333,7 @@
       "updated_at": "2026-07-28T10:54:40.404Z",
       "name": "Wildhaus",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Toggenburg",
       "region": [
         "CH-3211"
@@ -3272,6 +3368,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Unterwasser",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Toggenburg",
       "region": [
         "CH-3211"
@@ -3306,6 +3403,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Flumserberg",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-3223"
@@ -3340,6 +3438,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Pizol",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Bad Ragaz",
       "region": [
         "CH-3223"
@@ -3374,6 +3473,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Airolo",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Leventina",
       "region": [
         "CH-6112"
@@ -3405,9 +3505,10 @@
     "fields": {
       "uuid": "740a7437-4d07-42c0-b225-b9566ed1ae06",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.405Z",
+      "updated_at": "2026-08-07T09:47:25.677Z",
       "name": "Bedretto",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Valle Bedretto",
       "region": [
         "CH-6111"
@@ -3442,6 +3543,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Bosco Gurin",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-6121"
@@ -3473,9 +3575,10 @@
     "fields": {
       "uuid": "08759426-8006-4202-bbb4-9df8ee2571a9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-07-28T10:54:40.405Z",
+      "updated_at": "2026-08-07T09:47:25.677Z",
       "name": "Blenio",
       "kind": "RESORT",
+      "tier": "MINOR",
       "name_alt": "Lucomagno",
       "region": [
         "CH-6113"
@@ -3510,6 +3613,7 @@
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "San Bernardino",
       "kind": "RESORT",
+      "tier": "STANDARD",
       "name_alt": "Mesolcina",
       "region": [
         "CH-6211"
@@ -3544,6 +3648,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Bernina Pass",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-7112"
@@ -3578,6 +3683,7 @@
       "updated_at": "2026-04-30T16:45:29.067Z",
       "name": "Binntal",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-4242"
@@ -3612,6 +3718,7 @@
       "updated_at": "2026-05-14T13:33:15.433Z",
       "name": "Blatten",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Lötschental",
       "region": [
         "CH-4211"
@@ -3646,6 +3753,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Conters",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "südl. Prättigau",
       "region": [
         "CH-5112"
@@ -3680,6 +3788,7 @@
       "updated_at": "2026-05-14T13:33:15.438Z",
       "name": "Grimsel",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Haslital high",
       "region": [
         "CH-1247"
@@ -3714,6 +3823,7 @@
       "updated_at": "2026-04-30T16:43:56.340Z",
       "name": "Génépy",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-4112"
@@ -3748,6 +3858,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Haut Val de Bagnes",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Mauvoisin",
       "region": [
         "CH-4116"
@@ -3782,6 +3893,7 @@
       "updated_at": "2026-04-28T17:56:38.155Z",
       "name": "Klausenpass",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-3112"
@@ -3816,6 +3928,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Mattmark",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Saas high",
       "region": [
         "CH-4225"
@@ -3850,6 +3963,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Monte Rosa",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Zermatt high",
       "region": [
         "CH-4224"
@@ -3884,6 +3998,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Mountet",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Zinal hut",
       "region": [
         "CH-4125"
@@ -3918,6 +4033,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Schams",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Viamala",
       "region": [
         "CH-5222"
@@ -3952,6 +4068,7 @@
       "updated_at": "2026-05-14T13:33:15.447Z",
       "name": "Sustenpass",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-1246"
@@ -3986,6 +4103,7 @@
       "updated_at": "2026-04-30T16:20:35.399Z",
       "name": "Turtmann",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Turtmanntal",
       "region": [
         "CH-4212"
@@ -4020,6 +4138,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val Chamuera",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Samedan area",
       "region": [
         "CH-7115"
@@ -4054,6 +4173,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val S-charl",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7126"
@@ -4088,6 +4208,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val Suot",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Scuol area",
       "region": [
         "CH-7124"
@@ -4122,6 +4243,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val dal Spöl",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Swiss Nat. Park",
       "region": [
         "CH-7125"
@@ -4156,6 +4278,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Zervreila",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-5216"
@@ -4190,6 +4313,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "oberes Puschlav",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Livigno area",
       "region": [
         "CH-7221"
@@ -4224,6 +4348,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "westl. Silvretta",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "Prättigau",
       "region": [
         "CH-5113"
@@ -4258,6 +4383,7 @@
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "östliche Silvretta",
       "kind": "TOURING_TERRAIN",
+      "tier": "STANDARD",
       "name_alt": "",
       "region": [
         "CH-7122"

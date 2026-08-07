@@ -165,6 +165,23 @@
                     {% trans "Resort details" %}
                 </summary>
                 <div class="mt-2 grid grid-cols-2 gap-x-2 gap-y-2">
+                    {# SNOW-543: map prominence. No blank option — the field  #}
+                    {# is non-nullable with a STANDARD default, so a blank   #}
+                    {# choice would post "" and fail form validation.        #}
+                    {# ``data-default`` is what the JS falls back to when it #}
+                    {# clears the form (create mode has no row behind it).   #}
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Map tier" %}
+                        <select
+                            data-resort-field="tier"
+                            data-default="STANDARD"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                            <option value="CORE">{% trans "Core — large pin" %}</option>
+                            <option value="STANDARD">{% trans "Standard" %}</option>
+                            <option value="MINOR">{% trans "Minor — small pin" %}</option>
+                        </select>
+                    </label>
                     <label class="col-span-2 block text-xs text-text-3">
                         {% trans "Alternative name" %}
                         <input

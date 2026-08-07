@@ -39,6 +39,7 @@ COLUMNS = [
     "typical_season_close",
     "note",
     "kind",
+    "tier",
 ]
 
 
@@ -659,3 +660,63 @@ class TestImportResortsWhyItMatters:
 
         resort.refresh_from_db()
         assert resort.why_it_matters == "Short."
+
+
+@pytest.mark.django_db
+class TestImportResortsTier:
+    """The ``tier`` column (SNOW-543).
+
+    Tier is stored and curated rather than derived: the review's finding is
+    that scale is the wrong axis, and no formula promotes a small high area
+    like Avers or Bivio above a large low resort. The sheet is therefore
+    the source of truth, and the importer's job is to carry it faithfully.
+    """
+
+    def test_round_trips_from_the_sheet(self, tmp_path: Path) -> None:
+        """A CORE cell reaches the model."""
+        resort = ResortFactory.create(name="Zermatt")
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt", "tier": "CORE"}]
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE
+
+    def test_blank_tier_means_standard(self, tmp_path: Path) -> None:
+        """The column is optional — an export predating it still imports."""
+        resort = ResortFactory.create(name="Verbier", tier=Resort.Tier.CORE)
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.STANDARD
+
+    def test_unknown_tier_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
+        """A typo must not silently demote a Core resort to an ordinary pin."""
+        resort = ResortFactory.create(name="Zermatt", tier=Resort.Tier.CORE)
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt", "tier": "MAJOR"}]
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE
+
+    def test_tier_is_case_insensitive(self, tmp_path: Path) -> None:
+        """Sheet casing is the curator's business, not the importer's."""
+        resort = ResortFactory.create(name="Avers")
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Avers", "tier": "core"}]
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE

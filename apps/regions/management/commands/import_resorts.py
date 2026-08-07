@@ -1,8 +1,8 @@
 """import_resorts — reconcile the Resort table against the curated sheet.
 
 ``Resort``'s editorial columns (operator, website, the ``why_it_matters``
-line, elevations, lift/run counts, piste length, typical season dates,
-curator notes) are maintained
+line, the map ``tier``, elevations, lift/run counts, piste length,
+typical season dates, curator notes) are maintained
 in a spreadsheet, exported to ``apps/regions/data/resorts.tsv``. This command
 reconciles the database against that sheet in up to three modes, selected
 with ``--mode`` (all three by default):
@@ -461,6 +461,38 @@ def _kind_from_row(row: dict[str, str]) -> str:
     return raw
 
 
+def _tier_from_row(row: dict[str, str]) -> str:
+    """
+    Read the sheet's ``tier`` cell, defaulting to ``STANDARD`` (SNOW-543).
+
+    A blank or absent cell means ``STANDARD`` — the middle of the three
+    tiers and the shape every row had before the column existed, so an
+    export that predates it still imports.
+
+    An unrecognised value is an error rather than a silent fallback, for
+    the same reason ``_kind_from_row`` rejects one: a typo resolving
+    quietly to the default would demote a Core resort to an ordinary pin
+    with nothing in the output saying so.
+
+    Args:
+        row: One sheet row.
+
+    Returns:
+        A valid ``Resort.Tier`` value.
+
+    Raises:
+        ValueError: If the cell holds something that is not a Tier.
+
+    """
+    raw = (row.get("tier") or "").strip().upper()
+    if not raw:
+        return Resort.Tier.STANDARD
+    if raw not in Resort.Tier.values:
+        valid = ", ".join(Resort.Tier.values)
+        raise ValueError(f"unknown tier {raw!r} (expected one of: {valid})")
+    return raw
+
+
 def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]]:
     """Assign the sheet's editorial values onto ``resort`` in memory.
 
@@ -483,6 +515,7 @@ def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]
     values: dict[str, Any] = {field: row[field].strip() for field in TEXT_FIELDS}
     values["notes"] = row["note"].strip()
     values["kind"] = _kind_from_row(row)
+    values["tier"] = _tier_from_row(row)
     for field in INT_FIELDS:
         raw = row[field].strip()
         values[field] = int(raw) if raw else None

@@ -66,6 +66,27 @@ class TestResortsGeojson:
         assert feature["properties"]["name"] == "Both"
         assert feature["properties"]["region_id"] == geocoded.region.region_id
         assert feature["properties"]["needs_review"] is False
+        # SNOW-543: every feature carries its tier, so the map can size the
+        # pin without a second request.
+        assert feature["properties"]["tier"] == "STANDARD"
+
+    def test_tier_is_carried_per_feature(self) -> None:
+        """SNOW-543: the curated tier reaches the layer that sizes the pin."""
+        core = ResortFactory.create(
+            name="Zermatt", geocoded=True, tier=Resort.Tier.CORE
+        )
+        minor = ResortFactory.create(
+            name="Realp", latitude=46.6, longitude=8.5, tier=Resort.Tier.MINOR
+        )
+
+        client = Client()
+        resp = client.get(reverse("api:resorts_geojson"))
+        by_id = {
+            f["properties"]["id"]: f["properties"] for f in resp.json()["features"]
+        }
+
+        assert by_id[core.pk]["tier"] == "CORE"
+        assert by_id[minor.pk]["tier"] == "MINOR"
 
     @override_settings(DEBUG=False)
     def test_works_with_debug_off(self) -> None:
@@ -222,6 +243,7 @@ class TestEditResortsQueue:
             operator_name="Téléverbier SA",
             website="https://www.verbier.ch/",
             why_it_matters="Les 4 Vallées high alpine, heavy off-piste.",
+            tier=Resort.Tier.CORE,
             num_lifts=32,
             num_runs=97,
             total_piste_km=410.5,
@@ -235,6 +257,7 @@ class TestEditResortsQueue:
         entry = next(e for e in resp.json()["all_resorts"] if e["id"] == resort.pk)
         assert set(entry["details"]) == set(RESORT_DETAIL_FIELDS)
         assert entry["details"] == {
+            "tier": "CORE",
             "name_alt": resort.name_alt,
             "operator_name": "Téléverbier SA",
             "website": "https://www.verbier.ch/",
@@ -504,6 +527,7 @@ class TestEditResortSaveDetails:
                 "operator_name": "Téléverbier SA",
                 "website": "https://www.verbier.ch/",
                 "why_it_matters": "Les 4 Vallées high alpine, heavy off-piste.",
+                "tier": "CORE",
                 "num_lifts": 32,
                 "num_runs": 97,
                 "total_piste_km": 410.5,
@@ -520,6 +544,7 @@ class TestEditResortSaveDetails:
         assert resort.operator_name == "Téléverbier SA"
         assert resort.website == "https://www.verbier.ch/"
         assert resort.why_it_matters == "Les 4 Vallées high alpine, heavy off-piste."
+        assert resort.tier == Resort.Tier.CORE
         assert resort.num_lifts == 32
         assert resort.num_runs == 97
         assert resort.total_piste_km == 410.5
@@ -607,6 +632,8 @@ class TestEditResortSaveDetails:
             ("typical_season_close", "April"),
             ("total_piste_km", -5),
             ("name_alt", "x" * 256),
+            ("why_it_matters", "x" * 256),
+            ("tier", "MAJOR"),
         ],
     )
     def test_invalid_detail_returns_400_naming_the_field(

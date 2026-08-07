@@ -103,6 +103,7 @@ class ResortAdmin(admin.ModelAdmin):
     list_display = [
         "name",
         "kind",
+        "tier",
         "name_alt",
         "region",
         "canton",
@@ -113,7 +114,7 @@ class ResortAdmin(admin.ModelAdmin):
         "needs_review",
         "forecast_point",
     ]
-    list_filter = ["kind", "canton", "geocode_source", "needs_review"]
+    list_filter = ["kind", "tier", "canton", "geocode_source", "needs_review"]
     search_fields = ["name", "name_alt", "region__region_id"]
     ordering = ["name"]
     readonly_fields = [
@@ -130,6 +131,7 @@ class ResortAdmin(admin.ModelAdmin):
             "Resort details",
             {
                 "fields": (
+                    "tier",
                     "operator_name",
                     "website",
                     "why_it_matters",

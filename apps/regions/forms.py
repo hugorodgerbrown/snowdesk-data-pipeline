@@ -23,6 +23,7 @@ from .models import Resort
 # (derived, not hand-typed), and the geocode-provenance columns (stamped by
 # the endpoint, never sent by the client).
 RESORT_DETAIL_FIELDS: tuple[str, ...] = (
+    "tier",
     "name_alt",
     "operator_name",
     "website",

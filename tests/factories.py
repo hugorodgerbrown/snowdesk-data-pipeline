@@ -175,6 +175,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     operator_name = ""
     website = ""
     why_it_matters = ""
+    tier = Resort.Tier.STANDARD
     num_lifts = None
     num_runs = None
     total_piste_km = None
