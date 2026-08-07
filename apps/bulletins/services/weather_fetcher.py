@@ -122,8 +122,11 @@ REGION_DAILY_VARIABLES = (
 )
 
 # Comprehensive daily variable set requested for ForecastPoint forecasts — a
-# favourited point is rendered as a personal detail card, richer than the
-# region bulletin header (which only needs weather_code/sunrise/sunset).
+# favourited point is rendered as a personal detail card, so it asks for the
+# full daily block rather than the six variables REGION_DAILY_VARIABLES needs
+# for the bulletin header. The two sets overlap but are not nested by
+# accident: the region set is what the weather panel renders, the point set is
+# what the detail card and the convergence series need.
 POINT_DAILY_VARIABLES = (
     "weather_code,sunrise,sunset,"
     "temperature_2m_max,temperature_2m_min,"
