@@ -662,7 +662,7 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
         max_rating_key="considerable",
         subdivision="",
         has_bulletin=True,
-        source="albina",
+        source="ALBINA",
         bands=_albina_eo_bands,
     )
     _albina_eo_grid = SeasonGrid(
@@ -704,7 +704,7 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
         max_rating_key="high",
         subdivision="",
         has_bulletin=True,
-        source="albina",
+        source="ALBINA",
         bands=_albina_2x2_bands,
     )
     _albina_2x2_grid = SeasonGrid(

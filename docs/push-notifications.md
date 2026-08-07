@@ -2,7 +2,7 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/ smoke test, Declarative Web Push, mechanism/inactive_at lifecycle
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-08-07
 ---
 
 # Web Push notifications
@@ -28,9 +28,9 @@ by the OS even if the SW is gone.
 `apps/accounts/models.py::PushSubscription.mechanism` records which path a
 given subscription uses:
 
-- `sw` — the service-worker-parsed path (`{title, body, url}`), used by
+- `SW` — the service-worker-parsed path (`{title, body, url}`), used by
   every browser today except Safari 18.4+.
-- `declarative` — Apple's fixed shape, used when the browser exposes
+- `DECLARATIVE` — Apple's fixed shape, used when the browser exposes
   `'declarativePush' in Notification` at subscribe time.
 
 `static/js/push_demo.js::_supportsDeclarativePush()` does the feature
@@ -38,7 +38,7 @@ detection and sends the result as a `"mechanism"` field on the
 `/account/push/register/` POST body.
 
 `apps/accounts/push_service.py::dispatch_push` branches the *outgoing wire
-payload* on `sub.mechanism` (see `_build_wire_payload`). For a `declarative`
+payload* on `sub.mechanism` (see `_build_wire_payload`). For a `DECLARATIVE`
 subscription, whatever `{title, body, url}`-shaped payload the caller
 passes in is translated to:
 
@@ -55,14 +55,14 @@ passes in is translated to:
 
 `web_push: 8030` is Apple's declarative-push version tag (see
 [the WebKit blog post](https://webkit.org/blog/16535/meet-declarative-web-push/)).
-`notification.navigate` carries what the `sw` shape calls `url` — the page
+`notification.navigate` carries what the `SW` shape calls `url` — the page
 opened when the notification is tapped. This is the documented **minimum**
 subset of `notification` keys; Apple's accepted key set has drifted between
 releases, so treat any future field addition (`app_badge`, `silent`,
 `mutable`, …) as a schema change requiring a matching update to
 `_build_wire_payload` and this section.
 
-`sw` subscriptions are unaffected — they still get the plain
+`SW` subscriptions are unaffected — they still get the plain
 `{title, body, url}` shape the existing service worker `push` handler
 parses.
 
@@ -71,22 +71,25 @@ parses.
 | Browser / Platform | Declarative Web Push |
 |---------------------|----------------------|
 | Safari 18.4+ (macOS, iOS, iPadOS) | Yes |
-| Chrome, Firefox, Edge, Samsung Internet | No — always `sw` |
-| Safari < 18.4 | No — always `sw` |
+| Chrome, Firefox, Edge, Samsung Internet | No — always `SW` |
+| Safari < 18.4 | No — always `SW` |
 
 ---
 
 ## `mechanism` field lifecycle
 
-- Defaults to `"sw"` — both on the model (`PushSubscription.Mechanism.SW`)
+- Defaults to `"SW"` — both on the model (`PushSubscription.Mechanism.SW`)
   and when `push_register`'s POST body omits the field entirely, so old
   clients that predate SNOW-380 keep working unchanged.
 - Set from the `"mechanism"` key in the `push_register` POST body, which
   `static/js/push_demo.js::enablePush` and `::reverifyPushSubscription` both
-  populate via `_supportsDeclarativePush()`. An unrecognised value (outside
-  `PushSubscription.Mechanism.values`) is rejected with `400`.
+  populate via `_supportsDeclarativePush()`. The server upper-cases the
+  incoming value before validating (SNOW-582) — a stale cached page or
+  service worker still sending the pre-SNOW-582 lower-case wire value
+  (`"sw"`, `"declarative"`) keeps working — then rejects anything outside
+  `PushSubscription.Mechanism.values` with `400`.
 - Flips only on a fresh `update_or_create` call against the same endpoint —
-  it is not reconciled retroactively; a device only reports `declarative`
+  it is not reconciled retroactively; a device only reports `DECLARATIVE`
   once it resubscribes after upgrading to a Declarative-Web-Push-capable
   browser.
 
@@ -293,9 +296,9 @@ Safari on iOS only delivers Web Push in standalone (installed PWA) mode.
    `'declarativePush' in Notification` returns `true` — this is the same
    check `_supportsDeclarativePush()` runs client-side.
 3. Click **Enable push**, grant permission, and confirm the register POST
-   in the network tab carries `"mechanism":"declarative"`.
+   in the network tab carries `"mechanism":"DECLARATIVE"`.
 4. Check `/admin/accounts/pushsubscription/` — the new row's
-   **Mechanism** column should read `declarative`.
+   **Mechanism** column should read `DECLARATIVE`.
 5. Send a test push. The OS renders the notification directly from the
    Declarative Web Push JSON shape — no service worker `push` handler
    runs for this delivery, so a broken/evicted SW does not prevent the

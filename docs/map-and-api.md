@@ -392,7 +392,7 @@ every constraint stays on the model). Adding a field means adding it in
 both places and nowhere else.
 
 One **Save** POSTs `{latitude, longitude, details}`, which sets
-`geocode_source="manual"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
+`geocode_source="MANUAL"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
 clears `needs_review`, and writes the detail fields — a save is a manual
 confirmation of the marker's position as well as of the details. The
 button reads "Saving…" and is disabled for the round trip, and a

@@ -420,13 +420,13 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
     try:
         coordinates = _coordinates_from_row(row)
         if coordinates is not None:
-            # Stamped ``import``, never ``manual``: the panel's ``manual`` /
+            # Stamped ``IMPORT``, never ``MANUAL``: the panel's ``MANUAL`` /
             # ``confidence=1.0`` / ``needs_review=False`` stamp asserts that an
             # operator placed this pin on a map, which is not true of a
             # coordinate that arrived as sheet data. Flagging it for review is
             # the honest record, and the panel re-stamps it on the first save.
             resort.latitude, resort.longitude = coordinates
-            resort.geocode_source = "import"
+            resort.geocode_source = Resort.GeocodeSource.IMPORT
             resort.geocoded_at = timezone.now()
             resort.needs_review = True
         _apply_row(resort, row)

@@ -2126,10 +2126,10 @@ class TestBuildRenderModelEuregio:
     """End-to-end tests using the committed ALBINA sample bulletin."""
 
     def test_source_is_albina(self) -> None:
-        """ALBINA bulletin produces source='albina'."""
+        """ALBINA bulletin produces source='ALBINA'."""
         props = _load_albina_bulletin()
         rm = build_render_model(props)
-        assert rm["source"] == "albina"
+        assert rm["source"] == "ALBINA"
 
     def test_has_populated_traits(self) -> None:
         """ALBINA bulletin produces traits (non-empty)."""
@@ -2189,10 +2189,10 @@ class TestV4SLFRegressionNewEmptySlots:
     """Regression tests: SLF bulletins produce v4 shape with empty new slots."""
 
     def test_slf_bulletin_source_is_slf(self) -> None:
-        """SLF bulletin has source='slf'."""
+        """SLF bulletin has source='SLF'."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
-        assert rm["source"] == "slf"
+        assert rm["source"] == "SLF"
 
     def test_slf_bulletin_danger_patterns_is_empty(self) -> None:
         """SLF bulletin has empty danger_patterns list."""
@@ -2248,7 +2248,7 @@ class TestV4SLFRegressionNewEmptySlots:
         assert "danger_patterns" in rm
         assert "avalanche_activity" in rm["prose"]
         # SLF-specific empty values.
-        assert rm["source"] == "slf"
+        assert rm["source"] == "SLF"
         assert rm["danger_patterns"] == []
         assert rm["prose"]["avalanche_activity"] == {"highlights": "", "comment": ""}
 
@@ -2346,10 +2346,10 @@ class TestBuildRenderModelMeteoFranceEndToEnd:
     """End-to-end tests using a captured MeteoFrance BRA XML bulletin."""
 
     def test_source_is_meteofrance(self) -> None:
-        """METEOFRANCE bulletin produces source='meteofrance'."""
+        """METEOFRANCE bulletin produces source='METEOFRANCE'."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
-        assert rm["source"] == "meteofrance"
+        assert rm["source"] == "METEOFRANCE"
 
     def test_has_populated_traits(self) -> None:
         """METEOFRANCE bulletin with avalancheProblems produces non-empty traits."""

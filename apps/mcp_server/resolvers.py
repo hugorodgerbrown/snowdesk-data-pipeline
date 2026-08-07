@@ -52,12 +52,15 @@ VALID_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 # Country → provider mapping for the ``find_places_near`` result shape.
 # Static because Snowdesk fetches from exactly one provider per country;
 # the region's own country label is authoritative regardless of whether a
-# bulletin exists on any given day.
+# bulletin exists on any given day. Values are ``Bulletin.Source`` values
+# (SNOW-582 upper-cased them) — ``tools.py`` round-trips them through
+# ``Bulletin.Source(value)`` and ``_ISSUE_SCHEDULE`` lookups, both of which
+# require an exact match against the enum's current values.
 _PROVIDER_BY_COUNTRY: dict[str, str] = {
-    "CH": "slf",
-    "AT": "albina",
-    "IT": "albina",
-    "FR": "meteofrance",
+    "CH": "SLF",
+    "AT": "ALBINA",
+    "IT": "ALBINA",
+    "FR": "METEOFRANCE",
 }
 
 # Approximate mean earth radius in kilometres — good to five significant
@@ -114,7 +117,7 @@ def list_regions(
         country: An already-normalised ISO-3166-1 alpha-2 country code
             (e.g. ``"CH"``), or ``None`` for no country filter.
         provider: An already-normalised ``Bulletin.Source`` value (e.g.
-            ``"slf"``), or ``None`` for no provider filter — resolved to
+            ``"SLF"``), or ``None`` for no provider filter — resolved to
             the set of countries that provider serves via
             ``_PROVIDER_BY_COUNTRY``.
 

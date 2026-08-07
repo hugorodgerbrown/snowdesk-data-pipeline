@@ -5,9 +5,12 @@ Three views, all JSON in / JSON out:
 
 - ``push_register``   POST  — body: ``{endpoint, keys: {p256dh, auth}, mechanism?}``.
                               Upserts a PushSubscription keyed by endpoint.
-                              ``mechanism`` defaults to ``"sw"`` when omitted
-                              and must be one of ``PushSubscription.Mechanism``
-                              (SNOW-380); an unknown value is rejected with 400.
+                              ``mechanism`` defaults to ``"SW"`` when omitted,
+                              is upper-cased before validation (SNOW-582 — so
+                              a stale client still sending the old lower-case
+                              wire value keeps working), and must be one of
+                              ``PushSubscription.Mechanism`` (SNOW-380); an
+                              unknown value is rejected with 400.
 - ``push_unregister`` POST  — body: ``{endpoint}``. Hard-deletes the row.
 - ``push_test``       POST  — body: ``{endpoint?, title?, body?, url?}``.
                               Enqueues one ``_worker_dispatch_push`` task per
@@ -56,7 +59,11 @@ def push_register(request: HttpRequest) -> HttpResponse:
     if not (endpoint and p256dh and auth):
         return JsonResponse({"ok": False, "error": "missing fields"}, status=400)
 
-    mechanism = data.get("mechanism", PushSubscription.Mechanism.SW)
+    # Normalise before validating: a stale cached page or service worker may
+    # still send the pre-SNOW-582 lower-case wire value ("sw", "declarative").
+    # This is a tolerant read of an inbound value, not a lower-case store —
+    # the row is always persisted with the upper-case member below.
+    mechanism = str(data.get("mechanism", PushSubscription.Mechanism.SW)).upper()
     if mechanism not in PushSubscription.Mechanism.values:
         return JsonResponse({"ok": False, "error": "invalid mechanism"}, status=400)
 

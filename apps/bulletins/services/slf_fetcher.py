@@ -751,10 +751,12 @@ def run_slf_pipeline(
 # ---------------------------------------------------------------------------
 # Source registry — used by the unified fetch_bulletins management command.
 # ---------------------------------------------------------------------------
+# SNOW-582: these reference Bulletin.Source directly rather than redeclaring
+# the same upper-case strings — Bulletin.Source.SLF now already equals "SLF".
 
-SOURCE_SLF = "SLF"
-SOURCE_ALBINA = "ALBINA"
-SOURCE_METEOFRANCE = "METEOFRANCE"
+SOURCE_SLF = Bulletin.Source.SLF
+SOURCE_ALBINA = Bulletin.Source.ALBINA
+SOURCE_METEOFRANCE = Bulletin.Source.METEOFRANCE
 SOURCE_CHOICES = (SOURCE_SLF, SOURCE_ALBINA, SOURCE_METEOFRANCE)
 
 

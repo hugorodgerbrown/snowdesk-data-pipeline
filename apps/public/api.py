@@ -1923,7 +1923,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     its stored value (see ``_bind_resort_details``); its permitted keys
     are ``apps.regions.forms.RESORT_DETAIL_FIELDS``.
 
-    On success, sets ``geocode_source="manual"``,
+    On success, sets ``geocode_source="MANUAL"``,
     ``geocode_confidence=1.0``, ``geocoded_at=now()``, and clears
     ``needs_review`` — the operator has the pin under the placement
     marker whenever they save, so every save is a manual confirmation of
@@ -1966,7 +1966,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
 
     resort.latitude = lat
     resort.longitude = lon
-    resort.geocode_source = "manual"
+    resort.geocode_source = Resort.GeocodeSource.MANUAL
     resort.geocode_confidence = 1.0
     resort.geocoded_at = timezone.now()
     resort.needs_review = False
@@ -2128,7 +2128,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
     from is the one case that has to ask.
 
     The new row is stamped exactly as a save stamps an edited one
-    (``geocode_source="manual"``, ``geocode_confidence=1.0``,
+    (``geocode_source="MANUAL"``, ``geocode_confidence=1.0``,
     ``geocoded_at=now()``, ``needs_review=False``) — the operator placed
     the pin, so the position is manually confirmed by construction.
 
@@ -2207,7 +2207,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
         region=region,
         latitude=lat,
         longitude=lon,
-        geocode_source="manual",
+        geocode_source=Resort.GeocodeSource.MANUAL,
         geocode_confidence=1.0,
         geocoded_at=timezone.now(),
         needs_review=False,

@@ -232,7 +232,7 @@ class TestAlbinaCalendarTileRendering:
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_only_cell_attributes(self, client: Client) -> None:
-        """Elevation-only ALBINA cell has data-source='albina' and data-band-mode='elevation-only'."""
+        """Elevation-only ALBINA cell has data-source='ALBINA' and data-band-mode='elevation-only'."""
         region = MicroRegionFactory.create(region_id="at-9901")
         target = datetime.date(2025, 11, 4)
         bulletin = BulletinFactory.create()
@@ -262,14 +262,14 @@ class TestAlbinaCalendarTileRendering:
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         html = response.content.decode()
-        assert 'data-source="albina"' in html
+        assert 'data-source="ALBINA"' in html
         assert 'data-band-mode="elevation-only"' in html
         # Two calendar-band spans for the two elevation bands.
         assert html.count('class="calendar-band"') == 2
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_time_cell_attributes(self, client: Client) -> None:
-        """2×2 ALBINA cell has data-source='albina' and data-band-mode='elevation-time'."""
+        """2×2 ALBINA cell has data-source='ALBINA' and data-band-mode='elevation-time'."""
         region = MicroRegionFactory.create(region_id="at-9902")
         target = datetime.date(2025, 11, 4)
         bulletin = BulletinFactory.create()
@@ -311,7 +311,7 @@ class TestAlbinaCalendarTileRendering:
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         html = response.content.decode()
-        assert 'data-source="albina"' in html
+        assert 'data-source="ALBINA"' in html
         assert 'data-band-mode="elevation-time"' in html
         # Four calendar-band spans for the 2×2 grid.
         assert html.count('class="calendar-band"') == 4
@@ -355,6 +355,29 @@ class TestAlbinaCalendarTileRendering:
         assert response.status_code == 200
         html = response.content.decode()
         assert "data-band-mode=" not in html
+
+    def test_main_css_carries_the_matching_albina_selector(self) -> None:
+        """src/css/main.css targets the exact data-source value the template emits.
+
+        SNOW-582 upper-cased Bulletin.Source/RegionDayRating.source, so
+        ``cell.source`` renders as ``"ALBINA"`` rather than ``"albina"``. The
+        band-mode rendering rules in ``src/css/main.css`` are plain CSS
+        attribute selectors, not driven by the enum, so a casing change here
+        would silently stop matching and the elevation-band tiles would
+        fall back to the default (unsplit) fill with no test failure —
+        this guard ties the two together.
+        """
+        from pathlib import Path
+
+        css = Path("src/css/main.css").read_text(encoding="utf-8")
+        assert (
+            f'[data-source="{Bulletin.Source.ALBINA}"][data-band-mode="elevation-only"]'
+            in css
+        )
+        assert (
+            f'[data-source="{Bulletin.Source.ALBINA}"][data-band-mode="elevation-time"]'
+            in css
+        )
 
 
 # ---------------------------------------------------------------------------

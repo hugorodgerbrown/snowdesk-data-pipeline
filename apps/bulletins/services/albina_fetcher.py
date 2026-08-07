@@ -415,7 +415,7 @@ def latest_albina_date() -> date | None:
 
     """
     result = (
-        Bulletin.objects.filter(render_model__source=Bulletin.Source.ALBINA)
+        Bulletin.objects.filter(source=Bulletin.Source.ALBINA)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()

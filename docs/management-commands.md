@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-07
 ---
 
 # Management commands
@@ -575,6 +575,67 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`.
+
+- `uppercase_resort_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `Resort.geocode_source` from its legacy lower-case
+  stored values (`"manual"`, `"import"`) to the upper-case `GeocodeSource`
+  choices. Read-only by default; the dry-run prints a breakdown of what
+  would convert, grouped by target value. Idempotent by queryset — a
+  second run selects nothing, because no lower-case values remain.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted.
+  uv run python manage.py uppercase_resort_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_resort_choice_values --commit
+  ```
+
+  Flags: `--commit`.
+
+- `uppercase_account_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `Subscription.geo_match_kind` and
+  `PushSubscription.mechanism` from their legacy lower-case stored values
+  to their upper-case `TextChoices` members. Read-only by default;
+  idempotent by queryset per field.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted, both fields.
+  uv run python manage.py uppercase_account_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_account_choice_values --commit
+  ```
+
+  Flags: `--commit`.
+
+- `uppercase_bulletin_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `PipelineRun.status`, `Bulletin.source`, and
+  `RegionDayRating.source` from their legacy lower-case stored values, plus
+  a targeted rewrite of the `render_model["source"]` JSON key on rows whose
+  stored value is still lower case (a plain `rebuild_render_models --commit`
+  would be a no-op once every row's `render_model_version` is current, and
+  `--all` would regenerate every render-model field for ~8,000 production
+  rows — this rewrites exactly the one key). Read-only by default;
+  idempotent by queryset/JSON-path lookup per field/key.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted, all fields plus the JSON key.
+  uv run python manage.py uppercase_bulletin_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_bulletin_choice_values --commit
+  ```
+
+  Flags: `--commit`.
+
+  **Post-deploy ordering.** Between deploying the SNOW-582 choices change
+  and running the three `uppercase_*_choice_values` commands above, stored
+  values are lower case while the enums are upper case — reads that compare
+  against an enum member (the ALBINA calendar CSS selectors, the headline
+  variant matrix) fall back to their default/generic branch rather than
+  erroring. Run the three commands in any order immediately after deploy,
+  then verify with a read-only invocation of each (nothing left to convert).
 
 ### Health checks (read-only)
 

@@ -58,8 +58,8 @@ makes the sheet safe to re-run: a resort re-pinned in the map editor owns
 its own position and region afterwards, and a later import cannot drag it
 back to whatever the sheet happened to say.
 
-A sheet-supplied coordinate is stamped `geocode_source="import"` with
-`needs_review=True`, never `manual`. The edit-resorts panel's `manual` /
+A sheet-supplied coordinate is stamped `geocode_source="IMPORT"` with
+`needs_review=True`, never `MANUAL`. The edit-resorts panel's `MANUAL` /
 `geocode_confidence=1.0` / `needs_review=False` stamp records that an
 operator placed that pin on a map, which is not true of a coordinate that
 arrived as data — so imported rows stay flagged for a confirming pass, and

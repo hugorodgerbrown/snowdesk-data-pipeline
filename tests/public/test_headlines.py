@@ -88,35 +88,35 @@ def test_headline_matrix_version_is_int() -> None:
     ("source", "partition_type", "peak_rating", "direction", "family"),
     [
         # Cell 1
-        ("slf", "none", "1", "none", "slab"),
+        ("SLF", "none", "1", "none", "slab"),
         # Cell 2
-        ("slf", "none", "2", "none", "slab"),
+        ("SLF", "none", "2", "none", "slab"),
         # Cell 3
-        ("slf", "none", "2", "none", "persistent"),
+        ("SLF", "none", "2", "none", "persistent"),
         # Cell 4
-        ("slf", "none", "3", "none", "slab"),
+        ("SLF", "none", "3", "none", "slab"),
         # Cell 5
-        ("slf", "none", "3", "none", "persistent"),
+        ("SLF", "none", "3", "none", "persistent"),
         # Cell 6 (bare high, skier-high)
-        ("slf", "none", "4", "none", "slab"),
+        ("SLF", "none", "4", "none", "slab"),
         # Cell 6a (4-, skier-high)
-        ("slf", "none", "4-", "none", "slab"),
+        ("SLF", "none", "4-", "none", "slab"),
         # Cell 6b (4=, skier-high)
-        ("slf", "none", "4=", "none", "slab"),
+        ("SLF", "none", "4=", "none", "slab"),
         # Cell 6c (4+, road-high)
-        ("slf", "none", "4+", "none", "slab"),
+        ("SLF", "none", "4+", "none", "slab"),
         # Cell 7
-        ("slf", "none", "4", "none", "wet"),
+        ("SLF", "none", "4", "none", "wet"),
         # Cell 8
-        ("slf", "temporal", "2", "rise", "wet"),
+        ("SLF", "temporal", "2", "rise", "wet"),
         # Cell 9
-        ("slf", "temporal", "3", "rise", "wet"),
+        ("SLF", "temporal", "3", "rise", "wet"),
         # Cell 10
-        ("slf", "temporal", "3", "fall", "slab"),
+        ("SLF", "temporal", "3", "fall", "slab"),
         # Cell 11
-        ("slf", "none", "5", "none", "slab"),
+        ("SLF", "none", "5", "none", "slab"),
         # Cell 12
-        ("slf", "none", "3", "none", "mixed"),
+        ("SLF", "none", "3", "none", "mixed"),
     ],
 )
 def test_top_12_cells_do_not_fall_back(
@@ -141,7 +141,7 @@ def test_top_12_cells_do_not_fall_back(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("source", ["meteofrance", "albina"])
+@pytest.mark.parametrize("source", ["METEOFRANCE", "ALBINA"])
 def test_euregio_elevation_cell(source: str) -> None:
     """EUREGIO elevation-banded cell returns its hand-authored copy."""
     result = headline_for(source, "elevation", "3", "rise", "slab")
@@ -156,30 +156,30 @@ def test_euregio_elevation_cell(source: str) -> None:
 
 def test_level_4_skier_high_bare() -> None:
     """Bare level-4 returns the skier-high copy (large avalanches possible)."""
-    result = headline_for("slf", "none", "4", "none", "slab")
+    result = headline_for("SLF", "none", "4", "none", "slab")
     assert "large avalanches" in result.lower()
 
 
 def test_level_4_skier_high_minus() -> None:
     """4- returns the same skier-high copy as bare 4."""
-    bare = headline_for("slf", "none", "4", "none", "slab")
-    minus = headline_for("slf", "none", "4-", "none", "slab")
+    bare = headline_for("SLF", "none", "4", "none", "slab")
+    minus = headline_for("SLF", "none", "4-", "none", "slab")
     assert bare == minus
 
 
 def test_level_4_skier_high_equal() -> None:
     """4= returns the same skier-high copy as bare 4."""
-    bare = headline_for("slf", "none", "4", "none", "slab")
-    equal = headline_for("slf", "none", "4=", "none", "slab")
+    bare = headline_for("SLF", "none", "4", "none", "slab")
+    equal = headline_for("SLF", "none", "4=", "none", "slab")
     assert bare == equal
 
 
 def test_level_4_road_high() -> None:
     """4+ returns the road-high copy (infrastructure exposure)."""
-    result = headline_for("slf", "none", "4+", "none", "slab")
+    result = headline_for("SLF", "none", "4+", "none", "slab")
     assert "road" in result.lower() or "infrastructure" in result.lower()
     # Must differ from the skier-high copy.
-    skier_high = headline_for("slf", "none", "4", "none", "slab")
+    skier_high = headline_for("SLF", "none", "4", "none", "slab")
     assert result != skier_high
 
 
@@ -203,14 +203,14 @@ def test_generic_fallback_contains_danger_word(
 ) -> None:
     """Generic fallback includes the correct danger-level word."""
     # Use a source/family combo that has no hand-authored entry.
-    result = headline_for("albina", "none", peak_rating, "none", "other")
+    result = headline_for("ALBINA", "none", peak_rating, "none", "other")
     assert "Danger level" in result
     assert expected_word in result
 
 
 def test_generic_fallback_no_subdivision_in_text() -> None:
     """Generic fallback strips the subdivision suffix from the level number."""
-    result = headline_for("slf", "temporal", "4-", "none", "persistent")
+    result = headline_for("SLF", "temporal", "4-", "none", "persistent")
     # "4-" should not appear as-is; "4" should.
     assert "4-" not in result
     assert "4" in result

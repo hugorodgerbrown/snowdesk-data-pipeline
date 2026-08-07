@@ -77,7 +77,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--source",
             dest="filter_source",
-            choices=["slf", "albina", "meteofrance"],
+            choices=list(Bulletin.Source.values),
             default=None,
             help=(
                 "Restrict the scan to bulletins from a single source. "
@@ -137,8 +137,8 @@ class Command(BaseCommand):
         ``values_list`` tuple purely so there is something to print.
 
         Args:
-            filter_source: Optional source slug (``"slf"``, ``"albina"``,
-                ``"meteofrance"``) to restrict the scan. When given, bulletins
+            filter_source: Optional source slug (``"SLF"``, ``"ALBINA"``,
+                ``"METEOFRANCE"``) to restrict the scan. When given, bulletins
                 whose detected source does not match are silently skipped.
             verbosity: Django verbosity level (0–3).
 
@@ -231,32 +231,28 @@ def _detect_source_slug(properties: dict[str, Any]) -> str:
     """
     Detect the bulletin source from ``customData`` keys.
 
-    Mirrors the logic in ``render_model.detect_source`` but returns a plain
-    string slug instead of a ``Bulletin.Source`` enum member, so this module
-    stays free of Django ORM imports beyond what the management command base
-    already requires.
-
-    Returns ``"unknown"`` when no recognised key is found (rather than
-    raising, so the scanner is lenient over partial/test data).
+    Mirrors the logic in ``render_model.detect_source`` but never raises —
+    returns ``"UNKNOWN"`` when no recognised key is found, so the scanner
+    is lenient over partial/test data instead of aborting the whole scan.
 
     Args:
         properties: The CAAML properties dict.
 
     Returns:
-        One of ``"slf"``, ``"albina"``, ``"meteofrance"``, or ``"unknown"``.
+        A ``Bulletin.Source`` value, or ``"UNKNOWN"``.
 
     """
     custom_data: dict[str, Any] = properties.get("customData") or {}
     if "ALBINA" in custom_data:
-        return "albina"
+        return Bulletin.Source.ALBINA
     for key in custom_data:
         if key.startswith("LWD_"):
-            return "albina"
+            return Bulletin.Source.ALBINA
     if "MF" in custom_data:
-        return "meteofrance"
+        return Bulletin.Source.METEOFRANCE
     if "CH" in custom_data:
-        return "slf"
-    return "unknown"
+        return Bulletin.Source.SLF
+    return "UNKNOWN"
 
 
 def _score_problem(
