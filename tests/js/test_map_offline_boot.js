@@ -14,160 +14,60 @@
  * paint, and ``applyCountryFilters`` never ran, even though the regions
  * feed the sync dot itself probes (``/api/regions.geojson``) was fine.
  *
- * The fix decouples the three fetches: the resorts (and ratings) legs
- * degrade to an empty payload on failure; the regions leg is guarded
- * separately and, on failure, makes the boot handler return early rather
- * than throw. Case 1 below is the regression — it fails against the
- * pre-fix map.js (regions/layers never installed) and passes after the
- * fix. Case 2 is a negative control — the same assertions hold when every
- * fetch resolves, so a test that always passed regardless of the fix would
- * be caught.
+ * The fix guards each of the three legs independently, still inside ONE
+ * ``Promise.all`` (SNOW-235 trimmed this exact critical path — serialising
+ * the legs would reintroduce that cost): resorts/ratings degrade to an
+ * empty payload on failure, and the resolved ``geojson`` is null-checked
+ * after the ``await``, returning early rather than throwing. This file
+ * covers the regression itself — it fails against the pre-fix map.js
+ * (regions/layers never installed) and passes after the fix.
  *
- * Booting map.js in jsdom follows the pattern documented in
- * test_map_download_bytes.js: one script of top-level IIFEs,
- * ``map.on('load')`` never fires on its own in jsdom, so the test drives it
- * manually via the stubbed map's recorded ``load`` handlers.
+ * The negative control (same assertions, every fetch resolves — proving a
+ * test that always passed regardless of the fix would be caught) lives in
+ * ``test_map_offline_boot_control.js``, a SEPARATE file, NOT a second
+ * ``it()`` here. Why: this suite originally had both cases in one file,
+ * each calling ``vi.resetModules()`` + ``await import('.../map.js')``
+ * inside a shared ``bootMap()`` helper invoked once per ``it()`` — so the
+ * file imported map.js twice. That intermittently threw
+ * ``ReferenceError: BULLETIN_GROUPINGS_URL_MODULE is not defined`` from
+ * deep inside map.js's own module-evaluation on CI (never reproduced
+ * locally, including under ``--maxWorkers=1``/``=2`` or the full suite):
+ * map.js is one script of thousands of lines of top-level IIFEs,
+ * module-scope ``let``s, timers and listeners, and re-entering that
+ * evaluation while the first instance's side effects are still live is
+ * exactly the kind of thing that goes wrong under different timing. Every
+ * OTHER map.js test in this repo imports it exactly once, in ``beforeAll``
+ * (``test_map_download_bytes.js``, ``test_map_download_eviction.js``,
+ * ``test_map_groupings_guard.js``) — this file (and its control sibling)
+ * now follow that same rule: ONE ``import('.../map.js')`` per file, in
+ * ``beforeAll``. Do not add a second case here that needs a second import
+ * — put it in its own file, as the control case now is.
+ *
+ * Shared fixtures (the MapLibre stub, the DOM fixture, the
+ * ``regionsInstalled`` assertion helper) live in
+ * ``map_offline_boot_helpers.js`` — a plain module, not itself a test file
+ * (vitest.config.mjs's ``include`` glob only matches ``test_*.js``), so
+ * importing it here does not pull in a second copy of map.js.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import {
+  REGIONS_GEOJSON,
+  buildFixture,
+  regionsInstalled,
+  stubMapLibre,
+} from './map_offline_boot_helpers.js';
 
-const REGIONS_GEOJSON = {
-  type: 'FeatureCollection',
-  features: [
-    {
-      type: 'Feature',
-      properties: { id: 'CH-4115', name: 'Martigny — Verbier' },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[[7.0, 46.0], [7.01, 46.0], [7.01, 46.01], [7.0, 46.01], [7.0, 46.0]]],
-      },
-    },
-  ],
-};
+let mapStub;
 
-/**
- * Minimal MapLibre stub — adapted from test_map_groupings_guard.js's, with
- * ``addSource``/``addLayer`` upgraded to ``vi.fn()`` recorders (per the
- * plan) so a test can assert exactly which sources/layers the boot handler
- * installed, rather than inferring it indirectly.
- */
-function stubMapLibre() {
-  const handlers = {};
-  const map = {
-    on: (ev, a, b) => {
-      (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
-    },
-    once: () => {},
-    off: () => {},
-    addControl: () => {},
-    getLayer: () => null,
-    getFilter: () => null,
-    isSourceLoaded: () => true,
-    getSource: () => null,
-    addSource: vi.fn(),
-    addLayer: vi.fn(),
-    removeLayer: () => {},
-    removeSource: () => {},
-    setLayoutProperty: () => {},
-    setPaintProperty: () => {},
-    setFilter: () => {},
-    setFeatureState: () => {},
-    setStyle: () => {},
-    isStyleLoaded: () => true,
-    getStyle: () => ({ layers: [], sources: {} }),
-    getCanvas: () => ({ style: {} }),
-    getContainer: () => document.getElementById('map'),
-    triggerRepaint: () => {},
-    fitBounds: () => {},
-    easeTo: () => {},
-    getZoom: () => 8,
-    getCenter: () => ({ lng: 8, lat: 46.5 }),
-    getBounds: () => ({
-      getWest: () => 5,
-      getSouth: () => 45,
-      getEast: () => 10,
-      getNorth: () => 48,
-    }),
-    project: () => ({ x: 0, y: 0 }),
-    unproject: () => ({ lng: 8, lat: 46.5 }),
-    queryRenderedFeatures: () => [],
-    resize: () => {},
-    handlers,
-  };
-  globalThis.maplibregl = {
-    Map: function () {
-      return map;
-    },
-    Popup: function () {
-      return {
-        setLngLat: () => ({ setHTML: () => ({ addTo: () => {} }) }),
-        remove: () => {},
-      };
-    },
-    GeolocateControl: function () {
-      return { on: () => {} };
-    },
-    AttributionControl: function () {
-      return {};
-    },
-    MercatorCoordinate: { fromLngLat: () => ({ x: 0, y: 0 }) },
-  };
-  return map;
-}
-
-function buildFixture() {
-  document.body.innerHTML = `
-    <div id="map"
-         data-regions-url="/api/regions.geojson"
-         data-ratings-url="/api/ratings.json"
-         data-resorts-url="/api/resorts.json"
-         data-default-basemap-key="standard"
-         data-season-end="2026-05-31"></div>
-    <div id="search-pill" data-state="collapsed">
-      <button id="search-toggle" aria-expanded="false"></button>
-      <input id="search-input">
-    </div>
-    <ul id="search-results" hidden></ul>`;
-}
-
-/**
- * Boot map.js fresh against the given fetch mock and fire its ``load``
- * handler(s), the way ``test_map_download_bytes.js`` does. Returns the
- * stubbed map so a test can inspect ``addSource``/``addLayer`` calls.
- */
-async function bootMap(fetchImpl) {
+beforeAll(async () => {
   buildFixture();
-  const mapStub = stubMapLibre();
-  vi.stubGlobal('fetch', vi.fn(fetchImpl));
-
-  vi.resetModules();
-  // SNOW-618: map.js's search box delegates to this; home.html loads it
-  // immediately before map.js, and map.js does not guard for its absence.
-  await import('../../static/js/search_core.js');
-  // SNOW-623: map.js's choropleth paint delegates to this.
-  await import('../../static/js/choropleth_core.js');
-  await import('../../static/js/map.js');
-  for (const handler of mapStub.handlers.load || []) await handler();
-  return mapStub;
-}
-
-/** Whether `mapStub` installed the regions source and its choropleth fill layer. */
-function regionsInstalled(mapStub) {
-  const sourceInstalled = mapStub.addSource.mock.calls.some((call) => call[0] === 'regions');
-  const layerInstalled = mapStub.addLayer.mock.calls.some((call) => call[0].id === 'regions-fill');
-  return sourceInstalled && layerInstalled;
-}
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  delete globalThis.maplibregl;
-});
-
-describe('map.js boot handler — offline resorts feed (SNOW-638)', () => {
-  it('still installs the regions choropleth when /api/resorts.json rejects (the offline repro)', async () => {
-    const mapStub = await bootMap((url) => {
+  mapStub = stubMapLibre();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url) => {
       const href = String(url);
       if (href.includes('regions.geojson')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(REGIONS_GEOJSON) });
@@ -180,23 +80,29 @@ describe('map.js boot handler — offline resorts feed (SNOW-638)', () => {
       // ratings.json and anything else — resolve emptyish, matching the
       // ratings leg's own existing guard.
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    });
+    }),
+  );
 
-    expect(regionsInstalled(mapStub)).toBe(true);
-  });
+  vi.resetModules();
+  // SNOW-618: map.js's search box delegates to this; home.html loads it
+  // immediately before map.js, and map.js does not guard for its absence.
+  await import('../../static/js/search_core.js');
+  // SNOW-623: map.js's choropleth paint delegates to this.
+  await import('../../static/js/choropleth_core.js');
+  // ONE import of map.js for this whole file — see the module docstring
+  // above for why a second import (even from a second test in this file)
+  // is unsafe.
+  await import('../../static/js/map.js');
+  for (const handler of mapStub.handlers.load || []) await handler();
+});
 
-  it('installs the regions choropleth when every boot fetch resolves (negative control)', async () => {
-    const mapStub = await bootMap((url) => {
-      const href = String(url);
-      if (href.includes('regions.geojson')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(REGIONS_GEOJSON) });
-      }
-      if (href.includes('resorts.json')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    });
+afterAll(() => {
+  vi.unstubAllGlobals();
+  delete globalThis.maplibregl;
+});
 
+describe('map.js boot handler — offline resorts feed (SNOW-638)', () => {
+  it('still installs the regions choropleth when /api/resorts.json rejects (the offline repro)', () => {
     expect(regionsInstalled(mapStub)).toBe(true);
   });
 });
