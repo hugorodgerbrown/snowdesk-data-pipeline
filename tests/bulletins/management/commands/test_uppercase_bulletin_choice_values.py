@@ -142,9 +142,23 @@ class TestUppercaseBulletinChoiceValuesCommand:
     def test_no_eligible_rows_exits_cleanly(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """With everything already upper case, the command reports and returns."""
+        """With everything already upper case, the command reports and returns.
+
+        Every pass needs a row it would have matched had the value been
+        legacy — including the JSON pass, whose render model must carry an
+        explicit already-upper ``source`` key. ``BulletinFactory``'s default
+        render model has no ``source`` key at all, so seeding only the
+        columns would leave the JSON pass untested against a populated row.
+        """
         PipelineRunFactory.create(status=PipelineRun.Status.SUCCESS)
-        BulletinFactory.create(source=Bulletin.Source.SLF)
+        BulletinFactory.create(
+            source=Bulletin.Source.SLF,
+            render_model={
+                "version": 6,
+                "source": Bulletin.Source.METEOFRANCE,
+                "danger": {"key": "low"},
+            },
+        )
         RegionDayRatingFactory.create(source=Bulletin.Source.ALBINA)
 
         call_command("uppercase_bulletin_choice_values", "--commit")

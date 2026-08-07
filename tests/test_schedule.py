@@ -143,9 +143,9 @@ def test_fetch_bulletins_calls_call_command() -> None:
     mock_cc.assert_called_once_with(
         "fetch_bulletins",
         "--source",
-        "slf",
-        "albina",
-        "meteofrance",
+        "SLF",
+        "ALBINA",
+        "METEOFRANCE",
         "--commit",
     )
 

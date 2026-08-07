@@ -5,7 +5,7 @@ Defines ``build_scheduler()``, which constructs a :class:`BlockingScheduler`
 pre-loaded with the two recurring data-pipeline jobs:
 
 - **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
-  running ``fetch_bulletins --source slf albina meteofrance --commit``.
+  running ``fetch_bulletins --source SLF ALBINA METEOFRANCE --commit``.
 - **fetch_weather** — fires at midnight, 06:00, 12:00, and 18:00 UTC,
   running ``fetch_weather --commit``, plus ``--add-history`` when
   ``settings.FETCH_WEATHER_ADD_HISTORY`` is set.
@@ -59,9 +59,9 @@ def _run_fetch_bulletins() -> None:
     call_command(
         "fetch_bulletins",
         "--source",
-        "slf",
-        "albina",
-        "meteofrance",
+        "SLF",
+        "ALBINA",
+        "METEOFRANCE",
         "--commit",
     )
 
