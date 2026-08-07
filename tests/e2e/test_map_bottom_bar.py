@@ -164,3 +164,36 @@ def test_legend_splits_danger_scale_and_map_pins(
     # The two new keys are present as their own rows.
     assert page.locator('[data-testid="map-legend-favourites"]').count() == 1
     assert page.locator('[data-testid="map-legend-observations"]').count() == 1
+
+
+def test_map_data_section_is_never_a_heading_over_nothing(
+    live_server: LiveServer,
+    page: Page,
+    _load_test_data: None,
+) -> None:
+    """SNOW-640: the "Map data" section shows credits or it shows nothing.
+
+    Staging painted the heading with an empty line under it, because the
+    self-hosted style serves no source attribution for the union to find.
+    The invariant asserted here holds either way round, which is why it is
+    written as an invariant rather than as "the section is hidden": in this
+    headless context the tile CDN is unreachable so the style never
+    resolves and the section stays collapsed, while against a correctly
+    served style it is visible WITH credits. What must never happen is the
+    third state — visible and blank.
+    """
+    _navigate_and_wait(page, live_server.url)
+    _dismiss_home_intro(page)
+
+    page.locator("#map-legend-toggle").click()
+    page.wait_for_selector("#map-legend[data-state='expanded']", timeout=5_000)
+
+    section = page.locator("#map-attribution-section")
+    assert section.count() == 1
+    if section.is_visible():
+        assert page.locator("#map-attribution-text").inner_text().strip(), (
+            'the "Map data" section is visible, so it must carry attribution'
+        )
+    else:
+        # Collapsed, so its heading must not be readable in the card either.
+        assert "Map data" not in page.locator("#map-legend-card").inner_text()

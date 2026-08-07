@@ -666,7 +666,15 @@ Optional context:
                     </span>{% trans "Observations" %}
                 </div>
             </section>
-            <section class="map-legend-section">
+            {# SNOW-640: the whole section is hidden by map.js when the      #}
+            {# active style yields no attribution at all, rather than        #}
+            {# painting a heading with nothing under it. A style that omits  #}
+            {# attribution is a bug at the ORIGIN (the self-hosted tiles     #}
+            {# style rewrite drops it with the TileJSON pointer) and an      #}
+            {# ODbL compliance problem — map.js warns to the console so the  #}
+            {# collapse cannot hide it from QA. This is the presentation     #}
+            {# half only; the data has to be fixed where it is served.       #}
+            <section id="map-attribution-section" class="map-legend-section" hidden>
                 <div class="map-legend-title">{% trans "Map data" %}</div>
                 {% comment %}
                 Populated by map.js from the current style's source

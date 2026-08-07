@@ -2295,6 +2295,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // provider. MapLibre's own attribution control is disabled via
   // ``attributionControl: false`` on the Map constructor above.
   const attributionTarget = document.getElementById('map-attribution-text');
+  // SNOW-640: the whole section, so an empty union collapses the heading
+  // along with the text instead of leaving "Map data" over a blank line.
+  const attributionSection = document.getElementById('map-attribution-section');
 
   // SNOW-614: the source-id list for the current style, and the last string
   // written to the panel.
@@ -2337,6 +2340,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // MapLibre's stock AttributionControl renders stay clickable. The
     // basemap URLs are server-controlled, so the trust boundary matches.
     attributionTarget.innerHTML = html;
+
+    // SNOW-640: no source carried an attribution, so there is nothing to
+    // put under the heading. Collapse the section rather than paint an
+    // empty box — which is what staging showed, because the self-hosted
+    // style rewrite drops the TileJSON `url` and every field that only
+    // lived there, attribution included (the same line SNOW-604 caught
+    // taking minzoom/maxzoom with it).
+    //
+    // Collapsing is the honest presentation of "we have nothing", NOT the
+    // fix: OpenFreeMap serves OSM under ODbL, which requires attribution,
+    // so an empty union on the default basemap is a licence problem to be
+    // fixed where the style is served (`rewrite_style.py` in the
+    // snowdesk-tiles repo, with a matching check in its `verify.sh`). The
+    // warning is here so collapsing the section cannot quietly hide that
+    // from whoever is looking at the page — a missing panel is easier to
+    // overlook than an empty one, which is exactly the risk this branch
+    // introduces.
+    //
+    // No fallback string is invented here on purpose: the correct credit
+    // depends on which basemap is active (five are offered, three of them
+    // national services), and a wrong attribution is worse than none.
+    if (attributionSection) attributionSection.hidden = !html;
+    if (!html) {
+      console.warn(
+        '[map] SNOW-640: no source in the active style carries an ' +
+          'attribution — the "Map data" section is hidden. If this is the ' +
+          'default basemap, the served style is missing an ODbL-required ' +
+          'credit and needs fixing at the origin.',
+      );
+    }
   };
   map.on('sourcedata', updateMapAttribution);
   map.on('style.load', () => {

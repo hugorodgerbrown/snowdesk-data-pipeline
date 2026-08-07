@@ -142,6 +142,32 @@ def test_map_page_renders_resorts_legend_entry() -> None:
 
 
 @pytest.mark.django_db
+def test_map_data_attribution_section_ships_hidden() -> None:
+    """SNOW-640: the "Map data" section starts collapsed, not empty.
+
+    ``map.js``'s ``updateMapAttribution`` reveals it only once the active
+    style yields at least one source attribution. Server-rendering it
+    visible would paint a heading over a blank line for the whole window
+    between first paint and the style resolving — and permanently, for a
+    style that carries no attribution at all, which is the staging defect
+    this ticket was raised for.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    section_idx = content.index('id="map-attribution-section"')
+    # The `hidden` attribute has to be on the section element itself, not
+    # merely somewhere nearby — scope the assertion to the opening tag.
+    opening_tag = content[section_idx : content.index(">", section_idx)]
+    assert "hidden" in opening_tag
+    # The paragraph the JS fills stays inside it, so both hooks it looks
+    # up by id are served together or not at all.
+    assert 'id="map-attribution-text"' in content
+    assert content.index('id="map-attribution-text"') > section_idx
+
+
+@pytest.mark.django_db
 def test_map_page_omits_zoom_indicator() -> None:
     """
     SNOW-445: the always-visible zoom-level readout pill (SNOW-442) was a

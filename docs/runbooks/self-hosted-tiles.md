@@ -70,6 +70,36 @@ Fixed in `snowdesk-tiles` (`scripts/rewrite_style.py` +
 repo's `scripts/verify.sh` against the Worker's TileJSON, which reads the range
 out of the PMTiles header. Nothing in this repo can detect it.
 
+## The attribution trap (SNOW-640)
+
+**Same line, second casualty.** Dropping `url` also drops the `attribution`
+string, which upstream Liberty carries in exactly the same TileJSON as the zoom
+range. `scripts/rewrite_style.py` restores `minzoom`/`maxzoom` after the `url`
+pop; it does **not** restore `attribution`, so every rewritten source resolves
+with `src.attribution === undefined`.
+
+The client consequence: `updateMapAttribution` in `static/js/map.js` unions the
+attribution of every source in the active style, so the union is empty and the
+legend's **Map data** section has nothing to show. SNOW-640 made that section
+collapse rather than paint a heading over a blank line, and log a
+`console.warn` so the collapse cannot hide the cause — but collapsing is
+presentation, not a fix.
+
+**This is a licence-compliance issue, not cosmetic.** OpenFreeMap serves
+OpenStreetMap data under **ODbL, which requires attribution**. A public site
+showing none is out of compliance regardless of how tidily the empty panel is
+hidden.
+
+The fix belongs in `snowdesk-tiles`, in two parts:
+
+1. `scripts/rewrite_style.py` — set `spec["attribution"]` beside the existing
+   `minzoom`/`maxzoom` restoration, read **from the upstream TileJSON** rather
+   than hand-written, so the OpenFreeMap / OpenMapTiles / OpenStreetMap credits
+   are exactly what the licences require.
+2. `scripts/verify.sh` — assert the style declares an attribution, alongside the
+   zoom-range check it already makes. Without it this recurs on the next style
+   refresh, and as with the zoom range, nothing in this repo can detect it.
+
 ## Cutover check
 
 Once the origin is verified live (`./scripts/verify.sh` in `snowdesk-tiles`) and
@@ -82,3 +112,7 @@ the env vars are set, load `/` and confirm:
    the check that catches the zoom-range trap above, and the only one that does.
 3. Download a region's basemap, then reload offline and confirm the area renders
    at touring zooms.
+4. **Open the (i) legend and confirm the "Map data" section is present and names
+   the tile providers.** A missing section means the served style carries no
+   attribution — the trap above — and `console.warn` will say so. Until part 1
+   lands in `snowdesk-tiles`, this check fails by design.
