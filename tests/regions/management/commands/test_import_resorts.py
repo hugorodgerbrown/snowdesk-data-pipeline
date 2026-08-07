@@ -29,6 +29,7 @@ COLUMNS = [
     "canton",
     "operator_name",
     "website",
+    "why_it_matters",
     "top_elevation_m",
     "base_elevation_m",
     "num_runs",
@@ -591,3 +592,70 @@ class TestImportResortsKind:
         call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
 
         assert not Resort.objects.filter(pk=marked.pk).exists()
+
+
+@pytest.mark.django_db
+class TestImportResortsWhyItMatters:
+    """The ``why_it_matters`` column (SNOW-542).
+
+    It is an ordinary editorial text column, so it inherits the sheet's
+    authoritative-blank behaviour: clearing the cell clears the field. That
+    matters more here than for the numeric columns, because the field fills
+    up over time and a curator retracting a line must be able to.
+    """
+
+    def test_round_trips_from_the_sheet(self, tmp_path: Path) -> None:
+        """A curated line reaches the model."""
+        resort = ResortFactory.create(name="Tschiertschen")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Tschiertschen",
+                    "why_it_matters": (
+                        "Nationally known freeride destination. Four lifts, "
+                        "disproportionate avalanche relevance."
+                    ),
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters.startswith("Nationally known freeride")
+
+    def test_blank_cell_clears_the_line(self, tmp_path: Path) -> None:
+        """A blank cell retracts a line rather than leaving the old one."""
+        resort = ResortFactory.create(name="Verbier", why_it_matters="Old copy.")
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters == ""
+
+    def test_over_length_line_is_an_error_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """255 chars is the register: a paragraph no popup can render is rejected."""
+        resort = ResortFactory.create(name="Verbier", why_it_matters="Short.")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Verbier",
+                    "why_it_matters": "x" * 256,
+                }
+            ],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters == "Short."

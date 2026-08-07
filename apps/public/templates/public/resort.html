@@ -10,7 +10,9 @@ bulletin.
 
 Sections, top to bottom:
   1. Resort name (+ alternative/marketing name, when set), canton, and
-     parent region name.
+     parent region name, then the curated "why it matters" line (SNOW-542)
+     via the shared ``public/partials/_resort_why_it_matters.html`` partial,
+     which owns its own blank state.
   2. Today's danger chip — reuses the ``.danger-tile`` component from
      ``_region_tooltip.html`` — alongside a "View bulletin →" link to the
      parent region's evergreen bulletin page.
@@ -41,7 +43,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
   bulletin_url                  — str: the region's evergreen bulletin URL.
   favourited                    — bool.
   favourite_uuid                — str: "" when not favourited.
-  can_favourite                 — bool.
+  can_favourite                 — bool. Doubles as the "is signed in" signal
+                                   read by the why-it-matters partial.
+  is_staff                      — bool: switches the why-it-matters blank
+                                   state to a curation hint (SNOW-542).
   signin_url                    — str: accounts:sign_in URL.
   local_observations            — apps.public.views.LocalObservationResult:
                                    visible / scope ("point"|"region") /
@@ -86,6 +91,9 @@ Context expected (built by ``apps.public.views.resort_detail``):
                 <span aria-hidden="true"> &middot; </span>
                 {{ region.name }}
             </p>
+            <div class="mt-2">
+                {% include "public/partials/_resort_why_it_matters.html" %}
+            </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-4 mb-6" data-testid="resort-danger">

@@ -53,6 +53,7 @@ from apps.public._component_fixtures import (
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
     RESORT_META_ROW_VARIANTS,
+    RESORT_WHY_IT_MATTERS_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SHEET_HEADER_VARIANTS,
@@ -1107,6 +1108,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_resort_meta_row.html",
         variants=RESORT_META_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-why-it-matters",
+        label="Resort why-it-matters line",
+        description=(
+            'The curated one-sentence "why it matters" line for a resort '
+            "(SNOW-542), shared by the resort page and the resort-pin popup. "
+            "Blank is a first-class state with three branches: a dashed "
+            "curation hint for staff, a register prompt for anonymous "
+            "visitors, and nothing at all for a signed-in reader (who has no "
+            "way to contribute copy yet)."
+        ),
+        kind="components",
+        partial="public/partials/_resort_why_it_matters.html",
+        variants=RESORT_WHY_IT_MATTERS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

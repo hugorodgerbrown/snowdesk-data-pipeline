@@ -26,6 +26,7 @@ RESORT_DETAIL_FIELDS: tuple[str, ...] = (
     "name_alt",
     "operator_name",
     "website",
+    "why_it_matters",
     "num_lifts",
     "num_runs",
     "total_piste_km",

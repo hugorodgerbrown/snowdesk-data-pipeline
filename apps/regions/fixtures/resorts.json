@@ -7,6 +7,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-24T08:22:35.549Z",
       "name": "Verbier",
+      "kind": "RESORT",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -21,6 +22,7 @@
       "needs_review": false,
       "operator_name": "Téléverbier",
       "website": "https://www.verbier.ch",
+      "why_it_matters": "",
       "num_lifts": 34,
       "num_runs": 92,
       "total_piste_km": 210.0,
@@ -28,8 +30,7 @@
       "top_elevation_m": 3330,
       "typical_season_open": "12-01",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -40,6 +41,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.392Z",
       "name": "Nendaz",
+      "kind": "RESORT",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -54,6 +56,7 @@
       "needs_review": false,
       "operator_name": "NV Remontées Mécaniques SA",
       "website": "https://www.nendaz.ch",
+      "why_it_matters": "",
       "num_lifts": 82,
       "num_runs": null,
       "total_piste_km": 410.0,
@@ -61,8 +64,7 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -73,6 +75,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Veysonnaz",
+      "kind": "RESORT",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -87,6 +90,7 @@
       "needs_review": false,
       "operator_name": "NV Remontées Mécaniques SA",
       "website": "https://www.veysonnaz.ch",
+      "why_it_matters": "",
       "num_lifts": 82,
       "num_runs": null,
       "total_piste_km": 410.0,
@@ -94,8 +98,7 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -106,6 +109,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Thyon",
+      "kind": "RESORT",
       "name_alt": "Les 4 Vallées",
       "region": [
         "CH-4115"
@@ -120,6 +124,7 @@
       "needs_review": false,
       "operator_name": "Télé-Thyon SA (Téléverbier group)",
       "website": "https://www.thyon.ch",
+      "why_it_matters": "",
       "num_lifts": 82,
       "num_runs": null,
       "total_piste_km": 410.0,
@@ -127,8 +132,7 @@
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -139,6 +143,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "Champex",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4113"
@@ -153,6 +158,7 @@
       "needs_review": false,
       "operator_name": "TéléLaFouly-ChampexLac SA",
       "website": "https://www.saint-bernard.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 15.0,
@@ -160,8 +166,7 @@
       "top_elevation_m": 2194,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -172,6 +177,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.393Z",
       "name": "La Fouly",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4113"
@@ -186,6 +192,7 @@
       "needs_review": false,
       "operator_name": "TéléLaFouly-ChampexLac SA",
       "website": "https://www.saint-bernard.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 15.0,
@@ -193,8 +200,7 @@
       "top_elevation_m": 2172,
       "typical_season_open": "12-20",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -205,6 +211,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Zermatt",
+      "kind": "RESORT",
       "name_alt": "Matterhorn",
       "region": [
         "CH-4222"
@@ -219,6 +226,7 @@
       "needs_review": false,
       "operator_name": "Zermatt Bergbahnen AG",
       "website": "https://www.matterhornparadise.ch",
+      "why_it_matters": "",
       "num_lifts": 51,
       "num_runs": null,
       "total_piste_km": 322.0,
@@ -226,8 +234,7 @@
       "top_elevation_m": 3899,
       "typical_season_open": "11-01",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -238,6 +245,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Saas-Fee",
+      "kind": "RESORT",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -252,6 +260,7 @@
       "needs_review": false,
       "operator_name": "Saastal Bergbahnen AG",
       "website": "https://www.saas-fee.ch",
+      "why_it_matters": "",
       "num_lifts": 23,
       "num_runs": null,
       "total_piste_km": 100.0,
@@ -259,8 +268,7 @@
       "top_elevation_m": 3573,
       "typical_season_open": "07-15",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -271,6 +279,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Saas-Grund",
+      "kind": "RESORT",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -285,6 +294,7 @@
       "needs_review": false,
       "operator_name": "Hohsaas AG (Saastal Bergbahnen group)",
       "website": "https://www.saas-fee.ch",
+      "why_it_matters": "",
       "num_lifts": 8,
       "num_runs": null,
       "total_piste_km": 26.1,
@@ -292,8 +302,7 @@
       "top_elevation_m": 3200,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -304,6 +313,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Saas-Almagell",
+      "kind": "RESORT",
       "name_alt": "Saas Valley",
       "region": [
         "CH-4223"
@@ -318,6 +328,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "https://www.saas-fee.ch",
+      "why_it_matters": "",
       "num_lifts": 7,
       "num_runs": null,
       "total_piste_km": 15.4,
@@ -325,8 +336,7 @@
       "top_elevation_m": 2347,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -337,6 +347,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Crans-Montana",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4121"
@@ -351,6 +362,7 @@
       "needs_review": false,
       "operator_name": "Crans-Montana Aminona SA (CMA)",
       "website": "https://www.crans-montana.ch",
+      "why_it_matters": "",
       "num_lifts": 24,
       "num_runs": null,
       "total_piste_km": 140.0,
@@ -358,8 +370,7 @@
       "top_elevation_m": 2927,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -370,6 +381,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Leukerbad",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4211"
@@ -384,6 +396,7 @@
       "needs_review": false,
       "operator_name": "My Leukerbad AG",
       "website": "https://leukerbad.ch",
+      "why_it_matters": "",
       "num_lifts": 13,
       "num_runs": null,
       "total_piste_km": 47.5,
@@ -391,8 +404,7 @@
       "top_elevation_m": 2610,
       "typical_season_open": "12-05",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -403,6 +415,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Grimentz",
+      "kind": "RESORT",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -417,6 +430,7 @@
       "needs_review": false,
       "operator_name": "Remontées Mécaniques de Grimentz-Zinal SA",
       "website": "https://www.valdanniviers.ch",
+      "why_it_matters": "",
       "num_lifts": 21,
       "num_runs": null,
       "total_piste_km": 115.0,
@@ -424,8 +438,7 @@
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -436,6 +449,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.394Z",
       "name": "Zinal",
+      "kind": "RESORT",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -450,6 +464,7 @@
       "needs_review": false,
       "operator_name": "Remontées Mécaniques de Grimentz-Zinal SA",
       "website": "https://www.valdanniviers.ch",
+      "why_it_matters": "",
       "num_lifts": 21,
       "num_runs": null,
       "total_piste_km": 115.0,
@@ -457,8 +472,7 @@
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -469,6 +483,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Vercorin",
+      "kind": "RESORT",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -483,6 +498,7 @@
       "needs_review": false,
       "operator_name": "Télécabine de Vercorin SA",
       "website": "https://www.vercorin.ch",
+      "why_it_matters": "",
       "num_lifts": 10,
       "num_runs": null,
       "total_piste_km": 35.0,
@@ -490,8 +506,7 @@
       "top_elevation_m": 2374,
       "typical_season_open": "11-28",
       "typical_season_close": "04-18",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -502,6 +517,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "St-Luc",
+      "kind": "RESORT",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -516,6 +532,7 @@
       "needs_review": false,
       "operator_name": "Funiculaire St-Luc - Chandolin SA",
       "website": "https://www.stluc-chandolin.ch",
+      "why_it_matters": "",
       "num_lifts": 15,
       "num_runs": 31,
       "total_piste_km": 60.0,
@@ -523,8 +540,7 @@
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -535,6 +551,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Chandolin",
+      "kind": "RESORT",
       "name_alt": "Val d'Anniviers",
       "region": [
         "CH-4124"
@@ -549,6 +566,7 @@
       "needs_review": false,
       "operator_name": "Funiculaire St-Luc - Chandolin SA",
       "website": "https://www.stluc-chandolin.ch",
+      "why_it_matters": "",
       "num_lifts": 15,
       "num_runs": 31,
       "total_piste_km": 60.0,
@@ -556,8 +574,7 @@
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -568,6 +585,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Arolla",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4123"
@@ -582,6 +600,7 @@
       "needs_review": false,
       "operator_name": "Remontées Mécaniques des Fontanesses SA",
       "website": "https://www.evolene-region.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": 17,
       "total_piste_km": 26.7,
@@ -589,8 +608,7 @@
       "top_elevation_m": 2877,
       "typical_season_open": "12-12",
       "typical_season_close": "04-18",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -601,6 +619,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Les Haudères",
+      "kind": "RESORT",
       "name_alt": "Val d'Hérens",
       "region": [
         "CH-4122"
@@ -615,6 +634,7 @@
       "needs_review": false,
       "operator_name": "Evolène Région Tourisme",
       "website": "https://www.evolene-region.ch",
+      "why_it_matters": "",
       "num_lifts": 1,
       "num_runs": 1,
       "total_piste_km": 0.1,
@@ -622,8 +642,7 @@
       "top_elevation_m": 1447,
       "typical_season_open": "12-13",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -634,6 +653,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Evolène",
+      "kind": "RESORT",
       "name_alt": "Val d'Hérens",
       "region": [
         "CH-4122"
@@ -648,6 +668,7 @@
       "needs_review": false,
       "operator_name": "Télé-Evolène SA",
       "website": "https://www.evolene-region.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": 15,
       "total_piste_km": 41.1,
@@ -655,8 +676,7 @@
       "top_elevation_m": 2632,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -667,6 +687,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Riederalp",
+      "kind": "RESORT",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -681,6 +702,7 @@
       "needs_review": false,
       "operator_name": "Aletsch Bahnen AG",
       "website": "https://www.aletscharena.ch",
+      "why_it_matters": "",
       "num_lifts": 35,
       "num_runs": null,
       "total_piste_km": 104.0,
@@ -688,8 +710,7 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -700,6 +721,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.395Z",
       "name": "Bettmeralp",
+      "kind": "RESORT",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -714,6 +736,7 @@
       "needs_review": false,
       "operator_name": "Aletsch Bahnen AG",
       "website": "https://www.aletscharena.ch",
+      "why_it_matters": "",
       "num_lifts": 35,
       "num_runs": null,
       "total_piste_km": 104.0,
@@ -721,8 +744,7 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -733,6 +755,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Fiescheralp",
+      "kind": "RESORT",
       "name_alt": "Aletsch Arena",
       "region": [
         "CH-4214"
@@ -747,6 +770,7 @@
       "needs_review": false,
       "operator_name": "Aletsch Bahnen AG",
       "website": "https://www.aletscharena.ch",
+      "why_it_matters": "",
       "num_lifts": 35,
       "num_runs": null,
       "total_piste_km": 104.0,
@@ -754,8 +778,7 @@
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
       "typical_season_close": "04-03",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -766,6 +789,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Reckingen",
+      "kind": "RESORT",
       "name_alt": "Goms",
       "region": [
         "CH-4244"
@@ -780,6 +804,7 @@
       "needs_review": false,
       "operator_name": "Skilift Gluringen AG",
       "website": "https://www.skilift-gluringen.ch",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": null,
       "total_piste_km": 1.2,
@@ -787,8 +812,7 @@
       "top_elevation_m": 1445,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -799,6 +823,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Münster",
+      "kind": "RESORT",
       "name_alt": "Goms",
       "region": [
         "CH-4243"
@@ -813,6 +838,7 @@
       "needs_review": false,
       "operator_name": "Skilift Münster-Geschinen AG",
       "website": "https://www.skilift-muenster-geschinen.ch",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": null,
       "total_piste_km": 3.0,
@@ -820,8 +846,7 @@
       "top_elevation_m": 1645,
       "typical_season_open": "12-13",
       "typical_season_close": "03-22",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -832,6 +857,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Obergoms",
+      "kind": "RESORT",
       "name_alt": "Goms upper",
       "region": [
         "CH-4244"
@@ -846,6 +872,7 @@
       "needs_review": false,
       "operator_name": "Skilift Oberwald",
       "website": "https://www.goms.ch",
+      "why_it_matters": "",
       "num_lifts": 1,
       "num_runs": null,
       "total_piste_km": 0.2,
@@ -853,8 +880,7 @@
       "top_elevation_m": 1404,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -865,6 +891,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Champéry",
+      "kind": "RESORT",
       "name_alt": "Portes du Soleil",
       "region": [
         "CH-1312"
@@ -879,6 +906,7 @@
       "needs_review": false,
       "operator_name": "Portes du Soleil Suisse SA",
       "website": "https://www.regiondentsdumidi.ch",
+      "why_it_matters": "",
       "num_lifts": 196,
       "num_runs": 286,
       "total_piste_km": 600.0,
@@ -886,8 +914,7 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -898,6 +925,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Morgins",
+      "kind": "RESORT",
       "name_alt": "Portes du Soleil",
       "region": [
         "CH-1312"
@@ -912,6 +940,7 @@
       "needs_review": false,
       "operator_name": "Portes du Soleil Suisse SA",
       "website": "https://www.regiondentsdumidi.ch",
+      "why_it_matters": "",
       "num_lifts": 196,
       "num_runs": 286,
       "total_piste_km": 600.0,
@@ -919,8 +948,7 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -931,6 +959,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Torgon",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-1311"
@@ -945,6 +974,7 @@
       "needs_review": false,
       "operator_name": "SETT Sàrl",
       "website": "https://www.torgon.ch",
+      "why_it_matters": "",
       "num_lifts": 196,
       "num_runs": 286,
       "total_piste_km": 600.0,
@@ -952,8 +982,7 @@
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -964,6 +993,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "Val d'Entremont",
+      "kind": "RESORT",
       "name_alt": "Grand-St-Bernard",
       "region": [
         "CH-4113"
@@ -978,6 +1008,7 @@
       "needs_review": false,
       "operator_name": "Télés Vichères-Liddes",
       "website": "https://vicheres.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 15.0,
@@ -985,8 +1016,7 @@
       "top_elevation_m": 2267,
       "typical_season_open": "12-15",
       "typical_season_close": "03-25",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -997,6 +1027,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.396Z",
       "name": "St. Moritz",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1011,6 +1042,7 @@
       "needs_review": false,
       "operator_name": "Engadin St. Moritz Mountains AG",
       "website": "https://www.stmoritz.com",
+      "why_it_matters": "",
       "num_lifts": 23,
       "num_runs": null,
       "total_piste_km": 155.0,
@@ -1018,8 +1050,7 @@
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1030,6 +1061,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Pontresina",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1044,6 +1076,7 @@
       "needs_review": false,
       "operator_name": "Diavolezza Lagalb AG",
       "website": "https://www.pontresina.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": null,
       "total_piste_km": 35.0,
@@ -1051,8 +1084,7 @@
       "top_elevation_m": 3006,
       "typical_season_open": "10-17",
       "typical_season_close": "05-02",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1063,6 +1095,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Sils-Maria",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1077,6 +1110,7 @@
       "needs_review": false,
       "operator_name": "Corvatsch AG",
       "website": "https://www.corvatsch-diavolezza.ch",
+      "why_it_matters": "",
       "num_lifts": 14,
       "num_runs": 26,
       "total_piste_km": 120.0,
@@ -1084,8 +1118,7 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1096,6 +1129,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Silvaplana",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1110,6 +1144,7 @@
       "needs_review": false,
       "operator_name": "Corvatsch AG",
       "website": "https://www.corvatsch-diavolezza.ch",
+      "why_it_matters": "",
       "num_lifts": 14,
       "num_runs": 26,
       "total_piste_km": 120.0,
@@ -1117,8 +1152,7 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1129,6 +1163,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Celerina",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7114"
@@ -1143,6 +1178,7 @@
       "needs_review": false,
       "operator_name": "Engadin St. Moritz Mountains AG",
       "website": "https://www.mountains.ch",
+      "why_it_matters": "",
       "num_lifts": 24,
       "num_runs": 38,
       "total_piste_km": 155.0,
@@ -1150,8 +1186,7 @@
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1162,6 +1197,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Corvatsch",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7111"
@@ -1176,6 +1212,7 @@
       "needs_review": false,
       "operator_name": "Corvatsch AG",
       "website": "https://www.corvatsch-diavolezza.ch",
+      "why_it_matters": "",
       "num_lifts": 14,
       "num_runs": 26,
       "total_piste_km": 120.0,
@@ -1183,8 +1220,7 @@
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
       "typical_season_close": "04-25",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1195,6 +1231,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Diavolezza",
+      "kind": "RESORT",
       "name_alt": "Upper Engadin",
       "region": [
         "CH-7112"
@@ -1209,6 +1246,7 @@
       "needs_review": false,
       "operator_name": "Diavolezza Lagalb AG",
       "website": "https://www.corvatsch-diavolezza.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": null,
@@ -1216,8 +1254,7 @@
       "top_elevation_m": 2978,
       "typical_season_open": "10-17",
       "typical_season_close": "05-02",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1228,6 +1265,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Zuoz",
+      "kind": "RESORT",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7113"
@@ -1242,6 +1280,7 @@
       "needs_review": false,
       "operator_name": "Sessel- und Skilifte Zuoz AG",
       "website": "https://www.zuozski.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": 11,
       "total_piste_km": 15.0,
@@ -1249,8 +1288,7 @@
       "top_elevation_m": 2465,
       "typical_season_open": "12-19",
       "typical_season_close": "03-14",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1261,6 +1299,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "La Punt",
+      "kind": "RESORT",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7113"
@@ -1275,6 +1314,7 @@
       "needs_review": false,
       "operator_name": "Skilift Müsella La Punt-Chamues-ch",
       "website": "https://www.engadin.ch",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": null,
       "total_piste_km": 1.0,
@@ -1282,8 +1322,7 @@
       "top_elevation_m": 1787,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1294,6 +1333,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.397Z",
       "name": "Scuol",
+      "kind": "RESORT",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7123"
@@ -1308,6 +1348,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Scuol AG",
       "website": "https://www.bergbahnen-scuol.ch",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 25,
       "total_piste_km": 70.0,
@@ -1315,8 +1356,7 @@
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1327,6 +1367,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Ftan",
+      "kind": "RESORT",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7123"
@@ -1341,6 +1382,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Scuol AG",
       "website": "https://www.bergbahnen-scuol.ch",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 25,
       "total_piste_km": 70.0,
@@ -1348,8 +1390,7 @@
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1360,6 +1401,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Samnaun",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-7121"
@@ -1374,6 +1416,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Samnaun AG",
       "website": "https://www.samnaun.ch",
+      "why_it_matters": "",
       "num_lifts": 45,
       "num_runs": 78,
       "total_piste_km": 239.0,
@@ -1381,8 +1424,7 @@
       "top_elevation_m": 2872,
       "typical_season_open": "11-26",
       "typical_season_close": "05-02",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1393,6 +1435,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Münstertal",
+      "kind": "RESORT",
       "name_alt": "Val Müstair",
       "region": [
         "CH-7231"
@@ -1407,6 +1450,7 @@
       "needs_review": false,
       "operator_name": "Sportanlagen AG Val Müstair",
       "website": "https://www.minschuns.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 25.0,
@@ -1414,8 +1458,7 @@
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1426,6 +1469,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Santa Maria VM",
+      "kind": "RESORT",
       "name_alt": "Val Müstair",
       "region": [
         "CH-7231"
@@ -1440,6 +1484,7 @@
       "needs_review": false,
       "operator_name": "Sportanlagen AG Val Müstair",
       "website": "https://www.val-muestair.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 25.0,
@@ -1447,8 +1492,7 @@
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
       "typical_season_close": "03-21",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1459,6 +1503,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Poschiavo",
+      "kind": "RESORT",
       "name_alt": "Valposchiavo",
       "region": [
         "CH-7222"
@@ -1473,6 +1518,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "https://valposchiavo.ch",
+      "why_it_matters": "",
       "num_lifts": 1,
       "num_runs": null,
       "total_piste_km": null,
@@ -1480,8 +1526,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1492,6 +1537,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Bergell",
+      "kind": "RESORT",
       "name_alt": "Val Bregaglia",
       "region": [
         "CH-7211"
@@ -1506,6 +1552,7 @@
       "needs_review": false,
       "operator_name": "Bregaglia Engadin Turismo",
       "website": "https://www.bregaglia.ch",
+      "why_it_matters": "",
       "num_lifts": 1,
       "num_runs": 1,
       "total_piste_km": 0.6,
@@ -1513,8 +1560,7 @@
       "top_elevation_m": 1601,
       "typical_season_open": "12-26",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1525,6 +1571,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Maloja",
+      "kind": "RESORT",
       "name_alt": "Bergell",
       "region": [
         "CH-7211"
@@ -1539,6 +1586,7 @@
       "needs_review": false,
       "operator_name": "Bregaglia Engadin Turismo",
       "website": "https://www.bregaglia.ch",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": 2,
       "total_piste_km": 3.0,
@@ -1546,8 +1594,7 @@
       "top_elevation_m": 2100,
       "typical_season_open": "12-19",
       "typical_season_close": "03-07",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1558,6 +1605,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Davos",
+      "kind": "RESORT",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5123"
@@ -1572,6 +1620,7 @@
       "needs_review": false,
       "operator_name": "Davos Klosters Bergbahnen AG",
       "website": "https://www.davos.ch",
+      "why_it_matters": "",
       "num_lifts": 57,
       "num_runs": null,
       "total_piste_km": 300.0,
@@ -1579,8 +1628,7 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1591,6 +1639,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.398Z",
       "name": "Klosters",
+      "kind": "RESORT",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5112"
@@ -1605,6 +1654,7 @@
       "needs_review": false,
       "operator_name": "Davos Klosters Bergbahnen AG",
       "website": "https://www.davos.ch",
+      "why_it_matters": "",
       "num_lifts": 57,
       "num_runs": null,
       "total_piste_km": 300.0,
@@ -1612,8 +1662,7 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1624,6 +1673,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Parsenn",
+      "kind": "RESORT",
       "name_alt": "Davos Klosters",
       "region": [
         "CH-5123"
@@ -1638,6 +1688,7 @@
       "needs_review": false,
       "operator_name": "Davos Klosters Bergbahnen AG",
       "website": "https://www.davosklostersmountains.ch",
+      "why_it_matters": "",
       "num_lifts": 18,
       "num_runs": null,
       "total_piste_km": 95.5,
@@ -1645,8 +1696,7 @@
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1657,6 +1707,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Arosa",
+      "kind": "RESORT",
       "name_alt": "Arosa Lenzerheide",
       "region": [
         "CH-5122"
@@ -1671,6 +1722,7 @@
       "needs_review": false,
       "operator_name": "Arosa Bergbahnen AG",
       "website": "https://arosalenzerheide.swiss",
+      "why_it_matters": "",
       "num_lifts": 14,
       "num_runs": 17,
       "total_piste_km": 70.0,
@@ -1678,8 +1730,7 @@
       "top_elevation_m": 2653,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1690,6 +1741,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Lenzerheide",
+      "kind": "RESORT",
       "name_alt": "Arosa Lenzerheide",
       "region": [
         "CH-5221"
@@ -1704,6 +1756,7 @@
       "needs_review": false,
       "operator_name": "Lenzerheide Bergbahnen AG",
       "website": "https://arosalenzerheide.swiss",
+      "why_it_matters": "",
       "num_lifts": 29,
       "num_runs": 58,
       "total_piste_km": 155.0,
@@ -1711,8 +1764,7 @@
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1723,6 +1775,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Churwalden",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-5221"
@@ -1737,6 +1790,7 @@
       "needs_review": false,
       "operator_name": "Lenzerheide Bergbahnen AG",
       "website": "https://arosalenzerheide.swiss",
+      "why_it_matters": "",
       "num_lifts": 29,
       "num_runs": 58,
       "total_piste_km": 155.0,
@@ -1744,8 +1798,7 @@
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1756,6 +1809,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Flims",
+      "kind": "RESORT",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5124"
@@ -1770,6 +1824,7 @@
       "needs_review": false,
       "operator_name": "Weisse Arena Bergbahnen AG",
       "website": "https://www.laax.com",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": 55,
       "total_piste_km": 216.0,
@@ -1777,8 +1832,7 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1789,6 +1843,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Laax",
+      "kind": "RESORT",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5124"
@@ -1803,6 +1858,7 @@
       "needs_review": false,
       "operator_name": "Weisse Arena Bergbahnen AG",
       "website": "https://www.laax.com",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": 55,
       "total_piste_km": 216.0,
@@ -1810,8 +1866,7 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1822,6 +1877,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Falera",
+      "kind": "RESORT",
       "name_alt": "Flims Laax",
       "region": [
         "CH-5211"
@@ -1836,6 +1892,7 @@
       "needs_review": false,
       "operator_name": "Weisse Arena Bergbahnen AG",
       "website": "https://www.laax.com",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": 55,
       "total_piste_km": 216.0,
@@ -1843,8 +1900,7 @@
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1855,6 +1911,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Disentis",
+      "kind": "RESORT",
       "name_alt": "Disentis/Mustér",
       "region": [
         "CH-5212"
@@ -1869,6 +1926,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Disentis AG",
       "website": "https://www.disentis.fun",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 21,
       "total_piste_km": 60.0,
@@ -1876,8 +1934,7 @@
       "top_elevation_m": 2833,
       "typical_season_open": "11-28",
       "typical_season_close": "04-06",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1888,6 +1945,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Obersaxen",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-5214"
@@ -1902,6 +1960,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Obersaxen Mundaun AG",
       "website": "https://www.obersaxen-mundaun.ch",
+      "why_it_matters": "",
       "num_lifts": 15,
       "num_runs": 49,
       "total_piste_km": 120.0,
@@ -1909,8 +1968,7 @@
       "top_elevation_m": 2310,
       "typical_season_open": "12-06",
       "typical_season_close": "04-06",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1921,6 +1979,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.399Z",
       "name": "Safiental",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-5214"
@@ -1935,6 +1994,7 @@
       "needs_review": false,
       "operator_name": "Genossenschaft Skilift Tenna",
       "website": "https://solar-skilift.ch",
+      "why_it_matters": "",
       "num_lifts": 1,
       "num_runs": null,
       "total_piste_km": 4.0,
@@ -1942,8 +2002,7 @@
       "top_elevation_m": 1791,
       "typical_season_open": "12-20",
       "typical_season_close": "03-08",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1954,6 +2013,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Vals",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-5215"
@@ -1968,6 +2028,7 @@
       "needs_review": false,
       "operator_name": "Sportbahnen Vals AG",
       "website": "https://vals.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": 10,
       "total_piste_km": 25.0,
@@ -1975,8 +2036,7 @@
       "top_elevation_m": 2851,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -1987,6 +2047,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Splügen",
+      "kind": "RESORT",
       "name_alt": "Rheinwald",
       "region": [
         "CH-5223"
@@ -2001,6 +2062,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Splügen-Tambo AG",
       "website": "https://www.spluegen.ch",
+      "why_it_matters": "",
       "num_lifts": 7,
       "num_runs": 14,
       "total_piste_km": 30.0,
@@ -2008,8 +2070,7 @@
       "top_elevation_m": 2215,
       "typical_season_open": "12-19",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2020,6 +2081,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Bivio",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-5234"
@@ -2034,6 +2096,7 @@
       "needs_review": false,
       "operator_name": "Bivio Sportanlagen AG",
       "website": "https://www.schneesportbivio.ch",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": 14,
       "total_piste_km": 27.0,
@@ -2041,8 +2104,7 @@
       "top_elevation_m": 2560,
       "typical_season_open": "12-19",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2053,6 +2115,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Avers",
+      "kind": "RESORT",
       "name_alt": "Cresta",
       "region": [
         "CH-5233"
@@ -2067,6 +2130,7 @@
       "needs_review": false,
       "operator_name": "Avers Skibetriebs AG",
       "website": "https://skiferien-graubuenden.ch",
+      "why_it_matters": "",
       "num_lifts": 3,
       "num_runs": null,
       "total_piste_km": 8.0,
@@ -2074,8 +2138,7 @@
       "top_elevation_m": 2539,
       "typical_season_open": "12-20",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2086,6 +2149,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Savognin",
+      "kind": "RESORT",
       "name_alt": "Surses",
       "region": [
         "CH-5232"
@@ -2100,6 +2164,7 @@
       "needs_review": false,
       "operator_name": "Savognin Bergbahnen AG",
       "website": "https://www.valsurses.ch",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 25,
       "total_piste_km": 70.0,
@@ -2107,8 +2172,7 @@
       "top_elevation_m": 2713,
       "typical_season_open": "12-06",
       "typical_season_close": "04-06",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2119,6 +2183,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Bergün",
+      "kind": "RESORT",
       "name_alt": "Albulatal",
       "region": [
         "CH-5231"
@@ -2133,6 +2198,7 @@
       "needs_review": false,
       "operator_name": "Bergün Filisur Tourismus AG",
       "website": "https://www.berguen-filisur.graubuenden.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": null,
       "total_piste_km": 25.0,
@@ -2140,8 +2206,7 @@
       "top_elevation_m": 2550,
       "typical_season_open": "12-20",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2152,6 +2217,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Grindelwald",
+      "kind": "RESORT",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1242"
@@ -2166,6 +2232,7 @@
       "needs_review": false,
       "operator_name": "Jungfraubahnen",
       "website": "https://www.jungfrau.ch",
+      "why_it_matters": "",
       "num_lifts": 22,
       "num_runs": 59,
       "total_piste_km": 103.0,
@@ -2173,8 +2240,7 @@
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
       "typical_season_close": "04-26",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2185,6 +2251,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.400Z",
       "name": "Wengen",
+      "kind": "RESORT",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1233"
@@ -2199,6 +2266,7 @@
       "needs_review": false,
       "operator_name": "Jungfraubahnen",
       "website": "https://www.jungfrau.ch",
+      "why_it_matters": "",
       "num_lifts": 22,
       "num_runs": 59,
       "total_piste_km": 103.0,
@@ -2206,8 +2274,7 @@
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
       "typical_season_close": "04-26",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2218,6 +2285,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Mürren",
+      "kind": "RESORT",
       "name_alt": "Jungfrau Region",
       "region": [
         "CH-1233"
@@ -2232,6 +2300,7 @@
       "needs_review": false,
       "operator_name": "Schilthornbahn AG",
       "website": "https://muerren.swiss",
+      "why_it_matters": "",
       "num_lifts": 13,
       "num_runs": null,
       "total_piste_km": 51.0,
@@ -2239,8 +2308,7 @@
       "top_elevation_m": 2970,
       "typical_season_open": "11-22",
       "typical_season_close": "05-03",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2251,6 +2319,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Gstaad",
+      "kind": "RESORT",
       "name_alt": "Saanenland",
       "region": [
         "CH-1222"
@@ -2265,6 +2334,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Destination Gstaad AG",
       "website": "https://www.gstaad.ch",
+      "why_it_matters": "",
       "num_lifts": 44,
       "num_runs": null,
       "total_piste_km": 200.0,
@@ -2272,8 +2342,7 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2284,6 +2353,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Saanen",
+      "kind": "RESORT",
       "name_alt": "Saanenland",
       "region": [
         "CH-1112"
@@ -2298,6 +2368,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Destination Gstaad AG",
       "website": "https://www.gstaad.ch",
+      "why_it_matters": "",
       "num_lifts": 44,
       "num_runs": null,
       "total_piste_km": 200.0,
@@ -2305,8 +2376,7 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2317,6 +2387,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Schönried",
+      "kind": "RESORT",
       "name_alt": "Saanenland",
       "region": [
         "CH-1222"
@@ -2331,6 +2402,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Destination Gstaad AG",
       "website": "https://www.gstaad.ch",
+      "why_it_matters": "",
       "num_lifts": 44,
       "num_runs": null,
       "total_piste_km": 200.0,
@@ -2338,8 +2410,7 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2350,6 +2421,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Zweisimmen",
+      "kind": "RESORT",
       "name_alt": "Simmental",
       "region": [
         "CH-1228"
@@ -2364,6 +2436,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Destination Gstaad AG",
       "website": "https://bergbahnen-gstaad.ch",
+      "why_it_matters": "",
       "num_lifts": 16,
       "num_runs": null,
       "total_piste_km": 88.9,
@@ -2371,8 +2444,7 @@
       "top_elevation_m": 2011,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2383,6 +2455,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Lenk",
+      "kind": "RESORT",
       "name_alt": "Simmental",
       "region": [
         "CH-1224"
@@ -2397,6 +2470,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Adelboden-Lenk AG",
       "website": "https://betelberg.ch",
+      "why_it_matters": "",
       "num_lifts": 11,
       "num_runs": null,
       "total_piste_km": 42.0,
@@ -2404,8 +2478,7 @@
       "top_elevation_m": 2001,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2416,6 +2489,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Adelboden",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-1226"
@@ -2430,6 +2504,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Adelboden-Lenk AG",
       "website": "https://www.adelboden-lenk.ch",
+      "why_it_matters": "",
       "num_lifts": 22,
       "num_runs": null,
       "total_piste_km": 86.0,
@@ -2437,8 +2512,7 @@
       "top_elevation_m": 2200,
       "typical_season_open": "11-28",
       "typical_season_close": "04-11",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2449,6 +2523,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Kandersteg",
+      "kind": "RESORT",
       "name_alt": "Kandertal",
       "region": [
         "CH-1231"
@@ -2463,6 +2538,7 @@
       "needs_review": false,
       "operator_name": "Gondelbahn Kandersteg-Oeschinensee AG",
       "website": "https://www.oeschinensee.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": null,
       "total_piste_km": 13.0,
@@ -2470,8 +2546,7 @@
       "top_elevation_m": 1730,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2482,6 +2557,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Meiringen",
+      "kind": "RESORT",
       "name_alt": "Haslital",
       "region": [
         "CH-1244"
@@ -2496,6 +2572,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Meiringen-Hasliberg AG",
       "website": "https://www.meiringen-hasliberg.ch",
+      "why_it_matters": "",
       "num_lifts": 13,
       "num_runs": null,
       "total_piste_km": 60.0,
@@ -2503,8 +2580,7 @@
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2515,6 +2591,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.401Z",
       "name": "Hasliberg",
+      "kind": "RESORT",
       "name_alt": "Haslital",
       "region": [
         "CH-1244"
@@ -2529,6 +2606,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Meiringen-Hasliberg AG",
       "website": "https://www.meiringen-hasliberg.ch",
+      "why_it_matters": "",
       "num_lifts": 13,
       "num_runs": null,
       "total_piste_km": 60.0,
@@ -2536,8 +2614,7 @@
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2548,6 +2625,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Grimmialp",
+      "kind": "RESORT",
       "name_alt": "Niedersimmental",
       "region": [
         "CH-1228"
@@ -2562,6 +2640,7 @@
       "needs_review": false,
       "operator_name": "Grimmialpbergbahnen Diemtigtal AG",
       "website": "https://www.grimmialp.ch",
+      "why_it_matters": "",
       "num_lifts": 3,
       "num_runs": null,
       "total_piste_km": 7.2,
@@ -2569,8 +2648,7 @@
       "top_elevation_m": 1833,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2581,6 +2659,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Frutigen",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-1226"
@@ -2595,6 +2674,7 @@
       "needs_review": false,
       "operator_name": "Elsigenalpbahnen AG",
       "website": "https://elsigen-metsch.ch",
+      "why_it_matters": "",
       "num_lifts": 11,
       "num_runs": null,
       "total_piste_km": 30.0,
@@ -2602,8 +2682,7 @@
       "top_elevation_m": 2289,
       "typical_season_open": "11-15",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2614,6 +2693,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Beatenberg",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-1213"
@@ -2628,6 +2708,7 @@
       "needs_review": false,
       "operator_name": "Niederhornbahn AG",
       "website": "https://www.niederhorn.ch",
+      "why_it_matters": "",
       "num_lifts": 3,
       "num_runs": null,
       "total_piste_km": 5.0,
@@ -2635,8 +2716,7 @@
       "top_elevation_m": 1945,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2647,6 +2727,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Lötschental",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-4211"
@@ -2661,6 +2742,7 @@
       "needs_review": false,
       "operator_name": "Lauchernalp Bergbahnen AG",
       "website": "https://www.loetschental.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": 12,
       "total_piste_km": 37.5,
@@ -2668,8 +2750,7 @@
       "top_elevation_m": 3100,
       "typical_season_open": "12-15",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2680,6 +2761,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Leysin",
+      "kind": "RESORT",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1113"
@@ -2694,6 +2776,7 @@
       "needs_review": false,
       "operator_name": "Télé Leysin-Col des Mosses-La Lécherette SA (TLML)",
       "website": "https://www.tlml.ch",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": null,
       "total_piste_km": 60.0,
@@ -2701,8 +2784,7 @@
       "top_elevation_m": 2198,
       "typical_season_open": "11-25",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2713,6 +2795,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Villars-sur-Ollon",
+      "kind": "RESORT",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2727,6 +2810,7 @@
       "needs_review": false,
       "operator_name": "Télé Villars-Gryon-Diablerets SA (TVGD)",
       "website": "https://www.villars.ch",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": null,
       "total_piste_km": 87.0,
@@ -2734,8 +2818,7 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2746,6 +2829,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Gryon",
+      "kind": "RESORT",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2760,6 +2844,7 @@
       "needs_review": false,
       "operator_name": "Télé Villars-Gryon-Diablerets SA (TVGD)",
       "website": "https://www.tvgd.ch",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": null,
       "total_piste_km": 87.0,
@@ -2767,8 +2852,7 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2779,6 +2863,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Les Diablerets",
+      "kind": "RESORT",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2793,6 +2878,7 @@
       "needs_review": false,
       "operator_name": "Télé Villars-Gryon-Diablerets SA (TVGD)",
       "website": "https://www.tvgd.ch",
+      "why_it_matters": "",
       "num_lifts": 30,
       "num_runs": null,
       "total_piste_km": 87.0,
@@ -2800,8 +2886,7 @@
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
       "typical_season_close": "04-12",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2812,6 +2897,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Glacier 3000",
+      "kind": "RESORT",
       "name_alt": "Alpes Vaudoises",
       "region": [
         "CH-1114"
@@ -2826,6 +2912,7 @@
       "needs_review": false,
       "operator_name": "Glacier 3000 (Gstaad 3000 AG)",
       "website": "https://www.glacier3000.ch",
+      "why_it_matters": "",
       "num_lifts": 10,
       "num_runs": 9,
       "total_piste_km": 31.0,
@@ -2833,8 +2920,7 @@
       "top_elevation_m": 3016,
       "typical_season_open": "11-08",
       "typical_season_close": "04-30",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2845,6 +2931,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.402Z",
       "name": "Moléson",
+      "kind": "RESORT",
       "name_alt": "Gruyères",
       "region": [
         "CH-1121"
@@ -2859,6 +2946,7 @@
       "needs_review": false,
       "operator_name": "Gruyères-Moléson-Vudalla SA",
       "website": "https://www.moleson.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": 6,
       "total_piste_km": 30.0,
@@ -2866,8 +2954,7 @@
       "top_elevation_m": 1978,
       "typical_season_open": "12-15",
       "typical_season_close": "02-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2878,6 +2965,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Charmey",
+      "kind": "RESORT",
       "name_alt": "Gruyères",
       "region": [
         "CH-1121"
@@ -2892,6 +2980,7 @@
       "needs_review": false,
       "operator_name": "TéléCharmey SA",
       "website": "https://www.charmey.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": null,
       "total_piste_km": 30.0,
@@ -2899,8 +2988,7 @@
       "top_elevation_m": 1626,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2911,6 +2999,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Jaun",
+      "kind": "RESORT",
       "name_alt": "Jaunbach",
       "region": [
         "CH-1121"
@@ -2925,6 +3014,7 @@
       "needs_review": false,
       "operator_name": "Jaun-Gastlosen Bergbahnen AG",
       "website": "https://jaun-bergbahnen.jimdoweb.com",
+      "why_it_matters": "",
       "num_lifts": 4,
       "num_runs": null,
       "total_piste_km": 20.0,
@@ -2932,8 +3022,7 @@
       "top_elevation_m": 1571,
       "typical_season_open": "12-15",
       "typical_season_close": "03-22",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2944,6 +3033,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Rochers-de-Naye",
+      "kind": "RESORT",
       "name_alt": "Montreux area",
       "region": [
         "CH-1111"
@@ -2958,6 +3048,7 @@
       "needs_review": false,
       "operator_name": "SID Montreux",
       "website": "https://www.montreuxriviera.com",
+      "why_it_matters": "",
       "num_lifts": 3,
       "num_runs": null,
       "total_piste_km": 1.0,
@@ -2965,8 +3056,7 @@
       "top_elevation_m": 2012,
       "typical_season_open": "12-13",
       "typical_season_close": "03-29",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -2977,6 +3067,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Andermatt",
+      "kind": "RESORT",
       "name_alt": "SkiArena",
       "region": [
         "CH-2224"
@@ -2991,6 +3082,7 @@
       "needs_review": false,
       "operator_name": "Andermatt-Sedrun Sport AG",
       "website": "https://www.andermatt-sedrun-disentis.ch",
+      "why_it_matters": "",
       "num_lifts": 22,
       "num_runs": 43,
       "total_piste_km": 120.0,
@@ -2998,8 +3090,7 @@
       "top_elevation_m": 2961,
       "typical_season_open": "11-15",
       "typical_season_close": "04-18",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3010,6 +3101,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Realp",
+      "kind": "RESORT",
       "name_alt": "Andermatt area",
       "region": [
         "CH-2223"
@@ -3024,6 +3116,7 @@
       "needs_review": false,
       "operator_name": "Skilift Realp",
       "website": "https://www.skiliftrealp.ch",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": 1,
       "total_piste_km": 1.0,
@@ -3031,8 +3124,7 @@
       "top_elevation_m": 1660,
       "typical_season_open": "12-15",
       "typical_season_close": "03-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3043,6 +3135,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Engelberg",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-2122"
@@ -3057,6 +3150,7 @@
       "needs_review": false,
       "operator_name": "TITLIS Bergbahnen",
       "website": "https://www.engelberg.ch",
+      "why_it_matters": "",
       "num_lifts": 26,
       "num_runs": null,
       "total_piste_km": 82.0,
@@ -3064,8 +3158,7 @@
       "top_elevation_m": 3020,
       "typical_season_open": "10-11",
       "typical_season_close": "05-03",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3076,6 +3169,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Melchsee-Frutt",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-2123"
@@ -3090,6 +3184,7 @@
       "needs_review": false,
       "operator_name": "Sportbahnen Melchsee-Frutt AG",
       "website": "https://frutt.ch",
+      "why_it_matters": "",
       "num_lifts": 16,
       "num_runs": 10,
       "total_piste_km": 36.0,
@@ -3097,8 +3192,7 @@
       "top_elevation_m": 2255,
       "typical_season_open": "12-13",
       "typical_season_close": "04-06",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3109,6 +3203,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.403Z",
       "name": "Elm",
+      "kind": "RESORT",
       "name_alt": "Glarnerland",
       "region": [
         "CH-3113"
@@ -3123,6 +3218,7 @@
       "needs_review": false,
       "operator_name": "Sportbahnen Elm AG",
       "website": "https://sportbahnenelm.ch",
+      "why_it_matters": "",
       "num_lifts": 5,
       "num_runs": 16,
       "total_piste_km": 40.0,
@@ -3130,8 +3226,7 @@
       "top_elevation_m": 2105,
       "typical_season_open": "12-12",
       "typical_season_close": "03-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3142,6 +3237,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.404Z",
       "name": "Wildhaus",
+      "kind": "RESORT",
       "name_alt": "Toggenburg",
       "region": [
         "CH-3211"
@@ -3156,6 +3252,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Wildhaus AG",
       "website": "https://www.wildhaus.ch",
+      "why_it_matters": "",
       "num_lifts": 6,
       "num_runs": 12,
       "total_piste_km": 23.0,
@@ -3163,8 +3260,7 @@
       "top_elevation_m": 2076,
       "typical_season_open": "12-12",
       "typical_season_close": "03-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3175,6 +3271,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Unterwasser",
+      "kind": "RESORT",
       "name_alt": "Toggenburg",
       "region": [
         "CH-3211"
@@ -3189,6 +3286,7 @@
       "needs_review": false,
       "operator_name": "Toggenburg Bergbahnen AG",
       "website": "https://www.chaeserrugg.ch",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 23,
       "total_piste_km": 50.0,
@@ -3196,8 +3294,7 @@
       "top_elevation_m": 2262,
       "typical_season_open": "11-28",
       "typical_season_close": "04-06",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3208,6 +3305,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Flumserberg",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-3223"
@@ -3222,6 +3320,7 @@
       "needs_review": false,
       "operator_name": "Bergbahnen Flumserberg AG",
       "website": "https://www.flumserberg.ch",
+      "why_it_matters": "",
       "num_lifts": 17,
       "num_runs": 43,
       "total_piste_km": 65.0,
@@ -3229,8 +3328,7 @@
       "top_elevation_m": 2222,
       "typical_season_open": "11-16",
       "typical_season_close": "03-29",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3241,6 +3339,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Pizol",
+      "kind": "RESORT",
       "name_alt": "Bad Ragaz",
       "region": [
         "CH-3223"
@@ -3255,6 +3354,7 @@
       "needs_review": false,
       "operator_name": "Pizolbahnen AG",
       "website": "https://pizol.com",
+      "why_it_matters": "",
       "num_lifts": 12,
       "num_runs": 22,
       "total_piste_km": 43.6,
@@ -3262,8 +3362,7 @@
       "top_elevation_m": 2250,
       "typical_season_open": "11-27",
       "typical_season_close": "04-04",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3274,6 +3373,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Airolo",
+      "kind": "RESORT",
       "name_alt": "Leventina",
       "region": [
         "CH-6112"
@@ -3288,6 +3388,7 @@
       "needs_review": false,
       "operator_name": "Valbianca SA",
       "website": "https://www.airolo.ch",
+      "why_it_matters": "",
       "num_lifts": 8,
       "num_runs": null,
       "total_piste_km": 30.0,
@@ -3295,8 +3396,7 @@
       "top_elevation_m": 2250,
       "typical_season_open": "12-23",
       "typical_season_close": "03-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3307,6 +3407,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Bedretto",
+      "kind": "RESORT",
       "name_alt": "Valle Bedretto",
       "region": [
         "CH-6111"
@@ -3321,6 +3422,7 @@
       "needs_review": false,
       "operator_name": "Impianti Turistici Cioss Prato",
       "website": "https://ciossprato.jimdofree.com",
+      "why_it_matters": "",
       "num_lifts": 2,
       "num_runs": null,
       "total_piste_km": 0.6,
@@ -3328,8 +3430,7 @@
       "top_elevation_m": 1610,
       "typical_season_open": "12-26",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3340,6 +3441,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Bosco Gurin",
+      "kind": "RESORT",
       "name_alt": "",
       "region": [
         "CH-6121"
@@ -3354,6 +3456,7 @@
       "needs_review": false,
       "operator_name": "Centri Turistici Montani SA",
       "website": "https://www.bosco-gurin.ch",
+      "why_it_matters": "",
       "num_lifts": 7,
       "num_runs": 13,
       "total_piste_km": 30.0,
@@ -3361,8 +3464,7 @@
       "top_elevation_m": 2331,
       "typical_season_open": "12-15",
       "typical_season_close": "04-05",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3373,6 +3475,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "Blenio",
+      "kind": "RESORT",
       "name_alt": "Lucomagno",
       "region": [
         "CH-6113"
@@ -3387,6 +3490,7 @@
       "needs_review": false,
       "operator_name": "Società Cooperativa Impianti Turistici Campo Blenio-Ghirone",
       "website": "https://www.campoblenio.ch",
+      "why_it_matters": "",
       "num_lifts": 3,
       "num_runs": null,
       "total_piste_km": 2.0,
@@ -3394,8 +3498,7 @@
       "top_elevation_m": 1578,
       "typical_season_open": "12-15",
       "typical_season_close": "03-15",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3406,6 +3509,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-07-28T10:54:40.405Z",
       "name": "San Bernardino",
+      "kind": "RESORT",
       "name_alt": "Mesolcina",
       "region": [
         "CH-6211"
@@ -3420,6 +3524,7 @@
       "needs_review": false,
       "operator_name": "San Bernardino SA Impianti Turistici",
       "website": "https://sanbernardino-swissalps.com",
+      "why_it_matters": "",
       "num_lifts": 11,
       "num_runs": 15,
       "total_piste_km": 39.8,
@@ -3427,8 +3532,7 @@
       "top_elevation_m": 2525,
       "typical_season_open": "12-06",
       "typical_season_close": "03-28",
-      "forecast_point": null,
-      "kind": "RESORT"
+      "forecast_point": null
     }
   },
   {
@@ -3439,6 +3543,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Bernina Pass",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-7112"
@@ -3453,6 +3558,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3460,8 +3566,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3472,6 +3577,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-30T16:45:29.067Z",
       "name": "Binntal",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-4242"
@@ -3486,6 +3592,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3493,8 +3600,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3505,6 +3611,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-05-14T13:33:15.433Z",
       "name": "Blatten",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Lötschental",
       "region": [
         "CH-4211"
@@ -3519,6 +3626,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3526,8 +3634,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3538,6 +3645,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Conters",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "südl. Prättigau",
       "region": [
         "CH-5112"
@@ -3552,6 +3660,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3559,8 +3668,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3571,6 +3679,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-05-14T13:33:15.438Z",
       "name": "Grimsel",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Haslital high",
       "region": [
         "CH-1247"
@@ -3585,6 +3694,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3592,8 +3702,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3604,6 +3713,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-30T16:43:56.340Z",
       "name": "Génépy",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-4112"
@@ -3618,6 +3728,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3625,8 +3736,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3637,6 +3747,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Haut Val de Bagnes",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Mauvoisin",
       "region": [
         "CH-4116"
@@ -3651,6 +3762,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3658,8 +3770,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3670,6 +3781,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-28T17:56:38.155Z",
       "name": "Klausenpass",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-3112"
@@ -3684,6 +3796,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3691,8 +3804,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3703,6 +3815,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Mattmark",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Saas high",
       "region": [
         "CH-4225"
@@ -3717,6 +3830,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3724,8 +3838,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3736,6 +3849,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Monte Rosa",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Zermatt high",
       "region": [
         "CH-4224"
@@ -3750,6 +3864,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3757,8 +3872,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3769,6 +3883,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Mountet",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Zinal hut",
       "region": [
         "CH-4125"
@@ -3783,6 +3898,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3790,8 +3906,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3802,6 +3917,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Schams",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Viamala",
       "region": [
         "CH-5222"
@@ -3816,6 +3932,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3823,8 +3940,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3835,6 +3951,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-05-14T13:33:15.447Z",
       "name": "Sustenpass",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-1246"
@@ -3849,6 +3966,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3856,8 +3974,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3868,6 +3985,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-30T16:20:35.399Z",
       "name": "Turtmann",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Turtmanntal",
       "region": [
         "CH-4212"
@@ -3882,6 +4000,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3889,8 +4008,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3901,6 +4019,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val Chamuera",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Samedan area",
       "region": [
         "CH-7115"
@@ -3915,6 +4034,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3922,8 +4042,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3934,6 +4053,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val S-charl",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Lower Engadin",
       "region": [
         "CH-7126"
@@ -3948,6 +4068,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3955,8 +4076,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -3967,6 +4087,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val Suot",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Scuol area",
       "region": [
         "CH-7124"
@@ -3981,6 +4102,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -3988,8 +4110,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -4000,6 +4121,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Val dal Spöl",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Swiss Nat. Park",
       "region": [
         "CH-7125"
@@ -4014,6 +4136,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -4021,8 +4144,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -4033,6 +4155,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "Zervreila",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-5216"
@@ -4047,6 +4170,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -4054,8 +4178,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -4066,6 +4189,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "oberes Puschlav",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Livigno area",
       "region": [
         "CH-7221"
@@ -4080,6 +4204,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -4087,8 +4212,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -4099,6 +4223,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "westl. Silvretta",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "Prättigau",
       "region": [
         "CH-5113"
@@ -4113,6 +4238,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -4120,8 +4246,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   },
   {
@@ -4132,6 +4257,7 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z",
       "name": "östliche Silvretta",
+      "kind": "TOURING_TERRAIN",
       "name_alt": "",
       "region": [
         "CH-7122"
@@ -4146,6 +4272,7 @@
       "needs_review": false,
       "operator_name": "",
       "website": "",
+      "why_it_matters": "",
       "num_lifts": null,
       "num_runs": null,
       "total_piste_km": null,
@@ -4153,8 +4280,7 @@
       "top_elevation_m": null,
       "typical_season_open": "",
       "typical_season_close": "",
-      "forecast_point": null,
-      "kind": "TOURING_TERRAIN"
+      "forecast_point": null
     }
   }
 ]

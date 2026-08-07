@@ -273,8 +273,9 @@ Read-only by default; `--commit` is the only flag.
 
 ### `import_resorts` — reconcile Resort against the curated sheet
 
-`Resort`'s editorial columns (operator, website, elevations, lift/run
-counts, piste length, season dates, curator notes) are curated in a
+`Resort`'s editorial columns (operator, website, the `why_it_matters`
+line, elevations, lift/run counts, piste length, season dates, curator
+notes) are curated in a
 spreadsheet, exported to `apps/regions/data/resorts.tsv`. `import_resorts`
 reconciles the database against it in three modes, all on by default:
 

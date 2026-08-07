@@ -664,6 +664,15 @@ class Resort(BaseModel):
         blank=True,
         help_text="Official resort website, hand-curated (not from any feed).",
     )
+    why_it_matters = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            "One curated sentence on why a backcountry skier should care "
+            "about this resort — terrain, access, reputation. Not a "
+            "marketing blurb and not derivable from the numeric columns."
+        ),
+    )
     num_lifts = models.PositiveSmallIntegerField(
         null=True,
         blank=True,

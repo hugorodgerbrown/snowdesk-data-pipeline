@@ -1074,6 +1074,51 @@ RESORT_META_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Resort "why it matters" line (SNOW-542) -------------------------------------
+# The curated prose line, plus all three blank branches. The partial reads
+# ``resort`` directly, so the fixtures pass a stand-in object rather than a
+# flat context — ``SimpleNamespace`` is enough for the two attributes used.
+RESORT_WHY_IT_MATTERS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Curated line",
+        "context": {
+            "resort": SimpleNamespace(
+                name="Tschiertschen",
+                why_it_matters=(
+                    "Nationally known freeride destination. Four lifts, "
+                    "disproportionate avalanche relevance."
+                ),
+            ),
+            "is_staff": False,
+            "can_favourite": True,
+        },
+    },
+    {
+        "caption": "Blank — staff curation hint",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": True,
+            "can_favourite": True,
+        },
+    },
+    {
+        "caption": "Blank — anonymous register prompt",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": False,
+            "can_favourite": False,
+        },
+    },
+    {
+        "caption": "Blank — signed in, renders nothing",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": False,
+            "can_favourite": True,
+        },
+    },
+)
+
 
 # Overlay primitives (SNOW-486) -----------------------------------------------
 # The four consolidated overlay shapes — banner, modal, sheet — each with a

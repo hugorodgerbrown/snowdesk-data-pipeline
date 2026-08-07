@@ -221,6 +221,7 @@ class TestEditResortsQueue:
             name="Verbier",
             operator_name="Téléverbier SA",
             website="https://www.verbier.ch/",
+            why_it_matters="Les 4 Vallées high alpine, heavy off-piste.",
             num_lifts=32,
             num_runs=97,
             total_piste_km=410.5,
@@ -237,6 +238,7 @@ class TestEditResortsQueue:
             "name_alt": resort.name_alt,
             "operator_name": "Téléverbier SA",
             "website": "https://www.verbier.ch/",
+            "why_it_matters": "Les 4 Vallées high alpine, heavy off-piste.",
             "num_lifts": 32,
             "num_runs": 97,
             "total_piste_km": 410.5,
@@ -501,6 +503,7 @@ class TestEditResortSaveDetails:
                 "name_alt": "Val de Bagnes",
                 "operator_name": "Téléverbier SA",
                 "website": "https://www.verbier.ch/",
+                "why_it_matters": "Les 4 Vallées high alpine, heavy off-piste.",
                 "num_lifts": 32,
                 "num_runs": 97,
                 "total_piste_km": 410.5,
@@ -516,6 +519,7 @@ class TestEditResortSaveDetails:
         assert resort.name_alt == "Val de Bagnes"
         assert resort.operator_name == "Téléverbier SA"
         assert resort.website == "https://www.verbier.ch/"
+        assert resort.why_it_matters == "Les 4 Vallées high alpine, heavy off-piste."
         assert resort.num_lifts == 32
         assert resort.num_runs == 97
         assert resort.total_piste_km == 410.5

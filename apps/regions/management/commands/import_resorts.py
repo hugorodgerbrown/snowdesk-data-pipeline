@@ -1,7 +1,8 @@
 """import_resorts — reconcile the Resort table against the curated sheet.
 
-``Resort``'s editorial columns (operator, website, elevations, lift/run
-counts, piste length, typical season dates, curator notes) are maintained
+``Resort``'s editorial columns (operator, website, the ``why_it_matters``
+line, elevations, lift/run counts, piste length, typical season dates,
+curator notes) are maintained
 in a spreadsheet, exported to ``apps/regions/data/resorts.tsv``. This command
 reconciles the database against that sheet in up to three modes, selected
 with ``--mode`` (all three by default):
@@ -91,6 +92,7 @@ TEXT_FIELDS = (
     "name_alt",
     "operator_name",
     "website",
+    "why_it_matters",
     "typical_season_open",
     "typical_season_close",
 )

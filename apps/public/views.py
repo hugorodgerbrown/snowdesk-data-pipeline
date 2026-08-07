@@ -3952,6 +3952,10 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
+        # SNOW-542: the why-it-matters partial shows a curation hint instead
+        # of the public blank state for staff, exactly as the popup's
+        # metadata rows already do.
+        "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
         "local_observations": _get_local_observation_counts(request, resort, today),
         "observation_has_user_located": _get_observation_has_user_located(

@@ -132,6 +132,7 @@ class ResortAdmin(admin.ModelAdmin):
                 "fields": (
                     "operator_name",
                     "website",
+                    "why_it_matters",
                     "num_lifts",
                     "num_runs",
                     "total_piste_km",

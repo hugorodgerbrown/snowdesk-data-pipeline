@@ -14,6 +14,11 @@ instead of a hidden control.
 Content:
   1. Resort name (+ alternative/marketing name, when set).
   2. Parent region name.
+  2a. The curated "why it matters" line (SNOW-542), via the shared
+     ``_resort_why_it_matters.html`` partial — this is the surface where a
+     user is deciding whether the pin is worth a tap, so the line sits above
+     the numeric metadata rather than below them. The partial owns its own
+     blank state (staff hint / register prompt / nothing).
   3. Metadata rows (SNOW-501): operator, website, lifts, runs, piste
      length, elevation range, typical season. Every row always renders —
      a blank field shows a dashed-box placeholder rather than being
@@ -46,6 +51,7 @@ Context variables expected:
         {% endif %}
     </div>
     <p class="text-xs text-text-2">{{ region.name }}</p>
+    {% include "public/partials/_resort_why_it_matters.html" %}
     <div class="flex flex-col gap-1 border-t border-b border-border py-2">
         {% include "public/partials/_resort_meta_row.html" with label=_("Operator") value=resort.operator_name is_staff=is_staff staff_hint=_("Add operator name") %}
         <div class="flex items-center justify-between gap-2">

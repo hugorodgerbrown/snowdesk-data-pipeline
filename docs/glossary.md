@@ -39,6 +39,7 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Resort | Ski resort geocoded onto a MicroRegion |
 | Region id formats | `CH-4115` (4-digit), `FR-01` (2-digit), `AT-07-23-02` / `IT-32-BZ-15` (multi-level) |
 | Resort page | Public detail page for one Resort at `/resorts/<id>/<slug>/` — danger chip, bulletin link, favourite toggle (SNOW-504). `public:resort` route; `resort_detail()` in `apps/public/views.py`; template `apps/public/templates/public/resort.html` |
+| Why it matters | One curated sentence on why a backcountry skier should care about a resort — terrain, access, reputation; the thing piste km cannot say (SNOW-542). `Resort.why_it_matters`; sheet column `why_it_matters`; rendered by `apps/public/templates/public/partials/_resort_why_it_matters.html` |
 
 ## Bulletins and ratings
 
