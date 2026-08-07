@@ -39,6 +39,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadMapBundle } from './_load_map_bundle.js';
 
 const MB = 1024 * 1024;
 
@@ -192,7 +193,7 @@ beforeEach(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
-  await import('../../static/js/map.js');
+  loadMapBundle();
 });
 
 afterEach(() => {

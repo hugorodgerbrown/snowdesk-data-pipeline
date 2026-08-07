@@ -151,7 +151,27 @@ in addition to the shared map assets.
     {# document order relative to them doesn't matter — it just has to be on #}
     {# the page.                                                             #}
     <script defer src="{% static 'js/map_placement_focus.js' %}"></script>
+    {# SNOW-610: map.js, split along the eleven seams it already had. THIS   #}
+    {# ORDER IS LOAD-BEARING. These are classic scripts sharing one global   #}
+    {# lexical scope: a top-level let/const is readable from a later script  #}
+    {# as a bare identifier, but sits in the temporal dead zone until its    #}
+    {# own script has run — and every IIFE below runs at parse time. So      #}
+    {# declarations come first, then map.js's boot IIFE, then the surfaces,  #}
+    {# in the order they had inside the single file. map.js's header carries #}
+    {# the same list with a line on what each one owns.                      #}
+    <script defer src="{% static 'js/map_state.js' %}"></script>
+    <script defer src="{% static 'js/map_basemap_downloads.js' %}"></script>
+    <script defer src="{% static 'js/map_shared.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
+    <script defer src="{% static 'js/map_scrubber.js' %}"></script>
+    <script defer src="{% static 'js/map_legend.js' %}"></script>
+    <script defer src="{% static 'js/map_timelapse.js' %}"></script>
+    <script defer src="{% static 'js/map_basemap_picker.js' %}"></script>
+    <script defer src="{% static 'js/map_region_download.js' %}"></script>
+    <script defer src="{% static 'js/map_custom_download.js' %}"></script>
+    <script defer src="{% static 'js/map_autozoom.js' %}"></script>
+    <script defer src="{% static 'js/map_geolocate.js' %}"></script>
+    <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}

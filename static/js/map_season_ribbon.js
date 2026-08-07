@@ -1,0 +1,304 @@
+/*
+ * static/js/map_season_ribbon.js — the danger ribbon painted into the scrubber track, and its region readout.
+ *
+ * SNOW-610, step 4: extracted verbatim from map.js. Runs at parse time and
+ * binds its own DOM, so it loads AFTER map.js in the position it held
+ * inside that file — document order is execution order for deferred
+ * classic scripts. Shared state (`MAP`, `FEATURE_BY_REGION_ID`,
+ * `COUNTRY_STATE`, …) comes from static/js/map_state.js; shared helpers
+ * (`getSeasonRatings`, `repaintRegionsForDate`, the localStorage trio)
+ * from static/js/map_shared.js. Both load first.
+ */
+
+// SNOW-314: Season ribbon — the season scrubber's track doubles as the danger
+// ribbon. When a region is the focus, one decorative coloured cell per season
+// day is painted into the track (behind the thumb); a persistent readout names
+// that region and shows its danger for the scrubbed day. Both the track fill
+// and the readout are driven from the in-memory season-ratings cache (same
+// payload as the scrubber / timelapse — no extra fetch), so they update live
+// during manual scrub AND playback, decoupling region identity from the
+// ephemeral map popup. The homepage pre-selects CH-4115; /map/ starts grey
+// (no focus) until the user taps a region.
+(function seasonRibbonInit() {
+  // #season-ribbon is retained as the data carrier (season bounds + default
+  // region) and the caption header; the visible cells live in the scrubber
+  // track's .scrubber-ribbon fill, the label in #region-readout.
+  const ribbonEl = document.getElementById('season-ribbon');
+  if (!ribbonEl) return;
+
+  const fill = document.querySelector('.season-scrubber .scrubber-ribbon');
+  const trackEl = document.querySelector(
+    '.season-scrubber .season-scrubber-track'
+  );
+  if (!fill || !trackEl) return;
+
+  const readoutEl = document.getElementById('region-readout');
+  // The scrubbed date now lives in its own ribbon beside the scrubber
+  // (bottom-left), not in the top region chip — see updateReadout below.
+  const dateRibbonEl = document.getElementById('map-date-ribbon');
+  const readoutSwatch =
+    readoutEl && readoutEl.querySelector('.region-readout-swatch');
+  const readoutCrumbs =
+    readoutEl && readoutEl.querySelector('.region-readout-crumbs');
+  const readoutLeaf =
+    readoutEl && readoutEl.querySelector('.region-readout-leaf');
+  // The "view bulletin" action is now a separate roundel (sibling of the
+  // readout pill), not the pill itself; it carries the bulletin href.
+  const readoutAction = document.getElementById('region-readout-action');
+
+  // Convert the int rating from the ratings cache to a key string.
+  // SNOW-496: thin delegator — see scrubber_core.js's module header.
+  const intToKey = (n) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.intToKey(n, INT_TO_RATING);
+    if (n == null || n < 0 || n >= INT_TO_RATING.length) return 'no_rating';
+    return INT_TO_RATING[n];
+  };
+
+  // Focus state. Empty region => no focus (grey track, hidden readout, no
+  // map highlight).
+  let cache = null;
+  let regionId = ribbonEl.dataset.defaultRegionId || null;
+  let regionName = ribbonEl.dataset.defaultRegionName || null;
+  let regionSlug = ribbonEl.dataset.defaultRegionSlug || null;
+  let dateKey = ribbonEl.dataset.defaultDate || null;
+  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb. Seeded
+  // from data attributes for the pre-selected region, then overwritten on every
+  // region-selected event (which carries the full hierarchy).
+  let regionSubName = ribbonEl.dataset.defaultSubregionName || '';
+  let regionMajorName = ribbonEl.dataset.defaultMajorName || '';
+  // Which region tiers are visible on the map (l1=Major, l2=Minor); the chip
+  // breadcrumb mirrors these. Seeded from the persisted overlay state, updated
+  // on snowdesk:overlays-changed. The leaf is the region name; it remains in
+  // the breadcrumb regardless of the L4 map-layer visibility because it is a
+  // text readout, not the polygon layer.
+  const overlayVisible = {
+    l1: readBoolStorage('snowdesk.map.overlay.l1', false),
+    l2: readBoolStorage('snowdesk.map.overlay.l2', false),
+  };
+
+  // Paint one decorative cell per CALENDAR DAY across [seasonStart, seasonEnd]
+  // for the focused region into the scrubber track. One cell per day (not per
+  // data-date) is essential: the scrubber thumb maps date→position linearly
+  // over the same range, so a cell-per-day grid lines up with the thumb. A
+  // cell-per-data-date grid would compress gap days and drift every cell off
+  // its true date — making the colour under the thumb mismatch the map. Gap
+  // days (and any days past the last data point) render as no_rating slivers.
+  // Cells are pointer-events:none — the track beneath keeps its drag/click; the
+  // thumb marks the active day. With no focus or no region data → grey rail.
+  const DAY_MS = 86400000;
+  const paintTrack = () => {
+    if (!cache || !regionId) {
+      fill.replaceChildren();
+      trackEl.removeAttribute('data-ribbon');
+      return;
+    }
+    const startMs = Date.parse(ribbonEl.dataset.seasonStart);
+    const endMs = Date.parse(ribbonEl.dataset.seasonEnd);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
+      fill.replaceChildren();
+      trackEl.removeAttribute('data-ribbon');
+      return;
+    }
+    // UTC-midnight stepping (seasonStart parses as UTC midnight); UTC has no
+    // DST, so adding exact days and slicing toISOString gives correct ISO keys.
+    let regionHasData = false;
+    const cells = [];
+    for (let t = startMs; t <= endMs; t += DAY_MS) {
+      const d = new Date(t).toISOString().slice(0, 10);
+      const ratingInt = cache[d] ? cache[d][regionId] : null;
+      if (ratingInt != null) regionHasData = true;
+      const cell = document.createElement('span');
+      cell.className = 'scrubber-ribbon-cell ribbon-cell--' + intToKey(ratingInt);
+      // Month-boundary hairline: mark the first-of-month cells (skip the very
+      // first cell so there's no leading mark). A pure CSS overlay — see
+      // .scrubber-ribbon-cell--month — so it adds no width and the cells stay
+      // aligned with the scrubber thumb.
+      if (d.slice(8, 10) === '01' && t !== startMs) {
+        cell.classList.add('scrubber-ribbon-cell--month');
+      }
+      cells.push(cell);
+    }
+    if (!regionHasData) {
+      fill.replaceChildren();
+      trackEl.removeAttribute('data-ribbon');
+      return;
+    }
+    fill.replaceChildren(...cells);
+    trackEl.setAttribute('data-ribbon', 'on');
+  };
+
+  // Persist the focused region's border highlight on the map, independent of
+  // the popup (which is destroyed during playback). Driven from the
+  // module-scope MAP + FEATURE_BY_REGION_ID. Re-asserted on every date change
+  // so playback's popup-clear can't strip the selection outline.
+  let highlightedFeatureId = null;
+  const setHighlight = () => {
+    if (!MAP) return;
+    const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
+    const fid = feature ? feature.id : null;
+    if (highlightedFeatureId != null && highlightedFeatureId !== fid) {
+      MAP.setFeatureState(
+        { source: 'regions', id: highlightedFeatureId }, { selected: false },
+      );
+    }
+    if (fid != null) {
+      MAP.setFeatureState({ source: 'regions', id: fid }, { selected: true });
+    }
+    highlightedFeatureId = fid;
+    if (MAP.triggerRepaint) MAP.triggerRepaint();
+  };
+
+  // Update the two split readouts. The bottom #map-date-ribbon always shows
+  // the scrubbed date (the timeline's own readout, region or no region); the
+  // top #region-readout chip names the focused region and shows its danger
+  // swatch. Pure in-memory lookup (no fetch), so it is safe to call on every
+  // scrub/preview/playback frame.
+  //
+  // SNOW-642: the chip is no longer hidden until a region is focused. It was,
+  // and because both of its sibling controls key off `.has-region`, the whole
+  // .ribbon-header emptied out at once — which read as the ribbon vanishing
+  // rather than as "nothing is selected". It now persists with a "No region
+  // selected" leaf and both controls visible-but-disabled. `.has-region` is
+  // still toggled: the CSS uses it for the empty-state text treatment, and it
+  // remains the one place the focused/unfocused distinction is expressed.
+  const updateReadout = () => {
+    // Bottom date ribbon — day-first, title-case date ("18 May 2026") matching
+    // the popup card; deliberately not the uppercase scrubber format.
+    if (dateRibbonEl) {
+      dateRibbonEl.hidden = !dateKey;
+      if (dateKey) dateRibbonEl.textContent = formatDatePopup(dateKey);
+    }
+    if (!readoutEl) return;
+    const hasRegion = !!(dateKey && regionId && regionName);
+    // SNOW-642: no `readoutEl.hidden = !hasRegion` any more — see the note
+    // above. The template no longer ships `hidden` either, so the chip is
+    // visible from first paint rather than appearing on first selection.
+    readoutEl.classList.toggle('has-region', hasRegion);
+    if (hasRegion) {
+      // Breadcrumb: Major (L1) › Minor (L2) › Micro (L4, the leaf), including
+      // only the tiers currently visible on the map. The leaf is always shown.
+      if (readoutLeaf) readoutLeaf.textContent = regionName;
+      if (readoutCrumbs) {
+        const crumbs = [];
+        if (overlayVisible.l1 && regionMajorName) crumbs.push(regionMajorName);
+        if (overlayVisible.l2 && regionSubName) crumbs.push(regionSubName);
+        readoutCrumbs.textContent = crumbs.length ? crumbs.join(' › ') + ' › ' : '';
+      }
+      const ratingInt = cache && cache[dateKey] ? cache[dateKey][regionId] : null;
+      const key = intToKey(ratingInt);
+      // The swatch is its own element (a colour block that divides date from
+      // name), not a pseudo-element on the date.
+      if (readoutSwatch) {
+        readoutSwatch.style.background =
+          key === 'no_rating' ? 'transparent' : 'var(--color-eaws-' + key.replace(/_/g, '-') + ')';
+      }
+      // Point the action roundel at the bulletin: /<region_id>/<slug>/<date>/.
+      // Region id is lowercased to match the canonical URL form.
+      if (readoutAction) {
+        if (regionSlug) {
+          readoutAction.setAttribute(
+            'href',
+            '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
+          );
+          _setActionEnabled(readoutAction, true);
+        } else {
+          // Focused, but with no slug there is still no bulletin URL to
+          // build — so the roundel is as dead as it is with nothing
+          // selected, and says so the same way.
+          readoutAction.removeAttribute('href');
+          _setActionEnabled(readoutAction, false);
+        }
+      }
+    } else {
+      // SNOW-642: the empty state. The leaf carries the message rather than
+      // a new element, so the chip keeps its shape and there is one place
+      // that says what region is showing.
+      if (readoutLeaf) readoutLeaf.textContent = MAP_STRINGS['no-region'];
+      // Clear the crumbs (not the wrapper's textContent, which would detach
+      // the cached child spans) — a breadcrumb prefix on "No region
+      // selected" would read as a region called that, inside those parents.
+      if (readoutCrumbs) readoutCrumbs.textContent = '';
+      if (readoutSwatch) readoutSwatch.style.background = 'transparent';
+      if (readoutAction) {
+        readoutAction.removeAttribute('href');
+        _setActionEnabled(readoutAction, false);
+      }
+    }
+  };
+
+  /**
+   * Enable or disable the view-bulletin roundel (SNOW-642).
+   *
+   * It stays on screen with nothing selected, so "no bulletin to open" has
+   * to be a state rather than an absence. An <a> with no href is already
+   * inert and untabbable, but that is invisible to a screen reader and to
+   * the eye — this makes it legible to both, and the CSS keys its dimming
+   * off the same aria-disabled a screen reader announces, so the two
+   * cannot drift apart.
+   *
+   * tabindex is set explicitly rather than left to the missing href: the
+   * roundel is a real tab stop the moment a region IS selected, and an
+   * element that silently enters and leaves the tab order is harder to
+   * reason about than one that states where it is.
+   *
+   * @param {HTMLElement} el
+   * @param {boolean} enabled
+   */
+  function _setActionEnabled(el, enabled) {
+    if (enabled) {
+      el.removeAttribute('aria-disabled');
+      el.removeAttribute('tabindex');
+    } else {
+      el.setAttribute('aria-disabled', 'true');
+      el.setAttribute('tabindex', '-1');
+    }
+  }
+
+  const refresh = () => {
+    paintTrack();
+    updateReadout();
+    setHighlight();
+  };
+
+  // Tap a region → it becomes the focus.
+  document.addEventListener('snowdesk:region-selected', (e) => {
+    regionId = (e.detail && e.detail.region_id) || null;
+    regionName = (e.detail && e.detail.region_name) || null;
+    regionSlug = (e.detail && e.detail.region_slug) || null;
+    regionSubName = (e.detail && e.detail.subregion_name) || '';
+    regionMajorName = (e.detail && e.detail.major_name) || '';
+    refresh();
+  });
+
+  // SNOW-314 prototype: a Major/Minor overlay toggle changes which breadcrumb
+  // tiers are shown. Re-render the readout in place (the region is unchanged).
+  document.addEventListener('snowdesk:overlays-changed', (e) => {
+    const key = e.detail && e.detail.key;
+    if (key === 'l1' || key === 'l2') {
+      overlayVisible[key] = !!(e.detail && e.detail.visible);
+      updateReadout();
+    }
+  });
+
+  // Scrubber commit / live drag preview → update the readout's date, and
+  // re-assert the highlight (playback destroys the popup and its outline).
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    dateKey = (e.detail && e.detail.date) || dateKey;
+    updateReadout();
+    setHighlight();
+  });
+  document.addEventListener('snowdesk:date-preview', (e) => {
+    dateKey = (e.detail && e.detail.date) || dateKey;
+    updateReadout();
+  });
+
+  // Apply the initial highlight once the region features are loaded (the
+  // default homepage focus, or a deep-linked region).
+  document.addEventListener('snowdesk:regions-loaded', setHighlight);
+
+  // Paint the default focus (homepage) once the ratings cache resolves.
+  getSeasonRatings().then((c) => {
+    cache = c || null;
+    refresh();
+  });
+})();
