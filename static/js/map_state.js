@@ -124,6 +124,21 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'default-custom-name': 'Custom area %(n)s',
   // SNOW-642: #region-readout's empty state — see updateReadout below.
   'no-region': 'No region selected',
+  // SNOW-645: the per-region download roundel's own labels
+  // (map_region_download.js's `setState`) — see that file's own comment
+  // and _map_embed.html's map-strings-template for why these moved here.
+  'download-no-region-unavailable': "Basemap download isn't available for this region",
+  'download-no-region-select': 'Select a region to download its basemap',
+  'download-idle': "Download this region's basemap — up to %(mb)s MB",
+  'download-busy': "Downloading this region's basemap — %(pct)s",
+  'download-done': "This region's basemap is downloaded — available offline",
+  'download-error': "This region's basemap download failed — tap to try again",
+  'download-disabled': "This region's basemap is too large to download",
+  'download-offline': 'Basemap download unavailable while offline',
+  'download-other-basemap':
+    "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
+  'download-other-basemap-unnamed':
+    "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source

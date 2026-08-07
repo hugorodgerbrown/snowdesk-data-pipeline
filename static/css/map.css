@@ -1666,6 +1666,7 @@
 .map-download-control[data-download-state="offline"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="other-basemap"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="error"] .map-download-control-icon--error {
     display: block;
 }
@@ -1744,6 +1745,52 @@
    Same icon as every other state — see the display rules above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
+}
+
+/* SNOW-645: 'other-basemap' — the region IS downloaded, just for a
+   DIFFERENT basemap than the one on screen (see map_region_download.js's
+   module-header comment for the full story). Deliberately distinct from
+   both neighbours it sits between: 'idle' paints nothing, 'done' pins a
+   SOLID identity-coloured disc (the fill above, height: 100%); this is a
+   HOLLOW centre with a solid RING in the identity colour — "downloaded,
+   but not usable here" is a third answer, not a shade of the other two.
+   The ring lives on its own ::before as an inset box-shadow rather than
+   the height-based fill busy/done share above, so the two mechanisms
+   never have to negotiate the same clipped area for one state.
+
+   The glyph needs no override here: the base .map-download-control rule
+   already sets color: var(--ink), and only 'done' (white, for contrast on
+   its solid disc) and 'error' override it — a hollow ring has no solid
+   fill to fight for contrast, so the base ink colour already reads
+   correctly, unlike the white glyph 'done' needs.
+
+   Same var(…, var(--color-sync-ok)) fallback form as the busy/done fill
+   above, and for the identical reason — see that block's comment for why
+   it is load-bearing rather than decorative. A keyless record (no
+   data-basemap-key at all, not just a missing token) also needs to reach
+   this default, which is what the bare (non-attribute-qualified) rule
+   below is for. */
+.map-download-control[data-download-state="other-basemap"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 0 2px var(--color-sync-ok);
+    z-index: 0;
+}
+.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="other-basemap"]::before {
+    box-shadow: inset 0 0 0 2px var(--color-basemap-openfreemap-liberty, var(--color-sync-ok));
+}
+.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="other-basemap"]::before {
+    box-shadow: inset 0 0 0 2px var(--color-basemap-swisstopo-winter, var(--color-sync-ok));
+}
+.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="other-basemap"]::before {
+    box-shadow: inset 0 0 0 2px var(--color-basemap-swisstopo-light, var(--color-sync-ok));
+}
+.map-download-control[data-basemap-key="ign_plan"][data-download-state="other-basemap"]::before {
+    box-shadow: inset 0 0 0 2px var(--color-basemap-ign-plan, var(--color-sync-ok));
+}
+.map-download-control[data-basemap-key="basemap_at"][data-download-state="other-basemap"]::before {
+    box-shadow: inset 0 0 0 2px var(--color-basemap-basemap-at, var(--color-sync-ok));
 }
 
 @media (prefers-reduced-motion: reduce) {

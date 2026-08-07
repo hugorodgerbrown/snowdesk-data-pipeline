@@ -45,11 +45,14 @@ describe('per-basemap roundel fill fallback (SNOW-645 review)', () => {
     expect(bare).toEqual([]);
   });
 
-  it('carries all five per-key fallback rules, so the guard above is not vacuous', () => {
+  it('carries a fallback rule for every basemap key, in both roundel states, so the guard above is not vacuous', () => {
     // A regex asserting an empty list also passes if the source dropped
     // every basemap rule outright — this pins the count so that failure
-    // mode is caught too.
+    // mode is caught too. Five keys × two states each carry the fallback:
+    // the busy/done fill (SNOW-645) and the other-basemap ring (SNOW-645
+    // review — the roundel state for "downloaded, but under a different
+    // basemap").
     const guarded = MAP_CSS.match(/var\(--color-basemap-[a-z-]+, var\(--color-sync-ok\)\)/g) || [];
-    expect(guarded).toHaveLength(5);
+    expect(guarded).toHaveLength(10);
   });
 });

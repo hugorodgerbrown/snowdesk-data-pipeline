@@ -1271,4 +1271,35 @@ Optional context:
     {# .has-region), so the ribbon header read as vanishing. It now stays  #}
     {# put and says what is true instead.                                  #}
     <span data-string="no-region">{% trans "No region selected" %}</span>
+    {# SNOW-645: the per-region download roundel's own labels                #}
+    {# (static/js/map_region_download.js's `setState`). These seven          #}
+    {# ("download-no-region-…" through "download-offline") replace literals #}
+    {# a variable-indirection gap in bin/i18n-lint let ship untranslated —   #}
+    {# see that script's own comment for the shape of the gap it closes.    #}
+    {# "download-no-region-unavailable"/"download-no-region-select" stay    #}
+    {# two distinct strings rather than one templated by a boolean — the    #}
+    {# copy genuinely branches on whether a region is focused at all.       #}
+    <span
+        data-string="download-no-region-unavailable"
+    >{% trans "Basemap download isn't available for this region" %}</span>
+    <span data-string="download-no-region-select">{% trans "Select a region to download its basemap" %}</span>
+    <span data-string="download-idle">{% blocktrans %}Download this region's basemap — up to %(mb)s
+            MB{% endblocktrans %}</span>
+    {# No literal '%' in the msgid, mirroring "frame-readout-busy" above — #}
+    {# the caller appends it to the interpolated pct value itself.        #}
+    <span data-string="download-busy">{% blocktrans %}Downloading this region's basemap —
+            %(pct)s{% endblocktrans %}</span>
+    <span data-string="download-done">{% trans "This region's basemap is downloaded — available offline" %}</span>
+    <span data-string="download-error">{% trans "This region's basemap download failed — tap to try again" %}</span>
+    <span data-string="download-disabled">{% trans "This region's basemap is too large to download" %}</span>
+    <span data-string="download-offline">{% trans "Basemap download unavailable while offline" %}</span>
+    {# SNOW-645: the roundel's new "downloaded, but for a different basemap" #}
+    {# state. Two variants — never interpolate an empty basemap name into   #}
+    {# the named one — for a pre-SNOW-645 record whose stored `basemapKey`  #}
+    {# is empty, so the OTHER basemap has no name to give it.               #}
+    <span data-string="download-other-basemap">{% blocktrans %}This region's basemap is downloaded for %(basemap)s —
+            tap to download it for this basemap too{% endblocktrans %}</span>
+    <span
+        data-string="download-other-basemap-unnamed"
+    >{% trans "This region's basemap is downloaded for another basemap — tap to download it for this basemap too" %}</span>
 </template>
