@@ -47,6 +47,23 @@ function activeBasemapTileTemplate(map) {
   return null;
 }
 
+// SNOW-645: the settings.BASEMAP_STYLES key of the basemap currently
+// selected in the picker, read off the checked radio row that map.js:150-159
+// sets on boot and map_basemap_picker.js:285-291 maintains on every change.
+// Display-only — unlike activeBasemapTileTemplate above, which reads the
+// *rendered* style and is what beforeWarm uses to decide eviction, this
+// reads the *picker DOM* and can therefore lag the render by the moment a
+// style takes to load after a switch. Returns null with no menu, or no
+// checked row (nothing has resolved yet).
+function activeBasemapKey() {
+  const basemapMenu = document.getElementById('basemap-menu');
+  if (!basemapMenu) return null;
+  const checked = basemapMenu.querySelector(
+    '.basemap-menu-item[data-basemap-key][aria-checked="true"]',
+  );
+  return (checked && checked.dataset.basemapKey) || null;
+}
+
 // SNOW-492: sprite JSON/PNG URLs (1x and 2x) for `map`'s current style, if
 // any. MapLibre's `sprite` style property is either a single base URL
 // string or (multi-sprite styles) an array of `{id, url}` entries; both
@@ -482,6 +499,9 @@ async function basemapDownloadedAreas() {
         name: entry.name || entry.region_id,
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        // SNOW-645: absent on a record written before this ticket shipped
+        // — reads as "downloaded, basemap unknown" rather than a wrong one.
+        basemapKey: entry.basemapKey || null,
       });
     }
   } catch (_e) {
@@ -514,6 +534,8 @@ async function basemapDownloadedAreas() {
             : entry.id),
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        // SNOW-645: see the region branch above for the "unknown" fallback.
+        basemapKey: entry.basemapKey || null,
       });
     }
   } catch (_e) {
@@ -1381,6 +1403,7 @@ const PINNED_DOWNLOAD_DEPS = {
   fitsQuota: (mb) => basemapDownloadFitsQuota(mb),
   core: () => self.pwaBasemapDownloadCore,
   tileTemplate: () => activeBasemapTileTemplate(MAP),
+  basemapKey: () => activeBasemapKey(),
   planBudget: (areaId, mb) => planBasemapDownloadBudget(areaId, mb),
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),

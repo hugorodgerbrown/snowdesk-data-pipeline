@@ -56,6 +56,7 @@
    *   fitsQuota: function(number): Promise<boolean>,
    *   core: function(): (Object|null|undefined),
    *   tileTemplate: function(): (string|null|undefined),
+   *   basemapKey: function(): (string|null|undefined),
    *   planBudget: function(string, number): Promise<Object|null>,
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
@@ -88,10 +89,12 @@
    *     tile URLs from, so a caller's eviction decision and the URLs that
    *     follow it can never disagree about which basemap is active.
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
-   *     `extras` carries `core`, `progressFill` and, SNOW-632, `template`
+   *     `extras` carries `core`, `progressFill`, SNOW-632's `template`
    *     (the same value handed to `beforeWarm`, so a caller recording what
    *     was downloaded records the basemap that was actually fetched, not
-   *     whatever happens to be active when `finish` runs). `result` is the
+   *     whatever happens to be active when `finish` runs) and, SNOW-645,
+   *     `basemapKey` — the picker key captured alongside `template` at run
+   *     start, display-only and possibly null. `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
    *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
@@ -130,6 +133,12 @@
 
     const core = deps.core();
     const template = deps.tileTemplate();
+    // SNOW-645: the picker's basemap key, captured at run start so a
+    // mid-download basemap switch still records the basemap that was
+    // actually fetched. Display-only — see activeBasemapKey's header
+    // comment — so an unresolved key (null) never aborts the run the way a
+    // missing template does; it just means the record below stays keyless.
+    const basemapKey = deps.basemapKey();
     // No tile template (style still settling) means no tiles to warm, and a
     // feeds-only run must never paint 'done' — the area would not in fact
     // be available offline. SNOW-568: reads as a failed download so the
@@ -207,7 +216,7 @@
       progressFill.update(done, total, settled);
     };
 
-    const settle = (result) => finish(result, blob, { core, progressFill, template });
+    const settle = (result) => finish(result, blob, { core, progressFill, template, basemapKey });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —

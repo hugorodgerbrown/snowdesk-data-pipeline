@@ -47,6 +47,10 @@ function deps(overrides) {
       calls.push('tileTemplate');
       return 'https://tiles/{z}/{x}/{y}.png';
     }),
+    basemapKey: vi.fn(() => {
+      calls.push('basemapKey');
+      return 'openfreemap_liberty';
+    }),
     planBudget: vi.fn(async () => {
       calls.push('planBudget');
       return null;
@@ -202,6 +206,7 @@ describe('pre-flight ordering — the SNOW-607 regression', () => {
       'paint:busy',
       'fitsQuota',
       'tileTemplate',
+      'basemapKey',
       'planBudget',
       'loadBlob',
       'confirmEviction',

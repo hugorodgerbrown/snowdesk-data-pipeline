@@ -373,8 +373,23 @@
   async function _renderControl() {
     if (runState === 'busy') return;
     const areas = await basemapDownloadedAreas();
-    const done = areas.some((area) => !area.orphaned);
+    const kept = areas.filter((area) => !area.orphaned);
+    const done = kept.length > 0;
     btn.dataset.downloadState = done ? 'done' : 'idle';
+    // SNOW-645: this roundel means "the device holds at least one
+    // download", which can span basemaps — unlike the region control,
+    // whose single record always matches the active basemap. Only paint an
+    // identity colour when every kept area agrees on one non-empty key;
+    // mixed or unknown falls back to the neutral green fill, same as it
+    // shows today, with the sheet one tap away to itemise which is which.
+    const withKey = kept.filter((area) => area.basemapKey);
+    const keys = new Set(withKey.map((area) => area.basemapKey));
+    const basemapKey = keys.size === 1 && withKey.length === kept.length ? [...keys][0] : null;
+    if (basemapKey) {
+      btn.dataset.basemapKey = basemapKey;
+    } else {
+      delete btn.dataset.basemapKey;
+    }
     const text = done
       ? MAP_STRINGS['custom-control-done']
       : MAP_STRINGS['custom-control-idle'];
@@ -1198,7 +1213,7 @@
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      finish: async (result, runBlob, { core, progressFill, template }) => {
+      finish: async (result, runBlob, { core, progressFill, template, basemapKey }) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
         // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
@@ -1240,6 +1255,7 @@
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
             template: template,
+            basemapKey: basemapKey || null,
             bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };

@@ -160,9 +160,15 @@
    * @param {number[]} band The zoom band the run actually fetched.
    * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
    *   ``warm-cache-done`` reply.
+   * @param {string | null} basemapKey SNOW-645: the picker key captured
+   *   alongside `template` at run start (`basemap_download_runner.js`'s
+   *   `run`), display-only — stored so the Manage downloads sheet and this
+   *   control's own roundel can show which basemap the region was
+   *   downloaded under. Null on an unresolved picker; never used for the
+   *   template-eviction decision above, which stays `template`-only.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, template, z, band, bytes) {
+  async function _recordRegionDownload(regionId, template, z, band, bytes, basemapKey) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -176,6 +182,7 @@
         z: z,
         name: name,
         template: template,
+        basemapKey: basemapKey || null,
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -352,6 +359,18 @@
    */
   function setState(state, mb, pct) {
     btn.dataset.downloadState = state;
+    // SNOW-645: paint the roundel with the ACTIVE basemap's identity colour
+    // (map.css's data-basemap-key override), not the one this region was
+    // originally downloaded under. Correct unconditionally, in every state:
+    // `_probeDone` above builds its cached-tiles check from the active
+    // template, so 'done' already means "downloaded under the basemap
+    // showing now" — the two can never disagree.
+    const basemapKey = activeBasemapKey();
+    if (basemapKey) {
+      btn.dataset.basemapKey = basemapKey;
+    } else {
+      delete btn.dataset.basemapKey;
+    }
     // Non-runnable states are announced as disabled rather than removed, so
     // the control keeps its place in the stack (see renderControl). 'idle'
     // and (SNOW-568) 'error' are the actionable states — handleClick
@@ -550,7 +569,7 @@
           await evictBasemapAreas([evictAreaId]);
         }
       },
-      finish: async (result, blob, { core: runCore, progressFill, template }) => {
+      finish: async (result, blob, { core: runCore, progressFill, template, basemapKey }) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -578,6 +597,7 @@
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,
+            basemapKey,
           );
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the

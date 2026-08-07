@@ -224,17 +224,20 @@
    * than reshuffling on every render.
    *
    * @param {Array<{id: string, name?: string, bytes?: number,
-   *   savedAt?: string}>} areas Areas as ``map.js``'s
-   *   ``basemapDownloadedAreas()`` normalises them — the union of the
-   *   ``basemap.regions`` array and (SNOW-635) the ``basemap.customAreas``
-   *   array, each already keyed by the id that names its Cache Storage
-   *   bucket. ``name`` is always populated for a non-orphaned area — a
-   *   region's is stored by the download itself; an unrenamed custom
-   *   area's default "Custom area N" is filled in by
+   *   savedAt?: string, basemapKey?: string|null}>} areas Areas as
+   *   ``map.js``'s ``basemapDownloadedAreas()`` normalises them — the union
+   *   of the ``basemap.regions`` array and (SNOW-635) the
+   *   ``basemap.customAreas`` array, each already keyed by the id that
+   *   names its Cache Storage bucket. ``name`` is always populated for a
+   *   non-orphaned area — a region's is stored by the download itself; an
+   *   unrenamed custom area's default "Custom area N" is filled in by
    *   ``basemapDownloadedAreas()`` itself (SNOW-635 review — see that
    *   function's own comment for why the defaulting lives there and not
    *   here or in the DOM layer). Only ``reconcileAreas``' orphan entries
    *   (SNOW-612 — a bucket with no record at all) ever leave it unset.
+   *   ``basemapKey`` (SNOW-645) is null on a record written before this
+   *   ticket shipped, and always null on an orphan — both read as an
+   *   unknown basemap, never a wrong one.
    * @param {{isCustomAreaId?: function(string): boolean}} [options]
    *   ``isCustomAreaId`` is ``pwaBasemapDownloadCore.isCustomAreaId`` — an
    *   area whose id it accepts is a user-framed download rather than a
@@ -249,7 +252,7 @@
    *   longer needs a caller-supplied fallback string for it.
    * @returns {Array<{id: string, kind: string, orphaned: boolean,
    *   label: string, renameable: boolean, bytes: number, savedAt: string,
-   *   size: string}>}
+   *   size: string, basemapKey: string}>}
    */
   function manageRows(areas, options) {
     var list = Array.isArray(areas) ? areas : [];
@@ -293,6 +296,11 @@
         bytes: bytes,
         savedAt: area.savedAt || '',
         size: formatMegabytes(bytes),
+        // SNOW-645: absent on a record written before this ticket shipped,
+        // or on an orphan (no record at all) — both read as '', never a
+        // wrong basemap, so map_downloads_manager.js's buildRow removes
+        // the swatch+name line rather than showing an unknown one.
+        basemapKey: area.basemapKey || '',
       });
     }
 
@@ -355,6 +363,8 @@
         bytes: Number(area.bytes) || 0,
         savedAt: area.savedAt,
         orphaned: false,
+        // SNOW-645: absent on a pre-SNOW-645 record — see manageRows.
+        basemapKey: area.basemapKey || null,
       });
     }
 
@@ -375,6 +385,8 @@
         // the newest download on a surface ordered partly by recency.
         savedAt: undefined,
         orphaned: true,
+        // No record means no known basemap either.
+        basemapKey: null,
       });
     }
     orphans.sort(function (a, b) {
