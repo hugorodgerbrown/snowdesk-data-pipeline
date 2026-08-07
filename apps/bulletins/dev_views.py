@@ -101,7 +101,10 @@ def openmeteo_mirror(
     Accepts ``latitude``, ``longitude``, ``start_date``, and ``end_date``
     query parameters. Extra query parameters (``daily``, ``timezone``, etc.)
     are accepted and ignored — the mirror always returns
-    ``weather_code``, ``sunrise``, and ``sunset``.
+    ``weather_code``, ``sunrise``, and ``sunset``, plus
+    ``temperature_2m_max``, ``temperature_2m_min``, and ``snowfall_sum``
+    when the underlying archive record carries them (``None`` — replayed as
+    JSON ``null`` — for older records written before SNOW-571).
 
     Resolves ``(latitude, longitude)`` to a Region by matching
     ``str(region.centre["lat"])`` and ``str(region.centre["lon"])`` against
@@ -198,7 +201,10 @@ def openmeteo_mirror(
             status=404,
         )
 
-    # Synthesise the Open-Meteo response shape.
+    # Synthesise the Open-Meteo response shape. temperature_2m_max/min and
+    # snowfall_sum are read via .get() rather than direct indexing — a
+    # record from an older archive written before SNOW-571 carries no such
+    # keys, and the mirror must replay that as JSON null, not KeyError.
     payload = {
         "daily": {
             "time": requested_dates,
@@ -207,6 +213,15 @@ def openmeteo_mirror(
             ],
             "sunrise": [archive_by_date[d]["sunrise"] for d in requested_dates],
             "sunset": [archive_by_date[d]["sunset"] for d in requested_dates],
+            "temperature_2m_max": [
+                archive_by_date[d].get("temperature_2m_max") for d in requested_dates
+            ],
+            "temperature_2m_min": [
+                archive_by_date[d].get("temperature_2m_min") for d in requested_dates
+            ],
+            "snowfall_sum": [
+                archive_by_date[d].get("snowfall_sum") for d in requested_dates
+            ],
         }
     }
 

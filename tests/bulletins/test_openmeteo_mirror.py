@@ -26,9 +26,18 @@ def _om_record(
     date: str,
     weather_code: int = 3,
     captured_at: str = "2026-05-09T12:00:00Z",
+    *,
+    temperature_2m_max: float | None = None,
+    temperature_2m_min: float | None = None,
+    snowfall_sum: float | None = None,
 ) -> dict[str, Any]:
-    """Build a minimal Open-Meteo archive record."""
-    return {
+    """Build a minimal Open-Meteo archive record.
+
+    The three SNOW-571 extras default to ``None`` (key omitted entirely,
+    mirroring a record written before those keys existed) — pass them
+    explicitly to build a fully-populated record.
+    """
+    record: dict[str, Any] = {
         "region_id": region_id,
         "date": date,
         "weather_code": weather_code,
@@ -36,6 +45,13 @@ def _om_record(
         "sunset": f"{date}T20:14+02:00",
         "captured_at": captured_at,
     }
+    if temperature_2m_max is not None:
+        record["temperature_2m_max"] = temperature_2m_max
+    if temperature_2m_min is not None:
+        record["temperature_2m_min"] = temperature_2m_min
+    if snowfall_sum is not None:
+        record["snowfall_sum"] = snowfall_sum
+    return record
 
 
 def _make_archive(
@@ -140,6 +156,72 @@ class TestOpenMeteoMirrorArchiveEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["daily"]["weather_code"] == [7]
+
+
+@pytest.mark.django_db
+class TestOpenMeteoMirrorDailyExtras:
+    """temperature_2m_max/min and snowfall_sum replay through the mirror (SNOW-571)."""
+
+    def test_records_with_extras_replay_the_values(self, tmp_path: Path) -> None:
+        """A record carrying the extended fields replays them verbatim."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [
+                _om_record(
+                    region.region_id,
+                    "2026-05-01",
+                    weather_code=1,
+                    temperature_2m_max=4.2,
+                    temperature_2m_min=-3.1,
+                    snowfall_sum=12.0,
+                )
+            ],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 200
+        daily = response.json()["daily"]
+        assert daily["temperature_2m_max"] == [4.2]
+        assert daily["temperature_2m_min"] == [-3.1]
+        assert daily["snowfall_sum"] == [12.0]
+
+    def test_records_lacking_extras_replay_as_null(self, tmp_path: Path) -> None:
+        """A record written before SNOW-571 lacks the keys — replay as null, not KeyError."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [_om_record(region.region_id, "2026-05-01", weather_code=1)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 200
+        daily = response.json()["daily"]
+        assert daily["temperature_2m_max"] == [None]
+        assert daily["temperature_2m_min"] == [None]
+        assert daily["snowfall_sum"] == [None]
 
 
 @pytest.mark.django_db

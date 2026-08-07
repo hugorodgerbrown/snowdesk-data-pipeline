@@ -14,7 +14,9 @@ dispatcher used by the bulletin page render:
 
   fetch_weather_for_region(region, target_date, *, commit, base_url, on_fetched)
       Fetches today's (or any single day's) weather for one region from the
-      Open-Meteo forecast endpoint. Returns ``(WeatherSnapshot, created)`` when
+      Open-Meteo forecast endpoint, requesting ``REGION_DAILY_VARIABLES``
+      (weather_code/sunrise/sunset plus temperature_2m_max/min and
+      snowfall_sum). Returns ``(WeatherSnapshot, created)`` when
       ``commit=True``, or ``None`` when ``commit=False``. ``base_url`` overrides
       the configured forecast host; ``on_fetched`` is called once per
       fetched record (for ``--stash`` capture).
@@ -26,10 +28,11 @@ dispatcher used by the bulletin page render:
   fetch_archive_for_region(region, start_date, end_date, *, commit, base_url,
   on_fetched)
       Fetches historical weather for a date range from the Open-Meteo archive
-      endpoint. Returns a list of ``(WeatherSnapshot, created)`` tuples when
-      ``commit=True``, or an empty list when ``commit=False``. ``base_url``
-      overrides the configured archive host; ``on_fetched`` is called once
-      per fetched record.
+      endpoint, requesting the same ``REGION_DAILY_VARIABLES`` set as the
+      forecast path. Returns a list of ``(WeatherSnapshot, created)`` tuples
+      when ``commit=True``, or an empty list when ``commit=False``.
+      ``base_url`` overrides the configured archive host; ``on_fetched`` is
+      called once per fetched record.
 
   backfill_all_regions(start_date, end_date, *, commit, delay, base_url, on_fetched)
       Calls fetch_archive_for_region for every MicroRegion that has a centre
@@ -108,6 +111,15 @@ REQUEST_TIMEOUT = 30  # seconds
 
 SOURCE_LIVE = "live"
 SOURCE_LOCAL_MIRROR = "local-mirror"
+
+# Daily variable set requested for region (WeatherSnapshot) forecast/archive
+# calls (SNOW-571) — the required weather_code/sunrise/sunset trio plus the
+# hi/lo temperature and snowfall total the weather panel renders. All three
+# extras are nullable on the model; a response that omits one degrades to
+# None via _build_snapshot_defaults rather than rejecting the batch.
+REGION_DAILY_VARIABLES = (
+    "weather_code,sunrise,sunset,temperature_2m_max,temperature_2m_min,snowfall_sum"
+)
 
 # Comprehensive daily variable set requested for ForecastPoint forecasts — a
 # favourited point is rendered as a personal detail card, richer than the
@@ -243,23 +255,46 @@ def _build_snapshot_defaults(
     weather_code: int,
     sunrise_str: str,
     sunset_str: str,
+    daily: dict[str, Any] | None = None,
+    idx: int = 0,
 ) -> dict[str, Any]:
     """
     Build the ``defaults`` dict for a WeatherSnapshot update_or_create call.
+
+    ``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum`` are read
+    from ``daily`` via a degrade-to-``None`` accessor of the same shape as
+    ``_build_point_defaults._extended`` — an omitted array (or a caller that
+    passes no ``daily`` block at all) never raises, since all three are
+    nullable on the model.
 
     Args:
         weather_code: WMO weather interpretation code (0–99).
         sunrise_str: ISO-8601 sunrise datetime string from Open-Meteo.
         sunset_str: ISO-8601 sunset datetime string from Open-Meteo.
+        daily: The ``"daily"`` block of an Open-Meteo response, for reading
+            the extended variables. Defaults to ``None`` (all extras None).
+        idx: Index into each daily array for the target date. Defaults to
+            ``0``.
 
     Returns:
         A dict suitable for passing as ``defaults=`` to update_or_create.
 
     """
+
+    def _extended(key: str) -> Any:
+        """Return the extended variable at idx, or None if omitted/short."""
+        values = (daily or {}).get(key)
+        if values is None or idx >= len(values):
+            return None
+        return values[idx]
+
     return {
         "weather_code": weather_code,
         "sunrise": _parse_dt_preserve_offset(sunrise_str),
         "sunset": _parse_dt_preserve_offset(sunset_str),
+        "temperature_2m_max": _extended("temperature_2m_max"),
+        "temperature_2m_min": _extended("temperature_2m_min"),
+        "snowfall_sum": _extended("snowfall_sum"),
         "fetched_at": django_timezone.now(),
     }
 
@@ -444,8 +479,9 @@ def fetch_weather_for_region(
             back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once after the response is parsed,
             with a NDJSON-shape dict ``{region_id, date, weather_code, sunrise,
-            sunset, captured_at}``. Used by ``--stash`` to collect records for
-            the on-disk archive. Defaults to ``None`` (no-op).
+            sunset, temperature_2m_max, temperature_2m_min, snowfall_sum,
+            captured_at}``. Used by ``--stash`` to collect records for the
+            on-disk archive. Defaults to ``None`` (no-op).
 
     Returns:
         A ``(WeatherSnapshot, created)`` tuple when ``commit=True``, where
@@ -471,7 +507,7 @@ def fetch_weather_for_region(
         {
             "latitude": str(centre["lat"]),
             "longitude": str(centre["lon"]),
-            "daily": "weather_code,sunrise,sunset",
+            "daily": REGION_DAILY_VARIABLES,
             "timezone": "auto",
             # HRB: forecast_days cannot be used with start/end dates.
             # "forecast_days": "1",
@@ -498,6 +534,8 @@ def fetch_weather_for_region(
         sunset_str,
     )
 
+    defaults = _build_snapshot_defaults(weather_code, sunrise_str, sunset_str, daily, 0)
+
     if on_fetched is not None:
         on_fetched(
             {
@@ -506,6 +544,9 @@ def fetch_weather_for_region(
                 "weather_code": weather_code,
                 "sunrise": sunrise_str,
                 "sunset": sunset_str,
+                "temperature_2m_max": defaults["temperature_2m_max"],
+                "temperature_2m_min": defaults["temperature_2m_min"],
+                "snowfall_sum": defaults["snowfall_sum"],
                 "captured_at": django_timezone.now().isoformat(),
             }
         )
@@ -513,7 +554,6 @@ def fetch_weather_for_region(
     if not commit:
         return None
 
-    defaults = _build_snapshot_defaults(weather_code, sunrise_str, sunset_str)
     snapshot, created = WeatherSnapshot.objects.update_or_create(
         region=region,
         valid_for_date=target_date,
@@ -1228,8 +1268,9 @@ def fetch_archive_for_region(
             back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once per ``(region, date)`` record
             in the response, with a NDJSON-shape dict ``{region_id, date,
-            weather_code, sunrise, sunset, captured_at}``. Used by ``--stash``.
-            Defaults to ``None`` (no-op).
+            weather_code, sunrise, sunset, temperature_2m_max,
+            temperature_2m_min, snowfall_sum, captured_at}``. Used by
+            ``--stash``. Defaults to ``None`` (no-op).
 
     Returns:
         A list of ``(WeatherSnapshot, created)`` tuples — one per day — when
@@ -1261,7 +1302,7 @@ def fetch_archive_for_region(
             "longitude": str(centre["lon"]),
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-            "daily": "weather_code,sunrise,sunset",
+            "daily": REGION_DAILY_VARIABLES,
             "timezone": "auto",
         },
         url,
@@ -1277,7 +1318,10 @@ def fetch_archive_for_region(
     sunsets: list[str] = daily["sunset"]
 
     # Reject a truncated / inconsistent response before emitting or writing
-    # anything — never zip() the parallel arrays unvalidated (SNOW-467).
+    # anything — never zip() the parallel arrays unvalidated (SNOW-467). Only
+    # the four required arrays are checked here; temperature_2m_max/min and
+    # snowfall_sum are optional (read via _build_snapshot_defaults's
+    # degrade-to-None accessor) and must never be able to reject a batch.
     parsed_dates = _archive_daily_dates(
         dates,
         weather_codes,
@@ -1291,9 +1335,10 @@ def fetch_archive_for_region(
     captured_at = django_timezone.now().isoformat()
 
     if on_fetched is not None:
-        for date_str, code, sunrise_str, sunset_str in zip(
-            dates, weather_codes, sunrises, sunsets
+        for idx, (date_str, code, sunrise_str, sunset_str) in enumerate(
+            zip(dates, weather_codes, sunrises, sunsets)
         ):
+            extras = _build_snapshot_defaults(code, sunrise_str, sunset_str, daily, idx)
             on_fetched(
                 {
                     "region_id": region.region_id,
@@ -1301,6 +1346,9 @@ def fetch_archive_for_region(
                     "weather_code": code,
                     "sunrise": sunrise_str,
                     "sunset": sunset_str,
+                    "temperature_2m_max": extras["temperature_2m_max"],
+                    "temperature_2m_min": extras["temperature_2m_min"],
+                    "snowfall_sum": extras["snowfall_sum"],
                     "captured_at": captured_at,
                 }
             )
@@ -1317,10 +1365,12 @@ def fetch_archive_for_region(
     # One transaction for the whole batch so a mid-loop failure can't commit a
     # partial date range (SNOW-467).
     with transaction.atomic():
-        for day, code, sunrise_str, sunset_str in zip(
-            parsed_dates, weather_codes, sunrises, sunsets
+        for idx, (day, code, sunrise_str, sunset_str) in enumerate(
+            zip(parsed_dates, weather_codes, sunrises, sunsets)
         ):
-            defaults = _build_snapshot_defaults(code, sunrise_str, sunset_str)
+            defaults = _build_snapshot_defaults(
+                code, sunrise_str, sunset_str, daily, idx
+            )
             snapshot, created = WeatherSnapshot.objects.update_or_create(
                 region=region,
                 valid_for_date=day,

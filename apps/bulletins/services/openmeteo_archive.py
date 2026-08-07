@@ -15,8 +15,16 @@ One record per ``(region_id, date)`` pair per line. Record shape:
       "weather_code": 3,
       "sunrise": "2026-05-01T05:32+02:00",
       "sunset":  "2026-05-01T20:14+02:00",
+      "temperature_2m_max": 4.2,
+      "temperature_2m_min": -3.1,
+      "snowfall_sum": 12.0,
       "captured_at": "2026-05-09T12:34:56Z"
     }
+
+``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum`` (SNOW-571)
+are read via ``.get()`` by every consumer — a record written before these
+keys existed simply lacks them, and that must degrade to ``None`` rather
+than raise.
 
 Deduplication keys on ``(region_id, date)`` with the later-``captured_at``
 record winning. The stored order is ascending by ``(region_id, date)`` so
