@@ -59,9 +59,13 @@
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
  *   favourites,
- *   community_reports    — IndexedDB ``data:map_overlays`` rows written
+ *   community_reports,
+ *   weather               — IndexedDB ``data:map_overlays`` rows written
  *                          by map_overlay_offline_cache.js. A truthy row
- *                          carrying ``.geojson`` counts as cached.
+ *                          carrying ``.geojson`` counts as cached. weather
+ *                          (SNOW-573) is public like community_reports but
+ *                          uses the same idb kind, not geojson — see
+ *                          OVERLAY_RESOURCES.weather below for why.
  *   basemap (one dot)    — the active/any basemap's tile cache,
  *                          discovered by the ``snowdesk-basemap-``
  *                          prefix (SNOW-484's BASEMAP_CACHE) rather than
@@ -175,6 +179,15 @@
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
+    // SNOW-573: the map weather layer's forecast payload. `idb`, not
+    // `geojson` — its endpoint is flag-gated and public, but the payload
+    // is a mutable forecast, not static reference data suited to sw.js's
+    // STATIC_PATHS shell cache (which never expires). The write-through
+    // IndexedDB row (window.pwaMapOverlayCache, same posture as
+    // community_reports) is self-correcting on read-back: a stale cached
+    // payload simply stops drawing anything as scrubbed dates roll past
+    // its forecast window, rather than needing an explicit staleness check.
+    weather: Object.freeze({ kind: 'idb', key: 'weather' }),
     // The "Available offline" row. Unlike every other entry this has no
     // feed of its own to probe — its question is "are any basemap tiles
     // pinned at all", i.e. is there an offline map to speak of.

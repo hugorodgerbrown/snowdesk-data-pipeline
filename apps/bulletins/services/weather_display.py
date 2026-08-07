@@ -437,8 +437,7 @@ def build_point_weather_days(
     rows: list["ForecastPointWeather"], now: datetime.datetime
 ) -> dict[str, PointWeatherDay]:
     """
-    Project a forecast window into the date-keyed ``days`` dict the map
-    weather layer serialises.
+    Project a forecast window into the map weather layer's ``days`` dict.
 
     The single place both ``forecast_weather_geojson`` (public,
     resort-anchored points) and ``favourites_geojson`` (private,

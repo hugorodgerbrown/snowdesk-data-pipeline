@@ -59,6 +59,17 @@
  *     every feature's `days` dict — the exact set `installWeatherLayer`
  *     needs to rasterise via `map.addImage`, so a re-register after a
  *     basemap `setStyle` never decodes an icon the payload doesn't use.
+ *   extractWeatherFeatures(featureCollection)
+ *     The subset of a FeatureCollection's features that carry a `days`
+ *     property — pulls the weather-bearing subset out of
+ *     `favourites.geojson` (only present when the `weather_layer` flag is
+ *     active) for the client-side merge into the map's weather source. A
+ *     favourite's synthetic offline `pending` feature (SNOW-479, no `days`
+ *     yet) is naturally excluded.
+ *   mergeFeatureCollections(a, b)
+ *     Concatenates two FeatureCollections' feature arrays into one new
+ *     FeatureCollection — the public resort-anchored payload plus the
+ *     signed-in visitor's own favourite-anchored features.
  */
 
 (function () {
@@ -166,6 +177,37 @@
     return Object.keys(seen).sort();
   }
 
+  /**
+   * The subset of features that carry a `days` property.
+   *
+   * @param {{type: string, features: Array<Object>}|null|undefined} featureCollection
+   * @returns {{type: string, features: Array<Object>}} A new
+   *   FeatureCollection — the input is never mutated.
+   */
+  function extractWeatherFeatures(featureCollection) {
+    var features = (featureCollection && featureCollection.features) || [];
+    return {
+      type: 'FeatureCollection',
+      features: features.filter(function (feature) {
+        return !!(feature.properties && feature.properties.days);
+      }),
+    };
+  }
+
+  /**
+   * Concatenate two FeatureCollections' feature arrays into one.
+   *
+   * @param {{type: string, features: Array<Object>}|null|undefined} a
+   * @param {{type: string, features: Array<Object>}|null|undefined} b
+   * @returns {{type: string, features: Array<Object>}} A new
+   *   FeatureCollection — neither input is mutated.
+   */
+  function mergeFeatureCollections(a, b) {
+    var featuresA = (a && a.features) || [];
+    var featuresB = (b && b.features) || [];
+    return { type: 'FeatureCollection', features: featuresA.concat(featuresB) };
+  }
+
   window.pwaWeatherCore = Object.freeze({
     formatTempLabel: formatTempLabel,
     projectFeatureForDate: projectFeatureForDate,
@@ -173,5 +215,7 @@
     forecastWindowDates: forecastWindowDates,
     isDateInForecastWindow: isDateInForecastWindow,
     iconFilenamesForPayload: iconFilenamesForPayload,
+    extractWeatherFeatures: extractWeatherFeatures,
+    mergeFeatureCollections: mergeFeatureCollections,
   });
 })();

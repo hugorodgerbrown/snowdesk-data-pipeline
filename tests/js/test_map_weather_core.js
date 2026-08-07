@@ -204,3 +204,59 @@ describe('iconFilenamesForPayload', () => {
     expect(core.iconFilenamesForPayload(fc)).toEqual([]);
   });
 });
+
+describe('extractWeatherFeatures', () => {
+  it('keeps only features carrying a days property', () => {
+    const withDays = makeFeature({
+      '2026-08-07': { icon: 'clear-day.svg', label: 'Clear', tmax: 4, tmin: -3, snow: 0 },
+    });
+    const pendingFavourite = {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [7.4, 46.1] },
+      properties: { name: 'My spot', pending: true },
+    };
+    const fc = { type: 'FeatureCollection', features: [withDays, pendingFavourite] };
+
+    const result = core.extractWeatherFeatures(fc);
+
+    expect(result.features).toHaveLength(1);
+    expect(result.features[0]).toBe(withDays);
+  });
+
+  it('returns an empty FeatureCollection for null/undefined input', () => {
+    expect(core.extractWeatherFeatures(null)).toEqual({ type: 'FeatureCollection', features: [] });
+    expect(core.extractWeatherFeatures(undefined)).toEqual({ type: 'FeatureCollection', features: [] });
+  });
+});
+
+describe('mergeFeatureCollections', () => {
+  it('concatenates both feature arrays', () => {
+    const a = { type: 'FeatureCollection', features: [makeFeature({})] };
+    const b = { type: 'FeatureCollection', features: [makeFeature({}), makeFeature({})] };
+
+    const merged = core.mergeFeatureCollections(a, b);
+
+    expect(merged.type).toBe('FeatureCollection');
+    expect(merged.features).toHaveLength(3);
+  });
+
+  it('tolerates null/undefined inputs on either side', () => {
+    const a = { type: 'FeatureCollection', features: [makeFeature({})] };
+    expect(core.mergeFeatureCollections(a, null).features).toHaveLength(1);
+    expect(core.mergeFeatureCollections(null, a).features).toHaveLength(1);
+    expect(core.mergeFeatureCollections(null, undefined)).toEqual({
+      type: 'FeatureCollection',
+      features: [],
+    });
+  });
+
+  it('does not mutate either input', () => {
+    const a = { type: 'FeatureCollection', features: [makeFeature({})] };
+    const b = { type: 'FeatureCollection', features: [makeFeature({})] };
+
+    core.mergeFeatureCollections(a, b);
+
+    expect(a.features).toHaveLength(1);
+    expect(b.features).toHaveLength(1);
+  });
+});
