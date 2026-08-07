@@ -1378,9 +1378,7 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
         assert response.status_code == 403
 
-    def test_days_absent_when_weather_layer_flag_inactive(
-        self, client: Client
-    ) -> None:
+    def test_days_absent_when_weather_layer_flag_inactive(self, client: Client) -> None:
         """With the flag off, no feature carries a days key (SNOW-573)."""
         user = UserFactory.create()
         client.force_login(user)
@@ -1395,9 +1393,7 @@ class TestFavouritesGeojson:
 
         assert "days" not in response.json()["features"][0]["properties"]
 
-    def test_days_present_when_weather_layer_flag_active(
-        self, client: Client
-    ) -> None:
+    def test_days_present_when_weather_layer_flag_active(self, client: Client) -> None:
         """With the flag on, days mirrors build_point_weather_days's shape (SNOW-573)."""
         user = UserFactory.create()
         client.force_login(user)
@@ -1413,8 +1409,9 @@ class TestFavouritesGeojson:
             snowfall_sum=0.0,
         )
 
-        with freeze_time("2026-08-07T12:00:00Z"), override_flag(
-            "weather_layer", active=True
+        with (
+            freeze_time("2026-08-07T12:00:00Z"),
+            override_flag("weather_layer", active=True),
         ):
             response = client.get(GEOJSON_URL)
 
@@ -1429,9 +1426,7 @@ class TestFavouritesGeojson:
             }
         }
 
-    def test_days_empty_dict_when_no_weather_fetched_yet(
-        self, client: Client
-    ) -> None:
+    def test_days_empty_dict_when_no_weather_fetched_yet(self, client: Client) -> None:
         """A favourite with no fetched weather gets an empty days dict, not an error."""
         user = UserFactory.create()
         client.force_login(user)
