@@ -10,6 +10,8 @@ Covers:
     Report-button sentences are always present.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``.
+  * The Map-weather panel (SNOW-573) is gated on the ``weather_layer``
+    waffle flag the same way.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -90,6 +92,15 @@ class TestHelpPageFlagGating:
     def test_sync_log_panel_present_when_flag_active(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' in response.content
+
+    def test_weather_layer_panel_absent_by_default(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-weather-layer"' not in response.content
+
+    @override_flag("weather_layer", active=True)
+    def test_weather_layer_panel_present_when_flag_active(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-weather-layer"' in response.content
 
 
 @pytest.mark.django_db
