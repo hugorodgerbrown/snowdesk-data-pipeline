@@ -142,7 +142,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
 
     The ``geocoded`` trait sets ``latitude``/``longitude`` to the same
     representative coordinates as ``ForecastPointFactory`` (46.1, 7.4) plus
-    ``geocode_source="manual"``, so ``ResortFactory.create(geocoded=True)``
+    ``geocode_source="MANUAL"``, so ``ResortFactory.create(geocoded=True)``
     builds a resort that ``Resort.objects.geocoded()`` — and
     ``link_resort_forecast_points`` — can pick up.
     """
@@ -158,7 +158,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
         geocoded = factory.Trait(
             latitude=46.1,
             longitude=7.4,
-            geocode_source="manual",
+            geocode_source=Resort.GeocodeSource.MANUAL,
         )
 
     name = factory.Sequence(lambda n: f"Resort {n}")

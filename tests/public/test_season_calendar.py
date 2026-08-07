@@ -36,7 +36,7 @@ import datetime
 import pytest
 from django.test import override_settings
 
-from apps.bulletins.models import RegionDayRating
+from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
     build_season_grid,
     build_season_ribbon,
@@ -377,7 +377,7 @@ class TestSeasonCellSourceAndBands:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_slf_cell_source_is_slf(self) -> None:
-        """SLF RegionDayRating row propagates source='slf' to SeasonCell."""
+        """SLF RegionDayRating row propagates source='SLF' to SeasonCell."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create()
@@ -388,13 +388,13 @@ class TestSeasonCellSourceAndBands:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.LOW,
             source_bulletin=bulletin,
-            source="slf",
+            source=Bulletin.Source.SLF,
         )
         grid = build_season_grid(region, today=today)
         cell = next(
             c for col in grid.columns for c in col if c is not None and c.date == target
         )
-        assert cell.source == "slf"
+        assert cell.source == Bulletin.Source.SLF
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_slf_cell_bands_is_none(self) -> None:
@@ -409,7 +409,7 @@ class TestSeasonCellSourceAndBands:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.LOW,
             source_bulletin=bulletin,
-            source="slf",
+            source=Bulletin.Source.SLF,
             bands=None,
         )
         grid = build_season_grid(region, today=today)
@@ -445,14 +445,14 @@ class TestSeasonCellSourceAndBands:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.CONSIDERABLE,
             source_bulletin=bulletin,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             bands=bands,
         )
         grid = build_season_grid(region, today=today)
         cell = next(
             c for col in grid.columns for c in col if c is not None and c.date == target
         )
-        assert cell.source == "albina"
+        assert cell.source == Bulletin.Source.ALBINA
         assert cell.band_mode == "elevation-only"
         assert cell.bands is not None
         assert len(cell.bands) == 2
@@ -496,7 +496,7 @@ class TestSeasonCellSourceAndBands:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.HIGH,
             source_bulletin=bulletin,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             bands=bands,
         )
         grid = build_season_grid(region, today=today)
@@ -528,7 +528,7 @@ class TestSeasonCellSourceAndBands:
             min_rating=RegionDayRating.Rating.MODERATE,
             max_rating=RegionDayRating.Rating.MODERATE,
             source_bulletin=bulletin,
-            source="slf",
+            source=Bulletin.Source.SLF,
             bands=None,
         )
         grid = build_season_grid(region, today=today)

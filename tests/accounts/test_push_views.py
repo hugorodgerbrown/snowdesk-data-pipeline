@@ -182,11 +182,11 @@ class TestPushRegister:
         assert response.json()["ok"] is False
 
     def test_mechanism_from_body_is_persisted(self, staff_client: Client) -> None:
-        """A 'mechanism' field in the POST body is persisted on the row."""
+        """A 'mechanism' field in the POST body is persisted on the row (upper-case)."""
         body: dict[str, Any] = {
             "endpoint": "https://push.example.com/declarative-endpoint",
             "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"},
-            "mechanism": "declarative",
+            "mechanism": "DECLARATIVE",
         }
         response = _post_json(staff_client, _REGISTER_URL, body)
         assert response.status_code == 200
@@ -194,11 +194,46 @@ class TestPushRegister:
         assert sub.mechanism == PushSubscription.Mechanism.DECLARATIVE
 
     def test_omitted_mechanism_defaults_to_sw(self, staff_client: Client) -> None:
-        """A missing 'mechanism' field defaults to 'sw'."""
+        """A missing 'mechanism' field defaults to 'SW'."""
         response = _post_json(staff_client, _REGISTER_URL, _REGISTER_BODY)
         assert response.status_code == 200
         sub = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
         assert sub.mechanism == PushSubscription.Mechanism.SW
+
+    @pytest.mark.parametrize("wire_value", ["sw", "SW"])
+    def test_sw_wire_value_is_tolerant_of_case(
+        self, staff_client: Client, wire_value: str
+    ) -> None:
+        """Both the pre-SNOW-582 lower-case and current upper-case 'sw' wire
+        values are accepted and stored as 'SW' — a stale cached client sending
+        the old casing still registers instead of 400ing.
+        """
+        body: dict[str, Any] = {
+            "endpoint": f"https://push.example.com/sw-case-{wire_value}",
+            "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"},
+            "mechanism": wire_value,
+        }
+        response = _post_json(staff_client, _REGISTER_URL, body)
+        assert response.status_code == 200
+        sub = PushSubscription.objects.get(endpoint=body["endpoint"])
+        assert sub.mechanism == PushSubscription.Mechanism.SW
+
+    @pytest.mark.parametrize("wire_value", ["declarative", "DECLARATIVE"])
+    def test_declarative_wire_value_is_tolerant_of_case(
+        self, staff_client: Client, wire_value: str
+    ) -> None:
+        """Both casings of the 'declarative' wire value are accepted and stored
+        as 'DECLARATIVE'.
+        """
+        body: dict[str, Any] = {
+            "endpoint": f"https://push.example.com/declarative-case-{wire_value}",
+            "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"},
+            "mechanism": wire_value,
+        }
+        response = _post_json(staff_client, _REGISTER_URL, body)
+        assert response.status_code == 200
+        sub = PushSubscription.objects.get(endpoint=body["endpoint"])
+        assert sub.mechanism == PushSubscription.Mechanism.DECLARATIVE
 
     def test_invalid_mechanism_returns_400(self, staff_client: Client) -> None:
         """An unrecognised 'mechanism' value is rejected with 400."""

@@ -1,6 +1,6 @@
 ---
 name: map-page-functional-spec
-description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), basemaps, season scrubber
+description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), weather overlay, basemaps
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -224,13 +224,40 @@ users so they can be used independently:
 of reports — always shows the viewer's own reports plus other users'
 reports.)
 
-### 3.4 UGC eligibility at a glance
+### 3.4 Weather — condition symbols and temperature (SNOW-573)
+
+The **Weather** overlay draws a condition symbol (a Meteocons icon —
+clear, cloudy, rain/snow at three intensities, fog, thunder — with a
+day/night variant) plus the day's max temperature at each forecast point:
+every resort, and, for a signed-in visitor, every one of their own
+favourite pins too.
+
+- **What it shows.** One symbol per point for whichever date the scrubber
+  is showing. Point weather is forecast-only — it covers today plus the
+  next several days, and **often fewer than the full window** (the
+  backing weather model can return a shorter run than requested; a short
+  window is the normal case, not a failure). Scrubbing to a date outside
+  the stored window disables the layer's menu row, with a reason, rather
+  than silently drawing nothing.
+- **Privacy.** The public data (every resort's symbol) is not
+  authentication-gated, but a **favourite's** own weather is private —
+  it only ever reaches the map for the signed-in visitor it belongs to,
+  merged in client-side alongside the public resort data. Another user's
+  favourite-anchored weather is never part of the public payload.
+- **Who can use it.** Everyone can see resort weather once the feature is
+  enabled site-wide; a signed-in visitor additionally sees weather on
+  their own favourite pins. **Off by default**, like community reports.
+- **Rollout.** Gated behind the `weather_layer` feature flag during
+  rollout (see [`feature-flags.md`](feature-flags.md)).
+
+### 3.5 UGC eligibility at a glance
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
 | Favourites | Signed in | Owner only, 10/min | On (eligible users) | Private, per-user |
 | Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off | Anonymised, public |
+| Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
 `edit_map` remains a superuser-scoped feature flag during rollout;
@@ -288,7 +315,10 @@ to today's position within the **November–May** avalanche season window.
   animating the choropleth day by day as a time-lapse of the winter.
 - **Derived layers follow.** The bulletin-groupings layer re-dissolves for
   each scrubbed date (it only redraws once the scrubber settles, so it
-  never thrashes during a drag or playback).
+  never thrashes during a drag or playback). The Weather overlay
+  re-projects for each scrubbed date too, but with no network round-trip
+  at all — its payload already carries the whole forecast window, so a
+  date change just re-reads the already-fetched data.
 - **Performance.** The full season's ratings are fetched once, on the
   first scrub, and served from memory thereafter — the first scrub pays a
   single round-trip; every later scrub and all playback render instantly.
@@ -337,12 +367,13 @@ always fetched fresh or shown as explicitly expired, on the principle
 that a stale avalanche rating is worse than no rating. Two offline aids
 close the gaps this leaves:
 
-- Favourites and community-reports overlays get a client-side write-
-  through cache so they still render offline once fetched (favourites
-  never expire on read-back; community reports re-apply their 48-hour age
-  filter). When an overlay can't load and nothing is cached, a small
-  "unavailable offline" toast explains why rather than the toggle looking
-  broken.
+- Favourites, community-reports, and weather overlays get a client-side
+  write-through cache so they still render offline once fetched
+  (favourites never expire on read-back; community reports re-apply their
+  48-hour age filter; a cached weather payload simply stops drawing
+  anything as scrubbed dates roll past its forecast window). When an
+  overlay can't load and nothing is cached, a small "unavailable offline"
+  toast explains why rather than the toggle looking broken.
 - A one-shot **"Cache this area for offline"** command warms the current
   viewport's basemap tiles and the region data feeds for the area on
   screen. It is an explicit, bounded action — not a background download.

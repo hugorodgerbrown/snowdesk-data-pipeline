@@ -764,6 +764,10 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
+      ``weather_layer_eligible`` — True when the ``weather_layer`` waffle
+                                flag is active for the request user (SNOW-573).
+      ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
+                                GeoJSON endpoint (SNOW-573).
 
     Args:
         request: The incoming HTTP request.
@@ -825,6 +829,7 @@ def home(request: HttpRequest) -> HttpResponse:
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)
     community_reports_ctx = _community_reports_context(request)
+    weather_ctx = _weather_context(request)
 
     return render(
         request,
@@ -835,6 +840,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **report_ctx,
             **favourites_ctx,
             **community_reports_ctx,
+            **weather_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1158,7 +1164,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
-    the manage-page sync-log panel.
+    the manage-page sync-log panel. ``weather_layer_visible`` (SNOW-573)
+    mirrors the same pattern for the map's Weather overlay.
 
     Args:
         request: The incoming HTTP request.
@@ -1169,6 +1176,7 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+        "weather_layer_visible": waffle.flag_is_active(request, "weather_layer"),
     }
     return render(request, "public/help.html", context)
 
@@ -1498,6 +1506,30 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
+
+
+def _weather_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the map Weather overlay (SNOW-573).
+
+    Unlike favourites, eligibility here is the ``weather_layer`` waffle
+    flag, not authentication — the toggle, and the fetch it drives, must
+    not appear in the DOM at all while the flag is inactive for the
+    request user. Unlike community reports (no flag at all), this one
+    IS gated, so — unlike ``_community_reports_context`` —
+    ``weather_layer_eligible`` is a real per-request check, not a constant.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``weather_layer_eligible`` and
+        ``forecast_weather_geojson_url``.
+
+    """
+    return {
+        "weather_layer_eligible": waffle.flag_is_active(request, "weather_layer"),
+        "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson"),
+    }
 
 
 def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":

@@ -78,7 +78,7 @@ class SeasonCell:
     where ``month_parity == 1`` so the month boundary is visible at
     the exact day, even when it falls mid-column.
 
-    ``source`` is the bulletin source string (e.g. ``"albina"``, ``"slf"``)
+    ``source`` is the bulletin source string (e.g. ``"ALBINA"``, ``"SLF"``)
     copied from ``RegionDayRating.source``.  Empty string when no rating row
     exists.
 

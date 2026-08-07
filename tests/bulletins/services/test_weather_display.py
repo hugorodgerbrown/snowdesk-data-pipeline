@@ -13,6 +13,10 @@ Covers:
     icon_filename fields, and that it also accepts a ForecastPointWeather row.
   - build_point_forecast_panel (SNOW-417): per-day shape, ``None`` for an
     empty list, and hourly passthrough.
+  - weather_icon_filename (SNOW-573): day/night suffix behaviour, extracted
+    from build_weather_display.
+  - build_point_weather_days (SNOW-573): date-keyed dict shape, empty input,
+    and null extended fields passing through unchanged.
 """
 
 from __future__ import annotations
@@ -29,10 +33,12 @@ from apps.bulletins.services.weather_display import (
     WEATHER_BUCKETS,
     WEATHER_ICON_BUCKETS,
     build_point_forecast_panel,
+    build_point_weather_days,
     build_weather_display,
     is_day,
     weather_code_bucket,
     weather_code_icon_bucket,
+    weather_icon_filename,
 )
 from tests.factories import ForecastPointWeatherFactory, WeatherSnapshotFactory
 
@@ -424,3 +430,100 @@ class TestBuildPointForecastPanel:
 
         assert panel is not None
         assert panel["days"][0]["hourly"] == []
+
+
+# ---------------------------------------------------------------------------
+# weather_icon_filename
+# ---------------------------------------------------------------------------
+
+
+class TestWeatherIconFilename:
+    """Tests for the extracted filename-derivation helper (SNOW-573)."""
+
+    def test_day_night_bucket_gets_time_of_day_suffix(self) -> None:
+        """A bucket with day/night variants ships the suffixed filename."""
+        assert weather_icon_filename("light_snow", "day") == "light_snow-day.svg"
+        assert weather_icon_filename("light_snow", "night") == "light_snow-night.svg"
+
+    def test_cloudy_bucket_has_no_suffix(self) -> None:
+        """cloudy is the lone bucket without a day/night distinction."""
+        assert weather_icon_filename("cloudy", "day") == "cloudy.svg"
+        assert weather_icon_filename("cloudy", "night") == "cloudy.svg"
+
+
+# ---------------------------------------------------------------------------
+# build_point_weather_days
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBuildPointWeatherDays:
+    """Tests for the shared map-weather-layer projection (SNOW-573)."""
+
+    def test_empty_list_returns_empty_dict(self) -> None:
+        """No rows produces an empty dict, not None — payloads carry {}."""
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        assert build_point_weather_days([], now) == {}
+
+    def test_keyed_by_iso_date_with_expected_shape(self) -> None:
+        """Each entry is keyed by ISO date with icon/label/tmax/tmin/snow."""
+        row = ForecastPointWeatherFactory.create(
+            weather_code=71,  # light snowfall
+            valid_for_date=datetime.date(2026, 5, 1),
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+            temperature_2m_max=4.0,
+            temperature_2m_min=-3.0,
+            snowfall_sum=2.0,
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        days = build_point_weather_days([row], now)
+
+        assert days == {
+            "2026-05-01": {
+                "icon": "light_snow-day.svg",
+                "label": "Light snow",
+                "tmax": 4.0,
+                "tmin": -3.0,
+                "snow": 2.0,
+            }
+        }
+
+    def test_multiple_rows_produce_multiple_keys(self) -> None:
+        """A multi-day window yields one dict entry per date."""
+        point = ForecastPointWeatherFactory.create(
+            valid_for_date=datetime.date(2026, 5, 1)
+        ).forecast_point
+        row0 = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=datetime.date(2026, 5, 2)
+        )
+        row1 = ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=datetime.date(2026, 5, 3)
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        days = build_point_weather_days([row0, row1], now)
+
+        assert set(days.keys()) == {"2026-05-02", "2026-05-03"}
+
+    def test_null_extended_fields_pass_through_as_none(self) -> None:
+        """Nullable temperature/snowfall fields surface as None, not dropped.
+
+        ForecastPointWeatherFactory sets every extended field non-null by
+        default, so nulls must be overridden explicitly here.
+        """
+        row = ForecastPointWeatherFactory.create(
+            valid_for_date=datetime.date(2026, 5, 1),
+            temperature_2m_max=None,
+            temperature_2m_min=None,
+            snowfall_sum=None,
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        days = build_point_weather_days([row], now)
+
+        entry = days["2026-05-01"]
+        assert entry["tmax"] is None
+        assert entry["tmin"] is None
+        assert entry["snow"] is None

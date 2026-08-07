@@ -75,6 +75,9 @@ const OVERLAY_STORAGE_KEY = {
   community_reports: 'snowdesk.map.overlay.community_reports',
   // SNOW-570: which areas are held in the pinned basemap cache.
   downloaded: 'snowdesk.map.overlay.downloaded',
+  // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
+  // is only ever read/written) when data-weather-layer-eligible="true".
+  weather: 'snowdesk.map.overlay.weather',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -101,12 +104,14 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'timelapse-stop-reverse': 'Stop reverse timelapse',
   // SNOW-632: the custom-area framing overlay's CTA readout and top
   // banner. 'frame-up-to' and 'frame-over-ceiling' replace two literals
-  // that used to be assembled in JS (bin/i18n-lint does not catch a
-  // literal assigned to a variable before being rendered, which is a gap
-  // in that check, not a licence — see mapCustomDownloadControlInit's
-  // _updateReadout). 'frame-readout-busy' deliberately has no literal '%'
-  // in the msgid — the caller appends it to the interpolated `pct` value
-  // itself, so there is nothing here for a translation to get wrong.
+  // that used to be assembled in JS — at the time, bin/i18n-lint could
+  // not see a literal assigned to a variable before being rendered, so
+  // these were moved here by hand rather than because the check demanded
+  // it. SNOW-645 closed that gap (the check now follows one hop of
+  // indirection), so the same class of string is caught automatically
+  // now. 'frame-readout-busy' deliberately has no literal '%' in the
+  // msgid — the caller appends it to the interpolated `pct` value itself,
+  // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
@@ -139,6 +144,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
     "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
   'download-other-basemap-unnamed':
     "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+  // SNOW-573: the Weather overlay's layers-menu row disable reason —
+  // point weather is forecast-only and often runs short (ICON-CH2
+  // commonly returns fewer days than requested), so a scrubbed date
+  // outside the stored window disables the row with this as its title.
+  'weather-out-of-window': 'No forecast for this date',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source

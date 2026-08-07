@@ -289,7 +289,7 @@ class TestResortTier:
     def test_imported_coordinates_fall_inside_their_own_region(self) -> None:
         """Sheet-sourced pins are checked by the suite, not just by eye.
 
-        Rows stamped ``geocode_source="import"`` (SNOW-544) got their
+        Rows stamped ``geocode_source="IMPORT"`` (SNOW-544) got their
         coordinate from a reference rather than from an operator placing a
         pin, and their ``region`` was derived from that coordinate. If a
         coordinate were wrong, the resort would show a neighbouring
@@ -307,7 +307,9 @@ class TestResortTier:
             Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
         )
         imported = [
-            entry for entry in data if entry["fields"].get("geocode_source") == "import"
+            entry
+            for entry in data
+            if entry["fields"].get("geocode_source") == Resort.GeocodeSource.IMPORT
         ]
         assert imported, "expected the fixture to carry sheet-imported rows"
 
@@ -323,3 +325,29 @@ class TestResortTier:
         assert not mismatched, "coordinate/region disagreement: " + "; ".join(
             mismatched
         )
+
+
+class TestResortGeocodeSource:
+    """Coordinate provenance (SNOW-582: UPPER CASE storage).
+
+    ``GeocodeSource`` replaced the bare ``GEOCODE_SOURCES`` tuple list with a
+    proper ``TextChoices`` class storing upper-case values, matching
+    ``Kind``/``Tier`` directly above it on the model.
+    """
+
+    def test_choices_are_upper_case(self) -> None:
+        """Every GeocodeSource member value is its own upper-case form."""
+        for value in Resort.GeocodeSource.values:
+            assert value == value.upper()
+
+    def test_committed_fixture_geocode_source_values_are_valid(self) -> None:
+        """Every non-blank seeded row carries a real GeocodeSource value."""
+        import json
+        from pathlib import Path
+
+        data = json.loads(
+            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
+        )
+        sources = {entry["fields"]["geocode_source"] for entry in data} - {""}
+        assert sources
+        assert sources <= set(Resort.GeocodeSource.values)

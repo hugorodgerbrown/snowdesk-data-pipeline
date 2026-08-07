@@ -15,9 +15,10 @@
  * is included for the staff_member_required check.
  *
  * SNOW-380 additions:
- *   - Every register POST now carries a "mechanism" field ("declarative"
- *     when the browser supports Apple's Declarative Web Push, "sw"
- *     otherwise) so the server can shape the outgoing payload correctly.
+ *   - Every register POST now carries a "mechanism" field ("DECLARATIVE"
+ *     when the browser supports Apple's Declarative Web Push, "SW"
+ *     otherwise — SNOW-582 upper-cased the wire value) so the server can
+ *     shape the outgoing payload correctly.
  *   - On a successful register, `push.subscribed_before` is written to
  *     the `meta:app` IndexedDB store (SNOW-375). `reverifyPushSubscription`
  *     reads that flag at page load: if it's true but the browser reports
@@ -115,7 +116,7 @@
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(key),
     });
-    const mechanism = _supportsDeclarativePush() ? 'declarative' : 'sw';
+    const mechanism = _supportsDeclarativePush() ? 'DECLARATIVE' : 'SW';
     log(`POST /account/push/register/ (mechanism=${mechanism})`);
     const resp = await _postRegister(sub.toJSON(), mechanism);
     log(`register → ${resp.status}`);
@@ -200,7 +201,7 @@
     }
 
     try {
-      const mechanism = _supportsDeclarativePush() ? 'declarative' : 'sw';
+      const mechanism = _supportsDeclarativePush() ? 'DECLARATIVE' : 'SW';
       const resp = await _postRegister(newSub.toJSON(), mechanism);
       if (!resp.ok) {
         window.pwaTelemetry?.emit('pwa.push.subscription_lost', {

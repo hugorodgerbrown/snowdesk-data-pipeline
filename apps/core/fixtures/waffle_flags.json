@@ -9,6 +9,11 @@
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true
+    },
+    {
+      "name": "weather_layer",
+      "note": "Gates the SNOW-573 map Weather overlay (condition symbols + temperature at forecast points) and its matching /help/ section.",
+      "superusers": true
     }
   ]
 }

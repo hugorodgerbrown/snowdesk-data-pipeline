@@ -195,7 +195,7 @@ class TestSubscriptionGeoMatchFields:
     def test_geomatchkind_choices_are_correct(self) -> None:
         """GeoMatchKind has all four expected values."""
         kinds = {c[0] for c in Subscription.GeoMatchKind.choices}
-        assert kinds == {"in_region", "in_neighbour", "elsewhere", "unknown"}
+        assert kinds == {"IN_REGION", "IN_NEIGHBOUR", "ELSEWHERE", "UNKNOWN"}
 
 
 # ---------------------------------------------------------------------------

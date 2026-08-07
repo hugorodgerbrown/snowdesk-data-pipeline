@@ -2,7 +2,7 @@
 # Do not edit by hand; regenerate with:
 #   uv run python manage.py monitor_query_counts --commit
 # Format: <name> <count>
-home 5
+home 6
 api_ratings 1
 api_resorts_by_region 2
 api_regions_geojson 2

@@ -533,8 +533,8 @@ class TestImportResortsCoordinates:
 
         resort = Resort.objects.get(uuid=new_uuid)
         assert (resort.latitude, resort.longitude) == (46.68, 8.777)
-        # ``manual`` would claim an operator placed this pin on a map.
-        assert resort.geocode_source == "import"
+        # ``MANUAL`` would claim an operator placed this pin on a map.
+        assert resort.geocode_source == Resort.GeocodeSource.IMPORT
         assert resort.geocode_confidence is None
         assert resort.needs_review is True
         assert resort.geocoded_at is not None
@@ -577,7 +577,7 @@ class TestImportResortsCoordinates:
             name="Verbier",
             latitude=46.0955,
             longitude=7.2203,
-            geocode_source="manual",
+            geocode_source=Resort.GeocodeSource.MANUAL,
             geocode_confidence=1.0,
             needs_review=False,
         )
@@ -597,7 +597,7 @@ class TestImportResortsCoordinates:
 
         resort.refresh_from_db()
         assert (resort.latitude, resort.longitude) == (46.0955, 7.2203)
-        assert resort.geocode_source == "manual"
+        assert resort.geocode_source == Resort.GeocodeSource.MANUAL
         assert resort.geocode_confidence == 1.0
         assert resort.needs_review is False
 

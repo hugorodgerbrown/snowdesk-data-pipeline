@@ -1,8 +1,8 @@
 ---
 name: map-and-api
-description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, region-basemap-tiles)
+description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, forecast-weather)
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-07
 ---
 
 # Map page and JSON API
@@ -149,6 +149,53 @@ vars — the same reverse-with-a-dummy-id-then-string-replace trick
 `apps/public/views.py::home()` uses for `edit_save_url_template`
 (`api:edit_resort_save`).
 
+**Weather overlay (SNOW-573)**: a Meteocons condition symbol plus the
+day's max temperature at each resort-anchored (and, for a signed-in
+visitor, favourite-anchored) `ForecastPoint`. Flag-gated on `weather_layer`
+(`superusers=True` — see `docs/feature-flags.md`); `#map` carries
+`data-weather-layer-eligible="true|false"` and always emits
+`data-forecast-weather-url` (the endpoint itself 404s while the flag is
+inactive, mirroring the always-emitted `data-community-reports-url`
+rather than the eligible-gated `data-favourites-url`). Default **off**,
+like community reports. The public payload (`/api/forecast-weather.geojson`,
+below) carries resort-anchored points only — a `Favourite`-only
+`ForecastPoint` never appears there; a signed-in visitor's own pins are
+merged into the same `weather` MapLibre source client-side from
+`favourites.geojson`'s `days` property (also flag-gated), which
+`apps.bulletins.services.weather_display.build_point_weather_days` builds
+identically for both endpoints so the two can't drift.
+
+Point weather is forecast-only (`POINT_FORECAST_DAYS = 7` days from today,
+often fewer — ICON-CH2 commonly returns 5) and every date's data ships in
+one payload, so the client never re-fetches on a scrubbed date: it
+re-projects the already-fetched FeatureCollection in memory
+(`window.pwaWeatherCore.projectFeatureCollectionForDate`, `static/js/
+map_weather_core.js`) and calls `source.setData()`. A scrubbed date outside
+the payload's stored window (`isDateInForecastWindow`) disables the
+layers-menu row with a reason, via a namespaced marker
+(`data-weather-disabled-out-of-window`) distinct from
+`map_layer_sync_status.js`'s own offline-gating marker, so the two
+disable reasons never clobber each other's re-enable.
+
+The Meteocons icons are the one layer on this map that can't use the
+single-colour SDF `Path2D`-fill technique the favourite star / community-
+report flag use (`sdf: true` discards colour, and Meteocons are multi-path
+and gradient-filled) — they're rasterised full-colour via an `<img>`
+decode into a module-level cache keyed by filename
+(`decodeWeatherIcon`/`ensureWeatherIconsRegistered` in `map.js`), decoded
+once per filename and re-registered synchronously from that cache after a
+basemap `setStyle` wipes `map.addImage`'s registrations, preserving the
+same "image id exists before `addLayer` references it" invariant every
+other icon on this map relies on.
+
+Offline caching: `OVERLAY_RESOURCES.weather` in `map_layer_sync_status.js`
+is `kind: 'idb'` (not `'geojson'`) — the payload is a mutable forecast, not
+static reference data suited to `sw.js`'s never-expiring `STATIC_PATHS`
+shell cache. It write-through-caches to IndexedDB
+(`window.pwaMapOverlayCache`, same posture as `community_reports`) and
+self-corrects on read-back: a stale cached payload simply stops drawing
+anything as scrubbed dates roll past its forecast window.
+
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre
 has no `stopPropagation` between layer-scoped click handlers, so a tap on a
@@ -176,10 +223,11 @@ MapLibre paints layers in insertion order and the overlays are
 lazy-installed at unpredictable times (a polygon overlay toggled on after
 the pins exist, or the whole style re-added after a basemap swap), so a pin
 can otherwise end up buried. `raiseMarkerLayers()` (in `static/js/map.js`)
-re-lifts the favourite and community-observation layers to the top and is
-called at the end of **every** layer-install path (`installRegionsLayers`,
-`installOverlayLayers`, `installResortsLayer`, `installFavouritesLayer`,
-`installCommunityReportsLayer`, `installBulletinGroupingsLayer`) — so any new
+re-lifts the favourite, community-observation, and weather layers to the
+top and is called at the end of **every** layer-install path
+(`installRegionsLayers`, `installOverlayLayers`, `installResortsLayer`,
+`installFavouritesLayer`, `installCommunityReportsLayer`,
+`installBulletinGroupingsLayer`, `installWeatherLayer`) — so any new
 install must keep that call, or a later overlay will paint over the pins.
 
 **Placement focus (`static/js/map_placement_focus.js`)**: while a pin is
@@ -260,6 +308,7 @@ appeared first.
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. **Currently unused by the client** — the region popup lost its trigger (see the intro above); the endpoint is kept alongside `openRegionPopup` pending a decision on a replacement detail surface. |
 | `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `apps.bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`apps.bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`apps.public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the L4 layer, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, floored to the nearest 15 min), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
+| `GET /api/forecast-weather.geojson` | `api:forecast_weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-573 map Weather overlay: one Point feature per geocoded `Resort` with a linked `ForecastPoint` (never a `Favourite`-only point — see the privacy note above). Geometry is the *resort's* coordinates, not the quantised point's. `properties` carries `resort_id`, `name`, `region_id`, and `days` — a dict keyed by ISO date (`{"2026-08-07": {"icon": "light_snow-day.svg", "label": "Light snow", "tmax": 4.0, "tmin": -3.0, "snow": 2.0}}`), defaulting to the **whole stored forecast window** (mirrors `/api/ratings/`'s date-keyed shape); `?d=YYYY-MM-DD` narrows to one date, 400 `malformed date` on a bad value. Flag-gated on `weather_layer` — 404 while inactive. Server-side `cache.get_or_set` keyed `forecast-weather:v1:<d\|all>` (5 min). `generated_at` is the OLDEST `fetched_at` across the payload's `ForecastPointWeather` rows (a record mixing several points' data is only as fresh as its stalest one); `X-Data-Unsafe-After` is never set (non-safety data). Two queries regardless of resort count: `Resort.objects.resorts().geocoded()` with `select_related("forecast_point")`, then one bulk `ForecastPointWeather.objects.filter(forecast_point_id__in=…)` grouped in Python. |
 
 **Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
 `regions.geojson` (L4 only — MajorRegion/SubRegion never carry it) is a
@@ -343,7 +392,7 @@ every constraint stays on the model). Adding a field means adding it in
 both places and nowhere else.
 
 One **Save** POSTs `{latitude, longitude, details}`, which sets
-`geocode_source="manual"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
+`geocode_source="MANUAL"`, `geocode_confidence=1.0`, `geocoded_at=now()`,
 clears `needs_review`, and writes the detail fields — a save is a manual
 confirmation of the marker's position as well as of the details. The
 button reads "Saving…" and is disabled for the round trip, and a

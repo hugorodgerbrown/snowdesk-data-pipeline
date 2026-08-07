@@ -875,7 +875,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 /* —— ALBINA elevation-band calendar tiles (SNOW-292) ——————————————
-   Two rendering modes driven by data-source="albina" + data-band-mode:
+   Two rendering modes driven by data-source="ALBINA" + data-band-mode:
 
    elevation-only  — 2 elevation bands, same time period (all_day or
                      both earlier/later).  The tile is split horizontally:
@@ -904,7 +904,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    We use a top/bottom absolute layout: first span fills the top half,
    second fills the bottom half.  Each carries data-band-rating which we
    map to its EAWS colour via attribute selectors below.                 */
-[data-source="albina"][data-band-mode="elevation-only"] {
+[data-source="ALBINA"][data-band-mode="elevation-only"] {
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -913,7 +913,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     justify-content: stretch;
     font-size: 0; /* hide the date number inside band-mode cells */
 }
-[data-source="albina"][data-band-mode="elevation-only"] .calendar-band {
+[data-source="ALBINA"][data-band-mode="elevation-only"] .calendar-band {
     display: block;
     flex: 1;
     width: 100%;
@@ -923,7 +923,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    Band order is guaranteed by _derive_albina_bands in bulletins/services/day_rating.py:
    primary sort is time period (earlier → all_day → later), secondary is band height
    (above-* before below-*).  Do not reorder band spans in the template. */
-[data-source="albina"][data-band-mode="elevation-time"] {
+[data-source="ALBINA"][data-band-mode="elevation-time"] {
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
@@ -931,7 +931,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     padding: 0;
     font-size: 0;
 }
-[data-source="albina"][data-band-mode="elevation-time"] .calendar-band {
+[data-source="ALBINA"][data-band-mode="elevation-time"] .calendar-band {
     display: block;
 }
 

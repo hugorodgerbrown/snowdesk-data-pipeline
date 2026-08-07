@@ -467,26 +467,29 @@ class TestLatestEuregioDate:
         BulletinFactory.create(
             valid_from=datetime(2026, 1, 15, 16, tzinfo=UTC),
             valid_to=datetime(2026, 1, 16, 16, tzinfo=UTC),
-            render_model={"source": "albina", "version": 4},
+            source=Bulletin.Source.ALBINA,
+            render_model={"source": "ALBINA", "version": 4},
             render_model_version=4,
         )
         BulletinFactory.create(
             valid_from=datetime(2026, 1, 10, 16, tzinfo=UTC),
             valid_to=datetime(2026, 1, 11, 16, tzinfo=UTC),
-            render_model={"source": "albina", "version": 4},
+            source=Bulletin.Source.ALBINA,
+            render_model={"source": "ALBINA", "version": 4},
             render_model_version=4,
         )
         result = latest_albina_date()
         assert result == date(2026, 1, 15)
 
     def test_ignores_slf_bulletins(self) -> None:
-        """Bulletins with source='slf' are not considered."""
+        """Bulletins with source='SLF' are not considered."""
         from tests.factories import BulletinFactory
 
         BulletinFactory.create(
             valid_from=datetime(2026, 1, 20, 16, tzinfo=UTC),
             valid_to=datetime(2026, 1, 21, 16, tzinfo=UTC),
-            render_model={"source": "slf", "version": 4},
+            source=Bulletin.Source.SLF,
+            render_model={"source": "SLF", "version": 4},
             render_model_version=4,
         )
         assert latest_albina_date() is None

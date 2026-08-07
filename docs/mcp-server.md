@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — thirteen read-only tools over regions, bulletins, problems, danger trend, geolocation
 status: current
-last-reviewed: 2026-07-18
+last-reviewed: 2026-08-07
 ---
 
 # MCP server
@@ -195,7 +195,7 @@ the source without hallucinating.
   optional — defaults to today).
 * **Returns:** `{region_id, region_name, date, has_bulletin, bulletin_id,
   issued_at, valid_from, valid_to, next_update_expected, source_provider
-  ("slf"|"albina"|"meteofrance"|null), source_url, language,
+  ("SLF"|"ALBINA"|"METEOFRANCE"|null), source_url, language,
   language_variants_available, summary}`. `source_url` prefers the
   bulletin's stored `pdf_url` and falls back to the provider's landing
   page when none is recorded. `language_variants_available` reports the
@@ -255,7 +255,7 @@ region).
 * **Returns:** `{query: {lat, lon, radius_km}, results: [{region_id,
   name, kind: "micro", distance_km, provider}], count, summary}`.
   Nearest first. `provider` is derived from the region's country
-  (`"slf"` / `"albina"` / `"meteofrance"`).
+  (`"SLF"` / `"ALBINA"` / `"METEOFRANCE"`).
 * **Cost cap:** `radius_km` is hard-capped at 100 km per call (see
   `_FIND_REGIONS_NEAR_RADIUS_CAP_KM`). Over-cap radius, out-of-range
   lat/lon, non-positive radius, and non-integer `limit` are all

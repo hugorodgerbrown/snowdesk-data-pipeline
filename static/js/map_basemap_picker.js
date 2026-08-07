@@ -143,6 +143,10 @@
     // refresh that decides WHICH tiles are drawn is driven from the main
     // IIFE's snowdesk:downloaded-overlay-changed handler.
     downloaded: ['cached-tiles-fill', 'cached-tiles-line'],
+    // SNOW-573: one symbol layer carries both the icon and the temp label
+    // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
+    // separate pin+label layers.
+    weather: ['weather-point'],
   };
 
   for (const item of items) {
@@ -189,6 +193,10 @@
         if (overlayKey === 'community_reports') {
           window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', { visible: next });
         }
+        // SNOW-573: notify telemetry when the weather overlay is flipped.
+        if (overlayKey === 'weather') {
+          window.pwaTelemetry?.emit('map.weather.overlay_toggled', { visible: next });
+        }
         // SNOW-570/SNOW-587: the cached-tiles layers are already installed,
         // so the direct visibility path below handles showing them — but
         // WHICH tiles they draw is a cache probe only the main IIFE can run.
@@ -203,7 +211,7 @@
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports' || overlayKey === 'weather')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE

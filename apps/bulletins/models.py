@@ -94,10 +94,10 @@ class PipelineRun(BaseModel):
     class Status(models.TextChoices):
         """Possible states for a pipeline run."""
 
-        PENDING = "pending", "Pending"
-        RUNNING = "running", "Running"
-        SUCCESS = "success", "Success"
-        FAILED = "failed", "Failed"
+        PENDING = "PENDING", "Pending"
+        RUNNING = "RUNNING", "Running"
+        SUCCESS = "SUCCESS", "Success"
+        FAILED = "FAILED", "Failed"
 
     started_at = models.DateTimeField(default=timezone.now, db_index=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -302,9 +302,9 @@ class Bulletin(BaseModel):
     class Source(models.TextChoices):
         """The provider a bulletin was ingested from."""
 
-        SLF = "slf", "SLF (Switzerland)"
-        ALBINA = "albina", "ALBINA (Austria/South Tyrol/Trentino)"
-        METEOFRANCE = "meteofrance", "Météo-France (France)"
+        SLF = "SLF", "SLF (Switzerland)"
+        ALBINA = "ALBINA", "ALBINA (Austria/South Tyrol/Trentino)"
+        METEOFRANCE = "METEOFRANCE", "Météo-France (France)"
 
     bulletin_id = models.CharField(max_length=255, unique=True, db_index=True)
     source = models.CharField(
@@ -683,7 +683,7 @@ class RegionDayRating(BaseModel):
         blank=True,
         default="",
         help_text=(
-            "Originating bulletin source (e.g. 'slf', 'albina', 'meteofrance'). "
+            "Originating bulletin source (e.g. 'SLF', 'ALBINA', 'METEOFRANCE'). "
             "Blank for no-rating rows where source_bulletin is None."
         ),
     )

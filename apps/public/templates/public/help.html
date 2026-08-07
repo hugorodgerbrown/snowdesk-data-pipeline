@@ -12,7 +12,8 @@ apps/public/templates/public/help/.
 
 The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
 boolean computed by apps.public.views.help_page — a user never sees
-documentation for a feature they cannot use.
+documentation for a feature they cannot use. The map-weather panel
+(SNOW-573) is gated the same way, on ``weather_layer_visible``.
 {% endcomment %}
 {% load i18n %}
 
@@ -42,6 +43,11 @@ documentation for a feature they cannot use.
 
         {% translate "The map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
+
+        {% if weather_layer_visible %}
+            {% translate "Map weather" as t_weather_layer %}
+            {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
+        {% endif %}
 
         {% translate "Favourites" as t_favourites %}
         {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" body_template="public/help/_topic_favourites.html" %}

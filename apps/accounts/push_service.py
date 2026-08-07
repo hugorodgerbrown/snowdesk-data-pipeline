@@ -21,10 +21,10 @@ reconcile against on next launch; a successful resubscribe overwrites the
 same endpoint (or creates a fresh row for a new one) via
 ``update_or_create`` in ``push_register``.
 
-The outgoing wire payload also branches on ``sub.mechanism``: the ``sw``
+The outgoing wire payload also branches on ``sub.mechanism``: the ``SW``
 path (every browser today) keeps the existing ``{title, body, url}`` shape
 that the service worker's ``push`` event handler parses in JS. The
-``declarative`` path (Apple's Declarative Web Push, iOS 18.4+) requires a
+``DECLARATIVE`` path (Apple's Declarative Web Push, iOS 18.4+) requires a
 fixed JSON shape the OS renders without running any JS — see
 ``_build_wire_payload`` and ``docs/push-notifications.md``.
 
@@ -66,10 +66,10 @@ def _build_wire_payload(
 ) -> dict[str, Any]:
     """Return the JSON payload to encrypt, shaped for ``sub.mechanism``.
 
-    ``sw`` subscriptions keep the existing ``{title, body, url}`` shape
+    ``SW`` subscriptions keep the existing ``{title, body, url}`` shape
     that the service worker's ``push`` event handler expects.
 
-    ``declarative`` subscriptions get Apple's Declarative Web Push shape —
+    ``DECLARATIVE`` subscriptions get Apple's Declarative Web Push shape —
     the OS renders the notification directly from this JSON without
     running the service worker, so the keys are fixed by Apple's spec
     rather than by our own JS.

@@ -59,9 +59,13 @@
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
  *   favourites,
- *   community_reports    — IndexedDB ``data:map_overlays`` rows written
+ *   community_reports,
+ *   weather               — IndexedDB ``data:map_overlays`` rows written
  *                          by map_overlay_offline_cache.js. A truthy row
- *                          carrying ``.geojson`` counts as cached.
+ *                          carrying ``.geojson`` counts as cached. weather
+ *                          (SNOW-573) is public like community_reports but
+ *                          uses the same idb kind, not geojson — see
+ *                          OVERLAY_RESOURCES.weather below for why.
  *   basemap (one dot)    — the active/any basemap's tile cache,
  *                          discovered by the ``snowdesk-basemap-``
  *                          prefix (SNOW-484's BASEMAP_CACHE) rather than
@@ -148,6 +152,14 @@
   // ``data-was-disabled-offline`` idiom, namespaced to this module.
   const DISABLED_MARKER = 'data-sync-disabled-offline';
 
+  // SNOW-573: the one OTHER module that disables a row in this menu —
+  // map.js, while the scrubbed date sits outside the weather overlay's
+  // stored forecast window. Read (never written) here, so ``_setRowDisabled``
+  // can honour a disable it does not own. Kept in sync with
+  // ``WEATHER_ROW_DISABLED_MARKER`` in map.js by name only; a mismatch fails
+  // the round-trip test in tests/js/test_map_layer_sync_status.js.
+  const WEATHER_DISABLED_MARKER = 'data-weather-disabled-out-of-window';
+
   // The core row→resource constant. Keys are the overlay rows'
   // ``data-overlay-key`` values; the basemap indicator and (SNOW-524) the
   // country rows are handled separately — the country rows' resource set is
@@ -175,6 +187,15 @@
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
     favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
     community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
+    // SNOW-573: the map weather layer's forecast payload. `idb`, not
+    // `geojson` — its endpoint is flag-gated and public, but the payload
+    // is a mutable forecast, not static reference data suited to sw.js's
+    // STATIC_PATHS shell cache (which never expires). The write-through
+    // IndexedDB row (window.pwaMapOverlayCache, same posture as
+    // community_reports) is self-correcting on read-back: a stale cached
+    // payload simply stops drawing anything as scrubbed dates roll past
+    // its forecast window, rather than needing an explicit staleness check.
+    weather: Object.freeze({ kind: 'idb', key: 'weather' }),
     // The "Available offline" row. Unlike every other entry this has no
     // feed of its own to probe — its question is "are any basemap tiles
     // pinned at all", i.e. is there an offline map to speak of.
@@ -335,8 +356,17 @@
       row.setAttribute('aria-disabled', 'true');
       row.setAttribute(DISABLED_MARKER, '1');
     } else if (row.getAttribute(DISABLED_MARKER) === '1') {
-      row.removeAttribute('aria-disabled');
       row.removeAttribute(DISABLED_MARKER);
+      // SNOW-573: the weather row carries a SECOND, independent disable —
+      // map.js disables it while the scrubbed date sits outside the stored
+      // forecast window (WEATHER_ROW_DISABLED_MARKER there). Dropping our own
+      // marker must not clear ``aria-disabled`` while that one is still in
+      // force, or coming back online would re-enable a row whose date still
+      // has nothing to draw. map.js guards the mirror case the same way, so
+      // whichever reason clears second is the one that re-enables the row.
+      if (row.getAttribute(WEATHER_DISABLED_MARKER) !== '1') {
+        row.removeAttribute('aria-disabled');
+      }
     }
   }
 
