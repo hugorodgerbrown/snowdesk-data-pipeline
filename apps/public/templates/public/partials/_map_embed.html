@@ -1265,4 +1265,10 @@ Optional context:
     {# Kept in this one template rather than duplicated into              #}
     {# _map_downloads_sheet.html's own strings template.                  #}
     <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    {# SNOW-642: #region-readout's empty state. The readout used to be     #}
+    {# `hidden` until a region was focused, taking the download and        #}
+    {# view-bulletin roundels with it (both are sibling-ruled off          #}
+    {# .has-region), so the ribbon header read as vanishing. It now stays  #}
+    {# put and says what is true instead.                                  #}
+    <span data-string="no-region">{% trans "No region selected" %}</span>
 </template>

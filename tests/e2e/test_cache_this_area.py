@@ -25,17 +25,24 @@ would have shifted the stack's composition on every select/deselect.
 SNOW-522 moved it BACK into the ribbon header (between ``#region-readout``
 and ``#region-readout-action``, ``_season_ribbon.html``) so the bottom-right
 slot could become the new custom-area download control's home instead
-(``tests/e2e/test_custom_download_area.py``). Back in the header it is
+(``tests/e2e/test_custom_download_area.py``). Back in the header it was
 hidden-until-focused again via a CSS sibling rule keyed off
-``#region-readout.has-region`` — which is why ``_select_region`` below now
-also passes a ``region_name`` in the synthetic event detail: ``.has-region``
-is only set when ``seasonRibbonInit``'s ``updateReadout`` sees a truthy
-``dateKey && regionId && regionName``, so a detail with no name would leave
-the relocated control permanently ``display: none`` and every
-``icon.wait_for(state="visible")`` below would time out. The ``no-region``
-state itself stays in the state machine for the rarer case of a focused
-region with no computed download summary — the CSS now only hides it while
-NOTHING is focused at all. This file covers: the
+``#region-readout.has-region``, until **SNOW-642** removed that rule: the
+control, ``#region-readout-action`` and the readout itself all vanished
+together with nothing selected, collapsing ``.ribbon-header`` to an empty
+row. All three are now permanently present, the control holding its
+``no-region`` state again exactly as it did in the bottom-right stack.
+
+``_select_region`` below still passes a ``region_name`` in the synthetic
+event detail. It is no longer load-bearing for *visibility* — the control
+is visible either way now — but it is still what moves the control OUT of
+``no-region`` into an actionable state, since ``seasonRibbonInit``'s
+``updateReadout`` only sets ``.has-region`` on a truthy
+``dateKey && regionId && regionName``. Without it the icon would be
+visible but inert, and the click tests below would find nothing to run.
+
+``no-region`` also still covers the rarer case of a focused region with no
+computed download summary. This file covers: the
 idle→busy→done flow, a reselected region reading ``done`` from real cache
 state rather than in-page memory, a probe that couldn't resolve the
 active basemap's tile template re-running once the style settles, the
