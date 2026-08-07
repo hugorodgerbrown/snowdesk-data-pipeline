@@ -405,16 +405,6 @@
   }
 
   /**
-   * Paint `state` onto the download icon: data-download-state, the busy
-   * fill percentage, and an aria-label/title carrying the region's size.
-   *
-   * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
-   *   'error' | 'disabled' | 'offline'.
-   * @param {number} mb
-   * @param {number} [pct] - Only meaningful for state 'busy'.
-   * @returns {void}
-   */
-  /**
    * Paint `state` onto the download icon: data-download-state, the
    * identity-colour attribute, the busy fill percentage, and an
    * aria-label/title carrying the region's size.

@@ -230,9 +230,16 @@
       // gate in home.html) and is never rendered for a member of the public
       // — same reasoning as renderRemaining's own allow above.
       let msg = 'No resorts loaded.';
-      if (filter && hideSet) msg = 'No unset matches.';
-      else if (filter)       msg = 'No matches.';
-      else if (hideSet)      msg = 'All resorts are set — toggle off to see the rest.';
+      // SNOW-645 review: bin/i18n-lint's variable-indirection check only
+      // traces `msg`'s DECLARATION statement (the line above) today, so
+      // these three reassignments are exempt by accident, not by
+      // suppression — a trailing allow on each makes that robust against
+      // the next widening (following a reassignment chain is the natural
+      // next step) rather than leaving three findings with no allow
+      // comment anywhere near them.
+      if (filter && hideSet) msg = 'No unset matches.'; // i18n-allow: staff-only surface, same as above
+      else if (filter)       msg = 'No matches.'; // i18n-allow: staff-only surface, same as above
+      else if (hideSet)      msg = 'All resorts are set — toggle off to see the rest.'; // i18n-allow: staff-only surface, same as above
       empty.textContent = msg;
       queueListEl.appendChild(empty);
       return;
