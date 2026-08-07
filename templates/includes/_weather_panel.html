@@ -22,6 +22,14 @@ text contrast are unconditional; the SNOW-161 layout-shift fix (an invisible
 snapshot) is preserved verbatim so the HTMX swap never shifts the text
 column sideways.
 
+The meta strip's temperature and snowfall groups (SNOW-571) render whenever
+``weather_display.temp_max``/``temp_min``/``snowfall_sum`` are non-null,
+independently of each other — a partially-populated snapshot (e.g. temps
+only) still shows what it has rather than falling back to nothing.
+Snowfall renders on an explicit ``0`` too, unlike the favourite forecast
+panel's snowfall chip (``_favourite_forecast_panel.html``), which hides a
+zero: on an avalanche bulletin "no new snow" is itself worth stating.
+
 Context:
   weather_display     — dict from ``build_weather_display()``, or None.
   weather_htmx_trigger — bool: emit the belt-and-braces ``hx-post`` retry
@@ -174,6 +182,32 @@ Context:
                     </span>
                     <span aria-hidden="true">·</span>
                     <span>{{ weather_display.condition_label }}</span>
+                    {% if weather_display.temp_max is not None or weather_display.temp_min is not None %}
+                        <span aria-hidden="true">·</span>
+                        {# Hi/lo temperature — same floatformat:0/&mdash; idiom as        #}
+                        {# _favourite_forecast_panel.html's day strip, so the two temp    #}
+                        {# readouts on the site look identical.                           #}
+                        <span class="inline-flex items-center gap-x-1">
+                            <span class="sr-only">{% trans "Temperature" %}</span>
+                            <span
+                            >{% if weather_display.temp_max is not None %}{{ weather_display.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+                            <span
+                                class="text-white/70"
+                            >/{% if weather_display.temp_min is not None %}{{ weather_display.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+                        </span>
+                    {% endif %}
+                    {% if weather_display.snowfall_sum is not None %}
+                        <span aria-hidden="true">·</span>
+                        {# Renders on an explicit 0 cm too — unlike the favourite panel's #}
+                        {# snowfall chip, which hides a zero. On an avalanche bulletin    #}
+                        {# "no new snow" is itself a statement worth showing, not noise.  #}
+                        <span class="inline-flex items-center gap-x-1">
+                            <span class="sr-only">{% trans "Snowfall" %}</span>
+                            {% blocktrans with cm=weather_display.snowfall_sum|floatformat:0 trimmed %}
+                                {{ cm }} cm
+                            {% endblocktrans %}
+                        </span>
+                    {% endif %}
                 {% endif %}
             </div>
         </div>

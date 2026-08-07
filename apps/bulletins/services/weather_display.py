@@ -30,7 +30,10 @@ WMO code reference:
 ``build_weather_display`` builds the single-day ``WeatherDisplay`` context
 consumed by the bulletin page header; it accepts either a ``WeatherSnapshot``
 (region) or a ``ForecastPointWeather`` row (favourited point), since both
-expose the same ``weather_code``/``sunrise``/``sunset`` trio.
+expose the same ``weather_code``/``sunrise``/``sunset`` trio. The returned
+dict also carries ``temp_max``/``temp_min``/``snowfall_sum`` (SNOW-571),
+read via ``getattr(weather, ..., None)`` so a stub object missing them still
+produces a usable dict rather than raising.
 
 ``build_point_forecast_panel`` (SNOW-417) builds the multi-day
 ``ForecastPanel`` context consumed by the favourite detail card's forecast
@@ -270,6 +273,9 @@ class WeatherDisplay(TypedDict):
     icon_bucket: str  # One of WEATHER_ICON_BUCKETS (finer than ``bucket``).
     condition_label: str  # En-GB human label, e.g. "Light snow".
     icon_filename: str  # Basename of the SVG in static/icons/weather/.
+    temp_max: float | None  # Daily max air temp at 2m, °C (SNOW-571).
+    temp_min: float | None  # Daily min air temp at 2m, °C (SNOW-571).
+    snowfall_sum: float | None  # Daily snowfall total, cm (SNOW-571).
 
 
 def build_weather_display(
@@ -285,8 +291,12 @@ def build_weather_display(
     partial dumb — it only emits attributes it is handed. Accepts either a
     ``WeatherSnapshot`` (region bulletin header) or a
     ``ForecastPointWeather`` row (favourite forecast panel, SNOW-417) — both
-    expose ``weather_code``/``sunrise``/``sunset``, the only attributes this
-    function reads.
+    expose ``weather_code``/``sunrise``/``sunset``, plus
+    ``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum``
+    (SNOW-571), read via ``getattr(..., None)`` rather than a direct
+    attribute access since this function is documented to accept either
+    model — the fallback keeps it honest if a caller passes a stub lacking
+    them.
 
     Args:
         weather: The snapshot/row for the calendar day, or ``None`` when
@@ -322,6 +332,9 @@ def build_weather_display(
         icon_bucket=icon_bucket,
         condition_label=_ICON_BUCKET_LABEL[icon_bucket],
         icon_filename=icon_filename,
+        temp_max=getattr(weather, "temperature_2m_max", None),
+        temp_min=getattr(weather, "temperature_2m_min", None),
+        snowfall_sum=getattr(weather, "snowfall_sum", None),
     )
 
 
