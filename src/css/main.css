@@ -177,6 +177,21 @@
   --color-sync-off: #9ca3af;   /* gray-400  — resource is not cached (absent, not an error) */
   --color-sync-blocked: #dc2626; /* red-600 — offline AND not cached: genuinely unavailable */
 
+  /* Basemap identity colours (SNOW-645) — one hue per settings.BASEMAP_STYLES
+     key, so a downloaded area's roundel and the Manage downloads sheet can
+     show which basemap it was fetched under. Deliberately avoid green
+     (--color-sync-ok, repurposed as "downloaded, basemap unknown" for
+     records written before this change) and red (--color-sync-blocked).
+     The four keys that actually reach the picker (_BASEMAP_LABELS in
+     apps/public/views.py) take the four most-separated hues; sky goes to
+     swisstopo_light, which stays picker-invisible but still needs a token
+     for a BASEMAP=swisstopo_light deployment. */
+  --color-basemap-openfreemap-liberty: #2563eb;  /* blue-600   */
+  --color-basemap-swisstopo-winter:    #d97706;  /* amber-600  */
+  --color-basemap-swisstopo-light:     #0284c7;  /* sky-600    */
+  --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
+  --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
+
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
@@ -405,6 +420,14 @@
   --color-sync-off: #6b7280;   /* gray-500 — muted "not cached" on dark card */
   --color-sync-blocked: #f87171; /* red-400 — offline AND not cached, on dark card */
 
+  /* Basemap identity colours — lighter variants, mirroring the sync-status
+     light/dark pair above so the white roundel glyph keeps its contrast. */
+  --color-basemap-openfreemap-liberty: #60a5fa;  /* blue-400   */
+  --color-basemap-swisstopo-winter:    #fbbf24;  /* amber-400  */
+  --color-basemap-swisstopo-light:     #38bdf8;  /* sky-400    */
+  --color-basemap-ign-plan:            #c084fc;  /* purple-400 */
+  --color-basemap-basemap-at:          #2dd4bf;  /* teal-400   */
+
   /* Misc interactive */
   --color-card-hover:     #353330;
   --color-ring-selected:  #60a5fa;
@@ -475,6 +498,42 @@
 .danger-band[data-level="considerable"] { border-top: 4px solid var(--color-eaws-considerable); }
 .danger-band[data-level="high"]         { border-top: 4px solid var(--color-eaws-high); }
 .danger-band[data-level="very_high"]    { border-top: 4px solid var(--color-eaws-very-high); }
+
+
+/* —— Basemap identity swatch (SNOW-645) ——————
+   Small filled roundel shown in the Manage downloads
+   sheet beside a downloaded area's row, identifying
+   which basemap it was fetched under. Applied via
+   data attribute, mirroring the .danger-band pattern
+   above, so the fill comes from tokens rather than a
+   class string built in JS. A row with no key (legacy
+   record, or an orphaned area) renders no swatch at
+   all — see map_downloads_manager.js.
+
+   Usage in template:
+     <span class="basemap-swatch" data-basemap-key="openfreemap_liberty"></span>
+
+   Each rule here also consumes its --color-basemap-*
+   token via var(), which is what keeps Tailwind from
+   tree-shaking it out of the compiled @theme (see the
+   note at the top of section 1 above) — this is what
+   lets static/css/map.css, a non-Tailwind file, read
+   the same tokens for the download roundel fill.
+   ————————————————————————————————————————— */
+
+.basemap-swatch {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+.basemap-swatch[data-basemap-key="openfreemap_liberty"] { background: var(--color-basemap-openfreemap-liberty); }
+.basemap-swatch[data-basemap-key="swisstopo_winter"]     { background: var(--color-basemap-swisstopo-winter); }
+.basemap-swatch[data-basemap-key="swisstopo_light"]      { background: var(--color-basemap-swisstopo-light); }
+.basemap-swatch[data-basemap-key="ign_plan"]              { background: var(--color-basemap-ign-plan); }
+.basemap-swatch[data-basemap-key="basemap_at"]            { background: var(--color-basemap-basemap-at); }
 
 
 /* —— Hero rating badge tokens ———————————————

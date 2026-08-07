@@ -1691,6 +1691,33 @@
     transition: height 220ms ease;
 }
 
+/* SNOW-645: once a run's basemap is known, the roundel fill takes that
+   basemap's identity colour instead of the generic green — same tokens as
+   the .basemap-swatch in the Manage downloads sheet (src/css/main.css §2),
+   so the two surfaces agree. No data-basemap-key attribute (unresolved, or
+   a record predating this change) keeps the plain --color-sync-ok green
+   above — "downloaded, basemap unknown". */
+.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="busy"]::before,
+.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="done"]::before {
+    background: var(--color-basemap-openfreemap-liberty);
+}
+.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="busy"]::before,
+.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="done"]::before {
+    background: var(--color-basemap-swisstopo-winter);
+}
+.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="busy"]::before,
+.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="done"]::before {
+    background: var(--color-basemap-swisstopo-light);
+}
+.map-download-control[data-basemap-key="ign_plan"][data-download-state="busy"]::before,
+.map-download-control[data-basemap-key="ign_plan"][data-download-state="done"]::before {
+    background: var(--color-basemap-ign-plan);
+}
+.map-download-control[data-basemap-key="basemap_at"][data-download-state="busy"]::before,
+.map-download-control[data-basemap-key="basemap_at"][data-download-state="done"]::before {
+    background: var(--color-basemap-basemap-at);
+}
+
 /* Done: the fill is pinned full — a solid green circle matching the dot. */
 .map-download-control[data-download-state="done"]::before {
     height: 100%;
