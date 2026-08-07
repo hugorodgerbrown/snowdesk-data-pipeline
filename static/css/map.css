@@ -1352,8 +1352,24 @@
    fills the scrubber track and shows its danger for the scrubbed day. Survives
    playback (cache-fed by map.js); the source of truth for "which region", with
    the map popup demoted to on-tap detail. */
+/* SNOW-642: the readout is no longer hidden-until-focused. It used to carry
+   [hidden] with nothing selected, and because both sibling controls key off
+   #region-readout.has-region, the whole ribbon header emptied out at once —
+   which read as the ribbon vanishing rather than as "nothing is selected".
+   It now persists with a "No region selected" empty state and both controls
+   visible-but-disabled. The rule is kept because the element is still
+   [hidden] in one case: a page with no ribbon data at all. */
 .region-readout[hidden] {
     display: none;
+}
+
+/* Empty state — the leaf reads "No region selected" in muted, regular
+   weight, so it is legible as an absence rather than as a region whose name
+   happens to be those three words. The swatch is suppressed by map.js
+   (transparent background), not here, since it is set inline per rating. */
+.region-readout:not(.has-region) .region-readout-leaf {
+    font-weight: 400;
+    color: var(--muted);
 }
 
 .region-readout {
@@ -1414,10 +1430,17 @@
 
 /* PROTOTYPE (homepage rework): the "view bulletin" action is a separate
    roundel (a glass circle with an arrow + a "View bulletin" tooltip), sitting
-   to the right of the readout pill. Hidden by default; shown only when a region
-   is focused (the sibling rule below), so there is always a bulletin to open. */
+   to the right of the readout pill.
+
+   SNOW-642: always displayed. It was `display: none` until a
+   `#region-readout.has-region ~ …` sibling rule matched, which meant that with
+   nothing selected this roundel, the download roundel and the readout all
+   disappeared together and the ribbon header collapsed to an empty row. It is
+   now present-but-disabled instead (the [aria-disabled] rule below), so the
+   header keeps its shape and an unselected map is never mistaken for a ribbon
+   that failed to load. */
 .region-readout-action {
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: var(--map-control-lg);
@@ -1434,14 +1457,40 @@
     transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-#region-readout.has-region ~ .region-readout-action {
-    display: inline-flex;
-}
-
 .region-readout-action:hover,
 .region-readout-action:focus-visible {
     background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+}
+
+/* SNOW-642: disabled — nothing is focused, so there is no bulletin to open.
+   map.js sets aria-disabled and drops the href; this is the matching visual.
+   Keyed on [aria-disabled] rather than on a sibling .has-region rule so the
+   styling and the accessibility state cannot drift apart — the attribute a
+   screen reader reads is the same one that dims it.
+
+   The glyph dims and the glass shell stays at full strength, which is the
+   treatment .map-download-control's own unavailable states already use and
+   for the same reason: these roundels float over open basemap, where a
+   40%-opacity glass circle is close to invisible, and a control the user
+   cannot see reads as a missing feature rather than a disabled one. Dimming
+   the whole roundel here would have re-introduced exactly the disappearance
+   this ticket exists to remove.
+
+   Declared AFTER the hover/focus rules above and restating both of their
+   properties: an equally-specific later rule would otherwise repaint a
+   disabled roundel, and :focus-visible survives pointer-events: none. */
+.region-readout-action[aria-disabled="true"],
+.region-readout-action[aria-disabled="true"]:hover,
+.region-readout-action[aria-disabled="true"]:focus-visible {
+    color: var(--muted);
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.region-readout-action[aria-disabled="true"] svg {
+    opacity: 0.45;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1490,11 +1539,21 @@
    three tier roundels in a row inside .ribbon-header. */
 
 .map-download-control {
-    /* Hidden by default (the sibling rule below reveals it once a region is
-       focused); every other visual property still applies once shown, so
-       they stay in this same ruleset rather than a separate one keyed off
-       the sibling selector. */
-    display: none;
+    /* SNOW-642: always displayed. This was `display: none` with a
+       `#region-readout.has-region ~ .map-download-control` sibling rule
+       revealing it once a region was focused — so with nothing selected it
+       vanished along with its two neighbours in .ribbon-header and the whole
+       header collapsed to an empty row, which read as the ribbon failing to
+       load rather than as "nothing is selected".
+
+       Nothing new was needed for the unfocused state: the control already
+       ships `data-download-state="no-region"` with `aria-disabled="true"` and
+       a "Select a region to download its basemap" label, and the
+       [data-download-state="no-region"] rule further down already dims it and
+       mutes its icon. That state deliberately survived in the machine after
+       the CSS took over the hiding (see _map_download_control.html's own
+       comment), so this was a deletion, not a new state. */
+    display: inline-flex;
     position: relative;
     overflow: hidden;
     align-items: center;
@@ -1514,18 +1573,17 @@
     transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-/* Hidden until a region is focused — same idiom as .region-readout-action
-   immediately above it in the DOM (both are direct siblings of
-   #region-readout inside .ribbon-header). */
-#region-readout.has-region ~ .map-download-control {
-    display: inline-flex;
-}
-
 /* SNOW-522: the custom-area download control shares .map-download-control's
-   glass-roundel chrome (colour states, busy fill, done tick) but, unlike its
-   per-region sibling above, is NOT hidden-until-focused — it lives in the
-   bottom-right stack with no dependency on a focused region, so overrides
-   the shared display: none default back to always-shown. */
+   glass-roundel chrome (colour states, busy fill, done tick) and lives in the
+   bottom-right stack with no dependency on a focused region.
+
+   This override used to restore `display: inline-flex` over the shared
+   `display: none` default. SNOW-642 made always-shown the shared default —
+   the per-region control is no longer hidden-until-focused either — so the
+   declaration is now redundant. Kept as an explicit statement that this
+   control's visibility has never depended on a focused region, which is the
+   one fact about it most likely to be re-broken by a future change to the
+   rule it inherits from. */
 .map-custom-download-control {
     display: inline-flex;
 }

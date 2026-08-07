@@ -6,7 +6,9 @@ Two positional variants sharing one set of conventions (icon + copy +
 optional CTA + optional dismiss):
 
   "strip"    — full-width, in-flow edge bar (e.g. the off-season archive
-               notice). Always visible when rendered; no dismiss.
+               notice). Honours ``dismissible`` (SNOW-639) using the same
+               hooks as "floating"; without it, visible for as long as it
+               is rendered.
   "floating" — fixed bottom-centre card (default). Used by JS-revealed
                nudges: the service-worker update banner, the Android/
                Chromium install prompt.
@@ -65,7 +67,14 @@ Optional context:
                 static/js/overlays.js's shared delegated handler can hide
                 it (this partial always uses the Tailwind ``hidden``
                 CLASS idiom, matching every other shell-chrome overlay —
-                never the HTML5 attribute).
+                never the HTML5 attribute). Honoured by BOTH variants
+                since SNOW-639 — it was floating-only before, so a
+                ``strip`` caller passing it was silently ignored.
+                Dismissal is never persisted: the class is added to one
+                live element and a reload brings the banner back. That is
+                deliberate for the off-season strip, which exists to say
+                the data on screen is an archive — a fact that is just as
+                true on the next visit.
   static      — Bool; default False. When True the floating variant
                 renders inline (no ``hidden``, no ``fixed``, no z-index)
                 for the component library. No effect on "strip" (already
@@ -75,6 +84,7 @@ Optional context:
     <div
         {% if id %}id="{{ id }}"{% endif %}
         role="{{ role|default:'note' }}"
+        {% if dismissible %}data-overlay data-overlay-hide="class"{% endif %}
         class="flex items-center gap-2 border-b border-border bg-status-{{ kind|default:'warning' }}-bg px-4 py-2 text-sm text-status-{{ kind|default:'warning' }}-text"
     >
         {% if icon == "calendar" %}
@@ -97,6 +107,25 @@ Optional context:
             </svg>
         {% endif %}
         <span>{{ body }}</span>
+        {% if dismissible %}
+            {# ml-auto rather than justify-between on the row: the icon and #}
+            {# the text stay their natural gap-2 apart, and only the × is   #}
+            {# pushed to the far edge. justify-between would spread all     #}
+            {# three across the full width.                                 #}
+            {# Dimmed by opacity, not by a text-* token as the floating     #}
+            {# branch does: this strip sits on a status palette and colours #}
+            {# its text `text-status-<kind>-text`, so a fixed `text-text-3` #}
+            {# would fight the palette on every kind. Inheriting and        #}
+            {# fading keeps one rule correct for all of them.               #}
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Dismiss' %}"
+                class="ml-auto shrink-0 px-2 text-lg leading-none opacity-70 transition-opacity hover:opacity-100"
+            >
+                &times;
+            </button>
+        {% endif %}
     </div>
 {% else %}
     <div

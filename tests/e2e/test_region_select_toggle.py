@@ -15,6 +15,15 @@ Two behaviours that only exist in the browser, both owned by the consolidated
     empty-canvas tap — ``snowdesk:region-selected`` with a null ``region_id``
     and a cleared URL fragment.
 
+SNOW-642 changed what "deselected" looks like in the DOM. The readout used to
+take the ``hidden`` attribute with nothing selected, and both controls beside
+it are siblings keyed off ``#region-readout.has-region``, so the whole ribbon
+header emptied out at once. It now persists with a "No region selected" empty
+state, so the deselected state is asserted here as the ABSENCE of
+``.has-region`` rather than the presence of ``hidden`` — and its sibling test
+asserts the presence of ``.has-region`` rather than the absence of ``hidden``,
+which after that change was true either way and therefore proved nothing.
+
 The fill-layer hit-test is stubbed the way ``tests/e2e/test_map_marker_
 exclusion.py`` established: headless Chromium doesn't reliably composite the
 fill layer for a genuine pixel hit-test, so ``queryRenderedFeatures`` returns
@@ -126,7 +135,13 @@ def test_retapping_the_selected_region_deselects_it(
     """The second tap on the selected region clears the selection.
 
     Same end state as an empty-canvas tap: a null-``region_id`` selection
-    event, the readout chip dropped, and the ``#CH-xxxx`` fragment gone.
+    event, the readout back to its empty state, and the ``#CH-xxxx``
+    fragment gone.
+
+    SNOW-642: "readout back to its empty state" used to be "readout chip
+    dropped" (``#region-readout[hidden]``). The chip no longer hides — it
+    says "No region selected" instead — so the cleared selection is read
+    off ``.has-region`` and the leaf text.
     """
     _navigate_home(page, live_server.url)
     _stub_region_hit_test(page)
@@ -143,7 +158,15 @@ def test_retapping_the_selected_region_deselects_it(
         "() => { const s = window.__regionSelections || [];"
         " return s.length && s[s.length - 1].region_id === null; }"
     )
-    page.wait_for_selector("#region-readout[hidden]", state="attached")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('region-readout');"
+        " return el && !el.classList.contains('has-region'); }"
+    )
+    # The chip is still on screen, and says so rather than going blank or
+    # keeping the name of the region that was just deselected.
+    readout = page.locator("#region-readout")
+    assert readout.is_visible()
+    assert readout.inner_text().strip() == "No region selected"
     page.wait_for_function("() => location.hash === '' || location.hash === '#'")
 
 
@@ -195,5 +218,9 @@ def test_tapping_a_different_region_moves_the_selection(
         " return s.length && s[s.length - 1].region_id; }"
     )
     # Still focused on a region — the second tap re-selected rather than
-    # clearing, so the readout chip is showing.
-    assert page.locator("#region-readout[hidden]").count() == 0
+    # clearing. Asserted on .has-region, not on the absence of [hidden]:
+    # SNOW-642 stopped the readout hiding at all, so the old form was
+    # satisfied by the deselected state too and had stopped discriminating.
+    readout = page.locator("#region-readout")
+    assert "has-region" in (readout.get_attribute("class") or "")
+    assert readout.inner_text().strip() != "No region selected"

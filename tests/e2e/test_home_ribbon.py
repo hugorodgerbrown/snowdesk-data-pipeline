@@ -16,6 +16,11 @@ cannot catch, and which do NOT require live MapLibre tiles:
     hardcoded ``/map/`` there silently bounced homepage visitors to ``/map/``
     on every scrub/ribbon click.
 
+(c) SNOW-642: the ribbon header must persist with an empty state when no
+    region is selected, rather than vanishing. The readout and both of its
+    sibling controls used to disappear together, which no DOM-presence test
+    would catch either — the elements stayed in the DOM, hidden.
+
 The ribbon cells are JS-injected after the ``/api/ratings/`` fetch resolves.
 These tests request ``_load_test_data`` so CH-4115 has ``RegionDayRating``
 rows and the default-region focus paints cells immediately after the cache
@@ -122,4 +127,126 @@ def test_scrub_keeps_url_on_home(
     assert "d=" in search, (
         f"committing a (non-today) date should add a ?d= param; got '{search}'"
     )
+    assert page_errors == [], f"JS errors: {page_errors}"
+
+
+@pytest.mark.usefixtures("_load_test_data")
+def test_ribbon_header_persists_with_an_empty_state(
+    live_server: LiveServer,
+    page: Page,
+) -> None:
+    """SNOW-642: nothing selected shows an empty state, not an empty row.
+
+    ``#region-readout`` carried ``hidden`` until a region was focused, and
+    both controls beside it are siblings keyed off
+    ``#region-readout.has-region`` — so with nothing selected all three
+    disappeared at once and ``.ribbon-header`` collapsed to a blank strip.
+    That read as the ribbon failing to load rather than as "nothing is
+    selected".
+
+    The homepage pre-selects CH-4115, so the unfocused state is reached by
+    deselecting — which is also the reverse guard the ticket asks for: it
+    must return to the empty state rather than leave a stale region name.
+    """
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    _navigate_home(page, live_server.url)
+    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+
+    readout = page.locator("#region-readout")
+    action = page.locator("#region-readout-action")
+    download = page.locator("#map-download-control")
+
+    # Pre-selected: the focused state, and the baseline the empty state has
+    # to be visibly different from.
+    readout.wait_for(state="visible")
+    assert "has-region" in (readout.get_attribute("class") or "")
+
+    # Deselect — a region-selected event with no region is how the map
+    # clears focus.
+    page.evaluate(
+        """() => document.dispatchEvent(
+            new CustomEvent('snowdesk:region-selected', { detail: {} }),
+        )"""
+    )
+    page.wait_for_timeout(150)
+
+    # The header keeps all three of its parts.
+    assert readout.is_visible(), "the readout must persist with nothing selected"
+    assert action.is_visible(), "the view-bulletin roundel must persist"
+    assert download.is_visible(), "the download roundel must persist"
+
+    # And says what is true, with no stale region name left behind.
+    assert readout.inner_text().strip() == "No region selected"
+    assert "has-region" not in (readout.get_attribute("class") or "")
+
+    # Both controls are present but inert.
+    assert action.get_attribute("aria-disabled") == "true"
+    assert action.get_attribute("href") is None, (
+        "a disabled view-bulletin roundel must not carry a live href"
+    )
+    assert action.get_attribute("tabindex") == "-1", (
+        "a disabled roundel must be out of the tab order"
+    )
+    assert download.get_attribute("data-download-state") == "no-region"
+
+    assert page_errors == [], f"JS errors: {page_errors}"
+
+
+@pytest.mark.usefixtures("_load_test_data")
+def test_selecting_a_region_enables_both_ribbon_controls(
+    live_server: LiveServer,
+    page: Page,
+) -> None:
+    """SNOW-642: the empty state is a state, not a dead end.
+
+    Selecting a region must name it and make both roundels actionable —
+    the half of the contract that a permanently-disabled pair would also
+    satisfy if only the empty state were asserted.
+    """
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    _navigate_home(page, live_server.url)
+    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+
+    # Start from the empty state so the transition is the thing measured.
+    page.evaluate(
+        """() => document.dispatchEvent(
+            new CustomEvent('snowdesk:region-selected', { detail: {} }),
+        )"""
+    )
+    page.wait_for_timeout(150)
+
+    # region_name and region_slug are both load-bearing: updateReadout only
+    # sets .has-region on a truthy date + id + name, and only builds the
+    # bulletin href when there is a slug.
+    page.evaluate(
+        """() => document.dispatchEvent(
+            new CustomEvent('snowdesk:region-selected', {
+                detail: {
+                    region_id: 'CH-4115',
+                    region_name: 'Martigny-Verbier',
+                    region_slug: 'martigny-verbier',
+                },
+            }),
+        )"""
+    )
+    page.wait_for_timeout(150)
+
+    readout = page.locator("#region-readout")
+    action = page.locator("#region-readout-action")
+
+    assert "Martigny-Verbier" in readout.inner_text()
+    assert "No region selected" not in readout.inner_text()
+    assert "has-region" in (readout.get_attribute("class") or "")
+
+    assert action.get_attribute("aria-disabled") is None
+    assert action.get_attribute("tabindex") is None
+    href = action.get_attribute("href") or ""
+    assert href.startswith("/ch-4115/martigny-verbier/"), (
+        f"the roundel should point at the dated bulletin; got '{href}'"
+    )
+
     assert page_errors == [], f"JS errors: {page_errors}"

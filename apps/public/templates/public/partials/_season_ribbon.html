@@ -49,45 +49,68 @@ for it was dead.
             info-only (a <div>); the bulletin link is the separate
             #region-readout-action roundel below. map.js fills the swatch/
             breadcrumb text and toggles .has-region; cache-fed so it survives
-            playback. It is hidden until a region is focused — the scrubbed date
-            now lives in the #map-date-ribbon beside the scrubber (bottom-left),
-            leaving the top bar to name the region the user picked on the map.
+            playback. The scrubbed date lives in the #map-date-ribbon beside the
+            scrubber (bottom-left), leaving the top bar to name the region the
+            user picked on the map.
+
+            SNOW-642: it is no longer hidden until a region is focused. It
+            carried `hidden` with nothing selected, and both sibling controls
+            key off `#region-readout.has-region`, so all three disappeared
+            together and .ribbon-header collapsed to an empty row — which read
+            as the ribbon vanishing rather than as "nothing is selected". The
+            chip now persists with a "No region selected" leaf (filled by map.js
+            from map-strings-template's `no-region`) and both controls stay put,
+            disabled.
             {% endcomment %}
             {# Chip reads colour-swatch · region name. The swatch is the danger  #}
             {# colour for the scrubbed day and leads the chip; map.js fills the  #}
             {# name text and the swatch background. The pill is an info display; #}
             {# the bulletin link is the separate action roundel below.           #}
-            <div id="region-readout" class="region-readout" aria-live="polite" hidden>
+            <div id="region-readout" class="region-readout" aria-live="polite">
                 <span class="region-readout-swatch" aria-hidden="true"></span>
                 {# region name as a Major › Minor › Micro breadcrumb: the    #}
                 {# crumbs prefix (L1/L2) mirrors the visible map overlays and #}
                 {# is hidden on mobile; the leaf (L4 micro) is always shown.  #}
+                {# SNOW-642: the leaf is server-rendered with the empty-state #}
+                {# text rather than left blank. Nothing IS selected at first  #}
+                {# paint, so this is the true state, not a placeholder — and  #}
+                {# leaving it blank would show an empty pill for as long as   #}
+                {# map.js takes to run. Same msgid as map-strings-template's  #}
+                {# `no-region`, which is what map.js writes here afterwards,  #}
+                {# so the two cannot say different things in any locale.      #}
                 <span class="region-readout-name"><span class="region-readout-crumbs"></span><span
                         class="region-readout-leaf"
-                    ></span></span>
+                    >{% trans "No region selected" %}</span></span>
             </div>
             {# SNOW-522: the "Download basemap" roundel for the focused        #}
             {# region moves back here, between the readout and the            #}
             {# view-bulletin action — it briefly (SNOW-521) lived in the       #}
             {# bottom-right control stack (_map_embed.html), but that slot is  #}
             {# now the new custom-area download control's home (partial:      #}
-            {# public/partials/_map_custom_download_control.html). Like        #}
-            {# #region-readout-action below it, it is hidden until a region    #}
-            {# is focused (the sibling CSS rule in static/css/map.css) — the   #}
-            {# always-present "no-region" state made sense in the bottom-right #}
-            {# stack, where a vanishing roundel would have shifted the stack's #}
-            {# composition; here it sits beside two other already-hidden-      #}
-            {# until-focused controls, so a lone permanent roundel with        #}
-            {# nothing selected would have been the odd one out.               #}
+            {# public/partials/_map_custom_download_control.html).             #}
+            {# SNOW-642: like #region-readout-action below it, it is now       #}
+            {# always present and shows its own "no-region" disabled state     #}
+            {# with nothing selected, rather than being hidden by a            #}
+            {# `.has-region` sibling rule. The three controls in this header   #}
+            {# are consistent either way — the change is that consistency now  #}
+            {# means all three stay put instead of all three vanishing.        #}
             {% include "public/partials/_map_download_control.html" %}
             {# View-bulletin action: a roundel holding just an arrow, with a   #}
-            {# "View bulletin" tooltip. Shown only when a region is focused    #}
-            {# (CSS sibling rule); map.js sets its href to the dated bulletin. #}
+            {# "View bulletin" tooltip. map.js sets its href to the dated      #}
+            {# bulletin once a region is focused.                              #}
+            {# SNOW-642: always present. It ships DISABLED, matching the       #}
+            {# download control beside it, because with nothing selected there #}
+            {# is no bulletin to open and the href map.js would set does not   #}
+            {# exist yet — a bare hrefless anchor would look live and do       #}
+            {# nothing. map.js's _setActionEnabled clears both attributes on   #}
+            {# the first selection and restores them if it is ever cleared.    #}
             <a
                 id="region-readout-action"
                 class="region-readout-action"
                 title="{% trans 'View bulletin' %}"
                 aria-label="{% trans 'View bulletin' %}"
+                aria-disabled="true"
+                tabindex="-1"
             >
                 <svg
                     width="16"

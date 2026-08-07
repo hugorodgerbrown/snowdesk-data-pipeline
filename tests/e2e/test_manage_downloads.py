@@ -354,6 +354,84 @@ def test_a_device_with_no_downloads_says_so(
     expect(page.locator(f"{_SHEET} [data-downloads-empty]")).to_be_visible()
     assert _row_texts(page, "[data-row-label]") == []
 
+    # SNOW-641: the empty state points at the trigger by direction, and the
+    # trigger moved below the list in the same change. A stale "above" here
+    # would be a wrong instruction, not just untidy copy — which is why the
+    # sentence is asserted rather than merely its element's visibility.
+    empty_text = page.locator(f"{_SHEET} [data-downloads-empty]").inner_text()
+    assert "button below" in empty_text
+    assert "button above" not in empty_text
+
+
+def test_the_sheet_reads_list_then_add_then_budget(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-641: the running order, which had accreted rather than been chosen.
+
+    The total used to lead the sheet and the add-trigger sat above the
+    list, so the two things a reader wants — what is stored, and how much
+    room is left — were at opposite ends with the list between them. Now
+    the list leads, the trigger follows it, and the budget control, the
+    total and its bar are one bordered block at the foot.
+
+    Asserted on DOM order via ``compareDocumentPosition`` rather than on
+    pixel geometry: the sheet is a flex column, so document order IS the
+    visual order, and geometry would make this fail for viewport reasons
+    that have nothing to do with the ordering.
+    """
+    _boot(page, live_server)
+    _seed(page, _regions(), [_custom_area()])
+    _open_sheet(page)
+
+    def _precedes(first: str, second: str) -> bool:
+        """True when ``first`` comes before ``second`` in document order.
+
+        A missing element returns null from the page rather than false, so
+        it fails here with a message naming the selector — otherwise a
+        renamed data-attribute would read as "wrong order" and send the
+        next reader looking in the template's node order for a bug that is
+        actually a broken selector.
+        """
+        result = page.evaluate(
+            """([a, b]) => {
+                const sheet = document.getElementById('map-downloads-sheet');
+                const first = sheet.querySelector(a);
+                const second = sheet.querySelector(b);
+                if (!first || !second) return null;
+                // 4 === DOCUMENT_POSITION_FOLLOWING (b follows a).
+                return Boolean(
+                    first.compareDocumentPosition(second) &
+                    Node.DOCUMENT_POSITION_FOLLOWING
+                );
+            }""",
+            [first, second],
+        )
+        assert result is not None, f"{first} or {second} is missing from the sheet"
+        return bool(result)
+
+    assert _precedes("[data-downloads-list]", "[data-downloads-add]"), (
+        "the add-trigger should sit below the list"
+    )
+    assert _precedes("[data-downloads-add]", "[data-downloads-budget]"), (
+        "the budget control should sit below the add-trigger"
+    )
+    assert _precedes("[data-downloads-list]", "[data-downloads-summary]"), (
+        "the running total should sit below the list, beside the budget"
+    )
+    # The total and the bar belong to the same bordered block as the
+    # select — the point of the move, not a side effect of it.
+    assert page.evaluate(
+        """() => {
+            const sheet = document.getElementById('map-downloads-sheet');
+            const select = sheet.querySelector('[data-downloads-budget]');
+            const block = select.closest('div').parentElement;
+            return Boolean(
+                block.querySelector('[data-downloads-summary]') &&
+                block.querySelector('[data-downloads-bar]')
+            );
+        }"""
+    ), "the total and bar should share the budget control's block"
+
 
 def test_removing_an_area_deletes_its_whole_cache_bucket(
     page: Page, live_server: LiveServer
@@ -536,29 +614,67 @@ def test_the_add_trigger_hides_the_sheet_and_opens_framing(
     expect(page.locator(_SHEET)).to_be_hidden()
 
 
-def test_the_add_trigger_toasts_and_stays_put_while_offline(
+def test_the_add_trigger_renders_disabled_when_already_offline(
     page: Page, live_server: LiveServer
 ) -> None:
-    """Listing/deleting needs no connection; STARTING a new download does.
+    """SNOW-637: listing/deleting needs no connection; STARTING one does.
 
-    Mirrors ``#map-frame-overlay``'s own Download button, which refuses the
-    same way once framing is already open.
+    Through SNOW-636 the trigger stayed live offline and refused on tap
+    with a toast, which is a worse contract than not offering the action:
+    the user spends a tap to be told no. It is now disabled and relabelled
+    at render time, keeping the control visible rather than hiding it —
+    the treatment ``map_layer_sync_status.js`` already uses for uncached
+    rows offline.
+
+    The toast has not gone; it is the race guard for a connection lost
+    between the paint and the tap, which no render-time check can catch,
+    and it is covered in ``tests/js/test_map_downloads_manager.js`` where
+    that race can be staged deterministically.
+    """
+    _boot(page, live_server)
+
+    page.context.set_offline(True)
+    try:
+        _open_sheet(page)
+
+        trigger = page.locator(f"{_SHEET} {_ADD_TRIGGER}")
+        expect(trigger).to_be_visible()
+        expect(trigger).to_be_disabled()
+        expect(trigger).to_have_attribute("aria-disabled", "true")
+        expect(trigger).to_have_text("Downloading needs a connection")
+        expect(page.locator(_OVERLAY)).to_be_hidden()
+    finally:
+        page.context.set_offline(False)
+
+
+def test_the_add_trigger_disables_itself_when_the_connection_drops(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-637: an open sheet reacts without needing to be re-opened.
+
+    ``render()`` applies the gating, so a sheet already on screen when the
+    connection goes would keep showing a live trigger until its next open.
+    The module listens for ``snowdesk:connectivity-changed`` (broadcast by
+    ``pwa_offline.js``) and re-renders, exactly as the layers-menu dots and
+    the download roundel already do on the same event.
     """
     _boot(page, live_server)
     _open_sheet(page)
 
+    trigger = page.locator(f"{_SHEET} {_ADD_TRIGGER}")
+    expect(trigger).to_be_enabled()
+
     page.context.set_offline(True)
     try:
-        page.click(f"{_SHEET} {_ADD_TRIGGER}")
-
-        expect(page.locator("#map-sheet-toast")).to_be_visible()
-        expect(page.locator("#map-sheet-toast [data-toast-body]")).to_have_text(
-            "You're offline — connect to download a new area."
-        )
-        expect(page.locator(_OVERLAY)).to_be_hidden()
+        expect(trigger).to_be_disabled()
         expect(page.locator(_SHEET)).to_be_visible()
     finally:
         page.context.set_offline(False)
+
+    # And back again — the re-clone restores the enabled control and its
+    # original label, so nothing has to undo the disabled state by hand.
+    expect(trigger).to_be_enabled()
+    expect(trigger).to_have_text("Download a custom area")
 
 
 def test_the_sheet_reflects_downloads_made_since_it_was_last_open(

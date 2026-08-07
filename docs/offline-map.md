@@ -1141,9 +1141,11 @@ guard inward: the roundel opens the downloads sheet online *or* offline,
 because listing and deleting what is already stored is exactly what a
 user needs when storage is under pressure and the network is not there.
 What is refused offline is *starting a new download* — the sheet's
-`[data-downloads-add]` trigger declines with a toast
-(`MapSheet.toast()`), and this overlay's own Download button stays gated
-on connectivity as before, the same rule the per-region control applies.
+`[data-downloads-add]` trigger is disabled and relabelled ("Downloading
+needs a connection") while offline (SNOW-637; the `MapSheet.toast()`
+refusal it replaced survives as the guard for a connection lost between
+paint and tap), and this overlay's own Download button stays gated on
+connectivity as before, the same rule the per-region control applies.
 
 ### Download budget and whole-area eviction (SNOW-586)
 
@@ -1322,7 +1324,18 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 `static/js/map_downloads_manager.js` over the pure
 `static/js/basemap_manage_core.js`) lists every stored area with its name
 and size, a running total against the budget, an explicit delete, and the
-budget control itself. It opens from `#map-custom-download-control` — the
+budget control itself.
+
+**Running order (SNOW-641):** the list, then the add-trigger under it,
+then one bordered block at the foot holding the budget control, the
+running total and its bar. The total used to lead the sheet and the
+trigger sat above the list, which put the two things a reader wants —
+what is stored, and how much room is left — at opposite ends with the list
+between them. Nothing in `map_downloads_manager.js` is positional (every
+element is addressed by data-attribute), so the order is a presentation
+decision and reordering needed no JS change.
+
+It opens from `#map-custom-download-control` — the
 bottom-right roundel — and uses the shared sheet primitive
 (`includes/_overlay_sheet.html` + `_sheet_header.html`), so
 `overlays.js`'s delegated dismiss handler closes it.
@@ -1333,9 +1346,13 @@ downloads…` row in the layers menu was the only way to reach this sheet —
 the same subject reachable two ways, one of them buried in a menu about
 map layers. Now the roundel opens this sheet, the menu row is gone, and
 "Download a custom area" is an action inside the sheet instead
-(`[data-downloads-add]`, above the list): offline it toasts; online it
-hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()` —
-map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
+(`[data-downloads-add]`, below the list since SNOW-641): offline it
+renders disabled
+(SNOW-637 — the gating is applied inside `render()`, since the sheet body
+is re-cloned from its `<template>` on every open, and re-applied on every
+`snowdesk:connectivity-changed` so an open sheet reacts in place); online
+it hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()`
+— map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
 are driven by `_renderControl` reading `basemapDownloadedAreas()` — "done"
 means the device holds at least one downloaded area, region or custom, not
 that this one custom area is fully cached.

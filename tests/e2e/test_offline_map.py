@@ -514,13 +514,14 @@ def test_cache_now_button_leaves_busy_state(
                 },
             };
             document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-                // region_name is load-bearing, not decoration: SNOW-522
-                // moved this control back into the ribbon header, where it
-                // is shown by the sibling rule
-                // #region-readout.has-region ~ .map-download-control — and
-                // map.js only sets .has-region once it has a date, a region
-                // id AND a region name. Without the name the control stays
-                // display:none and never becomes visible.
+                // region_name is load-bearing, not decoration: map.js only
+                // sets .has-region once it has a date, a region id AND a
+                // region name, and until it does the control holds its
+                // inert 'no-region' state. (Through SNOW-641 that state was
+                // also display:none via a #region-readout.has-region ~ …
+                // sibling rule; SNOW-642 removed the hiding, so the control
+                // is now visible-but-inert rather than absent — the name is
+                // still what makes it actionable.)
                 detail: { region_id: 'CH-4115', region_name: 'Martigny-Verbier' },
             }));
         }"""

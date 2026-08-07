@@ -107,6 +107,23 @@
  * shown. Rebuilding is a few dozen nodes and removes the whole class of
  * bug.
  *
+ * ## Offline gating is applied at render time (SNOW-637)
+ *
+ * Everything this sheet does to what is ALREADY stored — listing, sizing,
+ * renaming, deleting — works offline, and must: storage pressure is felt
+ * exactly when there is no connection to relieve it. Starting a NEW
+ * download is the one thing that cannot, so ``[data-downloads-add]`` is
+ * disabled and relabelled while ``navigator.onLine`` is false, keeping the
+ * control visible rather than hiding it (the treatment
+ * map_layer_sync_status.js established for uncached rows offline).
+ *
+ * That gating lives inside ``render()`` because of the re-clone above: a
+ * listener or attribute bound to the trigger at boot is thrown away with
+ * the previous body on the next open. A ``snowdesk:connectivity-changed``
+ * listener re-renders an OPEN sheet so a connection dropped mid-use lands
+ * immediately, and the click handler keeps its own ``navigator.onLine``
+ * check as the race guard for the gap between paint and tap.
+ *
  * ## Its map.js dependencies are three narrow bridges
  *
  * Everything this module needs from static/js/map.js is module scope
@@ -186,6 +203,10 @@
     'remove-failed': "That download couldn't be removed. Try again.",
     // SNOW-634: [data-downloads-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
+    // SNOW-637: the same refusal as the disabled trigger's own label — the
+    // toast above is phrased as a reply to a tap, which reads wrong on a
+    // control nobody has touched yet.
+    'add-disabled': 'Downloading needs a connection',
     // SNOW-635: the Rename control's own prompt/failure copy. The default
     // "Custom area N" label itself lives in map.js's MAP_STRINGS
     // (_map_embed.html), not here — see this module's "Renaming" header
@@ -379,6 +400,29 @@
       sheet.querySelector('[data-downloads-budget]')
     );
     if (select) renderBudgetOptions(select, chosenMb);
+
+    // SNOW-637: offline-integrity for the add-trigger. Listing and deleting
+    // what is already stored needs no connection, but STARTING a download
+    // does, so the control is disabled and relabelled rather than left live
+    // to fail on tap — the disabled-but-visible treatment
+    // map_layer_sync_status.js already established for uncached rows
+    // offline, not a second one.
+    //
+    // Applied here rather than bound once at init because the body is
+    // re-cloned from its <template> on every render (see the module
+    // header), which discards anything bound to the previous copy. Only the
+    // offline branch needs writing for the same reason: the next render
+    // starts from a pristine clone, so coming back online restores the
+    // enabled control and its original label without an else.
+    const addButton = sheet.querySelector('[data-downloads-add]');
+    if (addButton && !navigator.onLine) {
+      addButton.setAttribute('disabled', '');
+      // Alongside the native property, not instead of it: `disabled` is
+      // what stops the click, `aria-disabled` is what a screen reader
+      // announces before the user reaches for it.
+      addButton.setAttribute('aria-disabled', 'true');
+      addButton.textContent = STRINGS['add-disabled'] || '';
+    }
   }
 
   /**
@@ -468,8 +512,12 @@
   //
   // SNOW-634: "Download a custom area" — offline refuses with a toast (no
   // read/write of the area list needs a connection, but STARTING a new
-  // download does, mirroring #map-frame-overlay's own Download button);
-  // online hides this sheet and hands off to map.js's own bridge, which
+  // download does, mirroring #map-frame-overlay's own Download button).
+  // SNOW-637 disables the trigger outright while offline (see render()), so
+  // this branch is now the race guard rather than the primary refusal: it
+  // covers a connection lost between the paint and the tap, which no
+  // render-time check can catch. Online hides this sheet and hands off to
+  // map.js's own bridge, which
   // opens framing exactly as the roundel's own click used to. Hiding
   // directly (rather than a dismiss idiom) mirrors `open()`'s own
   // `sheet.hidden = false` above; the sheet does not reopen when framing
@@ -591,6 +639,20 @@
       // which are stated against the budget that just changed.
       render();
     });
+  });
+
+  // SNOW-637: a sheet left open when the connection drops has to reflect it
+  // there and then — waiting for the next open would leave a live-looking
+  // trigger on screen for as long as the user keeps the sheet up. Same
+  // broadcast, same reaction as the two surfaces that already do this:
+  // map_layer_sync_status.js's menu dots and map.js's download roundel.
+  //
+  // Skipped while hidden: open() renders on its own way in, and re-rendering
+  // a closed sheet would re-read IndexedDB on every transition for a surface
+  // nobody is looking at.
+  document.addEventListener('snowdesk:connectivity-changed', function () {
+    if (sheet.hidden) return;
+    render();
   });
 
   window.pwaDownloadsManager = Object.freeze({

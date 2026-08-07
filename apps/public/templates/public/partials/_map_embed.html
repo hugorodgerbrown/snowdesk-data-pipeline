@@ -44,16 +44,22 @@ Optional context:
     {# the header and the map. Replaces the old bottom-left #map-offseason-note #}
     {# chip: same honesty guarantee (the danger shown is archive, not live)     #}
     {# but far more legible. Server-rendered whenever today is past the season  #}
-    {# end and not dismissable, so a returning off-season visitor always sees   #}
-    {# it. Mirrors the offline banner's status-warning treatment               #}
+    {# end, so a returning off-season visitor always sees it. Mirrors the       #}
+    {# offline banner's status-warning treatment                               #}
     {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
     {# the map down rather than overlaying it.                                  #}
     {# SNOW-486: markup delegated to the shared banner primitive               #}
     {# (includes/_overlay_banner.html, "strip" variant).                        #}
+    {# SNOW-639: dismissable, and deliberately NOT persisted — overlays.js      #}
+    {# adds the `hidden` class to this one live element and a reload brings     #}
+    {# the bar back. Do not "fix" that into a stored dismissal: the bar exists  #}
+    {# to say the danger on screen is an archive rather than today's forecast,  #}
+    {# and that is still true on the next visit. Dismissing clears it from a    #}
+    {# session once it has been read; it does not settle the question forever.  #}
     {% blocktrans asvar map_offseason_bar_body trimmed with start_month=archived_season_start|date:"F" %}
         New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
     {% endblocktrans %}
-    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body %}
+    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body dismissible=True %}
 {% endif %}
 {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
 {# fetch to the last populated date when today is past the season end.       #}
@@ -666,7 +672,15 @@ Optional context:
                     </span>{% trans "Observations" %}
                 </div>
             </section>
-            <section class="map-legend-section">
+            {# SNOW-640: the whole section is hidden by map.js when the      #}
+            {# active style yields no attribution at all, rather than        #}
+            {# painting a heading with nothing under it. A style that omits  #}
+            {# attribution is a bug at the ORIGIN (the self-hosted tiles     #}
+            {# style rewrite drops it with the TileJSON pointer) and an      #}
+            {# ODbL compliance problem — map.js warns to the console so the  #}
+            {# collapse cannot hide it from QA. This is the presentation     #}
+            {# half only; the data has to be fixed where it is served.       #}
+            <section id="map-attribution-section" class="map-legend-section" hidden>
                 <div class="map-legend-title">{% trans "Map data" %}</div>
                 {% comment %}
                 Populated by map.js from the current style's source
@@ -1251,4 +1265,10 @@ Optional context:
     {# Kept in this one template rather than duplicated into              #}
     {# _map_downloads_sheet.html's own strings template.                  #}
     <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    {# SNOW-642: #region-readout's empty state. The readout used to be     #}
+    {# `hidden` until a region was focused, taking the download and        #}
+    {# view-bulletin roundels with it (both are sibling-ruled off          #}
+    {# .has-region), so the ribbon header read as vanishing. It now stays  #}
+    {# put and says what is true instead.                                  #}
+    <span data-string="no-region">{% trans "No region selected" %}</span>
 </template>

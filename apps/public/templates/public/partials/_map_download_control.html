@@ -17,18 +17,22 @@ tier and took a ``tier`` argument; only the micro (leaf) tier survived —
 Major/Minor were dropped because their per-tier detail floors made the
 sizes non-monotonic with containment, which read as a bug.
 
-Hidden until a region is focused, like its neighbour #region-readout-action
-(the sibling CSS rule ``#region-readout.has-region ~ .map-download-control``
-in static/css/map.css) — back in the ribbon header, a permanently-present
-roundel with nothing selected would be the odd one out next to two other
-hidden-until-focused controls; that was only right while it sat alone in
-the bottom-right stack. map.js's mapDownloadControlInit drives
-data-download-state (no-region/idle/busy/done/error/disabled/offline) and
-rewrites the title/aria-label to match — the done state is probed from real
-pinned-cache contents (every per-area bucket, unioned — SNOW-586), never a stored flag. The "no-region" state
-stays in the machine for the focused-but-uncomputed case (properties.download
-is null) even though the CSS rule now also hides the control while nothing
-is focused at all.
+SNOW-642: always displayed, like its neighbour #region-readout-action. Both
+were hidden until a region was focused (``#region-readout.has-region ~ …``
+sibling rules in static/css/map.css), which meant they and the readout
+disappeared together and the ribbon header collapsed to an empty row — read
+as the ribbon vanishing rather than as "nothing is selected". Nothing new
+was needed to make the unfocused state legible: the "no-region" state below
+had survived in the machine after the CSS took over the hiding, and it is
+now what shows.
+
+map.js's mapDownloadControlInit drives data-download-state
+(no-region/idle/busy/done/error/disabled/offline) and rewrites the
+title/aria-label to match — the done state is probed from real pinned-cache
+contents (every per-area bucket, unioned — SNOW-586), never a stored flag.
+"no-region" covers both the nothing-selected case and the
+focused-but-uncomputed one (properties.download is null): in both there is
+no basemap to fetch, which is what the label says.
 {% endcomment %}
 <button
     type="button"

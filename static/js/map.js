@@ -108,6 +108,8 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // SNOW-635: an unrenamed custom area's default display name, filled in
   // by basemapDownloadedAreas() itself — see that function's own comment.
   'default-custom-name': 'Custom area %(n)s',
+  // SNOW-642: #region-readout's empty state — see updateReadout below.
+  'no-region': 'No region selected',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
@@ -2295,6 +2297,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // provider. MapLibre's own attribution control is disabled via
   // ``attributionControl: false`` on the Map constructor above.
   const attributionTarget = document.getElementById('map-attribution-text');
+  // SNOW-640: the whole section, so an empty union collapses the heading
+  // along with the text instead of leaving "Map data" over a blank line.
+  const attributionSection = document.getElementById('map-attribution-section');
 
   // SNOW-614: the source-id list for the current style, and the last string
   // written to the panel.
@@ -2337,6 +2342,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // MapLibre's stock AttributionControl renders stay clickable. The
     // basemap URLs are server-controlled, so the trust boundary matches.
     attributionTarget.innerHTML = html;
+
+    // SNOW-640: no source carried an attribution, so there is nothing to
+    // put under the heading. Collapse the section rather than paint an
+    // empty box — which is what staging showed, because the self-hosted
+    // style rewrite drops the TileJSON `url` and every field that only
+    // lived there, attribution included (the same line SNOW-604 caught
+    // taking minzoom/maxzoom with it).
+    //
+    // Collapsing is the honest presentation of "we have nothing", NOT the
+    // fix: OpenFreeMap serves OSM under ODbL, which requires attribution,
+    // so an empty union on the default basemap is a licence problem to be
+    // fixed where the style is served (`rewrite_style.py` in the
+    // snowdesk-tiles repo, with a matching check in its `verify.sh`). The
+    // warning is here so collapsing the section cannot quietly hide that
+    // from whoever is looking at the page — a missing panel is easier to
+    // overlook than an empty one, which is exactly the risk this branch
+    // introduces.
+    //
+    // No fallback string is invented here on purpose: the correct credit
+    // depends on which basemap is active (five are offered, three of them
+    // national services), and a wrong attribution is worse than none.
+    if (attributionSection) attributionSection.hidden = !html;
+    if (!html) {
+      console.warn(
+        '[map] SNOW-640: no source in the active style carries an ' +
+          'attribution — the "Map data" section is hidden. If this is the ' +
+          'default basemap, the served style is missing an ODbL-required ' +
+          'credit and needs fixing at the origin.',
+      );
+    }
   };
   map.on('sourcedata', updateMapAttribution);
   map.on('style.load', () => {
@@ -6765,16 +6800,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
 // itself needs), so showing the size is a pure in-memory lookup — no
 // extra fetch until the user actually clicks Download.
 //
-// Show/size — the control is rendered whenever a region is focused
+// Show/size — the control becomes actionable whenever a region is focused
 // (snowdesk:region-selected moves it from 'no-region' to an actionable
 // state), independent of which overlay tiers (L1/L2) are toggled on.
-// Hidden until then via the same CSS sibling rule as its neighbour
-// #region-readout-action (#region-readout.has-region ~ …,
-// static/css/map.css) — back in the ribbon header a permanently-present
-// roundel with nothing focused would be the odd one out next to that
-// already-hidden-until-focused neighbour. The 'no-region' state stays in
-// the machine below for the rarer case of a focused region with no
-// computed download summary (properties.download is null).
+// SNOW-642: it is always VISIBLE, holding the inert 'no-region' state until
+// then. It used to be hidden until focus by the same CSS sibling rule as its
+// neighbour #region-readout-action (#region-readout.has-region ~ …), which
+// meant those two and the readout all disappeared together and the ribbon
+// header collapsed to an empty row. 'no-region' also covers the rarer case
+// of a focused region with no computed download summary
+// (properties.download is null).
 //
 // State (no-region/idle/busy/done/disabled/offline, data-download-state)
 // — idle/done are
@@ -9004,8 +9039,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Update the two split readouts. The bottom #map-date-ribbon always shows
   // the scrubbed date (the timeline's own readout, region or no region); the
   // top #region-readout chip names the focused region and shows its danger
-  // swatch, and is hidden until a region is focused. Pure in-memory lookup
-  // (no fetch), so it is safe to call on every scrub/preview/playback frame.
+  // swatch. Pure in-memory lookup (no fetch), so it is safe to call on every
+  // scrub/preview/playback frame.
+  //
+  // SNOW-642: the chip is no longer hidden until a region is focused. It was,
+  // and because both of its sibling controls key off `.has-region`, the whole
+  // .ribbon-header emptied out at once — which read as the ribbon vanishing
+  // rather than as "nothing is selected". It now persists with a "No region
+  // selected" leaf and both controls visible-but-disabled. `.has-region` is
+  // still toggled: the CSS uses it for the empty-state text treatment, and it
+  // remains the one place the focused/unfocused distinction is expressed.
   const updateReadout = () => {
     // Bottom date ribbon — day-first, title-case date ("18 May 2026") matching
     // the popup card; deliberately not the uppercase scrubber format.
@@ -9015,7 +9058,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     if (!readoutEl) return;
     const hasRegion = !!(dateKey && regionId && regionName);
-    readoutEl.hidden = !hasRegion;
+    // SNOW-642: no `readoutEl.hidden = !hasRegion` any more — see the note
+    // above. The template no longer ships `hidden` either, so the chip is
+    // visible from first paint rather than appearing on first selection.
     readoutEl.classList.toggle('has-region', hasRegion);
     if (hasRegion) {
       // Breadcrumb: Major (L1) › Minor (L2) › Micro (L4, the leaf), including
@@ -9036,27 +9081,66 @@ const repaintRegionsForDate = (dateKey, cache) => {
           key === 'no_rating' ? 'transparent' : 'var(--color-eaws-' + key.replace(/_/g, '-') + ')';
       }
       // Point the action roundel at the bulletin: /<region_id>/<slug>/<date>/.
-      // Region id is lowercased to match the canonical URL form. The roundel is
-      // shown via CSS (#region-readout.has-region ~ .region-readout-action).
+      // Region id is lowercased to match the canonical URL form.
       if (readoutAction) {
         if (regionSlug) {
           readoutAction.setAttribute(
             'href',
             '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
           );
+          _setActionEnabled(readoutAction, true);
         } else {
+          // Focused, but with no slug there is still no bulletin URL to
+          // build — so the roundel is as dead as it is with nothing
+          // selected, and says so the same way.
           readoutAction.removeAttribute('href');
+          _setActionEnabled(readoutAction, false);
         }
       }
     } else {
-      // Clear the leaf/crumbs text (not the wrapper's textContent, which would
-      // detach the cached child spans).
-      if (readoutLeaf) readoutLeaf.textContent = '';
+      // SNOW-642: the empty state. The leaf carries the message rather than
+      // a new element, so the chip keeps its shape and there is one place
+      // that says what region is showing.
+      if (readoutLeaf) readoutLeaf.textContent = MAP_STRINGS['no-region'];
+      // Clear the crumbs (not the wrapper's textContent, which would detach
+      // the cached child spans) — a breadcrumb prefix on "No region
+      // selected" would read as a region called that, inside those parents.
       if (readoutCrumbs) readoutCrumbs.textContent = '';
       if (readoutSwatch) readoutSwatch.style.background = 'transparent';
-      if (readoutAction) readoutAction.removeAttribute('href');
+      if (readoutAction) {
+        readoutAction.removeAttribute('href');
+        _setActionEnabled(readoutAction, false);
+      }
     }
   };
+
+  /**
+   * Enable or disable the view-bulletin roundel (SNOW-642).
+   *
+   * It stays on screen with nothing selected, so "no bulletin to open" has
+   * to be a state rather than an absence. An <a> with no href is already
+   * inert and untabbable, but that is invisible to a screen reader and to
+   * the eye — this makes it legible to both, and the CSS keys its dimming
+   * off the same aria-disabled a screen reader announces, so the two
+   * cannot drift apart.
+   *
+   * tabindex is set explicitly rather than left to the missing href: the
+   * roundel is a real tab stop the moment a region IS selected, and an
+   * element that silently enters and leaves the tab order is harder to
+   * reason about than one that states where it is.
+   *
+   * @param {HTMLElement} el
+   * @param {boolean} enabled
+   */
+  function _setActionEnabled(el, enabled) {
+    if (enabled) {
+      el.removeAttribute('aria-disabled');
+      el.removeAttribute('tabindex');
+    } else {
+      el.setAttribute('aria-disabled', 'true');
+      el.setAttribute('tabindex', '-1');
+    }
+  }
 
   const refresh = () => {
     paintTrack();

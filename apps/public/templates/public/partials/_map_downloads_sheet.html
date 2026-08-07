@@ -15,10 +15,20 @@ while the roundel opened a DIFFERENT surface (the "Download a custom area"
 framing overlay) directly. SNOW-634 collapses the two: the roundel now
 opens THIS sheet, the menu row is gone, and "Download a custom area"
 became an action INSIDE the sheet instead — the ``[data-downloads-add]``
-trigger above the list, handled by map_downloads_manager.js's delegated
-click listener (offline: a toast; online: hide this sheet and call
-``window.pwaCustomAreaDownload.openFraming()``, map.js's own bridge for
-it).
+trigger, handled by map_downloads_manager.js's delegated click listener
+(offline: disabled and relabelled — SNOW-637; online: hide this sheet and
+call ``window.pwaCustomAreaDownload.openFraming()``, map.js's own bridge
+for it).
+
+SNOW-641 settled the running order, which had accreted rather than been
+chosen: the list first, then the add-trigger under it, then the budget
+control with the running total and its bar grouped into one bordered
+block at the foot. Previously the total led the sheet and the trigger sat
+above the list, so the two things a reader wants — what is stored, and
+how much room is left — were at opposite ends with the list between them.
+Nothing here is positional as far as the JS is concerned: every element
+is addressed by data-attribute, never by index or sibling relationship,
+so this order is a presentation decision and can be revisited as one.
 
 It lives on the map, rather than under account settings, for two reasons.
 Downloading happens here, so managing downloads belongs here; and the list
@@ -56,16 +66,12 @@ repeated here.
     <div class="flex flex-col gap-3">
         {% trans "Downloads on this device" as downloads_sheet_title %}
         {% include "includes/_sheet_header.html" with title=downloads_sheet_title close_action="dismiss" %}
-        {# Running total. The bar is decorative (aria-hidden) — the same    #}
-        {# figure is stated in words immediately above it, so a screen      #}
-        {# reader gets the number rather than a percentage role.            #}
-        <p data-downloads-summary class="text-sm text-text-2"></p>
-        <div
-            class="h-1.5 w-full overflow-hidden rounded-pill bg-border"
-            aria-hidden="true"
-        >
-            <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
-        </div>
+        {# SNOW-641: the running total and its bar used to lead the sheet,  #}
+        {# directly under the header. They now sit beside the budget        #}
+        {# control at the bottom — see the bordered block below. What is    #}
+        {# stored and the budget it is measured against are one fact, and   #}
+        {# splitting them across the whole list made the top number read    #}
+        {# as the point of the sheet rather than as a footnote to the list. #}
         {# Shown only when stored downloads exceed the budget — reachable   #}
         {# by lowering the budget below what is already held, which is      #}
         {# allowed deliberately: the alternative is refusing a setting on   #}
@@ -79,37 +85,69 @@ repeated here.
         >
             {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
         </p>
+        {# The list leads the sheet now (SNOW-641) — it is what the surface #}
+        {# is for, and it is what the header names.                        #}
+        <ul data-downloads-list class="flex flex-col divide-y divide-border"></ul>
+        <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
+            {# SNOW-641: "below", not "above" — the trigger this sentence   #}
+            {# points at moved under the list in the same change. The two   #}
+            {# have to stay in step; a stale direction here is a wrong      #}
+            {# instruction, not just untidy copy.                           #}
+            {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button below for a custom area." %}
+        </p>
         {# SNOW-634: "Download a custom area" moved here from the roundel's #}
-        {# own click — see this file's module header. Above the list, so a #}
-        {# fresh (empty) sheet leads with the one action that fills it —   #}
-        {# unchanged in label/position by SNOW-635, which is what lets it  #}
-        {# be clicked again to add a SECOND (or third, …) custom area      #}
+        {# own click — see this file's module header. SNOW-635 is what lets #}
+        {# it be clicked again to add a SECOND (or third, …) custom area    #}
         {# without leaving the sheet. Handled by                           #}
         {# map_downloads_manager.js's delegated click listener, not a      #}
         {# dedicated one — rows are re-cloned on every render and this     #}
         {# trigger is cloned right along with them, so binding here would  #}
         {# have to be redone on every open too.                            #}
+        {# SNOW-641 moved it BELOW the list. Above, it was the first thing #}
+        {# on a sheet whose subject is what you already hold, and it       #}
+        {# pushed the list down on every open; below, the list is read     #}
+        {# first and the action follows it. The empty state above still    #}
+        {# points at it by name, which is what carries a fresh (empty)     #}
+        {# sheet — the reason it led the sheet in the first place.         #}
+        {# SNOW-637: offline, map_downloads_manager.js's render() disables    #}
+        {# this trigger and swaps its label for `add-disabled` below —       #}
+        {# starting a download needs a connection, so the control says so    #}
+        {# instead of staying live and failing on tap. The disabled          #}
+        {# utilities are the same pair used elsewhere for this               #}
+        {# (_report_form.html, edit_resorts_panel.html).                     #}
         <button
             type="button"
             data-downloads-add
-            class='{% button_classes variant="secondary" size="compact" full_width=True %}'
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} disabled:cursor-not-allowed disabled:opacity-50'
         >
             {% trans "Download a custom area" %}
         </button>
-        <ul data-downloads-list class="flex flex-col divide-y divide-border"></ul>
-        <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
-            {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button above for a custom area." %}
-        </p>
-        <div class="flex items-center justify-between gap-3 border-t border-border pt-3">
-            <label for="map-downloads-budget" class="text-sm text-text-2">
-                {% trans "Storage budget" %}
-            </label>
-            <select
-                id="map-downloads-budget"
-                data-downloads-budget
-                class="rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1 focus:outline-none"
+        {# SNOW-641: the budget block — the control, the running total and  #}
+        {# the bar, in one bordered group at the foot. A two-row stack      #}
+        {# rather than the single flex row this was when it held only the   #}
+        {# label and the select.                                            #}
+        <div class="flex flex-col gap-2 border-t border-border pt-3">
+            <div class="flex items-center justify-between gap-3">
+                <label for="map-downloads-budget" class="text-sm text-text-2">
+                    {% trans "Storage budget" %}
+                </label>
+                <select
+                    id="map-downloads-budget"
+                    data-downloads-budget
+                    class="rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1 focus:outline-none"
+                >
+                </select>
+            </div>
+            {# The bar is decorative (aria-hidden) — the same figure is     #}
+            {# stated in words immediately above it, so a screen reader     #}
+            {# gets the number rather than a percentage role.               #}
+            <p data-downloads-summary class="text-sm text-text-2"></p>
+            <div
+                class="h-1.5 w-full overflow-hidden rounded-pill bg-border"
+                aria-hidden="true"
             >
-            </select>
+                <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
+            </div>
         </div>
         <p class="text-xs text-text-3">
             {% trans "Downloads and this budget are stored on this device only — they don't follow you to your other devices." %}
@@ -166,6 +204,11 @@ repeated here.
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
     <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
+    {# SNOW-637: the same refusal as a BUTTON LABEL rather than a toast. The #}
+    {# toast copy above is phrased as a reply to a tap ("You're offline —"), #}
+    {# which reads wrong sitting on a control nobody has touched yet, so the #}
+    {# disabled state gets its own wording naming the missing precondition.  #}
+    <span data-string="add-disabled">{% trans "Downloading needs a connection" %}</span>
     {# SNOW-635: an unrenamed custom area's default "Custom area N" label   #}
     {# is filled in by static/js/map.js's basemapDownloadedAreas() itself, #}
     {# reading `default-custom-name` off _map_embed.html's                 #}
