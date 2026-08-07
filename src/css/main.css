@@ -510,8 +510,16 @@
    record, or an orphaned area) renders no swatch at
    all — see map_downloads_manager.js.
 
+   The swatch's shape (size, radius, ring) is plain
+   Tailwind utilities on the element itself — inline-block
+   h-2.5 w-2.5 rounded-full ring-1 ring-border — not CSS
+   here, since Tailwind can express all of it. Only the
+   colour, which depends on a data attribute a static
+   utility class cannot select on, lives in this file.
+
    Usage in template:
-     <span class="basemap-swatch" data-basemap-key="openfreemap_liberty"></span>
+     <span class="basemap-swatch inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border"
+           data-basemap-key="openfreemap_liberty"></span>
 
    Each rule here also consumes its --color-basemap-*
    token via var(), which is what keeps Tailwind from
@@ -520,14 +528,6 @@
    lets static/css/map.css, a non-Tailwind file, read
    the same tokens for the download roundel fill.
    ————————————————————————————————————————— */
-
-.basemap-swatch {
-  display: inline-block;
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 9999px;
-  box-shadow: 0 0 0 1px var(--color-border);
-}
 
 .basemap-swatch[data-basemap-key="openfreemap_liberty"] { background: var(--color-basemap-openfreemap-liberty); }
 .basemap-swatch[data-basemap-key="swisstopo_winter"]     { background: var(--color-basemap-swisstopo-winter); }

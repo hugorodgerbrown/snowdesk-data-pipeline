@@ -171,7 +171,11 @@ repeated here.
             {# unknown basemap — colour is never the only signal, so the     #}
             {# swatch always pairs with the picker's own translated name.    #}
             <span data-row-basemap class="flex items-center gap-1.5 text-xs text-text-3">
-                <span data-row-basemap-swatch class="basemap-swatch" aria-hidden="true"></span>
+                <span
+                    data-row-basemap-swatch
+                    class="basemap-swatch inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border"
+                    aria-hidden="true"
+                ></span>
                 <span data-row-basemap-name></span>
             </span>
         </span>

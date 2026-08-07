@@ -92,7 +92,7 @@ function buildFixture() {
           <span data-row-label></span>
           <span data-row-kind></span>
           <span data-row-basemap>
-            <span data-row-basemap-swatch class="basemap-swatch" aria-hidden="true"></span>
+            <span data-row-basemap-swatch class="basemap-swatch inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border" aria-hidden="true"></span>
             <span data-row-basemap-name></span>
           </span>
         </span>
