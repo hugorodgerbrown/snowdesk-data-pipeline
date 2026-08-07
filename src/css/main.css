@@ -527,13 +527,21 @@
    note at the top of section 1 above) — this is what
    lets static/css/map.css, a non-Tailwind file, read
    the same tokens for the download roundel fill.
+
+   Every rule also nests a var(--color-sync-ok) fallback.
+   This file can never desync from its own @theme block
+   the way map.css can from a stale output.css, so it is
+   belt-and-suspenders here rather than load-bearing — but
+   it costs nothing and keeps the two files' rules
+   identical in shape, which is worth more than the one
+   line saved by leaving it off.
    ————————————————————————————————————————— */
 
-.basemap-swatch[data-basemap-key="openfreemap_liberty"] { background: var(--color-basemap-openfreemap-liberty); }
-.basemap-swatch[data-basemap-key="swisstopo_winter"]     { background: var(--color-basemap-swisstopo-winter); }
-.basemap-swatch[data-basemap-key="swisstopo_light"]      { background: var(--color-basemap-swisstopo-light); }
-.basemap-swatch[data-basemap-key="ign_plan"]              { background: var(--color-basemap-ign-plan); }
-.basemap-swatch[data-basemap-key="basemap_at"]            { background: var(--color-basemap-basemap-at); }
+.basemap-swatch[data-basemap-key="openfreemap_liberty"] { background: var(--color-basemap-openfreemap-liberty, var(--color-sync-ok)); }
+.basemap-swatch[data-basemap-key="swisstopo_winter"]     { background: var(--color-basemap-swisstopo-winter, var(--color-sync-ok)); }
+.basemap-swatch[data-basemap-key="swisstopo_light"]      { background: var(--color-basemap-swisstopo-light, var(--color-sync-ok)); }
+.basemap-swatch[data-basemap-key="ign_plan"]              { background: var(--color-basemap-ign-plan, var(--color-sync-ok)); }
+.basemap-swatch[data-basemap-key="basemap_at"]            { background: var(--color-basemap-basemap-at, var(--color-sync-ok)); }
 
 
 /* —— Hero rating badge tokens ———————————————

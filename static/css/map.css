@@ -1696,26 +1696,43 @@
    the .basemap-swatch in the Manage downloads sheet (src/css/main.css §2),
    so the two surfaces agree. No data-basemap-key attribute (unresolved, or
    a record predating this change) keeps the plain --color-sync-ok green
-   above — "downloaded, basemap unknown". */
+   above — "downloaded, basemap unknown".
+
+   Every rule below carries a var(…, var(--color-sync-ok)) FALLBACK, and it
+   is load-bearing, not decorative. This file is NOT compiled by Tailwind —
+   the --color-basemap-* custom properties only exist here because
+   static/css/output.css (a gitignored build artefact, rebuilt by
+   `npx @tailwindcss/cli`) defines them; src/css/main.css's own comment on
+   its @theme block explains why consuming each token via var() there is
+   what stops Tailwind tree-shaking it out. A checkout with a STALE
+   output.css — the default state for anyone who hasn't just run that
+   build — has the attribute selector but not the token: the custom
+   property is undefined, the declaration is invalid at computed-value
+   time, and a BARE var(--color-basemap-…) resolves `background` to its
+   initial value, transparent — it does NOT fall through to the base
+   ::before rule above, because this more-specific selector has already
+   won the cascade. Without the fallback a stale build turns every
+   downloaded region's solid green disc into a hollow ring, which reads as
+   "my download was wiped" rather than "the CSS build is stale". */
 .map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="busy"]::before,
 .map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="done"]::before {
-    background: var(--color-basemap-openfreemap-liberty);
+    background: var(--color-basemap-openfreemap-liberty, var(--color-sync-ok));
 }
 .map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="busy"]::before,
 .map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="done"]::before {
-    background: var(--color-basemap-swisstopo-winter);
+    background: var(--color-basemap-swisstopo-winter, var(--color-sync-ok));
 }
 .map-download-control[data-basemap-key="swisstopo_light"][data-download-state="busy"]::before,
 .map-download-control[data-basemap-key="swisstopo_light"][data-download-state="done"]::before {
-    background: var(--color-basemap-swisstopo-light);
+    background: var(--color-basemap-swisstopo-light, var(--color-sync-ok));
 }
 .map-download-control[data-basemap-key="ign_plan"][data-download-state="busy"]::before,
 .map-download-control[data-basemap-key="ign_plan"][data-download-state="done"]::before {
-    background: var(--color-basemap-ign-plan);
+    background: var(--color-basemap-ign-plan, var(--color-sync-ok));
 }
 .map-download-control[data-basemap-key="basemap_at"][data-download-state="busy"]::before,
 .map-download-control[data-basemap-key="basemap_at"][data-download-state="done"]::before {
-    background: var(--color-basemap-basemap-at);
+    background: var(--color-basemap-basemap-at, var(--color-sync-ok));
 }
 
 /* Done: the fill is pinned full — a solid green circle matching the dot. */
