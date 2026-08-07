@@ -159,6 +159,11 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_basemap_downloads.js' %}"></script>
     <script defer src="{% static 'js/map_shared.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
+    {# SNOW-610: map.js's surface IIFEs. Each runs at parse time and binds  #}
+    {# DOM, so they load AFTER map.js in the order they had inside it —     #}
+    {# document order is execution order for deferred classic scripts.      #}
+    <script defer src="{% static 'js/map_region_download.js' %}"></script>
+    <script defer src="{% static 'js/map_custom_download.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}
