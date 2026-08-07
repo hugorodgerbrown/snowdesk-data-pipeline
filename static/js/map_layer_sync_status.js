@@ -152,6 +152,14 @@
   // ``data-was-disabled-offline`` idiom, namespaced to this module.
   const DISABLED_MARKER = 'data-sync-disabled-offline';
 
+  // SNOW-573: the one OTHER module that disables a row in this menu —
+  // map.js, while the scrubbed date sits outside the weather overlay's
+  // stored forecast window. Read (never written) here, so ``_setRowDisabled``
+  // can honour a disable it does not own. Kept in sync with
+  // ``WEATHER_ROW_DISABLED_MARKER`` in map.js by name only; a mismatch fails
+  // the round-trip test in tests/js/test_map_layer_sync_status.js.
+  const WEATHER_DISABLED_MARKER = 'data-weather-disabled-out-of-window';
+
   // The core row→resource constant. Keys are the overlay rows'
   // ``data-overlay-key`` values; the basemap indicator and (SNOW-524) the
   // country rows are handled separately — the country rows' resource set is
@@ -348,8 +356,17 @@
       row.setAttribute('aria-disabled', 'true');
       row.setAttribute(DISABLED_MARKER, '1');
     } else if (row.getAttribute(DISABLED_MARKER) === '1') {
-      row.removeAttribute('aria-disabled');
       row.removeAttribute(DISABLED_MARKER);
+      // SNOW-573: the weather row carries a SECOND, independent disable —
+      // map.js disables it while the scrubbed date sits outside the stored
+      // forecast window (WEATHER_ROW_DISABLED_MARKER there). Dropping our own
+      // marker must not clear ``aria-disabled`` while that one is still in
+      // force, or coming back online would re-enable a row whose date still
+      // has nothing to draw. map.js guards the mirror case the same way, so
+      // whichever reason clears second is the one that re-enables the row.
+      if (row.getAttribute(WEATHER_DISABLED_MARKER) !== '1') {
+        row.removeAttribute('aria-disabled');
+      }
     }
   }
 
