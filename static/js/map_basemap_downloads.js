@@ -52,9 +52,16 @@ function activeBasemapTileTemplate(map) {
 // sets on boot and map_basemap_picker.js:285-291 maintains on every change.
 // Display-only — unlike activeBasemapTileTemplate above, which reads the
 // *rendered* style and is what beforeWarm uses to decide eviction, this
-// reads the *picker DOM* and can therefore lag the render by the moment a
-// style takes to load after a switch. Returns null with no menu, or no
-// checked row (nothing has resolved yet).
+// reads the *picker DOM*, which map_basemap_picker.js updates SYNCHRONOUSLY
+// on click, before MapLibre's asynchronous setStyle() has actually loaded
+// the new style. So for the moment between those two, this LEADS the
+// render rather than lagging it: it already reports the newly-picked key
+// while activeBasemapTileTemplate still resolves the outgoing style's
+// template. A download triggered in that narrow window would therefore
+// record the new key against tiles that were actually fetched from the
+// OLD basemap — display-only is what keeps that mismatch harmless: nothing
+// here feeds the eviction decision, which stays template-only. Returns
+// null with no menu, or no checked row (nothing has resolved yet).
 function activeBasemapKey() {
   const basemapMenu = document.getElementById('basemap-menu');
   if (!basemapMenu) return null;
