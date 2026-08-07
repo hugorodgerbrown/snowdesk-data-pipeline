@@ -1,16 +1,10 @@
-"""
-tests/e2e/test_setup_passkey.py — Playwright test for the setup-page passkey
-CTA (SNOW-434).
+"""tests/e2e/test_setup_passkey.py — A user registers a passkey and the setup flow advances.
 
-Drives the full WebAuthn registration ceremony against a CDP virtual
-authenticator: click "Save a passkey for this device" → the browser's
-``navigator.credentials.create()`` is answered by the virtual authenticator →
-``registerPasskey`` posts the response → on ``passkey:registered`` the inline
-script auto-advances to the manage page.
+Smoke test — one user journey, mirroring docs/testing-scenarios.md.
+Read docs/client-side-tests.md before adding anything here: the suite
+is capped, and bin/e2e-lint enforces the cap.
 
-WebAuthn verification checks the request origin against ``WEBAUTHN_ORIGIN``, so
-the test pins it to the live-server URL (the live server runs in-process, so
-the override is visible to its request thread).
+Scenario: none — a real WebAuthn ceremony needs a virtual authenticator
 """
 
 from __future__ import annotations

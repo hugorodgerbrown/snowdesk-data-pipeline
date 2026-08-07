@@ -88,14 +88,10 @@ Raising `MAX_TESTS` in `bin/e2e-lint` is a deliberate edit in a ticket that
 says why. It is not a way to land a PR — the two previous overruns both
 happened one reasonable-looking test at a time.
 
-**Current wiring status (SNOW-649):** the env exists (`tox -e e2e-lint`)
-but is deliberately outside the default `tox` envlist and the `lint-guards`
-CI matrix, because it fails by design while the suite is still 280 tests
-against a cap of 15. Both are switched on in the same PR that performs the
-deletion — the commit that makes the guard pass is the commit that makes
-it required. If you are reading this after that PR landed and the env is
-still not in `tox.ini`'s `envlist` and
-`.github/workflows/lint-guards.yml`'s matrix, that is the bug.
+`e2e-lint` runs in the default `tox` envlist and in the `lint-guards` CI
+matrix alongside `ds-lint`, `js-globals-lint`, `i18n-lint` and `docs-lint`.
+It costs nothing to run — no browser, no live server, pure AST — so there
+is no reason to keep it out of a local `uv run tox`.
 
 ### Does not belong in `tests/e2e/` — send it down a layer
 

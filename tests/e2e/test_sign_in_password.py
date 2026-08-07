@@ -1,17 +1,10 @@
-"""
-tests/e2e/test_sign_in_password.py — Playwright test for the password-toggle
-reveal on the sign-in page (SNOW-431).
+"""tests/e2e/test_sign_in_password.py — A returning user reveals their password on the sign-in page.
 
-Guards the inline ``<script>`` added to ``accounts/sign_in.html``: a
-template-tag-in-JS parse error would stop the script running, so the toggle
-would never reveal the password field. The test drives the real DOM:
+Smoke test — one user journey, mirroring docs/testing-scenarios.md.
+Read docs/client-side-tests.md before adding anything here: the suite
+is capped, and bin/e2e-lint enforces the cap.
 
-1. On load the "Sign in with a password instead" toggle is visible and the
-   password field is hidden.
-2. Clicking the toggle reveals the password field and hides the toggle.
-
-The sign-in page renders standalone (no bulletin data needed), so no
-``test_data`` fixture is required.
+Scenario: 21
 """
 
 from __future__ import annotations

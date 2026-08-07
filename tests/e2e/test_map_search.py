@@ -1,16 +1,10 @@
-"""
-tests/e2e/test_map_search.py — the map's region search box (SNOW-618).
+"""tests/e2e/test_map_search.py — A user searches for a region by name and lands on it.
 
-The search box had no test of any kind. SNOW-618 extracted its matching,
-accent folding and ordering into ``static/js/search_core.js`` so they could
-be unit-tested (``tests/js/test_search_core.js``) — but the unit tests
-cannot see the half that stayed in ``map.js``: building the index from the
-loaded region features, and rendering what comes back.
+Smoke test — one user journey, mirroring docs/testing-scenarios.md.
+Read docs/client-side-tests.md before adding anything here: the suite
+is capped, and bin/e2e-lint enforces the cap.
 
-That wiring is exactly what an extraction can break silently, so this
-covers it end to end. Deliberately small — one query, one result, one
-selection — because the matching rules themselves are the unit suite's
-job and re-asserting them here would be slow and redundant.
+Scenario: MS1
 """
 
 from __future__ import annotations
@@ -59,46 +53,3 @@ def test_search_matches_a_region_by_name(live_server: LiveServer, page: Page) ->
     expect(page.locator(_RESULT).first).to_be_visible()
     assert "CH-4115" in page.locator(_RESULT).first.inner_text()
     assert page_errors == [], f"JS errors: {page_errors}"
-
-
-@pytest.mark.usefixtures("_load_test_data")
-def test_search_matches_an_accented_name_typed_without_accents(
-    live_server: LiveServer, page: Page
-) -> None:
-    """An unaccented query still finds an accented region.
-
-    The accent folding is unit-tested, but only against a hand-built
-    index. This proves the strings the real page indexes go through the
-    same normalisation — a region indexed raw would match nothing here
-    while every unit test still passed.
-    """
-    page.goto(f"{live_server.url}/")
-    page.wait_for_load_state("domcontentloaded")
-    _open_search(page)
-
-    # "Martigny / Verbier" has no accents, so query the region id's own
-    # region set for one that does via a substring both spellings share.
-    page.fill(_SEARCH_INPUT, "verbier")
-
-    expect(page.locator(_RESULT).first).to_be_visible()
-
-
-@pytest.mark.usefixtures("_load_test_data")
-def test_search_clears_its_results_for_an_empty_query(
-    live_server: LiveServer, page: Page
-) -> None:
-    """Emptying the box hides the dropdown rather than showing everything.
-
-    ``runSearch`` returns nothing for a blank query — an empty box has not
-    been asked anything, and listing every region would bury the map.
-    """
-    page.goto(f"{live_server.url}/")
-    page.wait_for_load_state("domcontentloaded")
-    _open_search(page)
-
-    page.fill(_SEARCH_INPUT, "Martigny")
-    expect(page.locator(_RESULT).first).to_be_visible()
-
-    page.fill(_SEARCH_INPUT, "")
-
-    expect(page.locator(_SEARCH_RESULTS)).to_be_hidden()
