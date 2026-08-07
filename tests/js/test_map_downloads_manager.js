@@ -51,7 +51,17 @@ const MB = 1024 * 1024;
 // way the other seeded records mirror the real writer's shape.
 const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
 
-/** Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row; SNOW-635: Rename). */
+/**
+ * Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row;
+ * SNOW-635: Rename; SNOW-641: list → add-trigger → budget block order).
+ *
+ * The node ORDER here is kept in step with the real template even though
+ * nothing in this file depends on it — the module addresses every element
+ * by data-attribute, never by index or sibling relationship, which is
+ * exactly what let SNOW-641 reorder the sheet without touching the JS. A
+ * fixture that drifted out of order would still pass while quietly
+ * ceasing to be a description of the thing under test.
+ */
 function buildFixture() {
   document.body.innerHTML = `
     <div id="map-downloads-sheet" hidden tabindex="-1" data-overlay
@@ -60,17 +70,19 @@ function buildFixture() {
       <div>
         <div><span>Downloads on this device</span>
           <button type="button" data-action="dismiss">×</button></div>
-        <p data-downloads-summary></p>
-        <div aria-hidden="true">
-          <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
-        </div>
         <p data-downloads-over hidden>You're over your budget.</p>
-        <button type="button" data-downloads-add>Download a custom area</button>
         <ul data-downloads-list></ul>
         <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
+        <button type="button" data-downloads-add>Download a custom area</button>
         <div>
-          <label for="map-downloads-budget">Storage budget</label>
-          <select id="map-downloads-budget" data-downloads-budget></select>
+          <div>
+            <label for="map-downloads-budget">Storage budget</label>
+            <select id="map-downloads-budget" data-downloads-budget></select>
+          </div>
+          <p data-downloads-summary></p>
+          <div aria-hidden="true">
+            <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
+          </div>
         </div>
       </div>
     </template>

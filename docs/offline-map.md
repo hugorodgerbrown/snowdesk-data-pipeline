@@ -1324,7 +1324,18 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 `static/js/map_downloads_manager.js` over the pure
 `static/js/basemap_manage_core.js`) lists every stored area with its name
 and size, a running total against the budget, an explicit delete, and the
-budget control itself. It opens from `#map-custom-download-control` — the
+budget control itself.
+
+**Running order (SNOW-641):** the list, then the add-trigger under it,
+then one bordered block at the foot holding the budget control, the
+running total and its bar. The total used to lead the sheet and the
+trigger sat above the list, which put the two things a reader wants —
+what is stored, and how much room is left — at opposite ends with the list
+between them. Nothing in `map_downloads_manager.js` is positional (every
+element is addressed by data-attribute), so the order is a presentation
+decision and reordering needed no JS change.
+
+It opens from `#map-custom-download-control` — the
 bottom-right roundel — and uses the shared sheet primitive
 (`includes/_overlay_sheet.html` + `_sheet_header.html`), so
 `overlays.js`'s delegated dismiss handler closes it.
@@ -1335,7 +1346,8 @@ downloads…` row in the layers menu was the only way to reach this sheet —
 the same subject reachable two ways, one of them buried in a menu about
 map layers. Now the roundel opens this sheet, the menu row is gone, and
 "Download a custom area" is an action inside the sheet instead
-(`[data-downloads-add]`, above the list): offline it renders disabled
+(`[data-downloads-add]`, below the list since SNOW-641): offline it
+renders disabled
 (SNOW-637 — the gating is applied inside `render()`, since the sheet body
 is re-cloned from its `<template>` on every open, and re-applied on every
 `snowdesk:connectivity-changed` so an open sheet reacts in place); online

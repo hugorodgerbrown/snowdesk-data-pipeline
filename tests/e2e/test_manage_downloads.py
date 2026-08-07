@@ -354,6 +354,75 @@ def test_a_device_with_no_downloads_says_so(
     expect(page.locator(f"{_SHEET} [data-downloads-empty]")).to_be_visible()
     assert _row_texts(page, "[data-row-label]") == []
 
+    # SNOW-641: the empty state points at the trigger by direction, and the
+    # trigger moved below the list in the same change. A stale "above" here
+    # would be a wrong instruction, not just untidy copy — which is why the
+    # sentence is asserted rather than merely its element's visibility.
+    empty_text = page.locator(f"{_SHEET} [data-downloads-empty]").inner_text()
+    assert "button below" in empty_text
+    assert "button above" not in empty_text
+
+
+def test_the_sheet_reads_list_then_add_then_budget(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-641: the running order, which had accreted rather than been chosen.
+
+    The total used to lead the sheet and the add-trigger sat above the
+    list, so the two things a reader wants — what is stored, and how much
+    room is left — were at opposite ends with the list between them. Now
+    the list leads, the trigger follows it, and the budget control, the
+    total and its bar are one bordered block at the foot.
+
+    Asserted on DOM order via ``compareDocumentPosition`` rather than on
+    pixel geometry: the sheet is a flex column, so document order IS the
+    visual order, and geometry would make this fail for viewport reasons
+    that have nothing to do with the ordering.
+    """
+    _boot(page, live_server)
+    _seed(page, _regions(), [_custom_area()])
+    _open_sheet(page)
+
+    def _precedes(first: str, second: str) -> bool:
+        """True when ``first`` comes before ``second`` in document order."""
+        return page.evaluate(
+            """([a, b]) => {
+                const sheet = document.getElementById('map-downloads-sheet');
+                const first = sheet.querySelector(a);
+                const second = sheet.querySelector(b);
+                if (!first || !second) return null;
+                // 4 === DOCUMENT_POSITION_FOLLOWING (b follows a).
+                return Boolean(
+                    first.compareDocumentPosition(second) &
+                    Node.DOCUMENT_POSITION_FOLLOWING
+                );
+            }""",
+            [first, second],
+        )
+
+    assert _precedes("[data-downloads-list]", "[data-downloads-add]"), (
+        "the add-trigger should sit below the list"
+    )
+    assert _precedes("[data-downloads-add]", "[data-downloads-budget]"), (
+        "the budget control should sit below the add-trigger"
+    )
+    assert _precedes("[data-downloads-list]", "[data-downloads-summary]"), (
+        "the running total should sit below the list, beside the budget"
+    )
+    # The total and the bar belong to the same bordered block as the
+    # select — the point of the move, not a side effect of it.
+    assert page.evaluate(
+        """() => {
+            const sheet = document.getElementById('map-downloads-sheet');
+            const select = sheet.querySelector('[data-downloads-budget]');
+            const block = select.closest('div').parentElement;
+            return Boolean(
+                block.querySelector('[data-downloads-summary]') &&
+                block.querySelector('[data-downloads-bar]')
+            );
+        }"""
+    ), "the total and bar should share the budget control's block"
+
 
 def test_removing_an_area_deletes_its_whole_cache_bucket(
     page: Page, live_server: LiveServer
