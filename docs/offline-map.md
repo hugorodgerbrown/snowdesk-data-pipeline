@@ -634,17 +634,18 @@ the roundel, driven by a `--download-progress` CSS custom property —
 in white — SNOW-569 dropped the tick: the glyph is the control's identity,
 and swapping it made a completed download read as a different control,
 where the colour inversion already carries "finished"), `disabled`
-(over-ceiling), and `offline` (no downloading of layers while offline; see
-gating below). The three non-runnable states (`no-region`, `disabled`,
+(over-ceiling), `offline` (no downloading of layers while offline; see
+gating below), and (SNOW-645) `other-basemap` — see its own paragraph
+below. The three non-runnable states (`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
 a dimmed **glyph** — the glass shell stays at full strength, because the
 control now floats over open basemap where the old whole-roundel
-`opacity: 0.4` was close to invisible. `idle`/`done` are derived from a
-real pinned-cache probe every time the icon is (re)shown — never a stored
-flag, so a reselected region reads its true cache state, and a region that
-was downloaded in an earlier session still reads `done` after a reload.
-Since SNOW-586 that probe reads across **every** per-area bucket, unioned
-(`pinnedBasemapCacheURLs`), rather than one shared cache.
+`opacity: 0.4` was close to invisible. `idle`/`done`/`other-basemap` are
+derived from a real pinned-cache probe every time the icon is (re)shown —
+never a stored flag, so a reselected region reads its true cache state, and
+a region that was downloaded in an earlier session still reads `done` after
+a reload. Since SNOW-586 that probe reads across **every** per-area bucket,
+unioned (`pinnedBasemapCacheURLs`), rather than one shared cache.
 
 **Basemap identity colour (SNOW-645).** The `busy`/`done` fill is no
 longer a flat green — it takes one of five `--color-basemap-*` tokens
@@ -661,6 +662,32 @@ before it still shows, since it carries no basemap key to look up. The
 same identity colour, paired with the basemap's translated name, appears
 as a swatch on each row of the "Manage downloads" sheet (below) — colour
 alone is never the only signal.
+
+**`other-basemap` (SNOW-645).** Hugo's report: download a region on
+Standard, switch to Swisstopo, and the roundel silently reverted to plain
+`idle` — indistinguishable from never having downloaded it, when nothing
+had actually been deleted (a basemap switch alone evicts nothing; SNOW-632
+only evicts a region's bucket on a SAME-region RE-download). `_probeDone`
+now tells the two apart using the stored record's own `template`/
+`basemapKey`: when the record names a DIFFERENT basemap than the one
+active now, it verifies that OTHER basemap's tiles are STILL actually on
+disk (`blobFullyCached` against the record's own `template`, not the
+active one) before claiming `other-basemap` — a stale record whose bucket
+has since been evicted (by budget-driven eviction, external storage
+pressure, or Clear Site Data on just that bucket) falls through to plain
+`idle` rather than promising tiles that aren't there. The roundel paints
+in the OTHER basemap's identity colour, not the active one — `setState`
+takes an explicit key override for this one state, since that is the
+whole point (map_region_download.js — every other state still infers the
+colour from `activeBasemapKey()`). It renders as a hollow ring rather than
+a solid disc (`static/css/map.css`) — "downloaded, but not usable here" is
+a third answer, not a shade of `idle` (nothing) or `done` (a solid disc).
+It is fully **actionable**: `aria-disabled="false"`, and a tap downloads
+the region under the ACTIVE basemap, reusing `beforeWarm`'s existing
+template-mismatch eviction with no new logic. A pre-SNOW-645 record (no
+stored `basemapKey`) still reads `other-basemap` once its tiles are
+confirmed cached — just with the name-less label and no `data-basemap-key`
+attribute, since there is no key to show.
 
 **The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
 check here since SNOW-570 — the code has never assumed "the centre tile is
@@ -692,10 +719,12 @@ work offline, since there is nothing to fetch; a region in that state
 reads `offline` until back online. Because the probe keys off the
 **active** basemap's tile template, the state is also still **per-basemap**:
 download the region on Standard, switch to Swisstopo (online), and the
-icon reverts to `idle` — that basemap's tiles for the region aren't
-cached. The icon re-probes on `snowdesk:basemap-changed` (fired by the
-styledata reinstall once a new basemap's overlays are back) and on
-`snowdesk:connectivity-changed`.
+icon no longer reads `done` — it reads `other-basemap` (still downloaded,
+just for the basemap you switched away from — see that state's own
+paragraph above) if Standard's tiles are still on disk, or `idle` if they
+have since been evicted. The icon re-probes on `snowdesk:basemap-changed`
+(fired by the styledata reinstall once a new basemap's overlays are back)
+and on `snowdesk:connectivity-changed`.
 
 That template is only resolvable once MapLibre's style has settled
 (`map.isStyleLoaded()`), which is **not** true on the page load that

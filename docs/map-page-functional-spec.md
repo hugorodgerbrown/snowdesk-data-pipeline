@@ -262,10 +262,14 @@ data never is.
 Each basemap also has an **identity colour**, shown wherever a downloaded
 area is — the download roundel's fill and a swatch on each row of the
 "Manage downloads" sheet — so a device holding several downloaded areas
-under different basemaps can tell them apart, and a blank map after
-switching basemap reads as "this area was downloaded under a different
-one" rather than a mystery. See [`offline-map.md`](offline-map.md)'s
-"Download basemap" and "Manage downloads" sections for the mechanism.
+under different basemaps can tell them apart. The per-region download
+roundel goes one step further: switch basemap after downloading a region
+and its roundel doesn't just go quiet — it shows a distinct "downloaded,
+but for another basemap" ring, in that OTHER basemap's colour, that a tap
+turns into a download for the basemap now showing. Nothing was lost by
+switching; the roundel now says so instead of reading as data loss. See
+[`offline-map.md`](offline-map.md)'s "Download basemap" and "Manage
+downloads" sections for the mechanism.
 
 ---
 
