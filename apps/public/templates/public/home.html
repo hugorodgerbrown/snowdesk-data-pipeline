@@ -157,6 +157,7 @@ in addition to the shared map assets.
     {# bare identifiers — which is why they must all load BEFORE it: its     #}
     {# main IIFE runs at parse time and would hit the temporal dead zone.    #}
     <script defer src="{% static 'js/map_basemap_downloads.js' %}"></script>
+    <script defer src="{% static 'js/map_shared.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
