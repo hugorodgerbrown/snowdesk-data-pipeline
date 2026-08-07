@@ -91,6 +91,10 @@ function buildFixture() {
         <span>
           <span data-row-label></span>
           <span data-row-kind></span>
+          <span data-row-basemap>
+            <span data-row-basemap-swatch class="basemap-swatch" aria-hidden="true"></span>
+            <span data-row-basemap-name></span>
+          </span>
         </span>
         <span>
           <span data-row-size></span>
@@ -99,6 +103,14 @@ function buildFixture() {
         </span>
       </li>
     </template>
+    <ul id="basemap-menu" hidden>
+      <li role="none">
+        <button type="button" data-basemap-key="openfreemap_liberty" aria-checked="true">Standard</button>
+      </li>
+      <li role="none">
+        <button type="button" data-basemap-key="swisstopo_winter" aria-checked="false">Swisstopo (CH)</button>
+      </li>
+    </ul>
     <template id="map-downloads-strings-template">
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
@@ -167,6 +179,9 @@ function installDownloadsBridge(rows, cachesStub) {
         name: entry.name || entry.region_id,
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        // SNOW-645: mirrors map.js's own basemapDownloadedAreas — absent
+        // on a record written before this ticket shipped.
+        basemapKey: entry.basemapKey || null,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -181,6 +196,7 @@ function installDownloadsBridge(rows, cachesStub) {
         name: entry.name || self.pwaStrings.interpolate(DEFAULT_CUSTOM_NAME, { n: entry.ordinal }),
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        basemapKey: entry.basemapKey || null,
       });
     }
     return out;
@@ -448,6 +464,70 @@ describe('opening the sheet', () => {
     await settle();
 
     expect(rowLabels()).toEqual(['Custom area 1', 'Custom area 2']);
+  });
+});
+
+describe('basemap identity (SNOW-645)', () => {
+  it("shows the basemap's swatch and the picker's own translated name", async () => {
+    seed({
+      'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const swatches = Array.from(
+      document.querySelectorAll('#map-downloads-sheet [data-row-basemap-swatch]'),
+    );
+    expect(swatches.map((el) => el.dataset.basemapKey)).toEqual([
+      'swisstopo_winter',
+      'openfreemap_liberty',
+    ]);
+    const names = Array.from(
+      document.querySelectorAll('#map-downloads-sheet [data-row-basemap-name]'),
+    );
+    expect(names.map((el) => el.textContent)).toEqual(['Swisstopo (CH)', 'Standard']);
+  });
+
+  it('removes the basemap line for a record written before this ticket shipped', async () => {
+    // No `basemapKey` at all — a legacy record, not a wrong basemap.
+    seed({ 'basemap.regions': [REGIONS[0]] });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
+  });
+
+  it('removes the basemap line for an orphaned bucket', async () => {
+    seed({});
+    await loadModule();
+    // An orphan has no record at all, so no basemapKey — mirrors what
+    // basemapDownloadedAreas()'s reconciliation hands manageRows for a
+    // pinned bucket left behind by a failed download (SNOW-612). This
+    // file's own bridge reimplementation has no reconciliation of its
+    // own (see installDownloadsBridge's docstring), so the orphan is
+    // injected directly onto the one call this render makes.
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
+  });
+
+  it('removes the basemap line for a key the picker has no row for', async () => {
+    // The picker markup is the source of truth for the label; a key it
+    // does not recognise (a deployment BASEMAP override, or a stale key
+    // from a since-removed style) must not show an unlabelled swatch.
+    seed({ 'basemap.regions': [{ ...REGIONS[0], basemapKey: 'no_such_basemap' }] });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
   });
 });
 

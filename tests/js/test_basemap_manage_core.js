@@ -332,6 +332,24 @@ describe('manageRows', () => {
     expect(core.manageRows(undefined, options)).toEqual([]);
     expect(core.manageRows(null, options)).toEqual([]);
   });
+
+  it("carries a record's basemapKey through to the row (SNOW-645)", () => {
+    const rows = core.manageRows(
+      [{ id: 'region-CH-2101', name: 'Aletsch', bytes: MB, basemapKey: 'openfreemap_liberty' }],
+      options,
+    );
+    expect(rows[0].basemapKey).toBe('openfreemap_liberty');
+  });
+
+  it("yields '' rather than a wrong basemap for a record with none", () => {
+    // A record written before SNOW-645 shipped, or an orphan — see
+    // reconcileAreas below. Either way this is "unknown", never a guess.
+    const rows = core.manageRows(
+      [{ id: 'region-CH-2101', name: 'Aletsch', bytes: MB }],
+      options,
+    );
+    expect(rows[0].basemapKey).toBe('');
+  });
 });
 
 describe('reconcileAreas (SNOW-612)', () => {
@@ -386,6 +404,19 @@ describe('reconcileAreas (SNOW-612)', () => {
     const areas = core.reconcileAreas(recorded, ['region-ch-1000'], { 'region-ch-1000': MB });
     const orphan = areas.find((a) => a.id === 'region-ch-1000');
     expect(orphan.savedAt).toBeUndefined();
+  });
+
+  it("carries a recorded area's basemapKey through, and gives an orphan none (SNOW-645)", () => {
+    const withKey = [{ ...recorded[0], basemapKey: 'openfreemap_liberty' }];
+    const areas = core.reconcileAreas(withKey, ['region-ch-4115', 'region-ch-1000'], {
+      'region-ch-1000': 9 * MB,
+    });
+
+    expect(areas.find((a) => a.id === 'region-ch-4115').basemapKey).toBe(
+      'openfreemap_liberty',
+    );
+    // No record means no known basemap either.
+    expect(areas.find((a) => a.id === 'region-ch-1000').basemapKey).toBeNull();
   });
 
   it('renders an orphan as a deletable row carrying its bucket id', () => {

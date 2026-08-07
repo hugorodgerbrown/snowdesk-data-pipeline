@@ -249,7 +249,7 @@ function buildFixture() {
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
-         data-default-basemap-key="standard"
+         data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <button id="map-download-control" type="button"></button>
     <div id="search-pill" data-state="collapsed">
@@ -257,6 +257,21 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
+    <!-- SNOW-645: activeBasemapKey() reads the checked radio here. The
+         boot IIFE (map.js:150-159) is what actually sets aria-checked on
+         first paint, from data-default-basemap-key above matching this
+         row's data-basemap-key — not this markup's own initial value. -->
+    <ul id="basemap-menu">
+      <li role="none">
+        <button
+          type="button"
+          class="basemap-menu-item"
+          data-basemap-key="openfreemap_liberty"
+          data-basemap-url="https://tiles.example.invalid/style.json"
+          aria-checked="false"
+        >Standard</button>
+      </li>
+    </ul>
     <div id="map-download-evict-confirm" class="hidden" data-overlay data-overlay-hide="class">
       <p id="map-download-evict-confirm-title">Free up space?</p>
       <p id="map-download-evict-confirm-body"></p>
@@ -386,6 +401,18 @@ describe('region download byte recording (SNOW-632)', () => {
     expect(recorded).toBeDefined();
     expect(recorded.bytes).toBe(nextReportedBytes);
     expect(recorded.bytes).not.toBe(measured);
+  });
+
+  it("records the picker's active basemap key, and paints it onto the roundel (SNOW-645)", async () => {
+    nextReportedBytes = 111;
+    await downloadRegion();
+
+    const recorded = await recordedRegion();
+    expect(recorded).toBeDefined();
+    expect(recorded.basemapKey).toBe('openfreemap_liberty');
+
+    const btn = document.getElementById('map-download-control');
+    expect(btn.dataset.basemapKey).toBe('openfreemap_liberty');
   });
 
   it('does not inflate the total on a same-template repeat', async () => {

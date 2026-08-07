@@ -165,6 +165,15 @@ repeated here.
         <span class="flex min-w-0 flex-col">
             <span data-row-label class="truncate text-sm text-text-1"></span>
             <span data-row-kind class="text-xs text-text-3"></span>
+            {# SNOW-645: which basemap this area was downloaded under.       #}
+            {# map_downloads_manager.js's buildRow removes this whole line   #}
+            {# for a keyless (legacy) or orphaned row rather than showing an #}
+            {# unknown basemap — colour is never the only signal, so the     #}
+            {# swatch always pairs with the picker's own translated name.    #}
+            <span data-row-basemap class="flex items-center gap-1.5 text-xs text-text-3">
+                <span data-row-basemap-swatch class="basemap-swatch" aria-hidden="true"></span>
+                <span data-row-basemap-name></span>
+            </span>
         </span>
         <span class="flex shrink-0 items-center gap-3">
             <span data-row-size class="text-sm text-text-2"></span>

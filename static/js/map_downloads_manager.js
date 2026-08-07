@@ -227,6 +227,36 @@
     return window.pwaBasemapDownloadCore || null;
   }
 
+  // SNOW-645: lazily built {key: label} map, read off the basemap picker's
+  // own buttons rather than duplicating apps/public/views.py's
+  // _BASEMAP_LABELS here — that keeps the sheet's row using the SAME
+  // server-translated string the popover shows, with no new JS literal for
+  // tox -e i18n-lint to flag. Built once and cached: the picker's markup is
+  // static for the life of the page, it never re-renders.
+  var basemapLabelsByKey = null;
+
+  /**
+   * The picker's basemap label for `key`, or '' if the picker has no
+   * matching row (an unknown key, or a picker-invisible one like
+   * ``swisstopo_light`` — see ``_BASEMAP_LABELS``'s own docstring).
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  function basemapLabel(key) {
+    if (!basemapLabelsByKey) {
+      basemapLabelsByKey = {};
+      var menu = document.getElementById('basemap-menu');
+      if (menu) {
+        menu.querySelectorAll('[data-basemap-key]').forEach(function (btn) {
+          var btnKey = btn.dataset.basemapKey;
+          if (btnKey) basemapLabelsByKey[btnKey] = self.pwaStrings.collapse(btn.textContent);
+        });
+      }
+    }
+    return basemapLabelsByKey[key] || '';
+  }
+
   /**
    * Read a ``meta:app`` row's value (the budget row — see ``BUDGET_KEY``).
    *
@@ -463,6 +493,25 @@
 
     const size = fragment.querySelector('[data-row-size]');
     if (size) size.textContent = row.size;
+
+    // SNOW-645: which basemap this area was downloaded under. Colour is
+    // never the only signal — the swatch always pairs with the picker's
+    // own translated name. No key (a legacy record, or an orphan —
+    // manageRows/reconcileAreas both fall back to ''), or a key the picker
+    // no longer has a row for, removes the whole line rather than showing
+    // an unknown or mismatched basemap.
+    const basemapRow = fragment.querySelector('[data-row-basemap]');
+    if (basemapRow) {
+      const label = row.basemapKey ? basemapLabel(row.basemapKey) : '';
+      if (label) {
+        const swatch = basemapRow.querySelector('[data-row-basemap-swatch]');
+        if (swatch) swatch.dataset.basemapKey = row.basemapKey;
+        const name = basemapRow.querySelector('[data-row-basemap-name]');
+        if (name) name.textContent = label;
+      } else {
+        basemapRow.remove();
+      }
+    }
 
     const button = fragment.querySelector('[data-downloads-delete]');
     if (button) {
