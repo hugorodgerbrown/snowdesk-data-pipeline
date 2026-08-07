@@ -66,6 +66,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.bulletins.services.meteofrance_archive_loader import fixup_envelope
 from apps.bulletins.services.slf_archive import read_archive
@@ -87,10 +88,11 @@ GOLDEN_WEEK_LENGTH = 7
 REQUIRED_REGION_FIXTURES = ("eaws_CH", "eaws_AT", "eaws_IT", "eaws_FR")
 
 # Provider keys. These name the archives and are surfaced in command output;
-# they are deliberately the same upper-case tokens ``Bulletin.SOURCE`` uses.
-SOURCE_SLF = "SLF"
-SOURCE_ALBINA = "ALBINA"
-SOURCE_METEOFRANCE = "METEOFRANCE"
+# SNOW-582: reference Bulletin.Source directly rather than redeclaring the
+# same upper-case strings.
+SOURCE_SLF = Bulletin.Source.SLF
+SOURCE_ALBINA = Bulletin.Source.ALBINA
+SOURCE_METEOFRANCE = Bulletin.Source.METEOFRANCE
 
 SOURCES = (SOURCE_SLF, SOURCE_ALBINA, SOURCE_METEOFRANCE)
 

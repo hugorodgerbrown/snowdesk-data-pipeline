@@ -603,11 +603,11 @@ def latest_meteofrance_date() -> date | None:
     """
     Return the most recent ``valid_from`` date of any MeteoFrance bulletin in the DB.
 
-    Filters on ``render_model.source == Bulletin.Source.METEOFRANCE`` — mirrors the
-    approach used in ``latest_albina_date()``. Bulletins with a failed
-    render-model build (version 0 error sentinel) carry no ``source`` key
-    and are naturally excluded, which is the desired behaviour for
-    resume-from-last-success.
+    Filters on the ``source`` column (``Bulletin.Source.METEOFRANCE``) — mirrors
+    the approach used in ``latest_albina_date()``. Provenance is an ingest
+    fact set by ``upsert_bulletin`` regardless of whether the render model
+    built successfully, so this no longer depends on
+    ``render_model["source"]`` at all (SNOW-582).
 
     Used by the management command to derive the default ``--start-date``
     (resume from where the last run left off). Returns ``None`` when no
@@ -619,7 +619,7 @@ def latest_meteofrance_date() -> date | None:
 
     """
     result = (
-        Bulletin.objects.filter(render_model__source=Bulletin.Source.METEOFRANCE)
+        Bulletin.objects.filter(source=Bulletin.Source.METEOFRANCE)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()

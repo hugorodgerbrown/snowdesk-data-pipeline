@@ -224,10 +224,10 @@ class TestParseWetSnowCoverage:
                 custom_data_key="ALBINA",
             ),
         )
-        call_command("parse_wet_snow_coverage", filter_source="slf", verbosity=0)
+        call_command("parse_wet_snow_coverage", filter_source="SLF", verbosity=0)
         captured_slf = capsys.readouterr()
 
-        call_command("parse_wet_snow_coverage", filter_source="albina", verbosity=0)
+        call_command("parse_wet_snow_coverage", filter_source="ALBINA", verbosity=0)
         captured_albina = capsys.readouterr()
 
         # Each filtered run should mention only its own source.

@@ -84,7 +84,7 @@ def _render_model_with_traits(
         merged_prose["tendency_lead"] = None
     return {
         "version": RENDER_MODEL_VERSION,
-        "source": "slf",
+        "source": "SLF",
         "danger": {
             "key": "moderate",
             "number": "2",
@@ -2234,7 +2234,7 @@ class TestMFElevationBandSplitBulletinPage:
 
         rm = {
             "version": RENDER_MODEL_VERSION,
-            "source": "meteofrance",
+            "source": "METEOFRANCE",
             "danger": {
                 "key": "moderate",
                 "number": "2",
@@ -2518,7 +2518,7 @@ class TestDayWindowsBandedRender:
         vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
         rm = {
             "version": RENDER_MODEL_VERSION,
-            "source": "meteofrance",
+            "source": "METEOFRANCE",
             "danger": {
                 "key": "moderate",
                 "number": "2",
@@ -4467,7 +4467,7 @@ def _albina_render_model_with_bands(
     """Build a current-version ALBINA render_model dict with band_id traits."""
     return {
         "version": RENDER_MODEL_VERSION,
-        "source": "albina",
+        "source": "ALBINA",
         "danger": {
             "key": "considerable",
             "number": "3",

@@ -184,7 +184,7 @@ def _process_one(
         counts["error"] += 1
         return ""
 
-    if source_slug in ("slf", "albina", "meteofrance"):
+    if source_slug in Bulletin.Source.values:
         counts[source_slug] += 1
     else:
         counts["unknown"] += 1
@@ -210,9 +210,9 @@ def _process_queryset(
     mf_session.headers["User-Agent"] = _MF_USER_AGENT
 
     counts: dict[str, int] = {
-        "slf": 0,
-        "albina": 0,
-        "meteofrance": 0,
+        Bulletin.Source.SLF: 0,
+        Bulletin.Source.ALBINA: 0,
+        Bulletin.Source.METEOFRANCE: 0,
         "unknown": 0,
         "error": 0,
     }
@@ -259,8 +259,8 @@ def _derive_pdf_url(
 
     Args:
         bulletin: The Bulletin instance (used for issued_at and region info).
-        source: The detected source slug (``"slf"``, ``"albina"``, or
-            ``"meteofrance"``), derived from ``customData`` keys.
+        source: The detected source slug (``"SLF"``, ``"ALBINA"``, or
+            ``"METEOFRANCE"``), derived from ``customData`` keys.
         raw: The inner CAAML properties dict from ``bulletin.raw_data["properties"]``.
         mf_session: Shared ``requests.Session`` for Météo-France index calls.
         mf_call_count: How many Météo-France index calls have been made so far;
@@ -270,16 +270,16 @@ def _derive_pdf_url(
         The derived PDF URL, or ``""`` if unavailable or source is unknown.
 
     """
-    if source == "slf":
+    if source == Bulletin.Source.SLF:
         return _slf_pdf_url(raw)
 
-    if source == "albina":
+    if source == Bulletin.Source.ALBINA:
         regions = raw.get("regions") or []
         micro_region_id = regions[0].get("regionID", "") if regions else ""
         region = _albina_cdn_region(micro_region_id)
         return _albina_pdf_url(raw, region)
 
-    if source == "meteofrance":
+    if source == Bulletin.Source.METEOFRANCE:
         if mf_call_count > 0:
             time.sleep(_MF_RATE_LIMIT_S)
         # Read the canonical upstream slug from customData.MF.massif (e.g.
@@ -313,20 +313,22 @@ def _log_summary(
     mode = "Committed" if commit else "Dry-run"
     total_updated = sum(v for k, v in counts.items() if k not in ("unknown", "error"))
 
+    slf = counts[Bulletin.Source.SLF]
+    albina = counts[Bulletin.Source.ALBINA]
+    mf = counts[Bulletin.Source.METEOFRANCE]
+    unknown = counts["unknown"]
+    errors = counts["error"]
+
     if commit:
         msg = (
             f"{mode}: {total_updated} pdf_url(s) populated "
-            f"(SLF={counts['slf']}, ALBINA={counts['albina']}, "
-            f"MF={counts['meteofrance']}, unknown={counts['unknown']}, "
-            f"errors={counts['error']})"
+            f"(SLF={slf}, ALBINA={albina}, MF={mf}, unknown={unknown}, errors={errors})"
         )
         cmd.stdout.write(cmd.style.SUCCESS(msg))
     else:
         msg = (
             f"{mode}: would populate {total_updated} pdf_url(s) "
-            f"(SLF={counts['slf']}, ALBINA={counts['albina']}, "
-            f"MF={counts['meteofrance']}, unknown={counts['unknown']}, "
-            f"errors={counts['error']}). "
-            f"Re-run with --commit to persist."
+            f"(SLF={slf}, ALBINA={albina}, MF={mf}, unknown={unknown}, errors={errors})"
+            ". Re-run with --commit to persist."
         )
         cmd.stdout.write(msg)

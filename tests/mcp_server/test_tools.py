@@ -53,7 +53,7 @@ def _make_bulletin(
     danger_key: str = "considerable",
     avalanche_problems: list[dict[str, Any]] | None = None,
     *,
-    source: str = "slf",
+    source: str = Bulletin.Source.SLF,
     lang: str = "en",
     pdf_url: str = "",
     next_update: datetime.datetime | None = None,
@@ -606,11 +606,11 @@ class TestGetBulletinMetadata:
         assert result["valid_from"].startswith("2026-04-08T08:00")
         assert result["valid_to"].startswith("2026-04-08T17:00")
         assert result["next_update_expected"].startswith("2026-04-09T08:00")
-        assert result["source_provider"] == "slf"
+        assert result["source_provider"] == "SLF"
         assert result["source_url"] == pdf_url
         assert result["language"] == "en"
         assert result["language_variants_available"] == ["en"]
-        assert "slf" in result["summary"]
+        assert "SLF" in result["summary"]
 
     def test_falls_back_to_source_home_url_when_no_pdf_url(
         self, region: MicroRegion
@@ -626,7 +626,7 @@ class TestGetBulletinMetadata:
 
         result = tools.get_bulletin_metadata(region.region_id, target_date)
 
-        assert result["source_provider"] == "albina"
+        assert result["source_provider"] == "ALBINA"
         assert result["source_url"] == "https://avalanche.report/"
 
     def test_meteofrance_source_maps_to_meteofrance_home_url(
@@ -644,7 +644,7 @@ class TestGetBulletinMetadata:
             region.region_id, datetime.date(2026, 4, 8)
         )
 
-        assert result["source_provider"] == "meteofrance"
+        assert result["source_provider"] == "METEOFRANCE"
         assert "meteofrance.com" in result["source_url"]
 
     def test_no_bulletin_for_date_is_a_structured_empty_result(
@@ -768,7 +768,7 @@ class TestGetBulletinRaw:
         assert result["has_bulletin"] is True
         assert result["region_id"] == region.region_id
         assert result["date"] == "2026-04-08"
-        assert result["provider"] == "albina"
+        assert result["provider"] == "ALBINA"
         assert result["issued_at"].startswith("2026-04-08T17:00")
         assert result["caaml"] == bulletin.raw_data
         assert "dangerRatings" in result["caaml"]["properties"]
@@ -1001,7 +1001,7 @@ class TestFindRegionsNear:
         assert result["count"] >= 1
         assert result["results"][0]["region_id"] == "CH-4115"
         assert result["results"][0]["distance_km"] == 0.0
-        assert result["results"][0]["provider"] == "slf"
+        assert result["results"][0]["provider"] == "SLF"
 
     def test_orders_by_distance(self, alpine_regions: dict[str, MicroRegion]) -> None:
         """A wider radius returns hits nearest-first."""
@@ -1020,7 +1020,7 @@ class TestFindRegionsNear:
 
         assert result["count"] == 1
         assert result["results"][0]["region_id"] == "FR-73-01"
-        assert result["results"][0]["provider"] == "meteofrance"
+        assert result["results"][0]["provider"] == "METEOFRANCE"
 
     def test_zero_matches_returns_empty_not_error(
         self, alpine_regions: dict[str, MicroRegion]
