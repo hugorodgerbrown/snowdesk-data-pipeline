@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), basemaps, season scrubber
 status: current
-last-reviewed: 2026-07-26
+last-reviewed: 2026-08-07
 ---
 
 # Map page — functional specification
@@ -258,6 +258,14 @@ The basemap origin is configurable by environment variable, so moving to
 a self-hosted tile server is a config change, not a code deploy. Basemap
 tiles are cached opportunistically for offline use (see §6); the danger
 data never is.
+
+Each basemap also has an **identity colour**, shown wherever a downloaded
+area is — the download roundel's fill and a swatch on each row of the
+"Manage downloads" sheet — so a device holding several downloaded areas
+under different basemaps can tell them apart, and a blank map after
+switching basemap reads as "this area was downloaded under a different
+one" rather than a mystery. See [`offline-map.md`](offline-map.md)'s
+"Download basemap" and "Manage downloads" sections for the mechanism.
 
 ---
 

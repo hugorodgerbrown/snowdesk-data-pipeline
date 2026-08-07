@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal navigation partitioning, Download basemap, custom-area download, layers
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-07
 ---
 
 # PWA shell
@@ -630,7 +630,7 @@ which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
 **State** — `data-download-state` on the control: `no-region` (nothing
 focused), `idle` (arrow, size in the tooltip), `busy` (bottom-up fill of
 the roundel, driven by a `--download-progress` CSS custom property —
-`static/css/map.css`), `done` (solid green circle, the same download glyph
+`static/css/map.css`), `done` (solid circle, the same download glyph
 in white — SNOW-569 dropped the tick: the glyph is the control's identity,
 and swapping it made a completed download read as a different control,
 where the colour inversion already carries "finished"), `disabled`
@@ -645,6 +645,22 @@ flag, so a reselected region reads its true cache state, and a region that
 was downloaded in an earlier session still reads `done` after a reload.
 Since SNOW-586 that probe reads across **every** per-area bucket, unioned
 (`pinnedBasemapCacheURLs`), rather than one shared cache.
+
+**Basemap identity colour (SNOW-645).** The `busy`/`done` fill is no
+longer a flat green — it takes one of five `--color-basemap-*` tokens
+(`src/css/main.css`), one per `settings.BASEMAP_STYLES` key, matching the
+key currently selected in the basemap picker (`activeBasemapKey()`,
+`static/js/map_basemap_downloads.js`, reading the picker's checked radio —
+display-only, unlike the `template` the eviction logic above actually
+keys on). The custom-area control's own roundel (below) means "the device
+holds at least one download", which can span several basemaps, so it only
+paints an identity colour when every non-orphaned area agrees on one; a
+mixed or unresolved set falls back to the plain `--color-sync-ok` green —
+what every roundel showed before this ticket, and what any record written
+before it still shows, since it carries no basemap key to look up. The
+same identity colour, paired with the basemap's translated name, appears
+as a swatch on each row of the "Manage downloads" sheet (below) — colour
+alone is never the only signal.
 
 **The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
 check here since SNOW-570 — the code has never assumed "the centre tile is
@@ -1325,6 +1341,18 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 `static/js/basemap_manage_core.js`) lists every stored area with its name
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
+
+**Basemap swatch (SNOW-645).** Each row also carries a small
+`.basemap-swatch` roundel plus the basemap's own translated name — the
+same `--color-basemap-*` identity colour the download roundels paint (see
+"State" above), and the same label the picker itself shows: `buildRow`
+reads it off the picker's rendered `.basemap-menu-item` buttons rather
+than duplicating `apps/public/views.py`'s `_BASEMAP_LABELS`, so the two
+surfaces can never drift and no new JS string literal exists for
+`tox -e i18n-lint` to flag. A row with no stored `basemapKey` (a download
+recorded before this ticket shipped, or an orphaned bucket — SNOW-612)
+drops the whole swatch+name line rather than guessing; colour is never the
+only signal.
 
 **Running order (SNOW-641):** the list, then the add-trigger under it,
 then one bordered block at the foot holding the budget control, the
