@@ -226,6 +226,9 @@
     if (rows.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'italic text-text-3';
+      // i18n-allow: the resort editor is staff-only (edit_mode, superuser
+      // gate in home.html) and is never rendered for a member of the public
+      // — same reasoning as renderRemaining's own allow above.
       let msg = 'No resorts loaded.';
       if (filter && hideSet) msg = 'No unset matches.';
       else if (filter)       msg = 'No matches.';
