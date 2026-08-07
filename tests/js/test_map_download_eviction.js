@@ -36,6 +36,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import { loadMapBundle } from './_load_map_bundle.js';
 
 const MB = 1024 * 1024;
 
@@ -286,7 +287,7 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   // SNOW-623: map.js's choropleth paint delegates to this.
   await import('../../static/js/choropleth_core.js');
-  await import('../../static/js/map.js');
+  loadMapBundle();
   // MapLibre never fires 'load' in jsdom; the main IIFE's data load (and so
   // FEATURE_BY_REGION_ID) hangs off it.
   for (const handler of mapStub.handlers.load || []) await handler();

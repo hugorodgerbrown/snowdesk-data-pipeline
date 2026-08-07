@@ -107,7 +107,12 @@ class TestMapCoreModulesLoaded:
         """
         names = [name for name, _ in self._map_core_dependencies()]
         assert "map_weather_core.js" in names
-        assert "scrubber_core.js" in names
+        # SNOW-610 split the scrubber IIFE (and its window.pwaScrubberCore
+        # use) out of map.js into map_scrubber.js, so map.js itself no
+        # longer dereferences scrubber_core.js — search_core.js is one of
+        # the *_core.js modules map.js's own (unsplit) search box still
+        # uses directly.
+        assert "search_core.js" in names
         assert "choropleth_core.js" in names
 
     def test_every_map_core_dependency_is_loaded_before_map_js(self) -> None:
