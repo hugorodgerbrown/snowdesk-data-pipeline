@@ -17,6 +17,12 @@
 
 import { vi } from 'vitest';
 
+/**
+ * A well-formed empty FeatureCollection — safe default input for any
+ * `.geojson` consumer that does `data.features.forEach(...)` or similar.
+ */
+export const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
+
 /** One region, as /api/regions.geojson would emit for it. */
 export const REGIONS_GEOJSON = {
   type: 'FeatureCollection',
@@ -123,4 +129,81 @@ export function regionsInstalled(mapStub) {
   const sourceInstalled = mapStub.addSource.mock.calls.some((call) => call[0] === 'regions');
   const layerInstalled = mapStub.addLayer.mock.calls.some((call) => call[0].id === 'regions-fill');
   return sourceInstalled && layerInstalled;
+}
+
+/**
+ * Build a `fetch` implementation that answers EVERY endpoint map.js's boot
+ * path might touch — not just the ones a given test cares about — with a
+ * correctly-shaped payload by default.
+ *
+ * Why this matters: with real regions features (unlike every OTHER map.js
+ * test's empty-FC fixture — see the module docstring), the boot handler
+ * runs all the way through ``installRegionsLayers`` and then fires a lot of
+ * work it deliberately does NOT await: ``ensureCountryLoaded`` for every
+ * enabled country (major/sub-region + ratings top-up fetches),
+ * ``restoreOverlay`` for l1/l2/resorts, and the l3 bulletin-groupings load
+ * that rides along with L4 (on by default). A bare ``{}`` is the wrong
+ * shape for a ``.geojson`` endpoint — code doing
+ * ``payload.features.forEach(...)`` throws inside a floating (never
+ * awaited) promise. Those unhandled rejections settle at unpredictable
+ * times and got misattributed by the Vitest/Node runner to whatever frame
+ * happened to be executing when they did — including, on CI, a
+ * ``ReferenceError`` reported against a completely different import
+ * (SNOW-638's second CI failure). Answering every ``.geojson`` URL with a
+ * real (if empty) FeatureCollection, and everything else with ``{}``,
+ * removes the floating-rejection source at its root rather than papering
+ * over the symptom.
+ *
+ * @param overrides - ordered ``[predicate, responder]`` pairs tried before
+ *   the default; ``predicate(hrefString)`` decides whether ``responder``
+ *   (which may return a rejected Promise, to simulate a genuine fetch
+ *   failure) handles this URL.
+ */
+export function buildFetchImpl(overrides = []) {
+  return (url) => {
+    const href = String(url);
+    for (const [predicate, responder] of overrides) {
+      if (predicate(href)) return responder(href);
+    }
+    if (href.includes('.geojson')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(EMPTY_FEATURE_COLLECTION),
+      });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  };
+}
+
+/**
+ * Resolve after `waitMs` — lets fire-and-forget boot promises (see
+ * ``buildFetchImpl``'s docstring) settle before a test's ``beforeAll``
+ * returns, rather than leaking them past it. Mirrors the ``tick(ms)``
+ * pattern in ``test_map_groupings_guard.js``.
+ */
+export function tick(waitMs = 50) {
+  return new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
+/**
+ * Capture Node-level ``unhandledRejection`` events for the life of a test
+ * file, so a stray rejection surfaces as a visible, attributable assertion
+ * failure in the file it actually happened in — rather than (per SNOW-638's
+ * CI failure) a ``ReferenceError`` misattributed to whatever import was
+ * in-flight elsewhere in the same worker when it settled.
+ *
+ * Call ``stop()`` in ``afterAll``: registering a listener suppresses
+ * Node's default handling for the life of that listener, so a leaked one
+ * would swallow genuine crashes in files that run afterwards.
+ */
+export function captureUnhandledRejections() {
+  const rejections = [];
+  const onUnhandledRejection = (reason) => {
+    rejections.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandledRejection);
+  return {
+    rejections,
+    stop: () => process.off('unhandledRejection', onUnhandledRejection),
+  };
 }

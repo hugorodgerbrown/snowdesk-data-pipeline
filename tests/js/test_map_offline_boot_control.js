@@ -1,7 +1,9 @@
 /*
  * tests/js/test_map_offline_boot_control.js — negative control for SNOW-638
  * (see test_map_offline_boot.js's module docstring for the full root-cause
- * writeup).
+ * writeup, including the SECOND CI failure and the ``buildFetchImpl`` /
+ * ``tick`` / ``captureUnhandledRejections`` fix in
+ * ``map_offline_boot_helpers.js``).
  *
  * Same assertions as the regression case — the ``regions`` source and the
  * ``regions-fill`` layer both install — but here every one of the three
@@ -13,11 +15,7 @@
  *
  * Deliberately a SEPARATE file from test_map_offline_boot.js rather than a
  * second ``it()`` there: each file must import map.js exactly once (see
- * that file's module docstring for the CI failure this constraint fixes —
- * a second ``vi.resetModules()`` + ``import('.../map.js')`` in the same
- * file intermittently threw ``ReferenceError:
- * BULLETIN_GROUPINGS_URL_MODULE is not defined`` deep inside map.js's own
- * module evaluation on CI). Shared fixtures live in
+ * that file's module docstring for why). Shared fixtures live in
  * ``map_offline_boot_helpers.js``, a plain module (not itself a test file),
  * so importing them here does not pull in a second copy of map.js.
  */
@@ -27,26 +25,34 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import {
   REGIONS_GEOJSON,
+  buildFetchImpl,
   buildFixture,
+  captureUnhandledRejections,
   regionsInstalled,
   stubMapLibre,
+  tick,
 } from './map_offline_boot_helpers.js';
 
 let mapStub;
+let rejectionCapture;
 
 beforeAll(async () => {
   buildFixture();
   mapStub = stubMapLibre();
+  rejectionCapture = captureUnhandledRejections();
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => {
-      const href = String(url);
-      if (href.includes('regions.geojson')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(REGIONS_GEOJSON) });
-      }
-      // resorts.json, ratings.json and anything else — resolve emptyish.
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    }),
+    vi.fn(
+      buildFetchImpl([
+        [
+          (href) => href.includes('regions.geojson'),
+          () => Promise.resolve({ ok: true, json: () => Promise.resolve(REGIONS_GEOJSON) }),
+        ],
+        // resorts.json, ratings.json and every other endpoint: buildFetchImpl's
+        // default (well-formed `{}` for non-.geojson URLs) is exactly right
+        // here — nothing needs to fail in the negative control.
+      ]),
+    ),
   );
 
   vi.resetModules();
@@ -59,9 +65,14 @@ beforeAll(async () => {
   // test_map_offline_boot.js's module docstring for why.
   await import('../../static/js/map.js');
   for (const handler of mapStub.handlers.load || []) await handler();
+  // Let boot's un-awaited fire-and-forget chains settle before this
+  // beforeAll returns — see test_map_offline_boot.js's module docstring and
+  // map_offline_boot_helpers.js's tick() docstring for why.
+  await tick();
 });
 
 afterAll(() => {
+  rejectionCapture.stop();
   vi.unstubAllGlobals();
   delete globalThis.maplibregl;
 });
@@ -69,5 +80,9 @@ afterAll(() => {
 describe('map.js boot handler — negative control (SNOW-638)', () => {
   it('installs the regions choropleth when every boot fetch resolves', () => {
     expect(regionsInstalled(mapStub)).toBe(true);
+  });
+
+  it('produces no unhandled promise rejections during boot', () => {
+    expect(rejectionCapture.rejections).toEqual([]);
   });
 });
