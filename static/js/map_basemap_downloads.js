@@ -71,6 +71,39 @@ function activeBasemapKey() {
   return (checked && checked.dataset.basemapKey) || null;
 }
 
+// Hex floor for basemapIdentityColour below — the SAME green
+// --color-sync-ok resolves to in light mode (src/css/main.css @theme).
+// MapLibre paint values can't reference a CSS custom property at all, so
+// every consumer of an identity colour (the download progress grid, the
+// downloaded-areas overlay) has to read the live value off the document
+// instead — this is the floor for the pathological case where even THAT
+// comes back empty (no stylesheet loaded at all).
+const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
+
+// SNOW-645: resolve `key` (a settings.BASEMAP_STYLES key, or null/unknown)
+// to its identity colour, in the same three tiers as the CSS
+// var(--color-basemap-…, var(--color-sync-ok)) fallback the swatch and
+// roundel rules use (src/css/main.css, static/css/map.css) — kept in step
+// with that fallback deliberately, since the failure mode (a stale
+// output.css build with the token undefined) is identical here:
+//   1. --color-basemap-<key, underscores to dashes> off the document root
+//      — the exact token those CSS rules read, so every surface (roundel,
+//      sheet swatch, progress grid, downloaded-areas overlay) agrees.
+//   2. --color-sync-ok — no key (unresolved picker), an unrecognised key,
+//      or a stale build where tier 1's token isn't defined.
+//   3. DOWNLOAD_PROGRESS_COLOUR_FALLBACK — tier 2 itself came back empty.
+//
+// @param {string | null} key
+// @returns {string} A CSS colour value, never empty.
+function basemapIdentityColour(key) {
+  const root = getComputedStyle(document.documentElement);
+  if (key) {
+    const value = root.getPropertyValue(`--color-basemap-${key.replace(/_/g, '-')}`).trim();
+    if (value) return value;
+  }
+  return root.getPropertyValue('--color-sync-ok').trim() || DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
+}
+
 // SNOW-492: sprite JSON/PNG URLs (1x and 2x) for `map`'s current style, if
 // any. MapLibre's `sprite` style property is either a single base URL
 // string or (multi-sprite styles) an array of `{id, url}` entries; both
@@ -946,14 +979,6 @@ const DOWNLOAD_PROGRESS_SOURCE_ID = 'download-progress';
 const DOWNLOAD_PROGRESS_FILL_LAYER_ID = 'download-progress-fill';
 const DOWNLOAD_PROGRESS_LINE_LAYER_ID = 'download-progress-line';
 
-// Fallback for --color-sync-ok (src/css/main.css @theme) — the SAME green
-// the layers-menu "available offline" dot and the download roundel's own
-// fill use, so the map, the roundel, and the cache dashboard speak one
-// visual language. MapLibre paint values can't reference a CSS variable, so
-// the live value is read off the document at the start of each run (the
-// theme has a lighter green in dark mode) and this is only the floor.
-const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
-
 // Opacity a landed square sits at, and the peak of the completion pulse.
 // The fill lands ABOVE the choropleth, so it has to stay translucent
 // enough to read the region's danger colour through it while a download
@@ -1062,9 +1087,12 @@ function createDownloadProgressGrid(plan, urlOffset) {
 
   const offset = typeof urlOffset === 'number' ? urlOffset : 0;
   const cellOfURL = Array.isArray(plan.cellOfURL) ? plan.cellOfURL : [];
-  const colour =
-    getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
-    DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
+  // SNOW-645 (Hugo's explicit ask, overriding the plan's own non-goal): the
+  // grid now fills in the ACTIVE basemap's identity colour rather than the
+  // generic green, so it speaks the same visual language as the roundel it
+  // completes into rather than seaming into a different colour the instant
+  // the pulse fades and the roundel takes over.
+  const colour = basemapIdentityColour(activeBasemapKey());
   const reducedMotion =
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
