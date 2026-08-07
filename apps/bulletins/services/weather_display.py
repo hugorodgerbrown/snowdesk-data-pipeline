@@ -217,6 +217,31 @@ def weather_code_icon_bucket(code: int) -> str:
     return _WMO_CODE_TO_ICON_BUCKET.get(code, DEFAULT_ICON_BUCKET)
 
 
+def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
+    """
+    Return the Meteocons SVG basename for an icon bucket and time of day.
+
+    Buckets in :data:`WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT` ship separate
+    day/night SVG variants; ``cloudy`` is the lone exception that ships as
+    a single file regardless of light. Extracted from
+    :func:`build_weather_display` (SNOW-573) so the two forecast-point
+    GeoJSON views can derive the same filename without going through a
+    full :class:`WeatherDisplay`.
+
+    Args:
+        icon_bucket: One of the bucket identifiers in
+            :data:`WEATHER_ICON_BUCKETS`.
+        time_of_day: ``"day"`` or ``"night"``.
+
+    Returns:
+        The SVG basename, e.g. ``"light_snow-day.svg"`` or ``"cloudy.svg"``.
+
+    """
+    if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
+        return f"{icon_bucket}-{time_of_day}.svg"
+    return f"{icon_bucket}.svg"
+
+
 def is_day(
     weather: "WeatherSnapshot | ForecastPointWeather", now: datetime.datetime
 ) -> bool:
@@ -303,12 +328,7 @@ def build_weather_display(
     daytime = is_day(weather, now)
     time_of_day = "day" if daytime else "night"
     icon_bucket = weather_code_icon_bucket(weather.weather_code)
-    # Buckets in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT get a "-day"/"-night"
-    # suffix; "cloudy" is the lone exception that ships as a single SVG.
-    if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
-        icon_filename = f"{icon_bucket}-{time_of_day}.svg"
-    else:
-        icon_filename = f"{icon_bucket}.svg"
+    icon_filename = weather_icon_filename(icon_bucket, time_of_day)
     return WeatherDisplay(
         weather=weather,
         bucket=weather_code_bucket(weather.weather_code),
@@ -396,3 +416,55 @@ def build_point_forecast_panel(
             )
         )
     return ForecastPanel(days=days)
+
+
+# ---------------------------------------------------------------------------
+# Map weather layer (SNOW-573)
+# ---------------------------------------------------------------------------
+
+
+class PointWeatherDay(TypedDict):
+    """One date's entry in the ``days`` dict of a map weather payload."""
+
+    icon: str  # Basename of the SVG in static/icons/weather/.
+    label: str  # En-GB condition label, e.g. "Light snow".
+    tmax: float | None
+    tmin: float | None
+    snow: float | None
+
+
+def build_point_weather_days(
+    rows: list["ForecastPointWeather"], now: datetime.datetime
+) -> dict[str, PointWeatherDay]:
+    """
+    Project a forecast window into the map weather layer's ``days`` dict.
+
+    The single place both ``forecast_weather_geojson`` (public,
+    resort-anchored points) and ``favourites_geojson`` (private,
+    favourite-anchored points) turn ``ForecastPointWeather`` rows into
+    the payload shape, so the two endpoints cannot drift on icon or
+    label derivation.
+
+    Args:
+        rows: The forecast window for one point, in any order — the
+            result is keyed by date, so row order does not matter.
+        now: The reference instant for each day's day/night icon decision.
+
+    Returns:
+        A dict keyed by ISO date string (``"2026-08-07"``), each value a
+        :class:`PointWeatherDay`. Empty when ``rows`` is empty.
+
+    """
+    days: dict[str, PointWeatherDay] = {}
+    for row in rows:
+        display = build_weather_display(row, now)
+        if display is None:
+            continue  # pragma: no cover — unreachable: row is never None here
+        days[row.valid_for_date.isoformat()] = PointWeatherDay(
+            icon=display["icon_filename"],
+            label=display["condition_label"],
+            tmax=row.temperature_2m_max,
+            tmin=row.temperature_2m_min,
+            snow=row.snowfall_sum,
+        )
+    return days

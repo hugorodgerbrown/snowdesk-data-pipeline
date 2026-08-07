@@ -139,6 +139,16 @@ in addition to the shared map assets.
     {# (window.pwaSearchCore), extracted from map.js's main IIFE so it can  #}
     {# be unit-tested. Must load before map.js, whose search box uses it.   #}
     <script defer src="{% static 'js/search_core.js' %}"></script>
+    {# SNOW-573: pure projection / merge / forecast-window math for the map   #}
+    {# Weather overlay (window.pwaWeatherCore), extracted so it can be        #}
+    {# unit-tested (tests/js/test_map_weather_core.js).                       #}
+    {# Sits HERE, with the other *_core.js modules, rather than next to       #}
+    {# map.js: SNOW-647's test_bundle_scripts_are_contiguous forbids a        #}
+    {# non-bundle script inside the map bundle's run, and this is not a       #}
+    {# bundle member — map.js reads window.pwaWeatherCore lazily, on the      #}
+    {# first overlay toggle, never at parse time, so it has no place in the   #}
+    {# temporal-dead-zone ordering the bundle exists to protect.              #}
+    <script defer src="{% static 'js/map_weather_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}

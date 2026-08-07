@@ -75,6 +75,9 @@ const OVERLAY_STORAGE_KEY = {
   community_reports: 'snowdesk.map.overlay.community_reports',
   // SNOW-570: which areas are held in the pinned basemap cache.
   downloaded: 'snowdesk.map.overlay.downloaded',
+  // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
+  // is only ever read/written) when data-weather-layer-eligible="true".
+  weather: 'snowdesk.map.overlay.weather',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -124,6 +127,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'default-custom-name': 'Custom area %(n)s',
   // SNOW-642: #region-readout's empty state — see updateReadout below.
   'no-region': 'No region selected',
+  // SNOW-573: the Weather overlay's layers-menu row disable reason —
+  // point weather is forecast-only and often runs short (ICON-CH2
+  // commonly returns fewer days than requested), so a scrubbed date
+  // outside the stored window disables the row with this as its title.
+  'weather-out-of-window': 'No forecast for this date',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source

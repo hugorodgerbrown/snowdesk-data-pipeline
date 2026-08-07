@@ -48,7 +48,10 @@ Covers:
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
-                        (null for a plain pin, SNOW-499).
+                        (null for a plain pin, SNOW-499); with the
+                        weather_layer flag active, each feature also
+                        carries a days property (SNOW-573) — absent when
+                        the flag is inactive.
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -76,6 +79,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
@@ -1373,6 +1377,90 @@ class TestFavouritesGeojson:
         """An anonymous GET returns 403."""
         response = client.get(GEOJSON_URL)
         assert response.status_code == 403
+
+    def test_days_absent_when_weather_layer_flag_inactive(self, client: Client) -> None:
+        """With the flag off, no feature carries a days key (SNOW-573)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+        ForecastPointWeatherFactory.create(
+            forecast_point=favourite.forecast_point,
+            valid_for_date=datetime.date(2026, 8, 7),
+        )
+
+        with override_flag("weather_layer", active=False):
+            response = client.get(GEOJSON_URL)
+
+        assert "days" not in response.json()["features"][0]["properties"]
+
+    def test_days_present_when_weather_layer_flag_active(self, client: Client) -> None:
+        """With the flag on, days mirrors build_point_weather_days's shape (SNOW-573)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+        ForecastPointWeatherFactory.create(
+            forecast_point=favourite.forecast_point,
+            valid_for_date=datetime.date(2026, 8, 7),
+            weather_code=0,  # clear sky
+            sunrise=datetime.datetime(2026, 8, 7, 6, 0, tzinfo=datetime.UTC),
+            sunset=datetime.datetime(2026, 8, 7, 20, 0, tzinfo=datetime.UTC),
+            temperature_2m_max=4.0,
+            temperature_2m_min=-3.0,
+            snowfall_sum=0.0,
+        )
+
+        with (
+            freeze_time("2026-08-07T12:00:00Z"),
+            override_flag("weather_layer", active=True),
+        ):
+            response = client.get(GEOJSON_URL)
+
+        days = response.json()["features"][0]["properties"]["days"]
+        assert days == {
+            "2026-08-07": {
+                "icon": "clear-day.svg",
+                "label": "Clear",
+                "tmax": 4.0,
+                "tmin": -3.0,
+                "snow": 0.0,
+            }
+        }
+
+    def test_days_empty_dict_when_no_weather_fetched_yet(self, client: Client) -> None:
+        """A favourite with no fetched weather gets an empty days dict, not an error."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user)
+
+        with override_flag("weather_layer", active=True):
+            response = client.get(GEOJSON_URL)
+
+        assert response.json()["features"][0]["properties"]["days"] == {}
+
+    def test_days_only_covers_the_requesters_own_favourite(
+        self, client: Client
+    ) -> None:
+        """One bulk query still keys weather correctly per favourite (no cross-talk)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        mine = FavouriteFactory.create(user=user)
+        other = FavouriteFactory.create(user=UserFactory.create())
+        ForecastPointWeatherFactory.create(
+            forecast_point=mine.forecast_point,
+            valid_for_date=datetime.date(2026, 8, 7),
+        )
+        ForecastPointWeatherFactory.create(
+            forecast_point=other.forecast_point,
+            valid_for_date=datetime.date(2026, 8, 7),
+        )
+
+        with override_flag("weather_layer", active=True):
+            response = client.get(GEOJSON_URL)
+
+        data = response.json()
+        assert len(data["features"]) == 1
+        assert data["features"][0]["properties"]["uuid"] == str(mine.uuid)
+        assert "2026-08-07" in data["features"][0]["properties"]["days"]
 
 
 # ---------------------------------------------------------------------------

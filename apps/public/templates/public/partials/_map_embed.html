@@ -86,6 +86,12 @@ Optional context:
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
     data-community-reports-url="{{ community_reports_geojson_url }}"
     data-community-reports-eligible="true"
+    {# SNOW-573: unlike community-reports, this one IS flag-gated — the URL #}
+    {# is still always rendered (the endpoint itself 404s while the flag   #}
+    {# is inactive), matching the favourites-url pattern of gating the     #}
+    {# *eligible* flag rather than omitting the attribute.                 #}
+    data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
+    data-weather-layer-eligible="{{ weather_layer_eligible|yesno:'true,false' }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -357,6 +363,28 @@ Optional context:
                         {% trans "Community reports" %}
                     </button>
                 </li>
+                {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
+                {# plus the day's max temperature at each resort-anchored     #}
+                {# (and, for a signed-in visitor, favourite-anchored)         #}
+                {# forecast point. Flag-gated on weather_layer; off by       #}
+                {# default like Community reports. static/js/map.js disables #}
+                {# this row (with a reason, via a second namespaced marker   #}
+                {# — see DISABLED_MARKER in map_layer_sync_status.js) for    #}
+                {# any scrubbed date outside the stored forecast window.     #}
+                {% if weather_layer_eligible %}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="weather"
+                            aria-checked="false"
+                        >
+                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                            {% trans "Weather" %}
+                        </button>
+                    </li>
+                {% endif %}
                 {# SNOW-570/SNOW-587: draws one translucent square per tile   #}
                 {# actually held in the pinned basemap cache — nothing more, #}
                 {# read straight from Cache Storage with no stored record    #}
@@ -1143,6 +1171,12 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
+{# SNOW-573: same "never cached / cache aged out" shape as community reports #}
+{# above — the weather overlay write-through-caches under the idb kind      #}
+{# (map_layer_sync_status.js OVERLAY_RESOURCES.weather), so a read-back on a #}
+{# later offline visit is the recovery path once cached, not just "online". #}
+{% trans "Weather isn't available offline right now — view it online to refresh." as offline_toast_weather_body %}
+{% include "includes/_toast.html" with id="map-offline-toast-weather" kind="warning" body=offline_toast_weather_body dismissible=True timeout=6000 %}
 {# SNOW-521: a SUCCESSFUL "Download basemap" run is carried by the download #}
 {# roundel itself (a green offline circle) — there is no completion toast,  #}
 {# because a success needs no words and no action.                         #}
@@ -1271,4 +1305,8 @@ Optional context:
     {# .has-region), so the ribbon header read as vanishing. It now stays  #}
     {# put and says what is true instead.                                  #}
     <span data-string="no-region">{% trans "No region selected" %}</span>
+    {# SNOW-573: the Weather layers-menu row's disable reason (title       #}
+    {# attribute) for any scrubbed date outside the stored forecast       #}
+    {# window — see updateWeatherRowAvailability in map.js.               #}
+    <span data-string="weather-out-of-window">{% trans "No forecast for this date" %}</span>
 </template>

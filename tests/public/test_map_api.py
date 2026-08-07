@@ -31,6 +31,10 @@ SNOW-252 — peak semantics:
 SNOW-419:
 * ``api:community_reports_geojson`` — anonymised, 48h-windowed
   ``FieldObservation`` overlay.
+
+SNOW-573: ``api:forecast_weather_geojson``'s full test suite lives in
+``tests/public/test_forecast_weather_api.py``; this module only carries its
+``_POSTHOG_EXEMPT_PATHS`` regression case, alongside the rest of that suite.
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.slf_fetcher import BulletinSource
@@ -362,6 +367,27 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
     name, _, query = url.partition("?")
     target = reverse(name) + (f"?{query}" if query else "")
     response = Client().get(target)
+    assert response.status_code == 200
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary, (
+        f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
+    )
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
+    )
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_forecast_weather_geojson_no_cookie_vary_with_analytics_enabled() -> None:
+    """SNOW-299/SNOW-573 regression: forecast-weather.geojson stays Cookie-free.
+
+    Extends the ``_POSTHOG_EXEMPT_PATHS`` key-on coverage to the SNOW-573
+    map weather layer endpoint. Flag-gated on ``weather_layer``, so this
+    needs its own test rather than joining the plain parametrize list above.
+    """
+    with override_flag("weather_layer", active=True):
+        response = Client().get(reverse("api:forecast_weather_geojson"))
     assert response.status_code == 200
     vary = response.get("Vary", "")
     assert "Accept-Encoding" in vary, (

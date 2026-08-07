@@ -46,6 +46,7 @@ from apps.public.views import (
     _community_reports_context,
     _default_region_label,
     _favourites_context,
+    _weather_context,
 )
 from tests.factories import (
     AccountFactory,
@@ -866,3 +867,60 @@ class TestHomePageCommunityReportsParity:
         assert 'data-overlay-key="community_reports"' in content
         assert 'data-community-reports-eligible="true"' in content
         assert reverse("api:community_reports_geojson") in content
+
+
+@pytest.mark.django_db
+class TestWeatherContext:
+    """Unit tests for _weather_context() (SNOW-573).
+
+    Called directly (via RequestFactory) rather than through the full
+    home() round-trip — mirrors TestCommunityReportsContext above. Unlike
+    community reports, eligibility here IS a real per-request flag check.
+    """
+
+    def _request(self) -> HttpRequest:
+        request = RequestFactory().get("/")
+        request.user = AnonymousUser()
+        return request
+
+    @override_flag("weather_layer", active=True)
+    def test_eligible_when_flag_active(self) -> None:
+        """weather_layer_eligible is True when the flag is active."""
+        ctx = _weather_context(self._request())
+        assert ctx["weather_layer_eligible"] is True
+        assert ctx["forecast_weather_geojson_url"] == reverse(
+            "api:forecast_weather_geojson"
+        )
+
+    @override_flag("weather_layer", active=False)
+    def test_ineligible_when_flag_inactive(self) -> None:
+        """weather_layer_eligible is False when the flag is inactive."""
+        ctx = _weather_context(self._request())
+        assert ctx["weather_layer_eligible"] is False
+        # The URL is still always present — the endpoint itself 404s while
+        # the flag is inactive, mirroring the favourites-url gating pattern.
+        assert ctx["forecast_weather_geojson_url"] == reverse(
+            "api:forecast_weather_geojson"
+        )
+
+
+@pytest.mark.django_db
+class TestHomePageWeatherParity:
+    """The Weather map overlay control renders on / per SNOW-573's rules."""
+
+    @override_flag("weather_layer", active=True)
+    def test_controls_shown_when_flag_active(self) -> None:
+        """Overlay toggle and #map URL render when the flag is active."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert 'data-overlay-key="weather"' in content
+        assert 'data-weather-layer-eligible="true"' in content
+        assert reverse("api:forecast_weather_geojson") in content
+
+    @override_flag("weather_layer", active=False)
+    def test_overlay_row_absent_when_flag_inactive(self) -> None:
+        """The menu row itself is absent (not just disabled) while the flag is off."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert 'data-overlay-key="weather"' not in content
+        assert 'data-weather-layer-eligible="false"' in content

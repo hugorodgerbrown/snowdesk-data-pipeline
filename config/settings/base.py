@@ -407,6 +407,10 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/ratings/",
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
+        # SNOW-573: map weather layer — flag-gated (weather_layer) but
+        # publicly cacheable once active, same rationale as the rest of
+        # this set.
+        "/api/forecast-weather.geojson",
         "/api/regions.geojson",
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
