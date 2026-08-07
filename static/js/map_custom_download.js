@@ -58,7 +58,8 @@
 // 'basemap.customAreas' (an ARRAY — see `_appendCustomArea`/
 // `_readCustomAreas`, and their docstrings for the lazy migration from the
 // old single-row 'basemap.customArea'), each entry {id, ordinal, name?,
-// bbox, band, centre_tile, template, bytes, savedAt}. `id` is minted fresh
+// bbox, band, centre_tile, template, basemapKey, bytes, savedAt}. `id` is
+// minted fresh
 // per download (`generateCustomAreaId`) rather than the single fixed
 // `CUSTOM_AREA_ID` every earlier version shared — that shared id is why a
 // second download used to silently replace the first. `name` is written

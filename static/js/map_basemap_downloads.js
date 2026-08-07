@@ -434,8 +434,8 @@ async function _nextCustomAreaOrdinal() {
  * rather than assuming it.
  *
  * @param {{id: string, ordinal: number, name?: string, bbox: number[],
- *   band: number[], centre_tile: Object, template: string, bytes: number,
- *   savedAt: string}} area
+ *   band: number[], centre_tile: Object, template: string,
+ *   basemapKey?: string|null, bytes: number, savedAt: string}} area
  * @returns {Promise<void>}
  */
 async function _appendCustomArea(area) {

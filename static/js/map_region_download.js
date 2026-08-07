@@ -84,7 +84,8 @@
   const ribbonEl = document.getElementById('season-ribbon');
 
   // SNOW-570: the regions the user has downloaded, in meta:app under
-  // 'basemap.regions' as [{region_id, band, z, savedAt}].
+  // 'basemap.regions' as [{region_id, band, z, savedAt}] — SNOW-632 added
+  // `template`, SNOW-645 `basemapKey`.
   //
   // SNOW-583 repurposes this record. It used to carry the region's `bbox`
   // (derived from its boundary geometry) so both the "Downloaded areas"
