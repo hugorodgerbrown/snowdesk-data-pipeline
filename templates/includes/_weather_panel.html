@@ -189,11 +189,13 @@ Context:
                         {# readouts on the site look identical.                           #}
                         <span class="inline-flex items-center gap-x-1">
                             <span class="sr-only">{% trans "Temperature" %}</span>
+                            {# One span, not two: the parent's gap-x-1 would otherwise    #}
+                            {# push the separator off the hi value and render "4° /-3°".  #}
                             <span
-                            >{% if weather_display.temp_max is not None %}{{ weather_display.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
-                            <span
-                                class="text-white/70"
-                            >/{% if weather_display.temp_min is not None %}{{ weather_display.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+                                class="whitespace-nowrap"
+                            >{% if weather_display.temp_max is not None %}{{ weather_display.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}<span
+                                    class="text-white/70"
+                                >/{% if weather_display.temp_min is not None %}{{ weather_display.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span></span>
                         </span>
                     {% endif %}
                     {% if weather_display.snowfall_sum is not None %}
