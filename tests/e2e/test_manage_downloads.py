@@ -384,8 +384,15 @@ def test_the_sheet_reads_list_then_add_then_budget(
     _open_sheet(page)
 
     def _precedes(first: str, second: str) -> bool:
-        """True when ``first`` comes before ``second`` in document order."""
-        return page.evaluate(
+        """True when ``first`` comes before ``second`` in document order.
+
+        A missing element returns null from the page rather than false, so
+        it fails here with a message naming the selector — otherwise a
+        renamed data-attribute would read as "wrong order" and send the
+        next reader looking in the template's node order for a bug that is
+        actually a broken selector.
+        """
+        result = page.evaluate(
             """([a, b]) => {
                 const sheet = document.getElementById('map-downloads-sheet');
                 const first = sheet.querySelector(a);
@@ -399,6 +406,8 @@ def test_the_sheet_reads_list_then_add_then_budget(
             }""",
             [first, second],
         )
+        assert result is not None, f"{first} or {second} is missing from the sheet"
+        return bool(result)
 
     assert _precedes("[data-downloads-list]", "[data-downloads-add]"), (
         "the add-trigger should sit below the list"
