@@ -384,7 +384,7 @@ def test_new_resort_is_created_with_the_region_derived_from_the_pin(
     # Canton is normalised server-side, and the new row joins the list the
     # operator works from.
     assert created.canton == "VS"
-    assert created.geocode_source == "manual"
+    assert created.geocode_source == Resort.GeocodeSource.MANUAL
     assert created.latitude == pytest.approx(lat, abs=1e-5)
     assert created.longitude == pytest.approx(lon, abs=1e-5)
     expect(

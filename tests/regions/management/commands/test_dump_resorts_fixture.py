@@ -53,7 +53,7 @@ class TestDumpResortsFixture:
                 region=region,
                 latitude=46.0,
                 longitude=7.0,
-                geocode_source="manual",
+                geocode_source=Resort.GeocodeSource.MANUAL,
                 geocode_confidence=1.0,
             )
 
@@ -71,7 +71,9 @@ class TestDumpResortsFixture:
             assert commit_test["fields"]["region"] == ["CH-9999"]
             assert commit_test["fields"]["latitude"] == 46.0
             assert commit_test["fields"]["longitude"] == 7.0
-            assert commit_test["fields"]["geocode_source"] == "manual"
+            assert (
+                commit_test["fields"]["geocode_source"] == Resort.GeocodeSource.MANUAL
+            )
         finally:
             # Restore the fixture so the test is hermetic.
             FIXTURE_PATH.write_text(original, encoding="utf-8")

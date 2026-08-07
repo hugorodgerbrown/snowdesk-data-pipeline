@@ -593,11 +593,20 @@ class Resort(BaseModel):
     bookkeeping.
     """
 
-    GEOCODE_SOURCES = [
-        ("manual", "Manual"),
-        ("auto", "Auto"),
-        ("import", "Import"),
-    ]
+    class GeocodeSource(models.TextChoices):
+        """How a resort's coordinates were obtained (SNOW-582: UPPER CASE storage).
+
+        ``MANUAL`` — an operator placed the pin via the in-map editor.
+        ``AUTO`` — reserved for a future automated geocoder; not currently
+        written by any code path.
+        ``IMPORT`` — the coordinate arrived as sheet data via
+        ``import_resorts`` and is flagged ``needs_review`` rather than
+        stamped as an operator-confirmed placement.
+        """
+
+        MANUAL = "MANUAL", "Manual"
+        AUTO = "AUTO", "Auto"
+        IMPORT = "IMPORT", "Import"
 
     class Kind(models.TextChoices):
         """What a row actually is (SNOW-544).
@@ -682,7 +691,7 @@ class Resort(BaseModel):
     longitude = models.FloatField(null=True, blank=True)
     geocode_source = models.CharField(
         max_length=16,
-        choices=GEOCODE_SOURCES,
+        choices=GeocodeSource.choices,
         blank=True,
         default="",
     )

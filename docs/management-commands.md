@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-07
 ---
 
 # Management commands
@@ -572,6 +572,23 @@ incident that invalidates derived state:
 
   # Persist the deletions.
   uv run python manage.py prune_forecast_points --commit
+  ```
+
+  Flags: `--commit`.
+
+- `uppercase_resort_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `Resort.geocode_source` from its legacy lower-case
+  stored values (`"manual"`, `"import"`) to the upper-case `GeocodeSource`
+  choices. Read-only by default; the dry-run prints a breakdown of what
+  would convert, grouped by target value. Idempotent by queryset — a
+  second run selects nothing, because no lower-case values remain.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted.
+  uv run python manage.py uppercase_resort_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_resort_choice_values --commit
   ```
 
   Flags: `--commit`.

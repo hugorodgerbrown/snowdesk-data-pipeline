@@ -333,7 +333,7 @@ class TestEditResortSave:
         resort.refresh_from_db()
         assert resort.latitude == 46.0961
         assert resort.longitude == 7.2275
-        assert resort.geocode_source == "manual"
+        assert resort.geocode_source == Resort.GeocodeSource.MANUAL
         assert resort.geocode_confidence == 1.0
         assert resort.geocoded_at is not None
         assert resort.needs_review is False
@@ -804,7 +804,7 @@ class TestEditResortCreate:
         assert resort.longitude == 7.25
         # Stamped exactly as a save stamps an edited row — the operator
         # placed the pin, so the position is manually confirmed.
-        assert resort.geocode_source == "manual"
+        assert resort.geocode_source == Resort.GeocodeSource.MANUAL
         assert resort.geocode_confidence == 1.0
         assert resort.geocoded_at is not None
         assert resort.needs_review is False
