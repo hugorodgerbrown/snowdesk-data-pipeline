@@ -1212,7 +1212,12 @@
         // SNOW-568: a run that didn't succeed now says so. It used to fall
         // back to 'idle' silently, indistinguishable from never having
         // clicked Download.
-        const ok = !cancelled && !!(result && result.ok > 0 && result.failed === 0);
+        //
+        // SNOW-649: shared with map_region_download.js via the core, so the
+        // two controls cannot drift on what "done" means. `cancelled` stays
+        // a separate local because this control branches on it for its own
+        // teardown — the core predicate already folds it in.
+        const ok = core.downloadSucceeded(result);
         if (cancelled) {
           // Overlay teardown already ran synchronously when the user
           // dismissed (see the overlay:dismissed listener below) — this
