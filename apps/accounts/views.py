@@ -897,10 +897,10 @@ def _track_subscription_started(
         country_code: ISO 3166-1 alpha-2 country code resolved from the
             client IP.  Included in props when non-empty.
         geo_match_kind: The region-relative classification string (one of
-            ``in_region``, ``in_neighbour``, ``elsewhere``, ``unknown``).
+            ``IN_REGION``, ``IN_NEIGHBOUR``, ``ELSEWHERE``, ``UNKNOWN``).
             Included in props when non-empty.
-        region_match: True when geo_match_kind is ``in_region`` or
-            ``in_neighbour``, signalling the subscriber was geographically
+        region_match: True when geo_match_kind is ``IN_REGION`` or
+            ``IN_NEIGHBOUR``, signalling the subscriber was geographically
             close to the region they signed up for.
         language_primary: The primary language subtag from Accept-Language
             (e.g. ``'en'``, ``'de'``, ``'fr'``).  Included in props when

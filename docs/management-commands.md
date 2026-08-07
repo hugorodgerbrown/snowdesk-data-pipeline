@@ -593,6 +593,22 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
+- `uppercase_account_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `Subscription.geo_match_kind` and
+  `PushSubscription.mechanism` from their legacy lower-case stored values
+  to their upper-case `TextChoices` members. Read-only by default;
+  idempotent by queryset per field.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted, both fields.
+  uv run python manage.py uppercase_account_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_account_choice_values --commit
+  ```
+
+  Flags: `--commit`.
+
 ### Health checks (read-only)
 
 - `dump_settings` — print every environment-derived setting with secrets

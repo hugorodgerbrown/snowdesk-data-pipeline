@@ -713,7 +713,7 @@ class TestSubscribePartialGeoMatch:
         calls = {c.args[0]: c for c in mock_track.call_args_list}
         assert "subscription_started" in calls
         props = calls["subscription_started"].args[2]
-        assert props.get("geo_match_kind") == "in_region"
+        assert props.get("geo_match_kind") == "IN_REGION"
 
     def test_subscription_started_props_include_region_match_true(self) -> None:
         """subscription_started event includes region_match=True for in_region (Case A)."""

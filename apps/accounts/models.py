@@ -328,10 +328,10 @@ class Subscription(models.Model):
         ``tests/regions/services/test_point_match.py`` guards against drift.
         """
 
-        IN_REGION = "in_region", "In region"
-        IN_NEIGHBOUR = "in_neighbour", "In neighbouring region"
-        ELSEWHERE = "elsewhere", "Elsewhere"
-        UNKNOWN = "unknown", "Unknown"
+        IN_REGION = "IN_REGION", "In region"
+        IN_NEIGHBOUR = "IN_NEIGHBOUR", "In neighbouring region"
+        ELSEWHERE = "ELSEWHERE", "Elsewhere"
+        UNKNOWN = "UNKNOWN", "Unknown"
 
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -551,8 +551,8 @@ class PushSubscription(models.Model):
     class Mechanism(models.TextChoices):
         """Which browser API produced this subscription."""
 
-        SW = "sw", "Service worker"
-        DECLARATIVE = "declarative", "Declarative Web Push"
+        SW = "SW", "Service worker"
+        DECLARATIVE = "DECLARATIVE", "Declarative Web Push"
 
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -575,7 +575,7 @@ class PushSubscription(models.Model):
         max_length=16,
         choices=Mechanism.choices,
         default=Mechanism.SW,
-        help_text="Which browser API produced this subscription (sw or declarative).",
+        help_text="Which browser API produced this subscription (SW or DECLARATIVE).",
     )
     inactive_at = models.DateTimeField(
         null=True,

@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 # Subscription.GeoMatchKind literal values MUST match these — a unit test in
 # tests/regions/services/test_point_match.py guards against drift.
 
-IN_REGION: str = "in_region"
-IN_NEIGHBOUR: str = "in_neighbour"
-ELSEWHERE: str = "elsewhere"
-UNKNOWN: str = "unknown"
+IN_REGION: str = "IN_REGION"
+IN_NEIGHBOUR: str = "IN_NEIGHBOUR"
+ELSEWHERE: str = "ELSEWHERE"
+UNKNOWN: str = "UNKNOWN"
 
 
 # ---------------------------------------------------------------------------
