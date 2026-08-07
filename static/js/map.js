@@ -609,14 +609,26 @@
   const CACHED_TILES_LINE_OPACITY = 0.4;
   const CACHED_TILES_ZOOM = 14;
 
-  // Green, matching the sync dots and the download roundel's fill — the
-  // overlay is a view onto the same cache they report on. Resolved from
-  // the stylesheet rather than hardcoded (the theme carries a lighter
-  // green in dark mode); MapLibre paint values can't reference a CSS
-  // variable, hence the read here.
-  const DOWNLOADED_OUTLINE_COLOUR =
-    getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
-    '#16a34a';
+  // SNOW-645 (Hugo's explicit call, overruling the plan's own non-goal):
+  // the overlay is already computed against the ACTIVE basemap's template
+  // (it only ever shows tiles cached for the basemap showing now — see the
+  // "PER-BASEMAP" note on refreshDownloadedOverlay below), so the active
+  // basemap's identity colour is the honest colour for it — a plain green
+  // here while the roundel and progress grid turn (say) blue would read as
+  // a colour seam the instant the grid fades out and the overlay paints.
+  // basemapIdentityColour (static/js/map_basemap_downloads.js) falls back
+  // to --color-sync-ok itself for an unresolved/unknown key, so this is
+  // still "green matching the sync dots" for the common case.
+  //
+  // A FUNCTION, not the const it used to be: the identity colour has to
+  // track basemap changes, not freeze at whatever was active on first
+  // paint. installRegionsLayers calls this fresh every time it (re)installs
+  // the two layers below — which setStyle forces on every basemap switch —
+  // and refreshDownloadedOverlay ADDITIONALLY re-applies it with
+  // setPaintProperty on every refresh (including snowdesk:basemap-changed),
+  // so an already-installed pair of layers updates too, not only ones
+  // about to be freshly (re)added.
+  const downloadedOutlineColour = () => basemapIdentityColour(activeBasemapKey());
 
   // SNOW-478: the text-font every overlay symbol layer we add uses. MapLibre
   // resolves glyphs against the *active basemap style's* single ``glyphs`` URL,
@@ -863,7 +875,7 @@
       source: 'cached-tiles',
       layout: { visibility: overlayState.downloaded ? 'visible' : 'none' },
       paint: {
-        'fill-color': DOWNLOADED_OUTLINE_COLOUR,
+        'fill-color': downloadedOutlineColour(),
         'fill-opacity': CACHED_TILES_OPACITY,
       },
     });
@@ -877,7 +889,7 @@
         'line-cap': 'round',
       },
       paint: {
-        'line-color': DOWNLOADED_OUTLINE_COLOUR,
+        'line-color': downloadedOutlineColour(),
         'line-width': 0.75,
         // Same reasoning as the download grid's own gridlines: a few
         // thousand sub-pixel outlines read as a mesh, so they fade out as
@@ -2359,6 +2371,23 @@
         return;
       }
       const cached = await pinnedBasemapCacheURLs();
+
+      // SNOW-645: re-apply the identity colour on EVERY refresh, not only
+      // when installRegionsLayers happens to have (re)created the layers
+      // this call. A basemap switch normally does force a full re-add
+      // (setStyle wipes every custom layer), but this call is also the
+      // one the "downloaded" overlay toggle itself triggers — with no
+      // basemap change and so no re-add — and relying on re-add alone
+      // would leave two ALREADY-INSTALLED layers holding whatever colour
+      // they were first painted with, drifting the moment the user
+      // switches basemap without ever toggling the overlay off and on.
+      const colour = downloadedOutlineColour();
+      if (map.getLayer('cached-tiles-fill')) {
+        map.setPaintProperty('cached-tiles-fill', 'fill-color', colour);
+      }
+      if (map.getLayer('cached-tiles-line')) {
+        map.setPaintProperty('cached-tiles-line', 'line-color', colour);
+      }
 
       // The tiles themselves, read straight back out of the cache's own
       // URLs — no stored record involved, so this cannot drift from what
@@ -4111,4 +4140,3 @@
     if (resolveMapReady) resolveMapReady();
   });
 })();
-

@@ -789,6 +789,20 @@ The tiles need no stored record to stay honest, and cannot drift from the
 cache: eviction, a basemap swap and Clear Site Data all change the answer
 and all show up for free. Per-template, so switching basemap empties it.
 
+**Colour (SNOW-645).** Since the overlay is already computed against the
+ACTIVE basemap's template — it only ever shows tiles cached for the
+basemap showing now — it paints in that basemap's identity colour rather
+than a flat green, via the same `basemapIdentityColour` helper the
+progress grid below uses (`static/js/map_basemap_downloads.js`, next to
+`activeBasemapKey`). `DOWNLOADED_OUTLINE_COLOUR` used to be a module-level
+`const` resolved once at parse time; it is now a function
+(`downloadedOutlineColour`), called fresh both where the two layers are
+first installed and on every `refreshDownloadedOverlay` — which
+re-applies it with `setPaintProperty` on every call, not only when a
+basemap switch happens to force a full layer re-add — so an
+already-painted overlay tracks a switch rather than freezing at whatever
+was active on first paint.
+
 **On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
 the roundel's own fill, the tiles being fetched are drawn over the map as
 an **empty grid of squares**, and each square fills in as its own tiles
