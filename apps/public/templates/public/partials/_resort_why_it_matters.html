@@ -1,0 +1,55 @@
+{% load i18n %}
+{% comment %}
+apps/public/templates/public/partials/_resort_why_it_matters.html — the
+curated "why it matters" line for a resort (SNOW-542).
+
+One short prose sentence saying why a backcountry skier should care about
+this resort — the field the numeric columns cannot express. Tschiertschen
+is four lifts and a national freeride reputation; Haldigrat has one lift,
+no prepared pistes and no avalanche control on the descents. Piste km says
+none of that.
+
+Shared by the two surfaces that present a resort: ``public/resort.html``
+(under the heading) and ``public/partials/_resort_popup.html`` (the
+resort-pin popup, where the user is deciding whether the pin is worth a
+tap).
+
+The field is curated over time rather than in one pass, so the blank state
+is a first-class state with three branches, not an omission:
+
+  * ``is_staff``          — a dashed "Add a why-it-matters line" curation
+                            hint, matching ``_resort_meta_row.html``'s staff
+                            placeholder.
+  * anonymous             — an invitation to register. That is the point of
+                            the empty state: an unwritten line is the most
+                            natural place on the page to ask for a sign-up.
+  * signed in, not staff  — nothing at all. There is no reader-facing way to
+                            contribute copy yet, so a prompt would be a dead
+                            end.
+
+Context variables expected:
+  resort        — regions.Resort instance (reads ``why_it_matters``, ``name``).
+  is_staff      — bool: True when the requesting user is staff.
+  can_favourite — bool: True when the requesting user is authenticated.
+                  Reused as the "is signed in" signal, exactly as the popup
+                  does for the favourite star.
+{% endcomment %}
+{% if resort.why_it_matters %}
+    <p class="text-sm text-text-2" data-testid="resort-why-it-matters">{{ resort.why_it_matters }}</p>
+{% elif is_staff %}
+    <p
+        class="inline-block rounded-tag border border-dashed border-border px-2 py-0.5 text-xs text-text-3"
+        data-testid="resort-why-it-matters-hint"
+    >
+        {% trans "Add a why-it-matters line" %}
+    </p>
+{% elif not can_favourite %}
+    {% url 'accounts:register' as register_url %}
+    <p class="text-xs text-text-3" data-testid="resort-why-it-matters-signup">
+        {% blocktrans with name=resort.name trimmed %}
+            Nobody has written up {{ name }} yet.
+            <a href="{{ register_url }}" class="text-status-info-text underline">Create an account</a>
+            to help build the guide.
+        {% endblocktrans %}
+    </p>
+{% endif %}

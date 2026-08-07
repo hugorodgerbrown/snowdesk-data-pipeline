@@ -71,6 +71,9 @@
   // field name it edits. The template is the source of the field list
   // (``data-resort-field``) so adding one there needs no change here —
   // it only has to be in regions.forms.RESORT_DETAIL_FIELDS server-side.
+  // <input>, <textarea> and <select> are all read and written through
+  // ``.value``; the only shape that needs special handling is a <select>'s
+  // blank state, in ``writeDetailsForm``.
   const detailInputs = new Map(
     Array.from(
       panel.querySelectorAll('[data-resort-field]'),
@@ -380,7 +383,17 @@
       const value = details && details[field] != null ? details[field] : '';
       input.value = String(value);
       input.classList.remove(ERROR_CLASS);
-      if (input.value !== '') anyFilled = true;
+      // SNOW-543: a <select> silently rejects a value that is not one of
+      // its options — selectedIndex drops to -1 and the control posts ''
+      // back, which fails validation on a non-nullable choice field. That
+      // is the clear-the-form path (create mode has no row behind it), so
+      // fall back to the option the markup names as the default.
+      if (input.selectedIndex === -1) {
+        input.value = input.dataset.default || input.options[0].value;
+      }
+      // A <select> always holds a value, so counting it would auto-open the
+      // section for every resort and defeat the check below.
+      if (input.value !== '' && input.tagName !== 'SELECT') anyFilled = true;
     }
     // Auto-open the section when there is already something to see —
     // otherwise a resort with a filled-in record looks empty until the

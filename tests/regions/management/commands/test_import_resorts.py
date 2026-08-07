@@ -29,6 +29,7 @@ COLUMNS = [
     "canton",
     "operator_name",
     "website",
+    "why_it_matters",
     "top_elevation_m",
     "base_elevation_m",
     "num_runs",
@@ -38,6 +39,7 @@ COLUMNS = [
     "typical_season_close",
     "note",
     "kind",
+    "tier",
 ]
 
 
@@ -591,3 +593,130 @@ class TestImportResortsKind:
         call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
 
         assert not Resort.objects.filter(pk=marked.pk).exists()
+
+
+@pytest.mark.django_db
+class TestImportResortsWhyItMatters:
+    """The ``why_it_matters`` column (SNOW-542).
+
+    It is an ordinary editorial text column, so it inherits the sheet's
+    authoritative-blank behaviour: clearing the cell clears the field. That
+    matters more here than for the numeric columns, because the field fills
+    up over time and a curator retracting a line must be able to.
+    """
+
+    def test_round_trips_from_the_sheet(self, tmp_path: Path) -> None:
+        """A curated line reaches the model."""
+        resort = ResortFactory.create(name="Tschiertschen")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Tschiertschen",
+                    "why_it_matters": (
+                        "Nationally known freeride destination. Four lifts, "
+                        "disproportionate avalanche relevance."
+                    ),
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters.startswith("Nationally known freeride")
+
+    def test_blank_cell_clears_the_line(self, tmp_path: Path) -> None:
+        """A blank cell retracts a line rather than leaving the old one."""
+        resort = ResortFactory.create(name="Verbier", why_it_matters="Old copy.")
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters == ""
+
+    def test_over_length_line_is_an_error_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """255 chars is the register: a paragraph no popup can render is rejected."""
+        resort = ResortFactory.create(name="Verbier", why_it_matters="Short.")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Verbier",
+                    "why_it_matters": "x" * 256,
+                }
+            ],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.why_it_matters == "Short."
+
+
+@pytest.mark.django_db
+class TestImportResortsTier:
+    """The ``tier`` column (SNOW-543).
+
+    Tier is stored and curated rather than derived: the review's finding is
+    that scale is the wrong axis, and no formula promotes a small high area
+    like Avers or Bivio above a large low resort. The sheet is therefore
+    the source of truth, and the importer's job is to carry it faithfully.
+    """
+
+    def test_round_trips_from_the_sheet(self, tmp_path: Path) -> None:
+        """A CORE cell reaches the model."""
+        resort = ResortFactory.create(name="Zermatt")
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt", "tier": "CORE"}]
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE
+
+    def test_blank_tier_means_standard(self, tmp_path: Path) -> None:
+        """The column is optional — an export predating it still imports."""
+        resort = ResortFactory.create(name="Verbier", tier=Resort.Tier.CORE)
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.STANDARD
+
+    def test_unknown_tier_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
+        """A typo must not silently demote a Core resort to an ordinary pin."""
+        resort = ResortFactory.create(name="Zermatt", tier=Resort.Tier.CORE)
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt", "tier": "MAJOR"}]
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE
+
+    def test_tier_is_case_insensitive(self, tmp_path: Path) -> None:
+        """Sheet casing is the curator's business, not the importer's."""
+        resort = ResortFactory.create(name="Avers")
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Avers", "tier": "core"}]
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.tier == Resort.Tier.CORE

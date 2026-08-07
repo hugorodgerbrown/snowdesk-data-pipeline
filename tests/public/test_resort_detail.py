@@ -445,3 +445,61 @@ class TestResortDetailWeather:
         response = client.get(resort.get_absolute_url())
 
         assert response.context["weather_display"] is None
+
+
+@pytest.mark.django_db
+class TestResortWhyItMatters:
+    """The curated "why it matters" line on the resort page (SNOW-542).
+
+    The field is curated over time rather than in one pass, so all three
+    blank branches are behaviour worth pinning: staff get a curation hint,
+    anonymous visitors get a register prompt (the empty slot is the most
+    natural place on the page to ask for a sign-up), and a signed-in reader
+    — who has no way to contribute copy — gets nothing at all.
+    """
+
+    def test_curated_line_renders(self) -> None:
+        """A populated line renders as prose under the heading."""
+        resort = ResortFactory.create(
+            why_it_matters="High plateau above Adelboden, own cable car."
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        html = response.content.decode()
+        assert 'data-testid="resort-why-it-matters"' in html
+        assert "High plateau above Adelboden, own cable car." in html
+
+    def test_blank_line_anonymous_prompts_register(self) -> None:
+        """An anonymous visitor sees the register prompt, naming the resort."""
+        resort = ResortFactory.create(name="Haldigrat")
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        html = response.content.decode()
+        assert 'data-testid="resort-why-it-matters-signup"' in html
+        assert reverse("accounts:register") in html
+
+    def test_blank_line_staff_shows_curation_hint(self) -> None:
+        """Staff see the curation hint instead of the register prompt."""
+        resort = ResortFactory.create()
+
+        client = Client()
+        client.force_login(UserFactory.create(is_staff=True))
+        response = client.get(resort.get_absolute_url())
+
+        html = response.content.decode()
+        assert 'data-testid="resort-why-it-matters-hint"' in html
+        assert "resort-why-it-matters-signup" not in html
+
+    def test_blank_line_signed_in_reader_sees_nothing(self) -> None:
+        """A signed-in non-staff reader gets no prompt — there is nowhere to send them."""
+        resort = ResortFactory.create()
+
+        client = Client()
+        client.force_login(UserFactory.create(is_staff=False))
+        response = client.get(resort.get_absolute_url())
+
+        assert "resort-why-it-matters" not in response.content.decode()

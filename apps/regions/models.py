@@ -617,6 +617,29 @@ class Resort(BaseModel):
         RESORT = "RESORT", "Ski resort"
         TOURING_TERRAIN = "TOURING_TERRAIN", "Touring terrain"
 
+    class Tier(models.TextChoices):
+        """How prominently a resort draws on the map (SNOW-543).
+
+        Every resort pin used to be the same dot, so Zermatt and a
+        one-lift village hill read as equally important.
+
+        The resort-tiering review's substantive finding is that **scale
+        is the wrong axis**: plotting top lift elevation against piste km
+        puts the interesting resorts in the upper-left quadrant — small
+        areas high in the Alps (Avers, Bivio, Arolla) that carry far more
+        avalanche decision-making per visitor than a large low resort.
+        Piste km alone would rank them last.
+
+        So the tier is **stored and curated**, not derived. A formula can
+        get the big resorts right but has no way to promote a place that
+        is interesting beyond what its numbers say — which, for a
+        bulletin product, is most of the interesting ones.
+        """
+
+        CORE = "CORE", "Core"
+        STANDARD = "STANDARD", "Standard"
+        MINOR = "MINOR", "Minor"
+
     name = models.CharField(max_length=255)
     kind = models.CharField(
         max_length=20,
@@ -626,6 +649,17 @@ class Resort(BaseModel):
             "RESORT for a lift-served ski area; TOURING_TERRAIN for "
             "avalanche terrain with no lifts, which is kept for its "
             "bulletin relevance but excluded from every resort surface."
+        ),
+    )
+    tier = models.CharField(
+        max_length=20,
+        choices=Tier.choices,
+        default=Tier.STANDARD,
+        help_text=(
+            "How prominently this resort draws on the map. Curated, not "
+            "derived — CORE is for a resort that carries real avalanche "
+            "decision-making, which is as often a small high area as a "
+            "large domain. STANDARD is the default."
         ),
     )
     name_alt = models.CharField(
@@ -663,6 +697,15 @@ class Resort(BaseModel):
     website = models.URLField(
         blank=True,
         help_text="Official resort website, hand-curated (not from any feed).",
+    )
+    why_it_matters = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            "One curated sentence on why a backcountry skier should care "
+            "about this resort — terrain, access, reputation. Not a "
+            "marketing blurb and not derivable from the numeric columns."
+        ),
     )
     num_lifts = models.PositiveSmallIntegerField(
         null=True,

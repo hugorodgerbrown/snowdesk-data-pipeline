@@ -239,3 +239,49 @@ class TestResortKind:
         """The filter selects by kind, not by ordering luck."""
         ResortFactory.create(name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN)
         assert not Resort.objects.resorts().filter(name="Grimsel").exists()
+
+
+@pytest.mark.django_db
+class TestResortTier:
+    """The map-prominence tier (SNOW-543).
+
+    Stored and curated, not derived: the resort-tiering review's finding is
+    that scale is the wrong axis — small areas high in the Alps carry more
+    avalanche decision-making per visitor than a large low resort, and piste
+    km would rank them last. A stored column is what lets a curator promote
+    a place that is interesting beyond what its numbers say.
+    """
+
+    def test_tier_defaults_to_standard(self) -> None:
+        """An untiered resort is Standard — the middle of the three."""
+        resort = Resort.objects.create(
+            name="Untiered", region=MicroRegionFactory.create(), canton="VS"
+        )
+        assert resort.tier == Resort.Tier.STANDARD
+
+    def test_tier_is_independent_of_size(self) -> None:
+        """A four-lift area can outrank a large domain — that is the point."""
+        big = ResortFactory.create(
+            name="Large low resort", total_piste_km=120.0, top_elevation_m=1900
+        )
+        small = ResortFactory.create(
+            name="Avers",
+            total_piste_km=8.0,
+            top_elevation_m=2539,
+            tier=Resort.Tier.CORE,
+        )
+
+        assert small.tier == Resort.Tier.CORE
+        assert big.tier == Resort.Tier.STANDARD
+
+    def test_committed_fixture_tiers_are_all_valid(self) -> None:
+        """Every seeded row carries a real Tier value, not a stray string."""
+        import json
+        from pathlib import Path
+
+        data = json.loads(
+            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
+        )
+        tiers = {entry["fields"]["tier"] for entry in data}
+        assert tiers
+        assert tiers <= set(Resort.Tier.values)

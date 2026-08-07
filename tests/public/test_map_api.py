@@ -2692,3 +2692,70 @@ def test_resorts_geojson_excludes_touring_terrain() -> None:
     data = Client().get(reverse("api:resorts_geojson")).json()
     names = [f["properties"]["name"] for f in data["features"]]
     assert names == ["Verbier"]
+
+
+# ---------------------------------------------------------------------------
+# resort_popup — "why it matters" line (SNOW-542)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resort_popup_renders_why_it_matters_line() -> None:
+    """A curated line renders as prose above the metadata rows."""
+    resort = ResortFactory.create(
+        latitude=46.1,
+        longitude=7.4,
+        why_it_matters="Four lifts, national freeride reputation.",
+    )
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    html = response.json()["html"]
+    assert 'data-testid="resort-why-it-matters"' in html
+    assert "Four lifts, national freeride reputation." in html
+    # A populated line never shows either blank-state branch.
+    assert "resort-why-it-matters-hint" not in html
+    assert "resort-why-it-matters-signup" not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_why_it_matters_anonymous_prompts_register() -> None:
+    """The blank line is the register prompt for an anonymous visitor."""
+    resort = ResortFactory.create(name="Haldigrat", latitude=46.1, longitude=7.4)
+
+    client = Client()
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    html = response.json()["html"]
+    assert 'data-testid="resort-why-it-matters-signup"' in html
+    assert reverse("accounts:register") in html
+    assert "Haldigrat" in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_why_it_matters_staff_shows_curation_hint() -> None:
+    """Staff see a curation hint rather than the register prompt."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+    client = Client()
+    client.force_login(UserFactory.create(is_staff=True))
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    html = response.json()["html"]
+    assert 'data-testid="resort-why-it-matters-hint"' in html
+    assert "Add a why-it-matters line" in html
+    assert "resort-why-it-matters-signup" not in html
+
+
+@pytest.mark.django_db
+def test_resort_popup_blank_why_it_matters_signed_in_renders_nothing() -> None:
+    """A signed-in reader has no way to contribute copy, so gets no prompt."""
+    resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+    client = Client()
+    client.force_login(UserFactory.create(is_staff=False))
+    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+
+    html = response.json()["html"]
+    assert "resort-why-it-matters" not in html

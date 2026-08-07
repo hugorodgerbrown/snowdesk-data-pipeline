@@ -2869,6 +2869,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // inherit their parent region's bulletin via click-through). Halo +
   // white stroke keep the pin readable on every basemap and rating fill.
   //
+  // SNOW-543: pin size is the resort's curated ``tier``. Every tier is
+  // drawn at every zoom — the review's framing was to suppress Minor
+  // below a zoom threshold, but the small resorts are frequently the ones
+  // with the most interesting terrain for this product, so hiding them is
+  // backwards. Size does the ranking; nothing disappears.
+  //
   // Visibility is owned by ``overlayState.resorts`` and applied at
   // install time; toggle clicks (handled in the basemap-picker IIFE)
   // call ``setLayoutProperty`` on the pin and label layer ids via
@@ -2884,11 +2890,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
         visibility: overlayState.resorts ? 'visible' : 'none',
       },
       paint: {
+        // SNOW-543: radius carries the curated tier, so Zermatt and a
+        // one-lift village hill stop reading as equally important. Tier is
+        // matched inside each zoom stop rather than multiplying a base
+        // radius, because MapLibre interpolates between the stop *values* —
+        // a per-tier stop set keeps the ramp linear for every tier.
+        //
+        // Colour deliberately stays constant: it is reserved for the
+        // orthogonal "kind of resort" axis (touring / piste / freeride) and
+        // spending both channels on tier would be redundant. The map's
+        // colour budget is already committed to the danger scale, which is
+        // the one colour language users are meant to read precisely.
         'circle-radius': [
           'interpolate', ['linear'], ['zoom'],
-          5, 3,
-          9, 5,
-          12, 7,
+          5, ['match', ['get', 'tier'], 'CORE', 4.5, 'MINOR', 2, 3],
+          9, ['match', ['get', 'tier'], 'CORE', 7, 'MINOR', 3.5, 5],
+          12, ['match', ['get', 'tier'], 'CORE', 9.5, 'MINOR', 5, 7],
         ],
         'circle-color': '#1a1a1a',
         'circle-stroke-color': '#ffffff',

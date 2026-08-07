@@ -26,7 +26,8 @@
 
     The "Resort details" section edits the hand-curated metadata fields
     added by SNOW-500 (lifts, runs, piste length, elevations, season
-    dates, operator, website). Every input carries
+    dates, operator, website) plus the SNOW-542 ``why_it_matters`` line.
+    Every input carries
     ``data-resort-field="<model field name>"``; the JS reads and writes
     the whole set generically off that attribute, so adding a field here
     needs no JS change — only a matching entry in
@@ -164,6 +165,23 @@
                     {% trans "Resort details" %}
                 </summary>
                 <div class="mt-2 grid grid-cols-2 gap-x-2 gap-y-2">
+                    {# SNOW-543: map prominence. No blank option — the field  #}
+                    {# is non-nullable with a STANDARD default, so a blank   #}
+                    {# choice would post "" and fail form validation.        #}
+                    {# ``data-default`` is what the JS falls back to when it #}
+                    {# clears the form (create mode has no row behind it).   #}
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Map tier" %}
+                        <select
+                            data-resort-field="tier"
+                            data-default="STANDARD"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        >
+                            <option value="CORE">{% trans "Core — large pin" %}</option>
+                            <option value="STANDARD">{% trans "Standard" %}</option>
+                            <option value="MINOR">{% trans "Minor — small pin" %}</option>
+                        </select>
+                    </label>
                     <label class="col-span-2 block text-xs text-text-3">
                         {% trans "Alternative name" %}
                         <input
@@ -194,6 +212,17 @@
                             spellcheck="false"
                             class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
                         >
+                    </label>
+                    <label class="col-span-2 block text-xs text-text-3">
+                        {% trans "Why it matters" %}
+                        <textarea
+                            data-resort-field="why_it_matters"
+                            rows="2"
+                            maxlength="255"
+                            placeholder="{% trans 'Terrain, access or reputation — one sentence.' %}"
+                            autocomplete="off"
+                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        ></textarea>
                     </label>
                     <label class="block text-xs text-text-3">
                         {% trans "Lifts" %}

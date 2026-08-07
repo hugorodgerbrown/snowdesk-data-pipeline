@@ -401,7 +401,14 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``id``, ``name``, ``region_id``,
-    ``needs_review``. Resorts missing latitude or longitude are skipped.
+    ``needs_review``, ``tier``. Resorts missing latitude or longitude are
+    skipped.
+
+    SNOW-543: ``tier`` (``CORE`` / ``STANDARD`` / ``MINOR``) is the curated
+    map-prominence verdict, and the public map sizes its pins from it. This
+    response is shared by the public map and the edit panel and cached for
+    5 minutes, so the property is added once here rather than fetched
+    per-pin.
 
     Always available (not DEBUG-gated) — the public map will use this
     layer once enough resorts are placed to be worth showing.
@@ -437,6 +444,12 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
                     "name": resort.name,
                     "region_id": resort.region.region_id,
                     "needs_review": resort.needs_review,
+                    # SNOW-543: drives pin radius in ``installResortsLayer``
+                    # (static/js/map.js). Always present — a MapLibre
+                    # ``match`` expression on a missing property falls to its
+                    # default, which would silently flatten every pin back to
+                    # one size.
+                    "tier": resort.tier,
                 },
             }
         )

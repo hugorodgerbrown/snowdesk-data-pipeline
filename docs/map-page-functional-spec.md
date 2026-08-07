@@ -161,6 +161,19 @@ users. They are shown as reference, not as authoritative geography.
 - **What it shows.** A circle pin at each geocoded resort. A resort pin is
   a _proxy for its parent region_ — tapping one selects that micro-region
   and shows its rating, exactly as tapping the region fill would.
+- **Pin size carries the tier (SNOW-543).** Each resort has a curated
+  `tier` — Core, Standard or Minor — and the pin radius is interpolated
+  from it, so Zermatt and a one-lift village hill no longer read as
+  equally important. The tier is stored, not derived: the resort-tiering
+  review's finding is that scale is the wrong axis, since small areas high
+  in the Alps (Avers, Bivio, Arolla) carry more avalanche decision-making
+  per visitor than a large low resort, and piste km would rank them last.
+  Colour stays constant, reserved for the orthogonal "kind of resort" axis
+  — the map's colour budget is already committed to the danger scale.
+  **Every tier draws at every zoom.** The review proposed suppressing
+  Minor below a zoom threshold; for this product that is backwards, since
+  the small resorts are frequently the ones with the most interesting
+  terrain. Size does the ranking; nothing disappears.
 - **Who can use it.** Everyone. The resorts overlay and the search box
   (which indexes resorts alongside regions) are public. The overlay is
   **off by default** — a visitor opts in.
