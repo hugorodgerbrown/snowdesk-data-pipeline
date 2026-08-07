@@ -170,7 +170,22 @@ function buildFixture() {
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
          data-default-basemap-key="standard"
-         data-season-end="2026-05-31"></div>`;
+         data-season-end="2026-05-31"></div>
+    <!-- SNOW-645: mapCustomDownloadControlInit's own guard clause requires
+         every one of these to bind at all (map_custom_download.js:150) —
+         without them the roundel's basemap-identity aggregation below
+         (the "basemap identity on the custom roundel" describe block) has
+         nothing to render onto. -->
+    <button id="map-custom-download-control" type="button"></button>
+    <div id="map-frame-overlay" hidden>
+      <div id="map-frame-instruction"></div>
+      <div id="map-frame-area">
+        <div id="map-frame-rect"></div>
+      </div>
+      <span id="map-frame-readout"></span>
+      <button id="map-frame-cancel" type="button">Cancel</button>
+      <button id="map-frame-confirm" type="button">Download</button>
+    </div>`;
 }
 
 let cachesStub;
@@ -511,5 +526,123 @@ describe('renaming a custom area', () => {
     const ok = await window.pwaBasemapDownloads.rename('custom-ghost', 'Nope');
 
     expect(ok).toBe(false);
+  });
+});
+
+describe("the custom roundel's basemap-identity aggregation (SNOW-645)", () => {
+  // `_renderControl` in map_custom_download.js means "the device holds at
+  // least one download", which can span basemaps — unlike the per-region
+  // roundel, whose one record always matches the active basemap. It only
+  // paints an identity colour when every KEPT (non-orphaned) area agrees
+  // on one non-empty `basemapKey`; every other shape falls back to the
+  // neutral fill by leaving `data-basemap-key` unset. `refresh` is
+  // `renderControl` itself (map_custom_download.js's own bridge), so
+  // awaiting it settles the async coalescer before each assertion.
+
+  function customControl() {
+    return document.getElementById('map-custom-download-control');
+  }
+
+  it('sets it when every downloaded area agrees on one basemap key', async () => {
+    installDbStub({
+      'basemap.customAreas': [
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [1, 2, 3, 4],
+          bytes: 5 * MB,
+          basemapKey: 'openfreemap_liberty',
+          savedAt: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 'custom-b2',
+          ordinal: 2,
+          bbox: [1, 2, 3, 4],
+          bytes: 9 * MB,
+          basemapKey: 'openfreemap_liberty',
+          savedAt: '2026-08-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBe('openfreemap_liberty');
+  });
+
+  it('leaves it unset on a device with no downloads at all', async () => {
+    installDbStub({});
+
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+  });
+
+  it('leaves it unset when every stored bucket is an orphan', async () => {
+    // No record at all — an orphaned bucket has nothing to read a
+    // basemapKey off, whether or not the download that created it ever
+    // recorded one.
+    installDbStub({});
+    await cachesStub.open('snowdesk-basemap-pinned-custom-orphan1');
+
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+  });
+
+  it('leaves it unset when kept areas disagree on the basemap', async () => {
+    installDbStub({
+      'basemap.customAreas': [
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [1, 2, 3, 4],
+          bytes: 5 * MB,
+          basemapKey: 'openfreemap_liberty',
+          savedAt: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 'custom-b2',
+          ordinal: 2,
+          bbox: [1, 2, 3, 4],
+          bytes: 9 * MB,
+          basemapKey: 'swisstopo_winter',
+          savedAt: '2026-08-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+  });
+
+  it('leaves it unset when some kept areas carry no basemapKey (legacy mix)', async () => {
+    // One area downloaded before SNOW-645 shipped (no basemapKey at all),
+    // sitting alongside one downloaded after — a real basemap AGREEMENT
+    // cannot be claimed when one of the two is unknown.
+    installDbStub({
+      'basemap.customAreas': [
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [1, 2, 3, 4],
+          bytes: 5 * MB,
+          basemapKey: 'openfreemap_liberty',
+          savedAt: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 'custom-b2',
+          ordinal: 2,
+          bbox: [1, 2, 3, 4],
+          bytes: 9 * MB,
+          savedAt: '2026-08-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
   });
 });
