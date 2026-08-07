@@ -32,7 +32,10 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
-  HTMX swap.
+  HTMX swap. Carries a ``days`` weather property per feature (SNOW-573,
+  gated on the ``weather_layer`` waffle flag) — the private half of the
+  map weather layer; see ``apps.public.api.forecast_weather_geojson`` for
+  the public, resort-anchored half.
 
 All nine are authentication-gated (403 for anonymous users).
 
@@ -54,9 +57,11 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -65,7 +70,10 @@ from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.bulletins.models import ForecastPointWeather, RegionDayRating
-from apps.bulletins.services.weather_display import build_point_forecast_panel
+from apps.bulletins.services.weather_display import (
+    build_point_forecast_panel,
+    build_point_weather_days,
+)
 from apps.bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
 from apps.core.coordinates import validate_coordinates
 from apps.core.decorators import require_htmx
@@ -828,6 +836,21 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     Not ``@require_htmx`` — consumed by the map's saved-pins layer via a JS
     ``fetch()`` call, not an HTMX swap.
 
+    SNOW-573: when the ``weather_layer`` waffle flag is active, every
+    feature also carries a ``days`` property — the same date-keyed shape
+    ``apps.public.api.forecast_weather_geojson`` serves for resort-anchored
+    points (built by the same ``build_point_weather_days`` helper), so the
+    map's Weather overlay can merge a signed-in visitor's own pins into the
+    layer with no shape difference. With the flag inactive the ``days`` key
+    is simply absent and nothing else about the endpoint changes.
+    ``Favourite.forecast_point`` is non-nullable, so only the weather row
+    itself needs null handling (a point with nothing fetched yet gets an
+    empty ``days`` dict, not an error).
+
+    One extra bulk query when the flag is active — ``select_related`` on
+    ``forecast_point`` plus a single ``ForecastPointWeather`` fetch keyed by
+    ``forecast_point_id__in=…``, never one query per favourite.
+
     The response is marked ``Cache-Control: private, no-store`` — the
     inverse of the public ``resorts_geojson`` layer — since this payload is
     per-user and must never be shared across users by an intermediate
@@ -843,8 +866,31 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
+    weather_layer_active = waffle.flag_is_active(request, "weather_layer")
+    favourites = list(
+        Favourite.objects.for_user(request.user).select_related("forecast_point")
+    )
+
+    rows_by_point: dict[int, list[ForecastPointWeather]] = defaultdict(list)
+    if weather_layer_active:
+        point_ids = [favourite.forecast_point_id for favourite in favourites]
+        for row in ForecastPointWeather.objects.filter(
+            forecast_point_id__in=point_ids
+        ).iterator():
+            rows_by_point[row.forecast_point_id].append(row)
+
+    now = timezone.now()
     features: list[dict[str, Any]] = []
-    for favourite in Favourite.objects.for_user(request.user).iterator():
+    for favourite in favourites:
+        properties: dict[str, Any] = {
+            "uuid": str(favourite.uuid),
+            "name": favourite.name,
+            "resort_id": favourite.resort_id,
+        }
+        if weather_layer_active:
+            properties["days"] = build_point_weather_days(
+                rows_by_point.get(favourite.forecast_point_id, []), now
+            )
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {
@@ -853,11 +899,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
                     "type": "Point",
                     "coordinates": [favourite.longitude, favourite.latitude],
                 },
-                "properties": {
-                    "uuid": str(favourite.uuid),
-                    "name": favourite.name,
-                    "resort_id": favourite.resort_id,
-                },
+                "properties": properties,
             }
         )
 
