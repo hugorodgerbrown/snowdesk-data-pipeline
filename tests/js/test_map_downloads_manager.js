@@ -95,6 +95,7 @@ function buildFixture() {
             frees %(size)s. You can download it again when you're back online.</span>
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
       <span data-string="add-offline">You're offline — connect to download a new area.</span>
+      <span data-string="add-disabled">Downloading needs a connection</span>
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
     </template>
@@ -531,6 +532,8 @@ describe('the add-trigger', () => {
   });
 
   it('toasts and leaves the sheet open when offline', async () => {
+    // The connection is lost AFTER the sheet painted, so the trigger is
+    // still enabled — this is SNOW-637's race guard, not its main path.
     seed({});
     await loadModule();
     openSheet();
@@ -545,6 +548,106 @@ describe('the add-trigger', () => {
       "You're offline — connect to download a new area.",
     );
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+  });
+
+  // SNOW-637: rendering while offline disables the trigger outright, so the
+  // toast above is only ever reached by a connection lost mid-sheet.
+
+  it('renders the trigger disabled and relabelled when already offline', async () => {
+    seed({});
+    setOnline(false);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const add = document.querySelector('[data-downloads-add]');
+    expect(add.hasAttribute('disabled')).toBe(true);
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(add.textContent).toBe('Downloading needs a connection');
+  });
+
+  it('renders the trigger enabled and unlabelled when online', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const add = document.querySelector('[data-downloads-add]');
+    expect(add.hasAttribute('disabled')).toBe(false);
+    expect(add.hasAttribute('aria-disabled')).toBe(false);
+    expect(add.textContent).toBe('Download a custom area');
+  });
+
+  it('cannot reach framing while offline, even if the click lands', async () => {
+    seed({});
+    setOnline(false);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-add]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+  });
+
+  it('disables an open sheet the moment the connection drops', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+    expect(
+      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+    ).toBe(false);
+
+    setOnline(false);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }),
+    );
+    await settle();
+
+    expect(
+      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('re-enables it again when the connection comes back', async () => {
+    seed({});
+    setOnline(false);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    setOnline(true);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:connectivity-changed', { detail: { online: true } }),
+    );
+    await settle();
+
+    const add = document.querySelector('[data-downloads-add]');
+    expect(add.hasAttribute('disabled')).toBe(false);
+    expect(add.textContent).toBe('Download a custom area');
+  });
+
+  it('does not re-render a closed sheet on a connectivity change', async () => {
+    seed({});
+    await loadModule();
+
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }),
+    );
+    await settle();
+
+    // Never opened, so the listener has nothing to refresh: the sheet is
+    // still the empty container buildFixture made, with no cloned body in
+    // it. Asserted on the sheet rather than by counting pwaDb reads —
+    // vi.resetModules() leaves each earlier test's module instance still
+    // listening on `document`, and those render into their own detached
+    // sheets against whatever db stub is current.
+    const sheet = document.getElementById('map-downloads-sheet');
+    expect(sheet.hidden).toBe(true);
+    expect(sheet.children.length).toBe(0);
   });
 
   it('does nothing when the custom-area bridge has not loaded', async () => {

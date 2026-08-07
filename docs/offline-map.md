@@ -1141,9 +1141,11 @@ guard inward: the roundel opens the downloads sheet online *or* offline,
 because listing and deleting what is already stored is exactly what a
 user needs when storage is under pressure and the network is not there.
 What is refused offline is *starting a new download* — the sheet's
-`[data-downloads-add]` trigger declines with a toast
-(`MapSheet.toast()`), and this overlay's own Download button stays gated
-on connectivity as before, the same rule the per-region control applies.
+`[data-downloads-add]` trigger is disabled and relabelled ("Downloading
+needs a connection") while offline (SNOW-637; the `MapSheet.toast()`
+refusal it replaced survives as the guard for a connection lost between
+paint and tap), and this overlay's own Download button stays gated on
+connectivity as before, the same rule the per-region control applies.
 
 ### Download budget and whole-area eviction (SNOW-586)
 
@@ -1333,9 +1335,12 @@ downloads…` row in the layers menu was the only way to reach this sheet —
 the same subject reachable two ways, one of them buried in a menu about
 map layers. Now the roundel opens this sheet, the menu row is gone, and
 "Download a custom area" is an action inside the sheet instead
-(`[data-downloads-add]`, above the list): offline it toasts; online it
-hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()` —
-map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
+(`[data-downloads-add]`, above the list): offline it renders disabled
+(SNOW-637 — the gating is applied inside `render()`, since the sheet body
+is re-cloned from its `<template>` on every open, and re-applied on every
+`snowdesk:connectivity-changed` so an open sheet reacts in place); online
+it hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()`
+— map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
 are driven by `_renderControl` reading `basemapDownloadedAreas()` — "done"
 means the device holds at least one downloaded area, region or custom, not
 that this one custom area is fully cached.

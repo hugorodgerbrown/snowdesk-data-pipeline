@@ -536,29 +536,67 @@ def test_the_add_trigger_hides_the_sheet_and_opens_framing(
     expect(page.locator(_SHEET)).to_be_hidden()
 
 
-def test_the_add_trigger_toasts_and_stays_put_while_offline(
+def test_the_add_trigger_renders_disabled_when_already_offline(
     page: Page, live_server: LiveServer
 ) -> None:
-    """Listing/deleting needs no connection; STARTING a new download does.
+    """SNOW-637: listing/deleting needs no connection; STARTING one does.
 
-    Mirrors ``#map-frame-overlay``'s own Download button, which refuses the
-    same way once framing is already open.
+    Through SNOW-636 the trigger stayed live offline and refused on tap
+    with a toast, which is a worse contract than not offering the action:
+    the user spends a tap to be told no. It is now disabled and relabelled
+    at render time, keeping the control visible rather than hiding it —
+    the treatment ``map_layer_sync_status.js`` already uses for uncached
+    rows offline.
+
+    The toast has not gone; it is the race guard for a connection lost
+    between the paint and the tap, which no render-time check can catch,
+    and it is covered in ``tests/js/test_map_downloads_manager.js`` where
+    that race can be staged deterministically.
+    """
+    _boot(page, live_server)
+
+    page.context.set_offline(True)
+    try:
+        _open_sheet(page)
+
+        trigger = page.locator(f"{_SHEET} {_ADD_TRIGGER}")
+        expect(trigger).to_be_visible()
+        expect(trigger).to_be_disabled()
+        expect(trigger).to_have_attribute("aria-disabled", "true")
+        expect(trigger).to_have_text("Downloading needs a connection")
+        expect(page.locator(_OVERLAY)).to_be_hidden()
+    finally:
+        page.context.set_offline(False)
+
+
+def test_the_add_trigger_disables_itself_when_the_connection_drops(
+    page: Page, live_server: LiveServer
+) -> None:
+    """SNOW-637: an open sheet reacts without needing to be re-opened.
+
+    ``render()`` applies the gating, so a sheet already on screen when the
+    connection goes would keep showing a live trigger until its next open.
+    The module listens for ``snowdesk:connectivity-changed`` (broadcast by
+    ``pwa_offline.js``) and re-renders, exactly as the layers-menu dots and
+    the download roundel already do on the same event.
     """
     _boot(page, live_server)
     _open_sheet(page)
 
+    trigger = page.locator(f"{_SHEET} {_ADD_TRIGGER}")
+    expect(trigger).to_be_enabled()
+
     page.context.set_offline(True)
     try:
-        page.click(f"{_SHEET} {_ADD_TRIGGER}")
-
-        expect(page.locator("#map-sheet-toast")).to_be_visible()
-        expect(page.locator("#map-sheet-toast [data-toast-body]")).to_have_text(
-            "You're offline — connect to download a new area."
-        )
-        expect(page.locator(_OVERLAY)).to_be_hidden()
+        expect(trigger).to_be_disabled()
         expect(page.locator(_SHEET)).to_be_visible()
     finally:
         page.context.set_offline(False)
+
+    # And back again — the re-clone restores the enabled control and its
+    # original label, so nothing has to undo the disabled state by hand.
+    expect(trigger).to_be_enabled()
+    expect(trigger).to_have_text("Download a custom area")
 
 
 def test_the_sheet_reflects_downloads_made_since_it_was_last_open(

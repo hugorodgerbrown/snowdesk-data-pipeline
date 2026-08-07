@@ -89,10 +89,16 @@ repeated here.
         {# dedicated one — rows are re-cloned on every render and this     #}
         {# trigger is cloned right along with them, so binding here would  #}
         {# have to be redone on every open too.                            #}
+        {# SNOW-637: offline, map_downloads_manager.js's render() disables    #}
+        {# this trigger and swaps its label for `add-disabled` below —       #}
+        {# starting a download needs a connection, so the control says so    #}
+        {# instead of staying live and failing on tap. The disabled          #}
+        {# utilities are the same pair used elsewhere for this               #}
+        {# (_report_form.html, edit_resorts_panel.html).                     #}
         <button
             type="button"
             data-downloads-add
-            class='{% button_classes variant="secondary" size="compact" full_width=True %}'
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} disabled:cursor-not-allowed disabled:opacity-50'
         >
             {% trans "Download a custom area" %}
         </button>
@@ -166,6 +172,11 @@ repeated here.
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
     <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
+    {# SNOW-637: the same refusal as a BUTTON LABEL rather than a toast. The #}
+    {# toast copy above is phrased as a reply to a tap ("You're offline —"), #}
+    {# which reads wrong sitting on a control nobody has touched yet, so the #}
+    {# disabled state gets its own wording naming the missing precondition.  #}
+    <span data-string="add-disabled">{% trans "Downloading needs a connection" %}</span>
     {# SNOW-635: an unrenamed custom area's default "Custom area N" label   #}
     {# is filled in by static/js/map.js's basemapDownloadedAreas() itself, #}
     {# reading `default-custom-name` off _map_embed.html's                 #}
