@@ -609,6 +609,21 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
+- `uppercase_bulletin_choice_values --commit` — one-off post-deploy step for
+  SNOW-582: rewrites `PipelineRun.status` from its legacy lower-case
+  stored values to the upper-case `Status` choices. Read-only by default;
+  idempotent by queryset.
+
+  ```bash
+  # Dry-run — breakdown of what would be converted.
+  uv run python manage.py uppercase_bulletin_choice_values
+
+  # Persist.
+  uv run python manage.py uppercase_bulletin_choice_values --commit
+  ```
+
+  Flags: `--commit`.
+
 ### Health checks (read-only)
 
 - `dump_settings` — print every environment-derived setting with secrets

@@ -94,10 +94,10 @@ class PipelineRun(BaseModel):
     class Status(models.TextChoices):
         """Possible states for a pipeline run."""
 
-        PENDING = "pending", "Pending"
-        RUNNING = "running", "Running"
-        SUCCESS = "success", "Success"
-        FAILED = "failed", "Failed"
+        PENDING = "PENDING", "Pending"
+        RUNNING = "RUNNING", "Running"
+        SUCCESS = "SUCCESS", "Success"
+        FAILED = "FAILED", "Failed"
 
     started_at = models.DateTimeField(default=timezone.now, db_index=True)
     finished_at = models.DateTimeField(null=True, blank=True)
