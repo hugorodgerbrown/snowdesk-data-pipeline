@@ -16,7 +16,36 @@ a region deliberately opens **no** popup: the region detail popup
 `map.js` but has no trigger, because it covered the terrain the visitor had
 just tapped. `/map/` permanently redirects
 here (301, query string forwarded). The template (`apps/public/templates/public/home.html`)
-extends `base.html`. Static assets are `static/js/map.js` and `static/css/map.css`.
+extends `base.html`. Static assets are the `static/js/map*.js` set (see
+"Module layout" below) and `static/css/map.css`.
+
+### Module layout (SNOW-610)
+
+`map.js` was one 9,192-line file until SNOW-610 split it along the eleven
+IIFE seams it already contained. It is now the boot IIFE alone — style and
+overlay install, region select, popups, markers, search — and the surfaces
+are siblings. `map.js`'s own header carries the full list with a line on
+what each file owns; `apps/public/templates/public/home.html` carries the
+script tags.
+
+**The order of those tags is load-bearing.** These are classic scripts, so
+they share one global lexical scope: a top-level `let`/`const` in one file
+is readable from a later one as a bare identifier, but sits in the temporal
+dead zone until its own script has run. Every IIFE runs at parse time. So
+the three declaration files — `map_state.js`, `map_basemap_downloads.js`,
+`map_shared.js` — load before `map.js`, and the nine surface files after
+it, in the order they held inside the single file.
+
+Modules *outside* this set (`map_layer_sync_status.js`, `favourites.js`)
+must reach the shared state through `window.snowdeskMapState` instead. The
+distinction is not stylistic: a top-level `let` lands in the global lexical
+scope but **not** on `window`, which is how `map_layer_sync_status.js` read
+`window.MAP` for its entire life and always got `undefined`. See
+`map_state.js`'s header.
+
+`tests/js/_load_map_bundle.js` models the same order for Vitest, which
+would otherwise evaluate each file as an ES module and module-scope every
+one of those shared bindings.
 
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
 so `{% url %}` in the template remains the single source of truth for all three
@@ -73,7 +102,7 @@ a timelapse. The drawer (when open) follows the scrubber via the
 `snowdesk:date-changed` event, fetching `/api/region/<id>/summary/?d=…`
 so the bulletin shown matches the scrubbed-to date. The full-season
 payload is fetched lazily on first scrubber interaction and cached for
-the session via `getSeasonRatings()` in `static/js/map.js` — first scrub
+the session via `getSeasonRatings()` in `static/js/map_shared.js` — first scrub
 pays the round-trip; subsequent scrubs and timelapse playback render
 from the in-memory cache.
 
@@ -159,7 +188,8 @@ layer hangs off a `geojson` source this app adds, and every basemap layer
 hangs off a `vector`/`raster` source (or is a sourceless `background`
 layer, as in the offline fallback style), so the module hides exactly the
 geojson-sourced layers. A new overlay is covered without touching the
-module — unlike the `OVERLAY_LAYER_IDS` lists in `map.js`, which must
+module — unlike the `OVERLAY_LAYER_IDS` lists (`map_basemap_picker.js`,
+and `OVERLAY_LAYER_IDS_MAIN` in `map.js`), which must
 enumerate ids because they map *menu rows* to layers.
 
 Callers: `place_picker.js`'s `activate()`/`deactivate()` (which covers the
