@@ -151,6 +151,11 @@ in addition to the shared map assets.
     {# document order relative to them doesn't matter — it just has to be on #}
     {# the page.                                                             #}
     <script defer src="{% static 'js/map_placement_focus.js' %}"></script>
+    {# SNOW-573: pure projection / merge / forecast-window math for the map    #}
+    {# Weather overlay (window.pwaWeatherCore), extracted so it can be         #}
+    {# unit-tested (tests/js/test_map_weather_core.js). Must load before       #}
+    {# map.js, whose installWeatherLayer dereferences it on the first toggle.  #}
+    <script defer src="{% static 'js/map_weather_core.js' %}"></script>
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
