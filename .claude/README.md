@@ -100,6 +100,30 @@ so the remote Routine environment can find it after cloning.
 When you invoke it interactively (e.g. "post a project update for Snowdesk"),
 the approval gate is restored: draft → review → post.
 
+## Linear MCP permissions
+
+Every skill here talks to Linear over MCP, and the same Linear server reaches a
+session under **two different names** depending on where the session runs:
+
+| Name | Where it comes from | Which sessions see it |
+|---|---|---|
+| `linear-server` | Local config in `~/.claude.json`, project-scoped | Local sessions on this machine |
+| `bee16520-…` (UUID) | A claude.ai **connector**, OAuth held against the Anthropic account | Local **and** remote/cloud sessions |
+
+Permission rules match the literal string `mcp__<serverName>__<toolName>`, so a
+rule written against one name does nothing for the other. `permissions.allow`
+in [`settings.json`](settings.json) therefore lists the same nine tools twice,
+once per name. The UUID is specific to this account's connector install; it is
+committed because this repo is single-author, and it is the only string that
+suppresses the approval prompt in a remote session.
+
+**Do not add a `.mcp.json` for Linear.** It would declare an OAuth-only server
+that a remote container cannot authenticate (the OAuth flow needs an
+interactive session), and project-scoped servers carry their own first-use
+trust prompt on top. Remote access already works via the connector. A Linear
+API key must never be committed here, including through `${VAR}` interpolation
+— see invariant 5 in [`CLAUDE.md`](../CLAUDE.md).
+
 ## What's NOT here
 
 - **Hooks.** No `PreToolUse` blockers, no `Stop` hook on failing tests. The
