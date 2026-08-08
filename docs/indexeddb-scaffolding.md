@@ -139,7 +139,7 @@ not a `centre_tile` proxy: a single cached tile is not evidence the whole
 area is available offline (a neighbouring download can cache one tile of
 an area without covering it). This is the same "layers menu is a live
 cache-state dashboard" invariant every download control follows — see
-[`offline-map.md`](offline-map.md#available-offline-overlay-snow-570-rings-removed-snow-587).
+[`offline-map.md`](offline-map.md#downloaded-tiles-overlay-snow-570-rings-removed-snow-587-sheet-bound-snow-645).
 
 ### `meta:app` row shape — `basemap.regions` (SNOW-570, SNOW-583, SNOW-586)
 
