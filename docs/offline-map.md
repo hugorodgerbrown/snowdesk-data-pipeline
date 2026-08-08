@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal navigation partitioning, Download basemap, custom-area download, layers
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-08
 ---
 
 # PWA shell
@@ -653,15 +653,24 @@ longer a flat green — it takes one of five `--color-basemap-*` tokens
 key currently selected in the basemap picker (`activeBasemapKey()`,
 `static/js/map_basemap_downloads.js`, reading the picker's checked radio —
 display-only, unlike the `template` the eviction logic above actually
-keys on). The custom-area control's own roundel (below) means "the device
-holds at least one download", which can span several basemaps, so it only
-paints an identity colour when every non-orphaned area agrees on one; a
-mixed or unresolved set falls back to the plain `--color-sync-ok` green —
-what every roundel showed before this ticket, and what any record written
-before it still shows, since it carries no basemap key to look up. The
-same identity colour, paired with the basemap's translated name, appears
-as a swatch on each row of the "Manage downloads" sheet (below) — colour
-alone is never the only signal.
+keys on). The custom-area control's own roundel (below) uses the exact
+same rule, unconditionally — an EARLIER version of this ticket instead
+aggregated over the STORED areas' own `basemapKey`s (an identity colour
+only when every non-orphaned area agreed on one), which Hugo caught: on
+the Swisstopo map, with every custom area downloaded under Standard, the
+roundel painted Standard's blue on a Swisstopo screen. Every roundel and
+overlay on the map reflects the basemap CURRENTLY SHOWING, never what an
+earlier download happened to use — per-AREA basemap identity is the
+"Manage downloads" sheet's job (the swatch and name on each row, one tap
+away), not this roundel's. Set unconditionally, whether or not any
+download exists — the CSS only paints a fill for `busy`/`done`, so writing
+the attribute for `idle` too is harmless. The roundel also listens for
+`snowdesk:basemap-changed` again (SNOW-634 had dropped that listener on
+reasoning that was true for `done`'s tile-template dependency but never
+extended to this later colour dependency). The same identity colour,
+paired with the basemap's translated name, appears as a swatch on each row
+of the "Manage downloads" sheet (below) — colour alone is never the only
+signal.
 
 **`other-basemap` (SNOW-645).** Hugo's report: download a region on
 Standard, switch to Swisstopo, and the roundel silently reverted to plain
@@ -1159,12 +1168,31 @@ false: there is plainly something to manage offline. Orphaned buckets
 they are reclaimable quota, not an area you have offline.
 
 Two consequences worth naming. Neither connectivity nor the active
-basemap affects the roundel any more, so its `snowdesk:basemap-changed`
-listener and style-settle retry are gone. And switching basemap no longer
-flips it back to `idle` — the bucket still holds the *previous* basemap's
-tiles, so the device does hold an offline area, just not one for the
-basemap now selected. That per-basemap detail lives in the sheet; the
-roundel's signal is deliberately coarser.
+basemap affects the roundel's `done`/`idle` STATE any more, so it has no
+style-settle retry (there is no tile-template dependency left to wait on)
+and does not listen for `snowdesk:connectivity-changed`. And switching
+basemap no longer flips `done` back to `idle` — the bucket still holds the
+*previous* basemap's tiles, so the device does hold an offline area, just
+not one for the basemap now selected. That per-basemap DETAIL (which area,
+under which basemap) lives in the sheet; the roundel's `done`/`idle` signal
+is deliberately coarser.
+
+Its COLOUR is a different story (SNOW-645 review). Hugo's report: on the
+Swisstopo map, the roundel painted Standard's blue, because his custom
+areas had all been downloaded under Standard — an earlier version of this
+ticket aggregated the colour over the stored areas' own basemap keys. The
+fix aligns this roundel with every other one on the map: its colour is
+`activeBasemapKey()`, unconditionally, the same rule the per-region
+roundel's `setState` uses — never an aggregate over what is stored (see
+"Basemap identity colour (SNOW-645)" above). That reintroduces exactly the
+dependency the `done`/`idle` state does NOT have, so the
+`snowdesk:basemap-changed` listener SNOW-634 removed is back too — calling
+the same coalesced `renderControl` every other trigger in this file uses.
+`_renderControl`'s own busy guard (unchanged) already stops a basemap
+switch mid-run from clobbering anything: the roundel sits inside
+`#map-controls-br`, hidden for a run's whole life, so there is nothing on
+screen for a repaint to interfere with, and the run's own settle path
+already calls `renderControl()` once it finishes.
 
 Opening framing no longer re-centres the map on any previously-downloaded
 area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
