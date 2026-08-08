@@ -138,11 +138,11 @@
       'community-reports-cluster-count',
       'community-reports-point',
     ],
-    // SNOW-570/SNOW-587: not lazy — both layers are installed with the
-    // regions source itself, so this is a plain visibility flip. The
-    // refresh that decides WHICH tiles are drawn is driven from the main
-    // IIFE's snowdesk:downloaded-overlay-changed handler.
-    downloaded: ['cached-tiles-fill', 'cached-tiles-line'],
+    // SNOW-645: the 'downloaded' entry that lived here (cached-tiles-fill/
+    // -line) went with the layers-menu row — the overlay is now bound to
+    // the "Manage downloads" sheet being open, not a togglable layer (see
+    // map_downloads_manager.js's open()/close handling and
+    // window.pwaDownloadedOverlay's show/hide in map.js).
     // SNOW-573: one symbol layer carries both the icon and the temp label
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
@@ -197,17 +197,6 @@
         if (overlayKey === 'weather') {
           window.pwaTelemetry?.emit('map.weather.overlay_toggled', { visible: next });
         }
-        // SNOW-570/SNOW-587: the cached-tiles layers are already installed,
-        // so the direct visibility path below handles showing them — but
-        // WHICH tiles they draw is a cache probe only the main IIFE can run.
-        // Tell it, so the overlay is freshly derived at the moment it is
-        // revealed rather than showing whatever the last probe left.
-        if (overlayKey === 'downloaded') {
-          document.dispatchEvent(new CustomEvent('snowdesk:downloaded-overlay-changed', {
-            detail: { visible: next },
-          }));
-        }
-
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {

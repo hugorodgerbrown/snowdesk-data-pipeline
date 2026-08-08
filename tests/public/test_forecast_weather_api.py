@@ -125,9 +125,12 @@ class TestForecastWeatherGeojsonPrivacy:
 class TestForecastWeatherGeojsonShape:
     """Response shape and property contents."""
 
-    # Frozen inside the 06:00–20:00 sunrise/sunset window set up below:
-    # ``is_day`` compares wall-clock time-of-day, so the asserted
-    # ``-day.svg`` icon is only correct while the real clock agrees.
+    # Frozen to midday, inside the 06:00–20:00 sunrise/sunset window set up
+    # below. The icon's day/night suffix is a projection of the CURRENT
+    # time-of-day onto the row's stored sunrise/sunset
+    # (weather_display.is_day), not a property of the stored row — so left
+    # to the wall clock this assertion passes by day and fails every
+    # evening after 20:00 UTC, including in CI, which runs on UTC.
     @freeze_time("2026-08-07T12:00:00Z")
     def test_feature_shape(self) -> None:
         """[lon, lat] ordering and resort_id/name/region_id/days properties."""

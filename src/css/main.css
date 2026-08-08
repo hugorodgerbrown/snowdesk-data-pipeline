@@ -177,9 +177,64 @@
   --color-sync-off: #9ca3af;   /* gray-400  — resource is not cached (absent, not an error) */
   --color-sync-blocked: #dc2626; /* red-600 — offline AND not cached: genuinely unavailable */
 
+  /* Basemap identity colours (SNOW-645) — one hue per settings.BASEMAP_STYLES
+     key, so a downloaded area's roundel and the Manage downloads sheet can
+     show which basemap it was fetched under. Deliberately avoid green
+     (--color-sync-ok, repurposed as "downloaded, basemap unknown" for
+     records written before this change) and red (--color-sync-blocked).
+     The four keys that actually reach the picker (_BASEMAP_LABELS in
+     apps/public/views.py) take the four most-separated hues; sky goes to
+     swisstopo_light, which stays picker-invisible but still needs a token
+     for a BASEMAP=swisstopo_light deployment. */
+  --color-basemap-openfreemap-liberty: #2563eb;  /* blue-600 — coincides with
+                                                     --color-accent below (the
+                                                     design's own Standard
+                                                     basemap swatch and its
+                                                     accent colour are the same
+                                                     #2563eb); kept as two
+                                                     independent tokens that
+                                                     happen to share a value,
+                                                     not aliased to one another
+                                                     — SNOW-645 review. */
+  --color-basemap-swisstopo-winter:    #c2540a;  /* SNOW-645 review: rust —
+                                                     the design's own
+                                                     --map-swisstopo value,
+                                                     replacing amber-600. */
+  --color-basemap-swisstopo-light:     #0284c7;  /* sky-600    */
+  --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
+  --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
+
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
+
+  /* Chip surfaces (SNOW-645 review) — translucent-black fills for a resting
+     surface (--color-chip) and its hover/active step up (--color-chip-strong),
+     matched to the Claude Design source's own --color-chip /
+     --color-chip-strong tokens (rgba(0,0,0,.06) / rgba(0,0,0,.08)) rather than
+     reusing --color-border (9%, a BORDER token, not a fill) for the "Manage
+     downloads" sheet's budget-bar track and the hover fill on its close (×)
+     and overflow (…) buttons. Translucent black/white — same idiom as
+     --color-border / --color-border-strong above — so both read correctly
+     over whatever surface sits underneath in either theme. */
+  --color-chip:         rgba(0, 0, 0, 0.06);
+  --color-chip-strong:  rgba(0, 0, 0, 0.08);
+
+  /* Accent (SNOW-645 review) — the "Manage downloads" sheet's overlay switch
+     is the first control in this app whose ON state needs a plain interactive
+     blue with no status meaning; --color-status-info-text (blue-800, "info"
+     severity) was the nearest existing token but carries a severity meaning
+     this control doesn't have. Matched to the Claude Design source's own
+     --color-accent / --color-accent-hover / --color-accent-text. Scope:
+     the switch only for now — an existing "info" borrower elsewhere is a
+     separate decision, not swept into this one.
+     --color-accent-text (#fff literal in the design) is intentionally NOT
+     theme-mirrored: it is the thumb's colour while the track is filled with
+     --color-accent, and that combination reads correctly in both themes  —
+     see includes/_switch.html. */
+  --color-accent:        #2563eb;
+  --color-accent-hover:  #1d4ed8;
+  --color-accent-text:   #ffffff;
 
   /* Floating overlays — frosted glass surface used by the map utility
      cluster (SNOW-36) and any future overlay pinned above content. */
@@ -345,6 +400,15 @@
   --map-edge-inset-left:    calc(env(safe-area-inset-left, 0px) + var(--map-edge-gap));
   --map-edge-inset-right:   calc(env(safe-area-inset-right, 0px) + var(--map-edge-gap));
   --map-edge-inset-bottom:  calc(env(safe-area-inset-bottom, 0px) + var(--map-edge-gap));
+  /* SNOW-645 review: added so includes/_overlay_sheet.html can bound its
+     own max-height against "the room between the top of the screen and
+     its own bottom inset" — a bottom-docked sheet with enough content
+     (ten-plus downloads) grows upward past the top of the viewport with
+     nothing to stop it otherwise, pushing its own header off-screen.
+     Same env()-plus-gap shape as the other three, for the same reason
+     (the file's own header comment above explains why this has to be a
+     token, not an inline calc(env(...)) arbitrary value). */
+  --map-edge-inset-top:     calc(env(safe-area-inset-top, 0px) + var(--map-edge-gap));
 }
 
 
@@ -405,9 +469,38 @@
   --color-sync-off: #6b7280;   /* gray-500 — muted "not cached" on dark card */
   --color-sync-blocked: #f87171; /* red-400 — offline AND not cached, on dark card */
 
+  /* Basemap identity colours — lighter variants, mirroring the sync-status
+     light/dark pair above so the white roundel glyph keeps its contrast. */
+  --color-basemap-openfreemap-liberty: #60a5fa;  /* blue-400   */
+  --color-basemap-swisstopo-winter:    #fb923c;  /* SNOW-645 review: orange-400
+                                                     — the lighter/more-saturated
+                                                     counterpart to the new
+                                                     rust light value (#c2540a),
+                                                     same "-600 → -400 in the
+                                                     same hue family" pattern
+                                                     as this block's other four
+                                                     pairs. */
+  --color-basemap-swisstopo-light:     #38bdf8;  /* sky-400    */
+  --color-basemap-ign-plan:            #c084fc;  /* purple-400 */
+  --color-basemap-basemap-at:          #2dd4bf;  /* teal-400   */
+
   /* Misc interactive */
   --color-card-hover:     #353330;
   --color-ring-selected:  #60a5fa;
+
+  /* Chip surfaces — see the light-mode definition above for what these are
+     for. Translucent WHITE on dark, mirroring --color-border /
+     --color-border-strong's own light/dark idiom exactly. */
+  --color-chip:         rgba(255, 255, 255, 0.06);
+  --color-chip-strong:  rgba(255, 255, 255, 0.08);
+
+  /* Accent — see the light-mode definition above. A lighter blue reads
+     better against the dark card than the light value would; the switch's
+     white thumb (--color-accent-text, still literal #ffffff) keeps working
+     against either. */
+  --color-accent:        #3b82f6;
+  --color-accent-hover:  #60a5fa;
+  --color-accent-text:   #ffffff;
 
   /* Avalanche-type tag colours — dark-mode overrides.
      Slightly more saturated than light-mode so the filled pill stays
@@ -475,6 +568,86 @@
 .danger-band[data-level="considerable"] { border-top: 4px solid var(--color-eaws-considerable); }
 .danger-band[data-level="high"]         { border-top: 4px solid var(--color-eaws-high); }
 .danger-band[data-level="very_high"]    { border-top: 4px solid var(--color-eaws-very-high); }
+
+
+/* —— Basemap identity fill (SNOW-645, generalised in the review pass,
+   the row swatch replaced by a left-edge rule in the second review) ——
+   Shared by TWO elements: the coloured rule down the left edge of a
+   downloaded area's row in the Manage downloads sheet (identifying which
+   basemap it was fetched under — a round swatch before the sheet's
+   "grouped by kind" redesign, a vertical rule since), and a segment of
+   the budget bar beneath the list (identifying which basemap a slice of
+   the used total belongs to — one segment per basemap actually stored,
+   summed, not one per area). Applied via data attribute, mirroring the
+   .danger-band pattern above, so the fill comes from tokens rather than a
+   class string built in JS. A keyless row (a pre-SNOW-645 record with no
+   basemap on file) carries no ``data-basemap-key`` and so falls through
+   to this file's plain @theme background/border defaults for whatever
+   base class it also carries — see map_downloads_manager.js.
+
+   An ORPHANED row (SNOW-612 — a pinned bucket with no record at all) is
+   never full-strength and never this class's own keyless green default
+   ("downloaded, basemap unknown" — not true of something that never
+   completed). It IS still painted through this class when
+   map_basemap_downloads.js's `orphanBasemapKey` can infer a basemap from
+   the bucket's own cached tiles (Hugo's call: pale, not flat neutral —
+   "the orphan rule should be a pale version of the colour") — carrying a
+   real `data-basemap-key`, exactly like a completed row, plus a shared
+   `opacity-40` MODIFIER map_downloads_manager.js applies alongside it.
+   Only when nothing could be inferred does it skip this class entirely,
+   for `bg-sync-off` (this app's existing "absent, not an error" grey —
+   the sync dots' own uncached colour) at the same `opacity-40`. Either
+   way the modifier is ONE utility class reused, not five more per-key
+   "pale" declarations — see map_downloads_manager.js's own buildRow
+   comment for the full decision and the "inference, not a record"
+   caveat.
+
+   Shape (size, radius, ring for the row swatch/rule; height and width for
+   the bar segment) is plain Tailwind utilities on each element — not CSS
+   here, since Tailwind can express all of it. Only the colour, which
+   depends on a data attribute a static utility class cannot select on,
+   lives in this file. One shared class is what lets the row rule and the
+   bar segment read the SAME five rules rather than duplicating them per
+   consumer.
+
+   Usage in template:
+     <span class="basemap-identity-fill w-1 shrink-0 self-stretch rounded-full"
+           data-basemap-key="openfreemap_liberty"></span>
+     <div class="basemap-identity-fill h-full" data-basemap-key="openfreemap_liberty" style="flex-grow: 1200000"></div>
+
+   Each rule here also consumes its --color-basemap-*
+   token via var(), which is what keeps Tailwind from
+   tree-shaking it out of the compiled @theme (see the
+   note at the top of section 1 above) — this is what
+   lets static/css/map.css, a non-Tailwind file, read
+   the same tokens for the download roundel fill.
+
+   Every rule also nests a var(--color-sync-ok) fallback.
+   This file can never desync from its own @theme block
+   the way map.css can from a stale output.css, so it is
+   belt-and-suspenders here rather than load-bearing — but
+   it costs nothing and keeps the two files' rules
+   identical in shape, which is worth more than the one
+   line saved by leaving it off.
+   ————————————————————————————————————————— */
+
+.basemap-identity-fill[data-basemap-key="openfreemap_liberty"] { background: var(--color-basemap-openfreemap-liberty, var(--color-sync-ok)); }
+.basemap-identity-fill[data-basemap-key="swisstopo_winter"]     { background: var(--color-basemap-swisstopo-winter, var(--color-sync-ok)); }
+.basemap-identity-fill[data-basemap-key="swisstopo_light"]      { background: var(--color-basemap-swisstopo-light, var(--color-sync-ok)); }
+.basemap-identity-fill[data-basemap-key="ign_plan"]              { background: var(--color-basemap-ign-plan, var(--color-sync-ok)); }
+.basemap-identity-fill[data-basemap-key="basemap_at"]            { background: var(--color-basemap-basemap-at, var(--color-sync-ok)); }
+/* The keyless case — a pre-SNOW-645 record, or the budget bar's own
+   trailing "unknown" segment — has no data-basemap-key at all, so none
+   of the rules above match. Explicit rather than relying on inherited
+   background: the row rule and the bar segment both need SOMETHING
+   painted even with nothing to key off. An orphaned bucket (SNOW-612)
+   this class never sees at all: a RECOVERED orphan carries a real
+   data-basemap-key and matches one of the rules above instead, and an
+   UNRECOVERABLE one skips this class entirely for `bg-sync-off` (see the
+   block comment above) — falling through to this green default would
+   claim "downloaded, basemap unknown" for something that never
+   completed. */
+.basemap-identity-fill { background: var(--color-sync-ok); }
 
 
 /* —— Hero rating badge tokens ———————————————

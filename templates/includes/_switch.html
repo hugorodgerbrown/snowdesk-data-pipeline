@@ -1,0 +1,133 @@
+{% comment %}
+templates/includes/_switch.html — Reusable ON/OFF switch (SNOW-645).
+
+Built for the "Manage downloads" sheet's map-overlay control ("Show areas
+on the map") — the first place this app needed an iOS-style switch rather
+than a checkbox. There was no such primitive before this (checked against
+apps/public/design_tokens.py and the component library), so it is built
+here as a real, reusable partial rather than inline in that one sheet —
+"reuse first, extract second, inline never".
+
+It is a real <input type="checkbox" role="switch"> under the hood, drawn
+as a track + thumb using Tailwind's `peer` variant — CSS alone, no JS.
+That is load-bearing, not a style choice: a <div> with a click handler
+would need its own keyboard handling (Space/Enter), its own focus ring,
+and its own aria-checked bookkeeping to match what a real checkbox gives
+for free. `role="switch"` remaps the ANNOUNCED role from "checkbox" to
+"switch" (WAI-ARIA's switch pattern: a plain checkbox input with this one
+attribute) while every native behaviour — Tab focuses it, Space/Enter
+toggles it, ``:checked`` drives its state — is untouched.
+
+The input itself is visually hidden (`sr-only`, not `hidden` or
+`display:none` — it stays in the accessibility tree and keyboard-focusable)
+in favour of the track+thumb pair drawn next to it, which read its
+`:checked` state via the `peer` / `peer-checked` / `peer-focus-visible`
+Tailwind variants. This partial renders ONLY the control — no visible
+text label — because a caller almost always wants that label positioned
+and styled as part of its own row (see _map_downloads_sheet.html's
+overlay-toggle panel), not fixed by this partial's own markup. Pair it
+with a `<label for="{{ id }}">` alongside the include, using the same id —
+this is a SECOND label pointing at the same input, and that is fine: an
+input can have any number of labels associated by `for`, as long as one is
+never nested inside another (this partial's own wrapping element is
+itself a label — see immediately below — so the caller's external label
+must stay a SIBLING of this include, never wrap it).
+
+SNOW-645 review — the wrapping element is a `<label for="{{ id }}">`, not
+a bare `<span>`. It was a `<span>` originally, on the reasoning that the
+input already sits inside it so no explicit association was needed for
+KEYBOARD activation — true, but irrelevant to POINTER activation: the
+track and thumb are both `pointer-events-none` (so a click passes THROUGH
+them to whatever sits beneath), and the `sr-only` input is clipped to a
+1×1 box, so a click anywhere on the visible pill landed on the inert
+`<span>` itself and did nothing. Silent, no console error, no way to
+notice from `render_to_string` output — only a real click in a real
+browser shows it. A `<label>` fixes it structurally: the browser's own
+click-to-activate-labelled-control behaviour needs no JS and cannot be
+defeated by `pointer-events-none` children, because the click event
+still bubbles to the label itself.
+
+The clickable region is `w-11 min-h-11` (44×44 minimum — the tap-target
+fix the × elsewhere in this design got). The VISUAL track is smaller —
+`w-9 h-5` (36×20, the Claude Design source's own measurement) — and sits
+CENTRED on both axes inside the 44×44 label via `inset-0 m-auto` plus an
+explicit height/width (the same centre-within-an-indeterminate-size-box
+technique the single-axis `inset-y-0 my-auto` version used before this
+review, just applied on both axes at once: `inset: 0` on all four sides
+plus `margin: auto` distributes the label's own extra room evenly in
+every direction, and does not depend on the label's own size being
+anything other than "whatever `min-h-11`/`w-11` resolve to"). SNOW-645
+review, Hugo's refinement: the track used to be sized via `rounded-pill`
+(this project's `--radius-pill` token, 4px — correct for the flat budget
+bar elsewhere in this sheet, wrong here) at the label's OWN full size,
+which on a 44px-tall label rendered as a barely-rounded rectangle rather
+than a capsule. `rounded-full` on the (now correctly small) 20px-tall
+track is the fix — 9999px and an explicit 10px radius are IDENTICAL on a
+20px-tall box, and `rounded-full` cannot drift out of sync if that height
+ever changes, unlike a fixed-pixel radius would.
+
+The thumb is `h-4 w-4` (16×16) — `rounded-full` again — resting `left-1.5`
+(6px from the label's own left edge: the track itself sits 4px in from
+centring, plus the design's own 2px inset from the track's edge). Checked
+state translates it `translate-x-4` (16px — exactly `36 − 16 − 4 = 16`,
+the room the track's own 2px-each-side padding leaves for it to travel).
+
+Colour: `peer-checked:bg-accent` for the track's ON state — SNOW-645
+review: was `peer-checked:bg-status-info-text`, the nearest existing
+token at the time, but that carries an "info severity" meaning this plain
+interactive control does not have. `--color-accent` (`src/css/main.css`
+§1) is dedicated to exactly this, matched to the Claude Design source's
+own token of the same name — scoped to this control only, not swept
+across every other borrower of the info tokens. OFF state is
+`bg-border-strong` (also the design's own choice, not this project's
+softer `--color-border`). The thumb is `bg-accent-text` — the design's
+own literal white value, NOT theme-mirrored in `main.css` (unlike every
+other colour pair in this file), because an iOS-style switch's thumb
+reads as white in both themes; using a token here rather than a literal
+still keeps it declared once, in `@theme`, alongside its own track colour.
+
+Parameters (passed via {% include … with … %}):
+  id            (string) — DOM id, so a caller's own <label for="…">
+                addresses this exact input (this partial's OWN wrapping
+                label uses it too), and so the caller's own JS can select
+                this exact instance directly. Required.
+  checked       (bool, optional) — renders the input pre-checked (a demo
+                state — see the component library's own variants).
+                Default False.
+  disabled      (bool, optional) — renders the input disabled (a demo
+                state). Default False.
+
+SNOW-645 review (SAST): this used to take a single `extra_attrs` string,
+appended to the <input> verbatim — semgrep's
+`unquoted-attribute-var` flagged it as a live attribute-injection surface
+in a REUSABLE component: today's only real caller passed a static
+`data-downloads-overlay-toggle` string, but the whole point of a raw
+passthrough parameter is that the NEXT caller can pass anything,
+including a variable. Replaced with the two typed booleans above — the
+only two things `extra_attrs` was ever actually used for (the third use,
+a bare data-attribute hook for map_downloads_manager.js's own JS to
+select this instance, was dropped entirely: `id="{{ id }}"` already gives
+JS a real hook, so the caller now selects `#map-downloads-overlay-toggle`
+directly instead of `[data-downloads-overlay-toggle]`).
+{% endcomment %}
+<label
+    for="{{ id }}"
+    class="relative inline-flex w-11 min-h-11 shrink-0 cursor-pointer items-center has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+>
+    <input
+        id="{{ id }}"
+        type="checkbox"
+        role="switch"
+        class="peer sr-only"
+        {% if checked %}checked{% endif %}
+        {% if disabled %}disabled{% endif %}
+    >
+    <span
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-0 m-auto h-5 w-9 rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
+    ></span>
+    <span
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-y-0 left-1.5 my-auto h-4 w-4 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4"
+    ></span>
+</label>

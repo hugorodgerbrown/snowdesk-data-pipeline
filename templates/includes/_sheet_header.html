@@ -3,8 +3,9 @@
 templates/includes/_sheet_header.html — Shared header for map fly-out sheets.
 
 Renders a title plus a persistent × close control. Used by any sheet state
-that lacks its own close affordance (favourites and reports map sheets).
-The × dispatches through ``data-action`` — it does not call JS directly.
+that lacks its own close affordance (favourites, report, and downloads map
+sheets). The × dispatches through ``data-action`` — it does not call JS
+directly.
 
 SNOW-486: ``close_action`` is conventionally ``"dismiss"`` — the owning
 sheet is a ``[data-overlay]`` element (includes/_overlay_sheet.html), so
@@ -17,15 +18,87 @@ Parameters (passed via ``{% include … with … %}``):
   close_action (string) — Value for the button's ``data-action`` attribute.
                            Pass "dismiss" unless the owning sheet has its
                            own bespoke close handler.
+  title_class  (string, optional) — Font-size/weight utilities for the
+                           title. Defaults to the original
+                           ``text-sm font-semibold``; the "Manage
+                           downloads" sheet (SNOW-645 review) passes
+                           ``text-lg font-bold`` for its own larger
+                           heading. ``text-text-1`` is always applied
+                           underneath whatever this carries, so callers
+                           only need to state size/weight.
+
+SNOW-645 review, three times over on the × itself:
+
+1. It used to be ``text-lg leading-none px-1`` — a ~26×20px hit target,
+   well under the 44×44 minimum. First pass: centred the SAME small glyph
+   inside a new ``h-11 w-11`` (44×44px) box, growing the tap target only.
+   Wrong call — Hugo's report: "the 'x' is very small — it needs to fill
+   the 44x44". Reversed: the mark itself now scales to read at the
+   control's own size, not a small glyph floating in a big invisible box.
+2. The mark is no longer the literal "×" (U+00D7 multiplication sign)
+   character. It does not scale well — past a certain size it reads as a
+   thin, off-centre mathematical symbol whose optical centre sits high in
+   the line box, rather than a close icon. Replaced with the SAME
+   stroke-based inline SVG cross idiom ``#map-help-close`` /
+   ``#home-intro-close`` already use in ``_map_embed.html``
+   (``viewBox="0 0 24 24"``, ``stroke="currentColor"``, round caps/joins)
+   — ``currentColor`` means it inherits ``text-text-2``/``hover:text-text-1``
+   exactly as the old glyph did, no separate colour to keep in sync.
+3. Reconciled against the Claude Design source: the glyph is 20×20 (was
+   22×22 — a 2px difference, tightened to match exactly rather than left
+   as a rounding gap), and the 44×44 hit box now carries a ``-mt-3 -mr-3``
+   negative margin (``-12px`` top/right, matching the design) so the
+   OVERSIZED tap target does not inflate the header row's own rendered
+   height the way a plain ``h-11 w-11`` box would — the row's height is
+   still set by its shortest content (the title line), not by the
+   invisible-but-laid-out corners of an enlarged button. The hover fill
+   (``hover:bg-chip-strong``, ``rounded-tag``) is new too — the design
+   gives both this control and the overflow trigger the same translucent
+   hover backdrop, which the plain colour-only ``hover:text-text-1`` this
+   button already had did not provide.
+
+One size for all three consumers, deliberately — not a second
+``title_class``-style parameter: checked against favourites
+(``_favourites_surface.html``) and report (``observations/_report_form.html``,
+both tighter headers than downloads) and 20×20 in a 44×44 box reads
+sensibly in all three rather than needing a per-sheet override.
+
+KNOWN TEST BREAKAGE from the glyph swap (not fixed here — test files are
+out of scope for this pass): ``tests/e2e/test_report_sheet.py``
+(``test_report_form_close_button_hides_sheet``,
+``test_anonymous_signin_cta_has_close_button``) and
+``tests/e2e/test_favourites.py`` (``test_create_form_close_button_hides_sheet``,
+``test_anonymous_signin_cta_has_close_button``) each disambiguate this
+button from the Cancel button (which also carries
+``data-action="dismiss"``) via ``page.locator(…, has_text="×")`` — a
+locator that now matches nothing, since the visible mark is an SVG with
+no text content. The fix, when tests are back in scope, is a structural
+locator (e.g. scoped to this header's own row, or an
+``aria-label="Close"`` filter) rather than one keyed to the glyph's text.
 {% endcomment %}
 <div class="flex items-center justify-between px-2 pt-1 pb-3">
-    <span class="text-sm font-semibold text-text-1">{{ title }}</span>
+    <span class="{% if title_class %}{{ title_class }}{% else %}text-sm font-semibold{% endif %} text-text-1">
+        {{ title }}
+    </span>
     <button
         type="button"
         data-action="{{ close_action }}"
         aria-label="{% trans 'Close' %}"
-        class="text-text-2 hover:text-text-1 text-lg leading-none px-1"
+        class="-mt-3 -mr-3 flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:bg-chip-strong hover:text-text-1"
     >
-        ×
+        <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </svg>
     </button>
 </div>

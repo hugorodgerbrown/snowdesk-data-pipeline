@@ -16,21 +16,22 @@
  * defaults it to `true`. `setOnline(false)` overrides it per-test (reset in
  * afterEach) to exercise the offline red-dot + row-disable behaviour.
  *
- * SNOW-586: the `downloaded` (pinned-tiles) row's own describe block also
- * side-effect-imports `basemap_download_core.js`, so `_probeAnyPinnedTile()`
- * runs its REAL `cachedTilesFromURLs()` filtering against a real URL
- * template rather than a stand-in — the whole point of those tests is
- * proving tiles from a bucket that doesn't match the active basemap are
- * excluded and tiles from one that does are still found after it. That
- * block stubs the map handle as the bare global `MAP` and hides it from
- * `window` (`hideWindowMap()`), which is how a browser presents map.js's
- * top-level `let MAP` — see that helper's docstring.
+ * SNOW-645: the `downloaded` (pinned-tiles) row this file used to cover
+ * (SNOW-586's multi-bucket union describe block, plus the `includeDownloaded`
+ * fixture flag, the `pinnedBuckets`/`keys()`/`open()` CacheStorage fake
+ * scaffolding, and the `hideWindowMap()` helper it alone needed) is gone —
+ * the row was removed from ROWS entirely (map_layer_sync_status.js's own
+ * comment there explains why: a per-active-template probe can't answer a
+ * togglable-row question once downloads span every basemap at once). The
+ * overlay it reported on lives in the "Manage downloads" sheet now — see
+ * map_downloads_manager.js and window.pwaDownloadedOverlay in map.js, and
+ * tests/js/test_map_downloaded_overlay_colour.js for that overlay's own
+ * coverage.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
-import '../../static/js/basemap_download_core.js';
 import '../../static/js/map_layer_sync_status.js';
 
 const MAJOR_REGIONS_PATH = '/api/major-regions.geojson';
@@ -55,14 +56,7 @@ function buildFixture({
   // SNOW-524: country rows are opt-in so the pre-existing tier tests keep
   // exercising the country-blind fallback (no country enabled ⟹ ignoreSearch).
   countries = null,
-  // SNOW-586: the "Available offline" (pinned-tiles) row is opt-in too, for
-  // the same reason — every pre-existing test builds its fixture with no
-  // `downloaded` row at all, so `_overlayDot('downloaded')` returns null and
-  // `refresh()` skips `_probeAnyPinnedTile()` entirely for them. Adding the
-  // row unconditionally would exercise a probe none of those 29 tests were
-  // written to expect.
-  includeDownloaded = false,
-  // SNOW-573: opt-in for the same reason as `includeDownloaded` above — the
+  // SNOW-573: opt-in for the same reason `countries` is above — the
   // weather row is the only one carrying a SECOND disable marker owned by
   // another module, and the pre-existing tests were not written to expect it.
   includeWeather = false,
@@ -105,7 +99,6 @@ function buildFixture({
       ${overlayRow('resorts')}
       ${includeFavourites ? overlayRow('favourites') : ''}
       ${includeCommunityReports ? overlayRow('community_reports') : ''}
-      ${includeDownloaded ? overlayRow('downloaded') : ''}
       ${includeWeather ? overlayRow('weather') : ''}
       ${basemapRow('standard', STANDARD_STYLE, true)}
       ${basemapRow('swisstopo', SWISSTOPO_STYLE, false)}
@@ -138,62 +131,12 @@ function setOnline(value) {
 }
 
 /**
- * Give `window` the shape a browser gives it for map.js's map handle:
- * `let MAP = null` at the top of a classic script binds in the global
- * declarative environment, so `window.MAP` is undefined while the bare
- * identifier `MAP` resolves. jsdom collapses `globalThis` and `window` onto
- * one object, which erases that distinction — the conflation that let a
- * `window.MAP` read look correct here for as long as it did.
- *
- * Installs a stand-in `window` inheriting everything from the real one
- * (so `window.pwaLayerSyncStatus`, `window.pwaDb` and the rest still
- * resolve) with an own `MAP` of `undefined`. Returns the restore function.
- *
- * @returns {function(): void}
- */
-function hideWindowMap() {
-  const real = globalThis.window;
-  const standIn = Object.create(real);
-  Object.defineProperty(standIn, 'MAP', { value: undefined });
-  const install = (value) =>
-    Object.defineProperty(globalThis, 'window', { value, configurable: true, writable: true });
-  install(standIn);
-  return () => install(real);
-}
-
-/**
  * A fake `CacheStorage`: `match` resolves truthy for any request whose URL
  * (compared by pathname for same-origin GeoJSON, or by full URL for the
  * cross-origin basemap style URLs) is in `hitUrls`. Optionally throws when
  * `throws.match` is set.
- *
- * SNOW-586: `pinnedBuckets` extends the same fake with `keys()`/`open()` —
- * the two `CacheStorage` methods `_probeAnyPinnedTile()` needs and the
- * pre-SNOW-586 version of this fake never implemented (so that probe threw,
- * was swallowed by `refresh()`'s per-task `.catch()`, and the `downloaded`
- * row had no unit coverage at all — the union fix included). Extending the
- * ONE shared fake rather than adding a second is safe here: no existing
- * test's fixture includes a `downloaded` row (see `buildFixture`'s
- * `includeDownloaded`), so `_probeAnyPinnedTile()` is never reached by any
- * of them regardless of what `keys()`/`open()` do — the other 29 tests
- * exercise exactly the same code path they always have.
- *
- * `pinnedBuckets` is `{ [cacheName]: { urls: string[], openThrows?:
- * boolean, keysThrows?: boolean } }`. `keys()` returns the configured
- * bucket names (in the object's own key order, which is what
- * `Object.keys()` — and so `caches.keys()` in a real browser — preserves);
- * `open(name)` returns a per-bucket fake `Cache` whose own `keys()`
- * resolves to `{url}`-shaped Request stand-ins, or throws per-bucket via
- * `openThrows`/`keysThrows` so a test can prove one bucket's failure never
- * loses another's tiles.
  */
-function fakeCaches({
-  hitPaths = [],
-  hitUrls = [],
-  hitQueries = [],
-  throws = {},
-  pinnedBuckets = {},
-} = {}) {
+function fakeCaches({ hitPaths = [], hitUrls = [], hitQueries = [], throws = {} } = {}) {
   return {
     match: vi.fn(async (request) => {
       if (throws.match) throw new Error('match failed');
@@ -206,20 +149,6 @@ function fakeCaches({
       // `ignoreSearch` probe erased.
       if (hitQueries.includes(parsed.pathname + parsed.search)) return new Response('{}');
       return hitPaths.includes(parsed.pathname) ? new Response('{}') : undefined;
-    }),
-    keys: vi.fn(async () => {
-      if (throws.keys) throw new Error('keys failed');
-      return Object.keys(pinnedBuckets);
-    }),
-    open: vi.fn(async (name) => {
-      const bucket = pinnedBuckets[name];
-      if (!bucket || bucket.openThrows) throw new Error(`open failed for ${name}`);
-      return {
-        keys: vi.fn(async () => {
-          if (bucket.keysThrows) throw new Error(`keys failed for ${name}`);
-          return bucket.urls.map((url) => ({ url }));
-        }),
-      };
     }),
   };
 }
@@ -648,109 +577,6 @@ describe('probes that throw', () => {
     expect(basemapDotState('swisstopo')).toBe('uncached');
     // The active basemap is available regardless of the probe outcome.
     expect(basemapDotState('standard')).toBe('cached');
-  });
-});
-
-describe('downloaded row (pinned-tiles) — SNOW-586 multi-bucket union', () => {
-  // A `{z}/{x}/{y}` template `cachedTilesFromURLs` (basemap_download_core.js)
-  // can actually match, plus one URL that satisfies it and one that never
-  // could (wrong host/shape entirely — no amount of template-matching
-  // confuses the two).
-  const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
-  const MATCHING_TILE_URL = 'https://tiles.example/10/1/1.pbf';
-  const NON_MATCHING_URL = 'https://other.example/not-a-tile.json';
-  // The furniture a download pins alongside the tiles: the style JSON and
-  // its sprite sheet. Same host as the template, neither matching it.
-  const STYLE_JSON_URL = 'https://tiles.example/standard/style.json';
-  const SPRITE_URL = 'https://tiles.example/standard/sprite@2x.png';
-
-  let restoreWindow = null;
-
-  beforeEach(() => {
-    buildFixture({ includeDownloaded: true });
-    // `_probeAnyPinnedTile()` falls back to "any entry at all" when either
-    // of these is unresolvable (see its own docstring) — stubbed here so
-    // the tests below exercise the REAL per-tile filtering instead of
-    // that fallback, which is the only way to actually distinguish the
-    // matching bucket from the non-matching one.
-    //
-    // SNOW-610: the map handle now comes from `window.snowdeskMapState`,
-    // map.js's one named channel to its shared state. `hideWindowMap()`
-    // still runs, so `window.MAP` stays undefined throughout — that is
-    // what keeps this the M1 regression test: if the module ever goes back
-    // to reading `window.MAP`, `map` resolves null, the template goes with
-    // it, and the probe drops onto the "any entry at all" fallback these
-    // tests exist to distinguish from real per-tile filtering.
-    window.snowdeskMapState = Object.freeze({ get map() { return {}; } });
-    globalThis.activeBasemapTileTemplate = () => TEMPLATE;
-    restoreWindow = hideWindowMap();
-  });
-
-  afterEach(() => {
-    if (restoreWindow) restoreWindow();
-    restoreWindow = null;
-    delete window.snowdeskMapState;
-    delete globalThis.activeBasemapTileTemplate;
-  });
-
-  it('a bucket holding only the style JSON and sprites reads as uncached', async () => {
-    // The case the probe exists for (see its docstring): a run that pinned
-    // the furniture and none of the map must not read as available
-    // offline. Fails against a `window.MAP` read, which resolves to
-    // undefined in a browser and drops the probe onto its "any entry at
-    // all" fallback.
-    vi.stubGlobal(
-      'caches',
-      fakeCaches({
-        pinnedBuckets: {
-          'snowdesk-basemap-pinned-region-a': { urls: [STYLE_JSON_URL, SPRITE_URL] },
-        },
-      }),
-    );
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('downloaded')).toBe('uncached');
-  });
-
-  it('an earlier bucket with no tiles for this basemap does not hide a later one that has them', async () => {
-    // Object key order is `keys()` order (see fakeCaches's own docstring):
-    // the "region-a" bucket, which the OLD names.find() would have picked
-    // and which holds nothing matching TEMPLATE, comes first; "region-b",
-    // which does, comes second. Under the pre-fix find() this would have
-    // resolved `false` — that is the regression this test catches.
-    vi.stubGlobal(
-      'caches',
-      fakeCaches({
-        pinnedBuckets: {
-          'snowdesk-basemap-pinned-region-a': { urls: [NON_MATCHING_URL] },
-          'snowdesk-basemap-pinned-region-b': { urls: [MATCHING_TILE_URL] },
-        },
-      }),
-    );
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('downloaded')).toBe('cached');
-  });
-
-  it('one bucket failing to enumerate does not lose the others', async () => {
-    // "region-a" throws on open() (mirrors a bucket deleted mid-probe, or
-    // any other transient CacheStorage failure); "region-b" still holds a
-    // matching tile and must still be found — pins the inner try/catch in
-    // _probeAnyPinnedTile's per-bucket loop.
-    vi.stubGlobal(
-      'caches',
-      fakeCaches({
-        pinnedBuckets: {
-          'snowdesk-basemap-pinned-region-a': { urls: [], openThrows: true },
-          'snowdesk-basemap-pinned-region-b': { urls: [MATCHING_TILE_URL] },
-        },
-      }),
-    );
-
-    await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
-    expect(dotState('downloaded')).toBe('cached');
   });
 });
 

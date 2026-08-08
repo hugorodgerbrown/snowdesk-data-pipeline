@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), weather overlay, basemaps
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-08
 ---
 
 # Map page — functional specification
@@ -285,6 +285,23 @@ The basemap origin is configurable by environment variable, so moving to
 a self-hosted tile server is a config change, not a code deploy. Basemap
 tiles are cached opportunistically for offline use (see §6); the danger
 data never is.
+
+Each basemap also has an **identity colour**, shown wherever a downloaded
+area is — the download roundels' fill and a swatch on each row of the
+"Manage downloads" sheet — so a device holding several downloaded areas
+under different basemaps can tell them apart. Both download roundels (the
+per-region one, and the custom-area one in the bottom-right stack) always
+paint the ACTIVE basemap's colour, never a basemap some earlier download
+happened to use — a control sitting on the Swisstopo map is never painted
+in Standard's colour, whatever is stored underneath it. Per-area basemap
+identity is the "Manage downloads" sheet's job, one tap away. The
+per-region download roundel goes one step further: switch basemap after
+downloading a region and its roundel doesn't just go quiet — it shows a
+distinct "downloaded, but for another basemap" ring, in that OTHER
+basemap's colour, that a tap turns into a download for the basemap now
+showing. Nothing was lost by switching; the roundel now says so instead of
+reading as data loss. See [`offline-map.md`](offline-map.md)'s "Download
+basemap" and "Manage downloads" sections for the mechanism.
 
 ---
 

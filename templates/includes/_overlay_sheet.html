@@ -20,12 +20,30 @@ Required context:
   aria_label — Translated label text for the sheet's aria-label.
 
 Optional context:
-  static     — Bool; default False. When True renders inline (no
-               ``hidden``, no ``fixed`` positioning, no z-index) — used
-               only by the component library, mirroring _toast.html's
-               "static" convention. A slot of placeholder text is shown
-               in place of the real (JS-injected) content so the empty
-               shell isn't invisible in the panel.
+  static      — Bool; default False. When True renders inline (no
+                ``hidden``, no ``fixed`` positioning, no z-index) — used
+                only by the component library, mirroring _toast.html's
+                "static" convention. A slot of placeholder text is shown
+                in place of the real (JS-injected) content so the empty
+                shell isn't invisible in the panel.
+  scroll_body — Bool; default False. Ignored when ``static``. SNOW-645
+                review — see the "Bounded height" section below for the
+                defect this exists to fix.
+                False (favourites, report): the SHEET ITSELF scrolls as
+                one block (``overflow-y-auto`` on this element) — the
+                safe default for a body injected wholesale by JS
+                (favourites.js / report.js), which this partial has no
+                visibility into and so cannot carve a scroll region out
+                of.
+                True (the "Manage downloads" sheet): this element becomes
+                a flex column with its OWN overflow hidden instead
+                (``flex flex-col overflow-hidden``, no scrolling here) —
+                the caller's own body is then responsible for marking
+                ONE of its children as the scroll region
+                (``flex-1 overflow-y-auto min-h-0``) while its header and
+                footer stay pinned as ordinary, non-growing flex
+                children. See _map_downloads_sheet.html for the concrete
+                shape.
 
 ``tabindex="-1"`` (SNOW-538) makes the container a programmatic focus
 target without putting it in the tab order: favourites.js and report.js
@@ -40,13 +58,28 @@ the same distance the map control roundels use, so the sheet's edges line
 up with the stack above it, on notched devices too. Being inset on all
 sides, it also takes a full border and radius rather than the top-only
 pair it used while it was docked flush to the bottom.
+
+Bounded height (SNOW-645 review). This element used to set no
+max-height at all — content-driven height on a ``fixed``, bottom-docked
+box, so a sheet with enough content (the "Manage downloads" sheet with
+ten-plus areas is what surfaced it) grows UPWARD past the top of the
+viewport, pushing its own header off-screen entirely with nothing to
+stop it. All three consumers can hit this, not just downloads — the fix
+lives here, once, rather than in the one sheet that happened to prove
+it. ``max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]``
+bounds it to "the room between the top of the screen and this sheet's
+own bottom inset" — the SAME arbitrary-value-plus-token idiom this file
+already uses for its position (``bottom-[var(--map-edge-inset-bottom)]``
+etc.), not a new mechanism. ``dvh``, not ``vh``: on mobile ``vh`` ignores
+the browser chrome and would let the sheet run underneath it — the same
+bug in a subtler form.
 {% endcomment %}
 <div
     id="{{ id }}"
     {% if not static %}hidden{% endif %}
     tabindex="-1"
     data-overlay
-    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)]{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-96"
+    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-96"
     aria-label="{{ aria_label }}"
 >
     {% if static %}

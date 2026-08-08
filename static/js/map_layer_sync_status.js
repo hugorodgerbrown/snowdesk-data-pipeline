@@ -196,18 +196,15 @@
     // payload simply stops drawing anything as scrubbed dates roll past
     // its forecast window, rather than needing an explicit staleness check.
     weather: Object.freeze({ kind: 'idb', key: 'weather' }),
-    // The "Available offline" row. Unlike every other entry this has no
-    // feed of its own to probe — its question is "are any basemap tiles
-    // pinned at all", i.e. is there an offline map to speak of.
-    downloaded: Object.freeze({ kind: 'pinned-tiles' }),
+    // SNOW-645: the "Available offline" row that lived here (``downloaded:
+    // {kind: 'pinned-tiles'}``, probed by the now-deleted
+    // ``_probeAnyPinnedTile``) is gone — its dot went permanently grey and
+    // unclickable on a basemap switch, because the probe was inherently
+    // per-ACTIVE-template with no way to say so from the row. The overlay
+    // it reported on moved into the "Manage downloads" sheet, bound to the
+    // sheet being open rather than a togglable layer — see
+    // map_downloads_manager.js and window.pwaDownloadedOverlay in map.js.
   });
-
-  // The cache deliberate downloads write to. NOT the passive
-  // ``snowdesk-basemap-`` cache that ordinary panning and zooming fills:
-  // that one is a browsing side effect, capped and LRU-trimmed, and can
-  // vanish under the user at any moment. Reporting it as "available
-  // offline" would be a promise this app cannot keep.
-  const PINNED_BASEMAP_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
 
   // SNOW-524: the four feeds a country load fetches (``ensureCountryLoaded`` in
   // static/js/map.js). All four are ``?country=<code>``-scoped and all four are
@@ -519,79 +516,6 @@
   }
 
   /**
-   * Whether the pinned basemap cache holds at least one TILE.
-   *
-   * Tiles specifically, not merely "at least one entry": a download also
-   * pins the style JSON and its sprites, so an entry count would go green
-   * off a run that cached the furniture and none of the map. Tiles are
-   * identified by running the active basemap's URL template backwards
-   * (``cachedTilesFromURLs``), which also makes the dot per-basemap —
-   * consistent with the overlay it sits beside, and honest, since tiles
-   * pinned for one basemap genuinely are not available on another.
-   *
-   * SNOW-586: every per-area pinned bucket is UNIONED (accumulated into
-   * one URL list), not just the first ``caches.keys()`` happens to
-   * return. Each deliberate download now writes into its OWN bucket
-   * (``PINNED_BASEMAP_CACHE_PREFIX + areaId``), so taking only the first
-   * match would answer "does the first bucket, by Cache Storage insertion
-   * order, hold a tile for the active basemap?" rather than "is ANY area
-   * available offline?" — concretely, an area downloaded under a
-   * DIFFERENT basemap than the one now active can sort first and hold
-   * none of the active template's tiles, which would read the whole dot
-   * as uncached even though a complete area sits in a later bucket.
-   *
-   * This re-implements the same union `static/js/map.js`'s
-   * ``pinnedBasemapCacheURLs()`` performs, as a local loop rather than a
-   * shared call: this module is deliberately self-contained (its own
-   * ``PINNED_BASEMAP_CACHE_PREFIX``, its own never-throws contract), and
-   * reaching across into another script's helper would make that
-   * contract depend on script load order instead.
-   *
-   * Falls back to "any entry at all" when the template is unresolvable
-   * (the style still settling) rather than reporting a bare no.
-   *
-   * SNOW-610: the map handle comes from ``window.snowdeskMapState``, the
-   * one named channel to map.js's shared state. It used to be read as the
-   * bare identifier ``MAP`` — which works, because a top-level ``let`` in
-   * a classic script lands in the global declarative environment — but
-   * that is invisible to a reader and impossible to grep for, and reading
-   * the same handle as ``window.MAP`` (which is NOT a window property) is
-   * what left this probe stuck on the "any entry at all" fallback the
-   * paragraph above warns against for its whole life (M1,
-   * docs/code-reviews/2026-08-03-js-review.md).
-   *
-   * @returns {Promise<boolean>}
-   */
-  async function _probeAnyPinnedTile() {
-    try {
-      const names = await caches.keys();
-      const pinnedNames = names.filter((n) => n.startsWith(PINNED_BASEMAP_CACHE_PREFIX));
-      if (!pinnedNames.length) return false;
-      const urls = [];
-      for (const name of pinnedNames) {
-        try {
-          const cache = await caches.open(name);
-          const requests = await cache.keys();
-          for (const request of requests) urls.push(request.url);
-        } catch (_e) {
-          // One bucket failing to enumerate must not lose the others.
-        }
-      }
-      if (!urls.length) return false;
-      const core = self.pwaBasemapDownloadCore;
-      const map = window.snowdeskMapState ? window.snowdeskMapState.map : null;
-      const template =
-        typeof window.activeBasemapTileTemplate === 'function' && map
-          ? window.activeBasemapTileTemplate(map)
-          : null;
-      if (!core || !template) return true;
-      return core.cachedTilesFromURLs(template, urls).length > 0;
-    } catch (_e) {
-      return false;
-    }
-  }
-
-  /**
    * True when ``url`` (a basemap's cross-origin style URL) is present in
    * ANY Cache Storage cache — the per-basemap "available offline" proxy.
    * The style JSON is cached both by passive browsing (sw.js's
@@ -700,9 +624,7 @@
       if (!dot) continue;
 
       let probe;
-      if (resource.kind === 'pinned-tiles') {
-        probe = _probeAnyPinnedTile();
-      } else if (resource.kind === 'idb') {
+      if (resource.kind === 'idb') {
         probe = _probeIdbRow(resource.key);
       } else if (resource.countryScoped && enabledCountries.length > 0) {
         probe = _probeEveryCountry(resource.path, enabledCountries);

@@ -47,6 +47,100 @@ function activeBasemapTileTemplate(map) {
   return null;
 }
 
+// SNOW-645: the settings.BASEMAP_STYLES key of the basemap currently
+// selected in the picker, read off the checked radio row that map.js:150-159
+// sets on boot and map_basemap_picker.js:285-291 maintains on every change.
+// Display-only — unlike activeBasemapTileTemplate above, which reads the
+// *rendered* style and is what beforeWarm uses to decide eviction, this
+// reads the *picker DOM*, which map_basemap_picker.js updates SYNCHRONOUSLY
+// on click, before MapLibre's asynchronous setStyle() has actually loaded
+// the new style. So for the moment between those two, this LEADS the
+// render rather than lagging it: it already reports the newly-picked key
+// while activeBasemapTileTemplate still resolves the outgoing style's
+// template. A download triggered in that narrow window would therefore
+// record the new key against tiles that were actually fetched from the
+// OLD basemap — display-only is what keeps that mismatch harmless: nothing
+// here feeds the eviction decision, which stays template-only. Returns
+// null with no menu, or no checked row (nothing has resolved yet).
+function activeBasemapKey() {
+  const basemapMenu = document.getElementById('basemap-menu');
+  if (!basemapMenu) return null;
+  const checked = basemapMenu.querySelector(
+    '.basemap-menu-item[data-basemap-key][aria-checked="true"]',
+  );
+  return (checked && checked.dataset.basemapKey) || null;
+}
+
+// SNOW-645: lazily built {key: label} map, read off the basemap picker's
+// own rendered buttons rather than duplicating apps/public/views.py's
+// _BASEMAP_LABELS in JS — that keeps every caller showing the SAME
+// server-translated string the popover itself shows, with no new JS
+// literal for tox -e i18n-lint to flag. Built once and cached: the
+// picker's markup is static for the life of the page, it never re-renders.
+// Shared module scope rather than a per-caller copy — the Manage downloads
+// sheet (map_downloads_manager.js) and the region roundel's "downloaded
+// under another basemap" state (map_region_download.js) both need it, and
+// a second implementation would be the same lookup written twice.
+let _basemapLabelsByKey = null;
+
+/**
+ * The picker's basemap label for `key`, or '' if the picker has no
+ * matching row (an unrecognised key, or a picker-invisible one like
+ * `swisstopo_light` — see `_BASEMAP_LABELS`'s own docstring).
+ *
+ * @param {string} key
+ * @returns {string}
+ */
+function basemapLabel(key) {
+  if (!_basemapLabelsByKey) {
+    _basemapLabelsByKey = {};
+    const menu = document.getElementById('basemap-menu');
+    if (menu) {
+      // Iterates every [data-basemap-key] row and compares dataset.basemapKey
+      // — never interpolates a stored key into a CSS selector, which would
+      // be an injection risk if a key ever contained selector syntax.
+      menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+        const btnKey = btn.dataset.basemapKey;
+        if (btnKey) _basemapLabelsByKey[btnKey] = self.pwaStrings.collapse(btn.textContent);
+      });
+    }
+  }
+  return _basemapLabelsByKey[key] || '';
+}
+
+// Hex floor for basemapIdentityColour below — the SAME green
+// --color-sync-ok resolves to in light mode (src/css/main.css @theme).
+// MapLibre paint values can't reference a CSS custom property at all, so
+// every consumer of an identity colour (the download progress grid, the
+// downloaded-areas overlay) has to read the live value off the document
+// instead — this is the floor for the pathological case where even THAT
+// comes back empty (no stylesheet loaded at all).
+const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
+
+// SNOW-645: resolve `key` (a settings.BASEMAP_STYLES key, or null/unknown)
+// to its identity colour, in the same three tiers as the CSS
+// var(--color-basemap-…, var(--color-sync-ok)) fallback the swatch and
+// roundel rules use (src/css/main.css, static/css/map.css) — kept in step
+// with that fallback deliberately, since the failure mode (a stale
+// output.css build with the token undefined) is identical here:
+//   1. --color-basemap-<key, underscores to dashes> off the document root
+//      — the exact token those CSS rules read, so every surface (roundel,
+//      sheet swatch, progress grid, downloaded-areas overlay) agrees.
+//   2. --color-sync-ok — no key (unresolved picker), an unrecognised key,
+//      or a stale build where tier 1's token isn't defined.
+//   3. DOWNLOAD_PROGRESS_COLOUR_FALLBACK — tier 2 itself came back empty.
+//
+// @param {string | null} key
+// @returns {string} A CSS colour value, never empty.
+function basemapIdentityColour(key) {
+  const root = getComputedStyle(document.documentElement);
+  if (key) {
+    const value = root.getPropertyValue(`--color-basemap-${key.replace(/_/g, '-')}`).trim();
+    if (value) return value;
+  }
+  return root.getPropertyValue('--color-sync-ok').trim() || DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
+}
+
 // SNOW-492: sprite JSON/PNG URLs (1x and 2x) for `map`'s current style, if
 // any. MapLibre's `sprite` style property is either a single base URL
 // string or (multi-sprite styles) an array of `{id, url}` entries; both
@@ -417,8 +511,8 @@ async function _nextCustomAreaOrdinal() {
  * rather than assuming it.
  *
  * @param {{id: string, ordinal: number, name?: string, bbox: number[],
- *   band: number[], centre_tile: Object, template: string, bytes: number,
- *   savedAt: string}} area
+ *   band: number[], centre_tile: Object, template: string,
+ *   basemapKey?: string|null, bytes: number, savedAt: string}} area
  * @returns {Promise<void>}
  */
 async function _appendCustomArea(area) {
@@ -482,6 +576,9 @@ async function basemapDownloadedAreas() {
         name: entry.name || entry.region_id,
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        // SNOW-645: absent on a record written before this ticket shipped
+        // — reads as "downloaded, basemap unknown" rather than a wrong one.
+        basemapKey: entry.basemapKey || null,
       });
     }
   } catch (_e) {
@@ -514,6 +611,8 @@ async function basemapDownloadedAreas() {
             : entry.id),
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
+        // SNOW-645: see the region branch above for the "unknown" fallback.
+        basemapKey: entry.basemapKey || null,
       });
     }
   } catch (_e) {
@@ -539,6 +638,117 @@ async function basemapDownloadedAreas() {
     bytesById[id] = await measurePinnedBucketBytes(id);
   }
   return manage.reconcileAreas(areas, storedIds, bytesById);
+}
+
+/**
+ * SNOW-645: every DISTINCT tile template currently downloaded, paired with
+ * the basemap it was fetched under — the input `refreshDownloadedOverlay`
+ * (static/js/map.js) needs to paint every basemap's downloads at once,
+ * each in its own identity colour, rather than only the active basemap's.
+ *
+ * Deliberately NOT `basemapDownloadedAreas()` widened to carry `template` —
+ * that reader is the canonical, lossy-by-design normaliser eviction
+ * planning and the Manage downloads sheet share (see its own docstring),
+ * and neither of those callers has any use for a tile template. This reads
+ * `basemap.regions` and `basemap.customAreas` directly instead, which is
+ * the same pair of records `basemapDownloadedAreas()` reads — this
+ * function is a sibling of it, not a wrapper around it.
+ *
+ * A template can appear on more than one recorded area (several regions,
+ * or a region and a custom area, downloaded under the same basemap) — this
+ * dedupes by template, since `cachedTilesFromURLs` is run once per
+ * template regardless of how many areas share it. If two records
+ * disagree about the template's `basemapKey` (only possible with a
+ * pre-SNOW-645 keyless record alongside a keyed one for the same
+ * template), the non-empty key wins — an unresolved basemap should never
+ * shadow a known one.
+ *
+ * @returns {Promise<Array<{template: string, basemapKey: string}>>}
+ *   `basemapKey` is always a string, `''` for unknown — never `null` —
+ *   so a caller can use it as a MapLibre `match` arm directly. Empty when
+ *   nothing is recorded, or the reads fail — best-effort, matching
+ *   `basemapDownloadedAreas()`'s own degrade-to-nothing behaviour.
+ */
+async function basemapDownloadedTemplates() {
+  const byTemplate = new Map();
+  const record = (template, basemapKey) => {
+    if (!template) return;
+    const key = basemapKey || '';
+    const existing = byTemplate.get(template);
+    if (existing === undefined || (!existing && key)) {
+      byTemplate.set(template, key);
+    }
+  };
+
+  if (window.pwaDb) {
+    try {
+      const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+      const regions = Array.isArray(row && row.value) ? row.value : [];
+      for (const entry of regions) {
+        if (entry) record(entry.template, entry.basemapKey);
+      }
+    } catch (_e) {
+      // Best-effort — see docstring.
+    }
+  }
+
+  try {
+    const customAreas = await _readCustomAreas();
+    for (const entry of customAreas) {
+      if (entry) record(entry.template, entry.basemapKey);
+    }
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
+
+  return Array.from(byTemplate, ([template, basemapKey]) => ({ template, basemapKey }));
+}
+
+/**
+ * SNOW-645 review: infer which basemap an ORPHANED bucket (SNOW-612 — a
+ * pinned bucket with no record, so `reconcileAreas` gives it
+ * `basemapKey: null`) most likely belongs to, for the "Manage downloads"
+ * row's pale left-edge rule — DECORATION ONLY. This is inference from
+ * what is actually on disk, never a record: nothing writes it back
+ * anywhere, and no other reader may ever treat the result as anything
+ * more than a colour hint for a row whose only action is Remove.
+ *
+ * Matches the orphan's own cached tile URLs against every DISTINCT
+ * template `basemapDownloadedTemplates()` already knows about — the SAME
+ * per-template regex match `cachedTilesFromURLs` performs for the
+ * downloaded-tiles overlay, just against one bucket's URLs instead of the
+ * union of all of them. No new URL-parsing or origin-sniffing: a bucket
+ * whose tiles match a template on record was fetched from that
+ * template's basemap.
+ *
+ * @param {string} areaId The orphan's own area id (its bucket name is
+ *   `BASEMAP_PINNED_CACHE_PREFIX + areaId`).
+ * @returns {Promise<string|null>} The first matching basemapKey, or
+ *   `null` when the bucket's tiles match no template currently on record
+ *   (a basemap since retired from the picker, an unreadable bucket, or
+ *   Cache Storage itself unavailable) — the caller's cue to fall back to
+ *   a pale NEUTRAL rule rather than guessing a basemap.
+ */
+async function orphanBasemapKey(areaId) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !('caches' in window)) return null;
+
+  let urls;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const requests = await cache.keys();
+    urls = requests.map((request) => request.url);
+  } catch (_e) {
+    return null;
+  }
+  if (!urls.length) return null;
+
+  const templates = await basemapDownloadedTemplates();
+  for (const { template, basemapKey } of templates) {
+    if (!basemapKey) continue;
+    if (core.cachedTilesFromURLs(template, urls).length > 0) return basemapKey;
+  }
+  return null;
 }
 
 /**
@@ -711,6 +921,30 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {Promise<boolean>} Whether the write landed.
    */
   rename: (areaId, name) => renameCustomArea(areaId, name),
+
+  /**
+   * SNOW-645: the picker's translated label for a basemap key — see
+   * `basemapLabel`'s own docstring above. Exposed here (rather than left
+   * as a bare identifier) because this bridge is specifically for modules
+   * OUTSIDE the map bundle's load-order contract, which map_downloads_manager.js
+   * is: unlike map_region_download.js (inside the bundle, so it calls
+   * `basemapLabel` bare), it cannot assume this script has already run.
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  basemapLabel: (key) => basemapLabel(key),
+
+  /**
+   * SNOW-645 review: infer an orphaned bucket's basemap from its own
+   * cached tiles — see `orphanBasemapKey`'s own docstring for the
+   * matching and the "decoration only" caveat. Exposed here for the same
+   * load-order reason `basemapLabel` is.
+   *
+   * @param {string} areaId
+   * @returns {Promise<string|null>}
+   */
+  orphanBasemapKey: (areaId) => orphanBasemapKey(areaId),
 
   // SNOW-649: the two render-scheduling primitives below are exposed for
   // ONE reason — they were untestable. Both are pure higher-order
@@ -944,14 +1178,6 @@ const DOWNLOAD_PROGRESS_SOURCE_ID = 'download-progress';
 const DOWNLOAD_PROGRESS_FILL_LAYER_ID = 'download-progress-fill';
 const DOWNLOAD_PROGRESS_LINE_LAYER_ID = 'download-progress-line';
 
-// Fallback for --color-sync-ok (src/css/main.css @theme) — the SAME green
-// the layers-menu "available offline" dot and the download roundel's own
-// fill use, so the map, the roundel, and the cache dashboard speak one
-// visual language. MapLibre paint values can't reference a CSS variable, so
-// the live value is read off the document at the start of each run (the
-// theme has a lighter green in dark mode) and this is only the floor.
-const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
-
 // Opacity a landed square sits at, and the peak of the completion pulse.
 // The fill lands ABOVE the choropleth, so it has to stay translucent
 // enough to read the region's danger colour through it while a download
@@ -1060,9 +1286,12 @@ function createDownloadProgressGrid(plan, urlOffset) {
 
   const offset = typeof urlOffset === 'number' ? urlOffset : 0;
   const cellOfURL = Array.isArray(plan.cellOfURL) ? plan.cellOfURL : [];
-  const colour =
-    getComputedStyle(document.documentElement).getPropertyValue('--color-sync-ok').trim() ||
-    DOWNLOAD_PROGRESS_COLOUR_FALLBACK;
+  // SNOW-645 (Hugo's explicit ask, overriding the plan's own non-goal): the
+  // grid now fills in the ACTIVE basemap's identity colour rather than the
+  // generic green, so it speaks the same visual language as the roundel it
+  // completes into rather than seaming into a different colour the instant
+  // the pulse fades and the roundel takes over.
+  const colour = basemapIdentityColour(activeBasemapKey());
   const reducedMotion =
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1408,6 +1637,7 @@ const PINNED_DOWNLOAD_DEPS = {
   fitsQuota: (mb) => basemapDownloadFitsQuota(mb),
   core: () => self.pwaBasemapDownloadCore,
   tileTemplate: () => activeBasemapTileTemplate(MAP),
+  basemapKey: () => activeBasemapKey(),
   planBudget: (areaId, mb) => planBasemapDownloadBudget(areaId, mb),
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),

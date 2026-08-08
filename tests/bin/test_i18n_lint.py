@@ -81,6 +81,79 @@ class TestFlagsHardcodedProse:
         assert "Update available" in _run(str(js)).stdout
 
 
+class TestFlagsVariableIndirection:
+    """SNOW-645 review: one hop of variable indirection into a sink.
+
+    ``SINK_RE`` alone is blind to a value arriving through a variable —
+    which is exactly how seven of ``map_region_download.js``'s eight
+    roundel labels shipped untranslated for as long as this check has
+    existed (a `const text = {…}[state]` map, read by both
+    ``setAttribute('aria-label', text)`` and ``btn.title = text``). This
+    class is the regression test against that pattern reappearing anywhere
+    in the tree.
+    """
+
+    def test_flags_the_exact_map_region_download_shape(self, tmp_path: Path) -> None:
+        """A state-keyed label object, read by two sinks in a row."""
+        js = tmp_path / "offender.js"
+        js.write_text(
+            "function setState(state) {\n"
+            "  const text = {\n"
+            "    idle: 'Download the basemap for this region',\n"
+            "    done: 'The basemap for this region is downloaded',\n"
+            "  }[state];\n"
+            "  btn.setAttribute('aria-label', text);\n"
+            "  btn.title = text;\n"
+            "}\n"
+        )
+
+        result = _run(str(js))
+
+        assert result.returncode == 1
+        assert "Download the basemap for this region" in result.stdout
+        assert "The basemap for this region is downloaded" in result.stdout
+
+    def test_flags_a_ternary_assigned_to_a_variable_before_the_sink(
+        self, tmp_path: Path
+    ) -> None:
+        """The simplest shape: one literal, one ternary branch, one hop."""
+        js = tmp_path / "offender.js"
+        js.write_text(
+            "const label = saving ? 'Saving…' : 'Save';\nel.textContent = label;\n"
+        )
+
+        assert _run(str(js)).returncode == 1
+
+    def test_reports_a_traced_literal_only_once_across_two_sinks(
+        self, tmp_path: Path
+    ) -> None:
+        """One declaration read by two sinks is one thing to fix, not two."""
+        js = tmp_path / "offender.js"
+        js.write_text(
+            "const text = 'Update available';\n"
+            "el.setAttribute('aria-label', text);\n"
+            "el.title = text;\n"
+        )
+
+        result = _run(str(js))
+
+        assert result.returncode == 1
+        # Two SINKS read the one declaration; count the SUMMARY LINE, not
+        # occurrences of the string itself — it legitimately appears twice
+        # within a single finding (the snippet, and the "→ …" explanation
+        # quoting `finding.value`).
+        assert "1 hardcoded user-facing string(s)." in result.stdout
+
+    def test_does_not_flag_a_bare_reassignment_still_out_of_that_variable(
+        self, tmp_path: Path
+    ) -> None:
+        """A declaration with nothing to trace back stays quiet, as today."""
+        js = tmp_path / "clean.js"
+        js.write_text("const label = computeLabel();\nel.textContent = label;\n")
+
+        assert _run(str(js)).returncode == 0
+
+
 class TestStaysQuiet:
     """The non-prose strings these modules assign constantly."""
 
@@ -132,6 +205,45 @@ class TestStaysQuiet:
             "const S = self.pwaStrings.read('t', { reload: 'Reload' });\n"
             "el.textContent = S.reload;\n"
         )
+
+        assert _run(str(js)).returncode == 0
+
+    def test_accepts_a_ternary_of_two_map_strings_lookups_through_a_variable(
+        self, tmp_path: Path
+    ) -> None:
+        """The `custom-control-idle`/`-done` shape — already translated."""
+        js = tmp_path / "clean.js"
+        js.write_text(
+            "const text = done\n"
+            "  ? MAP_STRINGS['custom-control-done']\n"
+            "  : MAP_STRINGS['custom-control-idle'];\n"
+            "btn.setAttribute('aria-label', text);\n"
+        )
+
+        assert _run(str(js)).returncode == 0
+
+    def test_ignores_a_separator_literal_passed_to_a_function_call_in_the_declaration(
+        self, tmp_path: Path
+    ) -> None:
+        """A `.join(' &middot; ')` separator sits in a CALL ARGUMENT, not a
+        value position (after `=`/`?`/`:`) — map.js's own attribution line
+        builds exactly this shape, and it is decoration, not a message.
+        """
+        js = tmp_path / "clean.js"
+        js.write_text(
+            "const html = Array.from(seen).join(' &middot; ');\nel.innerHTML = html;\n"
+        )
+
+        assert _run(str(js)).returncode == 0
+
+    def test_ignores_a_function_parameter_indirection(self, tmp_path: Path) -> None:
+        """A parameter never matches DECL_RE/REASSIGN_RE (both anchored at
+        line-start) — this needs real dataflow to trace, which is exactly
+        the class of case this check declines to chase (see its own
+        module docstring).
+        """
+        js = tmp_path / "clean.js"
+        js.write_text("function toast(message) {\n  body.textContent = message;\n}\n")
 
         assert _run(str(js)).returncode == 0
 

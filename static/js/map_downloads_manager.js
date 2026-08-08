@@ -124,19 +124,39 @@
  * immediately, and the click handler keeps its own ``navigator.onLine``
  * check as the race guard for the gap between paint and tap.
  *
- * ## Its map.js dependencies are three narrow bridges
+ * ## Its map.js dependencies are four narrow bridges
  *
  * Everything this module needs from static/js/map.js is module scope
- * there, so it reaches it through three small frozen globals that file
+ * there, so it reaches it through four small frozen globals that file
  * exposes:
  *
- *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)`` and (SNOW-635)
- *                                ``rename(areaId, name)`` — the read, the
- *                                delete, and the rename. Without it the
- *                                sheet opens and honestly reports that it
- *                                can see nothing, which is the truthful
- *                                answer when the module that owns the
- *                                records hasn't loaded.
+ *   window.pwaDownloadedOverlay  (SNOW-645 review) ``show()``, ``hide()``
+ *                                and ``isVisible()`` for the downloaded-
+ *                                tiles map overlay. ``open()`` calls
+ *                                ``show()`` unconditionally; the in-sheet
+ *                                "Available offline" toggle's own change
+ *                                handler is the ONLY thing that ever calls
+ *                                ``hide()`` — closing the sheet does not,
+ *                                because it is bottom-docked and
+ *                                full-width on mobile
+ *                                (includes/_overlay_sheet.html), and
+ *                                binding visibility to "sheet is open"
+ *                                left the squares this overlay draws
+ *                                permanently covered by the thing showing
+ *                                them. ``render()`` reads ``isVisible()``
+ *                                back to paint the toggle, rather than
+ *                                keeping a flag of its own that could
+ *                                drift from it.
+ *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)``, (SNOW-635)
+ *                                ``rename(areaId, name)`` and (SNOW-645
+ *                                review) ``orphanBasemapKey(areaId)`` —
+ *                                the read, the delete, the rename, and
+ *                                an orphaned row's inferred (never
+ *                                stored) basemap for its pale rule.
+ *                                Without it the sheet opens and honestly
+ *                                reports that it can see nothing, which
+ *                                is the truthful answer when the module
+ *                                that owns the records hasn't loaded.
  *   window.pwaLayersMenu         ``close()``. Optional — without it the
  *                                menu is simply left open behind the
  *                                sheet (SNOW-634: the roundel that opens
@@ -193,10 +213,14 @@
    * @type {Object<string, string>}
    */
   var STRINGS = self.pwaStrings.read('map-downloads-strings-template', {
-    'kind-region': 'Region',
-    'kind-custom': 'Custom area',
-    'kind-incomplete': 'Incomplete download',
-    usage: '%(used)s of %(budget)s used',
+    // SNOW-645 review: an orphaned row (SNOW-612) is labelled by what it
+    // IS — the leftovers of a download that never finished — with no
+    // resume affordance (considered and dropped: a custom-area orphan has
+    // no record to rebuild from, and a link that silently does nothing
+    // for one of the two row kinds is worse than no link for either).
+    // "Incomplete download" shortened to "Incomplete" in a later review
+    // pass, matching Hugo's second mock.
+    'kind-incomplete': 'Incomplete',
     'confirm-remove':
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
@@ -213,6 +237,10 @@
     // note for why.
     'rename-prompt': 'Name this area',
     'rename-failed': "That name couldn't be saved. Try again.",
+    // SNOW-645 review: the overflow trigger's per-row aria-label —
+    // includes/_overflow_menu.html's own default ("More actions") is
+    // ambiguous with many rows on screen at once.
+    'row-menu-label': 'More actions for %(name)s',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -226,6 +254,20 @@
   function downloadCore() {
     return window.pwaBasemapDownloadCore || null;
   }
+
+  // SNOW-645: `basemapLabel` (the picker-label lookup used by `buildRow`
+  // below) now lives in static/js/map_basemap_downloads.js, shared with
+  // the region roundel's "downloaded under another basemap" state
+  // (map_region_download.js) — a second copy here would be the same
+  // lookup written twice. Called lazily (only once the sheet is actually
+  // opened), so it is safe to reference as a bare identifier regardless of
+  // this file's own position in the document relative to that one's
+  // <script> tag: by the time a user can open this sheet, every deferred
+  // script on the page — including map_basemap_downloads.js — has already
+  // run. tests/public/test_map_script_order.py's own docstring lists this
+  // file as one of the eight map*.js modules deliberately outside
+  // MAP_BUNDLE's load-order contract, which only binds modules that need
+  // each other AT PARSE TIME.
 
   /**
    * Read a ``meta:app`` row's value (the budget row — see ``BUDGET_KEY``).
@@ -364,25 +406,89 @@
       isCustomAreaId: downloadCore()?.isCustomAreaId,
     });
 
+    // SNOW-645 review: an orphaned row's left-edge rule should still read
+    // as a pale version of ITS basemap's colour where that can be
+    // inferred, not a flat neutral — see buildRow's own comment and
+    // map_basemap_downloads.js's orphanBasemapKey (whose own docstring
+    // has the "decoration only, not a record" caveat). Resolved here, in
+    // parallel, before any row is built — a row that hasn't resolved yet
+    // has no rule to paint.
+    await Promise.all(
+      rows
+        .filter((row) => row.orphaned)
+        .map(async (row) => {
+          row.recoveredBasemapKey =
+            (await window.pwaBasemapDownloads?.orphanBasemapKey?.(row.id)) || null;
+        }),
+    );
+
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
 
-    const summaryEl = sheet.querySelector('[data-downloads-summary]');
-    if (summaryEl) {
-      summaryEl.textContent = interpolate(STRINGS.usage, {
-        used: core.formatMegabytes(summary.usedBytes),
-        budget: core.formatMegabytes(summary.budgetBytes),
-      });
+    // SNOW-645 review: reflects the overlay's REAL visibility —
+    // window.pwaDownloadedOverlay.isVisible() — rather than a flag of its
+    // own that could drift from it. open() calls show() before this runs
+    // (see its own comment), so a freshly opened sheet always paints this
+    // already checked.
+    //
+    // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
+    // includes/_switch.html dropped its extra_attrs passthrough (a live
+    // attribute-injection surface semgrep flagged), and the switch already
+    // renders id="{{ id }}", which this sheet already sets to the one
+    // fixed value below — a second hook was never needed.
+    const overlayToggle = /** @type {HTMLInputElement|null} */ (
+      sheet.querySelector('#map-downloads-overlay-toggle')
+    );
+    if (overlayToggle) {
+      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
     }
+
+    // SNOW-645 review: the budget figure itself is no longer stated in
+    // this text — it now lives in the <select> right after it ("40.3 MB
+    // of [500 MB ⌄]"), part of the same header row (see the sheet's own
+    // template comment for the layout). The used FIGURE and the word "of"
+    // are two separately-styled spans now, reconciled against the design
+    // (number+unit in mono/medium/text-1, "of" in plain text-2) — only
+    // the figure needs JS at all: `core.formatMegabytes()` is a
+    // locale-invariant numeral, not translatable text, so it is set
+    // directly rather than through the STRINGS/interpolate path "of"
+    // itself still uses as a static `{% trans %}` node in the template.
+    const summaryValue = sheet.querySelector('[data-downloads-summary-value]');
+    if (summaryValue) summaryValue.textContent = core.formatMegabytes(summary.usedBytes);
 
     const bar = sheet.querySelector('[data-downloads-bar]');
     if (bar) {
       bar.style.width = summary.pct + '%';
-      // The bar is the glance-level signal; over budget it stops being a
-      // neutral readout and becomes the thing the sheet is about.
-      bar.classList.toggle('bg-status-error-text', summary.overBudget);
-      bar.classList.toggle('bg-text-2', !summary.overBudget);
+      bar.textContent = '';
+      // SNOW-645 review: one segment per basemap actually stored (grouped
+      // and summed by basemap_manage_core.js's budgetSegments — never one
+      // per area), each sized by flex-grow in proportion to its own share
+      // of the used bytes and coloured via .basemap-identity-fill's
+      // data-basemap-key rules (src/css/main.css §2) — the same rules the
+      // row swatches use, so the two readings of "what basemap is this"
+      // agree. JS sets the key and the grow weight; nothing here touches
+      // a colour or builds a class string.
+      for (const segment of core.budgetSegments(list)) {
+        const el = document.createElement('div');
+        el.className = 'basemap-identity-fill h-full';
+        el.dataset.basemapKey = segment.basemapKey;
+        el.style.flexGrow = String(segment.bytes);
+        el.style.flexShrink = '0';
+        el.style.flexBasis = '0';
+        bar.appendChild(el);
+      }
+    }
+
+    const track = sheet.querySelector('[data-downloads-track]');
+    if (track) {
+      // The bar itself can no longer turn solid red once it is carrying
+      // real basemap colours (SNOW-645 review) — the over-budget signal
+      // moves to the track that holds it instead. Still toggled, not a
+      // one-way class: coming back under budget (a delete, or raising the
+      // budget) has to clear it on the next render.
+      track.classList.toggle('ring-2', summary.overBudget);
+      track.classList.toggle('ring-status-error-text', summary.overBudget);
     }
 
     const over = sheet.querySelector('[data-downloads-over]');
@@ -391,9 +497,42 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    const listEl = sheet.querySelector('[data-downloads-list]');
-    if (listEl) {
-      for (const row of rows) listEl.appendChild(buildRow(row));
+    // SNOW-645 review: rows are grouped by kind — REGIONS, then CUSTOM
+    // AREAS — each under its own heading, rather than one flat list.
+    // groupRowsByKind partitions manageRows' own largest-first order
+    // (never re-sorts it), so a group's own biggest area still leads it.
+    // A group with no rows has its WHOLE wrapper (heading and list
+    // together) hidden — see the sheet's own template comment for why an
+    // empty heading is never shown.
+    const grouped = core.groupRowsByKind(rows);
+    const groupOrder = ['region', 'custom'];
+    const groupLists = {
+      region: sheet.querySelector('[data-downloads-list-region]'),
+      custom: sheet.querySelector('[data-downloads-list-custom]'),
+    };
+    // SNOW-645 review: each ROW now carries its own `border-t` (the row
+    // template's own `<li>` — see buildRow), replacing the `divide-y` the
+    // `<ul>` used to carry — reconciled against the design, which draws
+    // no line under the group heading (so the FIRST row's own top border
+    // is what separates heading from list now) but DOES close the LAST
+    // visible group off with a line underneath its last row. Which group
+    // is "last" is data-driven (either can be empty and hidden), so it
+    // cannot be expressed as a fixed CSS selector — this finds it and
+    // toggles a border-b/border-border pair onto that ONE list's own
+    // <ul>, clearing it from the other.
+    const lastVisibleKind = groupOrder
+      .filter((kind) => grouped[kind].length > 0)
+      .pop();
+    for (const kind of groupOrder) {
+      const listEl = groupLists[kind];
+      const wrapper = sheet.querySelector('[data-downloads-group="' + kind + '"]');
+      const kindRows = grouped[kind];
+      if (wrapper) wrapper.hidden = kindRows.length === 0;
+      if (!listEl) continue;
+      for (const row of kindRows) listEl.appendChild(buildRow(row));
+      const isLastVisible = kind === lastVisibleKind;
+      listEl.classList.toggle('border-b', isLastVisible);
+      listEl.classList.toggle('border-border', isLastVisible);
     }
 
     const select = /** @type {HTMLSelectElement|null} */ (
@@ -426,10 +565,34 @@
   }
 
   /**
+   * A DOM-id-safe version of an area id, for the per-row overflow-menu
+   * trigger/menu id pair below — an area id (``region-<regionId>`` /
+   * ``custom-<uuid>``) is already id-safe in practice, but this is
+   * defensive rather than assumed.
+   *
+   * @param {string} areaId
+   * @returns {string}
+   */
+  function _domSafeId(areaId) {
+    return String(areaId).replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  /**
    * Build one list row.
    *
+   * SNOW-645 review: the row's title is the plain name again — no longer
+   * "Verbier (Region)" (that fold-in was this same ticket's own earlier
+   * pass, reversed here now the group heading above the row says kind
+   * instead). The round basemap swatch is gone too, replaced by
+   * ``[data-row-rule]``, the coloured rule down the row's left edge — same
+   * ``.basemap-identity-fill``/``data-basemap-key`` mechanism, just a
+   * different shape.
+   *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   renameable?: boolean, size: string}} row
+   *   renameable?: boolean, size: string, basemapKey?: string,
+   *   recoveredBasemapKey?: string|null}} row `recoveredBasemapKey` is
+   *   set only for an orphaned row, by render()'s own pre-pass — see its
+   *   comment and map_basemap_downloads.js's `orphanBasemapKey`.
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -440,29 +603,125 @@
     // SNOW-635 review: `row.label` is already the right text — a stored
     // name, or an unrenamed custom area's numbered default, filled in
     // upstream by map.js's basemapDownloadedAreas() — so this module has
-    // no ordinal-aware fallback of its own to build any more.
+    // no ordinal-aware fallback of its own to build any more. For an
+    // orphaned row (SNOW-612) it is the bare bucket id — manageRows falls
+    // back to `id` only when there is no record at all — which is exactly
+    // what buildRow shows: an orphan is labelled by what it IS.
+    //
+    // SNOW-645 review: an orphaned row's title dims to `text-text-2` (the
+    // template's own default is `text-text-1`) — reconciled against the
+    // design, which dims the WHOLE row (title, size, and the rule's own
+    // opacity below), not just the rule, for a row that never finished.
     const label = fragment.querySelector('[data-row-label]');
-    if (label) label.textContent = row.label;
-
-    const kind = fragment.querySelector('[data-row-kind]');
-    if (kind) {
-      // SNOW-612: an orphaned bucket is labelled by what it IS — the
-      // leftovers of a download that never finished — rather than as the
-      // region or custom area it was going to be. It has no stored name
-      // to show, and calling it a finished download would be a lie about
-      // what the device can do offline.
+    if (label) {
+      label.textContent = row.label;
       if (row.orphaned) {
-        kind.textContent = STRINGS['kind-incomplete'] || '';
-      } else {
-        kind.textContent =
-          row.kind === 'custom'
-            ? STRINGS['kind-custom'] || ''
-            : STRINGS['kind-region'] || '';
+        label.classList.remove('text-text-1');
+        label.classList.add('text-text-2');
       }
     }
 
+    // The subtitle is either which basemap this was downloaded under, or
+    // — for an orphan — the fixed "Incomplete" string with no
+    // link (SNOW-645 review considered a "resume" affordance and dropped
+    // it: a region orphan's bucket id could in principle drive one, but a
+    // custom-area orphan has no record — no bbox, no band — to rebuild
+    // from, and a link that silently does nothing for one of the two row
+    // kinds is worse than no link for either; Remove is the only action
+    // an orphan gets). A resolvable-basemap row with no basemapKey (a
+    // legacy record, or a key the picker no longer has) removes the whole
+    // subtitle line rather than showing an unknown basemap — colour is
+    // never the only signal, so the rule below and this line always agree
+    // on whether anything is claimed.
+    const subtitle = fragment.querySelector('[data-row-subtitle]');
+    if (subtitle) {
+      if (row.orphaned) {
+        subtitle.textContent = STRINGS['kind-incomplete'] || '';
+      } else {
+        const basemapName = row.basemapKey
+          ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
+          : '';
+        if (basemapName) {
+          subtitle.textContent = basemapName;
+        } else {
+          subtitle.remove();
+        }
+      }
+    }
+
+    // SNOW-645 review: the coloured rule down the row's left edge. A
+    // COMPLETED row (not orphaned) gets its basemap's identity colour at
+    // full strength, or — keyless — the shared .basemap-identity-fill
+    // fallback (--color-sync-ok green, "downloaded, basemap unknown"),
+    // same as the roundels.
+    //
+    // An ORPHANED row (SNOW-612 — no record, so no stored basemapKey) is
+    // never full-strength and never that green default, which means
+    // "downloaded, basemap unknown" — not true of something that never
+    // finished. Hugo's call: pale, not flat neutral — `opacity-35`
+    // (reconciled against the design; was `opacity-40`) is the shared
+    // "this row is incomplete" modifier applied to EITHER of:
+    //   - render()'s recoveredBasemapKey, when the orphan's own bucket's
+    //     tiles matched a template on record (an INFERENCE — see
+    //     orphanBasemapKey's own docstring; never treated as a stored
+    //     fact past this paint call), painted through the same
+    //     .basemap-identity-fill mechanism a normal row uses, or
+    //   - `bg-sync-off` (the grey this app already uses everywhere else
+    //     for "absent, not an error" — the sync dots' own uncached
+    //     colour) when nothing could be inferred — explicitly NOT
+    //     .basemap-identity-fill's keyless green fallback, for the same
+    //     "not actually downloaded" reason above.
+    const rule = fragment.querySelector('[data-row-rule]');
+    if (rule) {
+      if (row.orphaned) {
+        rule.classList.add('opacity-35');
+        if (row.recoveredBasemapKey) {
+          rule.dataset.basemapKey = row.recoveredBasemapKey;
+        } else {
+          rule.classList.remove('basemap-identity-fill');
+          rule.classList.add('bg-sync-off');
+        }
+      } else if (row.basemapKey) {
+        rule.dataset.basemapKey = row.basemapKey;
+      }
+      // Neither branch: a non-orphaned, keyless row keeps the shared
+      // .basemap-identity-fill class already on the template with no
+      // data-basemap-key — its own CSS fallback (--color-sync-ok) paints
+      // it, same "downloaded, basemap unknown" green the roundels use.
+    }
+
+    // SNOW-645 review: dims to `text-text-3` for an orphan (the template's
+    // own default is `text-text-2`) — see the title's own comment above
+    // for why the whole row dims together, not just the rule.
     const size = fragment.querySelector('[data-row-size]');
-    if (size) size.textContent = row.size;
+    if (size) {
+      size.textContent = row.size;
+      if (row.orphaned) {
+        size.classList.remove('text-text-2');
+        size.classList.add('text-text-3');
+      }
+    }
+
+    // SNOW-645 review: the "…" overflow menu replaces the two inline
+    // Rename/Remove buttons. trigger_id/menu_id are placeholders in the
+    // template (see its own comment) — rewritten here to a per-row id so
+    // aria-controls resolves correctly with any number of rows on screen;
+    // overflow_menu.js's own open/close logic never depends on this
+    // (DOM-traversal-scoped, not id-scoped).
+    const suffix = _domSafeId(row.id);
+    const trigger = fragment.querySelector('[data-overflow-trigger]');
+    const menu = fragment.querySelector('[role="menu"]');
+    if (trigger && menu) {
+      const triggerId = 'downloads-row-overflow-trigger-' + suffix;
+      const menuId = 'downloads-row-overflow-menu-' + suffix;
+      trigger.id = triggerId;
+      menu.id = menuId;
+      trigger.setAttribute('aria-controls', menuId);
+      trigger.setAttribute(
+        'aria-label',
+        interpolate(STRINGS['row-menu-label'], { name: row.label }),
+      );
+    }
 
     const button = fragment.querySelector('[data-downloads-delete]');
     if (button) {
@@ -476,7 +735,9 @@
     // SNOW-635: only a renameable row (a custom area with a real record
     // behind it — see manageRows's own docstring) shows the control. A
     // region's name is its real name, and an orphaned bucket has no
-    // record entry left to write one onto.
+    // record entry left to write one onto. Removes the whole <li> — the
+    // menu item's wrapper (SNOW-645 review: was just the standalone
+    // button) — not just the button, so no empty row is left in the menu.
     const renameBtn = fragment.querySelector('[data-downloads-rename]');
     if (renameBtn) {
       if (row.renameable) {
@@ -485,7 +746,9 @@
         // accepting it unchanged is a no-op rather than blanking the name.
         renameBtn.setAttribute('data-downloads-current-name', row.label);
       } else {
-        renameBtn.remove();
+        const item = renameBtn.closest('li');
+        if (item) item.remove();
+        else renameBtn.remove();
       }
     }
     return fragment;
@@ -497,6 +760,22 @@
    * @returns {Promise<void>}
    */
   async function open() {
+    // SNOW-645 review: called BEFORE render(), not after — render() reads
+    // window.pwaDownloadedOverlay.isVisible() to paint the in-sheet toggle,
+    // and a user opening the sheet must see it already checked, not catch
+    // up on the render after this one. Optional chaining because map.js's
+    // IIFE (which owns the overlay) runs before this file but this module
+    // sits outside the map bundle's own load-order contract — see the
+    // module header.
+    //
+    // Turns the overlay on UNCONDITIONALLY on every open — that is what
+    // makes it discoverable. It does NOT turn off when the sheet closes
+    // (see the toggle's own change handler, further down, which is now the
+    // ONLY thing that calls hide()): the sheet is bottom-docked and
+    // full-width on mobile (includes/_overlay_sheet.html), so binding
+    // visibility to "sheet is open" left the squares this draws
+    // permanently covered by the thing showing them.
+    window.pwaDownloadedOverlay?.show();
     await render();
     sheet.hidden = false;
     // SNOW-634: the roundel (#map-custom-download-control) is the only way
@@ -533,6 +812,10 @@
         return;
       }
       sheet.hidden = true;
+      // SNOW-645 review: hiding the sheet here does NOT hide the
+      // downloaded-tiles overlay — only the in-sheet toggle's own change
+      // handler ever calls hide() now (see this module's header and
+      // open()'s own comment for why closing no longer implies off).
       window.pwaCustomAreaDownload?.openFraming();
       return;
     }
@@ -639,6 +922,24 @@
       // which are stated against the budget that just changed.
       render();
     });
+  });
+
+  // SNOW-645 review: the "Available offline" toggle drives the overlay
+  // DIRECTLY — show()/hide() are the only writers of
+  // window.pwaDownloadedOverlay's visibility, so this is the single place
+  // outside open() that ever calls them, and it never touches a flag of
+  // its own (render() reads isVisible() back, above). No re-render needed:
+  // nothing else on the sheet depends on this state.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches || !target.matches('#map-downloads-overlay-toggle')) {
+      return;
+    }
+    if (target.checked) {
+      window.pwaDownloadedOverlay?.show();
+    } else {
+      window.pwaDownloadedOverlay?.hide();
+    }
   });
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it

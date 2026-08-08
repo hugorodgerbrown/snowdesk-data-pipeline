@@ -1267,9 +1267,10 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Sheet header (SNOW-474) -----------------------------------------------------
-# Shared title + persistent × close control for the favourites/report map
-# sheets. Both context vars are required (title, close_action) — supplying
+# Sheet header (SNOW-474; the 44×44 × and title_class override SNOW-645
+# review) --------------------------------------------------------------------
+# Shared title + persistent × close control for the favourites/report/
+# downloads map sheets. Both title and close_action are required — supplying
 # them here keeps the include from erroring on a missing var.
 
 SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
@@ -1280,6 +1281,90 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Favourite sheet",
         "context": {"title": "Favourite", "close_action": "dismiss"},
+    },
+    {
+        "caption": "Manage downloads sheet (title_class override)",
+        "context": {
+            "title": "Downloads on this device",
+            "close_action": "dismiss",
+            "title_class": "text-lg font-bold",
+        },
+    },
+)
+
+
+# Switch (SNOW-645) -----------------------------------------------------------
+# First use: the "Manage downloads" sheet's "Show areas on the map" control.
+# Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
+# states render correctly from the `checked` attribute alone.
+
+SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Off",
+        "context": {"id": "component-library-switch-off"},
+    },
+    {
+        "caption": "On",
+        "context": {"id": "component-library-switch-on", "checked": True},
+    },
+    {
+        # SNOW-645 review: includes/_switch.html's own wrapping <label>
+        # carries has-[:disabled]:cursor-not-allowed/opacity-50, driven by
+        # the :disabled pseudo-class on the real <input> nested inside it —
+        # a state this fixture can render statically (unlike :focus-visible,
+        # which needs real interaction) via the typed `disabled` boolean.
+        "caption": "Disabled",
+        "context": {
+            "id": "component-library-switch-disabled",
+            "disabled": True,
+        },
+    },
+)
+
+
+# Overflow menu (SNOW-645) -----------------------------------------------------
+# First use: the "Manage downloads" sheet's per-row Rename/Remove actions.
+# `open=True` on one variant so the menu's contents are visible without
+# overflow_menu.js running — the component library page loads no
+# interaction JS for any partial (see that module's own header).
+
+OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Closed",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-closed",
+            "menu_id": "component-library-overflow-menu-closed",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename"},
+                {"label": "Remove"},
+            ],
+        },
+    },
+    {
+        "caption": "Open — custom area (Rename + Remove)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-open",
+            "menu_id": "component-library-overflow-menu-open",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename"},
+                {"label": "Remove"},
+            ],
+            "open": True,
+        },
+    },
+    {
+        "caption": "Open — region (Remove only)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-region",
+            "menu_id": "component-library-overflow-menu-region",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Remove"},
+            ],
+            "open": True,
+        },
     },
 )
 

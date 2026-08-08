@@ -249,7 +249,7 @@ function buildFixture() {
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
-         data-default-basemap-key="standard"
+         data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <button id="map-download-control" type="button"></button>
     <div id="search-pill" data-state="collapsed">
@@ -257,6 +257,32 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
+    <!-- SNOW-645: activeBasemapKey() reads the checked radio here. The
+         boot IIFE (map.js:150-159) is what actually sets aria-checked on
+         first paint, from data-default-basemap-key above matching this
+         row's data-basemap-key — not this markup's own initial value. A
+         second row lets the "other-basemap" tests below switch between
+         two real keys via switchBasemap(). -->
+    <ul id="basemap-menu">
+      <li role="none">
+        <button
+          type="button"
+          class="basemap-menu-item"
+          data-basemap-key="openfreemap_liberty"
+          data-basemap-url="https://tiles.example.invalid/liberty.json"
+          aria-checked="false"
+        >Standard</button>
+      </li>
+      <li role="none">
+        <button
+          type="button"
+          class="basemap-menu-item"
+          data-basemap-key="swisstopo_winter"
+          data-basemap-url="https://tiles.example.invalid/swisstopo.json"
+          aria-checked="false"
+        >Swisstopo (CH)</button>
+      </li>
+    </ul>
     <div id="map-download-evict-confirm" class="hidden" data-overlay data-overlay-hide="class">
       <p id="map-download-evict-confirm-title">Free up space?</p>
       <p id="map-download-evict-confirm-body"></p>
@@ -273,6 +299,25 @@ async function waitFor(predicate, timeoutMs = 2000) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return predicate();
+}
+
+/**
+ * Flip the picker's checked radio to `key` and switch the stub map's
+ * active template, then dispatch the same event map.js's own `styledata`
+ * handler fires once a real basemap switch has finished re-installing
+ * everything (map.js:4012's `snowdesk:basemap-changed`) — the signal
+ * map_region_download.js's `renderControl` listens for.
+ *
+ * @param {string} key
+ * @param {string} template
+ * @returns {void}
+ */
+function switchBasemap(key, template) {
+  for (const btn of document.querySelectorAll('#basemap-menu [data-basemap-key]')) {
+    btn.setAttribute('aria-checked', btn.dataset.basemapKey === key ? 'true' : 'false');
+  }
+  mapStub.setActiveTemplate(template);
+  document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 }
 
 /** The recorded ``basemap.regions`` entry for REGION_ID, or undefined. */
@@ -388,6 +433,18 @@ describe('region download byte recording (SNOW-632)', () => {
     expect(recorded.bytes).not.toBe(measured);
   });
 
+  it("records the picker's active basemap key, and paints it onto the roundel (SNOW-645)", async () => {
+    nextReportedBytes = 111;
+    await downloadRegion();
+
+    const recorded = await recordedRegion();
+    expect(recorded).toBeDefined();
+    expect(recorded.basemapKey).toBe('openfreemap_liberty');
+
+    const btn = document.getElementById('map-download-control');
+    expect(btn.dataset.basemapKey).toBe('openfreemap_liberty');
+  });
+
   it('does not inflate the total on a same-template repeat', async () => {
     const before = await recordedRegion();
     expect(before).toBeDefined();
@@ -440,5 +497,130 @@ describe('region download byte recording (SNOW-632)', () => {
     const afterTileKeysB = afterKeys.filter((k) => k.includes('tiles-b.example.invalid'));
     expect(afterTileKeysB.length).toBeGreaterThan(0);
     expect(afterTileKeysA.length).toBe(0);
+  });
+});
+
+/**
+ * Click the control and wait for a settled 'done' — tolerant of every
+ * ACTIONABLE starting state ('idle', 'error', SNOW-645's 'other-basemap'),
+ * unlike `downloadRegion()` above, which only waits for 'idle'/'done' and
+ * so cannot be reused once 'other-basemap' is in play.
+ *
+ * @returns {Promise<void>}
+ */
+async function runDownloadAndAwaitDone() {
+  const btn = document.getElementById('map-download-control');
+  await waitFor(() => {
+    const s = btn.dataset.downloadState;
+    return s === 'idle' || s === 'done' || s === 'other-basemap' || s === 'error';
+  });
+  if (btn.dataset.downloadState !== 'done') {
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done', 5000);
+  }
+  expect(btn.dataset.downloadState).toBe('done');
+}
+
+describe('the other-basemap roundel state (SNOW-645)', () => {
+  const btn = () => document.getElementById('map-download-control');
+
+  it('reads other-basemap, with the OTHER (recorded) key — not the active one — when its tiles are still cached', async () => {
+    // Clean baseline: a real download under openfreemap_liberty/TEMPLATE_A.
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    nextReportedBytes = 5001;
+    await runDownloadAndAwaitDone();
+    expect((await recordedRegion()).basemapKey).toBe('openfreemap_liberty');
+
+    // Switch to a DIFFERENT basemap. SNOW-632's beforeWarm only evicts a
+    // region's bucket on a SAME-region RE-download; switching basemap
+    // alone deletes nothing, so the tiles just fetched are still on disk
+    // — the region genuinely IS downloaded, just not for what's showing.
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await waitFor(() => btn().dataset.downloadState === 'other-basemap');
+
+    expect(btn().dataset.downloadState).toBe('other-basemap');
+    expect(btn().dataset.basemapKey).toBe('openfreemap_liberty');
+    // Actionable, unlike 'done'/'busy' — see the next test for the click.
+    expect(btn().getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('is actionable — a click downloads the region under the ACTIVE basemap', async () => {
+    expect(btn().dataset.downloadState).toBe('other-basemap');
+
+    nextReportedBytes = 5002;
+    btn().click();
+    await waitFor(() => btn().dataset.downloadState === 'busy');
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    const recorded = await recordedRegion();
+    expect(recorded.template).toBe(TEMPLATE_B);
+    expect(recorded.basemapKey).toBe('swisstopo_winter');
+    expect(btn().dataset.basemapKey).toBe('swisstopo_winter');
+  });
+
+  it('reads done, unchanged, once the record matches the active basemap and is fully cached', () => {
+    // The previous test's own download already put the control here —
+    // regression coverage that the ordinary "same basemap" path still
+    // reads done after _probeDone's SNOW-645 rework.
+    expect(btn().dataset.downloadState).toBe('done');
+    expect(btn().dataset.basemapKey).toBe('swisstopo_winter');
+  });
+
+  it("reads idle, not other-basemap, once the OTHER basemap's bucket has been evicted out-of-band (a stale record)", async () => {
+    const areaId = core.areaIdForRegion(REGION_ID);
+
+    // Switch away — the record currently on disk (swisstopo_winter, from
+    // the previous test) is still fully cached, so this reads
+    // other-basemap first, confirming the setup before it goes stale.
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    await waitFor(() => btn().dataset.downloadState === 'other-basemap');
+    expect(btn().dataset.basemapKey).toBe('swisstopo_winter');
+
+    // Simulate an OUT-OF-BAND eviction — the browser reclaiming Cache
+    // Storage under pressure, say — that drops the bucket WITHOUT going
+    // through evictBasemapAreas (which deletes the IndexedDB record right
+    // alongside the bucket, leaving nothing to read stale in the first
+    // place). This is exactly the gap the cache check in _probeDone
+    // exists to catch: the record still claims swisstopo_winter, but its
+    // tiles are gone — a stale record must not promise them back.
+    cachesStub.buckets.delete('snowdesk-basemap-pinned-' + areaId);
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    await waitFor(() => btn().dataset.downloadState !== 'busy' && btn().dataset.downloadState !== 'other-basemap');
+
+    // 'idle' paints the ACTIVE basemap's own colour, same as every state
+    // except 'other-basemap' (setState's documented default) — it is the
+    // MISSING swisstopo_winter ring, not the presence of any key, that
+    // proves the stale record was rejected rather than trusted.
+    expect(btn().dataset.downloadState).toBe('idle');
+    expect(btn().dataset.basemapKey).toBe('openfreemap_liberty');
+  });
+
+  it('reads other-basemap with the name-less label, and no key attribute, for a pre-SNOW-645 record with no basemapKey', async () => {
+    // A real, valid record + real cached tiles under
+    // openfreemap_liberty/TEMPLATE_A — the previous test left the control
+    // reading idle at exactly that basemap, so this is a genuine new
+    // download rather than a stale leftover.
+    nextReportedBytes = 5003;
+    await runDownloadAndAwaitDone();
+    expect((await recordedRegion()).basemapKey).toBe('openfreemap_liberty');
+
+    // Simulate a record written BEFORE SNOW-645 shipped: strip
+    // basemapKey in place, leaving `template` and the bucket's real tiles
+    // untouched — exactly what a pre-existing record looks like today.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const next = row.value.map((entry) =>
+      entry.region_id === REGION_ID ? { ...entry, basemapKey: undefined } : entry,
+    );
+    await window.pwaDb.put('meta:app', { key: 'basemap.regions', value: next });
+
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await waitFor(() => btn().dataset.downloadState === 'other-basemap');
+
+    expect(btn().dataset.downloadState).toBe('other-basemap');
+    expect(btn().dataset.basemapKey).toBeUndefined();
+    // The name-less variant — never interpolated with an empty name.
+    expect(btn().getAttribute('aria-label')).toBe(
+      "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+    );
   });
 });

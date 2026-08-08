@@ -169,8 +169,59 @@ function buildFixture() {
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
-         data-default-basemap-key="standard"
-         data-season-end="2026-05-31"></div>`;
+         data-default-basemap-key="openfreemap_liberty"
+         data-season-end="2026-05-31"></div>
+    <!-- SNOW-645: mapCustomDownloadControlInit's own guard clause requires
+         every one of these to bind at all (map_custom_download.js:150) —
+         without them the roundel below (the "the custom roundel stays
+         monochrome" describe block) has nothing to render onto. -->
+    <button id="map-custom-download-control" type="button"></button>
+    <div id="map-frame-overlay" hidden>
+      <div id="map-frame-instruction"></div>
+      <div id="map-frame-area">
+        <div id="map-frame-rect"></div>
+      </div>
+      <span id="map-frame-readout"></span>
+      <button id="map-frame-cancel" type="button">Cancel</button>
+      <button id="map-frame-confirm" type="button">Download</button>
+    </div>
+    <!-- The basemap picker markup switchBasemap() (below) flips. -->
+    <ul id="basemap-menu">
+      <li role="none">
+        <button
+          type="button"
+          class="basemap-menu-item"
+          data-basemap-key="openfreemap_liberty"
+          data-basemap-url="https://tiles.example.invalid/liberty.json"
+          aria-checked="false"
+        >Standard</button>
+      </li>
+      <li role="none">
+        <button
+          type="button"
+          class="basemap-menu-item"
+          data-basemap-key="swisstopo_winter"
+          data-basemap-url="https://tiles.example.invalid/swisstopo.json"
+          aria-checked="false"
+        >Swisstopo (CH)</button>
+      </li>
+    </ul>`;
+}
+
+/**
+ * Flip the picker's checked radio to `key` and dispatch the same event a
+ * real basemap switch fires once it has settled (map.js:4012's
+ * `snowdesk:basemap-changed`) — the signal map_custom_download.js's own
+ * listener re-renders the roundel on.
+ *
+ * @param {string} key
+ * @returns {void}
+ */
+function switchBasemap(key) {
+  for (const btn of document.querySelectorAll('#basemap-menu [data-basemap-key]')) {
+    btn.setAttribute('aria-checked', btn.dataset.basemapKey === key ? 'true' : 'false');
+  }
+  document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 }
 
 let cachesStub;
@@ -511,5 +562,121 @@ describe('renaming a custom area', () => {
     const ok = await window.pwaBasemapDownloads.rename('custom-ghost', 'Nope');
 
     expect(ok).toBe(false);
+  });
+});
+
+describe("the custom roundel stays monochrome (SNOW-645 review, superseding an earlier basemap-colour pass)", () => {
+  // An earlier SNOW-645 pass painted this roundel the ACTIVE basemap's
+  // identity colour (fixing a report that it showed Standard's blue while
+  // Swisstopo was on screen). That traded one wrong answer for another —
+  // the sheet this roundel opens spans every basemap's downloads at once,
+  // so the trigger cannot honestly describe its contents with a single
+  // basemap's colour. It is monochrome now (map.css's --ink, scoped to
+  // this control's own id) regardless of what is stored or what basemap
+  // is active — this block is the regression test for THAT, replacing the
+  // colour-tracking coverage this file used to carry. `refresh` is
+  // `_renderControl` itself (map_custom_download.js's own bridge), so
+  // awaiting it settles the async coalescer before each assertion.
+
+  function customControl() {
+    return document.getElementById('map-custom-download-control');
+  }
+
+  it('never carries a data-basemap-key attribute, downloads or not', async () => {
+    installDbStub({
+      'basemap.customAreas': [
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [1, 2, 3, 4],
+          bytes: 5 * MB,
+          basemapKey: 'swisstopo_winter',
+          savedAt: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    });
+    await window.pwaCustomAreaDownload.refresh();
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+  });
+
+  it('stays keyless and unchanged across a basemap switch — the regression test for the reported bug', async () => {
+    // SNOW-634 dropped this control's snowdesk:basemap-changed listener; a
+    // later SNOW-645 pass reinstated it to track the colour; this pass
+    // drops it again, now for good — the colour it existed to keep in
+    // sync is gone. A switch fires the same event this control used to
+    // listen for; the roundel's dataset must simply not react to it.
+    installDbStub({});
+    await window.pwaCustomAreaDownload.refresh();
+    expect(customControl().dataset.downloadState).toBe('idle');
+
+    switchBasemap('swisstopo_winter');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+    expect(customControl().dataset.downloadState).toBe('idle');
+  });
+});
+
+describe('orphanBasemapKey (SNOW-645 review — pale-rule inference for an orphaned bucket)', () => {
+  // window.pwaBasemapDownloads.orphanBasemapKey infers which basemap an
+  // ORPHANED bucket (a pinned Cache Storage entry with no
+  // basemap.regions/basemap.customAreas record — SNOW-612) most likely
+  // belongs to, by matching its own cached tile URLs against every
+  // DISTINCT template basemapDownloadedTemplates() (module-private, not
+  // itself exposed — exercised here only through this bridge and through
+  // refreshDownloadedOverlay, see test_map_downloaded_overlay_colour.js)
+  // currently has on record. Decoration only — see both functions' own
+  // docstrings.
+  const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
+  const MATCHING_TILE_URL = 'https://tiles.example/10/1/1.pbf';
+  const NON_MATCHING_URL = 'https://other.example/not-a-tile.json';
+
+  it("matches the orphan's tiles against a template on record", async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([MATCHING_TILE_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBe('swisstopo_winter');
+  });
+
+  it('returns null when the bucket matches no template currently on record', async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([NON_MATCHING_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
+  });
+
+  it('returns null for a bucket holding no tiles at all', async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set());
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
+  });
+
+  it('returns null when nothing is recorded at all — no template to match against', async () => {
+    installDbStub({});
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([MATCHING_TILE_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
   });
 });

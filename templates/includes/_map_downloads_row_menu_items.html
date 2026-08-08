@@ -1,0 +1,38 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_map_downloads_row_menu_items.html — the "Manage
+downloads" row's overflow-menu contents (SNOW-645 review).
+
+includes/_overflow_menu.html's `items_template` companion — see that
+partial's own docstring for why a template-file caller (this sheet's row
+<template>, server-rendered once and then cloned per row by
+map_downloads_manager.js's buildRow) uses this rather than the `items`
+list-of-dicts parameter, which only a Python caller can construct.
+
+Rename (SNOW-635) and Remove — the same pair of actions the row used to
+carry as two standalone buttons. `data-downloads-rename` / `data-downloads-
+delete` carry no value here; buildRow stamps the area id onto them after
+cloning, exactly as it did on the old inline buttons. buildRow also
+removes the Rename <li> outright for a non-renameable row (a region, or
+an orphaned bucket) — see that function's own comment.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-rename
+        class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
+    >
+        {% trans "Rename" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-delete
+        class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
+    >
+        {% trans "Remove" %}
+    </button>
+</li>

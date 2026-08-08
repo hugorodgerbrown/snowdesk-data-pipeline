@@ -73,8 +73,18 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-community-reports-eligible="true".
   community_reports: 'snowdesk.map.overlay.community_reports',
-  // SNOW-570: which areas are held in the pinned basemap cache.
-  downloaded: 'snowdesk.map.overlay.downloaded',
+  // SNOW-645 review, twice over: 'downloaded' was here (SNOW-570) — the
+  // layers-menu toggle it persisted is gone. It is now an "Available
+  // offline" toggle INSIDE the "Manage downloads" sheet instead
+  // (map_downloads_manager.js, driving window.pwaDownloadedOverlay in
+  // map.js directly) — deliberately SESSION-scoped, not persisted here or
+  // anywhere else: closing the sheet leaves it as the user set it, but a
+  // fresh page load always starts it off. This localStorage key is now
+  // write-once dead: an existing device may still carry a stored
+  // 'true'/'false' from before this change, but nothing reads it any
+  // more, and nothing should start reading it again — reviving it would
+  // silently turn the overlay on for a returning user who never asked to
+  // see it this session.
   // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-weather-layer-eligible="true".
   weather: 'snowdesk.map.overlay.weather',
@@ -104,12 +114,14 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'timelapse-stop-reverse': 'Stop reverse timelapse',
   // SNOW-632: the custom-area framing overlay's CTA readout and top
   // banner. 'frame-up-to' and 'frame-over-ceiling' replace two literals
-  // that used to be assembled in JS (bin/i18n-lint does not catch a
-  // literal assigned to a variable before being rendered, which is a gap
-  // in that check, not a licence — see mapCustomDownloadControlInit's
-  // _updateReadout). 'frame-readout-busy' deliberately has no literal '%'
-  // in the msgid — the caller appends it to the interpolated `pct` value
-  // itself, so there is nothing here for a translation to get wrong.
+  // that used to be assembled in JS — at the time, bin/i18n-lint could
+  // not see a literal assigned to a variable before being rendered, so
+  // these were moved here by hand rather than because the check demanded
+  // it. SNOW-645 closed that gap (the check now follows one hop of
+  // indirection), so the same class of string is caught automatically
+  // now. 'frame-readout-busy' deliberately has no literal '%' in the
+  // msgid — the caller appends it to the interpolated `pct` value itself,
+  // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
@@ -127,6 +139,21 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'default-custom-name': 'Custom area %(n)s',
   // SNOW-642: #region-readout's empty state — see updateReadout below.
   'no-region': 'No region selected',
+  // SNOW-645: the per-region download roundel's own labels
+  // (map_region_download.js's `setState`) — see that file's own comment
+  // and _map_embed.html's map-strings-template for why these moved here.
+  'download-no-region-unavailable': "Basemap download isn't available for this region",
+  'download-no-region-select': 'Select a region to download its basemap',
+  'download-idle': "Download this region's basemap — up to %(mb)s MB",
+  'download-busy': "Downloading this region's basemap — %(pct)s",
+  'download-done': "This region's basemap is downloaded — available offline",
+  'download-error': "This region's basemap download failed — tap to try again",
+  'download-disabled': "This region's basemap is too large to download",
+  'download-offline': 'Basemap download unavailable while offline',
+  'download-other-basemap':
+    "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
+  'download-other-basemap-unnamed':
+    "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
   // SNOW-573: the Weather overlay's layers-menu row disable reason —
   // point weather is forecast-only and often runs short (ICON-CH2
   // commonly returns fewer days than requested), so a scrubbed date

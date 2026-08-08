@@ -58,7 +58,8 @@
 // 'basemap.customAreas' (an ARRAY — see `_appendCustomArea`/
 // `_readCustomAreas`, and their docstrings for the lazy migration from the
 // old single-row 'basemap.customArea'), each entry {id, ordinal, name?,
-// bbox, band, centre_tile, template, bytes, savedAt}. `id` is minted fresh
+// bbox, band, centre_tile, template, basemapKey, bytes, savedAt}. `id` is
+// minted fresh
 // per download (`generateCustomAreaId`) rather than the single fixed
 // `CUSTOM_AREA_ID` every earlier version shared — that shared id is why a
 // second download used to silently replace the first. `name` is written
@@ -362,19 +363,37 @@
    * record) is excluded: it is not "you have this area offline", it is
    * leftover quota waiting to be reclaimed from the sheet.
    *
-   * Neither connectivity nor the active basemap affect this any more —
-   * there is no tile-template dependency left to re-probe on
-   * `snowdesk:basemap-changed`, and nothing here to grey out offline (the
-   * sheet lists and deletes offline, which is exactly when storage
-   * pressure is felt) — so this control no longer listens for either.
+   * Connectivity does not affect this — there is no tile-template
+   * dependency left to re-probe (the sheet lists and deletes offline,
+   * which is exactly when storage pressure is felt), so this control does
+   * not listen for `snowdesk:connectivity-changed` the way its `idle`/
+   * `offline`-carrying sibling does. It does not listen for
+   * `snowdesk:basemap-changed` either (SNOW-645 review, reversed) — see
+   * the comment in the body below for why this roundel carries no visual
+   * distinction between idle and done at all any more.
    *
    * @returns {Promise<void>}
    */
   async function _renderControl() {
     if (runState === 'busy') return;
     const areas = await basemapDownloadedAreas();
-    const done = areas.some((area) => !area.orphaned);
+    const kept = areas.filter((area) => !area.orphaned);
+    const done = kept.length > 0;
     btn.dataset.downloadState = done ? 'done' : 'idle';
+    // SNOW-645 review — this roundel paints NO fill for either state, in
+    // map.css. It went through two failed attempts first: an ACTIVE
+    // basemap colour (fixing a report that it showed Standard's blue
+    // while Swisstopo was on screen, but describing the wrong thing — the
+    // sheet this roundel opens lists downloads across EVERY basemap at
+    // once), then a flat/inverting neutral fill (still a solid disc that
+    // stood out against every other roundel in the stack, in one theme or
+    // the other, no matter which neutral tone it used). The actual fix
+    // was realising the roundel never needed to signal "what have I
+    // downloaded" at all — it is a panel OPENER, and the panel it opens
+    // (the row list, the per-area swatches, the budget bar) already
+    // answers that properly. `data-download-state` still drives the aria
+    // label two lines down (screen readers still hear "done" vs "idle"),
+    // it just no longer drives any paint.
     const text = done
       ? MAP_STRINGS['custom-control-done']
       : MAP_STRINGS['custom-control-idle'];
@@ -1198,7 +1217,7 @@
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      finish: async (result, runBlob, { core, progressFill, template }) => {
+      finish: async (result, runBlob, { core, progressFill, template, basemapKey }) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
         // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
@@ -1245,6 +1264,7 @@
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
             template: template,
+            basemapKey: basemapKey || null,
             bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };
@@ -1327,12 +1347,18 @@
     }
   });
 
-  // SNOW-634: unlike mapDownloadControlInit's own copy of this listener,
-  // this control no longer listens for 'snowdesk:basemap-changed' — the
-  // roundel's "done" no longer depends on the active basemap's tile
-  // template (there is no tile-cache probe left to re-run; see
-  // _renderControl's own docstring).
-  //
+  // SNOW-634 dropped this control's OWN copy of mapDownloadControlInit's
+  // 'snowdesk:basemap-changed' listener, on the reasoning that "done" no
+  // longer depends on the active basemap's tile template (no tile-cache
+  // probe left to re-run). A later SNOW-645 pass briefly reinstated it to
+  // track a per-basemap identity COLOUR this roundel carried for a while,
+  // then a monochrome fill after that colour was reverted — both are gone
+  // now (see _renderControl's own comment: this roundel paints no fill at
+  // all, for either state, in either theme), so there is no longer
+  // anything here for a basemap switch to invalidate. Do not re-add this
+  // listener without a real dependency to justify it — the previous THREE
+  // round-trips on this exact line are the reason for this comment.
+
   // Offline-integrity: re-validate the open CTA's Download button on every
   // connectivity transition — SNOW-632: a run in flight owns the CTA (see
   // paintRun), so this is skipped while busy, exactly like the 'move'
@@ -1356,9 +1382,10 @@
     // same frozen-global idiom as pwaBasemapDownloads/pwaLayersMenu/
     // pwaDownloadedOverlay.
     openFraming: openFraming,
-    // So a delete in the sheet settles the roundel without waiting for
-    // the next basemap switch or connectivity flip — neither of which
-    // affect it any more.
+    // So a delete in the sheet settles the roundel immediately, without
+    // waiting for the next basemap switch (SNOW-645: now its own trigger,
+    // above) or connectivity flip (still not a trigger for this roundel —
+    // see _renderControl's own docstring).
     refresh: renderControl,
   });
 })();

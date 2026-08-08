@@ -57,8 +57,8 @@
 // of a focused region with no computed download summary
 // (properties.download is null).
 //
-// State (no-region/idle/busy/done/disabled/offline, data-download-state)
-// — idle/done are
+// State (no-region/idle/busy/done/disabled/offline/other-basemap,
+// data-download-state) — idle/done/other-basemap are
 // derived from a real pinned-cache probe (every per-area bucket, unioned
 // — SNOW-586) every time the icon is (re)shown, never a stored flag (the
 // "layers menu is a live cache-state dashboard" invariant — see
@@ -69,7 +69,22 @@
 // re-run on the next MapLibre 'idle' rather than left reading idle
 // (see _retryWhenStyleSettles).
 //
-// Click (idle only) — fetches the region's full blob (incl. z tile
+// SNOW-645: 'other-basemap' — the region IS downloaded, just for a
+// DIFFERENT basemap than the one on screen. Before this, switching
+// basemap silently reverted an already-downloaded region's roundel to
+// plain 'idle', indistinguishable from never having downloaded it at all
+// — nothing was actually lost (the tiles and record both survive the
+// switch untouched; SNOW-632 only evicts on a same-region RE-download,
+// never on a basemap change alone), but the control gave no way to tell
+// that from data loss. `_probeDone` now reads the stored record's own
+// `template`/`basemapKey` to tell the two apart, and only claims
+// 'other-basemap' once it has verified the OTHER basemap's tiles are
+// still actually on disk (a stale, evicted record falls through to plain
+// 'idle', same as never downloaded). It is actionable, like 'idle': a tap
+// downloads the region under the ACTIVE basemap, and the existing
+// `beforeWarm` eviction (below) already handles the mismatched bucket.
+//
+// Click (idle/error/other-basemap) — fetches the region's full blob (incl. z tile
 // ranges) from /api/region-basemap-tiles/, assembles the URL list
 // (rangesToTileURLs + same-origin data feeds + active basemap style +
 // sprites — mirrors SNOW-492/493's assembly, minus tile enumeration) and
@@ -84,7 +99,8 @@
   const ribbonEl = document.getElementById('season-ribbon');
 
   // SNOW-570: the regions the user has downloaded, in meta:app under
-  // 'basemap.regions' as [{region_id, band, z, savedAt}].
+  // 'basemap.regions' as [{region_id, band, z, savedAt}] — SNOW-632 added
+  // `template`, SNOW-645 `basemapKey`.
   //
   // SNOW-583 repurposes this record. It used to carry the region's `bbox`
   // (derived from its boundary geometry) so both the "Downloaded areas"
@@ -160,9 +176,15 @@
    * @param {number[]} band The zoom band the run actually fetched.
    * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
    *   ``warm-cache-done`` reply.
+   * @param {string | null} basemapKey SNOW-645: the picker key captured
+   *   alongside `template` at run start (`basemap_download_runner.js`'s
+   *   `run`), display-only — stored so the Manage downloads sheet and this
+   *   control's own roundel can show which basemap the region was
+   *   downloaded under. Null on an unresolved picker; never used for the
+   *   template-eviction decision above, which stays `template`-only.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, template, z, band, bytes) {
+  async function _recordRegionDownload(regionId, template, z, band, bytes, basemapKey) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -176,6 +198,7 @@
         z: z,
         name: name,
         template: template,
+        basemapKey: basemapKey || null,
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -208,10 +231,13 @@
    *
    * @param {string} regionId
    * @returns {Promise<{region_id: string, band: number[], z: Object,
-   *   template?: string, savedAt: string} | null>} `template` is absent on
-   *   a record written before SNOW-632 — callers deciding whether to evict
-   *   the region's bucket on a template mismatch treat that absence as
-   *   "unknown, so different" (see `handleClick`'s `beforeWarm`).
+   *   template?: string, basemapKey?: string | null, savedAt: string} |
+   *   null>} `template` is absent on a record written before SNOW-632 —
+   *   callers deciding whether to evict the region's bucket on a template
+   *   mismatch treat that absence as "unknown, so different" (see
+   *   `handleClick`'s `beforeWarm`). `basemapKey` is absent (or `null`) on
+   *   a record written before SNOW-645 — `_probeDone` reads that the same
+   *   way, as "another basemap, unnamed" rather than a wrong one.
    */
   async function _storedRegionRecord(regionId) {
     try {
@@ -312,8 +338,26 @@
    * `navigator.onLine` to choose `idle` vs `offline` in that case). Both
    * are deliberately distinct from `false` ("looked, not there").
    *
+   * SNOW-645: also distinguishes "never downloaded" from "downloaded, but
+   * under a DIFFERENT basemap" — the record's own `template`/`basemapKey`
+   * (both added by SNOW-632/SNOW-645) make that answerable. Returned as
+   * `otherBasemapKey` alongside `done` rather than as a second probe: this
+   * function already awaits `pinnedBasemapCacheURLs()`, a walk of
+   * potentially several thousand cache entries, and a second independent
+   * probe would walk it twice for one render. `otherBasemapKey` is:
+   *   - `null` when not in that state — no record, no `record.template`
+   *     (a pre-SNOW-632 record — "unknown, so treat as the active
+   *     basemap", the same direction `handleClick`'s `beforeWarm` takes),
+   *     `record.template` matching the active one, or a stale record whose
+   *     bucket has since been evicted (never promise tiles that aren't
+   *     there — falls through to `idle` exactly as "never downloaded"
+   *     does);
+   *   - `record.basemapKey || ''` when it IS that state — `''` for a
+   *     pre-SNOW-645 record with no key, read by `setState` as "another
+   *     basemap", unnamed.
+   *
    * @param {{regionId: string, summary: Object}} data
-   * @returns {Promise<boolean | null>}
+   * @returns {Promise<{done: boolean, otherBasemapKey: string | null} | null>}
    */
   async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
@@ -330,37 +374,81 @@
     const cached = await pinnedBasemapCacheURLs();
 
     const stored = await _storedRegionRecord(data.regionId);
-    if (stored) return core.blobFullyCached(template, { z: stored.z }, cached);
+    if (stored) {
+      if (!stored.template || stored.template === template) {
+        return {
+          done: core.blobFullyCached(template, { z: stored.z }, cached),
+          otherBasemapKey: null,
+        };
+      }
+      // SNOW-645: a record for a DIFFERENT basemap. Verify its tiles are
+      // still actually on disk before promising them back — an evicted
+      // bucket makes this a stale record, which must read exactly like
+      // "never downloaded" rather than a lie the user can tap into.
+      const otherStillCached = core.blobFullyCached(
+        stored.template,
+        { z: stored.z },
+        cached,
+      );
+      return {
+        done: false,
+        otherBasemapKey: otherStillCached ? stored.basemapKey || '' : null,
+      };
+    }
 
     try {
       const blob = await _fetchRegionBlob(data.regionId);
-      return core.blobFullyCached(template, blob, cached);
+      return { done: core.blobFullyCached(template, blob, cached), otherBasemapKey: null };
     } catch (_e) {
       return null;
     }
   }
 
   /**
-   * Paint `state` onto the download icon: data-download-state, the busy
-   * fill percentage, and an aria-label/title carrying the region's size.
+   * Paint `state` onto the download icon: data-download-state, the
+   * identity-colour attribute, the busy fill percentage, and an
+   * aria-label/title carrying the region's size.
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
-   *   'error' | 'disabled' | 'offline'.
+   *   'error' | 'disabled' | 'offline' | 'other-basemap'.
    * @param {number} mb
    * @param {number} [pct] - Only meaningful for state 'busy'.
+   * @param {string} [basemapKeyOverride] - SNOW-645: overrides the
+   *   colour `data-basemap-key` would otherwise take from
+   *   `activeBasemapKey()`. Only 'other-basemap' passes this — its whole
+   *   point is showing the OTHER basemap's colour, the one that actually
+   *   holds the tiles, not the one currently on screen. An explicit
+   *   override rather than `setState` inferring it from `state`, so state
+   *   and "whose colour" can never silently drift apart. `''` (a
+   *   pre-SNOW-645 record with no stored key) is deliberately falsy here,
+   *   same as `activeBasemapKey()` returning `null` — both clear the
+   *   attribute rather than write an empty one.
    * @returns {void}
    */
-  function setState(state, mb, pct) {
+  function setState(state, mb, pct, basemapKeyOverride) {
     btn.dataset.downloadState = state;
+    // SNOW-645: paint the roundel with the ACTIVE basemap's identity colour
+    // (map.css's data-basemap-key override) by default — `_probeDone`
+    // builds its cached-tiles check from the active template, so 'done'
+    // already means "downloaded under the basemap showing now", and the
+    // two can never disagree. 'other-basemap' is the one exception: see
+    // `basemapKeyOverride` above.
+    const basemapKey =
+      basemapKeyOverride !== undefined ? basemapKeyOverride : activeBasemapKey();
+    if (basemapKey) {
+      btn.dataset.basemapKey = basemapKey;
+    } else {
+      delete btn.dataset.basemapKey;
+    }
     // Non-runnable states are announced as disabled rather than removed, so
-    // the control keeps its place in the stack (see renderControl). 'idle'
-    // and (SNOW-568) 'error' are the actionable states — handleClick
-    // returns immediately for every other one, including 'busy' (a run is
-    // already going) and 'done' (an informational success state), so those
-    // are announced as disabled too.
+    // the control keeps its place in the stack (see renderControl). 'idle',
+    // (SNOW-568) 'error' and (SNOW-645) 'other-basemap' are the actionable
+    // states — handleClick returns immediately for every other one,
+    // including 'busy' (a run is already going) and 'done' (an
+    // informational success state), so those are announced as disabled too.
     btn.setAttribute(
       'aria-disabled',
-      state === 'idle' || state === 'error' ? 'false' : 'true',
+      state === 'idle' || state === 'error' || state === 'other-basemap' ? 'false' : 'true',
     );
     // Busy progress renders as a bottom-up fill of the roundel (map.css),
     // driven by --download-progress rather than a numeric readout.
@@ -369,30 +457,48 @@
     } else {
       btn.style.removeProperty('--download-progress');
     }
+    // SNOW-620/SNOW-645: every label below is server-translated into
+    // map-strings-template (_map_embed.html) and read back via MAP_STRINGS
+    // (map_state.js) — makemessages cannot see a JS string literal, so
+    // these used to ship as English to every locale regardless of the
+    // visitor's own. See MAP_STRINGS' own module-header note, and
+    // bin/i18n-lint's widened check for why nothing caught it here sooner.
+    //
+    // The control is permanently in the bottom-right stack rather than
+    // appearing beside the region name, so it can be read with nothing
+    // selected — and it no longer sits next to the name that told the user
+    // which region it meant. Every label therefore has to say so itself.
+    //
+    // 'no-region' covers two distinct causes that the old hidden-icon
+    // behaviour let us conflate: nothing is focused, or the focused region
+    // has no precomputed download summary (properties.download is null —
+    // compute_basemap_download hasn't run for it). The control is always
+    // on screen now, so a single label would be wrong in one of the two
+    // cases — hence two distinct strings, not one templated by a boolean.
+    //
+    // 'other-basemap': named when the OTHER basemap's picker label is
+    // known (a real basemapKey), unnamed for a pre-SNOW-645 record (an
+    // empty-string basemapKey, read off `_probeDone`) — never interpolates
+    // an empty name into the named string.
+    const otherBasemapName = state === 'other-basemap' ? basemapLabel(basemapKey) : '';
     const text = {
-      // The control is permanently in the bottom-right stack rather than
-      // appearing beside the region name, so it can be read with nothing
-      // selected — and it no longer sits next to the name that told the user
-      // which region it meant. Every label therefore has to say so itself.
-      //
-      // 'no-region' covers two distinct causes that the old hidden-icon
-      // behaviour let us conflate: nothing is focused, or the focused region
-      // has no precomputed download summary (properties.download is null —
-      // compute_basemap_download hasn't run for it). Now that the control is
-      // always on screen a single label would be wrong in one of the two
-      // cases, so the copy branches on whether a region is actually focused.
       'no-region': currentRegionId
-        ? `Basemap download isn't available for this region`
-        : `Select a region to download its basemap`,
-      idle: `Download this region's basemap — up to ${mb} MB`,
-      busy: `Downloading this region's basemap — ${pct || 0}%`,
-      done: `This region's basemap is downloaded — available offline`,
+        ? MAP_STRINGS['download-no-region-unavailable']
+        : MAP_STRINGS['download-no-region-select'],
+      idle: self.pwaStrings.interpolate(MAP_STRINGS['download-idle'], { mb: mb }),
+      busy: self.pwaStrings.interpolate(MAP_STRINGS['download-busy'], { pct: `${pct || 0}%` }),
+      done: MAP_STRINGS['download-done'],
       // SNOW-568: the toast carries the reason; the roundel just has to
       // say the run failed and is retryable.
-      error: `This region's basemap download failed — tap to try again`,
-      disabled: `This region's basemap is too large to download`,
+      error: MAP_STRINGS['download-error'],
+      disabled: MAP_STRINGS['download-disabled'],
       // Offline-integrity: no downloading of layers while offline.
-      offline: `Basemap download unavailable while offline`,
+      offline: MAP_STRINGS['download-offline'],
+      'other-basemap': otherBasemapName
+        ? self.pwaStrings.interpolate(MAP_STRINGS['download-other-basemap'], {
+            basemap: otherBasemapName,
+          })
+        : MAP_STRINGS['download-other-basemap-unnamed'],
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
@@ -438,24 +544,38 @@
     // region hasn't been checked yet, so it must not borrow the last
     // region's answer.
     setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
-    const done = await _probeDone(data);
+    const probe = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
-    if (done === null) {
+    if (probe === null) {
       setState(navigator.onLine ? 'idle' : 'offline', data.summary.mb);
       _retryWhenStyleSettles();
       return;
     }
+    const { done, otherBasemapKey } = probe;
     // Offline-integrity: a region already downloaded (done) still reads as
     // the green offline circle; one that isn't can't be fetched now, so it
-    // shows the offline-disabled state instead of an actionable idle.
+    // shows the offline-disabled state instead of an actionable idle —
+    // including SNOW-645's 'other-basemap', which is just as much "start a
+    // new download" as 'idle' is, and so just as unavailable offline.
     if (!navigator.onLine && !done) {
       setState('offline', data.summary.mb);
       return;
     }
-    setState(done ? 'done' : 'idle', data.summary.mb);
+    if (done) {
+      setState('done', data.summary.mb);
+      return;
+    }
+    if (otherBasemapKey !== null) {
+      // SNOW-645: the whole point of this state is showing the OTHER
+      // basemap's colour, not the active one — setState's 4th argument
+      // overrides its usual activeBasemapKey() inference.
+      setState('other-basemap', data.summary.mb, undefined, otherBasemapKey);
+      return;
+    }
+    setState('idle', data.summary.mb);
   }
 
   // SNOW-613: overlapping renders coalesce onto one trailing pass — see
@@ -492,8 +612,13 @@
   async function handleClick() {
     const data = regionData;
     // SNOW-568: 'error' is retryable, so it starts a run like 'idle'.
+    // SNOW-645: so is 'other-basemap' — tapping it downloads the region
+    // under the ACTIVE basemap; beforeWarm below already evicts the
+    // mismatched bucket (the SAME branch a same-basemap re-download takes
+    // when the template it reads has changed), so no new eviction logic
+    // is needed for this state.
     const state = btn.dataset.downloadState;
-    if (!data || (state !== 'idle' && state !== 'error')) return;
+    if (!data || (state !== 'idle' && state !== 'error' && state !== 'other-basemap')) return;
     // Offline-integrity: never start a download offline, even if a race left
     // the icon on 'idle' at the moment of the click.
     if (!navigator.onLine) {
@@ -550,7 +675,7 @@
           await evictBasemapAreas([evictAreaId]);
         }
       },
-      finish: async (result, blob, { core: runCore, progressFill, template }) => {
+      finish: async (result, blob, { core: runCore, progressFill, template, basemapKey }) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -583,6 +708,7 @@
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,
+            basemapKey,
           );
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the

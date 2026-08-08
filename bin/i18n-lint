@@ -14,16 +14,25 @@
 # sheet translating one removal-failure message while `favourites.js`
 # hardcoded its near-twin.
 #
-# So this checks one thing: a string LITERAL reaching a sink the user reads.
-# The fix is always the same — render it through a strings `<template>` and
-# read it back with `window.pwaStrings.read()` (static/js/i18n_strings.js).
+# So this checks one thing: a string LITERAL reaching a sink the user reads
+# — DIRECTLY, or through one hop of variable indirection (`const text =
+# {…}[state]; el.setAttribute('aria-label', text);`). The fix is always
+# the same — render it through a strings `<template>` and read it back
+# with `window.pwaStrings.read()` (static/js/i18n_strings.js).
 #
-# Deliberately narrow, for the same reason `bin/js-globals-lint` is. It does
-# not try to find every string that might be prose; it finds strings that
-# demonstrably reach the screen. A literal assigned to a variable and then
-# rendered is out of scope — catching that needs real dataflow, and the
-# false-positive rate would make the check ignorable, which is worse than
-# not having it.
+# SNOW-645 review widened the direct-literal check (SNOW-620's own scope)
+# to that one hop, closing the exact gap seven of map_region_download.js's
+# eight roundel labels shipped through for as long as this file has
+# existed: `SINK_RE`'s value group sits directly against the sink, so a
+# BARE IDENTIFIER carrying an already-built string was invisible to it.
+# `INDIRECT_SINK_RE`/`_traces_to_prose` add exactly that one hop — the
+# NEAREST preceding declaration of that identifier, never further back —
+# and stop there. A two-hop chain, a value read off `this`/a closure
+# variable from an outer scope, or a literal folded in through a function
+# call, are all still out of scope: catching those needs real dataflow,
+# and the false-positive rate would make the check ignorable, which is
+# worse than not having it. Still deliberately narrow, for the same reason
+# `bin/js-globals-lint` is.
 #
 # Escape hatch, for a string that genuinely should not be translated:
 #
@@ -95,6 +104,73 @@ STRING_LITERAL = r"""
 """
 
 SINK_RE = re.compile(f"(?:{SINKS}){STRING_LITERAL}", re.X)
+
+# SNOW-645 review: the sink reached through ONE HOP of variable
+# indirection — `const text = {…}[state]; el.setAttribute('aria-label',
+# text);` — which SINK_RE above cannot see, because its value group sits
+# directly against the sink and a bare identifier is not a literal.
+# `map_region_download.js`'s `setState` shipped seven strings this way for
+# as long as bin/i18n-lint has existed, and would have shipped an eighth
+# in this same PR were this not added.
+#
+# Deliberately narrow rather than general dataflow: only a BARE
+# identifier (`text`, not `S.reload` or `MAP_STRINGS['x']`) is a
+# candidate at all, and `_traces_to_prose` below only follows it to the
+# NEAREST preceding `const`/`let`/`var` declaration or bare reassignment
+# of that exact name — see that function's own docstring for why a
+# member-expression value is out of scope by construction, not merely
+# unhandled.
+INDIRECT_SINK_RE = re.compile(
+    rf"(?:{SINKS})\s*(?P<ident>[A-Za-z_$][\w$]*)\s*(?=[,);])",
+    re.X,
+)
+
+# A prose literal in VALUE POSITION — immediately after a plain `=`
+# (never `==`/`===`/`!=`/`<=`/`>=`, excluded by the lookbehind/lookahead),
+# a ternary `?`, or a ternary/object-property `:` (never `::`). This is
+# what lets `_traces_to_prose` tell "Reload" in
+# `const label = MAP_STRINGS['x'] || 'Reload'` (not adjacent to any of
+# these — `||` isn't a value-position operator) from "Reload" in
+# `const label = saving ? 'Reload' : X` (adjacent to `?`) — the former is
+# a translated lookup with an English constant as a fallback KEY NAME
+# component, never reached; the latter is the untranslated message
+# itself. It is also what keeps a `.join(' &middot; ')` separator quiet:
+# preceded by `(`, not one of these three operators.
+VALUE_LITERAL_RE = re.compile(
+    rf"""
+      (?: (?<! [=!<>] ) = (?! = )
+        | \?
+        | : (?! : )
+      )
+    {STRING_LITERAL}
+    """,
+    re.X,
+)
+
+# How far back (lines) to search for the declaration/assignment that fed
+# a bare-identifier sink value — generous enough to span map_region_download.js's
+# `setState` (its `text` object is the longest instance of this shape in
+# the tree today, at under 30 lines), bounded so an unrelated same-named
+# variable in a much earlier, unconnected scope can't be mistaken for it.
+INDIRECTION_WINDOW = 80
+
+# `const NAME = …` / `let NAME = …` / `var NAME = …`, or a bare
+# reassignment `NAME = …` — either can be the start of the span
+# `_traces_to_prose` walks. Anchored at the START of the line (allowing
+# leading whitespace only): a property `text: 'foo'` or a function
+# parameter `text` never matches either, which is what keeps those two
+# shapes out of scope — see `_traces_to_prose`'s own docstring.
+DECL_RE = re.compile(r"^\s*(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\b")
+REASSIGN_RE = re.compile(r"^\s*(?P<name>[A-Za-z_$][\w$]*)\s*=(?!=)")
+
+# A span containing any of these already sources its strings through the
+# translated route — see `map_state.js`'s MAP_STRINGS or
+# `i18n_strings.js`'s `pwaStrings.read`/`interpolate` for the two forms in
+# use today. Matches even when the span ALSO happens to contain prose (a
+# `pwaStrings.read` fallback object's own English defaults, say) — this
+# check is deliberately a broad "already translated" signal, not a
+# precise one, in keeping with the under-report bias below.
+SAFE_SOURCE_RE = re.compile(r"pwaStrings\.(?:read|interpolate)\(|MAP_STRINGS(?:\[|\.)")
 
 # Prose needs two consecutive letters somewhere, and at least one space OR
 # a capitalised word — "Reload" and "Sign in" are prose; "flex", "px-2",
@@ -203,11 +279,147 @@ def _suppressed(lines: list[str], idx: int) -> bool:
     return False
 
 
+def _nearest_declaration(lines: list[str], sink_idx: int, ident: str) -> int | None:
+    """Find the line index of the NEAREST declaration/reassignment of `ident`.
+
+    Searched backward from `sink_idx`, within `INDIRECTION_WINDOW` lines —
+    see that constant's own comment for why a bounded, nearest-match
+    search is the right trade-off rather than a full scope analysis.
+
+    @returns The 0-based line index, or None if nothing matched — a
+        variable declared in a DIFFERENT file, a function parameter (never
+        matches `DECL_RE`/`REASSIGN_RE`, both anchored at line-start), or
+        simply out of range.
+    """
+    floor = max(-1, sink_idx - INDIRECTION_WINDOW)
+    for idx in range(sink_idx, floor, -1):
+        match = DECL_RE.match(lines[idx]) or REASSIGN_RE.match(lines[idx])
+        if match and match.group("name") == ident:
+            return idx
+    return None
+
+
+def _statement_end(lines: list[str], start: int) -> int:
+    """Find the line index where the statement opened at `start` closes.
+
+    Tracks `{`/`}` depth per line (a `${…}` template interpolation on one
+    line nets to zero, which is the only nesting shape this codebase's
+    label objects actually use) and calls the statement closed on the
+    first line, at or after `start`, where that depth is back to zero AND
+    a `;` appears — covering both a single-line assignment (no braces at
+    all, so depth is zero throughout) and a multi-line one whose last
+    brace and trailing `;` share a line. Bounded by `INDIRECTION_WINDOW`
+    for the same reason `_nearest_declaration`'s search is.
+    """
+    depth = 0
+    ceiling = min(len(lines), start + INDIRECTION_WINDOW)
+    for idx in range(start, ceiling):
+        line = lines[idx]
+        depth += line.count("{") - line.count("}")
+        if depth <= 0 and ";" in line:
+            return idx
+    return ceiling - 1
+
+
+def _traces_to_prose(
+    lines: list[str], sink_idx: int, ident: str
+) -> list[tuple[int, str]]:
+    """Find untranslated literals reaching `sink_idx` through `ident`'s declaration.
+
+    Deliberately ONE hop: only `ident`'s NEAREST preceding declaration is
+    read, never wherever ITS OWN value came from. A member-expression
+    value (`S.reload`, `MAP_STRINGS['x']`) is out of scope by
+    construction — `INDIRECT_SINK_RE` only captures a BARE identifier —
+    and so is a function parameter, since `DECL_RE`/`REASSIGN_RE` are both
+    anchored at the start of a line and a parameter list never is. Both
+    exclusions are the same "under-report a two-hop or opaque case rather
+    than risk a false positive" choice `_is_prose`'s own comment makes.
+
+    @returns `[(line_index, value), …]` for every prose literal found in
+        VALUE POSITION across the declaration's own statement — empty if
+        `ident` traces to no declaration in range, or the span is already
+        sourced from `pwaStrings`/`MAP_STRINGS` (see `SAFE_SOURCE_RE`).
+    """
+    start = _nearest_declaration(lines, sink_idx, ident)
+    if start is None:
+        return []
+    end = _statement_end(lines, start)
+    span = "\n".join(lines[start : end + 1])
+    if SAFE_SOURCE_RE.search(span):
+        return []
+
+    found: list[tuple[int, str]] = []
+    for idx in range(start, end + 1):
+        if COMMENT_RE.match(lines[idx]):
+            continue
+        for hit in VALUE_LITERAL_RE.finditer(lines[idx]):
+            value = hit.group("value")
+            if _is_prose(value):
+                found.append((idx, value))
+    return found
+
+
+def _direct_findings(
+    path: Path, lines: list[str], idx: int, raw_line: str
+) -> list[Finding]:
+    """Find findings in `raw_line` where a literal sits DIRECTLY against a sink."""
+    findings = []
+    for hit in SINK_RE.finditer(raw_line):
+        value = hit.group("value")
+        if not _is_prose(value) or _suppressed(lines, idx):
+            continue
+        findings.append(
+            Finding(
+                path=path, line_no=idx + 1, line_text=raw_line.rstrip(), value=value
+            )
+        )
+    return findings
+
+
+def _indirect_findings(
+    path: Path,
+    lines: list[str],
+    idx: int,
+    raw_line: str,
+    traced_declarations: set[int],
+) -> list[Finding]:
+    """Find findings where a sink's value is a bare, traceable identifier.
+
+    `traced_declarations` is mutated as a side effect — shared across the
+    whole file scan, so a declaration read by several sinks in a row (see
+    `_scan`'s own comment) is only ever traced once.
+    """
+    findings = []
+    for hit in INDIRECT_SINK_RE.finditer(raw_line):
+        ident = hit.group("ident")
+        start = _nearest_declaration(lines, idx, ident)
+        if start is None or start in traced_declarations:
+            continue
+        traced_declarations.add(start)
+        for lit_idx, value in _traces_to_prose(lines, idx, ident):
+            if _suppressed(lines, lit_idx):
+                continue
+            findings.append(
+                Finding(
+                    path=path,
+                    line_no=lit_idx + 1,
+                    line_text=lines[lit_idx].rstrip(),
+                    value=value,
+                )
+            )
+    return findings
+
+
 def _scan(path: Path) -> tuple[list[Finding], list[Suppression]]:
     """Find hardcoded user strings in `path`, and the suppressions used."""
     findings: list[Finding] = []
     suppressions: list[Suppression] = []
     lines = path.read_text(encoding="utf-8").splitlines()
+    # One finding per DECLARATION, not per sink call site — `setState`-style
+    # code reads the same object through two or three sinks in a row
+    # (`setAttribute('aria-label', text); btn.title = text;`), and without
+    # this every prose literal inside it would be reported once per sink.
+    traced_declarations: set[int] = set()
 
     for idx, raw_line in enumerate(lines):
         match = ALLOW_RE.search(raw_line)
@@ -217,20 +429,10 @@ def _scan(path: Path) -> tuple[list[Finding], list[Suppression]]:
             )
         if COMMENT_RE.match(raw_line):
             continue
-        for hit in SINK_RE.finditer(raw_line):
-            value = hit.group("value")
-            if not _is_prose(value):
-                continue
-            if _suppressed(lines, idx):
-                continue
-            findings.append(
-                Finding(
-                    path=path,
-                    line_no=idx + 1,
-                    line_text=raw_line.rstrip(),
-                    value=value,
-                )
-            )
+        findings.extend(_direct_findings(path, lines, idx, raw_line))
+        findings.extend(
+            _indirect_findings(path, lines, idx, raw_line, traced_declarations)
+        )
     return findings, suppressions
 
 

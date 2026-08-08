@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal navigation partitioning, Download basemap, custom-area download, layers
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-08
 ---
 
 # PWA shell
@@ -630,21 +630,73 @@ which overlay tiers (L1/L2) are toggled on. A region flagged `over_ceiling`
 **State** — `data-download-state` on the control: `no-region` (nothing
 focused), `idle` (arrow, size in the tooltip), `busy` (bottom-up fill of
 the roundel, driven by a `--download-progress` CSS custom property —
-`static/css/map.css`), `done` (solid green circle, the same download glyph
+`static/css/map.css`), `done` (solid circle, the same download glyph
 in white — SNOW-569 dropped the tick: the glyph is the control's identity,
 and swapping it made a completed download read as a different control,
 where the colour inversion already carries "finished"), `disabled`
-(over-ceiling), and `offline` (no downloading of layers while offline; see
-gating below). The three non-runnable states (`no-region`, `disabled`,
+(over-ceiling), `offline` (no downloading of layers while offline; see
+gating below), and (SNOW-645) `other-basemap` — see its own paragraph
+below. The three non-runnable states (`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
 a dimmed **glyph** — the glass shell stays at full strength, because the
 control now floats over open basemap where the old whole-roundel
-`opacity: 0.4` was close to invisible. `idle`/`done` are derived from a
-real pinned-cache probe every time the icon is (re)shown — never a stored
-flag, so a reselected region reads its true cache state, and a region that
-was downloaded in an earlier session still reads `done` after a reload.
-Since SNOW-586 that probe reads across **every** per-area bucket, unioned
-(`pinnedBasemapCacheURLs`), rather than one shared cache.
+`opacity: 0.4` was close to invisible. `idle`/`done`/`other-basemap` are
+derived from a real pinned-cache probe every time the icon is (re)shown —
+never a stored flag, so a reselected region reads its true cache state, and
+a region that was downloaded in an earlier session still reads `done` after
+a reload. Since SNOW-586 that probe reads across **every** per-area bucket,
+unioned (`pinnedBasemapCacheURLs`), rather than one shared cache.
+
+**Basemap identity colour (SNOW-645).** The `busy`/`done` fill is no
+longer a flat green — it takes one of five `--color-basemap-*` tokens
+(`src/css/main.css`), one per `settings.BASEMAP_STYLES` key, matching the
+key currently selected in the basemap picker (`activeBasemapKey()`,
+`static/js/map_basemap_downloads.js`, reading the picker's checked radio —
+display-only, unlike the `template` the eviction logic above actually
+keys on). The custom-area control's own roundel (below) uses the exact
+same rule, unconditionally — an EARLIER version of this ticket instead
+aggregated over the STORED areas' own `basemapKey`s (an identity colour
+only when every non-orphaned area agreed on one), which Hugo caught: on
+the Swisstopo map, with every custom area downloaded under Standard, the
+roundel painted Standard's blue on a Swisstopo screen. Every roundel and
+overlay on the map reflects the basemap CURRENTLY SHOWING, never what an
+earlier download happened to use — per-AREA basemap identity is the
+"Manage downloads" sheet's job (the swatch and name on each row, one tap
+away), not this roundel's. Set unconditionally, whether or not any
+download exists — the CSS only paints a fill for `busy`/`done`, so writing
+the attribute for `idle` too is harmless. The roundel also listens for
+`snowdesk:basemap-changed` again (SNOW-634 had dropped that listener on
+reasoning that was true for `done`'s tile-template dependency but never
+extended to this later colour dependency). The same identity colour,
+paired with the basemap's translated name, appears as a swatch on each row
+of the "Manage downloads" sheet (below) — colour alone is never the only
+signal.
+
+**`other-basemap` (SNOW-645).** Hugo's report: download a region on
+Standard, switch to Swisstopo, and the roundel silently reverted to plain
+`idle` — indistinguishable from never having downloaded it, when nothing
+had actually been deleted (a basemap switch alone evicts nothing; SNOW-632
+only evicts a region's bucket on a SAME-region RE-download). `_probeDone`
+now tells the two apart using the stored record's own `template`/
+`basemapKey`: when the record names a DIFFERENT basemap than the one
+active now, it verifies that OTHER basemap's tiles are STILL actually on
+disk (`blobFullyCached` against the record's own `template`, not the
+active one) before claiming `other-basemap` — a stale record whose bucket
+has since been evicted (by budget-driven eviction, external storage
+pressure, or Clear Site Data on just that bucket) falls through to plain
+`idle` rather than promising tiles that aren't there. The roundel paints
+in the OTHER basemap's identity colour, not the active one — `setState`
+takes an explicit key override for this one state, since that is the
+whole point (map_region_download.js — every other state still infers the
+colour from `activeBasemapKey()`). It renders as a hollow ring rather than
+a solid disc (`static/css/map.css`) — "downloaded, but not usable here" is
+a third answer, not a shade of `idle` (nothing) or `done` (a solid disc).
+It is fully **actionable**: `aria-disabled="false"`, and a tap downloads
+the region under the ACTIVE basemap, reusing `beforeWarm`'s existing
+template-mismatch eviction with no new logic. A pre-SNOW-645 record (no
+stored `basemapKey`) still reads `other-basemap` once its tiles are
+confirmed cached — just with the name-less label and no `data-basemap-key`
+attribute, since there is no key to show.
 
 **The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
 check here since SNOW-570 — the code has never assumed "the centre tile is
@@ -676,10 +728,12 @@ work offline, since there is nothing to fetch; a region in that state
 reads `offline` until back online. Because the probe keys off the
 **active** basemap's tile template, the state is also still **per-basemap**:
 download the region on Standard, switch to Swisstopo (online), and the
-icon reverts to `idle` — that basemap's tiles for the region aren't
-cached. The icon re-probes on `snowdesk:basemap-changed` (fired by the
-styledata reinstall once a new basemap's overlays are back) and on
-`snowdesk:connectivity-changed`.
+icon no longer reads `done` — it reads `other-basemap` (still downloaded,
+just for the basemap you switched away from — see that state's own
+paragraph above) if Standard's tiles are still on disk, or `idle` if they
+have since been evicted. The icon re-probes on `snowdesk:basemap-changed`
+(fired by the styledata reinstall once a new basemap's overlays are back)
+and on `snowdesk:connectivity-changed`.
 
 That template is only resolvable once MapLibre's style has settled
 (`map.isStyleLoaded()`), which is **not** true on the page load that
@@ -763,15 +817,60 @@ trip.
    retry) with nothing recorded. No toast either way; the icon's own state
    is the only feedback.
 
-**Cached-tiles overlay** (SNOW-570, rings removed SNOW-587) — the
-"Available offline" layer draws what is actually on disk: one square per
-tile in the pinned cache at `CACHED_TILES_ZOOM` (z14), read straight back
-out of the cache's own URLs by `cachedTilesFromURLs` — the inverse of the
+**Cached-tiles overlay** (SNOW-570, rings removed SNOW-587, rebuilt
+SNOW-645) — draws what is actually on disk: one square per tile in the
+pinned cache at `CACHED_TILES_ZOOM` (z14), read straight back out of the
+cache's own URLs by `cachedTilesFromURLs` — the inverse of the
 substitution `rangesToTileURLs` performs.
 
 The tiles need no stored record to stay honest, and cannot drift from the
 cache: eviction, a basemap swap and Clear Site Data all change the answer
-and all show up for free. Per-template, so switching basemap empties it.
+and all show up for free.
+
+**No longer a layers-menu toggle (SNOW-645, twice reworked).** The row
+that used to live in the layers menu (`data-overlay-key="downloaded"`, a
+persisted `overlayState.downloaded`) is gone — its probe was inherently
+per-ACTIVE-template, so switching basemap while it was on left its sync
+dot permanently grey and unclickable, with no way for the row to say why.
+The first fix bound the overlay to the "Manage downloads" sheet being
+open, full stop — which broke it a different way: the sheet is
+bottom-docked and full-width on mobile
+(`includes/_overlay_sheet.html`'s `sm:` breakpoint is what gives it a
+384px right-hand panel instead), so the squares this overlay draws were
+permanently covered by the sheet showing them, on the platform that needs
+offline maps most. It settled on: opening the sheet still turns the
+overlay ON (`map_downloads_manager.js`'s `open()` calls
+`window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
+turns it off. A second toggle — a switch, "Show areas on the map" — now
+lives INSIDE the sheet, in its own panel above the row groups (see
+"Manage downloads" sheet below) and is the ONLY thing that ever calls
+`hide()`. This is a deliberately
+session-scoped inspection mode, not persisted anywhere: close the sheet
+with the overlay on, look at the map, reopen the always-on-screen
+custom-area roundel to switch it off again. A fresh page load always
+starts it off — `OVERLAY_STORAGE_KEY.downloaded` (`static/js/map_state.js`)
+is documented dead rather than revived.
+
+**Every basemap at once, each in its own colour (SNOW-645).** The overlay
+used to key off the ACTIVE basemap's tile template alone, so downloading
+under Standard and switching to Swisstopo emptied it outright.
+`basemapDownloadedTemplates()` (`static/js/map_basemap_downloads.js`)
+reads `basemap.regions` / `basemap.customAreas` directly (not through the
+lossy `basemapDownloadedAreas()` normaliser — see that function's own
+docstring for why it must not be widened) for the DISTINCT
+`(template, basemapKey)` pairs actually recorded.
+`refreshDownloadedOverlay` runs `cachedTilesFromURLs` once per distinct
+template — still a real Cache Storage read per tile, "probed, never
+stored" still holds — and tags every resulting feature with the
+`basemapKey` its template belongs to. `downloadedTilesColourExpression`
+turns whatever keys are actually present into a MapLibre
+`['match', ['get', 'basemapKey'], key1, colour1, …, fallback]` paint
+expression (`basemapIdentityColour(null)` — `--color-sync-ok` — as the
+fallback, for a keyless/unresolved area), applied via `setPaintProperty`
+on every refresh so an already-installed pair of layers repaints rather
+than freezing at whichever keys were present the last time. This
+replaces the earlier flat-colour `downloadedOutlineColour`, which is
+gone.
 
 **On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
 the roundel's own fill, the tiles being fetched are drawn over the map as
@@ -1100,12 +1199,31 @@ false: there is plainly something to manage offline. Orphaned buckets
 they are reclaimable quota, not an area you have offline.
 
 Two consequences worth naming. Neither connectivity nor the active
-basemap affects the roundel any more, so its `snowdesk:basemap-changed`
-listener and style-settle retry are gone. And switching basemap no longer
-flips it back to `idle` — the bucket still holds the *previous* basemap's
-tiles, so the device does hold an offline area, just not one for the
-basemap now selected. That per-basemap detail lives in the sheet; the
-roundel's signal is deliberately coarser.
+basemap affects the roundel's `done`/`idle` STATE any more, so it has no
+style-settle retry (there is no tile-template dependency left to wait on)
+and does not listen for `snowdesk:connectivity-changed`. And switching
+basemap no longer flips `done` back to `idle` — the bucket still holds the
+*previous* basemap's tiles, so the device does hold an offline area, just
+not one for the basemap now selected. That per-basemap DETAIL (which area,
+under which basemap) lives in the sheet; the roundel's `done`/`idle` signal
+is deliberately coarser.
+
+Its COLOUR is a different story (SNOW-645 review). Hugo's report: on the
+Swisstopo map, the roundel painted Standard's blue, because his custom
+areas had all been downloaded under Standard — an earlier version of this
+ticket aggregated the colour over the stored areas' own basemap keys. The
+fix aligns this roundel with every other one on the map: its colour is
+`activeBasemapKey()`, unconditionally, the same rule the per-region
+roundel's `setState` uses — never an aggregate over what is stored (see
+"Basemap identity colour (SNOW-645)" above). That reintroduces exactly the
+dependency the `done`/`idle` state does NOT have, so the
+`snowdesk:basemap-changed` listener SNOW-634 removed is back too — calling
+the same coalesced `renderControl` every other trigger in this file uses.
+`_renderControl`'s own busy guard (unchanged) already stops a basemap
+switch mid-run from clobbering anything: the roundel sits inside
+`#map-controls-br`, hidden for a run's whole life, so there is nothing on
+screen for a repaint to interfere with, and the run's own settle path
+already calls `renderControl()` once it finishes.
 
 Opening framing no longer re-centres the map on any previously-downloaded
 area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
@@ -1234,24 +1352,37 @@ the recorded total has to grow to stay honest against what `planEviction`
 budgets for. See the decision doc for the accepted trade-off this makes
 with a same-basemap RETRY (which re-counts bytes already on disk).
 
-### "Available offline" overlay (SNOW-570, rings removed SNOW-587)
+### Downloaded-tiles overlay (SNOW-570, rings removed SNOW-587, sheet-bound SNOW-645)
 
 The two roundels answer "is *this* area downloaded?" one area at a time.
-The **Available offline** overlay answers it for the whole map: one
-translucent square — the sync dots' green, because it is a view onto the
-same cache — per tile actually present in the pinned cache. It is a
-layers-menu row (`data-overlay-key="downloaded"`), **off by default**: the
-map already carries the choropleth, the selection ring, the region tiers
-and the pins, and a permanent extra layer over all of that is crowding for
-an answer most sessions never ask.
+The **downloaded-tiles overlay** answers it for the whole map: one
+translucent square per tile actually present in the pinned cache, each
+coloured by the identity of the basemap it was downloaded under (see
+"Colour" above).
+
+**No longer a layers-menu toggle (SNOW-645).** It was originally a
+`data-overlay-key="downloaded"` row, off by default and persisted like
+every other overlay. Switching basemap while it was on left its sync dot
+permanently grey and unclickable — the probe was keyed to the ACTIVE
+basemap's template alone, and the row had no way to say that was why. The
+row is gone; opening the "Manage downloads" sheet now turns the overlay
+on (`window.pwaDownloadedOverlay.show()`, called from
+`map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
+turn it off — an in-sheet switch ("Show areas on the map") is the only
+thing that calls `hide()` (see "Manage downloads" sheet below for why: the
+sheet covers the whole screen on mobile, so binding visibility to "sheet
+open" made the overlay unreachable there). Session-scoped, never
+persisted across a reload.
 
 Two layers, both installed with the regions source (not lazy) so a basemap
 swap rebuilds them with everything else: `cached-tiles-fill` and
 `cached-tiles-line`, over a `cached-tiles` source that `refreshDownloadedOverlay`
-fills from `cachedTilesFromURLs`. Derived from `BASEMAP_PINNED_CACHE`
-contents ALONE — no stored record of any download is involved — so it
-cannot drift from what is on disk: eviction, a basemap swap and Clear Site
-Data all change the answer, and all of them show up here for free.
+fills from `cachedTilesFromURLs`, run once per distinct downloaded
+template (see "Colour" above for the multi-basemap read). Derived from
+`BASEMAP_PINNED_CACHE` contents ALONE — no stored record of any download
+is involved — so it cannot drift from what is on disk: eviction, a
+basemap swap and Clear Site Data all change the answer, and all of them
+show up here for free.
 
 An earlier version of this overlay (SNOW-570) additionally drew a dashed
 ring around every region and custom area the user had *deliberately*
@@ -1290,28 +1421,31 @@ single-saved-area reopen/evict-on-confirm behaviour entirely (see
 readers outside this overlay are the roundel's own `done` probe and the
 manage sheet.
 
-**One `cache.keys()` pass.** The roundel probes one region and can afford
-`cache.match()`; this checks every tile in the pinned cache at once, so it
-takes a single pass over the cache's URLs and answers from that set. Never
-call it per frame — the pinned cache holds thousands of entries. It
-refreshes when the overlay is switched on, on `snowdesk:basemap-changed`,
-on `snowdesk:regions-loaded`, when a download settles (both controls call
+**One `cache.keys()` pass per bucket.** The roundel probes one region and
+can afford `cache.match()`; this checks every tile the user has pinned,
+across every downloaded basemap, so it takes one pass over every per-area
+bucket's URLs (`pinnedBasemapCacheURLs`, unioned) and answers from that
+one set, run once per DISTINCT downloaded template (see "Colour" above).
+Never call it per frame — the pinned buckets together hold thousands of
+entries. It refreshes whenever `show()` runs — the sheet opening, or the
+in-sheet toggle being switched back on — on `snowdesk:basemap-changed`, on
+`snowdesk:regions-loaded`, when a download settles (both controls call
 `window.pwaDownloadedOverlay?.refresh()` beside their existing
 `pwaLayerSyncStatus.refresh()`), and on `visibilitychange` — tiles can be
 evicted while the tab is backgrounded, and a square for a tile that is no
 longer cached is worse than no square.
 
-**Per-basemap**, like the roundels: the probe keys off the active
-basemap's tile template, so downloading on Standard and switching to
-Swisstopo empties the overlay. Those tiles genuinely are not cached.
+**Every basemap at once (SNOW-645)**, unlike the roundels: the overlay
+used to key off the active basemap's tile template alone, so downloading
+on Standard and switching to Swisstopo emptied it. It now paints every
+downloaded basemap's tiles simultaneously, each in its own identity
+colour — see "Colour" above.
 
-The row carries a sync dot like every other overlay row — a `pinned-tiles`
-resource kind (`static/js/map_layer_sync_status.js`) that answers "is
-there an offline map at all?", i.e. whether any basemap tiles are pinned.
-It used to be deliberately dotless, on the reasoning that the row has no
-fetched data of its own and a dot would restate what the other dots
-already say; that made it the only row shaped differently from its
-neighbours, which read as a rendering fault rather than a distinction.
+**No sync dot** — SNOW-645 removed the layers-menu row this overlay used
+to live in (and the `pinned-tiles` resource kind /
+`_probeAnyPinnedTile` probe that fed its dot along with it), moving the
+overlay to the "Manage downloads" sheet instead — see "No longer a
+layers-menu toggle" above.
 
 ### "Manage downloads" sheet (SNOW-588)
 
@@ -1326,14 +1460,214 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
 
-**Running order (SNOW-641):** the list, then the add-trigger under it,
-then one bordered block at the foot holding the budget control, the
-running total and its bar. The total used to lead the sheet and the
-trigger sat above the list, which put the two things a reader wants —
-what is stored, and how much room is left — at opposite ends with the list
-between them. Nothing in `map_downloads_manager.js` is positional (every
-element is addressed by data-attribute), so the order is a presentation
-decision and reordering needed no JS change.
+**It now drives the map overlay too (SNOW-645, reworked twice more).**
+Opening the sheet calls `window.pwaDownloadedOverlay.show()`. Closing the
+sheet does NOT call `.hide()` — a `[data-downloads-overlay-toggle]` switch
+(see "The overlay switch" below) is the only thing that does. `render()`
+sets it from `window.pwaDownloadedOverlay.isVisible()` on every open, so a
+freshly opened sheet always shows it already on — see "No longer a
+layers-menu toggle" above for why closing no longer implies off.
+
+**Layout — "1c: grouped by kind · budget in the header · CTA in its
+group" (SNOW-645, Hugo's design).** Top to bottom:
+
+1. **Header.** The title reads noticeably larger/bolder than every other
+   sheet's — `includes/_sheet_header.html`'s own `title_class` override
+   (`"text-lg font-bold"`), added for this. The × itself is the SAME
+   control every sheet has (see "Sheet header ×", below) — the size and
+   shape change there is universal, not specific to this sheet.
+2. **Budget, folded into the header.** One row: the segmented bar (fills
+   the remaining width — see "Budget bar segments" below), `"<used> of"`,
+   then the budget `<select>` itself, styled as a rounded pill (e.g.
+   "500 MB"). A caption underneath: "Downloads and budget stay on this
+   device." This REVERSES SNOW-641's own conclusion (that the total and
+   the budget control belonged at the FOOT, beside the "you already
+   have" list) — worth recording so a future reader does not assume
+   SNOW-641's reasoning still holds; Hugo's design reads the budget as
+   part of what the sheet fundamentally IS, not a footnote below the list.
+3. **The overlay switch**, in its own `bg-tag` (light-grey) rounded panel
+   — see below.
+4. **Rows, grouped by kind** under a small muted uppercase heading —
+   "Regions", then "Custom areas" — each rendered `uppercase` by Tailwind
+   rather than typed in caps, so the underlying string stays natural-cased
+   for translators. A group with no rows is hidden ENTIRELY, heading
+   included — `[data-downloads-group="region"|"custom"]` wraps each
+   heading+list pair as one unit for exactly that.
+5. **The add-custom-area CTA**, full-width and outlined, in its own
+   bordered group at the foot (see "Running order" below).
+
+**Row shape (SNOW-645 review).** A coloured vertical rule down the row's
+left edge replaces the old round swatch — same
+`.basemap-identity-fill`/`data-basemap-key` mechanism (`src/css/main.css`
+§2), just a different shape, stretched to the row's own height via flex
+`self-stretch`. The title is the row's plain name again — NOT "Verbier
+(Region)": that fold-in was this same ticket's own earlier pass, reversed
+here now the group heading says kind instead, so `row-title` (the format
+string that built it) is deleted rather than left unused. A muted
+subtitle underneath the title carries the basemap's own translated name
+("Swisstopo (CH)", "Standard") when resolvable, dropped entirely when it
+isn't (a legacy record, or an unrecognised key) — colour is never the
+only signal, so the rule and the subtitle always agree on whether
+anything is claimed. Trailing: the size, then a "…" overflow trigger
+(`includes/_overflow_menu.html`) replacing the two inline Rename/Remove
+buttons every row used to carry.
+
+**Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
+(`manageRows` falls back to `id` only when there is no record — true only
+for an orphan); subtitle reads the fixed "Incomplete download" string,
+with NO link. Remove is the only action either kind of orphan gets. A
+"resume" affordance (re-triggering the download from the bucket id) was
+considered and dropped: a REGION orphan's bucket id (`region-<regionId>`)
+could in principle drive one, but a CUSTOM-AREA orphan has no record at
+all — no bbox, no band — to rebuild from, and a link that silently does
+nothing for one of the two row kinds reads worse than no link for either.
+
+**An orphan's left rule is a PALE version of its basemap's colour, not a
+flat neutral (Hugo's correction).** An orphan has no record and so no
+stored `basemapKey` — `reconcileAreas` gives it `null` — but it is a real
+pinned bucket with real tiles on disk, and those tiles were fetched under
+SOME basemap's URL template. `map_basemap_downloads.js`'s
+`orphanBasemapKey(areaId)` recovers it by INFERENCE: it opens the
+orphan's own bucket, reads its cached tile URLs, and matches them against
+every DISTINCT template `basemapDownloadedTemplates()` already knows
+about — the exact same per-template regex match `cachedTilesFromURLs`
+performs for the downloaded-tiles overlay, just against one bucket's URLs
+instead of the union of all of them; no new URL-parsing or
+origin-sniffing. `render()` resolves this for every orphaned row, in
+parallel, before any row is built, and stashes it as `row.recoveredBasemapKey`
+— explicitly commented at both the resolution point and the paint point
+as INFERENCE, never a record: nothing writes it back anywhere, and no
+other reader may treat it as more than a colour hint for a row whose only
+action is Remove.
+
+`buildRow` then paints the rule exactly like a completed row's — a real
+`data-basemap-key`, the same `.basemap-identity-fill` mechanism — plus a
+shared `opacity-40` modifier (`src/css/main.css` §2) applied to EITHER
+that recovered colour OR, when nothing could be inferred (a basemap since
+retired from the picker, an unreadable bucket, or Cache Storage itself
+unavailable), `bg-sync-off` — this app's existing "absent, not an error"
+grey, the sync dots' own uncached colour, deliberately NOT
+`.basemap-identity-fill`'s own keyless green default (which means
+"downloaded, basemap unknown" — not true of something that never
+finished). One utility class expresses "pale" for both cases, rather than
+five more per-key pale declarations. `--color-sync-off` and every
+`--color-basemap-*` token are chosen to hold up at 40% opacity against
+both the light and dark `--color-card` — checked by computing the blended
+colour against each, not by eye (this session had no way to render a
+screenshot).
+
+**The overlay switch.** `includes/_switch.html` — a real
+`input[type="checkbox" role="switch"]` drawn as a track+thumb with
+Tailwind's `peer` variant, no JS; see that partial's own docstring for why
+(there was no switch primitive in the design system before this). Its
+label — "Show areas on the map" — sits in its own `bg-tag` rounded panel,
+reading as a view control for the map BEHIND the sheet rather than a fact
+about what is stored, which is also why it leads the sheet ahead of the
+list it governs.
+
+**A real bug shipped in this control's first cut, found by Hugo clicking
+it in a live browser (not by `render_to_string`, which cannot show a
+pointer-activation defect).** The wrapping element was a bare `<span>`.
+Since the track and thumb are both `pointer-events-none` (so a click
+passes THROUGH them) and the input itself is `sr-only` (clipped to 1×1px),
+a click anywhere on the visible pill landed on that inert `<span>` and did
+nothing — silently, no console error, only the label TEXT ("Show areas on
+the map") actually worked, because that text sits in a genuine
+`<label for="…">` in the sheet's own markup. Fixed by making
+`_switch.html`'s own wrapping element a SECOND `<label for="{{ id }}">` —
+an input can have any number of labels, provided none is nested inside
+another (this one and the sheet's own external text label are siblings,
+not nested) — so the browser's native click-to-activate-a-labelled-control
+behaviour handles it with no JS and cannot be defeated by the
+`pointer-events-none` children. The same pass grew the label's tap target
+to `min-h-11` (44px minimum height; the width already matched at `w-11`)
+while keeping the VISUAL pill at its original 24px, centred within the
+taller label via `inset-y-0 h-* my-auto` (literal top:0/bottom:0 plus an
+explicit height plus auto margins — the standard technique for centring a
+fixed-size absolutely-positioned box regardless of how its container's own
+height was arrived at, unlike a percentage `top: 50%` which is fussier
+about that). Verified with real Playwright clicks against the running dev
+server (not `render_to_string`) — centre-of-label, edge-of-hitbox, and a
+second click to toggle back, plus a keyboard Space-on-focus check, and the
+`/_components/switch/` fixture panel — all toggle correctly.
+
+**The overflow menu.** `includes/_overflow_menu.html` + the delegated,
+instance-agnostic `static/js/overflow_menu.js` — see that partial's own
+docstring for the full contract (dismiss on outside click/Escape,
+keyboard-reachable, why it is delegated rather than per-instance-bound).
+`buildRow` rewrites the row template's placeholder `trigger_id`/`menu_id`
+to a per-row id (`_domSafeId(row.id)`-suffixed) once cloned, for
+`aria-controls` correctness with any number of rows on screen — the
+open/close logic itself never depends on the ids being unique. Menu
+contents: Rename (custom areas only — `buildRow` removes the whole `<li>`
+for a non-renameable row, not just the button) and Remove.
+
+**Basemap subtitle label.** The basemap name shown in a row's subtitle
+(when resolvable) is the same label the picker itself shows: `buildRow`
+reads it off the picker's rendered `.basemap-menu-item` buttons rather
+than duplicating `apps/public/views.py`'s `_BASEMAP_LABELS`, so the two
+surfaces can never drift and no new JS string literal exists for
+`tox -e i18n-lint` to flag.
+
+**Budget bar segments (SNOW-645 review).** The used portion of the budget
+bar is one flat fill no longer — `basemap_manage_core.js`'s
+`budgetSegments(areas)` groups the SAME area list by `basemapKey` (summed,
+never one segment per area — a dozen small custom areas under one basemap
+would otherwise read as a barcode), sorted largest first with the keyless
+group (legacy records, orphaned buckets) always last so the bar doesn't
+reshuffle on every re-render. `render()` appends one
+`.basemap-identity-fill` `<div>` per segment into `[data-downloads-bar]`,
+sized by `flex-grow: <bytes>` (a ratio, not a computed percentage) and
+coloured via `dataset.basemapKey` — JS sets the key and the grow weight,
+nothing else. Over budget, the bar itself can no longer turn solid red
+(it is carrying real basemap colours), so the signal moved to
+`[data-downloads-track]`, the outer element, which gets a
+`ring-2 ring-status-error-text` outline instead — `[data-downloads-over]`'s
+own warning text is unchanged.
+
+**Sheet header × (SNOW-645, reworked twice).** `includes/_sheet_header.html`'s
+× used to be `text-lg leading-none px-1` — a ~26×20px hit target, well
+under the 44×44 minimum. First pass: centred that SAME small glyph inside
+a new `h-11 w-11` (44×44px) box, growing only the invisible tap target.
+Wrong call, per Hugo directly: "the 'x' is very small — it needs to fill
+the 44x44". Reversed — the MARK itself now scales to read at the
+control's own size, not a small glyph floating in a big invisible box, at
+roughly the title's own visual weight (Hugo's mock). Second complication:
+the mark is no longer the literal "×" (U+00D7) character at all — past a
+certain size it reads as a thin, off-centre mathematical symbol rather
+than a close icon. Replaced with the same stroke-based inline SVG cross
+`#map-help-close` / `#home-intro-close` already use in `_map_embed.html`
+(`viewBox="0 0 24 24"`, `stroke="currentColor"`, round caps/joins,
+`currentColor` inheriting `text-text-2`/`hover:text-text-1` exactly as the
+glyph did), sized 22×22 inside the 44×44 box — proportionate, not
+edge-to-edge. One size for all three consumers (this sheet, favourites,
+report) rather than a second `title_class`-style parameter — checked
+against all three, including the two tighter headers.
+
+`title_class` (used above) is the OTHER, unrelated, still-standing new
+parameter — purely so this sheet's own title can be larger without
+resizing the other two sheets' headers.
+
+**Known test breakage from the glyph swap** (not fixed — test files are
+out of scope for this pass): `tests/e2e/test_report_sheet.py`
+(`test_report_form_close_button_hides_sheet`,
+`test_anonymous_signin_cta_has_close_button`) and
+`tests/e2e/test_favourites.py` (`test_create_form_close_button_hides_sheet`,
+`test_anonymous_signin_cta_has_close_button`) each disambiguate this
+button from the Cancel button (which also carries
+`data-action="dismiss"`) via `page.locator(…, has_text="×")`. That locator
+now matches nothing — the visible mark is an SVG with no text content —
+so all four will fail. The fix, once tests are back in scope, is a
+structural locator (e.g. scoped to the header row specifically, or an
+`aria-label="Close"` filter) rather than one keyed to the glyph's text.
+
+**Running order:** the header block (title, budget), then the over-budget
+warning (when shown), then the overlay switch panel, then the REGIONS and
+CUSTOM AREAS groups, then the empty state (when neither group has rows),
+then the add-custom-area CTA in its own bordered group at the foot.
+Nothing in `map_downloads_manager.js` is positional (every element is
+addressed by data-attribute), so the order is a presentation decision and
+reordering never needs a JS change.
 
 It opens from `#map-custom-download-control` — the
 bottom-right roundel — and uses the shared sheet primitive

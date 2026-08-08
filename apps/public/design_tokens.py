@@ -45,6 +45,7 @@ from apps.public._component_fixtures import (
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
+    OVERFLOW_MENU_VARIANTS,
     OVERLAY_BANNER_VARIANTS,
     OVERLAY_MODAL_VARIANTS,
     OVERLAY_SHEET_VARIANTS,
@@ -61,6 +62,7 @@ from apps.public._component_fixtures import (
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
+    SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
@@ -1144,14 +1146,49 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="sheet-header",
         label="Sheet header",
         description=(
-            "Shared title + persistent × close control for the favourites "
-            "and report map fly-out sheets (SNOW-474). The × carries the "
-            "close_action value as its data-action attribute, so it "
-            "triggers the owning sheet's existing delegated close listener."
+            "Shared title + persistent × close control for the favourites, "
+            "report, and downloads map fly-out sheets (SNOW-474; the × grew "
+            "a 44×44 tap target and the title an optional title_class "
+            "override in SNOW-645 review). The × carries the close_action "
+            "value as its data-action attribute, so it triggers the owning "
+            "sheet's existing delegated close listener."
         ),
         kind="components",
         partial="includes/_sheet_header.html",
         variants=SHEET_HEADER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="switch",
+        label="Switch",
+        description=(
+            "iOS-style ON/OFF switch (SNOW-645) — a real checkbox input "
+            "with role=switch, styled with Tailwind's peer variant, no JS. "
+            "First use: the Manage downloads sheet's map-overlay control. "
+            "Renders the control only — a caller supplies its own label "
+            "alongside it."
+        ),
+        kind="components",
+        partial="includes/_switch.html",
+        variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overflow-menu",
+        label="Overflow menu",
+        description=(
+            "Reusable ellipsis kebab overflow menu (SNOW-645) — a trigger "
+            "button opening a role=menu popover, dismissed on outside "
+            "click or Escape by the delegated, instance-agnostic "
+            "static/js/overflow_menu.js. First use: the Manage downloads "
+            "sheet's per-row Rename/Remove actions, replacing two inline "
+            "buttons. The Open variants below are rendered pre-expanded "
+            "(this page loads no interaction JS) so the menu contents are "
+            "visible without a click."
+        ),
+        kind="components",
+        partial="includes/_overflow_menu.html",
+        variants=OVERFLOW_MENU_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -72,10 +72,18 @@
  *     ``name`` upstream, by ``map.js``'s ``basemapDownloadedAreas()``
  *     (which has the translation catalogue this module does not), not
  *     built here.
+ *   groupRowsByKind(rows)
+ *     SNOW-645 review: manageRows' own rows partitioned into
+ *     {region, custom} — the sheet's REGIONS / CUSTOM AREAS grouping —
+ *     without re-sorting either group.
  *   reconcileAreas(recorded, storedAreaIds, bytesById)
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
  *     stranded (SNOW-612).
+ *   budgetSegments(areas)
+ *     SNOW-645 review: the budget bar's segments, one per basemap
+ *     actually stored (grouped and summed, not one per area), largest
+ *     first with the keyless group always last.
  */
 
 (function () {
@@ -224,17 +232,20 @@
    * than reshuffling on every render.
    *
    * @param {Array<{id: string, name?: string, bytes?: number,
-   *   savedAt?: string}>} areas Areas as ``map.js``'s
-   *   ``basemapDownloadedAreas()`` normalises them — the union of the
-   *   ``basemap.regions`` array and (SNOW-635) the ``basemap.customAreas``
-   *   array, each already keyed by the id that names its Cache Storage
-   *   bucket. ``name`` is always populated for a non-orphaned area — a
-   *   region's is stored by the download itself; an unrenamed custom
-   *   area's default "Custom area N" is filled in by
+   *   savedAt?: string, basemapKey?: string|null}>} areas Areas as
+   *   ``map.js``'s ``basemapDownloadedAreas()`` normalises them — the union
+   *   of the ``basemap.regions`` array and (SNOW-635) the
+   *   ``basemap.customAreas`` array, each already keyed by the id that
+   *   names its Cache Storage bucket. ``name`` is always populated for a
+   *   non-orphaned area — a region's is stored by the download itself; an
+   *   unrenamed custom area's default "Custom area N" is filled in by
    *   ``basemapDownloadedAreas()`` itself (SNOW-635 review — see that
    *   function's own comment for why the defaulting lives there and not
    *   here or in the DOM layer). Only ``reconcileAreas``' orphan entries
    *   (SNOW-612 — a bucket with no record at all) ever leave it unset.
+   *   ``basemapKey`` (SNOW-645) is null on a record written before this
+   *   ticket shipped, and always null on an orphan — both read as an
+   *   unknown basemap, never a wrong one.
    * @param {{isCustomAreaId?: function(string): boolean}} [options]
    *   ``isCustomAreaId`` is ``pwaBasemapDownloadCore.isCustomAreaId`` — an
    *   area whose id it accepts is a user-framed download rather than a
@@ -249,7 +260,7 @@
    *   longer needs a caller-supplied fallback string for it.
    * @returns {Array<{id: string, kind: string, orphaned: boolean,
    *   label: string, renameable: boolean, bytes: number, savedAt: string,
-   *   size: string}>}
+   *   size: string, basemapKey: string}>}
    */
   function manageRows(areas, options) {
     var list = Array.isArray(areas) ? areas : [];
@@ -293,6 +304,11 @@
         bytes: bytes,
         savedAt: area.savedAt || '',
         size: formatMegabytes(bytes),
+        // SNOW-645: absent on a record written before this ticket shipped,
+        // or on an orphan (no record at all) — both read as '', never a
+        // wrong basemap, so map_downloads_manager.js's buildRow removes
+        // the swatch+name line rather than showing an unknown one.
+        basemapKey: area.basemapKey || '',
       });
     }
 
@@ -305,6 +321,30 @@
     });
 
     return rows;
+  }
+
+  /**
+   * Partition ``manageRows``' own rows into REGIONS and CUSTOM AREAS
+   * (SNOW-645 review — Hugo's "grouped by kind" sheet redesign).
+   *
+   * A ``filter``, not a re-sort: each group keeps ``manageRows``' own
+   * largest-first (then recency, then id) order, so a group's own biggest
+   * area still leads it and the sheet's own render() never has to re-apply
+   * that ordering itself.
+   *
+   * @param {Array<{kind: string}>} rows As ``manageRows`` returns them.
+   * @returns {{region: Array<Object>, custom: Array<Object>}}
+   */
+  function groupRowsByKind(rows) {
+    var list = Array.isArray(rows) ? rows : [];
+    return {
+      region: list.filter(function (row) {
+        return row && row.kind !== 'custom';
+      }),
+      custom: list.filter(function (row) {
+        return row && row.kind === 'custom';
+      }),
+    };
   }
 
 
@@ -355,6 +395,8 @@
         bytes: Number(area.bytes) || 0,
         savedAt: area.savedAt,
         orphaned: false,
+        // SNOW-645: absent on a pre-SNOW-645 record — see manageRows.
+        basemapKey: area.basemapKey || null,
       });
     }
 
@@ -375,6 +417,8 @@
         // the newest download on a surface ordered partly by recency.
         savedAt: undefined,
         orphaned: true,
+        // No record means no known basemap either.
+        basemapKey: null,
       });
     }
     orphans.sort(function (a, b) {
@@ -384,13 +428,71 @@
     return out.concat(orphans);
   }
 
+  /**
+   * The budget bar's segments — one per basemap actually stored.
+   *
+   * SNOW-645 review: the bar used to be one flat fill for the whole used
+   * total. Grouped by basemap here, one segment per KEY (summed across
+   * however many areas share it), not one per area — a device with a
+   * dozen small custom areas under the same basemap would otherwise
+   * render a dozen slivers, which reads as noise rather than as "here is
+   * what OpenFreeMap is costing you".
+   *
+   * @param {Array<{bytes?: number, basemapKey?: string|null}>} areas As
+   *   ``manageRows`` returns them (or anything shaped the same — only
+   *   ``bytes`` and ``basemapKey`` are read).
+   * @returns {Array<{basemapKey: string, bytes: number}>} Sorted largest
+   *   first, with the keyless group (legacy records, orphaned buckets —
+   *   ``basemapKey`` falsy) always LAST regardless of its size. Stable
+   *   across renders for the same underlying data: two groups of equal
+   *   size never swap because sort itself is stable and the input order
+   *   (``manageRows``' own largest-first, tie-broken by recency then id)
+   *   is already deterministic. ``basemapKey`` is always a string, never
+   *   ``null`` — ``''`` for the keyless group — so a caller can hand it
+   *   straight to a ``data-basemap-key`` attribute or a MapLibre ``match``
+   *   arm without an extra null check.
+   */
+  function budgetSegments(areas) {
+    var list = Array.isArray(areas) ? areas : [];
+    var totals = Object.create(null);
+    var order = [];
+
+    for (var i = 0; i < list.length; i += 1) {
+      var area = list[i];
+      var bytes = Number(area && area.bytes);
+      if (!Number.isFinite(bytes) || bytes <= 0) continue;
+      var key = (area && area.basemapKey) || '';
+      if (!(key in totals)) {
+        totals[key] = 0;
+        order.push(key);
+      }
+      totals[key] += bytes;
+    }
+
+    var keyed = order.filter(function (key) {
+      return key !== '';
+    });
+    keyed.sort(function (a, b) {
+      return totals[b] - totals[a];
+    });
+
+    var segments = keyed.map(function (key) {
+      return { basemapKey: key, bytes: totals[key] };
+    });
+    if ('' in totals) segments.push({ basemapKey: '', bytes: totals[''] });
+
+    return segments;
+  }
+
   self.pwaBasemapManageCore = Object.freeze({
     megabytesToBytes: megabytesToBytes,
     formatMegabytes: formatMegabytes,
     clampBudgetMb: clampBudgetMb,
     budgetSummary: budgetSummary,
     manageRows: manageRows,
+    groupRowsByKind: groupRowsByKind,
     reconcileAreas: reconcileAreas,
+    budgetSegments: budgetSegments,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,
     MIN_BUDGET_MB: MIN_BUDGET_MB,
     DEFAULT_BUDGET_MB: DEFAULT_BUDGET_MB,
