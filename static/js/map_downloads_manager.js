@@ -210,15 +210,16 @@
    * @type {Object<string, string>}
    */
   var STRINGS = self.pwaStrings.read('map-downloads-strings-template', {
-    // SNOW-645 review: composes a row's title from its name and kind —
-    // "Verbier (Region)". An orphaned row has no usable name (its
-    // `label` is the bare bucket id), so buildRow skips this format for
-    // it and uses `kind-incomplete` alone instead.
-    'row-title': '%(name)s (%(kind)s)',
-    'kind-region': 'Region',
-    'kind-custom': 'Custom area',
+    // SNOW-645 review: an orphaned row (SNOW-612) is labelled by what it
+    // IS — the leftovers of a download that never finished — with no
+    // resume affordance (considered and dropped: a custom-area orphan has
+    // no record to rebuild from, and a link that silently does nothing
+    // for one of the two row kinds is worse than no link for either).
     'kind-incomplete': 'Incomplete download',
-    usage: '%(used)s of %(budget)s used',
+    // SNOW-645 review: was "%(used)s of %(budget)s used" — a self-contained
+    // sentence. The budget figure now lives in the <select> immediately
+    // after this fragment ("40.3 MB of [500 MB ⌄]"), not repeated as text.
+    'usage-used': '%(used)s of',
     'confirm-remove':
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
@@ -235,6 +236,10 @@
     // note for why.
     'rename-prompt': 'Name this area',
     'rename-failed': "That name couldn't be saved. Try again.",
+    // SNOW-645 review: the overflow trigger's per-row aria-label —
+    // includes/_overflow_menu.html's own default ("More actions") is
+    // ambiguous with many rows on screen at once.
+    'row-menu-label': 'More actions for %(name)s',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -416,11 +421,14 @@
       overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
     }
 
+    // SNOW-645 review: the budget figure itself is no longer stated in
+    // this text — it now lives in the <select> right after it ("40.3 MB
+    // of [500 MB ⌄]"), part of the same header row (see the sheet's own
+    // template comment for the layout).
     const summaryEl = sheet.querySelector('[data-downloads-summary]');
     if (summaryEl) {
-      summaryEl.textContent = interpolate(STRINGS.usage, {
+      summaryEl.textContent = interpolate(STRINGS['usage-used'], {
         used: core.formatMegabytes(summary.usedBytes),
-        budget: core.formatMegabytes(summary.budgetBytes),
       });
     }
 
@@ -464,9 +472,25 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    const listEl = sheet.querySelector('[data-downloads-list]');
-    if (listEl) {
-      for (const row of rows) listEl.appendChild(buildRow(row));
+    // SNOW-645 review: rows are grouped by kind — REGIONS, then CUSTOM
+    // AREAS — each under its own heading, rather than one flat list.
+    // groupRowsByKind partitions manageRows' own largest-first order
+    // (never re-sorts it), so a group's own biggest area still leads it.
+    // A group with no rows has its WHOLE wrapper (heading and list
+    // together) hidden — see the sheet's own template comment for why an
+    // empty heading is never shown.
+    const grouped = core.groupRowsByKind(rows);
+    const groupLists = {
+      region: sheet.querySelector('[data-downloads-list-region]'),
+      custom: sheet.querySelector('[data-downloads-list-custom]'),
+    };
+    for (const kind of ['region', 'custom']) {
+      const listEl = groupLists[kind];
+      const wrapper = sheet.querySelector('[data-downloads-group="' + kind + '"]');
+      const kindRows = grouped[kind];
+      if (wrapper) wrapper.hidden = kindRows.length === 0;
+      if (!listEl) continue;
+      for (const row of kindRows) listEl.appendChild(buildRow(row));
     }
 
     const select = /** @type {HTMLSelectElement|null} */ (
@@ -499,10 +523,31 @@
   }
 
   /**
+   * A DOM-id-safe version of an area id, for the per-row overflow-menu
+   * trigger/menu id pair below — an area id (``region-<regionId>`` /
+   * ``custom-<uuid>``) is already id-safe in practice, but this is
+   * defensive rather than assumed.
+   *
+   * @param {string} areaId
+   * @returns {string}
+   */
+  function _domSafeId(areaId) {
+    return String(areaId).replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  /**
    * Build one list row.
    *
+   * SNOW-645 review: the row's title is the plain name again — no longer
+   * "Verbier (Region)" (that fold-in was this same ticket's own earlier
+   * pass, reversed here now the group heading above the row says kind
+   * instead). The round basemap swatch is gone too, replaced by
+   * ``[data-row-rule]``, the coloured rule down the row's left edge — same
+   * ``.basemap-identity-fill``/``data-basemap-key`` mechanism, just a
+   * different shape.
+   *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   renameable?: boolean, size: string}} row
+   *   renameable?: boolean, size: string, basemapKey?: string}} row
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -513,55 +558,84 @@
     // SNOW-635 review: `row.label` is already the right text — a stored
     // name, or an unrenamed custom area's numbered default, filled in
     // upstream by map.js's basemapDownloadedAreas() — so this module has
-    // no ordinal-aware fallback of its own to build any more.
-    //
-    // SNOW-645 review: the separate "Region" / "Custom area" line that
-    // used to sit under the name is folded into this one via `row-title`
-    // — "Verbier (Region)". An orphaned row (SNOW-612) is labelled by
-    // what it IS — the leftovers of a download that never finished —
-    // rather than as the region or custom area it was going to be: its
-    // `label` is the bare bucket id, not a name worth showing, so it
-    // skips the format entirely and reads as `kind-incomplete` alone.
-    // Calling it a finished download by wrapping the id would be a lie
-    // about what the device can do offline.
+    // no ordinal-aware fallback of its own to build any more. For an
+    // orphaned row (SNOW-612) it is the bare bucket id — manageRows falls
+    // back to `id` only when there is no record at all — which is exactly
+    // what buildRow shows: an orphan is labelled by what it IS.
     const label = fragment.querySelector('[data-row-label]');
-    if (label) {
+    if (label) label.textContent = row.label;
+
+    // The subtitle is either which basemap this was downloaded under, or
+    // — for an orphan — the fixed "Incomplete download" string with no
+    // link (SNOW-645 review considered a "resume" affordance and dropped
+    // it: a region orphan's bucket id could in principle drive one, but a
+    // custom-area orphan has no record — no bbox, no band — to rebuild
+    // from, and a link that silently does nothing for one of the two row
+    // kinds is worse than no link for either; Remove is the only action
+    // an orphan gets). A resolvable-basemap row with no basemapKey (a
+    // legacy record, or a key the picker no longer has) removes the whole
+    // subtitle line rather than showing an unknown basemap — colour is
+    // never the only signal, so the rule below and this line always agree
+    // on whether anything is claimed.
+    const subtitle = fragment.querySelector('[data-row-subtitle]');
+    if (subtitle) {
       if (row.orphaned) {
-        label.textContent = STRINGS['kind-incomplete'] || '';
+        subtitle.textContent = STRINGS['kind-incomplete'] || '';
       } else {
-        const kind =
-          row.kind === 'custom'
-            ? STRINGS['kind-custom'] || ''
-            : STRINGS['kind-region'] || '';
-        label.textContent = interpolate(STRINGS['row-title'], {
-          name: row.label,
-          kind: kind,
-        });
+        const basemapName = row.basemapKey
+          ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
+          : '';
+        if (basemapName) {
+          subtitle.textContent = basemapName;
+        } else {
+          subtitle.remove();
+        }
       }
+    }
+
+    // SNOW-645 review: the coloured rule down the row's left edge — the
+    // basemap's identity colour when known, or (SNOW-612) a flat muted
+    // grey for an orphan, which has no known basemap and should read as
+    // paler/incomplete rather than falling through to the identity
+    // colours' own green "downloaded, basemap unknown" default (a
+    // meaning that only applies to a COMPLETED download of unknown
+    // basemap, which an orphan by definition is not).
+    const rule = fragment.querySelector('[data-row-rule]');
+    if (rule) {
+      if (row.orphaned) {
+        rule.classList.remove('basemap-identity-fill');
+        rule.classList.add('bg-border');
+      } else if (row.basemapKey) {
+        rule.dataset.basemapKey = row.basemapKey;
+      }
+      // Neither branch: a non-orphaned, keyless row keeps the shared
+      // .basemap-identity-fill class already on the template with no
+      // data-basemap-key — its own CSS fallback (--color-sync-ok) paints
+      // it, same "downloaded, basemap unknown" green the roundels use.
     }
 
     const size = fragment.querySelector('[data-row-size]');
     if (size) size.textContent = row.size;
 
-    // SNOW-645: which basemap this area was downloaded under. Colour is
-    // never the only signal — the swatch always pairs with the picker's
-    // own translated name. No key (a legacy record, or an orphan —
-    // manageRows/reconcileAreas both fall back to ''), or a key the picker
-    // no longer has a row for, removes the whole line rather than showing
-    // an unknown or mismatched basemap.
-    const basemapRow = fragment.querySelector('[data-row-basemap]');
-    if (basemapRow) {
-      const label = row.basemapKey
-        ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
-        : '';
-      if (label) {
-        const swatch = basemapRow.querySelector('[data-row-basemap-swatch]');
-        if (swatch) swatch.dataset.basemapKey = row.basemapKey;
-        const name = basemapRow.querySelector('[data-row-basemap-name]');
-        if (name) name.textContent = label;
-      } else {
-        basemapRow.remove();
-      }
+    // SNOW-645 review: the "…" overflow menu replaces the two inline
+    // Rename/Remove buttons. trigger_id/menu_id are placeholders in the
+    // template (see its own comment) — rewritten here to a per-row id so
+    // aria-controls resolves correctly with any number of rows on screen;
+    // overflow_menu.js's own open/close logic never depends on this
+    // (DOM-traversal-scoped, not id-scoped).
+    const suffix = _domSafeId(row.id);
+    const trigger = fragment.querySelector('[data-overflow-trigger]');
+    const menu = fragment.querySelector('[role="menu"]');
+    if (trigger && menu) {
+      const triggerId = 'downloads-row-overflow-trigger-' + suffix;
+      const menuId = 'downloads-row-overflow-menu-' + suffix;
+      trigger.id = triggerId;
+      menu.id = menuId;
+      trigger.setAttribute('aria-controls', menuId);
+      trigger.setAttribute(
+        'aria-label',
+        interpolate(STRINGS['row-menu-label'], { name: row.label }),
+      );
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
@@ -576,7 +650,9 @@
     // SNOW-635: only a renameable row (a custom area with a real record
     // behind it — see manageRows's own docstring) shows the control. A
     // region's name is its real name, and an orphaned bucket has no
-    // record entry left to write one onto.
+    // record entry left to write one onto. Removes the whole <li> — the
+    // menu item's wrapper (SNOW-645 review: was just the standalone
+    // button) — not just the button, so no empty row is left in the menu.
     const renameBtn = fragment.querySelector('[data-downloads-rename]');
     if (renameBtn) {
       if (row.renameable) {
@@ -585,7 +661,9 @@
         // accepting it unchanged is a no-op rather than blanking the name.
         renameBtn.setAttribute('data-downloads-current-name', row.label);
       } else {
-        renameBtn.remove();
+        const item = renameBtn.closest('li');
+        if (item) item.remove();
+        else renameBtn.remove();
       }
     }
     return fragment;

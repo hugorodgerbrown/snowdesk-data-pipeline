@@ -72,6 +72,10 @@
  *     ``name`` upstream, by ``map.js``'s ``basemapDownloadedAreas()``
  *     (which has the translation catalogue this module does not), not
  *     built here.
+ *   groupRowsByKind(rows)
+ *     SNOW-645 review: manageRows' own rows partitioned into
+ *     {region, custom} — the sheet's REGIONS / CUSTOM AREAS grouping —
+ *     without re-sorting either group.
  *   reconcileAreas(recorded, storedAreaIds, bytesById)
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
@@ -319,6 +323,30 @@
     return rows;
   }
 
+  /**
+   * Partition ``manageRows``' own rows into REGIONS and CUSTOM AREAS
+   * (SNOW-645 review — Hugo's "grouped by kind" sheet redesign).
+   *
+   * A ``filter``, not a re-sort: each group keeps ``manageRows``' own
+   * largest-first (then recency, then id) order, so a group's own biggest
+   * area still leads it and the sheet's own render() never has to re-apply
+   * that ordering itself.
+   *
+   * @param {Array<{kind: string}>} rows As ``manageRows`` returns them.
+   * @returns {{region: Array<Object>, custom: Array<Object>}}
+   */
+  function groupRowsByKind(rows) {
+    var list = Array.isArray(rows) ? rows : [];
+    return {
+      region: list.filter(function (row) {
+        return row && row.kind !== 'custom';
+      }),
+      custom: list.filter(function (row) {
+        return row && row.kind === 'custom';
+      }),
+    };
+  }
+
 
   /**
    * The union of what is RECORDED as downloaded and what is actually
@@ -462,6 +490,7 @@
     clampBudgetMb: clampBudgetMb,
     budgetSummary: budgetSummary,
     manageRows: manageRows,
+    groupRowsByKind: groupRowsByKind,
     reconcileAreas: reconcileAreas,
     budgetSegments: budgetSegments,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,
