@@ -1267,9 +1267,10 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Sheet header (SNOW-474) -----------------------------------------------------
-# Shared title + persistent × close control for the favourites/report map
-# sheets. Both context vars are required (title, close_action) — supplying
+# Sheet header (SNOW-474; the 44×44 × and title_class override SNOW-645
+# review) --------------------------------------------------------------------
+# Shared title + persistent × close control for the favourites/report/
+# downloads map sheets. Both title and close_action are required — supplying
 # them here keeps the include from erroring on a missing var.
 
 SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
@@ -1280,6 +1281,78 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Favourite sheet",
         "context": {"title": "Favourite", "close_action": "dismiss"},
+    },
+    {
+        "caption": "Manage downloads sheet (title_class override)",
+        "context": {
+            "title": "Downloads on this device",
+            "close_action": "dismiss",
+            "title_class": "text-lg font-bold",
+        },
+    },
+)
+
+
+# Switch (SNOW-645) -----------------------------------------------------------
+# First use: the "Manage downloads" sheet's "Show areas on the map" control.
+# Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
+# states render correctly from the `checked` attribute alone.
+
+SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Off",
+        "context": {"id": "component-library-switch-off", "extra_attrs": ""},
+    },
+    {
+        "caption": "On",
+        "context": {"id": "component-library-switch-on", "extra_attrs": "checked"},
+    },
+)
+
+
+# Overflow menu (SNOW-645) -----------------------------------------------------
+# First use: the "Manage downloads" sheet's per-row Rename/Remove actions.
+# `open=True` on one variant so the menu's contents are visible without
+# overflow_menu.js running — the component library page loads no
+# interaction JS for any partial (see that module's own header).
+
+OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Closed",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-closed",
+            "menu_id": "component-library-overflow-menu-closed",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename", "attrs": ""},
+                {"label": "Remove", "attrs": ""},
+            ],
+        },
+    },
+    {
+        "caption": "Open — custom area (Rename + Remove)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-open",
+            "menu_id": "component-library-overflow-menu-open",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename", "attrs": ""},
+                {"label": "Remove", "attrs": ""},
+            ],
+            "open": True,
+        },
+    },
+    {
+        "caption": "Open — region (Remove only)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-region",
+            "menu_id": "component-library-overflow-menu-region",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Remove", "attrs": ""},
+            ],
+            "open": True,
+        },
     },
 )
 

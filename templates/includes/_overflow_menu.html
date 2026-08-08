@@ -1,0 +1,107 @@
+{% comment %}
+templates/includes/_overflow_menu.html — Reusable "…" kebab overflow menu
+(SNOW-645).
+
+Built for the "Manage downloads" sheet's row actions (Rename / Remove),
+replacing the two inline buttons every row used to carry. There was no
+kebab-menu primitive before this (checked against
+apps/public/design_tokens.py and the component library) — the nearest
+existing pattern was static/js/map_basemap_picker.js's basemap popover, a
+single hardcoded `#basemap-menu`. This generalises that shape into a
+reusable partial + a DELEGATED, instance-agnostic script
+(static/js/overflow_menu.js) rather than a per-instance binding, because
+the downloads sheet can render any number of rows, each with its own
+menu, all re-cloned from one <template> on every render() — a
+closure-per-instance script (the shape the basemap picker itself uses)
+would have to be rebound on every clone.
+
+Keyboard: the trigger is a real <button> (`aria-haspopup="menu"`,
+`aria-expanded`, `aria-controls`); the items are real <button>s inside a
+`role="menu"` <ul>, so Tab reaches the trigger and (once open) each item
+in document order — the same level of keyboard support
+static/js/map_basemap_picker.js's own popover has, not a full
+roving-tabindex arrow-key implementation, which that existing pattern
+does not have either. Dismiss: outside click and Escape, mirroring that
+same popover's own idiom (see overflow_menu.js's module header).
+
+IDs are NOT guaranteed unique by this partial alone — a caller that clones
+this markup (map_downloads_manager.js's buildRow) MUST rewrite
+`trigger_id`/`menu_id` to something unique per clone once it is in the
+DOM, the same way it already rewrites `data-downloads-delete`'s value
+post-clone. overflow_menu.js's own open/close logic never depends on the
+ids being unique — it is scoped by DOM traversal
+(`closest('[data-overflow-menu]')`), never `getElementById` — the ids
+exist purely for `aria-controls` correctness.
+
+Parameters (passed via {% include … with … %}):
+  trigger_id     (string) — DOM id for the trigger button.
+  menu_id        (string) — DOM id for the <ul>; the trigger's
+                 aria-controls points at it.
+  trigger_label  (string) — aria-label for the trigger — the "…" glyph
+                 alone names nothing to a screen reader.
+  items          (list of {label, attrs}, optional) — one <li><button>
+                 per entry, looped directly. Only usable from a PYTHON
+                 caller (a view, or — today — the component library's
+                 fixtures): Django's `{% include … with … %}` cannot
+                 construct a list literal inside a template FILE, so a
+                 template-file caller with a fixed set of items (like
+                 _map_downloads_sheet.html's row template) must use
+                 `items_template` instead. Ignored when `items_template`
+                 is provided.
+  items_template (string, optional) — a template path `{% include %}`d
+                 verbatim inside the <ul> in place of the `items` loop —
+                 mirrors includes/_collapsible_panel.html's own
+                 `body_html`/`body_template` duality, for exactly the
+                 same reason. The included template owns its own <li>
+                 markup and receives this include's full context.
+  open           (bool, optional) — renders the menu already expanded,
+                 for the component library's own demo (no JS runs there
+                 to open it otherwise). Default closed.
+
+Either `items` OR `items_template` — whichever fits the caller — supplies
+`attrs`: raw attribute text appended to an item's <button> verbatim (e.g.
+`data-downloads-rename` — the caller's own delegated click handler reads
+it back off the button, the same way _switch.html's `extra_attrs` works)
+— this partial never has to know what a caller's handler expects to find.
+{% endcomment %}
+<div class="relative inline-block" data-overflow-menu>
+    <button
+        type="button"
+        id="{{ trigger_id }}"
+        data-overflow-trigger
+        aria-haspopup="menu"
+        aria-expanded="{% if open %}true{% else %}false{% endif %}"
+        aria-controls="{{ menu_id }}"
+        aria-label="{{ trigger_label }}"
+        class="flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:text-text-1"
+    >
+        {# A literal "…" character, not its decimal numeric-entity form —  #}
+        {# every digit of that decimal code point also happens to be a     #}
+        {# valid hex digit, which ds-lint's hex-colour rule reads as a     #}
+        {# raw colour literal.                                             #}
+        <span aria-hidden="true">…</span>
+    </button>
+    <ul
+        id="{{ menu_id }}"
+        role="menu"
+        {% if not open %}hidden{% endif %}
+        class="absolute right-0 z-10 mt-1 w-40 rounded-tag border border-border bg-card py-1 shadow-glass"
+    >
+        {% if items_template %}
+            {% include items_template %}
+        {% else %}
+            {% for item in items %}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitem"
+                        {{ item.attrs }}
+                        class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                    >
+                        {{ item.label }}
+                    </button>
+                </li>
+            {% endfor %}
+        {% endif %}
+    </ul>
+</div>

@@ -17,14 +17,32 @@ Parameters (passed via ``{% include … with … %}``):
   close_action (string) — Value for the button's ``data-action`` attribute.
                            Pass "dismiss" unless the owning sheet has its
                            own bespoke close handler.
+  title_class  (string, optional) — Font-size/weight utilities for the
+                           title. Defaults to the original
+                           ``text-sm font-semibold``; the "Manage
+                           downloads" sheet (SNOW-645 review) passes
+                           ``text-lg font-bold`` for its own larger
+                           heading. ``text-text-1`` is always applied
+                           underneath whatever this carries, so callers
+                           only need to state size/weight.
+
+SNOW-645 review: the × used to be ``text-lg leading-none px-1`` — a
+~26×20px hit target, well under the 44×44 minimum. The glyph itself is
+unchanged (still ``text-lg leading-none``); it is now centred inside an
+``h-11 w-11`` (44×44px) box instead, so every consumer's close control
+gets a real tap target for free. Checked against both other consumers
+(``_favourites_surface.html``, ``observations/_report_form.html``) — both
+headers gain a little vertical room, which is the point, not a defect.
 {% endcomment %}
 <div class="flex items-center justify-between px-2 pt-1 pb-3">
-    <span class="text-sm font-semibold text-text-1">{{ title }}</span>
+    <span class="{% if title_class %}{{ title_class }}{% else %}text-sm font-semibold{% endif %} text-text-1">
+        {{ title }}
+    </span>
     <button
         type="button"
         data-action="{{ close_action }}"
         aria-label="{% trans 'Close' %}"
-        class="text-text-2 hover:text-text-1 text-lg leading-none px-1"
+        class="flex h-11 w-11 items-center justify-center text-lg leading-none text-text-2 hover:text-text-1"
     >
         ×
     </button>
