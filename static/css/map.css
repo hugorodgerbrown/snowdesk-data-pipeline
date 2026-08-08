@@ -504,14 +504,23 @@
    the 40×40 glass-circle look. As of the homepage rework it is a member of the
    bottom-right stack (#map-controls-br) rather than independently positioned,
    so it shares the stack's flow — same 40×40 icon-pill geometry as the basemap
-   / locate pills. The warning-triangle icon is tinted amber (status-warning)
-   to stand out as the report-a-hazard action; the SVG strokes inherit it via
-   currentColor. */
+   / locate pills.
+
+   Review (post-SNOW-645): SNOW-324 originally tinted the warning-triangle
+   icon amber (--color-status-warning-text) "to stand out as the
+   report-a-hazard action" — Hugo's own reversal of that call, not an
+   oversight found later: the colour override is gone, so this icon now
+   inherits the same ink/on-ink colour every other roundel in the stack
+   does (see .map-utility-pill / #map-controls-br's own colour rules),
+   and reads as a hazard-report affordance from its glyph (the warning
+   triangle itself) and its position in the stack, not from a one-off
+   tint. If a future ticket wants this control to stand out again, that
+   is a fresh design decision — do not resurrect this exact rationale by
+   copying it back in; it was tried and reversed once already. */
 .map-report-control {
     width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
-    color: var(--color-status-warning-text);
 }
 
 .map-report-control:hover {
@@ -1083,7 +1092,15 @@
 
 /* Season scrubber — floating bottom-pinned pill (SNOW-37 / SNOW-230).
    Attribution was relocated to top-right so the scrubber now sits flush
-   at the bottom edge above the safe-area inset. */
+   at the bottom edge above the safe-area inset.
+
+   Review (post-SNOW-645, Hugo's dark-mode report): background was a
+   hardcoded rgba(255, 255, 255, …) with no dark-mode counterpart, so this
+   pill stayed a light disc in dark mode while everything around it went
+   dark. src/css/main.css's --color-glass is exactly this token — the
+   frosted-glass surface the map utility cluster already uses — and it
+   inverts under .dark, so this pill now tracks the theme the same way
+   .map-utility-pill does. */
 
 .season-scrubber,
 .season-scrubber-demo {
@@ -1091,7 +1108,7 @@
     align-items: center;
     gap: 10px;
     padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.75);
+    background: var(--color-glass);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 0.5px solid var(--border);
@@ -1401,7 +1418,9 @@
        rather than as the label for what the map is currently showing. */
     font-size: 13px;
     /* Frosted pill so the label stays legible over the map (it was getting
-       lost against the choropleth). Matches the scrubber / utility-pill idiom.
+       lost against the choropleth). Matches the scrubber / utility-pill idiom
+       — review (post-SNOW-645): including now using --color-glass rather than
+       a hardcoded rgba(255, 255, 255, …), which had no dark-mode counterpart.
 
        The explicit --map-control-sm height replaces a padding-derived one that
        computed to 29px — odd, so border-radius: 999px resolved to a 14.5px
@@ -1410,7 +1429,7 @@
     height: var(--map-control-sm);
     box-sizing: border-box;
     padding: 0 12px;
-    background: rgba(255, 255, 255, 0.75);
+    background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border: 0.5px solid var(--border);
@@ -1468,19 +1487,28 @@
     flex: 0 0 auto;
     border-radius: 999px;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.75);
+    /* Review (post-SNOW-645, Hugo's dark-mode report): was a hardcoded
+       rgba(255, 255, 255, …) with no dark-mode counterpart — see
+       --color-glass's own comment in src/css/main.css. */
+    background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border: 0.5px solid var(--border);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     text-decoration: none;
-    transition: box-shadow 120ms ease, background 120ms ease;
 }
 
+/* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
+   a bigger box-shadow — a bespoke hover treatment invented for this control
+   alone, with no dark-mode counterpart either. Every .map-utility-pill
+   variant (basemap/locate/favourite/help — same 40×40 glass-roundel family)
+   already has a hover idiom that needs no light/dark counterpart at all:
+   filter: brightness(1.04), which brightens whatever is actually painted
+   rather than assuming what colour it is. Matched here rather than inventing
+   a parallel one. */
 .region-readout-action:hover,
 .region-readout-action:focus-visible {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+    filter: brightness(1.04);
 }
 
 /* SNOW-642: disabled — nothing is focused, so there is no bulletin to open.
@@ -1497,16 +1525,17 @@
    the whole roundel here would have re-introduced exactly the disappearance
    this ticket exists to remove.
 
-   Declared AFTER the hover/focus rules above and restating both of their
-   properties: an equally-specific later rule would otherwise repaint a
-   disabled roundel, and :focus-visible survives pointer-events: none. */
+   Declared AFTER the hover/focus rules above and restating what they change
+   — filter: none, now that hover/focus is a brightness filter rather than a
+   background/box-shadow swap (see that rule's own comment) — so an
+   equally-specific later rule cannot leave a disabled roundel looking
+   hovered; :focus-visible survives pointer-events: none. */
 .region-readout-action[aria-disabled="true"],
 .region-readout-action[aria-disabled="true"]:hover,
 .region-readout-action[aria-disabled="true"]:focus-visible {
     color: var(--muted);
     cursor: not-allowed;
-    background: rgba(255, 255, 255, 0.75);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    filter: none;
 }
 
 .region-readout-action[aria-disabled="true"] svg {
@@ -1584,13 +1613,15 @@
     padding: 0;
     border-radius: 999px;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.75);
+    /* Review (post-SNOW-645, Hugo's dark-mode report): was a hardcoded
+       rgba(255, 255, 255, …) with no dark-mode counterpart — see
+       --color-glass's own comment in src/css/main.css. */
+    background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border: 0.5px solid var(--border);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     cursor: pointer;
-    transition: box-shadow 120ms ease, background 120ms ease;
 }
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
@@ -1608,10 +1639,74 @@
     display: inline-flex;
 }
 
+/* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
+   a bigger box-shadow — the same bespoke, no-dark-counterpart hover
+   treatment .region-readout-action's own comment describes, and the same
+   fix: matched to the .map-utility-pill idiom (brightness filter, no
+   background/box-shadow change) instead of inventing a parallel one. Also
+   drops the now-nothing-to-transition `transition: box-shadow …, background
+   …` this rule used to animate and the `prefers-reduced-motion` override
+   that existed only to cancel it — a plain filter swap needs neither,
+   matching every sibling .map-utility-pill--* hover exactly. */
 .map-download-control:hover,
 .map-download-control:focus-visible {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+    filter: brightness(1.04);
+}
+
+/* Review (post-SNOW-645, Hugo's dark-mode report): --ink/--muted-coloured
+   TEXT and glyphs sitting directly on top of the glass surfaces just above
+   and around here (.season-scrubber, .region-readout and its children,
+   .region-readout-action, .map-download-control) — surfaces this same
+   review moved onto --color-glass, which now genuinely goes dark under
+   .dark. Before that fix their background was a hardcoded
+   rgba(255, 255, 255, …), unaffected by theme, so --ink (a fixed
+   near-black with no dark counterpart) painted on top of it was always
+   legible; making the background theme-aware without also addressing the
+   text it carries would have traded "wrong colour in dark mode" for
+   "invisible in dark mode" — confirmed in a real browser (dark mode, port
+   3000): the region-readout pill's own label and the download roundel's
+   own idle glyph were both unreadable black-on-near-black before this
+   block existed.
+
+   Not a --ink/--muted dark variant (this file's own header explains why
+   that is a bigger job than this ticket) — these are per-selector
+   overrides onto src/css/main.css's ALREADY dark-mirrored --color-text-1 /
+   --color-text-2 (the semantic equivalents: --color-text-1 for primary
+   label text, --color-text-2 for secondary/muted), scoped to exactly the
+   elements whose background this review made theme-aware and nothing
+   else — every other --ink/--muted use in this file sits on a surface
+   that is still deliberately theme-independent (the scrubber's own
+   dark-filled play/pause buttons, the legend card, etc.) and is
+   untouched.
+
+   Placed HERE — before the state-specific rules below, not after them —
+   on purpose: .map-download-control[data-download-state="error"] shares
+   this same (.dark X = two classes) specificity with the plain
+   .dark .map-download-control rule below, so which one wins a real tile
+   is decided by source order, not specificity. Declaring the general dark
+   override first lets the later, more specific-in-INTENT error rule keep
+   winning exactly as it already does in light mode — the reverse order
+   would have silently repainted an offline-and-uncached download's red
+   error state in ordinary text colour under dark mode only. */
+.dark .scrubber-skip,
+.dark .region-readout,
+.dark .region-readout-name,
+.dark .region-readout-leaf,
+.dark .region-readout-action,
+.dark .map-download-control {
+    color: var(--color-text-1);
+}
+
+.dark .season-scrubber-loading,
+.dark .region-readout:not(.has-region) .region-readout-leaf,
+.dark .region-readout-crumbs,
+.dark .region-readout-action[aria-disabled="true"],
+.dark .region-readout-action[aria-disabled="true"]:hover,
+.dark .region-readout-action[aria-disabled="true"]:focus-visible,
+.dark .map-download-control[data-download-state="no-region"],
+.dark .map-download-control[data-download-state="disabled"],
+.dark .map-download-control[data-download-state="offline"] {
+    color: var(--color-text-2);
 }
 
 /* Three distinct reasons the control can't run, one shared treatment:
@@ -1657,12 +1752,6 @@
 .map-download-control[data-download-state="error"] {
     color: var(--color-sync-blocked);
     cursor: pointer;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .map-download-control {
-        transition: none;
-    }
 }
 
 /* Only the active state's icon renders; it sits above the busy fill. The
@@ -1778,6 +1867,23 @@
     background: var(--ink);
 }
 
+/* Review (post-SNOW-645, Hugo's dark-mode report): once the chrome around
+   this roundel goes dark (the .map-download-control background/hover fixes
+   above), a fixed near-black --ink fill on a now near-black glass shell
+   loses the filled/unfilled distinction the fill exists to carry — the
+   exact defect class the background fix above corrects, just one layer
+   deeper. --ink itself has no dark-mode counterpart and this ticket is not
+   the place to give map.css's whole private palette one (see this file's
+   own header) — instead this one fill INVERTS in dark mode: --on-ink
+   (already declared, literally "the icon/label colour painted on top of a
+   dark filled circle" — see its own doc comment at :root) makes the fill
+   itself the light element, so it still reads as a distinct disc against
+   the dark shell. The glyph inverts to match — see that rule below. */
+.dark #map-custom-download-control[data-download-state="busy"]::before,
+.dark #map-custom-download-control[data-download-state="done"]::before {
+    background: var(--on-ink);
+}
+
 /* Done: the fill is pinned full — a solid disc matching the sync dot's
    colour language: green on the region roundel, --ink on the custom-area
    one (see that control's own monochrome comment above). */
@@ -1791,6 +1897,17 @@
    above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
+}
+
+/* Review (post-SNOW-645, Hugo's dark-mode report): the custom control's
+   fill inverts to --on-ink (light) in dark mode — see that rule's own
+   comment above — so the white glyph above would go white-on-white. More
+   specific than the shared rule above (an id beats a class), so it wins
+   without needing !important. --ink reads correctly here regardless of
+   theme: it is a fixed dark colour sitting on a fixed light (--on-ink)
+   fill, deliberately independent of the surrounding chrome. */
+.dark #map-custom-download-control[data-download-state="done"] .map-download-control-icon--idle {
+    color: var(--ink);
 }
 
 /* SNOW-645: 'other-basemap' — the region IS downloaded, just for a
@@ -1815,11 +1932,32 @@
    it is load-bearing rather than decorative. A keyless record (no
    data-basemap-key at all, not just a missing token) also needs to reach
    this default, which is what the bare (non-attribute-qualified) rule
-   below is for. */
+   below is for.
+
+   Review (Hugo's report, with a screenshot): "the roundel is bleeding the
+   basemap colour at the top/bottom/left/right" — four coloured slivers at
+   the cardinal points instead of a continuous ring. Root cause: this
+   pseudo-element had no border-radius of its own, so `inset: 0` on a
+   `border-radius: 999px` HOST produced a SQUARE box-shadow ring, relying
+   on the host's `overflow: hidden` to clip it down to a circle. A circle
+   inscribed in a square touches the square at exactly those four points —
+   the "clip" was doing the shaping work the shadow's own geometry should
+   have done, and a square clipped to a circle is still visibly square at
+   the corners it never reaches. `border-radius: inherit` (999px, matching
+   the host) makes the pseudo-element itself circular, so the ring is
+   correct on its own geometry and does not depend on the host clip at
+   all — do not "simplify" this back out on the reasoning that
+   `overflow: hidden` already clips it; that reasoning is exactly what
+   shipped the bug. Scoped to THIS rule only: the busy/done fill's own
+   ::before (above) is deliberately a bottom-anchored RECTANGLE that DOES
+   rely on the circular clip to read as a rising level inside a circle —
+   giving that one a radius too would round the fill's own rising top
+   edge and break the effect. */
 .map-download-control[data-download-state="other-basemap"]::before {
     content: "";
     position: absolute;
     inset: 0;
+    border-radius: inherit;
     box-shadow: inset 0 0 0 2px var(--color-sync-ok);
     z-index: 0;
 }
