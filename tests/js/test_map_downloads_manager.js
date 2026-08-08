@@ -644,6 +644,85 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
   });
 });
 
+describe('orphan dimming and the pale rule (SNOW-645 review)', () => {
+  // Starts from [data-row-rule], not [data-downloads-delete] — the delete
+  // button's nearest `<li>` ancestor is the OVERFLOW MENU's own item
+  // wrapper (<li role="none"> inside the "…" menu), not the row itself;
+  // [data-row-rule] sits directly in the row's own <li> with nothing
+  // else between.
+  function orphanRow() {
+    return document.querySelector('#map-downloads-sheet [data-row-rule]').closest('li');
+  }
+
+  it('dims the title and size, and pales the rule, for an orphaned row', async () => {
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    openSheet();
+    await settle();
+
+    const row = orphanRow();
+    const label = row.querySelector('[data-row-label]');
+    const size = row.querySelector('[data-row-size]');
+    const rule = row.querySelector('[data-row-rule]');
+    expect(label.classList.contains('text-text-2')).toBe(true);
+    expect(label.classList.contains('text-text-1')).toBe(false);
+    expect(size.classList.contains('text-text-3')).toBe(true);
+    expect(size.classList.contains('text-text-2')).toBe(false);
+    expect(rule.classList.contains('opacity-35')).toBe(true);
+  });
+
+  it('leaves a normal (non-orphaned) row at full strength — no dimming, no opacity-35', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = document.querySelector('#map-downloads-sheet li');
+    const label = row.querySelector('[data-row-label]');
+    const rule = row.querySelector('[data-row-rule]');
+    expect(label.classList.contains('text-text-1')).toBe(true);
+    expect(rule.classList.contains('opacity-35')).toBe(false);
+  });
+
+  it("paints the rule with the RECOVERED basemap when orphanBasemapKey resolves one", async () => {
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    window.pwaBasemapDownloads.orphanBasemapKey = vi.fn(async () => 'swisstopo_winter');
+    openSheet();
+    await settle();
+
+    const rule = orphanRow().querySelector('[data-row-rule]');
+    expect(rule.dataset.basemapKey).toBe('swisstopo_winter');
+    expect(rule.classList.contains('basemap-identity-fill')).toBe(true);
+    expect(rule.classList.contains('bg-sync-off')).toBe(false);
+  });
+
+  it('falls back to the neutral bg-sync-off rule when nothing could be inferred', async () => {
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    window.pwaBasemapDownloads.orphanBasemapKey = vi.fn(async () => null);
+    openSheet();
+    await settle();
+
+    const rule = orphanRow().querySelector('[data-row-rule]');
+    expect(rule.dataset.basemapKey).toBeUndefined();
+    expect(rule.classList.contains('bg-sync-off')).toBe(true);
+    // Never the keyless GREEN default a genuinely-downloaded, basemap-
+    // unknown row gets — see buildRow's own comment: "downloaded, basemap
+    // unknown" is not true of something that never finished.
+    expect(rule.classList.contains('basemap-identity-fill')).toBe(false);
+  });
+});
+
 describe('the budget readout', () => {
   it('offers every choice the core defines, with the stored one selected', async () => {
     seed({ 'basemap.budgetMb': 1000 });
