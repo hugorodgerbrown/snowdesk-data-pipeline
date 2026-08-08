@@ -385,35 +385,18 @@ Optional context:
                         </button>
                     </li>
                 {% endif %}
-                {# SNOW-570/SNOW-587: draws one translucent square per tile   #}
-                {# actually held in the pinned basemap cache — nothing more, #}
-                {# read straight from Cache Storage with no stored record    #}
-                {# involved. Off by default: the map already carries the     #}
-                {# choropleth, the selection ring, the region tiers and the  #}
-                {# pins, and a permanent extra layer over all of that is     #}
-                {# crowding for an answer most sessions don't need.          #}
-                {#                                                           #}
-                {# Carries a sync dot like every other overlay row. It used  #}
-                {# to be deliberately dotless, on the reasoning that this row #}
-                {# has no fetched data of its own and a dot would restate     #}
-                {# what the other dots already say. That made it the only     #}
-                {# row shaped differently from its neighbours, which read as  #}
-                {# a rendering bug rather than a distinction — and the dot    #}
-                {# does have something of its own to say: whether ANY basemap #}
-                {# tiles are pinned, i.e. whether there is an offline map at  #}
-                {# all. Same question the other dots answer for their feed.   #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="downloaded"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Available offline" %}
-                    </button>
-                </li>
+                {# SNOW-570/SNOW-587 drew one translucent square per tile     #}
+                {# actually held in the pinned basemap cache here, as a       #}
+                {# togglable "Available offline" overlay row. SNOW-645        #}
+                {# (Hugo's report: switching basemap while it was on left the #}
+                {# dot permanently grey and unclickable — its "any tile       #}
+                {# pinned under the ACTIVE template" probe is inherently      #}
+                {# per-basemap, and there was no way to tell that from the    #}
+                {# row) removed the row and moved the overlay itself into the #}
+                {# "Manage downloads" sheet: it is now bound to the sheet     #}
+                {# being open, on across every basemap, no separate toggle    #}
+                {# anywhere — see map_downloads_manager.js's open()/close     #}
+                {# handling and window.pwaDownloadedOverlay's show/hide.      #}
                 {# SNOW-588 added a "Manage downloads…" row here, opening   #}
                 {# the sheet that lists what is stored offline on this      #}
                 {# device (public/partials/_map_downloads_sheet.html). That #}
