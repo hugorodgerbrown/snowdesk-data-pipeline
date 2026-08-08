@@ -47,21 +47,44 @@ click-to-activate-labelled-control behaviour needs no JS and cannot be
 defeated by `pointer-events-none` children, because the click event
 still bubbles to the label itself.
 
-The clickable region is `w-11 min-h-11` (44×44 minimum — width already
-matched the visual pill's own 44px, only the height needed the tap-target
-fix the × elsewhere in this design got). The VISUAL pill stays its
-original `h-6` (24px): the track and thumb are absolutely positioned and
-vertically centred within the taller label via `inset-y-0 h-* my-auto`
-(literal `top:0;bottom:0` plus an explicit height plus auto margins is
-the standard centre-within-an-indeterminate-height-box technique — it
-does not depend on the label's own height being anything other than
-"whatever `min-h-11` resolves to", unlike a percentage `top: 50%` would).
+The clickable region is `w-11 min-h-11` (44×44 minimum — the tap-target
+fix the × elsewhere in this design got). The VISUAL track is smaller —
+`w-9 h-5` (36×20, the Claude Design source's own measurement) — and sits
+CENTRED on both axes inside the 44×44 label via `inset-0 m-auto` plus an
+explicit height/width (the same centre-within-an-indeterminate-size-box
+technique the single-axis `inset-y-0 my-auto` version used before this
+review, just applied on both axes at once: `inset: 0` on all four sides
+plus `margin: auto` distributes the label's own extra room evenly in
+every direction, and does not depend on the label's own size being
+anything other than "whatever `min-h-11`/`w-11` resolve to"). SNOW-645
+review, Hugo's refinement: the track used to be sized via `rounded-pill`
+(this project's `--radius-pill` token, 4px — correct for the flat budget
+bar elsewhere in this sheet, wrong here) at the label's OWN full size,
+which on a 44px-tall label rendered as a barely-rounded rectangle rather
+than a capsule. `rounded-full` on the (now correctly small) 20px-tall
+track is the fix — 9999px and an explicit 10px radius are IDENTICAL on a
+20px-tall box, and `rounded-full` cannot drift out of sync if that height
+ever changes, unlike a fixed-pixel radius would.
 
-Colour: `peer-checked:bg-status-info-text` — the same strong blue this
-app already uses as the "filled control" affordance (the favourites
-create form's own submit pill is `bg-status-info-bg text-status-info-text`),
-reused here as a background rather than adding a dedicated new token for
-one control's "on" colour.
+The thumb is `h-4 w-4` (16×16) — `rounded-full` again — resting `left-1.5`
+(6px from the label's own left edge: the track itself sits 4px in from
+centring, plus the design's own 2px inset from the track's edge). Checked
+state translates it `translate-x-4` (16px — exactly `36 − 16 − 4 = 16`,
+the room the track's own 2px-each-side padding leaves for it to travel).
+
+Colour: `peer-checked:bg-accent` for the track's ON state — SNOW-645
+review: was `peer-checked:bg-status-info-text`, the nearest existing
+token at the time, but that carries an "info severity" meaning this plain
+interactive control does not have. `--color-accent` (`src/css/main.css`
+§1) is dedicated to exactly this, matched to the Claude Design source's
+own token of the same name — scoped to this control only, not swept
+across every other borrower of the info tokens. OFF state is
+`bg-border-strong` (also the design's own choice, not this project's
+softer `--color-border`). The thumb is `bg-accent-text` — the design's
+literal white (`#ffffff`), NOT theme-mirrored in `main.css` (unlike every
+other colour pair in this file), because an iOS-style switch's thumb
+reads as white in both themes; using a token here rather than a literal
+still keeps it declared once, in `@theme`, alongside its own track colour.
 
 Parameters (passed via {% include … with … %}):
   id            (string) — DOM id, so a caller's own <label for="…">
@@ -69,15 +92,15 @@ Parameters (passed via {% include … with … %}):
                 label uses it too). Required.
   extra_attrs   (string, optional) — Raw attribute text appended to the
                 <input> verbatim (e.g. `data-downloads-overlay-toggle`,
-                or the bare word `checked` for a pre-checked demo state
-                — see the component library's own variants). Django's
+                or the bare word `checked`/`disabled` for a demo state —
+                see the component library's own variants). Django's
                 `{% include %}` cannot express "add this bare attribute
                 conditionally", so callers pass it as text; nothing here
                 is ever built from user-supplied content.
 {% endcomment %}
 <label
     for="{{ id }}"
-    class="relative inline-flex w-11 min-h-11 shrink-0 cursor-pointer items-center"
+    class="relative inline-flex w-11 min-h-11 shrink-0 cursor-pointer items-center has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
 >
     <input
         id="{{ id }}"
@@ -88,10 +111,10 @@ Parameters (passed via {% include … with … %}):
     >
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute inset-x-0 inset-y-0 my-auto h-6 rounded-pill bg-border transition-colors peer-checked:bg-status-info-text peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
+        class="pointer-events-none absolute inset-0 m-auto h-5 w-9 rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
     ></span>
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute left-0.5 inset-y-0 my-auto h-5 w-5 rounded-full bg-card shadow transition-transform peer-checked:translate-x-5"
+        class="pointer-events-none absolute inset-y-0 left-1.5 my-auto h-4 w-4 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4"
     ></span>
 </label>

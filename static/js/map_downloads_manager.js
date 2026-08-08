@@ -218,7 +218,9 @@
     // resume affordance (considered and dropped: a custom-area orphan has
     // no record to rebuild from, and a link that silently does nothing
     // for one of the two row kinds is worse than no link for either).
-    'kind-incomplete': 'Incomplete download',
+    // "Incomplete download" shortened to "Incomplete" in a later review
+    // pass, matching Hugo's second mock.
+    'kind-incomplete': 'Incomplete',
     // SNOW-645 review: was "%(used)s of %(budget)s used" — a self-contained
     // sentence. The budget figure now lives in the <select> immediately
     // after this fragment ("40.3 MB of [500 MB ⌄]"), not repeated as text.
@@ -588,7 +590,7 @@
     if (label) label.textContent = row.label;
 
     // The subtitle is either which basemap this was downloaded under, or
-    // — for an orphan — the fixed "Incomplete download" string with no
+    // — for an orphan — the fixed "Incomplete" string with no
     // link (SNOW-645 review considered a "resume" affordance and dropped
     // it: a region orphan's bucket id could in principle drive one, but a
     // custom-area orphan has no record — no bbox, no band — to rebuild

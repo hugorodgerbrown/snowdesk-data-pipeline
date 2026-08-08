@@ -63,6 +63,12 @@ Either `items` OR `items_template` — whichever fits the caller — supplies
 `data-downloads-rename` — the caller's own delegated click handler reads
 it back off the button, the same way _switch.html's `extra_attrs` works)
 — this partial never has to know what a caller's handler expects to find.
+
+SNOW-645 review: the trigger's hover fill is `hover:bg-chip-strong`
+(`src/css/main.css` §1) — the same translucent-black token
+`_sheet_header.html`'s × button uses, reconciling this against the Claude
+Design source rather than leaving it colour-only (`hover:text-text-1`
+alone, as it shipped originally).
 {% endcomment %}
 <div class="relative inline-block" data-overflow-menu>
     <button
@@ -73,7 +79,7 @@ it back off the button, the same way _switch.html's `extra_attrs` works)
         aria-expanded="{% if open %}true{% else %}false{% endif %}"
         aria-controls="{{ menu_id }}"
         aria-label="{{ trigger_label }}"
-        class="flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:text-text-1"
+        class="flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:bg-chip-strong hover:text-text-1"
     >
         {# A literal "…" character, not its decimal numeric-entity form —  #}
         {# every digit of that decimal code point also happens to be a     #}

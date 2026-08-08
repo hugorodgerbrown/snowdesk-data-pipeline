@@ -186,8 +186,20 @@
      apps/public/views.py) take the four most-separated hues; sky goes to
      swisstopo_light, which stays picker-invisible but still needs a token
      for a BASEMAP=swisstopo_light deployment. */
-  --color-basemap-openfreemap-liberty: #2563eb;  /* blue-600   */
-  --color-basemap-swisstopo-winter:    #d97706;  /* amber-600  */
+  --color-basemap-openfreemap-liberty: #2563eb;  /* blue-600 — coincides with
+                                                     --color-accent below (the
+                                                     design's own Standard
+                                                     basemap swatch and its
+                                                     accent colour are the same
+                                                     #2563eb); kept as two
+                                                     independent tokens that
+                                                     happen to share a value,
+                                                     not aliased to one another
+                                                     — SNOW-645 review. */
+  --color-basemap-swisstopo-winter:    #c2540a;  /* SNOW-645 review: rust —
+                                                     the design's own
+                                                     --map-swisstopo value,
+                                                     replacing amber-600. */
   --color-basemap-swisstopo-light:     #0284c7;  /* sky-600    */
   --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
   --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
@@ -195,6 +207,34 @@
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
+
+  /* Chip surfaces (SNOW-645 review) — translucent-black fills for a resting
+     surface (--color-chip) and its hover/active step up (--color-chip-strong),
+     matched to the Claude Design source's own --color-chip /
+     --color-chip-strong tokens (rgba(0,0,0,.06) / rgba(0,0,0,.08)) rather than
+     reusing --color-border (9%, a BORDER token, not a fill) for the "Manage
+     downloads" sheet's budget-bar track and the hover fill on its close (×)
+     and overflow (…) buttons. Translucent black/white — same idiom as
+     --color-border / --color-border-strong above — so both read correctly
+     over whatever surface sits underneath in either theme. */
+  --color-chip:         rgba(0, 0, 0, 0.06);
+  --color-chip-strong:  rgba(0, 0, 0, 0.08);
+
+  /* Accent (SNOW-645 review) — the "Manage downloads" sheet's overlay switch
+     is the first control in this app whose ON state needs a plain interactive
+     blue with no status meaning; --color-status-info-text (blue-800, "info"
+     severity) was the nearest existing token but carries a severity meaning
+     this control doesn't have. Matched to the Claude Design source's own
+     --color-accent / --color-accent-hover / --color-accent-text. Scope:
+     the switch only for now — an existing "info" borrower elsewhere is a
+     separate decision, not swept into this one.
+     --color-accent-text (#fff literal in the design) is intentionally NOT
+     theme-mirrored: it is the thumb's colour while the track is filled with
+     --color-accent, and that combination reads correctly in both themes  —
+     see includes/_switch.html. */
+  --color-accent:        #2563eb;
+  --color-accent-hover:  #1d4ed8;
+  --color-accent-text:   #ffffff;
 
   /* Floating overlays — frosted glass surface used by the map utility
      cluster (SNOW-36) and any future overlay pinned above content. */
@@ -423,7 +463,14 @@
   /* Basemap identity colours — lighter variants, mirroring the sync-status
      light/dark pair above so the white roundel glyph keeps its contrast. */
   --color-basemap-openfreemap-liberty: #60a5fa;  /* blue-400   */
-  --color-basemap-swisstopo-winter:    #fbbf24;  /* amber-400  */
+  --color-basemap-swisstopo-winter:    #fb923c;  /* SNOW-645 review: orange-400
+                                                     — the lighter/more-saturated
+                                                     counterpart to the new
+                                                     rust light value (#c2540a),
+                                                     same "-600 → -400 in the
+                                                     same hue family" pattern
+                                                     as this block's other four
+                                                     pairs. */
   --color-basemap-swisstopo-light:     #38bdf8;  /* sky-400    */
   --color-basemap-ign-plan:            #c084fc;  /* purple-400 */
   --color-basemap-basemap-at:          #2dd4bf;  /* teal-400   */
@@ -431,6 +478,20 @@
   /* Misc interactive */
   --color-card-hover:     #353330;
   --color-ring-selected:  #60a5fa;
+
+  /* Chip surfaces — see the light-mode definition above for what these are
+     for. Translucent WHITE on dark, mirroring --color-border /
+     --color-border-strong's own light/dark idiom exactly. */
+  --color-chip:         rgba(255, 255, 255, 0.06);
+  --color-chip-strong:  rgba(255, 255, 255, 0.08);
+
+  /* Accent — see the light-mode definition above. A lighter blue reads
+     better against the dark card than the light value would; the switch's
+     white thumb (--color-accent-text, still literal #ffffff) keeps working
+     against either. */
+  --color-accent:        #3b82f6;
+  --color-accent-hover:  #60a5fa;
+  --color-accent-text:   #ffffff;
 
   /* Avalanche-type tag colours — dark-mode overrides.
      Slightly more saturated than light-mode so the filled pill stays

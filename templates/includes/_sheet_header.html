@@ -27,7 +27,7 @@ Parameters (passed via ``{% include … with … %}``):
                            underneath whatever this carries, so callers
                            only need to state size/weight.
 
-SNOW-645 review, twice over on the × itself:
+SNOW-645 review, three times over on the × itself:
 
 1. It used to be ``text-lg leading-none px-1`` — a ~26×20px hit target,
    well under the 44×44 minimum. First pass: centred the SAME small glyph
@@ -44,15 +44,23 @@ SNOW-645 review, twice over on the × itself:
    (``viewBox="0 0 24 24"``, ``stroke="currentColor"``, round caps/joins)
    — ``currentColor`` means it inherits ``text-text-2``/``hover:text-text-1``
    exactly as the old glyph did, no separate colour to keep in sync.
-   Sized at 22×22 inside the 44×44 box — large enough to read as an
-   unmistakable close control at roughly the title's own visual weight
-   (Hugo's mock), proportionate rather than edge-to-edge (a cross that
-   touches the button's bounds reads as broken/clipped, not bold).
+3. Reconciled against the Claude Design source: the glyph is 20×20 (was
+   22×22 — a 2px difference, tightened to match exactly rather than left
+   as a rounding gap), and the 44×44 hit box now carries a ``-mt-3 -mr-3``
+   negative margin (``-12px`` top/right, matching the design) so the
+   OVERSIZED tap target does not inflate the header row's own rendered
+   height the way a plain ``h-11 w-11`` box would — the row's height is
+   still set by its shortest content (the title line), not by the
+   invisible-but-laid-out corners of an enlarged button. The hover fill
+   (``hover:bg-chip-strong``, ``rounded-tag``) is new too — the design
+   gives both this control and the overflow trigger the same translucent
+   hover backdrop, which the plain colour-only ``hover:text-text-1`` this
+   button already had did not provide.
 
 One size for all three consumers, deliberately — not a second
 ``title_class``-style parameter: checked against favourites
 (``_favourites_surface.html``) and report (``observations/_report_form.html``,
-both tighter headers than downloads) and 22×22 in a 44×44 box reads
+both tighter headers than downloads) and 20×20 in a 44×44 box reads
 sensibly in all three rather than needing a per-sheet override.
 
 KNOWN TEST BREAKAGE from the glyph swap (not fixed here — test files are
@@ -76,11 +84,11 @@ locator (e.g. scoped to this header's own row, or an
         type="button"
         data-action="{{ close_action }}"
         aria-label="{% trans 'Close' %}"
-        class="flex h-11 w-11 items-center justify-center text-text-2 hover:text-text-1"
+        class="-mt-3 -mr-3 flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:bg-chip-strong hover:text-text-1"
     >
         <svg
-            width="22"
-            height="22"
+            width="20"
+            height="20"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
