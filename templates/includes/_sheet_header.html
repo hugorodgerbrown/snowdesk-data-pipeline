@@ -3,8 +3,9 @@
 templates/includes/_sheet_header.html — Shared header for map fly-out sheets.
 
 Renders a title plus a persistent × close control. Used by any sheet state
-that lacks its own close affordance (favourites and reports map sheets).
-The × dispatches through ``data-action`` — it does not call JS directly.
+that lacks its own close affordance (favourites, report, and downloads map
+sheets). The × dispatches through ``data-action`` — it does not call JS
+directly.
 
 SNOW-486: ``close_action`` is conventionally ``"dismiss"`` — the owning
 sheet is a ``[data-overlay]`` element (includes/_overlay_sheet.html), so
@@ -26,13 +27,46 @@ Parameters (passed via ``{% include … with … %}``):
                            underneath whatever this carries, so callers
                            only need to state size/weight.
 
-SNOW-645 review: the × used to be ``text-lg leading-none px-1`` — a
-~26×20px hit target, well under the 44×44 minimum. The glyph itself is
-unchanged (still ``text-lg leading-none``); it is now centred inside an
-``h-11 w-11`` (44×44px) box instead, so every consumer's close control
-gets a real tap target for free. Checked against both other consumers
-(``_favourites_surface.html``, ``observations/_report_form.html``) — both
-headers gain a little vertical room, which is the point, not a defect.
+SNOW-645 review, twice over on the × itself:
+
+1. It used to be ``text-lg leading-none px-1`` — a ~26×20px hit target,
+   well under the 44×44 minimum. First pass: centred the SAME small glyph
+   inside a new ``h-11 w-11`` (44×44px) box, growing the tap target only.
+   Wrong call — Hugo's report: "the 'x' is very small — it needs to fill
+   the 44x44". Reversed: the mark itself now scales to read at the
+   control's own size, not a small glyph floating in a big invisible box.
+2. The mark is no longer the literal "×" (U+00D7 multiplication sign)
+   character. It does not scale well — past a certain size it reads as a
+   thin, off-centre mathematical symbol whose optical centre sits high in
+   the line box, rather than a close icon. Replaced with the SAME
+   stroke-based inline SVG cross idiom ``#map-help-close`` /
+   ``#home-intro-close`` already use in ``_map_embed.html``
+   (``viewBox="0 0 24 24"``, ``stroke="currentColor"``, round caps/joins)
+   — ``currentColor`` means it inherits ``text-text-2``/``hover:text-text-1``
+   exactly as the old glyph did, no separate colour to keep in sync.
+   Sized at 22×22 inside the 44×44 box — large enough to read as an
+   unmistakable close control at roughly the title's own visual weight
+   (Hugo's mock), proportionate rather than edge-to-edge (a cross that
+   touches the button's bounds reads as broken/clipped, not bold).
+
+One size for all three consumers, deliberately — not a second
+``title_class``-style parameter: checked against favourites
+(``_favourites_surface.html``) and report (``observations/_report_form.html``,
+both tighter headers than downloads) and 22×22 in a 44×44 box reads
+sensibly in all three rather than needing a per-sheet override.
+
+KNOWN TEST BREAKAGE from the glyph swap (not fixed here — test files are
+out of scope for this pass): ``tests/e2e/test_report_sheet.py``
+(``test_report_form_close_button_hides_sheet``,
+``test_anonymous_signin_cta_has_close_button``) and
+``tests/e2e/test_favourites.py`` (``test_create_form_close_button_hides_sheet``,
+``test_anonymous_signin_cta_has_close_button``) each disambiguate this
+button from the Cancel button (which also carries
+``data-action="dismiss"``) via ``page.locator(…, has_text="×")`` — a
+locator that now matches nothing, since the visible mark is an SVG with
+no text content. The fix, when tests are back in scope, is a structural
+locator (e.g. scoped to this header's own row, or an
+``aria-label="Close"`` filter) rather than one keyed to the glyph's text.
 {% endcomment %}
 <div class="flex items-center justify-between px-2 pt-1 pb-3">
     <span class="{% if title_class %}{{ title_class }}{% else %}text-sm font-semibold{% endif %} text-text-1">
@@ -42,8 +76,21 @@ headers gain a little vertical room, which is the point, not a defect.
         type="button"
         data-action="{{ close_action }}"
         aria-label="{% trans 'Close' %}"
-        class="flex h-11 w-11 items-center justify-center text-lg leading-none text-text-2 hover:text-text-1"
+        class="flex h-11 w-11 items-center justify-center text-text-2 hover:text-text-1"
     >
-        ×
+        <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </svg>
     </button>
 </div>

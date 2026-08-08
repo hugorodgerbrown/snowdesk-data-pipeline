@@ -26,7 +26,36 @@ Tailwind variants. This partial renders ONLY the control — no visible
 text label — because a caller almost always wants that label positioned
 and styled as part of its own row (see _map_downloads_sheet.html's
 overlay-toggle panel), not fixed by this partial's own markup. Pair it
-with a `<label for="{{ id }}">` alongside the include, using the same id.
+with a `<label for="{{ id }}">` alongside the include, using the same id —
+this is a SECOND label pointing at the same input, and that is fine: an
+input can have any number of labels associated by `for`, as long as one is
+never nested inside another (this partial's own wrapping element is
+itself a label — see immediately below — so the caller's external label
+must stay a SIBLING of this include, never wrap it).
+
+SNOW-645 review — the wrapping element is a `<label for="{{ id }}">`, not
+a bare `<span>`. It was a `<span>` originally, on the reasoning that the
+input already sits inside it so no explicit association was needed for
+KEYBOARD activation — true, but irrelevant to POINTER activation: the
+track and thumb are both `pointer-events-none` (so a click passes THROUGH
+them to whatever sits beneath), and the `sr-only` input is clipped to a
+1×1 box, so a click anywhere on the visible pill landed on the inert
+`<span>` itself and did nothing. Silent, no console error, no way to
+notice from `render_to_string` output — only a real click in a real
+browser shows it. A `<label>` fixes it structurally: the browser's own
+click-to-activate-labelled-control behaviour needs no JS and cannot be
+defeated by `pointer-events-none` children, because the click event
+still bubbles to the label itself.
+
+The clickable region is `w-11 min-h-11` (44×44 minimum — width already
+matched the visual pill's own 44px, only the height needed the tap-target
+fix the × elsewhere in this design got). The VISUAL pill stays its
+original `h-6` (24px): the track and thumb are absolutely positioned and
+vertically centred within the taller label via `inset-y-0 h-* my-auto`
+(literal `top:0;bottom:0` plus an explicit height plus auto margins is
+the standard centre-within-an-indeterminate-height-box technique — it
+does not depend on the label's own height being anything other than
+"whatever `min-h-11` resolves to", unlike a percentage `top: 50%` would).
 
 Colour: `peer-checked:bg-status-info-text` — the same strong blue this
 app already uses as the "filled control" affordance (the favourites
@@ -36,10 +65,8 @@ one control's "on" colour.
 
 Parameters (passed via {% include … with … %}):
   id            (string) — DOM id, so a caller's own <label for="…">
-                addresses this exact input. Required — WITHOUT an id
-                nothing outside this partial can toggle it by clicking a
-                text label, which is the whole point of keeping the
-                label external.
+                addresses this exact input (this partial's OWN wrapping
+                label uses it too). Required.
   extra_attrs   (string, optional) — Raw attribute text appended to the
                 <input> verbatim (e.g. `data-downloads-overlay-toggle`,
                 or the bare word `checked` for a pre-checked demo state
@@ -48,7 +75,10 @@ Parameters (passed via {% include … with … %}):
                 conditionally", so callers pass it as text; nothing here
                 is ever built from user-supplied content.
 {% endcomment %}
-<span class="relative inline-flex h-6 w-11 shrink-0">
+<label
+    for="{{ id }}"
+    class="relative inline-flex w-11 min-h-11 shrink-0 cursor-pointer items-center"
+>
     <input
         id="{{ id }}"
         type="checkbox"
@@ -58,10 +88,10 @@ Parameters (passed via {% include … with … %}):
     >
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute inset-0 rounded-pill bg-border transition-colors peer-checked:bg-status-info-text peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
+        class="pointer-events-none absolute inset-x-0 inset-y-0 my-auto h-6 rounded-pill bg-border transition-colors peer-checked:bg-status-info-text peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
     ></span>
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-card shadow transition-transform peer-checked:translate-x-5"
+        class="pointer-events-none absolute left-0.5 inset-y-0 my-auto h-5 w-5 rounded-full bg-card shadow transition-transform peer-checked:translate-x-5"
     ></span>
-</span>
+</label>

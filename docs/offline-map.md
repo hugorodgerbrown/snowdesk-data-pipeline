@@ -1474,8 +1474,8 @@ group" (SNOW-645, Hugo's design).** Top to bottom:
 1. **Header.** The title reads noticeably larger/bolder than every other
    sheet's — `includes/_sheet_header.html`'s own `title_class` override
    (`"text-lg font-bold"`), added for this. The × itself is the SAME
-   control every sheet has (see "Sheet header × tap target", below) — the
-   size change there is universal, not specific to this sheet.
+   control every sheet has (see "Sheet header ×", below) — the size and
+   shape change there is universal, not specific to this sheet.
 2. **Budget, folded into the header.** One row: the segmented bar (fills
    the remaining width — see "Budget bar segments" below), `"<used> of"`,
    then the budget `<select>` itself, styled as a rounded pill (e.g.
@@ -1565,6 +1565,32 @@ reading as a view control for the map BEHIND the sheet rather than a fact
 about what is stored, which is also why it leads the sheet ahead of the
 list it governs.
 
+**A real bug shipped in this control's first cut, found by Hugo clicking
+it in a live browser (not by `render_to_string`, which cannot show a
+pointer-activation defect).** The wrapping element was a bare `<span>`.
+Since the track and thumb are both `pointer-events-none` (so a click
+passes THROUGH them) and the input itself is `sr-only` (clipped to 1×1px),
+a click anywhere on the visible pill landed on that inert `<span>` and did
+nothing — silently, no console error, only the label TEXT ("Show areas on
+the map") actually worked, because that text sits in a genuine
+`<label for="…">` in the sheet's own markup. Fixed by making
+`_switch.html`'s own wrapping element a SECOND `<label for="{{ id }}">` —
+an input can have any number of labels, provided none is nested inside
+another (this one and the sheet's own external text label are siblings,
+not nested) — so the browser's native click-to-activate-a-labelled-control
+behaviour handles it with no JS and cannot be defeated by the
+`pointer-events-none` children. The same pass grew the label's tap target
+to `min-h-11` (44px minimum height; the width already matched at `w-11`)
+while keeping the VISUAL pill at its original 24px, centred within the
+taller label via `inset-y-0 h-* my-auto` (literal top:0/bottom:0 plus an
+explicit height plus auto margins — the standard technique for centring a
+fixed-size absolutely-positioned box regardless of how its container's own
+height was arrived at, unlike a percentage `top: 50%` which is fussier
+about that). Verified with real Playwright clicks against the running dev
+server (not `render_to_string`) — centre-of-label, edge-of-hitbox, and a
+second click to toggle back, plus a keyboard Space-on-focus check, and the
+`/_components/switch/` fixture panel — all toggle correctly.
+
 **The overflow menu.** `includes/_overflow_menu.html` + the delegated,
 instance-agnostic `static/js/overflow_menu.js` — see that partial's own
 docstring for the full contract (dismiss on outside click/Escape,
@@ -1599,14 +1625,41 @@ nothing else. Over budget, the bar itself can no longer turn solid red
 `ring-2 ring-status-error-text` outline instead — `[data-downloads-over]`'s
 own warning text is unchanged.
 
-**Sheet header × tap target (SNOW-645 review).** `includes/_sheet_header.html`'s
+**Sheet header × (SNOW-645, reworked twice).** `includes/_sheet_header.html`'s
 × used to be `text-lg leading-none px-1` — a ~26×20px hit target, well
-under the 44×44 minimum. The glyph is unchanged; it is now centred inside
-an `h-11 w-11` (44×44px) box instead, so every consumer's close control
-(this sheet, the favourites create form, the report form) gets a real tap
-target for free. `title_class` (used above) is the OTHER new parameter —
-unrelated to the × fix, purely so this sheet's own title can be larger
-without resizing the other two sheets' headers.
+under the 44×44 minimum. First pass: centred that SAME small glyph inside
+a new `h-11 w-11` (44×44px) box, growing only the invisible tap target.
+Wrong call, per Hugo directly: "the 'x' is very small — it needs to fill
+the 44x44". Reversed — the MARK itself now scales to read at the
+control's own size, not a small glyph floating in a big invisible box, at
+roughly the title's own visual weight (Hugo's mock). Second complication:
+the mark is no longer the literal "×" (U+00D7) character at all — past a
+certain size it reads as a thin, off-centre mathematical symbol rather
+than a close icon. Replaced with the same stroke-based inline SVG cross
+`#map-help-close` / `#home-intro-close` already use in `_map_embed.html`
+(`viewBox="0 0 24 24"`, `stroke="currentColor"`, round caps/joins,
+`currentColor` inheriting `text-text-2`/`hover:text-text-1` exactly as the
+glyph did), sized 22×22 inside the 44×44 box — proportionate, not
+edge-to-edge. One size for all three consumers (this sheet, favourites,
+report) rather than a second `title_class`-style parameter — checked
+against all three, including the two tighter headers.
+
+`title_class` (used above) is the OTHER, unrelated, still-standing new
+parameter — purely so this sheet's own title can be larger without
+resizing the other two sheets' headers.
+
+**Known test breakage from the glyph swap** (not fixed — test files are
+out of scope for this pass): `tests/e2e/test_report_sheet.py`
+(`test_report_form_close_button_hides_sheet`,
+`test_anonymous_signin_cta_has_close_button`) and
+`tests/e2e/test_favourites.py` (`test_create_form_close_button_hides_sheet`,
+`test_anonymous_signin_cta_has_close_button`) each disambiguate this
+button from the Cancel button (which also carries
+`data-action="dismiss"`) via `page.locator(…, has_text="×")`. That locator
+now matches nothing — the visible mark is an SVG with no text content —
+so all four will fail. The fix, once tests are back in scope, is a
+structural locator (e.g. scoped to the header row specifically, or an
+`aria-label="Close"` filter) rather than one keyed to the glyph's text.
 
 **Running order:** the header block (title, budget), then the over-budget
 warning (when shown), then the overlay switch panel, then the REGIONS and
