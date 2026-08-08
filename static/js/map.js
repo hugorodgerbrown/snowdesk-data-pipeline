@@ -242,29 +242,37 @@
   // SNOW-645 review: 'downloaded' used to be a key here, a togglable
   // layers-menu row like every other overlay — persisted, seeded on boot
   // and after every basemap swap same as the rest. It is gone from this
-  // object entirely now: the downloaded-tiles overlay is no longer a
-  // user-togglable layer at all, it is bound to the "Manage downloads"
-  // sheet being open (see downloadedOverlayVisible, refreshDownloadedOverlay
-  // and window.pwaDownloadedOverlay's show()/hide() below) — Hugo's report
-  // was that switching basemap while it was on left its layers-menu dot
-  // permanently grey and unclickable, because "any tile pinned under the
-  // ACTIVE template" is inherently per-basemap and the row gave no way to
-  // say that. A boolean toggle can't express "visible only while this
-  // OTHER surface happens to be open", so it moved out of overlayState
-  // rather than growing a governor entry the way l3 has one for l4.
+  // object entirely now: the downloaded-tiles overlay is no longer that
+  // kind of overlay at all, it is governed by downloadedOverlayVisible
+  // below instead — Hugo's report was that switching basemap while it was
+  // on left its layers-menu dot permanently grey and unclickable, because
+  // "any tile pinned under the ACTIVE template" is inherently per-basemap
+  // and the row gave no way to say that. A second report, once the first
+  // fix bound visibility to the "Manage downloads" sheet being open, was
+  // that a bottom-docked full-width mobile sheet then covered the very
+  // squares it drew — see downloadedOverlayVisible's own comment for the
+  // shape this settled on instead.
   const overlayState = {
     l1: false, l2: false, l4: true, resorts: false,
     favourites: true, community_reports: false,
     weather: false,
   };
 
-  // SNOW-645 review: NOT persisted and NOT seeded from overlayState's boot
-  // loop or its basemap-swap re-seed below — see the comment on
-  // overlayState above for why 'downloaded' isn't a key there any more.
-  // Read only by installRegionsLayers (initial layout.visibility) and
-  // refreshDownloadedOverlay; written only by show()/hide() on
-  // window.pwaDownloadedOverlay, called from map_downloads_manager.js as
-  // the "Manage downloads" sheet opens and closes.
+  // SNOW-645 review, twice over: NOT persisted and NOT seeded from
+  // overlayState's boot loop or its basemap-swap re-seed below — see the
+  // comment on overlayState above for why 'downloaded' isn't a key there
+  // any more. Read by installRegionsLayers (initial layout.visibility),
+  // refreshDownloadedOverlay, and window.pwaDownloadedOverlay.isVisible()
+  // (the "Available offline" toggle INSIDE the "Manage downloads" sheet
+  // reads this, not a flag of its own, so the two can never drift);
+  // written only by show()/hide() on window.pwaDownloadedOverlay.
+  // map_downloads_manager.js's open() calls show() unconditionally, so
+  // opening the sheet always turns the overlay on — but hide() is now
+  // called ONLY from that in-sheet toggle, never from a close route: a
+  // sheet that covers the whole screen on mobile made "open = visible,
+  // closed = hidden" unusable there, so this is deliberately a
+  // session-scoped inspection mode that survives the sheet closing, not
+  // the sheet's own visibility echoed into a second variable.
   let downloadedOverlayVisible = false;
 
   // The bulletin-boundary layer (internal key ``l3``) is not an overlay the
@@ -898,11 +906,11 @@
     // what is on disk: eviction, a basemap swap and Clear Site Data all
     // change the answer, and all of them show up here for free.
     //
-    // SNOW-645 review: no longer a user-togglable layer — its visibility is
-    // bound to the "Manage downloads" sheet being open
+    // SNOW-645 review: no longer a layers-menu row — its visibility is now
+    // an "Available offline" toggle INSIDE the "Manage downloads" sheet
     // (downloadedOverlayVisible, written only by window.pwaDownloadedOverlay's
-    // show()/hide()). The layer is still installed whether or not that
-    // sheet is open right now — a style swap mid-session reinstalls it with
+    // show()/hide()). The layer is still installed whether or not that is
+    // switched on right now — a style swap mid-session reinstalls it with
     // everything else rather than leaving show()/hide() pointing at a layer
     // that isn't there.
     if (!map.getSource('cached-tiles')) {
@@ -2586,7 +2594,13 @@
 
   // ==== SNOW-570/SNOW-587: the downloaded-tiles overlay ====
   // (SNOW-645 review: no longer a togglable layers-menu row — see
-  // downloadedOverlayVisible's own declaration above for why.)
+  // downloadedOverlayVisible's own declaration above for why. SNOW-645
+  // second review: it is now an "Available offline" toggle INSIDE the
+  // "Manage downloads" sheet, not the sheet's own open/closed state — a
+  // sheet that is bottom-docked and full-width on mobile would otherwise
+  // cover the very squares it draws, making the overlay unreachable on
+  // the platform that needs offline maps most. Opening the sheet still
+  // turns it on; closing the sheet no longer turns it off.)
   //
   // Answers "where is the basemap I already have?" for the whole map at
   // once, where the download roundels only ever answer it for the one
@@ -2762,16 +2776,24 @@
   // without the sheet being reopened. Exposed the same way pwaLayerSyncStatus
   // is, because those controls live in sibling IIFEs.
   //
-  // SNOW-645: show()/hide() are the sheet's own bridge —
-  // map_downloads_manager.js calls them (via optional chaining, since it
-  // sits outside the map bundle's load-order contract) as the "Manage
-  // downloads" sheet opens and closes, which is now the ONLY thing that
-  // controls this overlay's visibility. There is no toggle anywhere any
-  // more; see this block's own header comment for why.
+  // SNOW-645 review (Hugo's second call — the first version of this bridge
+  // bound visibility to the sheet being OPEN, full stop; that made the
+  // overlay unreachable on mobile, where the sheet is bottom-docked and
+  // full-width, covering the very squares it would have drawn): opening the
+  // sheet still turns the overlay ON (map_downloads_manager.js's open()
+  // calls show()), but CLOSING the sheet no longer turns it off — the
+  // in-sheet "Available offline" toggle is the only thing that calls
+  // hide(), and it is a genuine session-scoped inspection mode: close the
+  // sheet with it on, look at the map, reopen the always-on-screen roundel
+  // to switch it off again. isVisible() is read by that toggle (and by
+  // render() on every open, so a freshly opened sheet shows the toggle
+  // already checked) — a function, not a plain frozen property, since
+  // downloadedOverlayVisible changes after this object is built.
   window.pwaDownloadedOverlay = Object.freeze({
     refresh: refreshDownloadedOverlay,
     show: showDownloadedOverlay,
     hide: hideDownloadedOverlay,
+    isVisible: () => downloadedOverlayVisible,
   });
 
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate

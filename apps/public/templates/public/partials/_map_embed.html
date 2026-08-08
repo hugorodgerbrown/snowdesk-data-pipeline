@@ -392,11 +392,17 @@ Optional context:
                 {# dot permanently grey and unclickable — its "any tile       #}
                 {# pinned under the ACTIVE template" probe is inherently      #}
                 {# per-basemap, and there was no way to tell that from the    #}
-                {# row) removed the row and moved the overlay itself into the #}
-                {# "Manage downloads" sheet: it is now bound to the sheet     #}
-                {# being open, on across every basemap, no separate toggle    #}
-                {# anywhere — see map_downloads_manager.js's open()/close     #}
-                {# handling and window.pwaDownloadedOverlay's show/hide.      #}
+                {# row) removed the row; its overlay, painted across every    #}
+                {# basemap at once, moved to the "Manage downloads" sheet.    #}
+                {# SNOW-645 review: opening that sheet turns the overlay on,  #}
+                {# but a second "Available offline" toggle now lives INSIDE   #}
+                {# the sheet itself and is the only thing that turns it off — #}
+                {# closing the sheet does not, since it is bottom-docked and  #}
+                {# full-width on mobile and would otherwise cover the very    #}
+                {# squares it draws. See map_downloads_manager.js's open()    #}
+                {# and its overlay-toggle change handler, and                 #}
+                {# window.pwaDownloadedOverlay's show/hide/isVisible in       #}
+                {# map.js.                                                    #}
                 {# SNOW-588 added a "Manage downloads…" row here, opening   #}
                 {# the sheet that lists what is stored offline on this      #}
                 {# device (public/partials/_map_downloads_sheet.html). That #}

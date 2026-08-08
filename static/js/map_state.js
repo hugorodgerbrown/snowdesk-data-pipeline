@@ -73,12 +73,18 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-community-reports-eligible="true".
   community_reports: 'snowdesk.map.overlay.community_reports',
-  // SNOW-645 review: 'downloaded' was here (SNOW-570) — the layers-menu
-  // toggle it persisted is gone; the overlay it drove is now bound to the
-  // "Manage downloads" sheet being open, which is never persisted across a
-  // reload. This localStorage key is now write-once dead: an existing
-  // device may still carry a stored 'true'/'false' from before this
-  // change, but nothing reads it any more.
+  // SNOW-645 review, twice over: 'downloaded' was here (SNOW-570) — the
+  // layers-menu toggle it persisted is gone. It is now an "Available
+  // offline" toggle INSIDE the "Manage downloads" sheet instead
+  // (map_downloads_manager.js, driving window.pwaDownloadedOverlay in
+  // map.js directly) — deliberately SESSION-scoped, not persisted here or
+  // anywhere else: closing the sheet leaves it as the user set it, but a
+  // fresh page load always starts it off. This localStorage key is now
+  // write-once dead: an existing device may still carry a stored
+  // 'true'/'false' from before this change, but nothing reads it any
+  // more, and nothing should start reading it again — reviving it would
+  // silently turn the overlay on for a returning user who never asked to
+  // see it this session.
   // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-weather-layer-eligible="true".
   weather: 'snowdesk.map.overlay.weather',

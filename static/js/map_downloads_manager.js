@@ -124,12 +124,29 @@
  * immediately, and the click handler keeps its own ``navigator.onLine``
  * check as the race guard for the gap between paint and tap.
  *
- * ## Its map.js dependencies are three narrow bridges
+ * ## Its map.js dependencies are four narrow bridges
  *
  * Everything this module needs from static/js/map.js is module scope
- * there, so it reaches it through three small frozen globals that file
+ * there, so it reaches it through four small frozen globals that file
  * exposes:
  *
+ *   window.pwaDownloadedOverlay  (SNOW-645 review) ``show()``, ``hide()``
+ *                                and ``isVisible()`` for the downloaded-
+ *                                tiles map overlay. ``open()`` calls
+ *                                ``show()`` unconditionally; the in-sheet
+ *                                "Available offline" toggle's own change
+ *                                handler is the ONLY thing that ever calls
+ *                                ``hide()`` — closing the sheet does not,
+ *                                because it is bottom-docked and
+ *                                full-width on mobile
+ *                                (includes/_overlay_sheet.html), and
+ *                                binding visibility to "sheet is open"
+ *                                left the squares this overlay draws
+ *                                permanently covered by the thing showing
+ *                                them. ``render()`` reads ``isVisible()``
+ *                                back to paint the toggle, rather than
+ *                                keeping a flag of its own that could
+ *                                drift from it.
  *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)`` and (SNOW-635)
  *                                ``rename(areaId, name)`` — the read, the
  *                                delete, and the rename. Without it the
@@ -387,6 +404,18 @@
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
 
+    // SNOW-645 review: reflects the overlay's REAL visibility —
+    // window.pwaDownloadedOverlay.isVisible() — rather than a flag of its
+    // own that could drift from it. open() calls show() before this runs
+    // (see its own comment), so a freshly opened sheet always paints this
+    // already checked.
+    const overlayToggle = /** @type {HTMLInputElement|null} */ (
+      sheet.querySelector('[data-downloads-overlay-toggle]')
+    );
+    if (overlayToggle) {
+      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
+    }
+
     const summaryEl = sheet.querySelector('[data-downloads-summary]');
     if (summaryEl) {
       summaryEl.textContent = interpolate(STRINGS.usage, {
@@ -568,6 +597,22 @@
    * @returns {Promise<void>}
    */
   async function open() {
+    // SNOW-645 review: called BEFORE render(), not after — render() reads
+    // window.pwaDownloadedOverlay.isVisible() to paint the in-sheet toggle,
+    // and a user opening the sheet must see it already checked, not catch
+    // up on the render after this one. Optional chaining because map.js's
+    // IIFE (which owns the overlay) runs before this file but this module
+    // sits outside the map bundle's own load-order contract — see the
+    // module header.
+    //
+    // Turns the overlay on UNCONDITIONALLY on every open — that is what
+    // makes it discoverable. It does NOT turn off when the sheet closes
+    // (see the toggle's own change handler, further down, which is now the
+    // ONLY thing that calls hide()): the sheet is bottom-docked and
+    // full-width on mobile (includes/_overlay_sheet.html), so binding
+    // visibility to "sheet is open" left the squares this draws
+    // permanently covered by the thing showing them.
+    window.pwaDownloadedOverlay?.show();
     await render();
     sheet.hidden = false;
     // SNOW-634: the roundel (#map-custom-download-control) is the only way
@@ -575,27 +620,8 @@
     // opened the menu, then clicked the roundel without closing it first —
     // and leaving it open would cover the sheet that just opened.
     window.pwaLayersMenu?.close();
-    // SNOW-645: this sheet is now what drives the downloaded-tiles map
-    // overlay — visible while it is open, hidden the moment it closes, no
-    // toggle anywhere else. Optional chaining because map.js's IIFE (which
-    // owns the overlay) runs before this file but this module sits outside
-    // the map bundle's own load-order contract — see the module header.
-    window.pwaDownloadedOverlay?.show();
     sheet.focus();
   }
-
-  // SNOW-645: every OTHER close route for this sheet — the header's ×
-  // button, and whatever Escape/backdrop handling includes/_overlay_sheet.html
-  // itself provides — goes through overlays.js's shared
-  // `[data-action="dismiss"]` handler, which dispatches this bubbling event
-  // rather than calling back into this module directly. The one close route
-  // that does NOT go through it is the add-trigger's own `sheet.hidden =
-  // true` below (a manual hide, not a dismiss), which calls hide() itself
-  // instead of relying on this listener.
-  document.addEventListener('overlay:dismissed', function (event) {
-    if (!event.detail || event.detail.overlay !== sheet) return;
-    window.pwaDownloadedOverlay?.hide();
-  });
 
   // Delegated on the sheet: cloned along with the body template on every
   // render, so a per-element listener would have to be rebound each time.
@@ -623,10 +649,10 @@
         return;
       }
       sheet.hidden = true;
-      // SNOW-645: a manual hide, not a dismiss — overlay:dismissed is not
-      // dispatched for this route, so the downloaded-tiles overlay has to
-      // be told directly, same as it would be on any other close.
-      window.pwaDownloadedOverlay?.hide();
+      // SNOW-645 review: hiding the sheet here does NOT hide the
+      // downloaded-tiles overlay — only the in-sheet toggle's own change
+      // handler ever calls hide() now (see this module's header and
+      // open()'s own comment for why closing no longer implies off).
       window.pwaCustomAreaDownload?.openFraming();
       return;
     }
@@ -733,6 +759,24 @@
       // which are stated against the budget that just changed.
       render();
     });
+  });
+
+  // SNOW-645 review: the "Available offline" toggle drives the overlay
+  // DIRECTLY — show()/hide() are the only writers of
+  // window.pwaDownloadedOverlay's visibility, so this is the single place
+  // outside open() that ever calls them, and it never touches a flag of
+  // its own (render() reads isVisible() back, above). No re-render needed:
+  // nothing else on the sheet depends on this state.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches || !target.matches('[data-downloads-overlay-toggle]')) {
+      return;
+    }
+    if (target.checked) {
+      window.pwaDownloadedOverlay?.show();
+    } else {
+      window.pwaDownloadedOverlay?.hide();
+    }
   });
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it

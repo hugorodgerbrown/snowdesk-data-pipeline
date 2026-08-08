@@ -827,19 +827,28 @@ The tiles need no stored record to stay honest, and cannot drift from the
 cache: eviction, a basemap swap and Clear Site Data all change the answer
 and all show up for free.
 
-**No longer a layers-menu toggle (SNOW-645).** The row that used to live
-in the layers menu (`data-overlay-key="downloaded"`, a persisted
-`overlayState.downloaded`) is gone — its probe was inherently per-ACTIVE-
-template, so switching basemap while it was on left its sync dot
-permanently grey and unclickable, with no way for the row to say why. The
-overlay is now bound to the "Manage downloads" sheet being open instead:
-`window.pwaDownloadedOverlay.show()`/`hide()` (`static/js/map.js`) are
-called by `map_downloads_manager.js`'s `open()` and by an
-`overlay:dismissed` listener covering every close route the shared
-`_overlay_sheet.html` primitive provides, plus the sheet's own manual
-`sheet.hidden = true` path (handing off to "Download a custom area"
-framing). There is no persisted visibility any more — a fresh page load
-always starts with the overlay off, matching the sheet being closed.
+**No longer a layers-menu toggle (SNOW-645, twice reworked).** The row
+that used to live in the layers menu (`data-overlay-key="downloaded"`, a
+persisted `overlayState.downloaded`) is gone — its probe was inherently
+per-ACTIVE-template, so switching basemap while it was on left its sync
+dot permanently grey and unclickable, with no way for the row to say why.
+The first fix bound the overlay to the "Manage downloads" sheet being
+open, full stop — which broke it a different way: the sheet is
+bottom-docked and full-width on mobile
+(`includes/_overlay_sheet.html`'s `sm:` breakpoint is what gives it a
+384px right-hand panel instead), so the squares this overlay draws were
+permanently covered by the sheet showing them, on the platform that needs
+offline maps most. It settled on: opening the sheet still turns the
+overlay ON (`map_downloads_manager.js`'s `open()` calls
+`window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
+turns it off. A second "Available offline" toggle now lives INSIDE the
+sheet (above the list — see "Manage downloads" sheet below) and is the
+ONLY thing that ever calls `hide()`. This is a deliberately
+session-scoped inspection mode, not persisted anywhere: close the sheet
+with the overlay on, look at the map, reopen the always-on-screen
+custom-area roundel to switch it off again. A fresh page load always
+starts it off — `OVERLAY_STORAGE_KEY.downloaded` (`static/js/map_state.js`)
+is documented dead rather than revived.
 
 **Every basemap at once, each in its own colour (SNOW-645).** The overlay
 used to key off the ACTIVE basemap's tile template alone, so downloading
@@ -1355,11 +1364,14 @@ coloured by the identity of the basemap it was downloaded under (see
 every other overlay. Switching basemap while it was on left its sync dot
 permanently grey and unclickable — the probe was keyed to the ACTIVE
 basemap's template alone, and the row had no way to say that was why. The
-row is gone; the overlay is now bound to the "Manage downloads" sheet
-being open (`window.pwaDownloadedOverlay.show()`/`hide()`, called from
-`map_downloads_manager.js`) — visible for as long as the sheet is, hidden
-the instant it closes by any route, no separate toggle anywhere. Nothing
-about its visibility is persisted across a reload any more.
+row is gone; opening the "Manage downloads" sheet now turns the overlay
+on (`window.pwaDownloadedOverlay.show()`, called from
+`map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
+turn it off — an in-sheet "Available offline" toggle is the only thing
+that calls `hide()` (see "Manage downloads" sheet below for why: the
+sheet covers the whole screen on mobile, so binding visibility to "sheet
+open" made the overlay unreachable there). Session-scoped, never
+persisted across a reload.
 
 Two layers, both installed with the regions source (not lazy) so a basemap
 swap rebuilds them with everything else: `cached-tiles-fill` and
@@ -1414,12 +1426,13 @@ across every downloaded basemap, so it takes one pass over every per-area
 bucket's URLs (`pinnedBasemapCacheURLs`, unioned) and answers from that
 one set, run once per DISTINCT downloaded template (see "Colour" above).
 Never call it per frame — the pinned buckets together hold thousands of
-entries. It refreshes when the sheet is opened (`show()`), on
-`snowdesk:basemap-changed`, on `snowdesk:regions-loaded`, when a download
-settles (both controls call `window.pwaDownloadedOverlay?.refresh()`
-beside their existing `pwaLayerSyncStatus.refresh()`), and on
-`visibilitychange` — tiles can be evicted while the tab is backgrounded,
-and a square for a tile that is no longer cached is worse than no square.
+entries. It refreshes whenever `show()` runs — the sheet opening, or the
+in-sheet toggle being switched back on — on `snowdesk:basemap-changed`, on
+`snowdesk:regions-loaded`, when a download settles (both controls call
+`window.pwaDownloadedOverlay?.refresh()` beside their existing
+`pwaLayerSyncStatus.refresh()`), and on `visibilitychange` — tiles can be
+evicted while the tab is backgrounded, and a square for a tile that is no
+longer cached is worse than no square.
 
 **Every basemap at once (SNOW-645)**, unlike the roundels: the overlay
 used to key off the active basemap's tile template alone, so downloading
@@ -1446,9 +1459,15 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
 
-**It now drives the map overlay too (SNOW-645).** Opening the sheet calls
-`window.pwaDownloadedOverlay.show()`; every close route calls `.hide()` —
-see "No longer a layers-menu toggle" above.
+**It now drives the map overlay too (SNOW-645, twice reworked).** Opening
+the sheet calls `window.pwaDownloadedOverlay.show()`. Closing the sheet
+does NOT call `.hide()` any more — a `[data-downloads-overlay-toggle]`
+checkbox above the list ("Show downloaded areas on the map", styled on
+the same checkbox+label pattern `edit_resorts_panel.html` already uses)
+is the only thing that does. `render()` sets its `checked` state from
+`window.pwaDownloadedOverlay.isVisible()` on every open, so a freshly
+opened sheet always shows it already on — see "No longer a layers-menu
+toggle" above for why closing no longer implies off.
 
 **Row title (SNOW-645 review).** A row's title line is composed from a
 `row-title` format string (`"%(name)s (%(kind)s)"`, e.g. "Verbier
@@ -1490,10 +1509,14 @@ nothing else. Over budget, the bar itself can no longer turn solid red
 `ring-2 ring-status-error-text` outline instead — `[data-downloads-over]`'s
 own warning text is unchanged.
 
-**Running order (SNOW-641):** the list, then the add-trigger under it,
-then one bordered block at the foot holding the budget control, the
-running total and its bar. The total used to lead the sheet and the
-trigger sat above the list, which put the two things a reader wants —
+**Running order (SNOW-641, the overlay toggle added SNOW-645 review):**
+the "Available offline" toggle, then the list, then the add-trigger under
+it, then one bordered block at the foot holding the budget control, the
+running total and its bar. The toggle leads the sheet deliberately — it
+is a view control for the map BEHIND the sheet, not a fact about what is
+stored, so it reads before "what you have" rather than inside the list it
+governs the visibility of. Below it, the total used to lead the sheet and
+the trigger sat above the list, which put the two things a reader wants —
 what is stored, and how much room is left — at opposite ends with the list
 between them. Nothing in `map_downloads_manager.js` is positional (every
 element is addressed by data-attribute), so the order is a presentation

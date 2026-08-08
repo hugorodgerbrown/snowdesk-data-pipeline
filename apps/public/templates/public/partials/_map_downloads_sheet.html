@@ -66,6 +66,34 @@ repeated here.
     <div class="flex flex-col gap-3">
         {% trans "Downloads on this device" as downloads_sheet_title %}
         {% include "includes/_sheet_header.html" with title=downloads_sheet_title close_action="dismiss" %}
+        {# SNOW-645 review: a view control for the MAP BEHIND the sheet,    #}
+        {# not a row in the downloads list — placed first, above the list,  #}
+        {# so it reads as "what you're looking at" rather than "what you    #}
+        {# have". Opening the sheet turns the downloaded-tiles overlay on   #}
+        {# and this reflects that: map_downloads_manager.js's render() sets #}
+        {# `checked` from `window.pwaDownloadedOverlay.isVisible()` on      #}
+        {# every open, and its own change listener is the ONLY thing that   #}
+        {# ever calls `hide()` — closing the sheet does not. On mobile the  #}
+        {# sheet is bottom-docked and full-width                           #}
+        {# (includes/_overlay_sheet.html's `sm:` breakpoint), so binding    #}
+        {# visibility to "sheet is open" left the squares this draws       #}
+        {# permanently covered by the thing showing them; this toggle is   #}
+        {# what makes "close the sheet, look at the map, reopen to switch   #}
+        {# off" a coherent gesture, and the always-on-screen roundel        #}
+        {# (#map-custom-download-control) is what keeps "off" one tap       #}
+        {# away without putting a row back in the layers menu. Session-     #}
+        {# scoped only: never persisted, and does not revive the old        #}
+        {# `OVERLAY_STORAGE_KEY.downloaded` (see map_state.js). Styled on   #}
+        {# the same checkbox+label pattern edit_resorts_panel.html already  #}
+        {# uses ("Hide already-set resorts") rather than a new control.     #}
+        <label class="flex cursor-pointer items-center gap-2 border-b border-border pb-3 text-sm text-text-2">
+            <input
+                type="checkbox"
+                data-downloads-overlay-toggle
+                class="h-3.5 w-3.5 rounded border-border text-text-1 focus:ring-text-2"
+            >
+            <span>{% trans "Show downloaded areas on the map" %}</span>
+        </label>
         {# SNOW-641: the running total and its bar used to lead the sheet,  #}
         {# directly under the header. They now sit beside the budget        #}
         {# control at the bottom — see the bordered block below. What is    #}
