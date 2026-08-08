@@ -559,13 +559,18 @@
         // shared toast, rather than reverting to 'idle' — which was
         // indistinguishable from never having clicked.
         //
-        // SNOW-632: `result.cancelled` is checked here too, even though
-        // this control has no Cancel affordance of its own to trigger it
-        // — the shared runner's contract now permits a cancelled result
-        // from ANY caller (basemap_download_runner.js's `finish`
-        // docstring), and a cancelled run's `failed` is always 0, which
-        // would otherwise misread as a clean success.
-        const ok = !!(result && !result.cancelled && result.ok > 0 && result.failed === 0);
+        // SNOW-632: `result.cancelled` is checked too, even though this
+        // control has no Cancel affordance of its own to trigger it — the
+        // shared runner's contract permits a cancelled result from ANY
+        // caller (basemap_download_runner.js's `finish` docstring), and a
+        // cancelled run's `failed` is always 0, which would otherwise
+        // misread as a clean success.
+        //
+        // SNOW-649: the predicate itself lives in the core, so this control
+        // and map_custom_download.js cannot drift apart on what "done"
+        // means — see downloadSucceeded's docstring for why each clause is
+        // there.
+        const ok = runCore.downloadSucceeded(result);
         // SNOW-570: record what was downloaded before anything is painted.
         // SNOW-583: records the blob's own `z` (the clipped tile set the run
         // actually fetched) rather than a bbox — `_probeDone` reads this
