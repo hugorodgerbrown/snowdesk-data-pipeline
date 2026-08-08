@@ -4,8 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+    # SNOW-652: renumbered from 0015 and re-pointed at 0016. SNOW-571 and
+    # SNOW-582 both branched this off 0014_bulletin_source and merged
+    # without either being re-tested against the other, leaving two leaf
+    # nodes and a migrate that refused to run at all. Chained here instead,
+    # so the graph has one leaf. Safe to renumber because the conflict
+    # itself stopped this migration ever being applied — `migrate` rejects
+    # a multi-leaf graph before applying anything, so no database (staging
+    # included) has recorded the old name.
     dependencies = [
-        ("bulletins", "0014_bulletin_source"),
+        ("bulletins", "0016_uppercase_bulletin_source"),
     ]
 
     operations = [
