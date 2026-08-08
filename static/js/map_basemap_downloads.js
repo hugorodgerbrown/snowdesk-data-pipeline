@@ -641,6 +641,70 @@ async function basemapDownloadedAreas() {
 }
 
 /**
+ * SNOW-645: every DISTINCT tile template currently downloaded, paired with
+ * the basemap it was fetched under — the input `refreshDownloadedOverlay`
+ * (static/js/map.js) needs to paint every basemap's downloads at once,
+ * each in its own identity colour, rather than only the active basemap's.
+ *
+ * Deliberately NOT `basemapDownloadedAreas()` widened to carry `template` —
+ * that reader is the canonical, lossy-by-design normaliser eviction
+ * planning and the Manage downloads sheet share (see its own docstring),
+ * and neither of those callers has any use for a tile template. This reads
+ * `basemap.regions` and `basemap.customAreas` directly instead, which is
+ * the same pair of records `basemapDownloadedAreas()` reads — this
+ * function is a sibling of it, not a wrapper around it.
+ *
+ * A template can appear on more than one recorded area (several regions,
+ * or a region and a custom area, downloaded under the same basemap) — this
+ * dedupes by template, since `cachedTilesFromURLs` is run once per
+ * template regardless of how many areas share it. If two records
+ * disagree about the template's `basemapKey` (only possible with a
+ * pre-SNOW-645 keyless record alongside a keyed one for the same
+ * template), the non-empty key wins — an unresolved basemap should never
+ * shadow a known one.
+ *
+ * @returns {Promise<Array<{template: string, basemapKey: string}>>}
+ *   `basemapKey` is always a string, `''` for unknown — never `null` —
+ *   so a caller can use it as a MapLibre `match` arm directly. Empty when
+ *   nothing is recorded, or the reads fail — best-effort, matching
+ *   `basemapDownloadedAreas()`'s own degrade-to-nothing behaviour.
+ */
+async function basemapDownloadedTemplates() {
+  const byTemplate = new Map();
+  const record = (template, basemapKey) => {
+    if (!template) return;
+    const key = basemapKey || '';
+    const existing = byTemplate.get(template);
+    if (existing === undefined || (!existing && key)) {
+      byTemplate.set(template, key);
+    }
+  };
+
+  if (window.pwaDb) {
+    try {
+      const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+      const regions = Array.isArray(row && row.value) ? row.value : [];
+      for (const entry of regions) {
+        if (entry) record(entry.template, entry.basemapKey);
+      }
+    } catch (_e) {
+      // Best-effort — see docstring.
+    }
+  }
+
+  try {
+    const customAreas = await _readCustomAreas();
+    for (const entry of customAreas) {
+      if (entry) record(entry.template, entry.basemapKey);
+    }
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
+
+  return Array.from(byTemplate, ([template, basemapKey]) => ({ template, basemapKey }));
+}
+
+/**
  * SNOW-586: pre-flight an incoming `areaId` download of `mb` megabytes
  * against the standing byte budget — the page-side half of the eviction
  * plan (basemap_download_core.js's `planEviction` does the arithmetic;
