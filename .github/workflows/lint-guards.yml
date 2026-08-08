@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, migrations-lint, djangofmt]
+        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, migrations-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

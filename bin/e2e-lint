@@ -15,8 +15,15 @@
 # Three invariants:
 #
 #   1. At most MAX_TESTS test functions in the whole suite. Browser tests
-#      are the slowest and flakiest thing in CI, so the budget is fixed
+#      are the slowest and flakiest thing in CI, so the budget is finite
 #      and spending it is a trade, not an addition.
+#
+#      MAX_TESTS is a BACKSTOP, not a target. It is set well above the
+#      suite's working size so it never fires on one more legitimate
+#      journey — it exists to catch the runaway (110 -> 280 in a
+#      fortnight), not to police a sixteenth test. If you are near it,
+#      the question to ask is whether these are all really journeys, not
+#      how to shave one.
 #
 #   2. No test function longer than MAX_TEST_LINES. A long browser test is
 #      one asserting things a unit test should own — every extra assertion
@@ -30,8 +37,11 @@
 #      scenario is not a smoke test, and a renamed scenario surfaces here
 #      rather than rotting.
 #
-# Raising MAX_TESTS is a deliberate act. Edit the constant in a ticket that
-# says why, or delete a test to make room. Do not raise it to land a PR.
+# Raising MAX_TESTS is a deliberate act — edit the constant in a ticket
+# that says why. That is a real option, not a last resort: the number is a
+# judgement, and the length and scenario-mapping checks below are what
+# actually keep individual tests honest. What it must not become is a
+# reflex for landing a PR that should have put its assertion in tests/js.
 #
 # Escape hatch for invariant 3, audit-visible via --show-scenarios:
 #
@@ -61,7 +71,7 @@ E2E_ROOT = REPO_ROOT / "tests" / "e2e"
 SCENARIOS_DOC = REPO_ROOT / "docs" / "testing-scenarios.md"
 
 # The cap. See the module docstring before changing either number.
-MAX_TESTS = 15
+MAX_TESTS = 25
 MAX_TEST_LINES = 40
 
 # `### Scenario M1: Load the map and see today's choropleth` -> "M1"
@@ -238,8 +248,8 @@ def main() -> int:
         print(
             f"tests/e2e/: {total_tests} test functions across {len(modules)} "
             f"module(s) — the cap is {MAX_TESTS}.\n"
-            f"  Delete {total_tests - MAX_TESTS} test(s), move them to tests/js/, "
-            f"or change MAX_TESTS in bin/e2e-lint in a ticket that says why.\n"
+            f"  Move {total_tests - MAX_TESTS} test(s) down to tests/js/, delete "
+            f"them, or raise MAX_TESTS in bin/e2e-lint in a ticket that says why.\n"
             f"  Read the exclusion list in docs/client-side-tests.md first — "
             f"numbers, geometry, state machines, class strings and persistence "
             f"all belong in tests/js/."

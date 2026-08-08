@@ -64,7 +64,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from django.conf import settings
@@ -272,85 +272,6 @@ class PwaPage:
     live_server_url: str
     page_errors: list[str]
 
-    def wait_for_event(self, event_name: str, timeout: int = 5000) -> dict[str, Any]:
-        """Poll ``queue:events`` until ``event_name`` appears; return the row.
-
-        The wait, the row-capture, and the JSON snapshot all happen inside
-        a single ``page.evaluate`` call so no cross-call race window exists.
-        Earlier revisions of this helper split the wait and the capture
-        into ``wait_for_function`` + ``page.evaluate`` (raced) and then into
-        ``wait_for_function`` returning the row itself + a deferred
-        ``json_value`` on the JSHandle (also raced — the handle's referent
-        could be reclaimed or mutated between resolution and serialisation).
-        Polling inside evaluate with an explicit ``setTimeout`` loop, plus
-        a ``JSON.parse(JSON.stringify(found))`` snapshot at match time,
-        removes every intermediate window in which the row could vanish
-        or drift (SNOW-397).
-
-        Args:
-            event_name: The ``pwa.*`` event name to wait for.
-            timeout: Milliseconds to poll before giving up.
-
-        Returns:
-            The matching row from ``queue:events``.
-
-        Raises:
-            AssertionError: If the event never lands within ``timeout``
-                milliseconds. The message names the missing event AND the
-                event names actually present in ``queue:events`` at the
-                final poll, so a failure distinguishes "never emitted"
-                from "emitted but the row I wanted isn't among them"
-                without a rerun (SNOW-427).
-
-        """
-        result = self.page.evaluate(
-            """async ({ name, timeoutMs }) => {
-                const deadline = Date.now() + timeoutMs;
-                let seen = [];
-                while (Date.now() < deadline) {
-                  const rows = await window.pwaDb.getAll('queue:events');
-                  seen = rows.map((r) => r.event);
-                  const found = rows.find((r) => r.event === name);
-                  if (found) {
-                    return { found: JSON.parse(JSON.stringify(found)), seen };
-                  }
-                  await new Promise((r) => setTimeout(r, 100));
-                }
-                return { found: null, seen };
-              }""",
-            {"name": event_name, "timeoutMs": timeout},
-        )
-        assert result["found"] is not None, (
-            f"event {event_name!r} not found in queue:events within {timeout}ms; "
-            f"events present at last poll: {result['seen']!r}"
-        )
-        return cast(dict[str, Any], result["found"])
-
-    def assert_sw_absent(self) -> None:
-        """Assert no SW registration, no shell caches, no PWA IndexedDB survive."""
-        state = self.page.evaluate(
-            """async (dbName) => {
-                const regs = await navigator.serviceWorker.getRegistrations();
-                const cacheKeys = (await caches.keys()).filter(
-                  (k) => k.startsWith('snowdesk-shell-'),
-                );
-                let hasDb = false;
-                if ('databases' in indexedDB) {
-                  const dbs = await indexedDB.databases();
-                  hasDb = dbs.some((d) => d.name === dbName);
-                }
-                return { regCount: regs.length, cacheKeys, hasDb };
-              }""",
-            _PWA_DB_NAME,
-        )
-        assert state["regCount"] == 0, (
-            f"expected no SW registrations, found {state['regCount']}"
-        )
-        assert state["cacheKeys"] == [], (
-            f"expected no snowdesk-shell-* caches, found {state['cacheKeys']}"
-        )
-        assert state["hasDb"] is False, "expected snowdesk-pwa-v1 IDB to be absent"
-
 
 @pytest.fixture()
 def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
@@ -514,50 +435,6 @@ def _session_login(context: BrowserContext, live_server_url: str, user: User) ->
                 "url": live_server_url,
             }
         ]
-    )
-
-
-@dataclass
-class SignedInPage(PwaPage):
-    """A ``PwaPage`` authenticated as a freshly-created ``Account``.
-
-    Reused by the P12 manage-page journey (reset local data), which needs
-    a signed-in session before ``/account/manage/`` renders anything but
-    a redirect to sign-in.
-    """
-
-    account: Account
-
-
-@pytest.fixture()
-def signed_in_page(pwa_page: PwaPage, django_db_blocker: Any) -> SignedInPage:
-    """``pwa_page``, plus a Django session cookie for a fresh ``Account``.
-
-    Q5 (SNOW-389 plan step 1): the ``AccountFactory.create()`` +
-    ``force_login`` + ``add_cookies`` round-trip measured well under the
-    plan's 2s cutoff — see ``tests/e2e/_spike_results.py`` — so the full
-    manage-page journey ships directly rather than splitting off a cheaper
-    subset.
-
-    Args:
-        pwa_page: The real-SW page to attach the session cookie to.
-        django_db_blocker: pytest-django's DB-access guard — ``pwa_page``
-            does not itself request DB access, so this fixture must
-            explicitly unblock it to create the ``Account``.
-
-    Returns:
-        A ``SignedInPage`` — the same interface as ``PwaPage`` plus the
-        authenticated ``account``.
-
-    """
-    with django_db_blocker.unblock():
-        account = AccountFactory.create()
-    _session_login(pwa_page.page.context, pwa_page.live_server_url, account.user)
-    return SignedInPage(
-        page=pwa_page.page,
-        live_server_url=pwa_page.live_server_url,
-        page_errors=pwa_page.page_errors,
-        account=account,
     )
 
 

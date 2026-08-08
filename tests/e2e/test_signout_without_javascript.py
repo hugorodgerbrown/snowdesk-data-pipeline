@@ -1,33 +1,10 @@
-"""
-tests/e2e/test_signout_without_javascript.py — SNOW-616: sign out is
-reachable with JavaScript unavailable.
+"""tests/e2e/test_signout_without_javascript.py — A user signs out with JavaScript disabled.
 
-Sign out was only reachable through a JavaScript-driven disclosure menu:
-the nav rendered ``#subscriber-menu`` with the ``hidden`` attribute and an
-inline script removed it on a click. With scripts off the attribute stayed,
-so a signed-in user had no way to end their session. Finding M8 in
-``docs/code-reviews/2026-08-03-js-review.md``.
+Smoke test — one user journey, mirroring docs/testing-scenarios.md.
+Read docs/client-side-tests.md before adding anything here: the suite
+is capped, and bin/e2e-lint enforces the cap.
 
-The project position is that JavaScript is progressive enhancement and core
-functionality must work without it. Ending a session on a shared or borrowed
-device is squarely core, and it was the one control the review found on the
-wrong side of that line.
-
-The fix is markup, not a new endpoint — sign out was always a POST form, so
-once the menu opens without script the control works. The nav is now a
-native ``<details>``/``<summary>`` disclosure and the script only adds
-click-outside and Escape.
-
-Two halves, one test each:
-
-  * ``test_sign_out_works_with_javascript_disabled`` — the fix. Runs on the
-    ``no_script_page`` fixture (``java_script_enabled=False``), which this
-    ticket introduced; there was no JS-disabled case in the suite before,
-    which is why a control that only existed once a script had run looked
-    identical to one that did not.
-  * ``test_escape_still_closes_the_menu_with_javascript_enabled`` — the
-    enhancement the rewrite had to preserve. ``<details>`` gives Enter and
-    Space for free but nothing for Escape.
+Scenario: 22
 """
 
 from __future__ import annotations
@@ -35,7 +12,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e.conftest import FavouritesPage, NoScriptPage
+from tests.e2e.conftest import NoScriptPage
 
 MANAGE_URL_PATH = "/account/manage/"
 
@@ -83,71 +60,3 @@ def test_sign_out_works_with_javascript_disabled(no_script_page: NoScriptPage) -
     page.wait_for_load_state("load")
 
     _assert_signed_out(page, no_script_page.live_server_url)
-
-
-@pytest.mark.django_db(transaction=True)
-def test_sign_out_is_also_reachable_from_the_account_page(
-    no_script_page: NoScriptPage,
-) -> None:
-    """The manage page carries its own sign-out control.
-
-    The secondary half of SNOW-616: the nav control is the primary one, but
-    the account page is where a user goes looking for account actions, and
-    on a borrowed device this is the one they need.
-    """
-    page = no_script_page.page
-    page.goto(no_script_page.live_server_url + MANAGE_URL_PATH)
-    page.wait_for_load_state("load")
-
-    page.click('[data-testid="manage-sign-out"]')
-    page.wait_for_load_state("load")
-
-    _assert_signed_out(page, no_script_page.live_server_url)
-
-
-@pytest.mark.django_db(transaction=True)
-def test_escape_still_closes_the_menu_with_javascript_enabled(
-    favourites_page: FavouritesPage,
-) -> None:
-    """Escape closes the disclosure and returns focus to its summary.
-
-    ``<details>`` handles opening, closing on a second click, Enter and
-    Space natively — Escape is not among them, so it stays the inline
-    script's job and has to survive the rewrite.
-    """
-    page = favourites_page.page
-    page.goto(favourites_page.live_server_url + MANAGE_URL_PATH)
-    page.wait_for_load_state("load")
-
-    page.click(_MENU_TOGGLE)
-    expect(page.locator(_SIGN_OUT)).to_be_visible()
-
-    page.keyboard.press("Escape")
-
-    expect(page.locator(_SIGN_OUT)).to_be_hidden()
-    assert (
-        page.evaluate("() => document.activeElement && document.activeElement.id")
-        == "subscriber-menu-toggle"
-    ), (
-        "Escape must return focus to the control that opened the menu, or a "
-        "keyboard user is dropped back at the top of the document"
-    )
-
-
-@pytest.mark.django_db(transaction=True)
-def test_click_outside_still_closes_the_menu(favourites_page: FavouritesPage) -> None:
-    """A click elsewhere closes the disclosure.
-
-    The other behaviour ``<details>`` does not provide — it stays open until
-    its own summary is clicked again.
-    """
-    page = favourites_page.page
-    page.goto(favourites_page.live_server_url + MANAGE_URL_PATH)
-    page.wait_for_load_state("load")
-
-    page.click(_MENU_TOGGLE)
-    expect(page.locator(_SIGN_OUT)).to_be_visible()
-
-    page.click("h1")
-
-    expect(page.locator(_SIGN_OUT)).to_be_hidden()

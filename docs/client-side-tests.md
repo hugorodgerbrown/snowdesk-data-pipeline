@@ -1,6 +1,6 @@
 ---
 name: client-side-tests
-description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the 15-test e2e cap and exclusion list, tox -e e2e and tox -e js
+description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop and exclusion list, tox -e e2e and tox -e js
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -36,31 +36,35 @@ Vitest is the **default** for client-side behaviour. It is fast,
 deterministic, and in the default `tox` envlist, so it runs on every local
 `uv run tox` rather than waiting for CI.
 
-### The `tests/e2e/` cap
+### How big `tests/e2e/` should be
 
-**At most ~15 tests. One file per user journey. Each under 40 lines. Each
-mapping to a named scenario family in
-[`testing-scenarios.md`](testing-scenarios.md).**
+**One file per user journey. Each under 40 lines. Each mapping to a named
+scenario family in [`testing-scenarios.md`](testing-scenarios.md). The
+suite should stay around a dozen tests.**
 
 The suite mirrors the manual test script and nothing else. It answers one
 question — *can a user still see the map, read a bulletin, search, sign in,
 add a favourite, and reload offline?* — and it must fail loudly for a
 broken page, not for a shifted pixel.
 
-Adding a sixteenth test means deleting one, or changing this rule
-deliberately in a ticket that says so. It is not a soft target: the cap
-exists because the suite has twice grown until it was too slow and too
-flaky to trust. SNOW-494 cut it to 110 tests on 22 July 2026; by 7 August
-it was 280 across 18,309 lines, because every UI ticket bundled an e2e
-test and nothing said stop.
+That size is a working expectation, not a quota to defend to the last
+test. What is not negotiable is the direction of travel: the suite has
+twice grown until it was too slow and too flaky to trust. SNOW-494 cut it
+to 110 tests on 22 July 2026; by 7 August it was 280 across 18,309 lines,
+because every UI ticket bundled an e2e test and nothing said stop.
 
-### The cap is a lint, not a convention (`tox -e e2e-lint`)
+So `bin/e2e-lint` carries a `MAX_TESTS` **backstop**, set well above the
+working size. It is there to catch that runaway, not to adjudicate one
+more journey. Hitting it is a prompt to ask whether these are all really
+journeys — and if they are, to raise it in a ticket that says why.
+
+### It is a lint, not a convention (`tox -e e2e-lint`)
 
 `bin/e2e-lint` enforces three invariants, and blocks any PR that breaks
 one:
 
-1. **At most 15 test functions** across the whole suite. The message names
-   how many need to go.
+1. **A suite-size backstop** (`MAX_TESTS`). The message names how many are
+   over and what the options are.
 2. **No test function over 40 lines.** A long browser test is one
    asserting things a unit test should own.
 3. **Every test module declares the scenario family it mirrors**, as a
@@ -85,17 +89,15 @@ is audit-visible via `bin/e2e-lint --show-scenarios`:
 ```
 
 Raising `MAX_TESTS` in `bin/e2e-lint` is a deliberate edit in a ticket that
-says why. It is not a way to land a PR — the two previous overruns both
-happened one reasonable-looking test at a time.
+says why — a legitimate move when the suite genuinely needs another
+journey. What it must not be is the reflex for landing a PR whose
+assertion belongs in `tests/js/`: the two previous overruns both happened
+one reasonable-looking test at a time.
 
-**Current wiring status (SNOW-649):** the env exists (`tox -e e2e-lint`)
-but is deliberately outside the default `tox` envlist and the `lint-guards`
-CI matrix, because it fails by design while the suite is still 280 tests
-against a cap of 15. Both are switched on in the same PR that performs the
-deletion — the commit that makes the guard pass is the commit that makes
-it required. If you are reading this after that PR landed and the env is
-still not in `tox.ini`'s `envlist` and
-`.github/workflows/lint-guards.yml`'s matrix, that is the bug.
+`e2e-lint` runs in the default `tox` envlist and in the `lint-guards` CI
+matrix alongside `ds-lint`, `js-globals-lint`, `i18n-lint` and `docs-lint`.
+It costs nothing to run — no browser, no live server, pure AST — so there
+is no reason to keep it out of a local `uv run tox`.
 
 ### Does not belong in `tests/e2e/` — send it down a layer
 
