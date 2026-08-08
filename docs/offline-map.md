@@ -841,9 +841,10 @@ permanently covered by the sheet showing them, on the platform that needs
 offline maps most. It settled on: opening the sheet still turns the
 overlay ON (`map_downloads_manager.js`'s `open()` calls
 `window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
-turns it off. A second "Available offline" toggle now lives INSIDE the
-sheet (above the list — see "Manage downloads" sheet below) and is the
-ONLY thing that ever calls `hide()`. This is a deliberately
+turns it off. A second toggle — a switch, "Show areas on the map" — now
+lives INSIDE the sheet, in its own panel above the row groups (see
+"Manage downloads" sheet below) and is the ONLY thing that ever calls
+`hide()`. This is a deliberately
 session-scoped inspection mode, not persisted anywhere: close the sheet
 with the overlay on, look at the map, reopen the always-on-screen
 custom-area roundel to switch it off again. A fresh page load always
@@ -1367,8 +1368,8 @@ basemap's template alone, and the row had no way to say that was why. The
 row is gone; opening the "Manage downloads" sheet now turns the overlay
 on (`window.pwaDownloadedOverlay.show()`, called from
 `map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
-turn it off — an in-sheet "Available offline" toggle is the only thing
-that calls `hide()` (see "Manage downloads" sheet below for why: the
+turn it off — an in-sheet switch ("Show areas on the map") is the only
+thing that calls `hide()` (see "Manage downloads" sheet below for why: the
 sheet covers the whole screen on mobile, so binding visibility to "sheet
 open" made the overlay unreachable there). Session-scoped, never
 persisted across a reload.
@@ -1459,42 +1460,102 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
 
-**It now drives the map overlay too (SNOW-645, twice reworked).** Opening
-the sheet calls `window.pwaDownloadedOverlay.show()`. Closing the sheet
-does NOT call `.hide()` any more — a `[data-downloads-overlay-toggle]`
-checkbox above the list ("Show downloaded areas on the map", styled on
-the same checkbox+label pattern `edit_resorts_panel.html` already uses)
-is the only thing that does. `render()` sets its `checked` state from
-`window.pwaDownloadedOverlay.isVisible()` on every open, so a freshly
-opened sheet always shows it already on — see "No longer a layers-menu
-toggle" above for why closing no longer implies off.
+**It now drives the map overlay too (SNOW-645, reworked twice more).**
+Opening the sheet calls `window.pwaDownloadedOverlay.show()`. Closing the
+sheet does NOT call `.hide()` — a `[data-downloads-overlay-toggle]` switch
+(see "The overlay switch" below) is the only thing that does. `render()`
+sets it from `window.pwaDownloadedOverlay.isVisible()` on every open, so a
+freshly opened sheet always shows it already on — see "No longer a
+layers-menu toggle" above for why closing no longer implies off.
 
-**Row title (SNOW-645 review).** A row's title line is composed from a
-`row-title` format string (`"%(name)s (%(kind)s)"`, e.g. "Verbier
-(Region)") — folded in from what used to be a separate `[data-row-kind]`
-line under the name. An orphaned row (SNOW-612 — a pinned bucket with no
-record) has no usable name (its `label` is the bare bucket id), so it
-skips the format entirely and shows `kind-incomplete` ("Incomplete
-download") alone instead, same as before.
+**Layout — "1c: grouped by kind · budget in the header · CTA in its
+group" (SNOW-645, Hugo's design).** Top to bottom:
 
-**Basemap swatch (SNOW-645).** Each row also carries a small
-`.basemap-identity-fill` roundel plus the basemap's own translated name —
-the same `--color-basemap-*` identity colour the download roundels paint
-(see "State" above), and the same label the picker itself shows: `buildRow`
+1. **Header.** The title reads noticeably larger/bolder than every other
+   sheet's — `includes/_sheet_header.html`'s own `title_class` override
+   (`"text-lg font-bold"`), added for this. The × itself is the SAME
+   control every sheet has (see "Sheet header × tap target", below) — the
+   size change there is universal, not specific to this sheet.
+2. **Budget, folded into the header.** One row: the segmented bar (fills
+   the remaining width — see "Budget bar segments" below), `"<used> of"`,
+   then the budget `<select>` itself, styled as a rounded pill (e.g.
+   "500 MB"). A caption underneath: "Downloads and budget stay on this
+   device." This REVERSES SNOW-641's own conclusion (that the total and
+   the budget control belonged at the FOOT, beside the "you already
+   have" list) — worth recording so a future reader does not assume
+   SNOW-641's reasoning still holds; Hugo's design reads the budget as
+   part of what the sheet fundamentally IS, not a footnote below the list.
+3. **The overlay switch**, in its own `bg-tag` (light-grey) rounded panel
+   — see below.
+4. **Rows, grouped by kind** under a small muted uppercase heading —
+   "Regions", then "Custom areas" — each rendered `uppercase` by Tailwind
+   rather than typed in caps, so the underlying string stays natural-cased
+   for translators. A group with no rows is hidden ENTIRELY, heading
+   included — `[data-downloads-group="region"|"custom"]` wraps each
+   heading+list pair as one unit for exactly that.
+5. **The add-custom-area CTA**, full-width and outlined, in its own
+   bordered group at the foot (see "Running order" below).
+
+**Row shape (SNOW-645 review).** A coloured vertical rule down the row's
+left edge replaces the old round swatch — same
+`.basemap-identity-fill`/`data-basemap-key` mechanism (`src/css/main.css`
+§2), just a different shape, stretched to the row's own height via flex
+`self-stretch`. The title is the row's plain name again — NOT "Verbier
+(Region)": that fold-in was this same ticket's own earlier pass, reversed
+here now the group heading says kind instead, so `row-title` (the format
+string that built it) is deleted rather than left unused. A muted
+subtitle underneath the title carries the basemap's own translated name
+("Swisstopo (CH)", "Standard") when resolvable, dropped entirely when it
+isn't (a legacy record, or an unrecognised key) — colour is never the
+only signal, so the rule and the subtitle always agree on whether
+anything is claimed. Trailing: the size, then a "…" overflow trigger
+(`includes/_overflow_menu.html`) replacing the two inline Rename/Remove
+buttons every row used to carry.
+
+**Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
+(`manageRows` falls back to `id` only when there is no record — true only
+for an orphan); subtitle reads the fixed "Incomplete download" string,
+with NO link; the left rule is a flat muted `bg-border`, not this row's
+basemap identity colour (there isn't one) and deliberately not
+`.basemap-identity-fill`'s own keyless green default either — that
+default means "downloaded, basemap unknown", which is not true of
+something that never finished. Remove is the only action either kind of
+orphan gets. A "resume" affordance (re-triggering the download from the
+bucket id) was considered and dropped: a REGION orphan's bucket id
+(`region-<regionId>`) could in principle drive one, but a CUSTOM-AREA
+orphan has no record at all — no bbox, no band — to rebuild from, and a
+link that silently does nothing for one of the two row kinds reads worse
+than no link for either.
+
+**The overlay switch.** `includes/_switch.html` — a real
+`input[type="checkbox" role="switch"]` drawn as a track+thumb with
+Tailwind's `peer` variant, no JS; see that partial's own docstring for why
+(there was no switch primitive in the design system before this). Its
+label — "Show areas on the map" — sits in its own `bg-tag` rounded panel,
+reading as a view control for the map BEHIND the sheet rather than a fact
+about what is stored, which is also why it leads the sheet ahead of the
+list it governs.
+
+**The overflow menu.** `includes/_overflow_menu.html` + the delegated,
+instance-agnostic `static/js/overflow_menu.js` — see that partial's own
+docstring for the full contract (dismiss on outside click/Escape,
+keyboard-reachable, why it is delegated rather than per-instance-bound).
+`buildRow` rewrites the row template's placeholder `trigger_id`/`menu_id`
+to a per-row id (`_domSafeId(row.id)`-suffixed) once cloned, for
+`aria-controls` correctness with any number of rows on screen — the
+open/close logic itself never depends on the ids being unique. Menu
+contents: Rename (custom areas only — `buildRow` removes the whole `<li>`
+for a non-renameable row, not just the button) and Remove.
+
+**Basemap subtitle label.** The basemap name shown in a row's subtitle
+(when resolvable) is the same label the picker itself shows: `buildRow`
 reads it off the picker's rendered `.basemap-menu-item` buttons rather
 than duplicating `apps/public/views.py`'s `_BASEMAP_LABELS`, so the two
 surfaces can never drift and no new JS string literal exists for
-`tox -e i18n-lint` to flag. A row with no stored `basemapKey` (a download
-recorded before this ticket shipped, or an orphaned bucket — SNOW-612)
-drops the whole swatch+name line rather than guessing; colour is never the
-only signal. `.basemap-identity-fill` (`src/css/main.css` §2) is the same
-class the budget bar's segments use, below — generalised from the
-ticket's original `.basemap-swatch` name once it grew a second consumer,
-so the five per-key colour rules are declared once rather than duplicated
-per surface.
+`tox -e i18n-lint` to flag.
 
 **Budget bar segments (SNOW-645 review).** The used portion of the budget
-bar is no longer one flat fill — `basemap_manage_core.js`'s
+bar is one flat fill no longer — `basemap_manage_core.js`'s
 `budgetSegments(areas)` groups the SAME area list by `basemapKey` (summed,
 never one segment per area — a dozen small custom areas under one basemap
 would otherwise read as a barcode), sorted largest first with the keyless
@@ -1509,18 +1570,22 @@ nothing else. Over budget, the bar itself can no longer turn solid red
 `ring-2 ring-status-error-text` outline instead — `[data-downloads-over]`'s
 own warning text is unchanged.
 
-**Running order (SNOW-641, the overlay toggle added SNOW-645 review):**
-the "Available offline" toggle, then the list, then the add-trigger under
-it, then one bordered block at the foot holding the budget control, the
-running total and its bar. The toggle leads the sheet deliberately — it
-is a view control for the map BEHIND the sheet, not a fact about what is
-stored, so it reads before "what you have" rather than inside the list it
-governs the visibility of. Below it, the total used to lead the sheet and
-the trigger sat above the list, which put the two things a reader wants —
-what is stored, and how much room is left — at opposite ends with the list
-between them. Nothing in `map_downloads_manager.js` is positional (every
-element is addressed by data-attribute), so the order is a presentation
-decision and reordering needed no JS change.
+**Sheet header × tap target (SNOW-645 review).** `includes/_sheet_header.html`'s
+× used to be `text-lg leading-none px-1` — a ~26×20px hit target, well
+under the 44×44 minimum. The glyph is unchanged; it is now centred inside
+an `h-11 w-11` (44×44px) box instead, so every consumer's close control
+(this sheet, the favourites create form, the report form) gets a real tap
+target for free. `title_class` (used above) is the OTHER new parameter —
+unrelated to the × fix, purely so this sheet's own title can be larger
+without resizing the other two sheets' headers.
+
+**Running order:** the header block (title, budget), then the over-budget
+warning (when shown), then the overlay switch panel, then the REGIONS and
+CUSTOM AREAS groups, then the empty state (when neither group has rows),
+then the add-custom-area CTA in its own bordered group at the foot.
+Nothing in `map_downloads_manager.js` is positional (every element is
+addressed by data-attribute), so the order is a presentation decision and
+reordering never needs a JS change.
 
 It opens from `#map-custom-download-control` — the
 bottom-right roundel — and uses the shared sheet primitive
