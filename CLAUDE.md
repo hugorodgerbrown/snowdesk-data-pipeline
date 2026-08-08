@@ -409,6 +409,7 @@ uv run tox -e ds-lint         # design-system linter — templates + static/js (
 uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
 uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
+uv run tox -e migrations-lint # duplicate migration numbers / multi-leaf migration graph
 uv run tox -e e2e-lint        # Playwright cap: ~15 tests, ≤40 lines each, scenario-mapped
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
