@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 from django.utils import timezone
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 from pytest_django.live_server_helper import LiveServer
 
 from apps.regions.models import Resort
@@ -133,3 +133,46 @@ def test_resort_page_shows_region_weather_panel(
 
     # No per-point weather surface — that stays a favourite-page feature.
     assert page.locator('[data-testid="favourite-forecast-panel"]').count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_weather_panel_renders_temperature_and_snowfall(
+    live_server: LiveServer,
+    page: Page,
+    django_db_blocker: Any,
+    _load_test_data: None,
+) -> None:
+    """SNOW-571: the panel's meta strip carries hi/lo temperature and snowfall.
+
+    Seeds a fully-populated ``WeatherSnapshot`` for Verbier's region at
+    *today*, so the server render already carries the enriched strip and
+    ``weather_htmx_trigger`` is False.
+
+    Deliberately **not** exercised through the HTMX retry swap: that path
+    is broken for every region and always has been (SNOW-650). The panel
+    builds its retry URL from the uppercase EAWS ``region_id``, and
+    ``@lowercase_region_id`` answers with a 301 — which a browser re-issues
+    as a GET, so the POST-only ``weather_snippet`` returns 405 and no swap
+    ever lands. Asserting the retry here would be asserting a fiction; the
+    coverage belongs with the fix.
+    """
+    with django_db_blocker.unblock():
+        resort = Resort.objects.get(name="Verbier")
+        WeatherSnapshotFactory.create(
+            region=resort.region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,  # clear sky
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+        resort_url = resort.get_absolute_url()
+
+    page.goto(f"{live_server.url}{resort_url}")
+
+    panel = page.locator('[data-testid="resort-weather"]')
+    expect(panel).to_have_attribute("data-weather-bucket", "clear")
+    # floatformat:0 rounds 4.2 → "4" and -3.1 → "-3"; the pair renders as
+    # one nowrap group, so the separator sits tight against the hi value.
+    expect(panel).to_contain_text("4°/-3°")
+    expect(panel).to_contain_text("12 cm")

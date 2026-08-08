@@ -357,6 +357,60 @@ class TestBuildWeatherDisplay:
         assert display["bucket"] == "clear"
         assert display["is_day"] is True
 
+    def test_temp_and_snowfall_pass_through_when_present(self) -> None:
+        """temp_max/temp_min/snowfall_sum pass through from a populated snapshot."""
+        snapshot = WeatherSnapshotFactory.create(
+            weather_code=0,
+            valid_for_date=datetime.date(2026, 5, 1),
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        display = build_weather_display(snapshot, now)
+
+        assert display is not None
+        assert display["temp_max"] == 4.2
+        assert display["temp_min"] == -3.1
+        assert display["snowfall_sum"] == 12.0
+
+    def test_temp_and_snowfall_are_none_when_absent(self) -> None:
+        """A sparse snapshot (fields unset) surfaces None for all three."""
+        snapshot = WeatherSnapshotFactory.create(
+            weather_code=0,
+            valid_for_date=datetime.date(2026, 5, 1),
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        display = build_weather_display(snapshot, now)
+
+        assert display is not None
+        assert display["temp_max"] is None
+        assert display["temp_min"] is None
+        assert display["snowfall_sum"] is None
+
+    def test_snowfall_zero_is_distinct_from_none(self) -> None:
+        """An explicit 0 cm snowfall total surfaces as 0.0, not None."""
+        snapshot = WeatherSnapshotFactory.create(
+            weather_code=0,
+            valid_for_date=datetime.date(2026, 5, 1),
+            sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
+            sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+            snowfall_sum=0.0,
+        )
+        now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+
+        display = build_weather_display(snapshot, now)
+
+        assert display is not None
+        assert display["snowfall_sum"] == 0.0
+        assert display["snowfall_sum"] is not None
+
 
 # ---------------------------------------------------------------------------
 # build_point_forecast_panel
