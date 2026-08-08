@@ -49,6 +49,7 @@ const REGIONS_GEOJSON = { type: 'FeatureCollection', features: [] };
 function stubMapLibre() {
   const handlers = {};
   const layers = new Map();
+  const layouts = new Map();
   let cachedTilesData = null;
   const map = {
     on: (ev, a, b) => {
@@ -62,7 +63,10 @@ function stubMapLibre() {
     removeControl: () => {},
     getLayer: (id) => (layers.has(id) ? { id } : null),
     getFilter: () => null,
-    getLayoutProperty: () => null,
+    getLayoutProperty: (id, prop) => {
+      const layout = layouts.get(id);
+      return layout ? layout[prop] : undefined;
+    },
     getPaintProperty: (id, prop) => {
       const paint = layers.get(id);
       return paint ? paint[prop] : undefined;
@@ -78,12 +82,18 @@ function stubMapLibre() {
     addSource: () => {},
     addLayer: (def) => {
       layers.set(def.id, { ...(def.paint || {}) });
+      layouts.set(def.id, { ...(def.layout || {}) });
     },
     removeLayer: (id) => {
       layers.delete(id);
+      layouts.delete(id);
     },
     removeSource: () => {},
-    setLayoutProperty: () => {},
+    setLayoutProperty: (id, prop, value) => {
+      const layout = layouts.get(id) || {};
+      layout[prop] = value;
+      layouts.set(id, layout);
+    },
     setPaintProperty: (id, prop, value) => {
       const paint = layers.get(id);
       if (paint) paint[prop] = value;
@@ -372,5 +382,39 @@ describe('downloaded-areas overlay colour — nothing downloaded', () => {
 
     const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-color'];
     expect(fillExpr).toBe(SYNC_OK_COLOUR);
+  });
+});
+
+describe('window.pwaDownloadedOverlay show()/hide()/isVisible() (SNOW-645 review)', () => {
+  it('isVisible() reflects the real session-scoped flag, not a DOM read', () => {
+    window.pwaDownloadedOverlay.hide();
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
+  });
+
+  it('show() flips isVisible() to true', async () => {
+    window.pwaDownloadedOverlay.hide();
+    await window.pwaDownloadedOverlay.show();
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(true);
+  });
+
+  it('hide() flips isVisible() back to false and hides the layers', async () => {
+    await window.pwaDownloadedOverlay.show();
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(true);
+
+    window.pwaDownloadedOverlay.hide();
+
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
+    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
+      expect(mapStub.getLayoutProperty(id, 'visibility')).toBe('none');
+    }
+  });
+
+  it('show() sets both layers visible', async () => {
+    window.pwaDownloadedOverlay.hide();
+    await window.pwaDownloadedOverlay.show();
+
+    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
+      expect(mapStub.getLayoutProperty(id, 'visibility')).toBe('visible');
+    }
   });
 });

@@ -617,3 +617,66 @@ describe("the custom roundel stays monochrome (SNOW-645 review, superseding an e
     expect(customControl().dataset.downloadState).toBe('idle');
   });
 });
+
+describe('orphanBasemapKey (SNOW-645 review — pale-rule inference for an orphaned bucket)', () => {
+  // window.pwaBasemapDownloads.orphanBasemapKey infers which basemap an
+  // ORPHANED bucket (a pinned Cache Storage entry with no
+  // basemap.regions/basemap.customAreas record — SNOW-612) most likely
+  // belongs to, by matching its own cached tile URLs against every
+  // DISTINCT template basemapDownloadedTemplates() (module-private, not
+  // itself exposed — exercised here only through this bridge and through
+  // refreshDownloadedOverlay, see test_map_downloaded_overlay_colour.js)
+  // currently has on record. Decoration only — see both functions' own
+  // docstrings.
+  const TEMPLATE = 'https://tiles.example/{z}/{x}/{y}.pbf';
+  const MATCHING_TILE_URL = 'https://tiles.example/10/1/1.pbf';
+  const NON_MATCHING_URL = 'https://other.example/not-a-tile.json';
+
+  it("matches the orphan's tiles against a template on record", async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([MATCHING_TILE_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBe('swisstopo_winter');
+  });
+
+  it('returns null when the bucket matches no template currently on record', async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([NON_MATCHING_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
+  });
+
+  it('returns null for a bucket holding no tiles at all', async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', template: TEMPLATE, basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set());
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
+  });
+
+  it('returns null when nothing is recorded at all — no template to match against', async () => {
+    installDbStub({});
+    cachesStub.buckets.set('snowdesk-basemap-pinned-orphan-1', new Set([MATCHING_TILE_URL]));
+
+    const key = await window.pwaBasemapDownloads.orphanBasemapKey('orphan-1');
+
+    expect(key).toBeNull();
+  });
+});

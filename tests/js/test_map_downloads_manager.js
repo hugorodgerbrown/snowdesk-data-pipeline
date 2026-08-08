@@ -53,14 +53,24 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
 
 /**
  * Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row;
- * SNOW-635: Rename; SNOW-641: list → add-trigger → budget block order).
+ * SNOW-635: Rename; SNOW-645 review: grouped by kind, budget folded into
+ * the header, an overflow "…" menu per row instead of two inline
+ * buttons, the toggle moved to the foot).
  *
  * The node ORDER here is kept in step with the real template even though
  * nothing in this file depends on it — the module addresses every element
  * by data-attribute, never by index or sibling relationship, which is
- * exactly what let SNOW-641 reorder the sheet without touching the JS. A
- * fixture that drifted out of order would still pass while quietly
+ * exactly what let SNOW-641/645 reorder the sheet without touching the
+ * JS. A fixture that drifted out of order would still pass while quietly
  * ceasing to be a description of the thing under test.
+ *
+ * The row template's overflow menu is a hand-copy of
+ * includes/_overflow_menu.html + includes/_map_downloads_row_menu_items.html
+ * rather than the shared partials themselves — Vitest cannot render a
+ * Django template (see the file header) — kept close enough that
+ * buildRow's own [data-overflow-trigger]/[role="menu"] id-rewriting and
+ * overflow_menu.js's [data-overflow-menu]/[data-overflow-trigger] scoping
+ * both have something real to act on.
  */
 function buildFixture() {
   document.body.innerHTML = `
@@ -68,38 +78,64 @@ function buildFixture() {
          aria-label="Downloads on this device"></div>
     <template id="map-downloads-body-template">
       <div>
-        <div><span>Downloads on this device</span>
-          <button type="button" data-action="dismiss">×</button></div>
-        <p data-downloads-over hidden>You're over your budget.</p>
-        <ul data-downloads-list></ul>
-        <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
-        <button type="button" data-downloads-add>Download a custom area</button>
         <div>
+          <div><span>Downloads on this device</span>
+            <button type="button" data-action="dismiss">×</button></div>
           <div>
-            <label for="map-downloads-budget">Storage budget</label>
-            <select id="map-downloads-budget" data-downloads-budget></select>
+            <div>
+              <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip">
+                <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
+              </div>
+              <p data-downloads-summary>
+                <span data-downloads-summary-value></span>
+                <span>of</span>
+              </p>
+              <select id="map-downloads-budget" data-downloads-budget></select>
+            </div>
+            <p>Downloads and budget stay on this device.</p>
           </div>
-          <p data-downloads-summary></p>
-          <div aria-hidden="true">
-            <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
+        </div>
+        <p data-downloads-over hidden>You're over your budget.</p>
+        <div>
+          <div data-downloads-group="region" hidden>
+            <p>Regions</p>
+            <ul data-downloads-list-region></ul>
           </div>
+          <div data-downloads-group="custom" hidden>
+            <p>Custom areas</p>
+            <ul data-downloads-list-custom></ul>
+          </div>
+          <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
+        </div>
+        <div>
+          <button type="button" data-downloads-add>Download a custom area</button>
+        </div>
+        <div>
+          <label for="map-downloads-overlay-toggle">Show areas on the map</label>
+          <label for="map-downloads-overlay-toggle">
+            <input id="map-downloads-overlay-toggle" type="checkbox" role="switch"
+                   data-downloads-overlay-toggle>
+          </label>
         </div>
       </div>
     </template>
     <template id="map-downloads-row-template">
       <li>
+        <span data-row-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <span>
-          <span data-row-label></span>
-          <span data-row-kind></span>
-          <span data-row-basemap>
-            <span data-row-basemap-swatch class="basemap-swatch inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border" aria-hidden="true"></span>
-            <span data-row-basemap-name></span>
-          </span>
+          <span data-row-label class="text-text-1"></span>
+          <span data-row-subtitle class="text-text-2"></span>
         </span>
         <span>
-          <span data-row-size></span>
-          <button type="button" data-downloads-rename>Rename</button>
-          <button type="button" data-downloads-delete>Remove</button>
+          <span data-row-size class="text-text-2"></span>
+          <div data-overflow-menu>
+            <button type="button" id="row-overflow-trigger" data-overflow-trigger
+                    aria-haspopup="menu" aria-expanded="false" aria-controls="row-overflow-menu">…</button>
+            <ul id="row-overflow-menu" role="menu" hidden>
+              <li role="none"><button type="button" role="menuitem" data-downloads-rename>Rename</button></li>
+              <li role="none"><button type="button" role="menuitem" data-downloads-delete>Remove</button></li>
+            </ul>
+          </div>
         </span>
       </li>
     </template>
@@ -112,9 +148,7 @@ function buildFixture() {
       </li>
     </ul>
     <template id="map-downloads-strings-template">
-      <span data-string="kind-region">Region</span>
-      <span data-string="kind-custom">Custom area</span>
-      <span data-string="usage">%(used)s of %(budget)s used</span>
+      <span data-string="kind-incomplete">Incomplete</span>
       <span data-string="confirm-remove">Remove the offline map for %(name)s? This
             frees %(size)s. You can download it again when you're back online.</span>
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
@@ -122,6 +156,7 @@ function buildFixture() {
       <span data-string="add-disabled">Downloading needs a connection</span>
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
+      <span data-string="row-menu-label">More actions for %(name)s</span>
     </template>
   `;
 }
@@ -343,7 +378,17 @@ beforeEach(() => {
     'snowdesk-basemap-pinned-custom-a1',
   ]);
   window.pwaLayersMenu = { close: vi.fn() };
-  window.pwaDownloadedOverlay = { refresh: vi.fn() };
+  // SNOW-645 review: open() calls show() unconditionally before render(),
+  // and the "Available offline" toggle calls show()/hide() directly (see
+  // that block's own describe below) — a stub missing either used to fail
+  // EVERY test that opens the sheet with "show is not a function", not
+  // just the ones this bridge is actually the point of.
+  window.pwaDownloadedOverlay = {
+    refresh: vi.fn(),
+    show: vi.fn(),
+    hide: vi.fn(),
+    isVisible: vi.fn(() => false),
+  };
   window.pwaLayerSyncStatus = { refresh: vi.fn() };
   // SNOW-634: window.pwaCustomAreaDownload — map.js's own bridge, the
   // add-trigger's online path calls it. window.MapSheet.toast — its
@@ -374,11 +419,13 @@ describe('opening the sheet', () => {
 
     const sheet = document.getElementById('map-downloads-sheet');
     expect(sheet.hidden).toBe(false);
+    // SNOW-645 review: grouped by kind — REGIONS before CUSTOM AREAS,
+    // regardless of size — not one flat largest-first list any more.
     // SNOW-635: an unrenamed custom area's default label is numbered.
-    expect(rowLabels()).toEqual(['Custom area 1', 'Aletsch']);
+    expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
     expect(
       Array.from(sheet.querySelectorAll('[data-row-size]')).map((el) => el.textContent),
-    ).toEqual(['120 MB', '40.0 MB']);
+    ).toEqual(['40.0 MB', '120 MB']);
   });
 
   it('states the running total against the budget', async () => {
@@ -387,9 +434,16 @@ describe('opening the sheet', () => {
     openSheet();
     await settle();
 
+    // SNOW-645 review: the used figure and the budget are two separate
+    // elements now — the numeral (data-downloads-summary-value) plus a
+    // static "of" node in the header, and the budget itself in its own
+    // <select> right after — not one interpolated "X of Y used" string.
     expect(
-      document.querySelector('[data-downloads-summary]').textContent,
-    ).toBe('160 MB of 500 MB used');
+      document.querySelector('[data-downloads-summary-value]').textContent,
+    ).toBe('160 MB');
+    expect(
+      document.querySelector('[data-downloads-budget]').value,
+    ).toBe('500');
   });
 
   it('closes the layers menu it was opened from', async () => {
@@ -457,7 +511,7 @@ describe('opening the sheet', () => {
     rows.set('basemap.customAreas', CUSTOM_AREAS);
     openSheet();
     await settle();
-    expect(rowLabels()).toEqual(['Custom area 1', 'Aletsch']);
+    expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
   });
 
   it('lists more than one custom area at once', async () => {
@@ -481,8 +535,51 @@ describe('opening the sheet', () => {
   });
 });
 
-describe('basemap identity (SNOW-645)', () => {
-  it("shows the basemap's swatch and the picker's own translated name", async () => {
+describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
+  it('turns the overlay on, unconditionally, before it renders', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+
+    // show() is called synchronously inside open(), before the async
+    // render() below even starts — see open()'s own comment for why the
+    // ordering (not just the call) matters: render() reads isVisible()
+    // back to paint the toggle already checked.
+    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalled();
+    await settle();
+  });
+
+  it("paints the toggle from the overlay's real visibility, not a flag of its own", async () => {
+    seed({});
+    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(
+      document.querySelector('[data-downloads-overlay-toggle]').checked,
+    ).toBe(true);
+  });
+
+  it('the "Show areas on the map" toggle drives show()/hide() directly', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const toggle = document.querySelector('[data-downloads-overlay-toggle]');
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalledTimes(2); // open() + this
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.pwaDownloadedOverlay.hide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a swatch)', () => {
+  it("colours the left rule with the row's own basemapKey and names it in the subtitle", async () => {
     seed({
       'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
       'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
@@ -491,30 +588,30 @@ describe('basemap identity (SNOW-645)', () => {
     openSheet();
     await settle();
 
-    const swatches = Array.from(
-      document.querySelectorAll('#map-downloads-sheet [data-row-basemap-swatch]'),
-    );
-    expect(swatches.map((el) => el.dataset.basemapKey)).toEqual([
-      'swisstopo_winter',
+    // Regions render before custom areas (grouped by kind) — see
+    // "opening the sheet" above.
+    const rules = Array.from(document.querySelectorAll('#map-downloads-sheet [data-row-rule]'));
+    expect(rules.map((el) => el.dataset.basemapKey)).toEqual([
       'openfreemap_liberty',
+      'swisstopo_winter',
     ]);
-    const names = Array.from(
-      document.querySelectorAll('#map-downloads-sheet [data-row-basemap-name]'),
+    const subtitles = Array.from(
+      document.querySelectorAll('#map-downloads-sheet [data-row-subtitle]'),
     );
-    expect(names.map((el) => el.textContent)).toEqual(['Swisstopo (CH)', 'Standard']);
+    expect(subtitles.map((el) => el.textContent)).toEqual(['Standard', 'Swisstopo (CH)']);
   });
 
-  it('removes the basemap line for a record written before this ticket shipped', async () => {
+  it('removes the subtitle for a record written before this ticket shipped', async () => {
     // No `basemapKey` at all — a legacy record, not a wrong basemap.
     seed({ 'basemap.regions': [REGIONS[0]] });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
+    expect(document.querySelector('#map-downloads-sheet [data-row-subtitle]')).toBeNull();
   });
 
-  it('removes the basemap line for an orphaned bucket', async () => {
+  it('shows "Incomplete" for an orphaned bucket, never a guessed basemap subtitle', async () => {
     seed({});
     await loadModule();
     // An orphan has no record at all, so no basemapKey — mirrors what
@@ -529,19 +626,21 @@ describe('basemap identity (SNOW-645)', () => {
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
+    expect(
+      document.querySelector('#map-downloads-sheet [data-row-subtitle]').textContent,
+    ).toBe('Incomplete');
   });
 
-  it('removes the basemap line for a key the picker has no row for', async () => {
+  it('removes the subtitle for a key the picker has no row for', async () => {
     // The picker markup is the source of truth for the label; a key it
     // does not recognise (a deployment BASEMAP override, or a stale key
-    // from a since-removed style) must not show an unlabelled swatch.
+    // from a since-removed style) must not show an unlabelled subtitle.
     seed({ 'basemap.regions': [{ ...REGIONS[0], basemapKey: 'no_such_basemap' }] });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-basemap]')).toBeNull();
+    expect(document.querySelector('#map-downloads-sheet [data-row-subtitle]')).toBeNull();
   });
 });
 
@@ -581,8 +680,9 @@ describe('the budget readout', () => {
 
     expect(rows.get('basemap.budgetMb')).toBe(1000);
     expect(
-      document.querySelector('[data-downloads-summary]').textContent,
-    ).toBe('160 MB of 1000 MB used');
+      document.querySelector('[data-downloads-summary-value]').textContent,
+    ).toBe('160 MB');
+    expect(document.querySelector('[data-downloads-budget]').value).toBe('1000');
   });
 
   it('says so when stored downloads exceed the budget', async () => {
@@ -600,10 +700,14 @@ describe('the budget readout', () => {
     openSheet();
     await settle();
 
-    const bar = document.querySelector('[data-downloads-bar]');
+    // SNOW-645 review: the bar itself now carries real basemap colours
+    // (one segment per basemap_manage_core.js's budgetSegments), so the
+    // over-budget signal moved to the TRACK that holds it — a ring, not a
+    // solid-red fill.
+    const track = document.querySelector('[data-downloads-track]');
     expect(document.querySelector('[data-downloads-over]').hidden).toBe(false);
-    expect(bar.classList.contains('bg-status-error-text')).toBe(true);
-    expect(bar.classList.contains('bg-text-2')).toBe(false);
+    expect(track.classList.contains('ring-2')).toBe(true);
+    expect(track.classList.contains('ring-status-error-text')).toBe(true);
   });
 
   it('keeps the over-budget line hidden while under budget', async () => {
@@ -613,9 +717,9 @@ describe('the budget readout', () => {
     await settle();
 
     expect(document.querySelector('[data-downloads-over]').hidden).toBe(true);
-    expect(
-      document.querySelector('[data-downloads-bar]').classList.contains('bg-text-2'),
-    ).toBe(true);
+    const track = document.querySelector('[data-downloads-track]');
+    expect(track.classList.contains('ring-2')).toBe(false);
+    expect(track.classList.contains('ring-status-error-text')).toBe(false);
   });
 });
 
@@ -866,10 +970,18 @@ describe('renaming an area (SNOW-635)', () => {
 });
 
 describe('deleting an area', () => {
+  // SNOW-645 review: rows are grouped by kind now (REGIONS before CUSTOM
+  // AREAS), so a bare "first [data-downloads-delete] in the document"
+  // would land on Aletsch (the region), not custom-a1 — a silent change
+  // of which area every test below actually deletes. Scoped to the
+  // custom-areas group to keep deleting THAT area (120 MB, the one every
+  // assertion below was written against).
   async function openAndDeleteFirst() {
     openSheet();
     await settle();
-    document.querySelector('[data-downloads-delete]').click();
+    document
+      .querySelector('[data-downloads-list-custom] [data-downloads-delete]')
+      .click();
     await settle();
   }
 
@@ -905,8 +1017,8 @@ describe('deleting an area', () => {
 
     expect(rowLabels()).toEqual(['Aletsch']);
     expect(
-      document.querySelector('[data-downloads-summary]').textContent,
-    ).toBe('40.0 MB of 500 MB used');
+      document.querySelector('[data-downloads-summary-value]').textContent,
+    ).toBe('40.0 MB');
   });
 
   it('deletes only its own custom area, leaving a second one intact', async () => {
@@ -970,7 +1082,7 @@ describe('deleting an area', () => {
     expect(window.caches.delete).not.toHaveBeenCalled();
     expect(rows.get('basemap.regions')).toHaveLength(1);
     expect(rows.get('basemap.customAreas')).toHaveLength(1);
-    expect(rowLabels()).toEqual(['Custom area 1', 'Aletsch']);
+    expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
   });
 
   it('keeps the record intact when the bucket delete throws', async () => {
@@ -984,7 +1096,12 @@ describe('deleting an area', () => {
 
     expect(rows.get('basemap.regions')).toHaveLength(1);
     expect(rows.get('basemap.customAreas')).toHaveLength(1);
-    const button = document.querySelector('[data-downloads-delete]');
+    // The failure mutates the SAME button that was clicked (the custom
+    // area's — see openAndDeleteFirst), not a fresh re-render, so the
+    // assertion has to stay scoped to it too.
+    const button = document.querySelector(
+      '[data-downloads-list-custom] [data-downloads-delete]',
+    );
     expect(button.textContent).toBe("That download couldn't be removed. Try again.");
     expect(button.hasAttribute('disabled')).toBe(true);
   });
