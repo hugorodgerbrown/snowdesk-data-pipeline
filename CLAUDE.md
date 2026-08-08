@@ -202,14 +202,20 @@ first layer that can hold the assertion:
    WebGL canvas, the service worker, real clipboard/WebAuthn ceremonies,
    and multi-script user journeys.
 
-**`tests/e2e/` is capped at ~15 tests.** One file per user journey, each
-under 40 lines, each mapping to a named scenario family in
-[`docs/testing-scenarios.md`](docs/testing-scenarios.md) — the suite
-mirrors the manual test script and nothing else. Adding a sixteenth means
-deleting one, or changing this rule on purpose. The suite is a smoke
-alarm, not a fire inspection: it answers "can a user still see the map,
-read a bulletin, search, sign in, and reload offline", and it must fail
-loudly for a broken page rather than for a shifted pixel.
+**`tests/e2e/` is small on purpose** — roughly a dozen tests. One file per
+user journey, each under 40 lines, each mapping to a named scenario family
+in [`docs/testing-scenarios.md`](docs/testing-scenarios.md); the suite
+mirrors the manual test script and nothing else. It is a smoke alarm, not
+a fire inspection: it answers "can a user still see the map, read a
+bulletin, search, sign in, and reload offline", and it must fail loudly
+for a broken page rather than for a shifted pixel.
+
+The guard's `MAX_TESTS` is a **backstop set well above that working size**,
+not a target to fill or a line to squeeze under. It exists to catch a
+runaway, not to arbitrate a sixteenth test. If a genuine journey needs a
+browser and takes the suite over, raise the constant in a ticket that says
+why — the real question is always whether the assertion belongs in
+`tests/js/` instead.
 
 The cap exists because it was breached twice. SNOW-494 cut the suite to
 110 tests in July 2026; sixteen days later it was 280, because every UI
@@ -220,11 +226,12 @@ belongs in `tests/js/`. Full rules, the exclusion list, and the current
 journey inventory: [`docs/client-side-tests.md`](docs/client-side-tests.md).
 
 The cap is enforced, not advisory: **`tox -e e2e-lint`** (`bin/e2e-lint`)
-fails on more than 15 test functions, on any test longer than 40 lines,
+fails past a suite-size backstop, on any test longer than 40 lines,
 and on a test module whose docstring doesn't carry a `Scenario:` line
 naming a real heading in `docs/testing-scenarios.md`. Conventions did not
 hold this line twice; a failing build does. Raising `MAX_TESTS` is a
-deliberate edit in a ticket that says why — not a way to land a PR. The
+deliberate edit in a ticket that says why — a legitimate move, just not a
+reflex for landing a PR whose assertion belongs a layer down. The
 opt-out for a journey with no manual scenario is
 `Scenario: none — <reason>`, audit-visible via `bin/e2e-lint --show-scenarios`.
 
@@ -410,7 +417,7 @@ uv run tox -e js-globals-lint # fails on reads of window/self globals nothing as
 uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 uv run tox -e migrations-lint # duplicate migration numbers / multi-leaf migration graph
-uv run tox -e e2e-lint        # Playwright cap: ~15 tests, ≤40 lines each, scenario-mapped
+uv run tox -e e2e-lint        # Playwright guard: suite-size backstop, ≤40 lines each, scenario-mapped
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
