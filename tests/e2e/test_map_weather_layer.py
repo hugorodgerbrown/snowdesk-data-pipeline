@@ -16,6 +16,19 @@ click below a no-op — mirrors test_map_layer_sync_status.py's
 every test here forces it on with ``@override_flag`` rather than signing
 in as a superuser — the flag check is server-side per request and
 ``override_flag`` patches that regardless of the requesting user.
+
+SNOW-649 brought this file under the e2e cap: the shared seeding moved to
+``_seed_verbier_weather`` so each test fits the 40-line budget, and the
+``Scenario:`` line below is what ``bin/e2e-lint`` checks. No assertion was
+removed. The row-gating half of this file (aria-disabled on an
+out-of-window date) is the kind of state assertion the layer rules point at
+``tests/js`` — ``test_map_layer_sync_status.js`` already owns 37 cases of
+that surface — so if this file ever needs to shrink again, that is the test
+to move rather than the icon-registration one, which genuinely needs a real
+MapLibre canvas.
+
+Scenario: none — the weather overlay has no manual scenario yet; add one to
+docs/testing-scenarios.md and cite it here
 """
 
 from __future__ import annotations
@@ -91,14 +104,15 @@ def _toggle_weather_on(page: Page) -> Any:
     return toggle
 
 
-@override_flag("weather_layer", active=True)
-@pytest.mark.django_db(transaction=True)
-def test_overlay_toggle_installs_source_and_registers_icons(
-    live_server: LiveServer, page: Page, django_db_blocker: Any
-) -> None:
-    """Enabling the overlay fetches the geojson, installs the symbol layer,
-    and rasterises + registers the icon the seeded point's weather uses.
-    """
+# The weather row's aria-disabled probe, used three times below.
+_ROW_DISABLED_JS = (
+    "() => document.querySelector('[data-overlay-key=\"weather\"]')"
+    ".getAttribute('aria-disabled')"
+)
+
+
+def _seed_verbier_weather(django_db_blocker: Any) -> None:
+    """Seed one resort-anchored forecast point carrying today's weather."""
     with django_db_blocker.unblock():
         point = ForecastPointFactory.create(latitude=46.2, longitude=7.6)
         ResortFactory.create(
@@ -111,6 +125,17 @@ def test_overlay_toggle_installs_source_and_registers_icons(
             forecast_point=point,
             valid_for_date=datetime.date.today(),
         )
+
+
+@override_flag("weather_layer", active=True)
+@pytest.mark.django_db(transaction=True)
+def test_overlay_toggle_installs_source_and_registers_icons(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> None:
+    """Enabling the overlay fetches the geojson, installs the symbol layer,
+    and rasterises + registers the icon the seeded point's weather uses.
+    """
+    _seed_verbier_weather(django_db_blocker)
 
     _navigate_home(page, live_server.url)
     _toggle_weather_on(page)
@@ -150,18 +175,7 @@ def test_sync_dot_resolves_cached_after_toggle(
     load succeeds — the same optimistic markCached() path every other
     lazy overlay tier uses.
     """
-    with django_db_blocker.unblock():
-        point = ForecastPointFactory.create(latitude=46.2, longitude=7.6)
-        ResortFactory.create(
-            name="Verbier",
-            latitude=46.2,
-            longitude=7.6,
-            forecast_point=point,
-        )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
-            valid_for_date=datetime.date.today(),
-        )
+    _seed_verbier_weather(django_db_blocker)
 
     _navigate_home(page, live_server.url)
     _toggle_weather_on(page)
@@ -179,50 +193,27 @@ def test_sync_dot_resolves_cached_after_toggle(
 def test_row_disables_on_out_of_window_date(
     live_server: LiveServer, page: Page, django_db_blocker: Any
 ) -> None:
-    """Scrubbing to a date outside the stored forecast window disables the row.
+    """Scrubbing outside the stored forecast window disables the row.
 
-    Dispatches ``snowdesk:date-changed`` directly (the explicit-dispatch
-    technique ``test_favourites.py`` uses for ``snowdesk:favourite-selected``)
-    rather than driving the real scrubber UI, since only the date value —
-    not the drag gesture — matters to the behaviour under test.
+    Dispatches ``snowdesk:date-changed`` directly rather than driving the
+    scrubber UI — only the date value matters here, not the drag gesture.
     """
-    with django_db_blocker.unblock():
-        point = ForecastPointFactory.create(latitude=46.2, longitude=7.6)
-        ResortFactory.create(
-            name="Verbier",
-            latitude=46.2,
-            longitude=7.6,
-            forecast_point=point,
-        )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
-            valid_for_date=datetime.date.today(),
-        )
+    _seed_verbier_weather(django_db_blocker)
 
     _navigate_home(page, live_server.url)
     toggle = _toggle_weather_on(page)
     page.wait_for_function("() => !!MAP.getSource('weather')")
 
-    # Wait for the row to reach a settled (non out-of-window) state before
-    # jumping to a date outside the window, so the assertion below is
-    # attributable to the date change rather than a boot-time default.
-    # This has to be a wait, not a bare read: the comment above claimed to
-    # wait while the assertion sampled once, so on a loaded machine it could
-    # catch the row still carrying its pre-payload disabled state and fail
-    # with "assert 'true' is None" — a race in the test, not in the layer.
-    page.wait_for_function(
-        "() => document.querySelector('[data-overlay-key=\"weather\"]')"
-        ".getAttribute('aria-disabled') === null"
-    )
+    # Must be a WAIT, not a bare read: sampling once can catch the row still
+    # carrying its pre-payload disabled state, failing with
+    # "assert 'true' is None" — a race in the test, not in the layer.
+    page.wait_for_function(f"() => ({_ROW_DISABLED_JS})() === null")
 
     page.evaluate(
         "() => document.dispatchEvent(new CustomEvent('snowdesk:date-changed', "
         "{ detail: { date: '2099-01-01', source: 'test' } }))"
     )
-    page.wait_for_function(
-        "() => document.querySelector('[data-overlay-key=\"weather\"]')"
-        ".getAttribute('aria-disabled') === 'true'"
-    )
+    page.wait_for_function(f"() => ({_ROW_DISABLED_JS})() === 'true'")
     assert toggle.get_attribute("aria-disabled") == "true"
     assert toggle.get_attribute("title")
 
@@ -231,7 +222,4 @@ def test_row_disables_on_out_of_window_date(
         "() => document.dispatchEvent(new CustomEvent('snowdesk:date-changed', "
         f"{{ detail: {{ date: '{datetime.date.today().isoformat()}', source: 'test' }} }}))"
     )
-    page.wait_for_function(
-        "() => document.querySelector('[data-overlay-key=\"weather\"]')"
-        ".getAttribute('aria-disabled') === null"
-    )
+    page.wait_for_function(f"() => ({_ROW_DISABLED_JS})() === null")
