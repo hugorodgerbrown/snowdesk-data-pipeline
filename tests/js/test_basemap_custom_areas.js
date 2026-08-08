@@ -173,9 +173,8 @@ function buildFixture() {
          data-season-end="2026-05-31"></div>
     <!-- SNOW-645: mapCustomDownloadControlInit's own guard clause requires
          every one of these to bind at all (map_custom_download.js:150) —
-         without them the roundel's basemap-identity colour below (the
-         "the custom roundel's basemap identity colour" describe block)
-         has nothing to render onto. -->
+         without them the roundel below (the "the custom roundel stays
+         monochrome" describe block) has nothing to render onto. -->
     <button id="map-custom-download-control" type="button"></button>
     <div id="map-frame-overlay" hidden>
       <div id="map-frame-instruction"></div>
@@ -186,9 +185,7 @@ function buildFixture() {
       <button id="map-frame-cancel" type="button">Cancel</button>
       <button id="map-frame-confirm" type="button">Download</button>
     </div>
-    <!-- SNOW-645 (review): activeBasemapKey() reads the checked radio
-         here — see map_basemap_downloads.js's own comment on why that is
-         display-only, picker-DOM state. -->
+    <!-- The basemap picker markup switchBasemap() (below) flips. -->
     <ul id="basemap-menu">
       <li role="none">
         <button
@@ -568,46 +565,24 @@ describe('renaming a custom area', () => {
   });
 });
 
-describe("the custom roundel's basemap identity colour (SNOW-645 review)", () => {
-  // Hugo's report: on the Swisstopo map, this roundel painted Standard's
-  // blue — his custom areas had been downloaded under Standard, and
-  // `_renderControl` used to paint an aggregate over the STORED areas'
-  // own basemapKeys (only agreeing when every non-orphaned area shared
-  // one). That was wrong: every roundel and overlay on the map reflects
-  // the basemap CURRENTLY SHOWING, not what an earlier download happened
-  // to use. `_renderControl` now paints `activeBasemapKey()`
-  // unconditionally — the SAME rule map_region_download.js's `setState`
-  // uses — regardless of what is stored. `refresh` is `renderControl`
-  // itself (map_custom_download.js's own bridge), so awaiting it settles
-  // the async coalescer before each assertion.
+describe("the custom roundel stays monochrome (SNOW-645 review, superseding an earlier basemap-colour pass)", () => {
+  // An earlier SNOW-645 pass painted this roundel the ACTIVE basemap's
+  // identity colour (fixing a report that it showed Standard's blue while
+  // Swisstopo was on screen). That traded one wrong answer for another —
+  // the sheet this roundel opens spans every basemap's downloads at once,
+  // so the trigger cannot honestly describe its contents with a single
+  // basemap's colour. It is monochrome now (map.css's --ink, scoped to
+  // this control's own id) regardless of what is stored or what basemap
+  // is active — this block is the regression test for THAT, replacing the
+  // colour-tracking coverage this file used to carry. `refresh` is
+  // `_renderControl` itself (map_custom_download.js's own bridge), so
+  // awaiting it settles the async coalescer before each assertion.
 
   function customControl() {
     return document.getElementById('map-custom-download-control');
   }
 
-  /**
-   * Let `switchBasemap`'s own event-triggered render settle.
-   *
-   * `switchBasemap` dispatches `snowdesk:basemap-changed` synchronously,
-   * which SYNCHRONOUSLY starts a `renderControl()` call via this file's
-   * listener — so a SECOND, explicit `await
-   * window.pwaCustomAreaDownload.refresh()` right after `switchBasemap`
-   * would race it: `coalesceRenders` makes that second call see the first
-   * one already "running" and return immediately without having painted
-   * anything, resolving before the real repaint lands. Awaiting a real
-   * tick instead lets the event's own call finish on its own schedule.
-   *
-   * @returns {Promise<void>}
-   */
-  function settle() {
-    return new Promise((resolve) => setTimeout(resolve, 0));
-  }
-
-  it("reads the ACTIVE basemap's key, not the stored areas' own — Hugo's exact case", async () => {
-    // Areas stored under openfreemap_liberty (the default the fixture
-    // boots with — see buildFixture's data-default-basemap-key), active
-    // basemap switched to swisstopo_winter: the roundel must read
-    // swisstopo_winter, never the key its own downloads were made under.
+  it('never carries a data-basemap-key attribute, downloads or not', async () => {
     installDbStub({
       'basemap.customAreas': [
         {
@@ -615,48 +590,30 @@ describe("the custom roundel's basemap identity colour (SNOW-645 review)", () =>
           ordinal: 1,
           bbox: [1, 2, 3, 4],
           bytes: 5 * MB,
-          basemapKey: 'openfreemap_liberty',
+          basemapKey: 'swisstopo_winter',
           savedAt: '2026-08-01T00:00:00.000Z',
-        },
-        {
-          id: 'custom-b2',
-          ordinal: 2,
-          bbox: [1, 2, 3, 4],
-          bytes: 9 * MB,
-          basemapKey: 'openfreemap_liberty',
-          savedAt: '2026-08-02T00:00:00.000Z',
         },
       ],
     });
     await window.pwaCustomAreaDownload.refresh();
-    expect(customControl().dataset.basemapKey).toBe('openfreemap_liberty');
 
-    switchBasemap('swisstopo_winter');
-    await settle();
-
-    expect(customControl().dataset.basemapKey).toBe('swisstopo_winter');
+    expect(customControl().dataset.basemapKey).toBeUndefined();
   });
 
-  it('is set to the active basemap even with no downloads at all', async () => {
-    installDbStub({});
-
-    await window.pwaCustomAreaDownload.refresh();
-
-    expect(customControl().dataset.basemapKey).toBe('openfreemap_liberty');
-  });
-
-  it('changes when snowdesk:basemap-changed fires — the regression test for the reported bug', async () => {
-    // No downloads at all: this asserts the colour itself tracks the
-    // event, independent of anything stored — the actual bug was that
-    // this roundel simply never re-rendered on a basemap switch (SNOW-634
-    // had dropped the listener on since-outdated reasoning).
+  it('stays keyless and unchanged across a basemap switch — the regression test for the reported bug', async () => {
+    // SNOW-634 dropped this control's snowdesk:basemap-changed listener; a
+    // later SNOW-645 pass reinstated it to track the colour; this pass
+    // drops it again, now for good — the colour it existed to keep in
+    // sync is gone. A switch fires the same event this control used to
+    // listen for; the roundel's dataset must simply not react to it.
     installDbStub({});
     await window.pwaCustomAreaDownload.refresh();
-    expect(customControl().dataset.basemapKey).toBe('openfreemap_liberty');
+    expect(customControl().dataset.downloadState).toBe('idle');
 
     switchBasemap('swisstopo_winter');
-    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(customControl().dataset.basemapKey).toBe('swisstopo_winter');
+    expect(customControl().dataset.basemapKey).toBeUndefined();
+    expect(customControl().dataset.downloadState).toBe('idle');
   });
 });

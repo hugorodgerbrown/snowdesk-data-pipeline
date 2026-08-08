@@ -4,8 +4,9 @@
  *
  * The pure half of the "Manage downloads" sheet: the budget arithmetic,
  * the MB conversion and its display form, and the row model the sheet
- * renders. The DOM half is covered by test_map_downloads_manager.js and
- * tests/e2e/test_manage_downloads.py.
+ * renders. The DOM half is covered by test_map_downloads_manager.js
+ * (SNOW-649 cut the e2e suite to its ~dozen-test cap; this module's own
+ * coverage lives here and in that file, not in tests/e2e/).
  *
  * Three of these assertions are load-bearing rather than incidental:
  *
@@ -349,6 +350,96 @@ describe('manageRows', () => {
       options,
     );
     expect(rows[0].basemapKey).toBe('');
+  });
+});
+
+describe('groupRowsByKind (SNOW-645 review — grouped-by-kind sheet)', () => {
+  it('partitions into region and custom, keeping manageRows own order within each', () => {
+    const rows = [
+      { id: 'custom-a1', kind: 'custom' },
+      { id: 'region-CH-2101', kind: 'region' },
+      { id: 'custom-b2', kind: 'custom' },
+      { id: 'region-CH-2102', kind: 'region' },
+    ];
+    const grouped = core.groupRowsByKind(rows);
+    expect(grouped.region.map((r) => r.id)).toEqual(['region-CH-2101', 'region-CH-2102']);
+    expect(grouped.custom.map((r) => r.id)).toEqual(['custom-a1', 'custom-b2']);
+  });
+
+  it('treats anything not kind "custom" as a region, matching manageRows own default', () => {
+    const grouped = core.groupRowsByKind([{ id: 'x', kind: 'region' }, { id: 'y' }]);
+    expect(grouped.region.map((r) => r.id)).toEqual(['x', 'y']);
+    expect(grouped.custom).toEqual([]);
+  });
+
+  it('gives back two empty arrays for nothing stored, never undefined', () => {
+    expect(core.groupRowsByKind([])).toEqual({ region: [], custom: [] });
+  });
+
+  it('tolerates a non-array input the same way manageRows does', () => {
+    expect(core.groupRowsByKind(undefined)).toEqual({ region: [], custom: [] });
+    expect(core.groupRowsByKind(null)).toEqual({ region: [], custom: [] });
+  });
+});
+
+describe('budgetSegments (SNOW-645 review — per-basemap budget bar)', () => {
+  it('sums bytes per basemapKey rather than emitting one segment per area', () => {
+    const segments = core.budgetSegments([
+      { basemapKey: 'openfreemap_liberty', bytes: 10 * MB },
+      { basemapKey: 'openfreemap_liberty', bytes: 5 * MB },
+      { basemapKey: 'swisstopo_winter', bytes: 8 * MB },
+    ]);
+    expect(segments).toEqual([
+      { basemapKey: 'openfreemap_liberty', bytes: 15 * MB },
+      { basemapKey: 'swisstopo_winter', bytes: 8 * MB },
+    ]);
+  });
+
+  it('orders keyed segments largest first', () => {
+    const segments = core.budgetSegments([
+      { basemapKey: 'a', bytes: 1 * MB },
+      { basemapKey: 'b', bytes: 20 * MB },
+      { basemapKey: 'c', bytes: 5 * MB },
+    ]);
+    expect(segments.map((s) => s.basemapKey)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('puts the keyless group last regardless of its size', () => {
+    // A legacy (pre-SNOW-645) record or an orphaned bucket has no
+    // basemapKey — that group must never jump the queue just because it
+    // happens to be the biggest one on the device.
+    const segments = core.budgetSegments([
+      { basemapKey: '', bytes: 100 * MB },
+      { basemapKey: 'openfreemap_liberty', bytes: 1 * MB },
+    ]);
+    expect(segments.map((s) => s.basemapKey)).toEqual(['openfreemap_liberty', '']);
+  });
+
+  it('treats a missing/null basemapKey the same as an empty string', () => {
+    const segments = core.budgetSegments([
+      { basemapKey: null, bytes: 4 * MB },
+      { bytes: 6 * MB },
+    ]);
+    expect(segments).toEqual([{ basemapKey: '', bytes: 10 * MB }]);
+  });
+
+  it('drops entries with zero, negative or unusable bytes', () => {
+    const segments = core.budgetSegments([
+      { basemapKey: 'a', bytes: 0 },
+      { basemapKey: 'b', bytes: -5 },
+      { basemapKey: 'c', bytes: NaN },
+      { basemapKey: 'd', bytes: 3 * MB },
+    ]);
+    expect(segments).toEqual([{ basemapKey: 'd', bytes: 3 * MB }]);
+  });
+
+  it('returns an empty array for nothing stored', () => {
+    expect(core.budgetSegments([])).toEqual([]);
+  });
+
+  it('tolerates a non-array input', () => {
+    expect(core.budgetSegments(undefined)).toEqual([]);
+    expect(core.budgetSegments(null)).toEqual([]);
   });
 });
 
