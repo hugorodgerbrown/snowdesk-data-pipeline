@@ -326,7 +326,11 @@ repeated here.
             <label for="map-downloads-overlay-toggle" class="text-sm font-medium text-text-1">
                 {% trans "Show areas on the map" %}
             </label>
-            {% include "includes/_switch.html" with id="map-downloads-overlay-toggle" extra_attrs="data-downloads-overlay-toggle" %}
+            {# SNOW-645 review (SAST): map_downloads_manager.js selects this  #}
+            {# instance by id (#map-downloads-overlay-toggle) directly — see  #}
+            {# _switch.html's own docstring for why the data-attribute hook   #}
+            {# this used to carry (extra_attrs) is gone.                      #}
+            {% include "includes/_switch.html" with id="map-downloads-overlay-toggle" %}
         </div>
     </div>
 </template>

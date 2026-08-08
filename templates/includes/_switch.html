@@ -89,14 +89,26 @@ still keeps it declared once, in `@theme`, alongside its own track colour.
 Parameters (passed via {% include … with … %}):
   id            (string) — DOM id, so a caller's own <label for="…">
                 addresses this exact input (this partial's OWN wrapping
-                label uses it too). Required.
-  extra_attrs   (string, optional) — Raw attribute text appended to the
-                <input> verbatim (e.g. `data-downloads-overlay-toggle`,
-                or the bare word `checked`/`disabled` for a demo state —
-                see the component library's own variants). Django's
-                `{% include %}` cannot express "add this bare attribute
-                conditionally", so callers pass it as text; nothing here
-                is ever built from user-supplied content.
+                label uses it too), and so the caller's own JS can select
+                this exact instance directly. Required.
+  checked       (bool, optional) — renders the input pre-checked (a demo
+                state — see the component library's own variants).
+                Default False.
+  disabled      (bool, optional) — renders the input disabled (a demo
+                state). Default False.
+
+SNOW-645 review (SAST): this used to take a single `extra_attrs` string,
+appended to the <input> verbatim — semgrep's
+`unquoted-attribute-var` flagged it as a live attribute-injection surface
+in a REUSABLE component: today's only real caller passed a static
+`data-downloads-overlay-toggle` string, but the whole point of a raw
+passthrough parameter is that the NEXT caller can pass anything,
+including a variable. Replaced with the two typed booleans above — the
+only two things `extra_attrs` was ever actually used for (the third use,
+a bare data-attribute hook for map_downloads_manager.js's own JS to
+select this instance, was dropped entirely: `id="{{ id }}"` already gives
+JS a real hook, so the caller now selects `#map-downloads-overlay-toggle`
+directly instead of `[data-downloads-overlay-toggle]`).
 {% endcomment %}
 <label
     for="{{ id }}"
@@ -107,7 +119,8 @@ Parameters (passed via {% include … with … %}):
         type="checkbox"
         role="switch"
         class="peer sr-only"
-        {{ extra_attrs|default:"" }}
+        {% if checked %}checked{% endif %}
+        {% if disabled %}disabled{% endif %}
     >
     <span
         aria-hidden="true"

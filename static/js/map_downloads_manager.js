@@ -431,8 +431,14 @@
     // own that could drift from it. open() calls show() before this runs
     // (see its own comment), so a freshly opened sheet always paints this
     // already checked.
+    //
+    // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
+    // includes/_switch.html dropped its extra_attrs passthrough (a live
+    // attribute-injection surface semgrep flagged), and the switch already
+    // renders id="{{ id }}", which this sheet already sets to the one
+    // fixed value below — a second hook was never needed.
     const overlayToggle = /** @type {HTMLInputElement|null} */ (
-      sheet.querySelector('[data-downloads-overlay-toggle]')
+      sheet.querySelector('#map-downloads-overlay-toggle')
     );
     if (overlayToggle) {
       overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
@@ -926,7 +932,7 @@
   // nothing else on the sheet depends on this state.
   sheet.addEventListener('change', function (event) {
     const target = /** @type {HTMLInputElement} */ (event.target);
-    if (!target || !target.matches || !target.matches('[data-downloads-overlay-toggle]')) {
+    if (!target || !target.matches || !target.matches('#map-downloads-overlay-toggle')) {
       return;
     }
     if (target.checked) {

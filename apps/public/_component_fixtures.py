@@ -1301,24 +1301,22 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Off",
-        "context": {"id": "component-library-switch-off", "extra_attrs": ""},
+        "context": {"id": "component-library-switch-off"},
     },
     {
         "caption": "On",
-        "context": {"id": "component-library-switch-on", "extra_attrs": "checked"},
+        "context": {"id": "component-library-switch-on", "checked": True},
     },
     {
         # SNOW-645 review: includes/_switch.html's own wrapping <label>
         # carries has-[:disabled]:cursor-not-allowed/opacity-50, driven by
         # the :disabled pseudo-class on the real <input> nested inside it —
         # a state this fixture can render statically (unlike :focus-visible,
-        # which needs real interaction) by passing the bare `disabled`
-        # attribute through `extra_attrs`, the same mechanism `checked`
-        # above uses.
+        # which needs real interaction) via the typed `disabled` boolean.
         "caption": "Disabled",
         "context": {
             "id": "component-library-switch-disabled",
-            "extra_attrs": "disabled",
+            "disabled": True,
         },
     },
 )
@@ -1338,8 +1336,8 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
             "menu_id": "component-library-overflow-menu-closed",
             "trigger_label": "More actions",
             "items": [
-                {"label": "Rename", "attrs": ""},
-                {"label": "Remove", "attrs": ""},
+                {"label": "Rename"},
+                {"label": "Remove"},
             ],
         },
     },
@@ -1350,8 +1348,8 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
             "menu_id": "component-library-overflow-menu-open",
             "trigger_label": "More actions",
             "items": [
-                {"label": "Rename", "attrs": ""},
-                {"label": "Remove", "attrs": ""},
+                {"label": "Rename"},
+                {"label": "Remove"},
             ],
             "open": True,
         },
@@ -1363,7 +1361,7 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
             "menu_id": "component-library-overflow-menu-region",
             "trigger_label": "More actions",
             "items": [
-                {"label": "Remove", "attrs": ""},
+                {"label": "Remove"},
             ],
             "open": True,
         },

@@ -113,8 +113,7 @@ function buildFixture() {
         <div>
           <label for="map-downloads-overlay-toggle">Show areas on the map</label>
           <label for="map-downloads-overlay-toggle">
-            <input id="map-downloads-overlay-toggle" type="checkbox" role="switch"
-                   data-downloads-overlay-toggle>
+            <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
           </label>
         </div>
       </div>
@@ -557,7 +556,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     await settle();
 
     expect(
-      document.querySelector('[data-downloads-overlay-toggle]').checked,
+      document.getElementById('map-downloads-overlay-toggle').checked,
     ).toBe(true);
   });
 
@@ -567,7 +566,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     openSheet();
     await settle();
 
-    const toggle = document.querySelector('[data-downloads-overlay-toggle]');
+    const toggle = document.getElementById('map-downloads-overlay-toggle');
     toggle.checked = true;
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
     expect(window.pwaDownloadedOverlay.show).toHaveBeenCalledTimes(2); // open() + this

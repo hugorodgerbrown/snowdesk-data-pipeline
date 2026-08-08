@@ -39,15 +39,17 @@ Parameters (passed via {% include … with … %}):
                  aria-controls points at it.
   trigger_label  (string) — aria-label for the trigger — the "…" glyph
                  alone names nothing to a screen reader.
-  items          (list of {label, attrs}, optional) — one <li><button>
-                 per entry, looped directly. Only usable from a PYTHON
-                 caller (a view, or — today — the component library's
-                 fixtures): Django's `{% include … with … %}` cannot
-                 construct a list literal inside a template FILE, so a
-                 template-file caller with a fixed set of items (like
+  items          (list of {label}, optional) — one <li><button> per
+                 entry, looped directly. Only usable from a PYTHON caller
+                 (a view, or — today — the component library's fixtures):
+                 Django's `{% include … with … %}` cannot construct a
+                 list literal inside a template FILE, so a template-file
+                 caller with a fixed set of items (like
                  _map_downloads_sheet.html's row template) must use
                  `items_template` instead. Ignored when `items_template`
-                 is provided.
+                 is provided. Demo-only today — every real item (Rename,
+                 Remove) is rendered via `items_template` instead, which
+                 owns its own attributes directly in its own markup.
   items_template (string, optional) — a template path `{% include %}`d
                  verbatim inside the <ul> in place of the `items` loop —
                  mirrors includes/_collapsible_panel.html's own
@@ -58,11 +60,16 @@ Parameters (passed via {% include … with … %}):
                  for the component library's own demo (no JS runs there
                  to open it otherwise). Default closed.
 
-Either `items` OR `items_template` — whichever fits the caller — supplies
-`attrs`: raw attribute text appended to an item's <button> verbatim (e.g.
-`data-downloads-rename` — the caller's own delegated click handler reads
-it back off the button, the same way _switch.html's `extra_attrs` works)
-— this partial never has to know what a caller's handler expects to find.
+SNOW-645 review (SAST): `items` used to also accept a per-item `attrs`
+string, appended to that item's <button> verbatim — semgrep flagged it as
+a live attribute-injection surface, the same class of finding as
+_switch.html's former `extra_attrs`. Dropped rather than fixed: no real
+caller ever used it (the sheet's own Rename/Remove buttons render through
+`items_template`, which owns its own markup and needs no passthrough at
+all), so the fixture-only `items` loop needed no attribute hook to begin
+with. A future caller that genuinely needs one should render a specific
+NAMED, quoted attribute here (e.g. `data-action="{{ item.action }}"`),
+never a raw blob.
 
 SNOW-645 review: the trigger's hover fill is `hover:bg-chip-strong`
 (`src/css/main.css` §1) — the same translucent-black token
@@ -101,7 +108,6 @@ alone, as it shipped originally).
                     <button
                         type="button"
                         role="menuitem"
-                        {{ item.attrs }}
                         class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
                     >
                         {{ item.label }}
