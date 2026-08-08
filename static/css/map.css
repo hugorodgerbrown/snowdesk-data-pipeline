@@ -1694,8 +1694,9 @@
 
 /* SNOW-645: once a run's basemap is known, the roundel fill takes that
    basemap's identity colour instead of the generic green — same tokens as
-   the .basemap-swatch in the Manage downloads sheet (src/css/main.css §2),
-   so the two surfaces agree. No data-basemap-key attribute (unresolved, or
+   .basemap-identity-fill in the Manage downloads sheet (src/css/main.css
+   §2, generalised to also drive the budget bar's segments), so the
+   surfaces agree. No data-basemap-key attribute (unresolved, or
    a record predating this change) keeps the plain --color-sync-ok green
    above — "downloaded, basemap unknown".
 

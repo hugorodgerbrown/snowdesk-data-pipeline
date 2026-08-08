@@ -142,11 +142,25 @@ repeated here.
             {# stated in words immediately above it, so a screen reader     #}
             {# gets the number rather than a percentage role.               #}
             <p data-downloads-summary class="text-sm text-text-2"></p>
+            {# SNOW-645 review: the used portion is no longer one flat      #}
+            {# fill — `data-downloads-bar` is a flex row map_downloads_     #}
+            {# manager.js's render() populates with one segment per         #}
+            {# basemap actually stored (grouped and summed, not one per     #}
+            {# area — see budgetSegments in basemap_manage_core.js), sized  #}
+            {# by flex-grow in proportion to that basemap's share of the    #}
+            {# used bytes and coloured via the same `.basemap-identity-     #}
+            {# fill` rules the row swatches use. A keyless group (legacy    #}
+            {# records, orphaned buckets) always renders last, in the       #}
+            {# neutral fallback colour. `data-downloads-track` is the       #}
+            {# outer element that now carries the over-budget signal (an    #}
+            {# outline) — the bar itself can no longer turn solid red once  #}
+            {# it is carrying real basemap colours.                         #}
             <div
+                data-downloads-track
                 class="h-1.5 w-full overflow-hidden rounded-pill bg-border"
                 aria-hidden="true"
             >
-                <div data-downloads-bar class="h-full rounded-pill bg-text-2" style="width: 0%"></div>
+                <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
             </div>
         </div>
         <p class="text-xs text-text-3">
@@ -163,8 +177,14 @@ repeated here.
 <template id="map-downloads-row-template">
     <li class="flex items-center justify-between gap-3 py-2">
         <span class="flex min-w-0 flex-col">
+            {# SNOW-645 review: the separate "Region" / "Custom area" line   #}
+            {# that used to sit under the name is folded into this one, via #}
+            {# the `row-title` format string below — "Verbier (Region)".    #}
+            {# An orphaned row (SNOW-612) has no usable name (its `label`   #}
+            {# is the bare bucket id), so buildRow skips the format for it  #}
+            {# and shows the "Incomplete download" string alone instead —   #}
+            {# see this file's `kind-incomplete` string and buildRow.       #}
             <span data-row-label class="truncate text-sm text-text-1"></span>
-            <span data-row-kind class="text-xs text-text-3"></span>
             {# SNOW-645: which basemap this area was downloaded under.       #}
             {# map_downloads_manager.js's buildRow removes this whole line   #}
             {# for a keyless (legacy) or orphaned row rather than showing an #}
@@ -173,7 +193,7 @@ repeated here.
             <span data-row-basemap class="flex items-center gap-1.5 text-xs text-text-3">
                 <span
                     data-row-basemap-swatch
-                    class="basemap-swatch inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border"
+                    class="basemap-identity-fill inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border"
                     aria-hidden="true"
                 ></span>
                 <span data-row-basemap-name></span>
@@ -202,6 +222,12 @@ repeated here.
 {# templates and Python, so anything JS renders has to be handed to it      #}
 {# from here. ``%(name)s`` / ``%(size)s`` are substituted by the module.    #}
 <template id="map-downloads-strings-template">
+    {# SNOW-645 review: `row-title` is what buildRow now composes the row's #}
+    {# name line from — "%(name)s (%(kind)s)", e.g. "Verbier (Region)" —    #}
+    {# using `kind-region` / `kind-custom` below to fill %(kind)s. An       #}
+    {# orphaned row (no usable name) skips this format and shows            #}
+    {# `kind-incomplete` alone instead — see buildRow.                      #}
+    <span data-string="row-title">{% blocktrans %}%(name)s (%(kind)s){% endblocktrans %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
     {# SNOW-612: a pinned bucket left on disk by a download that failed    #}

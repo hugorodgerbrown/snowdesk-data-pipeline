@@ -193,6 +193,11 @@
    * @type {Object<string, string>}
    */
   var STRINGS = self.pwaStrings.read('map-downloads-strings-template', {
+    // SNOW-645 review: composes a row's title from its name and kind —
+    // "Verbier (Region)". An orphaned row has no usable name (its
+    // `label` is the bare bucket id), so buildRow skips this format for
+    // it and uses `kind-incomplete` alone instead.
+    'row-title': '%(name)s (%(kind)s)',
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     'kind-incomplete': 'Incomplete download',
@@ -393,10 +398,35 @@
     const bar = sheet.querySelector('[data-downloads-bar]');
     if (bar) {
       bar.style.width = summary.pct + '%';
-      // The bar is the glance-level signal; over budget it stops being a
-      // neutral readout and becomes the thing the sheet is about.
-      bar.classList.toggle('bg-status-error-text', summary.overBudget);
-      bar.classList.toggle('bg-text-2', !summary.overBudget);
+      bar.textContent = '';
+      // SNOW-645 review: one segment per basemap actually stored (grouped
+      // and summed by basemap_manage_core.js's budgetSegments — never one
+      // per area), each sized by flex-grow in proportion to its own share
+      // of the used bytes and coloured via .basemap-identity-fill's
+      // data-basemap-key rules (src/css/main.css §2) — the same rules the
+      // row swatches use, so the two readings of "what basemap is this"
+      // agree. JS sets the key and the grow weight; nothing here touches
+      // a colour or builds a class string.
+      for (const segment of core.budgetSegments(list)) {
+        const el = document.createElement('div');
+        el.className = 'basemap-identity-fill h-full';
+        el.dataset.basemapKey = segment.basemapKey;
+        el.style.flexGrow = String(segment.bytes);
+        el.style.flexShrink = '0';
+        el.style.flexBasis = '0';
+        bar.appendChild(el);
+      }
+    }
+
+    const track = sheet.querySelector('[data-downloads-track]');
+    if (track) {
+      // The bar itself can no longer turn solid red once it is carrying
+      // real basemap colours (SNOW-645 review) — the over-budget signal
+      // moves to the track that holds it instead. Still toggled, not a
+      // one-way class: coming back under budget (a delete, or raising the
+      // budget) has to clear it on the next render.
+      track.classList.toggle('ring-2', summary.overBudget);
+      track.classList.toggle('ring-status-error-text', summary.overBudget);
     }
 
     const over = sheet.querySelector('[data-downloads-over]');
@@ -455,23 +485,29 @@
     // name, or an unrenamed custom area's numbered default, filled in
     // upstream by map.js's basemapDownloadedAreas() — so this module has
     // no ordinal-aware fallback of its own to build any more.
+    //
+    // SNOW-645 review: the separate "Region" / "Custom area" line that
+    // used to sit under the name is folded into this one via `row-title`
+    // — "Verbier (Region)". An orphaned row (SNOW-612) is labelled by
+    // what it IS — the leftovers of a download that never finished —
+    // rather than as the region or custom area it was going to be: its
+    // `label` is the bare bucket id, not a name worth showing, so it
+    // skips the format entirely and reads as `kind-incomplete` alone.
+    // Calling it a finished download by wrapping the id would be a lie
+    // about what the device can do offline.
     const label = fragment.querySelector('[data-row-label]');
-    if (label) label.textContent = row.label;
-
-    const kind = fragment.querySelector('[data-row-kind]');
-    if (kind) {
-      // SNOW-612: an orphaned bucket is labelled by what it IS — the
-      // leftovers of a download that never finished — rather than as the
-      // region or custom area it was going to be. It has no stored name
-      // to show, and calling it a finished download would be a lie about
-      // what the device can do offline.
+    if (label) {
       if (row.orphaned) {
-        kind.textContent = STRINGS['kind-incomplete'] || '';
+        label.textContent = STRINGS['kind-incomplete'] || '';
       } else {
-        kind.textContent =
+        const kind =
           row.kind === 'custom'
             ? STRINGS['kind-custom'] || ''
             : STRINGS['kind-region'] || '';
+        label.textContent = interpolate(STRINGS['row-title'], {
+          name: row.label,
+          kind: kind,
+        });
       }
     }
 
@@ -539,8 +575,27 @@
     // opened the menu, then clicked the roundel without closing it first —
     // and leaving it open would cover the sheet that just opened.
     window.pwaLayersMenu?.close();
+    // SNOW-645: this sheet is now what drives the downloaded-tiles map
+    // overlay — visible while it is open, hidden the moment it closes, no
+    // toggle anywhere else. Optional chaining because map.js's IIFE (which
+    // owns the overlay) runs before this file but this module sits outside
+    // the map bundle's own load-order contract — see the module header.
+    window.pwaDownloadedOverlay?.show();
     sheet.focus();
   }
+
+  // SNOW-645: every OTHER close route for this sheet — the header's ×
+  // button, and whatever Escape/backdrop handling includes/_overlay_sheet.html
+  // itself provides — goes through overlays.js's shared
+  // `[data-action="dismiss"]` handler, which dispatches this bubbling event
+  // rather than calling back into this module directly. The one close route
+  // that does NOT go through it is the add-trigger's own `sheet.hidden =
+  // true` below (a manual hide, not a dismiss), which calls hide() itself
+  // instead of relying on this listener.
+  document.addEventListener('overlay:dismissed', function (event) {
+    if (!event.detail || event.detail.overlay !== sheet) return;
+    window.pwaDownloadedOverlay?.hide();
+  });
 
   // Delegated on the sheet: cloned along with the body template on every
   // render, so a per-element listener would have to be rebound each time.
@@ -568,6 +623,10 @@
         return;
       }
       sheet.hidden = true;
+      // SNOW-645: a manual hide, not a dismiss — overlay:dismissed is not
+      // dispatched for this route, so the downloaded-tiles overlay has to
+      // be told directly, same as it would be on any other close.
+      window.pwaDownloadedOverlay?.hide();
       window.pwaCustomAreaDownload?.openFraming();
       return;
     }

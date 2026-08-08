@@ -76,6 +76,10 @@
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
  *     stranded (SNOW-612).
+ *   budgetSegments(areas)
+ *     SNOW-645 review: the budget bar's segments, one per basemap
+ *     actually stored (grouped and summed, not one per area), largest
+ *     first with the keyless group always last.
  */
 
 (function () {
@@ -396,6 +400,62 @@
     return out.concat(orphans);
   }
 
+  /**
+   * The budget bar's segments — one per basemap actually stored.
+   *
+   * SNOW-645 review: the bar used to be one flat fill for the whole used
+   * total. Grouped by basemap here, one segment per KEY (summed across
+   * however many areas share it), not one per area — a device with a
+   * dozen small custom areas under the same basemap would otherwise
+   * render a dozen slivers, which reads as noise rather than as "here is
+   * what OpenFreeMap is costing you".
+   *
+   * @param {Array<{bytes?: number, basemapKey?: string|null}>} areas As
+   *   ``manageRows`` returns them (or anything shaped the same — only
+   *   ``bytes`` and ``basemapKey`` are read).
+   * @returns {Array<{basemapKey: string, bytes: number}>} Sorted largest
+   *   first, with the keyless group (legacy records, orphaned buckets —
+   *   ``basemapKey`` falsy) always LAST regardless of its size. Stable
+   *   across renders for the same underlying data: two groups of equal
+   *   size never swap because sort itself is stable and the input order
+   *   (``manageRows``' own largest-first, tie-broken by recency then id)
+   *   is already deterministic. ``basemapKey`` is always a string, never
+   *   ``null`` — ``''`` for the keyless group — so a caller can hand it
+   *   straight to a ``data-basemap-key`` attribute or a MapLibre ``match``
+   *   arm without an extra null check.
+   */
+  function budgetSegments(areas) {
+    var list = Array.isArray(areas) ? areas : [];
+    var totals = Object.create(null);
+    var order = [];
+
+    for (var i = 0; i < list.length; i += 1) {
+      var area = list[i];
+      var bytes = Number(area && area.bytes);
+      if (!Number.isFinite(bytes) || bytes <= 0) continue;
+      var key = (area && area.basemapKey) || '';
+      if (!(key in totals)) {
+        totals[key] = 0;
+        order.push(key);
+      }
+      totals[key] += bytes;
+    }
+
+    var keyed = order.filter(function (key) {
+      return key !== '';
+    });
+    keyed.sort(function (a, b) {
+      return totals[b] - totals[a];
+    });
+
+    var segments = keyed.map(function (key) {
+      return { basemapKey: key, bytes: totals[key] };
+    });
+    if ('' in totals) segments.push({ basemapKey: '', bytes: totals[''] });
+
+    return segments;
+  }
+
   self.pwaBasemapManageCore = Object.freeze({
     megabytesToBytes: megabytesToBytes,
     formatMegabytes: formatMegabytes,
@@ -403,6 +463,7 @@
     budgetSummary: budgetSummary,
     manageRows: manageRows,
     reconcileAreas: reconcileAreas,
+    budgetSegments: budgetSegments,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,
     MIN_BUDGET_MB: MIN_BUDGET_MB,
     DEFAULT_BUDGET_MB: DEFAULT_BUDGET_MB,
