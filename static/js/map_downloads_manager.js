@@ -147,13 +147,16 @@
  *                                back to paint the toggle, rather than
  *                                keeping a flag of its own that could
  *                                drift from it.
- *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)`` and (SNOW-635)
- *                                ``rename(areaId, name)`` — the read, the
- *                                delete, and the rename. Without it the
- *                                sheet opens and honestly reports that it
- *                                can see nothing, which is the truthful
- *                                answer when the module that owns the
- *                                records hasn't loaded.
+ *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)``, (SNOW-635)
+ *                                ``rename(areaId, name)`` and (SNOW-645
+ *                                review) ``orphanBasemapKey(areaId)`` —
+ *                                the read, the delete, the rename, and
+ *                                an orphaned row's inferred (never
+ *                                stored) basemap for its pale rule.
+ *                                Without it the sheet opens and honestly
+ *                                reports that it can see nothing, which
+ *                                is the truthful answer when the module
+ *                                that owns the records hasn't loaded.
  *   window.pwaLayersMenu         ``close()``. Optional — without it the
  *                                menu is simply left open behind the
  *                                sheet (SNOW-634: the roundel that opens
@@ -405,6 +408,22 @@
       isCustomAreaId: downloadCore()?.isCustomAreaId,
     });
 
+    // SNOW-645 review: an orphaned row's left-edge rule should still read
+    // as a pale version of ITS basemap's colour where that can be
+    // inferred, not a flat neutral — see buildRow's own comment and
+    // map_basemap_downloads.js's orphanBasemapKey (whose own docstring
+    // has the "decoration only, not a record" caveat). Resolved here, in
+    // parallel, before any row is built — a row that hasn't resolved yet
+    // has no rule to paint.
+    await Promise.all(
+      rows
+        .filter((row) => row.orphaned)
+        .map(async (row) => {
+          row.recoveredBasemapKey =
+            (await window.pwaBasemapDownloads?.orphanBasemapKey?.(row.id)) || null;
+        }),
+    );
+
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
@@ -547,7 +566,10 @@
    * different shape.
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   renameable?: boolean, size: string, basemapKey?: string}} row
+   *   renameable?: boolean, size: string, basemapKey?: string,
+   *   recoveredBasemapKey?: string|null}} row `recoveredBasemapKey` is
+   *   set only for an orphaned row, by render()'s own pre-pass — see its
+   *   comment and map_basemap_downloads.js's `orphanBasemapKey`.
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -593,18 +615,37 @@
       }
     }
 
-    // SNOW-645 review: the coloured rule down the row's left edge — the
-    // basemap's identity colour when known, or (SNOW-612) a flat muted
-    // grey for an orphan, which has no known basemap and should read as
-    // paler/incomplete rather than falling through to the identity
-    // colours' own green "downloaded, basemap unknown" default (a
-    // meaning that only applies to a COMPLETED download of unknown
-    // basemap, which an orphan by definition is not).
+    // SNOW-645 review: the coloured rule down the row's left edge. A
+    // COMPLETED row (not orphaned) gets its basemap's identity colour at
+    // full strength, or — keyless — the shared .basemap-identity-fill
+    // fallback (--color-sync-ok green, "downloaded, basemap unknown"),
+    // same as the roundels.
+    //
+    // An ORPHANED row (SNOW-612 — no record, so no stored basemapKey) is
+    // never full-strength and never that green default, which means
+    // "downloaded, basemap unknown" — not true of something that never
+    // finished. Hugo's call: pale, not flat neutral — `opacity-40` is the
+    // shared "this row is incomplete" modifier applied to EITHER of:
+    //   - render()'s recoveredBasemapKey, when the orphan's own bucket's
+    //     tiles matched a template on record (an INFERENCE — see
+    //     orphanBasemapKey's own docstring; never treated as a stored
+    //     fact past this paint call), painted through the same
+    //     .basemap-identity-fill mechanism a normal row uses, or
+    //   - `bg-sync-off` (the grey this app already uses everywhere else
+    //     for "absent, not an error" — the sync dots' own uncached
+    //     colour) when nothing could be inferred — explicitly NOT
+    //     .basemap-identity-fill's keyless green fallback, for the same
+    //     "not actually downloaded" reason above.
     const rule = fragment.querySelector('[data-row-rule]');
     if (rule) {
       if (row.orphaned) {
-        rule.classList.remove('basemap-identity-fill');
-        rule.classList.add('bg-border');
+        rule.classList.add('opacity-40');
+        if (row.recoveredBasemapKey) {
+          rule.dataset.basemapKey = row.recoveredBasemapKey;
+        } else {
+          rule.classList.remove('basemap-identity-fill');
+          rule.classList.add('bg-sync-off');
+        }
       } else if (row.basemapKey) {
         rule.dataset.basemapKey = row.basemapKey;
       }

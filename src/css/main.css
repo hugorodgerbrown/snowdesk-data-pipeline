@@ -516,12 +516,21 @@
    base class it also carries — see map_downloads_manager.js.
 
    An ORPHANED row (SNOW-612 — a pinned bucket with no record at all) is
-   NOT painted through this class at all: map_downloads_manager.js swaps
-   it for plain `bg-border` instead. An orphan is not "downloaded, basemap
-   unknown" (this class's own keyless meaning) — it never completed — so
-   it must not fall into the same green default a genuinely finished
-   keyless download gets; `bg-border` reads as the paler, muted treatment
-   the sheet's design calls for.
+   never full-strength and never this class's own keyless green default
+   ("downloaded, basemap unknown" — not true of something that never
+   completed). It IS still painted through this class when
+   map_basemap_downloads.js's `orphanBasemapKey` can infer a basemap from
+   the bucket's own cached tiles (Hugo's call: pale, not flat neutral —
+   "the orphan rule should be a pale version of the colour") — carrying a
+   real `data-basemap-key`, exactly like a completed row, plus a shared
+   `opacity-40` MODIFIER map_downloads_manager.js applies alongside it.
+   Only when nothing could be inferred does it skip this class entirely,
+   for `bg-sync-off` (this app's existing "absent, not an error" grey —
+   the sync dots' own uncached colour) at the same `opacity-40`. Either
+   way the modifier is ONE utility class reused, not five more per-key
+   "pale" declarations — see map_downloads_manager.js's own buildRow
+   comment for the full decision and the "inference, not a record"
+   caveat.
 
    Shape (size, radius, ring for the row swatch/rule; height and width for
    the bar segment) is plain Tailwind utilities on each element — not CSS
@@ -557,11 +566,17 @@
 .basemap-identity-fill[data-basemap-key="swisstopo_light"]      { background: var(--color-basemap-swisstopo-light, var(--color-sync-ok)); }
 .basemap-identity-fill[data-basemap-key="ign_plan"]              { background: var(--color-basemap-ign-plan, var(--color-sync-ok)); }
 .basemap-identity-fill[data-basemap-key="basemap_at"]            { background: var(--color-basemap-basemap-at, var(--color-sync-ok)); }
-/* The keyless case — a pre-SNOW-645 record, an orphaned bucket, or the
-   budget bar's own trailing "unknown" segment — has no data-basemap-key
-   at all, so none of the rules above match. Explicit rather than relying
-   on inherited background: the row swatch and the bar segment both need
-   SOMETHING painted even with nothing to key off. */
+/* The keyless case — a pre-SNOW-645 record, or the budget bar's own
+   trailing "unknown" segment — has no data-basemap-key at all, so none
+   of the rules above match. Explicit rather than relying on inherited
+   background: the row rule and the bar segment both need SOMETHING
+   painted even with nothing to key off. An orphaned bucket (SNOW-612)
+   this class never sees at all: a RECOVERED orphan carries a real
+   data-basemap-key and matches one of the rules above instead, and an
+   UNRECOVERABLE one skips this class entirely for `bg-sync-off` (see the
+   block comment above) — falling through to this green default would
+   claim "downloaded, basemap unknown" for something that never
+   completed. */
 .basemap-identity-fill { background: var(--color-sync-ok); }
 
 
