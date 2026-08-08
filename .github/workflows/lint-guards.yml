@@ -5,7 +5,12 @@
 # static/js), ``tox -e i18n-lint`` (user-facing strings hardcoded in JS),
 # ``tox -e js-globals-lint`` (reads of globals nothing
 # assigns), ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing
-# guard) and ``tox -e djangofmt`` (template formatting — the CI backstop
+# guard), ``tox -e migrations-lint`` (duplicate migration numbers and
+# multi-leaf migration graphs — SNOW-652; it sees the collision because a
+# ``pull_request`` checkout is the MERGE commit, so the tree already holds
+# main's migrations alongside the PR's, which is exactly the union each
+# PR's own ``django-checks`` run cannot see under a non-strict ruleset)
+# and ``tox -e djangofmt`` (template formatting — the CI backstop
 # for the bypassable pre-commit hook).
 #
 # SNOW-619 added the JavaScript half. The project has deliberately avoided
@@ -65,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, djangofmt]
+        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, migrations-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 
