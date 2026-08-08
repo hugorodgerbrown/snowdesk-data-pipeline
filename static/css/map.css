@@ -1712,13 +1712,17 @@
     transition: height 220ms ease;
 }
 
-/* SNOW-645: once a run's basemap is known, the roundel fill takes that
+/* SNOW-645: once a region's basemap is known, ITS roundel fill takes that
    basemap's identity colour instead of the generic green — same tokens as
    .basemap-identity-fill in the Manage downloads sheet (src/css/main.css
    §2, generalised to also drive the budget bar's segments), so the
-   surfaces agree. No data-basemap-key attribute (unresolved, or
-   a record predating this change) keeps the plain --color-sync-ok green
-   above — "downloaded, basemap unknown".
+   surfaces agree. Scoped to #map-download-control's own id (SNOW-645
+   review) — this is the REGION roundel only, not #map-custom-download-
+   control (see that control's own monochrome override further down this
+   file, and map_custom_download.js's _renderControl comment for why it
+   does not carry a basemap identity colour). No data-basemap-key
+   attribute (unresolved, or a record predating this change) keeps the
+   plain --color-sync-ok green above — "downloaded, basemap unknown".
 
    Every rule below carries a var(…, var(--color-sync-ok)) FALLBACK, and it
    is load-bearing, not decorative. This file is NOT compiled by Tailwind —
@@ -1736,34 +1740,55 @@
    won the cascade. Without the fallback a stale build turns every
    downloaded region's solid green disc into a hollow ring, which reads as
    "my download was wiped" rather than "the CSS build is stale". */
-.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="busy"]::before,
-.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="done"]::before {
+#map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="busy"]::before,
+#map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="done"]::before {
     background: var(--color-basemap-openfreemap-liberty, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="busy"]::before,
-.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="done"]::before {
+#map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="busy"]::before,
+#map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="done"]::before {
     background: var(--color-basemap-swisstopo-winter, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="busy"]::before,
-.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="done"]::before {
+#map-download-control[data-basemap-key="swisstopo_light"][data-download-state="busy"]::before,
+#map-download-control[data-basemap-key="swisstopo_light"][data-download-state="done"]::before {
     background: var(--color-basemap-swisstopo-light, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="ign_plan"][data-download-state="busy"]::before,
-.map-download-control[data-basemap-key="ign_plan"][data-download-state="done"]::before {
+#map-download-control[data-basemap-key="ign_plan"][data-download-state="busy"]::before,
+#map-download-control[data-basemap-key="ign_plan"][data-download-state="done"]::before {
     background: var(--color-basemap-ign-plan, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="basemap_at"][data-download-state="busy"]::before,
-.map-download-control[data-basemap-key="basemap_at"][data-download-state="done"]::before {
+#map-download-control[data-basemap-key="basemap_at"][data-download-state="busy"]::before,
+#map-download-control[data-basemap-key="basemap_at"][data-download-state="done"]::before {
     background: var(--color-basemap-basemap-at, var(--color-sync-ok));
 }
 
-/* Done: the fill is pinned full — a solid green circle matching the dot. */
+/* SNOW-645 review: #map-custom-download-control stays monochrome. It opens
+   the Manage downloads sheet, which lists every downloaded area across
+   EVERY basemap at once — an earlier pass here painted this roundel the
+   ACTIVE basemap's identity colour (fixing a report that it showed
+   Standard's blue while Swisstopo was on screen), but that only traded one
+   wrong answer for another: the colour still didn't describe what the
+   sheet actually contains. idle/done stay distinguishable via --ink
+   instead — this app's own near-black chrome token (already used for
+   .home-intro-dismiss's dark pill), not a basemap colour. Scoped to this
+   control's own id, so it wins on specificity over the shared green
+   .map-download-control base rule above without needing !important or a
+   particular source order — an id selector always beats a class one. */
+#map-custom-download-control[data-download-state="busy"]::before,
+#map-custom-download-control[data-download-state="done"]::before {
+    background: var(--ink);
+}
+
+/* Done: the fill is pinned full — a solid disc matching the sync dot's
+   colour language: green on the region roundel, --ink on the custom-area
+   one (see that control's own monochrome comment above). */
 .map-download-control[data-download-state="done"]::before {
     height: 100%;
 }
 
-/* White download glyph on the green fill (the glyph strokes currentColor).
-   Same icon as every other state — see the display rules above for why. */
+/* White download glyph on the filled disc (the glyph strokes currentColor).
+   Reads on both fills above — green and --ink are both dark enough for
+   white to sit on. Same icon as every other state — see the display rules
+   above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
 }
@@ -1798,19 +1823,19 @@
     box-shadow: inset 0 0 0 2px var(--color-sync-ok);
     z-index: 0;
 }
-.map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="other-basemap"]::before {
+#map-download-control[data-basemap-key="openfreemap_liberty"][data-download-state="other-basemap"]::before {
     box-shadow: inset 0 0 0 2px var(--color-basemap-openfreemap-liberty, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="other-basemap"]::before {
+#map-download-control[data-basemap-key="swisstopo_winter"][data-download-state="other-basemap"]::before {
     box-shadow: inset 0 0 0 2px var(--color-basemap-swisstopo-winter, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="swisstopo_light"][data-download-state="other-basemap"]::before {
+#map-download-control[data-basemap-key="swisstopo_light"][data-download-state="other-basemap"]::before {
     box-shadow: inset 0 0 0 2px var(--color-basemap-swisstopo-light, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="ign_plan"][data-download-state="other-basemap"]::before {
+#map-download-control[data-basemap-key="ign_plan"][data-download-state="other-basemap"]::before {
     box-shadow: inset 0 0 0 2px var(--color-basemap-ign-plan, var(--color-sync-ok));
 }
-.map-download-control[data-basemap-key="basemap_at"][data-download-state="other-basemap"]::before {
+#map-download-control[data-basemap-key="basemap_at"][data-download-state="other-basemap"]::before {
     box-shadow: inset 0 0 0 2px var(--color-basemap-basemap-at, var(--color-sync-ok));
 }
 
