@@ -51,18 +51,34 @@ def _make_forecast_response(
     sunrise: str = "2026-05-01T05:32+02:00",
     sunset: str = "2026-05-01T20:45+02:00",
     target_date: str = "2026-05-01",
+    *,
+    temperature_2m_max: list[float] | None = None,
+    temperature_2m_min: list[float] | None = None,
+    snowfall_sum: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Build a minimal Open-Meteo forecast API response dict."""
+    """Build a minimal Open-Meteo forecast API response dict.
+
+    ``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum`` default
+    to ``None`` (array omitted entirely) so tests can opt in to the
+    extended daily block only when they need it.
+    """
+    daily: dict[str, Any] = {
+        "time": [target_date],
+        "weather_code": [weather_code],
+        "sunrise": [sunrise],
+        "sunset": [sunset],
+    }
+    if temperature_2m_max is not None:
+        daily["temperature_2m_max"] = temperature_2m_max
+    if temperature_2m_min is not None:
+        daily["temperature_2m_min"] = temperature_2m_min
+    if snowfall_sum is not None:
+        daily["snowfall_sum"] = snowfall_sum
     return {
         "latitude": 46.8,
         "longitude": 7.5,
         "timezone": "Europe/Zurich",
-        "daily": {
-            "time": [target_date],
-            "weather_code": [weather_code],
-            "sunrise": [sunrise],
-            "sunset": [sunset],
-        },
+        "daily": daily,
     }
 
 
@@ -71,18 +87,34 @@ def _make_archive_response(
     weather_codes: list[int],
     sunrises: list[str],
     sunsets: list[str],
+    *,
+    temperature_2m_max: list[float] | None = None,
+    temperature_2m_min: list[float] | None = None,
+    snowfall_sum: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Build a minimal Open-Meteo archive API response dict."""
+    """Build a minimal Open-Meteo archive API response dict.
+
+    ``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum`` default
+    to ``None`` (array omitted entirely) so tests can opt in to the
+    extended daily block only when they need it.
+    """
+    daily: dict[str, Any] = {
+        "time": dates,
+        "weather_code": weather_codes,
+        "sunrise": sunrises,
+        "sunset": sunsets,
+    }
+    if temperature_2m_max is not None:
+        daily["temperature_2m_max"] = temperature_2m_max
+    if temperature_2m_min is not None:
+        daily["temperature_2m_min"] = temperature_2m_min
+    if snowfall_sum is not None:
+        daily["snowfall_sum"] = snowfall_sum
     return {
         "latitude": 46.8,
         "longitude": 7.5,
         "timezone": "Europe/Zurich",
-        "daily": {
-            "time": dates,
-            "weather_code": weather_codes,
-            "sunrise": sunrises,
-            "sunset": sunsets,
-        },
+        "daily": daily,
     }
 
 
@@ -279,6 +311,84 @@ class TestFetchWeatherForRegion:
         assert "weather_code" in daily_fields, "weather_code must be in daily params"
         assert "sunrise" in daily_fields, "sunrise must be in daily params"
         assert "sunset" in daily_fields, "sunset must be in daily params"
+        assert "temperature_2m_max" in daily_fields
+        assert "temperature_2m_min" in daily_fields
+        assert "snowfall_sum" in daily_fields
+
+
+# ---------------------------------------------------------------------------
+# fetch_weather_for_region — daily temperature/snowfall extras (SNOW-571)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherForRegionDailyExtras:
+    """temperature_2m_max/min and snowfall_sum persist from the forecast path."""
+
+    def test_extended_values_persist(self) -> None:
+        """A response carrying all three extras writes them onto the snapshot."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response(
+            temperature_2m_max=[4.2],
+            temperature_2m_min=[-3.1],
+            snowfall_sum=[12.0],
+        )
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            result = fetch_weather_for_region(region, target, commit=True)
+
+        assert result is not None
+        snapshot, _ = result
+        assert snapshot.temperature_2m_max == 4.2
+        assert snapshot.temperature_2m_min == -3.1
+        assert snapshot.snowfall_sum == 12.0
+
+    def test_missing_extended_arrays_create_row_with_nulls(self) -> None:
+        """A response that omits the extended arrays still creates a row — NULLs, not an error."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()  # no extended arrays
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            result = fetch_weather_for_region(region, target, commit=True)
+
+        assert result is not None
+        snapshot, _ = result
+        assert snapshot.temperature_2m_max is None
+        assert snapshot.temperature_2m_min is None
+        assert snapshot.snowfall_sum is None
+
+    def test_on_fetched_stash_carries_extended_keys(self) -> None:
+        """The --stash callback dict carries the three extended keys."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response(
+            temperature_2m_max=[4.2],
+            temperature_2m_min=[-3.1],
+            snowfall_sum=[12.0],
+        )
+        captured: list[dict] = []
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            fetch_weather_for_region(
+                region, target, commit=False, on_fetched=captured.append
+            )
+
+        assert len(captured) == 1
+        record = captured[0]
+        assert record["temperature_2m_max"] == 4.2
+        assert record["temperature_2m_min"] == -3.1
+        assert record["snowfall_sum"] == 12.0
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +619,124 @@ class TestFetchArchiveForRegion:
         params = mock.call_args[1]["params"]
         assert params["start_date"] == "2026-04-01"
         assert params["end_date"] == "2026-04-30"
+
+    def test_daily_param_carries_extended_variables(self) -> None:
+        """The archive 'daily' param requests temperature and snowfall too."""
+        region = MicroRegionFactory.create()
+        start = end = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+        )
+        mock = _mock_get(api_data)
+
+        with patch("apps.bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_archive_for_region(region, start, end, commit=False)
+
+        daily_fields = mock.call_args[1]["params"]["daily"].split(",")
+        assert "temperature_2m_max" in daily_fields
+        assert "temperature_2m_min" in daily_fields
+        assert "snowfall_sum" in daily_fields
+
+
+# ---------------------------------------------------------------------------
+# fetch_archive_for_region — daily temperature/snowfall extras (SNOW-571)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchArchiveForRegionDailyExtras:
+    """temperature_2m_max/min and snowfall_sum persist from the archive path."""
+
+    def test_extended_values_persist_per_day(self) -> None:
+        """Each day's snapshot carries that day's extended values."""
+        region = MicroRegionFactory.create()
+        start = datetime.date(2026, 4, 28)
+        end = datetime.date(2026, 4, 29)
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-29"],
+            weather_codes=[0, 1],
+            sunrises=["2026-04-28T05:40+02:00", "2026-04-29T05:38+02:00"],
+            sunsets=["2026-04-28T20:30+02:00", "2026-04-29T20:32+02:00"],
+            temperature_2m_max=[4.2, 5.0],
+            temperature_2m_min=[-3.1, -2.0],
+            snowfall_sum=[12.0, 0.0],
+        )
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            result = fetch_archive_for_region(region, start, end, commit=True)
+
+        snapshots = {snap.valid_for_date: snap for snap, _ in result}
+        first = snapshots[datetime.date(2026, 4, 28)]
+        second = snapshots[datetime.date(2026, 4, 29)]
+        assert first.temperature_2m_max == 4.2
+        assert first.temperature_2m_min == -3.1
+        assert first.snowfall_sum == 12.0
+        assert second.temperature_2m_max == 5.0
+        assert second.snowfall_sum == 0.0
+
+    def test_missing_extended_arrays_do_not_reject_batch(self) -> None:
+        """A response missing the extended arrays still writes rows — NULLs, not rejected.
+
+        This is the SNOW-467-adjacent risk: the extended arrays must never
+        be folded into _archive_daily_dates's length check, or an Open-Meteo
+        response that omits one of them would reject the whole batch.
+        """
+        region = MicroRegionFactory.create()
+        start = end = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+            # No extended arrays at all.
+        )
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            result = fetch_archive_for_region(region, start, end, commit=True)
+
+        assert len(result) == 1
+        snapshot, _ = result[0]
+        assert snapshot.temperature_2m_max is None
+        assert snapshot.temperature_2m_min is None
+        assert snapshot.snowfall_sum is None
+
+    def test_on_fetched_stash_carries_extended_keys(self) -> None:
+        """The --stash callback dict carries the three extended keys per day."""
+        region = MicroRegionFactory.create()
+        start = end = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+            temperature_2m_max=[4.2],
+            temperature_2m_min=[-3.1],
+            snowfall_sum=[12.0],
+        )
+        captured: list[dict] = []
+
+        with patch(
+            "apps.bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            fetch_archive_for_region(
+                region, start, end, commit=False, on_fetched=captured.append
+            )
+
+        assert len(captured) == 1
+        record = captured[0]
+        assert record["temperature_2m_max"] == 4.2
+        assert record["temperature_2m_min"] == -3.1
+        assert record["snowfall_sum"] == 12.0
 
 
 # ---------------------------------------------------------------------------

@@ -183,6 +183,51 @@ point, so don't skip pieces for "simple" models:
   classmethod is properly typed and lets mypy infer the correct model
   return type.
 
+#### Which layer does a test belong in?
+
+Three layers, and the choice is not a preference — a test in the wrong
+layer is a defect, whatever it asserts. Work top-down and stop at the
+first layer that can hold the assertion:
+
+1. **pytest** (`tests/`) — anything reachable from the Django test client.
+   Status codes, redirects, rendered HTML, HTMX fragment responses,
+   querysets, services, commands. **A 404 needs no browser.**
+2. **Vitest** (`tests/js/`) — anything a `static/js/` module does that
+   jsdom can observe. Pure logic, arithmetic, storage, state machines,
+   class-string construction, IndexedDB, geometry maths. This is the
+   **default** home for client-side behaviour: it is fast, deterministic,
+   and in the default `tox` envlist.
+3. **Playwright** (`tests/e2e/`) — only what genuinely requires a real
+   browser executing real JavaScript against a live server: MapLibre's
+   WebGL canvas, the service worker, real clipboard/WebAuthn ceremonies,
+   and multi-script user journeys.
+
+**`tests/e2e/` is capped at ~15 tests.** One file per user journey, each
+under 40 lines, each mapping to a named scenario family in
+[`docs/testing-scenarios.md`](docs/testing-scenarios.md) — the suite
+mirrors the manual test script and nothing else. Adding a sixteenth means
+deleting one, or changing this rule on purpose. The suite is a smoke
+alarm, not a fire inspection: it answers "can a user still see the map,
+read a bulletin, search, sign in, and reload offline", and it must fail
+loudly for a broken page rather than for a shifted pixel.
+
+The cap exists because it was breached twice. SNOW-494 cut the suite to
+110 tests in July 2026; sixteen days later it was 280, because every UI
+ticket dutifully bundled an e2e test and nothing said stop. A ticket that
+adds a browser test for a class string, a byte count, or a state
+transition is answering the right question in the wrong layer — that test
+belongs in `tests/js/`. Full rules, the exclusion list, and the current
+journey inventory: [`docs/client-side-tests.md`](docs/client-side-tests.md).
+
+The cap is enforced, not advisory: **`tox -e e2e-lint`** (`bin/e2e-lint`)
+fails on more than 15 test functions, on any test longer than 40 lines,
+and on a test module whose docstring doesn't carry a `Scenario:` line
+naming a real heading in `docs/testing-scenarios.md`. Conventions did not
+hold this line twice; a failing build does. Raising `MAX_TESTS` is a
+deliberate edit in a ticket that says why — not a way to land a PR. The
+opt-out for a journey with no manual scenario is
+`Scenario: none — <reason>`, audit-visible via `bin/e2e-lint --show-scenarios`.
+
 ## Data sources
 
 Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
@@ -364,6 +409,7 @@ uv run tox -e ds-lint         # design-system linter — templates + static/js (
 uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
 uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
+uv run tox -e e2e-lint        # Playwright cap: ~15 tests, ≤40 lines each, scenario-mapped
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
@@ -533,7 +579,7 @@ Read these when working in the relevant area:
 | Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
-| Client-side Playwright tests (`tox -e e2e`) | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
+| Which test layer to use; the e2e cap; Playwright + Vitest harnesses | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
 | Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |
 | Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |

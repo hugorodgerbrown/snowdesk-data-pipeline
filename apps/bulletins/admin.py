@@ -674,7 +674,16 @@ class WeatherSnapshotAdmin(admin.ModelAdmin):
 
     change_list_template = "admin/bulletins/weathersnapshot/change_list.html"
 
-    list_display = ["id", "region", "valid_for_date", "weather_code", "fetched_at"]
+    list_display = [
+        "id",
+        "region",
+        "valid_for_date",
+        "weather_code",
+        "temperature_2m_max",
+        "temperature_2m_min",
+        "snowfall_sum",
+        "fetched_at",
+    ]
     list_filter = ["valid_for_date"]
     search_fields = ["region__region_id", "region__name"]
     list_select_related = ("region",)

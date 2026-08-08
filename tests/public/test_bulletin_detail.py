@@ -1441,6 +1441,110 @@ class TestWeatherHeader:
         assert response.context["weather_display"] is None
 
 
+# ── Weather panel — daily temperature/snowfall (SNOW-571) ──────────────────
+
+
+@pytest.mark.django_db
+class TestWeatherPanelDailyExtras:
+    """The masthead's meta strip renders temp/snowfall from the snapshot."""
+
+    def _bulletin_url(self) -> str:
+        """Return the form-3 URL for the test region on 2026-03-15."""
+        return reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+    def test_renders_temp_and_snowfall_when_populated(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A fully-populated snapshot renders both the temp and snowfall groups."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        content = response.content.decode()
+        assert "4&deg;" in content
+        assert "-3&deg;" in content
+        assert "12 cm" in content
+
+    def test_renders_explicit_zero_snowfall(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A 0 cm snowfall total still renders — 'no new snow' is a statement."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+            snowfall_sum=0.0,
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert "0 cm" in response.content.decode()
+
+    def test_omits_temp_and_snowfall_when_absent(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A sparse snapshot (fields unset) omits both groups individually."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        content = response.content.decode()
+        assert 'sr-only">Temperature<' not in content
+        assert 'sr-only">Snowfall<' not in content
+
+    def test_temp_renders_without_snowfall_when_snowfall_is_null(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Temperature renders on its own when snowfall_sum is NULL — omit individually."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        content = response.content.decode()
+        assert "4&deg;" in content
+        assert 'sr-only">Snowfall<' not in content
+
+
 @pytest.mark.django_db
 class TestCanonicalUrl:
     """The form-3 canonical URL is rendered as a ``<link rel="canonical">``."""

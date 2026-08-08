@@ -1,8 +1,8 @@
 ---
 name: weather-header
-description: Weather bulletin header and resort weather panel — build_weather_display buckets, is_day, shared _weather_panel.html, ForecastPanel
+description: Weather header/resort panel — build_weather_display buckets, is_day, _weather_panel.html, ForecastPanel, WeatherSnapshot temp/snowfall
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-07
 ---
 
 # Weather-driven bulletin header
@@ -25,16 +25,27 @@ The bulletin page always renders `templates/includes/bulletin_header.html` — a
 ```
 WeatherSnapshot         build_weather_display(...)        _weather_panel.html
 (weather_code,          ┌─ bucket: clear|partly_cloudy    ┌─ data-weather-bucket="…"
- sunrise, sunset)  ───▶ │  cloudy|fog|rain|snow|thunder ─▶│  data-time-of-day="day|night"
-                        ├─ is_day: bool                   │  data-weather-code="<int>"
-                        ├─ icon_bucket: (12 values)       └─ hero <img> + condition label
+ sunrise, sunset,  ───▶ │  cloudy|fog|rain|snow|thunder ─▶│  data-time-of-day="day|night"
+ temp_max, temp_min,    ├─ is_day: bool                   │  data-weather-code="<int>"
+ snowfall_sum)          ├─ icon_bucket: (12 values)       └─ hero <img> + condition label
                         ├─ condition_label: str               + sunrise/sunset strip
-                        ├─ icon_filename: str                 (+ region <h1>/share button
-                        └─ time_of_day: "day"|"night"          when the bulletin masthead
+                        ├─ icon_filename: str                 + hi/lo temp + snowfall
+                        ├─ time_of_day: "day"|"night"           (each shown only if
+                        └─ temp_max/temp_min/                    non-null — SNOW-571)
+                           snowfall_sum: float|None            (+ region <h1>/share button
+                                                                 when the bulletin masthead
                                                                  includes it)
 ```
 
 `bulletin_detail` in [`apps/public/views.py`](../apps/public/views.py) fetches the snapshot via `WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()` and passes the `WeatherDisplay` dict (or `None`) into the template context as `weather_display`. `resort_detail` does the same lookup keyed on `resort.region` (SNOW-509). When `weather_display` is `None` the panel still renders — the hero icon is omitted, weather/sunrise lines are dropped from the metadata strip, and `data-weather-bucket="none"` triggers a neutral dark fallback colour via `--color-weather-fallback`.
+
+### Daily temperature and snowfall (SNOW-571)
+
+`WeatherSnapshot` also stores `temperature_2m_max`/`temperature_2m_min` (°C) and `snowfall_sum` (cm) — the same field names and units as `ForecastPointWeather` (see [`docs/decisions/weather-snapshot-vs-forecast-point-weather.md`](decisions/weather-snapshot-vs-forecast-point-weather.md) for why the two models stay separate despite the overlap). All three are nullable: existing rows keep them `None` until re-fetched, and `_weather_panel.html` omits each independently rather than falling back to the no-weather state — a snapshot with temps but no snowfall still shows the temps.
+
+Both `fetch_weather_for_region` (forecast) and `fetch_archive_for_region` (archive) in [`apps/bulletins/services/weather_fetcher.py`](../apps/bulletins/services/weather_fetcher.py) request `REGION_DAILY_VARIABLES`, reading the three extras via the same degrade-to-`None` accessor shape as the `ForecastPointWeather` fetch path — an Open-Meteo response that omits one of them still creates the row, with `None` for the missing field(s). `_archive_daily_dates` validates only the four required arrays (`time`/`weather_code`/`sunrise`/`sunset`); the extras are never folded into that check, so an omitted array can never reject a whole archive batch.
+
+`build_weather_display` surfaces the three as `temp_max`/`temp_min`/`snowfall_sum` on the `WeatherDisplay` dict, read via `getattr(weather, ..., None)` so the function stays honest about accepting either `WeatherSnapshot` or `ForecastPointWeather`. The template renders the hi/lo temperature group whenever either bound is non-null (`4°/-2°`, `&mdash;` for a missing half — the same idiom as `_favourite_forecast_panel.html`'s day strip) and the snowfall group whenever `snowfall_sum` is non-null, **including an explicit `0`** — deliberately unlike the favourite panel's snowfall chip, which hides a zero. On an avalanche bulletin "no new snow" is a statement worth showing, not noise.
 
 ## Bucket map
 

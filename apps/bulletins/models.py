@@ -15,8 +15,10 @@ Owns the eleven bulletin-driven models:
     ratings, updated whenever a bulletin covering that (region, date) is
     ingested or rebuilt. Drives the longitudinal calendar view.
   - WeatherSnapshot: one row per (region, date) storing the WMO weather
-    code and sunrise/sunset times fetched from Open-Meteo. Used by the
-    render model (SNOW-98) to determine whether a day is daytime or night.
+    code, sunrise/sunset times, and daily temperature/snowfall totals
+    fetched from Open-Meteo. Used by the render model (SNOW-98) to
+    determine whether a day is daytime or night, and by the weather panel
+    (SNOW-571) to show a hi/lo temperature and a snowfall total.
   - BulletinShare: a tokenised short-URL share link for a bulletin page.
     Stores (region, target_date, token, bulletin) so the redirect can
     always recover the canonical destination even if the bulletin changes.
@@ -779,7 +781,18 @@ class WeatherSnapshot(BaseModel):
     ``fetch_weather`` management command (forecast or historical range).
     Stores the WMO weather code and tz-aware
     sunrise/sunset times so that downstream consumers (SNOW-98 render
-    model) can determine day/night state without re-calling the API.
+    model) can determine day/night state without re-calling the API, plus
+    the daily hi/lo temperature and snowfall total consumed by the weather
+    panel (SNOW-571).
+
+    ``temperature_2m_max``, ``temperature_2m_min``, and ``snowfall_sum``
+    mirror ``ForecastPointWeather``'s fields of the same name (same units:
+    °C, °C, cm) — see
+    ``docs/decisions/weather-snapshot-vs-forecast-point-weather.md`` for why
+    the two models stay separate rather than merging. All three are
+    nullable: existing rows keep them ``None`` until re-fetched, and the
+    panel omits each individually rather than falling back to the
+    no-weather state.
 
     ``is_day`` is intentionally NOT stored here — it is computed at render
     time by the consumer (SNOW-98) because it depends on the display
@@ -811,6 +824,21 @@ class WeatherSnapshot(BaseModel):
         help_text=(
             "Sunset time for this region on valid_for_date (tz-aware, local time)."
         ),
+    )
+    temperature_2m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily air temperature at 2m, in °C.",
+    )
+    temperature_2m_min = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Minimum daily air temperature at 2m, in °C.",
+    )
+    snowfall_sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daily snowfall, in cm.",
     )
 
     objects = WeatherSnapshotQuerySet.as_manager()

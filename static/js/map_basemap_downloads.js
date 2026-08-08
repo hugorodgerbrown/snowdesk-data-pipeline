@@ -823,6 +823,33 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {string}
    */
   basemapLabel: (key) => basemapLabel(key),
+
+  // SNOW-649: the two render-scheduling primitives below are exposed for
+  // ONE reason — they were untestable. Both are pure higher-order
+  // functions with no DOM or MapLibre dependency of their own, yet the
+  // only coverage they had was a Playwright test watching a roundel
+  // settle, because a module-scope `function` inside the map bundle
+  // cannot be reached from tests/js. Neither is called from another
+  // module; if that changes, the caller belongs in this file instead.
+  //
+  // Function declarations hoist, so referencing them from this block —
+  // which evaluates well before their definitions further down — is safe.
+
+  /**
+   * Wrap an async, idempotent render so overlapping calls coalesce.
+   *
+   * @param {function(): Promise<void>} render
+   * @returns {function(): Promise<void>}
+   */
+  coalesceRenders: (render) => coalesceRenders(render),
+
+  /**
+   * Build a "re-run `render` once MapLibre next goes idle" callback.
+   *
+   * @param {function(): void} render
+   * @returns {function(): void}
+   */
+  makeStyleSettleRetry: (render) => makeStyleSettleRetry(render),
 });
 
 /**

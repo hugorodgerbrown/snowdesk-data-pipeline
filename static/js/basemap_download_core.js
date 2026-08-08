@@ -1149,7 +1149,39 @@
     return seen > 0;
   }
 
+  /**
+   * Decide whether a warm-cache result counts as a completed download.
+   *
+   * This is the "green offline circle" predicate. Both download controls
+   * (``map_region_download.js`` and ``map_custom_download.js``) spelled it
+   * out themselves inside their ``finish`` callbacks — the seam
+   * ``basemap_download_runner.js``'s header flagged as still untested when
+   * the run itself was extracted. Two copies of a four-clause boolean is
+   * exactly the shape that drifted in SNOW-607, so it lives here once
+   * (SNOW-649).
+   *
+   * Every clause earns its place:
+   *
+   * - **absent result** — the worker never ran, or the warm run rejected;
+   *   the runner settles with ``null``. Nothing was cached.
+   * - **``cancelled``** — SNOW-632. A cancelled run always reports
+   *   ``failed: 0``, so without this clause an abort reads as a clean
+   *   success and the area is marked available offline when it is not.
+   * - **``ok > 0``** — a vacuous run (no tiles, e.g. a feeds-only run when
+   *   the style has not settled) must never claim the area is downloaded.
+   * - **``failed === 0``** — a partial download is not a download. The
+   *   missing tiles are exactly the ones the user would hit offline.
+   *
+   * @param {{ok: number, failed: number, bytes: number, cancelled?: boolean}
+   *   | null | undefined} result The warm-cache worker's reply.
+   * @returns {boolean} True only for a complete, uncancelled, non-empty run.
+   */
+  function downloadSucceeded(result) {
+    return !!(result && !result.cancelled && result.ok > 0 && result.failed === 0);
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
+    downloadSucceeded: downloadSucceeded,
     zoomRows: zoomRows,
     rangesToTileURLs: rangesToTileURLs,
     lonLatToTile: lonLatToTile,

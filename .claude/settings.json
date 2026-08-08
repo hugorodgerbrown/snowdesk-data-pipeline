@@ -29,7 +29,22 @@
       "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__list_comments",
       "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__save_comment",
       "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__get_status_updates",
-      "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__save_status_update"
+      "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__save_status_update",
+
+      "mcp__render__list_workspaces",
+      "mcp__render__select_workspace",
+      "mcp__render__get_selected_workspace",
+      "mcp__render__list_services",
+      "mcp__render__get_service",
+      "mcp__render__list_deploys",
+      "mcp__render__get_deploy",
+      "mcp__render__list_logs",
+      "mcp__render__list_log_label_values",
+      "mcp__render__get_metrics",
+      "mcp__render__list_postgres_instances",
+      "mcp__render__get_postgres",
+      "mcp__render__list_key_value",
+      "mcp__render__get_key_value"
     ],
     "deny": [
       "Read(./.venv/**)",
@@ -44,8 +59,15 @@
       "Read(./htmlcov/**)",
       "Read(./.pytest_cache/**)",
       "Read(./.ruff_cache/**)",
-      "Read(./.mypy_cache/**)"
-    ]
+      "Read(./.mypy_cache/**)",
+
+      "mcp__render__trigger_deploy",
+      "mcp__render__update_environment_variables",
+      "mcp__render__create_web_service",
+      "mcp__render__create_static_site",
+      "mcp__render__create_cron_job",
+      "mcp__render__create_postgres",
+      "mcp__render__create_key_value"    ]
   },
   "hooks": {
     "SessionStart": [

@@ -446,6 +446,58 @@ class TestResortDetailWeather:
 
         assert response.context["weather_display"] is None
 
+    def test_renders_temp_and_snowfall_when_populated(self) -> None:
+        """A fully-populated snapshot renders temperature and snowfall (SNOW-571)."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,
+            temperature_2m_max=4.2,
+            temperature_2m_min=-3.1,
+            snowfall_sum=12.0,
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert "4&deg;" in content
+        assert "-3&deg;" in content
+        assert "12 cm" in content
+
+    def test_renders_explicit_zero_snowfall(self) -> None:
+        """A 0 cm snowfall total still renders (SNOW-571)."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=timezone.localdate(),
+            weather_code=0,
+            snowfall_sum=0.0,
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert "0 cm" in response.content.decode()
+
+    def test_omits_temp_and_snowfall_when_absent(self) -> None:
+        """A sparse snapshot (fields unset) omits both groups (SNOW-571)."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=timezone.localdate(), weather_code=0
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'sr-only">Temperature<' not in content
+        assert 'sr-only">Snowfall<' not in content
+
 
 @pytest.mark.django_db
 class TestResortWhyItMatters:
