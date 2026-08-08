@@ -1515,17 +1515,46 @@ buttons every row used to carry.
 **Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
 (`manageRows` falls back to `id` only when there is no record — true only
 for an orphan); subtitle reads the fixed "Incomplete download" string,
-with NO link; the left rule is a flat muted `bg-border`, not this row's
-basemap identity colour (there isn't one) and deliberately not
-`.basemap-identity-fill`'s own keyless green default either — that
-default means "downloaded, basemap unknown", which is not true of
-something that never finished. Remove is the only action either kind of
-orphan gets. A "resume" affordance (re-triggering the download from the
-bucket id) was considered and dropped: a REGION orphan's bucket id
-(`region-<regionId>`) could in principle drive one, but a CUSTOM-AREA
-orphan has no record at all — no bbox, no band — to rebuild from, and a
-link that silently does nothing for one of the two row kinds reads worse
-than no link for either.
+with NO link. Remove is the only action either kind of orphan gets. A
+"resume" affordance (re-triggering the download from the bucket id) was
+considered and dropped: a REGION orphan's bucket id (`region-<regionId>`)
+could in principle drive one, but a CUSTOM-AREA orphan has no record at
+all — no bbox, no band — to rebuild from, and a link that silently does
+nothing for one of the two row kinds reads worse than no link for either.
+
+**An orphan's left rule is a PALE version of its basemap's colour, not a
+flat neutral (Hugo's correction).** An orphan has no record and so no
+stored `basemapKey` — `reconcileAreas` gives it `null` — but it is a real
+pinned bucket with real tiles on disk, and those tiles were fetched under
+SOME basemap's URL template. `map_basemap_downloads.js`'s
+`orphanBasemapKey(areaId)` recovers it by INFERENCE: it opens the
+orphan's own bucket, reads its cached tile URLs, and matches them against
+every DISTINCT template `basemapDownloadedTemplates()` already knows
+about — the exact same per-template regex match `cachedTilesFromURLs`
+performs for the downloaded-tiles overlay, just against one bucket's URLs
+instead of the union of all of them; no new URL-parsing or
+origin-sniffing. `render()` resolves this for every orphaned row, in
+parallel, before any row is built, and stashes it as `row.recoveredBasemapKey`
+— explicitly commented at both the resolution point and the paint point
+as INFERENCE, never a record: nothing writes it back anywhere, and no
+other reader may treat it as more than a colour hint for a row whose only
+action is Remove.
+
+`buildRow` then paints the rule exactly like a completed row's — a real
+`data-basemap-key`, the same `.basemap-identity-fill` mechanism — plus a
+shared `opacity-40` modifier (`src/css/main.css` §2) applied to EITHER
+that recovered colour OR, when nothing could be inferred (a basemap since
+retired from the picker, an unreadable bucket, or Cache Storage itself
+unavailable), `bg-sync-off` — this app's existing "absent, not an error"
+grey, the sync dots' own uncached colour, deliberately NOT
+`.basemap-identity-fill`'s own keyless green default (which means
+"downloaded, basemap unknown" — not true of something that never
+finished). One utility class expresses "pale" for both cases, rather than
+five more per-key pale declarations. `--color-sync-off` and every
+`--color-basemap-*` token are chosen to hold up at 40% opacity against
+both the light and dark `--color-card` — checked by computing the blended
+colour against each, not by eye (this session had no way to render a
+screenshot).
 
 **The overlay switch.** `includes/_switch.html` — a real
 `input[type="checkbox" role="switch"]` drawn as a track+thumb with
