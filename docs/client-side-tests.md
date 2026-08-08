@@ -1,8 +1,8 @@
 ---
 name: client-side-tests
-description: Playwright e2e (tox -e e2e) and Vitest JS-unit (tox -e js) harnesses — tests/js/ db.js coverage, when to use which, adding tests
+description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the 15-test e2e cap and exclusion list, tox -e e2e and tox -e js
 status: current
-last-reviewed: 2026-07-22
+last-reviewed: 2026-08-07
 ---
 
 # Client-side test harness
@@ -18,6 +18,115 @@ SNOW-495 added a second, faster harness — [Vitest](https://vitest.dev/) —
 for unit-testing the standalone `static/js/*` PWA modules (db.js, telemetry,
 the mutation queue, sw.js cache helpers, …) without a browser. See "JS unit
 tests" below for when to reach for which.
+
+---
+
+## Which layer? Read this before writing a client-side test
+
+Work top-down and **stop at the first layer that can hold the assertion**.
+A test in the wrong layer is a defect regardless of what it asserts.
+
+| Layer | Directory | Holds |
+|-------|-----------|-------|
+| pytest | `tests/` | Anything the Django test client can reach — status codes, redirects, rendered HTML, HTMX fragment responses |
+| Vitest | `tests/js/` | Anything a `static/js/` module does that jsdom can observe — logic, arithmetic, storage, state machines, class strings, IndexedDB |
+| Playwright | `tests/e2e/` | Only what needs a real browser against a live server — WebGL canvas, service worker, clipboard/WebAuthn, multi-script journeys |
+
+Vitest is the **default** for client-side behaviour. It is fast,
+deterministic, and in the default `tox` envlist, so it runs on every local
+`uv run tox` rather than waiting for CI.
+
+### The `tests/e2e/` cap
+
+**At most ~15 tests. One file per user journey. Each under 40 lines. Each
+mapping to a named scenario family in
+[`testing-scenarios.md`](testing-scenarios.md).**
+
+The suite mirrors the manual test script and nothing else. It answers one
+question — *can a user still see the map, read a bulletin, search, sign in,
+add a favourite, and reload offline?* — and it must fail loudly for a
+broken page, not for a shifted pixel.
+
+Adding a sixteenth test means deleting one, or changing this rule
+deliberately in a ticket that says so. It is not a soft target: the cap
+exists because the suite has twice grown until it was too slow and too
+flaky to trust. SNOW-494 cut it to 110 tests on 22 July 2026; by 7 August
+it was 280 across 18,309 lines, because every UI ticket bundled an e2e
+test and nothing said stop.
+
+### The cap is a lint, not a convention (`tox -e e2e-lint`)
+
+`bin/e2e-lint` enforces three invariants, and blocks any PR that breaks
+one:
+
+1. **At most 15 test functions** across the whole suite. The message names
+   how many need to go.
+2. **No test function over 40 lines.** A long browser test is one
+   asserting things a unit test should own.
+3. **Every test module declares the scenario family it mirrors**, as a
+   `Scenario:` line in its module docstring, and the ID must be a real
+   heading in [`testing-scenarios.md`](testing-scenarios.md). This keeps
+   the suite honest in both directions — a test with no scenario is not a
+   smoke test, and a renamed scenario surfaces as a lint failure rather
+   than rotting quietly.
+
+```python
+"""tests/e2e/test_map_search.py — search for a region and land on it.
+
+Scenario: MS1, MS2
+"""
+```
+
+A journey with genuinely no manual scenario opts out with a reason, which
+is audit-visible via `bin/e2e-lint --show-scenarios`:
+
+```python
+"""Scenario: none — clipboard ceremony, no manual scenario covers it."""
+```
+
+Raising `MAX_TESTS` in `bin/e2e-lint` is a deliberate edit in a ticket that
+says why. It is not a way to land a PR — the two previous overruns both
+happened one reasonable-looking test at a time.
+
+**Current wiring status (SNOW-649):** the env exists (`tox -e e2e-lint`)
+but is deliberately outside the default `tox` envlist and the `lint-guards`
+CI matrix, because it fails by design while the suite is still 280 tests
+against a cap of 15. Both are switched on in the same PR that performs the
+deletion — the commit that makes the guard pass is the commit that makes
+it required. If you are reading this after that PR landed and the env is
+still not in `tox.ini`'s `envlist` and
+`.github/workflows/lint-guards.yml`'s matrix, that is the bug.
+
+### Does not belong in `tests/e2e/` — send it down a layer
+
+If a proposed test asserts any of the following, it is a Vitest or pytest
+test wearing a browser costume:
+
+- **Numbers** — byte counts, size estimates, budget totals, tile counts,
+  cache quotas, eviction order. → `tests/js/`
+- **Geometry and layout maths** — bounding boxes, grid cell polygons,
+  frame dimensions, zoom-to-ground locks, clamping. → `tests/js/`
+- **State machines** — idle → busy → done → error transitions, retry and
+  backoff, disabled/enabled control state. → `tests/js/`
+- **Class strings and copy** — what CSS classes or text a module writes
+  into the DOM. → `tests/js/`
+- **Persistence** — what survives a reload, what a rename writes, what a
+  removal deletes. → `tests/js/` (fake-indexeddb covers this)
+- **Status codes, redirects and 404s** — a missing region needs no
+  Chromium. → `tests/`
+- **HTMX fragment responses** — assert the response, not the swap, unless
+  the swap itself is the journey. → `tests/`
+
+The honest test of whether something belongs here: *would a manual tester
+following `testing-scenarios.md` notice this break?* If the answer is no,
+it is not a smoke test.
+
+### Its own coverage rule
+
+The project's 90% coverage target is Python-only and does not apply to
+`tests/e2e/`. **Do not add an e2e test to raise coverage** — coverage of a
+browser journey is not a meaningful number, and chasing it is what
+produced the two previous overruns.
 
 ---
 
@@ -151,12 +260,26 @@ uv run tox -e e2e   # e2e only
 
 ## How to add a test
 
-1. Create a new file under `tests/e2e/`, e.g.
-   `tests/e2e/test_season_sheet.py`.
+**Almost always, the answer is: don't — add it to `tests/js/` instead.**
+Read "Which layer?" above first. The suite is capped, so a new e2e test is
+a deliberate act, not a routine one.
+
+0. **Clear the gate.** Answer all four in the PR description, or write the
+   test somewhere else:
+   - Which scenario family in [`testing-scenarios.md`](testing-scenarios.md)
+     does this cover? (No answer → not a smoke test.)
+   - Why can neither pytest nor Vitest hold it?
+   - Which existing e2e test is being deleted to make room, if the suite
+     is at its cap?
+   - Is it under 40 lines?
+1. Create a new file under `tests/e2e/`, named for the **journey**, not the
+   feature — `test_sign_in.py`, not `test_passkey_button_disabled_state.py`.
 2. Request the `live_server`, `page`, and `_load_test_data` fixtures (all
    defined in `tests/e2e/conftest.py` or by pytest-playwright).
 3. Navigate to the page under test with `page.goto(live_server.url + "/...")`.
-4. Assert on page content, network requests, or JS behaviour.
+4. Assert the journey completed, and assert `page_errors == []`. Resist
+   asserting anything else — every extra assertion is a future flake and a
+   reason someone will delete the whole file instead of fixing it.
 
 Example skeleton:
 

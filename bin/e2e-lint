@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+# bin/e2e-lint — Playwright suite guard for tests/e2e/.
+#
+# The e2e suite is a smoke alarm, not a fire inspection. It answers one
+# question — can a user still see the map, read a bulletin, search, sign
+# in, and reload offline — and it mirrors the manual test script in
+# docs/testing-scenarios.md and nothing else.
+#
+# That rule has been stated twice and broken twice. SNOW-494 cut the suite
+# to 110 tests on 2026-07-22; sixteen days later it was 280 tests across
+# 18,309 lines, because every UI ticket dutifully bundled a browser test
+# and no check ever said stop. This is that check (SNOW-649). Conventions
+# in CLAUDE.md did not hold the line; a failing build does.
+#
+# Three invariants:
+#
+#   1. At most MAX_TESTS test functions in the whole suite. Browser tests
+#      are the slowest and flakiest thing in CI, so the budget is fixed
+#      and spending it is a trade, not an addition.
+#
+#   2. No test function longer than MAX_TEST_LINES. A long browser test is
+#      one asserting things a unit test should own — every extra assertion
+#      is a future flake and a reason someone deletes the whole file
+#      rather than fixing it.
+#
+#   3. Every test module names the manual scenario family it mirrors, in a
+#      `Scenario:` line in its module docstring, and that scenario must
+#      actually exist in docs/testing-scenarios.md. This is the invariant
+#      that keeps the suite honest in both directions: a test with no
+#      scenario is not a smoke test, and a renamed scenario surfaces here
+#      rather than rotting.
+#
+# Raising MAX_TESTS is a deliberate act. Edit the constant in a ticket that
+# says why, or delete a test to make room. Do not raise it to land a PR.
+#
+# Escape hatch for invariant 3, audit-visible via --show-scenarios:
+#
+#   Scenario: none — <reason>
+#
+# Exit code: 0 = clean; 1 = one or more violations.
+#
+# Usage:
+#   bin/e2e-lint                   # check the suite
+#   bin/e2e-lint --show-scenarios  # print the test → scenario map
+"""Playwright e2e suite guard — see module docstring for full behaviour."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+E2E_ROOT = REPO_ROOT / "tests" / "e2e"
+SCENARIOS_DOC = REPO_ROOT / "docs" / "testing-scenarios.md"
+
+# The cap. See the module docstring before changing either number.
+MAX_TESTS = 15
+MAX_TEST_LINES = 40
+
+# `### Scenario M1: Load the map and see today's choropleth` -> "M1"
+SCENARIO_HEADING_RE = re.compile(r"^###\s+Scenario\s+([A-Za-z]*\d+[a-z]?)\s*:", re.M)
+
+# `Scenario: M1, M2` or `Scenario: none — covers the share button only`
+SCENARIO_LINE_RE = re.compile(r"^\s*Scenario:\s*(.+)$", re.M)
+
+
+# Modules that hold no journeys: fixtures, package marker, private helpers.
+def _is_test_module(path: Path) -> bool:
+    """Return True if `path` is a journey module, not a fixture or helper."""
+    return path.suffix == ".py" and path.name.startswith("test_")
+
+
+@dataclass(frozen=True)
+class Violation:
+    """One lint failure in the e2e suite."""
+
+    path: Path
+    message: str
+
+
+@dataclass(frozen=True)
+class ModuleScenarios:
+    """The scenario families one test module declares it mirrors."""
+
+    path: Path
+    ids: tuple[str, ...]
+    opt_out_reason: str | None
+
+
+def _repo_relative(path: Path) -> Path:
+    """Return `path` relative to `REPO_ROOT`, or unchanged if outside."""
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _known_scenario_ids() -> frozenset[str]:
+    """Return every scenario ID defined in docs/testing-scenarios.md."""
+    if not SCENARIOS_DOC.exists():
+        return frozenset()
+    text = SCENARIOS_DOC.read_text(encoding="utf-8")
+    return frozenset(SCENARIO_HEADING_RE.findall(text))
+
+
+def _test_functions(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return every top-level `test_*` function in a parsed module."""
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name.startswith("test_")
+    ]
+
+
+def _function_length(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    """Return the line span of a function, decorators excluded.
+
+    `end_lineno` is always populated on Python 3.8+, but the annotation is
+    Optional, so fall back to the start line rather than assert.
+    """
+    return (node.end_lineno or node.lineno) - node.lineno + 1
+
+
+def _parse_scenarios(
+    path: Path, tree: ast.Module
+) -> tuple[ModuleScenarios | None, list[Violation]]:
+    """Extract and validate the `Scenario:` declaration from a module docstring."""
+    docstring = ast.get_docstring(tree) or ""
+    match = SCENARIO_LINE_RE.search(docstring)
+    if match is None:
+        return None, [
+            Violation(
+                path,
+                "module docstring has no `Scenario:` line — name the family in "
+                "docs/testing-scenarios.md this journey mirrors, or opt out with "
+                "`Scenario: none — <reason>`",
+            )
+        ]
+
+    raw = match.group(1).strip()
+    if raw.lower().startswith("none"):
+        # `none — reason` / `none - reason`; the reason is required.
+        reason = re.sub(r"^none\s*[—-]?\s*", "", raw, flags=re.I).strip()
+        if not reason:
+            return None, [
+                Violation(
+                    path,
+                    "`Scenario: none` needs a reason — write "
+                    "`Scenario: none — <why this journey has no manual scenario>`",
+                )
+            ]
+        return ModuleScenarios(path, (), reason), []
+
+    ids = tuple(part.strip() for part in re.split(r"[,/]| and ", raw) if part.strip())
+    known = _known_scenario_ids()
+    unknown = [scenario_id for scenario_id in ids if scenario_id not in known]
+    violations = [
+        Violation(
+            path,
+            f"`Scenario: {scenario_id}` is not a heading in "
+            f"docs/testing-scenarios.md — fix the ID, or add the scenario",
+        )
+        for scenario_id in unknown
+    ]
+    return ModuleScenarios(path, ids, None), violations
+
+
+def _collect_modules() -> list[Path]:
+    """Return every journey module under tests/e2e/, sorted."""
+    if not E2E_ROOT.exists():
+        return []
+    return sorted(path for path in E2E_ROOT.glob("*.py") if _is_test_module(path))
+
+
+def _scan_module(path: Path) -> tuple[int, list[Violation], ModuleScenarios | None]:
+    """Check one module; return its test count, violations, and scenario map."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError as exc:  # unparseable file — report, don't crash
+        return 0, [Violation(path, f"could not parse: {exc}")], None
+
+    functions = _test_functions(tree)
+    violations = [
+        Violation(
+            path,
+            f"{node.name}() is {_function_length(node)} lines "
+            f"(max {MAX_TEST_LINES}) — a browser test this long is asserting "
+            f"something tests/js/ should own",
+        )
+        for node in functions
+        if _function_length(node) > MAX_TEST_LINES
+    ]
+
+    module_scenarios, scenario_violations = _parse_scenarios(path, tree)
+    return len(functions), violations + scenario_violations, module_scenarios
+
+
+def main() -> int:
+    """Run the guard — see module docstring for behaviour and exit codes."""
+    parser = argparse.ArgumentParser(description="Snowdesk Playwright e2e guard.")
+    parser.add_argument(
+        "--show-scenarios",
+        action="store_true",
+        help="Print the test module → manual scenario map and exit.",
+    )
+    args = parser.parse_args()
+
+    modules = _collect_modules()
+    violations: list[Violation] = []
+    declared: list[ModuleScenarios] = []
+    total_tests = 0
+
+    for path in modules:
+        count, module_violations, module_scenarios = _scan_module(path)
+        total_tests += count
+        violations.extend(module_violations)
+        if module_scenarios is not None:
+            declared.append(module_scenarios)
+
+    if args.show_scenarios:
+        for entry in declared:
+            rel = _repo_relative(entry.path)
+            mapped = (
+                ", ".join(entry.ids) if entry.ids else f"none — {entry.opt_out_reason}"
+            )
+            print(f"{rel}: {mapped}")
+        return 0
+
+    if total_tests > MAX_TESTS:
+        print(
+            f"tests/e2e/: {total_tests} test functions across {len(modules)} "
+            f"module(s) — the cap is {MAX_TESTS}.\n"
+            f"  Delete {total_tests - MAX_TESTS} test(s), move them to tests/js/, "
+            f"or change MAX_TESTS in bin/e2e-lint in a ticket that says why.\n"
+            f"  Read the exclusion list in docs/client-side-tests.md first — "
+            f"numbers, geometry, state machines, class strings and persistence "
+            f"all belong in tests/js/."
+        )
+
+    for v in violations:
+        print(f"{_repo_relative(v.path)}: {v.message}")
+
+    failed = len(violations) + (1 if total_tests > MAX_TESTS else 0)
+    print(
+        f"\nScanned {len(modules)} module(s) | {total_tests}/{MAX_TESTS} test(s) "
+        f"| {failed} violation(s)"
+    )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
