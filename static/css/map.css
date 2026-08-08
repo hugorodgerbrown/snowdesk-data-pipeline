@@ -1625,8 +1625,8 @@
 }
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
-   glass-roundel chrome (colour states, busy fill, done tick) and lives in the
-   bottom-right stack with no dependency on a focused region.
+   glass-roundel chrome and lives in the bottom-right stack with no
+   dependency on a focused region.
 
    This override used to restore `display: inline-flex` over the shared
    `display: none` default. SNOW-642 made always-shown the shared default —
@@ -1634,9 +1634,24 @@
    declaration is now redundant. Kept as an explicit statement that this
    control's visibility has never depended on a focused region, which is the
    one fact about it most likely to be re-broken by a future change to the
-   rule it inherits from. */
+   rule it inherits from.
+
+   Review (post-SNOW-645, Hugo's screenshot: "just make it work the same
+   as ALL THE OTHER ROUNDELS"): `color` is pinned to --color-text-1
+   (src/css/main.css, already dark-mirrored) rather than inheriting the
+   shared rule's --ink (map.css's own private token) — the two are a few
+   RGB units apart (#1a1a1a vs #1a1916) and read as identical to the eye,
+   but a byte-exact computed-style comparison against a neighbouring
+   .map-utility-pill (which uses --color-text-1 itself) is the actual bar
+   this control now has to clear, in both themes, with one declaration —
+   --color-text-1 already resolves to the right value under .dark without
+   a second rule. This is the one intentional difference left after the
+   "no fill" reversal below: everything else about this control now comes
+   from the shared .map-download-control rule, same as its neighbours get
+   their own look from .map-utility-pill alone. */
 .map-custom-download-control {
     display: inline-flex;
+    color: var(--color-text-1);
 }
 
 /* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
@@ -1850,64 +1865,63 @@
     background: var(--color-basemap-basemap-at, var(--color-sync-ok));
 }
 
-/* SNOW-645 review: #map-custom-download-control stays monochrome. It opens
-   the Manage downloads sheet, which lists every downloaded area across
-   EVERY basemap at once — an earlier pass here painted this roundel the
-   ACTIVE basemap's identity colour (fixing a report that it showed
-   Standard's blue while Swisstopo was on screen), but that only traded one
-   wrong answer for another: the colour still didn't describe what the
-   sheet actually contains. idle/done stay distinguishable via --ink
-   instead — this app's own near-black chrome token (already used for
-   .home-intro-dismiss's dark pill), not a basemap colour. Scoped to this
-   control's own id, so it wins on specificity over the shared green
-   .map-download-control base rule above without needing !important or a
-   particular source order — an id selector always beats a class one. */
+/* Review (post-SNOW-645, Hugo's screenshot: every other roundel in the
+   stack is glass chrome + a plain glyph; this one alone stood out as a
+   solid disc of some colour in every theme tried — an ACTIVE basemap
+   colour, then flat --ink, then --ink inverting per theme). Each attempt
+   fixed the theme mismatch and re-created the "stands out" complaint in a
+   new shape, because the real problem was never which colour to paint —
+   it was painting one at all. #map-custom-download-control OPENS a panel;
+   it does not need to also tell you what's inside it before you open it.
+   SNOW-634 already moved "what have I downloaded" into the Manage
+   downloads sheet itself (the row list, the swatches, the budget bar) —
+   this roundel restating any part of that answer as a fill colour was
+   always redundant with a surface that already answers it properly.
+
+   So: no fill, in either state, in either theme. content: none removes
+   the pseudo-element outright rather than leaving it transparent, so
+   nothing here can be re-lit by a future edit to the shared green
+   busy/done rule above (which still paints a REAL status fill for
+   #map-download-control, the region control — see its own docstring;
+   that one is unchanged and stays in scope). Scoped by id, so it wins
+   over the shared class rule without !important regardless of theme —
+   no `.dark` variant needed, because there is nothing left to invert. */
 #map-custom-download-control[data-download-state="busy"]::before,
 #map-custom-download-control[data-download-state="done"]::before {
-    background: var(--ink);
-}
-
-/* Review (post-SNOW-645, Hugo's dark-mode report): once the chrome around
-   this roundel goes dark (the .map-download-control background/hover fixes
-   above), a fixed near-black --ink fill on a now near-black glass shell
-   loses the filled/unfilled distinction the fill exists to carry — the
-   exact defect class the background fix above corrects, just one layer
-   deeper. --ink itself has no dark-mode counterpart and this ticket is not
-   the place to give map.css's whole private palette one (see this file's
-   own header) — instead this one fill INVERTS in dark mode: --on-ink
-   (already declared, literally "the icon/label colour painted on top of a
-   dark filled circle" — see its own doc comment at :root) makes the fill
-   itself the light element, so it still reads as a distinct disc against
-   the dark shell. The glyph inverts to match — see that rule below. */
-.dark #map-custom-download-control[data-download-state="busy"]::before,
-.dark #map-custom-download-control[data-download-state="done"]::before {
-    background: var(--on-ink);
+    content: none;
 }
 
 /* Done: the fill is pinned full — a solid disc matching the sync dot's
-   colour language: green on the region roundel, --ink on the custom-area
-   one (see that control's own monochrome comment above). */
+   colour language: green on the region roundel. (The custom-area control
+   used to share this fill mechanism under its own monochrome colour; see
+   the review comment above for why it now paints no fill at all — this
+   rule is region-control-only in practice again, the same as before that
+   detour.) */
 .map-download-control[data-download-state="done"]::before {
     height: 100%;
 }
 
 /* White download glyph on the filled disc (the glyph strokes currentColor).
-   Reads on both fills above — green and --ink are both dark enough for
-   white to sit on. Same icon as every other state — see the display rules
-   above for why. */
+   Reads on the green fill above in both themes (see that fill's own
+   dark-mode colour, src/css/main.css). Same icon as every other state —
+   see the display rules above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
 }
 
-/* Review (post-SNOW-645, Hugo's dark-mode report): the custom control's
-   fill inverts to --on-ink (light) in dark mode — see that rule's own
-   comment above — so the white glyph above would go white-on-white. More
-   specific than the shared rule above (an id beats a class), so it wins
-   without needing !important. --ink reads correctly here regardless of
-   theme: it is a fixed dark colour sitting on a fixed light (--on-ink)
-   fill, deliberately independent of the surrounding chrome. */
-.dark #map-custom-download-control[data-download-state="done"] .map-download-control-icon--idle {
-    color: var(--ink);
+/* Review: the shared rule above is written for the REGION control's
+   coloured fill and would otherwise also paint #map-custom-download-
+   control's glyph white — on that control's now-plain glass chrome (no
+   fill at all, see above), a white glyph would be exactly the kind of
+   one-off, doesn't-match-its-neighbours treatment this whole review
+   exists to remove. `inherit` hands it back to the roundel's own base
+   `color` (--ink in light, --color-text-1 in dark under the .dark
+   .map-download-control rule below) — the SAME value idle and
+   other-basemap already use, in both themes, with no new token needed
+   here at all. Scoped by id so it wins over the shared rule above without
+   !important. */
+#map-custom-download-control[data-download-state="done"] .map-download-control-icon--idle {
+    color: inherit;
 }
 
 /* SNOW-645: 'other-basemap' — the region IS downloaded, just for a

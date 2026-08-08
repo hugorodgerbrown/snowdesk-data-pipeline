@@ -369,8 +369,8 @@
    * not listen for `snowdesk:connectivity-changed` the way its `idle`/
    * `offline`-carrying sibling does. It does not listen for
    * `snowdesk:basemap-changed` either (SNOW-645 review, reversed) — see
-   * the monochrome-fill comment in the body below for why the earlier
-   * per-basemap colour this roundel briefly carried was removed.
+   * the comment in the body below for why this roundel carries no visual
+   * distinction between idle and done at all any more.
    *
    * @returns {Promise<void>}
    */
@@ -380,21 +380,20 @@
     const kept = areas.filter((area) => !area.orphaned);
     const done = kept.length > 0;
     btn.dataset.downloadState = done ? 'done' : 'idle';
-    // SNOW-645 review — this roundel does NOT carry a basemap identity
-    // colour, unlike map_region_download.js's setState. It briefly did
-    // (an earlier SNOW-645 pass painted it the ACTIVE basemap's colour,
-    // fixing a report that it showed Standard's blue while Swisstopo was
-    // on screen) — but that only swapped one wrong answer for another:
-    // the sheet this roundel opens lists downloads across EVERY basemap
-    // at once, so painting the trigger in whichever basemap happens to be
-    // showing right now doesn't describe what's inside it. Per-area
-    // basemap identity is the sheet's own job (the swatch and name on
-    // each row), not this roundel's. idle/done stay distinguishable via
-    // a neutral `--ink` fill instead (map.css, scoped to this control's
-    // id) — this app's own near-black chrome token, already used for
-    // `.home-intro-dismiss`'s dark pill, not a basemap colour or the
-    // shared green `--color-sync-ok` default the base rule would
-    // otherwise paint it.
+    // SNOW-645 review — this roundel paints NO fill for either state, in
+    // map.css. It went through two failed attempts first: an ACTIVE
+    // basemap colour (fixing a report that it showed Standard's blue
+    // while Swisstopo was on screen, but describing the wrong thing — the
+    // sheet this roundel opens lists downloads across EVERY basemap at
+    // once), then a flat/inverting neutral fill (still a solid disc that
+    // stood out against every other roundel in the stack, in one theme or
+    // the other, no matter which neutral tone it used). The actual fix
+    // was realising the roundel never needed to signal "what have I
+    // downloaded" at all — it is a panel OPENER, and the panel it opens
+    // (the row list, the per-area swatches, the budget bar) already
+    // answers that properly. `data-download-state` still drives the aria
+    // label two lines down (screen readers still hear "done" vs "idle"),
+    // it just no longer drives any paint.
     const text = done
       ? MAP_STRINGS['custom-control-done']
       : MAP_STRINGS['custom-control-idle'];
@@ -1352,13 +1351,13 @@
   // 'snowdesk:basemap-changed' listener, on the reasoning that "done" no
   // longer depends on the active basemap's tile template (no tile-cache
   // probe left to re-run). A later SNOW-645 pass briefly reinstated it to
-  // track a per-basemap identity COLOUR this roundel carried for a while —
-  // that colour is gone again (see _renderControl's own comment: the
-  // roundel is monochrome, because the sheet it opens spans every basemap
-  // at once), so there is no longer anything here for a basemap switch to
-  // invalidate. Do not re-add this listener without a real dependency to
-  // justify it — the previous two round-trips on this exact line are the
-  // reason for this comment.
+  // track a per-basemap identity COLOUR this roundel carried for a while,
+  // then a monochrome fill after that colour was reverted — both are gone
+  // now (see _renderControl's own comment: this roundel paints no fill at
+  // all, for either state, in either theme), so there is no longer
+  // anything here for a basemap switch to invalidate. Do not re-add this
+  // listener without a real dependency to justify it — the previous THREE
+  // round-trips on this exact line are the reason for this comment.
 
   // Offline-integrity: re-validate the open CTA's Download button on every
   // connectivity transition — SNOW-632: a run in flight owns the CTA (see
