@@ -1,25 +1,19 @@
 /*
  * tests/js/test_map_downloaded_overlay_colour.js — Vitest DOM test for
- * SNOW-645 (review item 3): the "downloaded areas" map overlay
- * (`cached-tiles-fill` / `cached-tiles-line`) paints in the ACTIVE
- * basemap's identity colour, and keeps tracking it across a basemap
- * switch rather than freezing at whatever was active on first paint.
+ * SNOW-645 (review item — "every basemap at once"): the "downloaded areas"
+ * map overlay (`cached-tiles-fill` / `cached-tiles-line`) paints EACH tile
+ * in the identity colour of the basemap it was downloaded UNDER, not the
+ * one active on screen right now.
  *
- * Hugo's call, overruling the plan's own non-goal for this overlay: it is
- * already computed against the active basemap's tile template (it only
- * ever shows tiles cached for the basemap showing now — see
- * refreshDownloadedOverlay's own "PER-BASEMAP" comment in map.js), so a
- * plain green here while the roundel and progress grid turn (say) blue
- * would read as a colour seam.
- *
- * The bug this guards against: `DOWNLOADED_OUTLINE_COLOUR` used to be a
- * module-level `const` resolved ONCE at parse time. `downloadedOutlineColour`
- * is now a function, called fresh both where the two layers are first
- * installed (`installRegionsLayers`) AND on every `refreshDownloadedOverlay`
- * call via `map.setPaintProperty` — the second half is what this test
- * exercises, since a real basemap switch does not always force a full
- * layer re-add (map.js's own `styledata` handler skips reinstalling when
- * the regions layer survived the style swap).
+ * This supersedes an earlier version of this file, which covered a
+ * single-colour-tied-to-the-active-basemap mechanism — Hugo's own
+ * follow-up call, after the overlay itself was rebuilt to show downloads
+ * across every basemap at once rather than emptying out on a basemap
+ * switch (see refreshDownloadedOverlay's own "EVERY BASEMAP AT ONCE"
+ * comment in map.js). The mechanism is now a MapLibre `match` PAINT
+ * EXPRESSION keyed on each tile feature's own `basemapKey` property
+ * (`downloadedTilesColourExpression`, map.js), not a flat colour
+ * re-resolved on a basemap-changed event — this file tests that shape.
  *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern —
  * see its header for the general rationale. This file's stub additionally
@@ -33,11 +27,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
-const TEMPLATE_A = 'https://tiles-a.example.invalid/{z}/{x}/{y}.pbf';
-const TEMPLATE_B = 'https://tiles-b.example.invalid/{z}/{x}/{y}.pbf';
+const TEMPLATE_LIBERTY = 'https://tiles-liberty.example.invalid/{z}/{x}/{y}.pbf';
+const TEMPLATE_SWISSTOPO = 'https://tiles-swisstopo.example.invalid/{z}/{x}/{y}.pbf';
 
 const LIBERTY_COLOUR = 'rgb(1, 2, 3)';
 const SWISSTOPO_COLOUR = 'rgb(9, 8, 7)';
+const SYNC_OK_COLOUR = 'rgb(4, 5, 6)';
+
+const CACHED_TILES_ZOOM = 14;
 
 /** Empty regions collection — this suite only cares about the overlay's colour. */
 const REGIONS_GEOJSON = { type: 'FeatureCollection', features: [] };
@@ -45,15 +42,14 @@ const REGIONS_GEOJSON = { type: 'FeatureCollection', features: [] };
 /**
  * Minimal MapLibre stub, mirroring test_map_download_bytes.js's, but with
  * `addLayer` / `getLayer` / `setPaintProperty` backed by a real `layers`
- * Map (id -> paint object) instead of no-ops, so a test can read back
- * what the overlay is actually painted with — and `setActiveTemplate` to
- * switch which template `activeBasemapTileTemplate` resolves, exactly as
- * test_map_download_bytes.js uses it to exercise a basemap switch.
+ * Map (id -> paint object) and a `sources` Map (id -> data) so a test can
+ * read back both the paint expression AND the feature data
+ * refreshDownloadedOverlay builds from them.
  */
 function stubMapLibre() {
   const handlers = {};
-  let activeTemplate = TEMPLATE_A;
   const layers = new Map();
+  let cachedTilesData = null;
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -73,7 +69,12 @@ function stubMapLibre() {
     },
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
-    getSource: (id) => (id === 'basemap' ? { tiles: [activeTemplate] } : null),
+    getSource: (id) =>
+      id === 'cached-tiles'
+        ? { setData: (data) => { cachedTilesData = data; } }
+        : id === 'basemap'
+          ? { tiles: [TEMPLATE_LIBERTY] }
+          : null,
     addSource: () => {},
     addLayer: (def) => {
       layers.set(def.id, { ...(def.paint || {}) });
@@ -118,9 +119,7 @@ function stubMapLibre() {
     resize: () => {},
     handlers,
     layers,
-    setActiveTemplate: (template) => {
-      activeTemplate = template;
-    },
+    getCachedTilesData: () => cachedTilesData,
   };
   globalThis.maplibregl = {
     Map: function () {
@@ -143,15 +142,24 @@ function stubMapLibre() {
   return map;
 }
 
-/** Cache Storage stub — empty throughout; this suite never downloads anything. */
-function installCachesStub() {
+/**
+ * Cache Storage stub with one pinned bucket per `{name, urls}` entry —
+ * mirrors SNOW-586's one-bucket-per-downloaded-area shape closely enough
+ * for `pinnedBasemapCacheURLs` (static/js/map_basemap_downloads.js) to
+ * union across them, which is all this suite needs from it.
+ */
+function installCachesStub(buckets) {
   const stub = {
-    keys: vi.fn(async () => []),
-    open: vi.fn(async () => ({
-      keys: async () => [],
-      put: async () => {},
-      match: async () => undefined,
-    })),
+    keys: vi.fn(async () => buckets.map((b) => b.name)),
+    open: vi.fn(async (name) => {
+      const bucket = buckets.find((b) => b.name === name);
+      const urls = bucket ? bucket.urls : [];
+      return {
+        keys: async () => urls.map((url) => ({ url })),
+        put: async () => {},
+        match: async () => undefined,
+      };
+    }),
     delete: vi.fn(async () => {}),
   };
   Object.defineProperty(window, 'caches', {
@@ -162,7 +170,31 @@ function installCachesStub() {
   return stub;
 }
 
-/** The DOM map.js's boot reads, plus a two-option basemap picker to switch between. */
+/**
+ * `window.pwaDb` stub seeded with the raw `basemap.regions` /
+ * `basemap.customAreas` records `basemapDownloadedTemplates()` reads
+ * directly (see that function's own docstring — it is a sibling of
+ * `basemapDownloadedAreas()`, not a wrapper, so this suite has to write
+ * the SAME record shape map_region_download.js's `_recordRegionDownload`
+ * does, not the normalised `areas()` shape).
+ */
+function installDbStub(regions, customAreas) {
+  const rows = new Map([
+    ['basemap.regions', regions || []],
+    ['basemap.customAreas', customAreas || []],
+  ]);
+  window.pwaDb = {
+    get: vi.fn(async (_store, key) =>
+      rows.has(key) ? { key, value: rows.get(key) } : undefined,
+    ),
+    put: vi.fn(async (_store, row) => {
+      rows.set(row.key, row.value);
+    }),
+    delete: vi.fn(async () => {}),
+  };
+}
+
+/** The DOM map.js's boot reads. */
 function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
@@ -183,7 +215,7 @@ function buildFixture() {
           class="basemap-menu-item"
           data-basemap-key="openfreemap_liberty"
           data-basemap-url="https://tiles.example.invalid/liberty.json"
-          aria-checked="false"
+          aria-checked="true"
         >Standard</button>
       </li>
       <li role="none">
@@ -208,31 +240,18 @@ async function waitFor(predicate, timeoutMs = 1000) {
   return predicate();
 }
 
-/**
- * Flip the picker's checked radio to `key` and dispatch the same event
- * map.js's own `styledata` handler fires once a basemap switch has
- * finished re-installing everything (map.js:4012's
- * `snowdesk:basemap-changed`) — the signal `refreshDownloadedOverlay`
- * listens for. Mirrors the picker's own aria-checked bookkeeping
- * (map_basemap_picker.js) without driving a real MapLibre setStyle
- * round trip, which this stub's `setStyle` is a no-op for anyway.
- */
-function switchBasemap(key, template) {
-  for (const btn of document.querySelectorAll('#basemap-menu [data-basemap-key]')) {
-    btn.setAttribute('aria-checked', btn.dataset.basemapKey === key ? 'true' : 'false');
-  }
-  mapStub.setActiveTemplate(template);
-  document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+/** Read a `['match', ['get', 'basemapKey'], key, colour, …, fallback]` expression as a plain object. */
+function matchArms(expr) {
+  if (!Array.isArray(expr)) return null;
+  const arms = {};
+  for (let i = 2; i + 1 < expr.length; i += 2) arms[expr[i]] = expr[i + 1];
+  return { arms, fallback: expr[expr.length - 1] };
 }
 
 let mapStub;
 
 beforeAll(async () => {
   buildFixture();
-  // Seeded before loadMapBundle() runs — overlayState.downloaded is read
-  // from this key synchronously at the IIFE's top level (map.js:261), and
-  // refreshDownloadedOverlay is a no-op whenever it is false.
-  localStorage.setItem('snowdesk.map.overlay.downloaded', 'true');
   document.documentElement.style.setProperty(
     '--color-basemap-openfreemap-liberty',
     LIBERTY_COLOUR,
@@ -241,8 +260,46 @@ beforeAll(async () => {
     '--color-basemap-swisstopo-winter',
     SWISSTOPO_COLOUR,
   );
+  document.documentElement.style.setProperty('--color-sync-ok', SYNC_OK_COLOUR);
+
+  installDbStub(
+    [
+      // A region downloaded under Standard (openfreemap_liberty).
+      {
+        region_id: 'CH-2101',
+        name: 'Aletsch',
+        template: TEMPLATE_LIBERTY,
+        basemapKey: 'openfreemap_liberty',
+        bytes: 1000,
+        savedAt: '2026-08-01T10:00:00.000Z',
+      },
+    ],
+    [
+      // A custom area downloaded under Swisstopo Winter.
+      {
+        id: 'custom-a1',
+        ordinal: 1,
+        bbox: [7.9, 46.4, 8.1, 46.6],
+        template: TEMPLATE_SWISSTOPO,
+        basemapKey: 'swisstopo_winter',
+        bytes: 2000,
+        savedAt: '2026-08-01T10:00:00.000Z',
+      },
+    ],
+  );
+
+  installCachesStub([
+    {
+      name: 'snowdesk-basemap-pinned-CH-2101',
+      urls: [`https://tiles-liberty.example.invalid/${CACHED_TILES_ZOOM}/100/200.pbf`],
+    },
+    {
+      name: 'snowdesk-basemap-pinned-custom-a1',
+      urls: [`https://tiles-swisstopo.example.invalid/${CACHED_TILES_ZOOM}/300/400.pbf`],
+    },
+  ]);
+
   mapStub = stubMapLibre();
-  installCachesStub();
   Object.defineProperty(navigator, 'storage', {
     value: { estimate: async () => ({ quota: 10 * 1024 * 1024 * 1024, usage: 0 }) },
     configurable: true,
@@ -265,42 +322,55 @@ beforeAll(async () => {
   // MapLibre never fires 'load' in jsdom; installRegionsLayers (and so the
   // two cached-tiles-* layers) hangs off it.
   for (const handler of mapStub.handlers.load || []) await handler();
+  // downloadedOverlayVisible is session-scoped, off by default — only
+  // window.pwaDownloadedOverlay.show()/hide() (called from the sheet's
+  // toggle) ever flip it, so a test must call show() itself rather than
+  // relying on any persisted flag.
+  await window.pwaDownloadedOverlay.show();
 });
 
 afterAll(() => {
   vi.unstubAllGlobals();
-  localStorage.removeItem('snowdesk.map.overlay.downloaded');
   document.documentElement.removeAttribute('style');
   delete globalThis.maplibregl;
+  delete window.pwaDb;
 });
 
-describe('downloaded-areas overlay colour (SNOW-645 review)', () => {
-  it('paints the active basemap identity colour on first install, not a frozen default', async () => {
-    await waitFor(() => mapStub.layers.has('cached-tiles-fill'));
+describe('downloaded-areas overlay colour (SNOW-645 review — every basemap at once)', () => {
+  it('paints a match expression with one arm per basemap actually downloaded', async () => {
+    await waitFor(() => {
+      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-color'];
+      return Array.isArray(expr) && expr[0] === 'match';
+    });
 
-    expect(mapStub.layers.get('cached-tiles-fill')['fill-color']).toBe(LIBERTY_COLOUR);
-    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
+    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-color'];
+    const lineExpr = mapStub.layers.get('cached-tiles-line')['line-color'];
+    expect(fillExpr[0]).toBe('match');
+    expect(fillExpr[1]).toEqual(['get', 'basemapKey']);
+
+    const { arms, fallback } = matchArms(fillExpr);
+    expect(arms.openfreemap_liberty).toBe(LIBERTY_COLOUR);
+    expect(arms.swisstopo_winter).toBe(SWISSTOPO_COLOUR);
+    expect(fallback).toBe(SYNC_OK_COLOUR);
+
+    expect(matchArms(lineExpr).arms).toEqual(arms);
   });
 
-  it('tracks a basemap switch — the colour is not frozen at parse time', async () => {
-    switchBasemap('swisstopo_winter', TEMPLATE_B);
-
-    await waitFor(
-      () => mapStub.layers.get('cached-tiles-fill')['fill-color'] === SWISSTOPO_COLOUR,
-    );
-
-    expect(mapStub.layers.get('cached-tiles-fill')['fill-color']).toBe(SWISSTOPO_COLOUR);
-    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(SWISSTOPO_COLOUR);
+  it('tags each feature with the basemapKey it was downloaded under', async () => {
+    const data = mapStub.getCachedTilesData();
+    const keys = new Set(data.features.map((f) => f.properties.basemapKey));
+    expect(keys).toEqual(new Set(['openfreemap_liberty', 'swisstopo_winter']));
   });
+});
 
-  it('switches back just as readily — this is live resolution, not a one-way flip', async () => {
-    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+describe('downloaded-areas overlay colour — nothing downloaded', () => {
+  it('falls back to a flat colour when no basemap keys are present at all', async () => {
+    installDbStub([], []);
+    installCachesStub([]);
+    window.pwaDownloadedOverlay.hide();
+    await window.pwaDownloadedOverlay.show();
 
-    await waitFor(
-      () => mapStub.layers.get('cached-tiles-fill')['fill-color'] === LIBERTY_COLOUR,
-    );
-
-    expect(mapStub.layers.get('cached-tiles-fill')['fill-color']).toBe(LIBERTY_COLOUR);
-    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
+    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-color'];
+    expect(fillExpr).toBe(SYNC_OK_COLOUR);
   });
 });
