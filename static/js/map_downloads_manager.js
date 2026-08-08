@@ -221,10 +221,6 @@
     // "Incomplete download" shortened to "Incomplete" in a later review
     // pass, matching Hugo's second mock.
     'kind-incomplete': 'Incomplete',
-    // SNOW-645 review: was "%(used)s of %(budget)s used" — a self-contained
-    // sentence. The budget figure now lives in the <select> immediately
-    // after this fragment ("40.3 MB of [500 MB ⌄]"), not repeated as text.
-    'usage-used': '%(used)s of',
     'confirm-remove':
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
@@ -445,13 +441,15 @@
     // SNOW-645 review: the budget figure itself is no longer stated in
     // this text — it now lives in the <select> right after it ("40.3 MB
     // of [500 MB ⌄]"), part of the same header row (see the sheet's own
-    // template comment for the layout).
-    const summaryEl = sheet.querySelector('[data-downloads-summary]');
-    if (summaryEl) {
-      summaryEl.textContent = interpolate(STRINGS['usage-used'], {
-        used: core.formatMegabytes(summary.usedBytes),
-      });
-    }
+    // template comment for the layout). The used FIGURE and the word "of"
+    // are two separately-styled spans now, reconciled against the design
+    // (number+unit in mono/medium/text-1, "of" in plain text-2) — only
+    // the figure needs JS at all: `core.formatMegabytes()` is a
+    // locale-invariant numeral, not translatable text, so it is set
+    // directly rather than through the STRINGS/interpolate path "of"
+    // itself still uses as a static `{% trans %}` node in the template.
+    const summaryValue = sheet.querySelector('[data-downloads-summary-value]');
+    if (summaryValue) summaryValue.textContent = core.formatMegabytes(summary.usedBytes);
 
     const bar = sheet.querySelector('[data-downloads-bar]');
     if (bar) {
@@ -501,17 +499,34 @@
     // together) hidden — see the sheet's own template comment for why an
     // empty heading is never shown.
     const grouped = core.groupRowsByKind(rows);
+    const groupOrder = ['region', 'custom'];
     const groupLists = {
       region: sheet.querySelector('[data-downloads-list-region]'),
       custom: sheet.querySelector('[data-downloads-list-custom]'),
     };
-    for (const kind of ['region', 'custom']) {
+    // SNOW-645 review: each ROW now carries its own `border-t` (the row
+    // template's own `<li>` — see buildRow), replacing the `divide-y` the
+    // `<ul>` used to carry — reconciled against the design, which draws
+    // no line under the group heading (so the FIRST row's own top border
+    // is what separates heading from list now) but DOES close the LAST
+    // visible group off with a line underneath its last row. Which group
+    // is "last" is data-driven (either can be empty and hidden), so it
+    // cannot be expressed as a fixed CSS selector — this finds it and
+    // toggles a border-b/border-border pair onto that ONE list's own
+    // <ul>, clearing it from the other.
+    const lastVisibleKind = groupOrder
+      .filter((kind) => grouped[kind].length > 0)
+      .pop();
+    for (const kind of groupOrder) {
       const listEl = groupLists[kind];
       const wrapper = sheet.querySelector('[data-downloads-group="' + kind + '"]');
       const kindRows = grouped[kind];
       if (wrapper) wrapper.hidden = kindRows.length === 0;
       if (!listEl) continue;
       for (const row of kindRows) listEl.appendChild(buildRow(row));
+      const isLastVisible = kind === lastVisibleKind;
+      listEl.classList.toggle('border-b', isLastVisible);
+      listEl.classList.toggle('border-border', isLastVisible);
     }
 
     const select = /** @type {HTMLSelectElement|null} */ (
@@ -586,8 +601,19 @@
     // orphaned row (SNOW-612) it is the bare bucket id — manageRows falls
     // back to `id` only when there is no record at all — which is exactly
     // what buildRow shows: an orphan is labelled by what it IS.
+    //
+    // SNOW-645 review: an orphaned row's title dims to `text-text-2` (the
+    // template's own default is `text-text-1`) — reconciled against the
+    // design, which dims the WHOLE row (title, size, and the rule's own
+    // opacity below), not just the rule, for a row that never finished.
     const label = fragment.querySelector('[data-row-label]');
-    if (label) label.textContent = row.label;
+    if (label) {
+      label.textContent = row.label;
+      if (row.orphaned) {
+        label.classList.remove('text-text-1');
+        label.classList.add('text-text-2');
+      }
+    }
 
     // The subtitle is either which basemap this was downloaded under, or
     // — for an orphan — the fixed "Incomplete" string with no
@@ -626,8 +652,9 @@
     // An ORPHANED row (SNOW-612 — no record, so no stored basemapKey) is
     // never full-strength and never that green default, which means
     // "downloaded, basemap unknown" — not true of something that never
-    // finished. Hugo's call: pale, not flat neutral — `opacity-40` is the
-    // shared "this row is incomplete" modifier applied to EITHER of:
+    // finished. Hugo's call: pale, not flat neutral — `opacity-35`
+    // (reconciled against the design; was `opacity-40`) is the shared
+    // "this row is incomplete" modifier applied to EITHER of:
     //   - render()'s recoveredBasemapKey, when the orphan's own bucket's
     //     tiles matched a template on record (an INFERENCE — see
     //     orphanBasemapKey's own docstring; never treated as a stored
@@ -641,7 +668,7 @@
     const rule = fragment.querySelector('[data-row-rule]');
     if (rule) {
       if (row.orphaned) {
-        rule.classList.add('opacity-40');
+        rule.classList.add('opacity-35');
         if (row.recoveredBasemapKey) {
           rule.dataset.basemapKey = row.recoveredBasemapKey;
         } else {
@@ -657,8 +684,17 @@
       // it, same "downloaded, basemap unknown" green the roundels use.
     }
 
+    // SNOW-645 review: dims to `text-text-3` for an orphan (the template's
+    // own default is `text-text-2`) — see the title's own comment above
+    // for why the whole row dims together, not just the rule.
     const size = fragment.querySelector('[data-row-size]');
-    if (size) size.textContent = row.size;
+    if (size) {
+      size.textContent = row.size;
+      if (row.orphaned) {
+        size.classList.remove('text-text-2');
+        size.classList.add('text-text-3');
+      }
+    }
 
     // SNOW-645 review: the "…" overflow menu replaces the two inline
     // Rename/Remove buttons. trigger_id/menu_id are placeholders in the

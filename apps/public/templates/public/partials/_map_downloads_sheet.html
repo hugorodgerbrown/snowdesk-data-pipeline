@@ -64,7 +64,11 @@ htmx.min.js / db.js are loaded earlier by home.html / base.html — not
 repeated here.
 {% endcomment %}
 {% trans "Downloads on this device" as downloads_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label %}
+{# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
+{# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
+{# between them scroll; see includes/_overlay_sheet.html's own docstring  #}
+{# for the mechanism and why favourites/report do NOT opt into this.      #}
+{% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label scroll_body=True %}
 {# Sheet body — cloned into #map-downloads-sheet by map_downloads_manager.js #}
 {# each time the sheet is opened, then populated from the basemap.areas     #}
 {# record. Re-cloned rather than updated in place so a stale row can never  #}
@@ -76,7 +80,19 @@ repeated here.
     {# dynamic spacing scale (v4: any utility is `calc(var(--spacing) * N)` #}
     {# for any N, not a fixed named list) makes `gap-4.5` (4.5 × 4px = 18px)#}
     {# a real, non-arbitrary utility, so this needed no new token.          #}
-    <div class="flex flex-col gap-4.5">
+    {#                                                                      #}
+    {# SNOW-645 review — scrolling: this <div> is the sole child of         #}
+    {# #map-downloads-sheet, which includes/_overlay_sheet.html's           #}
+    {# scroll_body=True renders as `flex flex-col overflow-hidden` — so     #}
+    {# this element needs `min-h-0 flex-1` to actually fill (and be         #}
+    {# allowed to SHRINK within) that bounded box, rather than pushing it   #}
+    {# taller than the sheet's own max-height the way plain block content   #}
+    {# would. `min-h-0` is load-bearing, not decorative: a flex child       #}
+    {# defaults to `min-height: auto`, which means "never shrink below my   #}
+    {# own content's height" — without overriding that, the row list below  #}
+    {# refuses to scroll and pushes the CTA/toggle off-screen instead,      #}
+    {# which looks exactly like this work never having been done.           #}
+    <div class="flex min-h-0 flex-1 flex-col gap-4.5">
         {# SNOW-645 review: the title reads noticeably larger/bolder than    #}
         {# every other sheet's — _sheet_header.html's own title_class        #}
         {# override, added for exactly this. `text-lg` (18px, Tailwind's     #}
@@ -203,25 +219,36 @@ repeated here.
         {# empty/hidden), so render() sets it via a `border-b`/`border-border`#}
         {# class toggle on whichever list is genuinely last-visible, not      #}
         {# something expressible as a fixed CSS selector here.                #}
-        <div data-downloads-group="region" class="flex flex-col gap-1" hidden>
-            <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-                {% trans "Regions" %}
+        {#                                                                    #}
+        {# SNOW-645 review — scrolling: THIS is the scroll region             #}
+        {# includes/_overlay_sheet.html's own docstring describes — the       #}
+        {# header above (title, budget, over-budget warning) and the footer   #}
+        {# below (CTA, toggle) are both ordinary flex children and stay       #}
+        {# pinned; only this `overflow-y-auto` div scrolls when there are     #}
+        {# enough areas to overflow the sheet's own bounded max-height.       #}
+        {# `min-h-0` is the same load-bearing override the outer wrapper      #}
+        {# needs, for the same reason — see that element's own comment.       #}
+        <div class="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto">
+            <div data-downloads-group="region" class="flex flex-col gap-1" hidden>
+                <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
+                    {% trans "Regions" %}
+                </p>
+                <ul data-downloads-list-region class="flex flex-col"></ul>
+            </div>
+            <div data-downloads-group="custom" class="flex flex-col gap-1" hidden>
+                <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
+                    {% trans "Custom areas" %}
+                </p>
+                <ul data-downloads-list-custom class="flex flex-col"></ul>
+            </div>
+            <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
+                {# "below" — the trigger this sentence points at is still below  #}
+                {# both groups, in its own CTA group. The two have to stay in    #}
+                {# step; a stale direction here is a wrong instruction, not just #}
+                {# untidy copy.                                                  #}
+                {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button below for a custom area." %}
             </p>
-            <ul data-downloads-list-region class="flex flex-col"></ul>
         </div>
-        <div data-downloads-group="custom" class="flex flex-col gap-1" hidden>
-            <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-                {% trans "Custom areas" %}
-            </p>
-            <ul data-downloads-list-custom class="flex flex-col"></ul>
-        </div>
-        <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
-            {# "below" — the trigger this sentence points at is still below  #}
-            {# both groups, in its own CTA group. The two have to stay in    #}
-            {# step; a stale direction here is a wrong instruction, not just #}
-            {# untidy copy.                                                  #}
-            {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button below for a custom area." %}
-        </p>
         {# SNOW-645 review: the add-trigger is its own group with a top      #}
         {# border. SNOW-634: "Download a custom area" moved here from the    #}
         {# roundel's own click — see this file's module header. SNOW-635 is  #}
@@ -293,7 +320,10 @@ repeated here.
         {# would help the layout, and the control still does something real   #}
         {# (a downloaded-under-a-different-basemap area, say, still shows).   #}
         <div class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2">
-            <label for="map-downloads-overlay-toggle" class="text-sm text-text-2">
+            {# SNOW-645 review: 14px/500/text-1 (was text-sm/text-2, i.e.    #}
+            {# 400 weight) — reconciled against the design, which reads     #}
+            {# this label with more weight than a purely descriptive one.   #}
+            <label for="map-downloads-overlay-toggle" class="text-sm font-medium text-text-1">
                 {% trans "Show areas on the map" %}
             </label>
             {% include "includes/_switch.html" with id="map-downloads-overlay-toggle" extra_attrs="data-downloads-overlay-toggle" %}
@@ -322,15 +352,35 @@ repeated here.
 {# per-row id once cloned, the same way it already rewrites                 #}
 {# data-downloads-delete's value. The Rename item is present unconditionally #}
 {# here too — buildRow removes its whole <li> for a non-renameable row.     #}
+{# SNOW-645 review — sizing reconciled against the design:                  #}
+{#   - the rule: 3px wide / 26px tall / small radius, vertically CENTRED    #}
+{#     (was `w-1 self-stretch rounded-full` — full row height, fully        #}
+{#     rounded). `w-0.75`/`h-6.5` are Tailwind's own dynamic spacing scale   #}
+{#     (0.75 × 4px = 3px, 6.5 × 4px = 26px — exact, not an arbitrary        #}
+{#     value); `rounded-xs` is Tailwind's OWN unmodified default            #}
+{#     (`--radius-xs: 2px`, the one radius step this project's own @theme   #}
+{#     block does not override) rather than a new token, since it already  #}
+{#     equals the design's own 2px exactly. `self-center` overrides the    #}
+{#     `<li>`'s `items-stretch` for this one child.                        #}
+{#   - the title: `text-label font-medium` (15px/500 — was                 #}
+{#     `text-sm font-semibold`, 14px/600).                                  #}
+{#   - the size: `font-mono text-summary text-text-2` (13px mono — was     #}
+{#     `text-sm text-text-2`, 14px sans). `text-summary` (13px) is reused   #}
+{#     from its original collapsible-panel-summary role — the pixel value  #}
+{#     coincides, not the semantic name.                                   #}
+{#   - the row itself: `border-t border-border py-2.25` (9px vertical      #}
+{#     padding — `py-2.25` = 2.25 × 4px = 9px exact) replaces the `<ul>`'s  #}
+{#     removed `divide-y` (see the group `<div>`s above) and the old       #}
+{#     `py-2` (8px).                                                       #}
 <template id="map-downloads-row-template">
-    <li class="flex items-stretch gap-3 py-2">
+    <li class="flex items-stretch gap-3 border-t border-border py-2.25">
         <span
             data-row-rule
             aria-hidden="true"
-            class="basemap-identity-fill w-1 shrink-0 self-stretch rounded-full"
+            class="basemap-identity-fill h-6.5 w-0.75 shrink-0 self-center rounded-xs"
         ></span>
         <span class="flex min-w-0 flex-1 flex-col justify-center">
-            <span data-row-label class="truncate text-sm font-semibold text-text-1"></span>
+            <span data-row-label class="truncate text-label font-medium text-text-1"></span>
             {# SNOW-645: which basemap this area was downloaded under, or —  #}
             {# for an orphan (SNOW-612) — the fixed "Incomplete" string      #}
             {# (`kind-incomplete` below). A row with no resolvable basemap   #}
@@ -340,7 +390,7 @@ repeated here.
             <span data-row-subtitle class="truncate text-xs text-text-3"></span>
         </span>
         <span class="flex shrink-0 items-center gap-1">
-            <span data-row-size class="text-sm text-text-2"></span>
+            <span data-row-size class="font-mono text-summary text-text-2"></span>
             {% include "includes/_overflow_menu.html" with trigger_id="row-overflow-trigger" menu_id="row-overflow-menu" trigger_label="More actions" items_template="includes/_map_downloads_row_menu_items.html" %}
         </span>
     </li>
@@ -364,7 +414,6 @@ repeated here.
     {# second mock shows the shorter form. A genuine msgid change, not a   #}
     {# JS-side truncation, so it stays through makemessages/translation.   #}
     <span data-string="kind-incomplete">{% trans "Incomplete" %}</span>
-    <span data-string="usage-used">{% blocktrans %}%(used)s of{% endblocktrans %}</span>
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
             download it again when you're back online.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>

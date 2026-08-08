@@ -756,6 +756,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    /* SNOW-645 review: held as a custom property so .map-legend-card's own
+       max-height, below, can reuse the exact figure this element is
+       already offset from the viewport bottom by, plus the card's own
+       8px gap — see that rule's own comment for why this now has a
+       bound at all. */
+    --map-legend-card-bottom-offset: calc(env(safe-area-inset-bottom, 0px) + 60px + 8px);
 }
 
 /* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
@@ -829,6 +835,20 @@
     border: 0.5px solid var(--color-border);
     border-radius: 8px;
     box-shadow: var(--shadow-glass);
+    /* SNOW-645 review: bounded height, added — the card opens UPWARD from
+       a fixed low anchor with no height limit at all, so a longer legend
+       (more danger levels, longer attribution strings in a future locale)
+       would grow into the top of the viewport with nothing to stop it —
+       the same defect class as #home-intro and the "Manage downloads"
+       sheet. Bound to the room between the shared top safe-area/gap
+       token every floating map surface uses (--map-edge-inset-top,
+       src/css/main.css) and this card's own distance from the viewport
+       bottom (--map-legend-card-bottom-offset, set on the parent
+       .map-legend above — the offset this card is already anchored from,
+       plus its own 8px gap). `dvh`, not `vh`: see .home-intro-card's own
+       comment for why. */
+    max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
+    overflow-y: auto;
     font-size: 11px;
     line-height: 1.5;
     color: var(--color-text-1);
@@ -1861,6 +1881,25 @@
     position: absolute;
     /* Offset from safe areas so the card clears the status bar / notch. */
     top: calc(env(safe-area-inset-top, 0px) + 64px);
+    /* SNOW-645 review: `bottom` is new — this element used to set `top`
+       ONLY, which leaves its height "auto" (intrinsic, sized to whatever
+       .home-intro-card inside it needs). Setting `bottom` too gives it a
+       DEFINITE height instead (this element's own containing block,
+       #map, has one: #map is `flex: 1 1 auto` inside a `flex-col` body
+       whose `min-height: 100dvh` makes #map's own height determinate in
+       the standard case — the nav bar and any off-season banner above it
+       are already excluded from #map's box by that flex layout, which a
+       raw `100dvh` figure computed HERE could not know about). That
+       definite height is what lets .home-intro-card's own `max-height:
+       100%`, below, resolve against "the real room inside #map below the
+       nav/banner chrome" rather than the full viewport including it —
+       measured directly against a live page (nav + off-season banner
+       both present) rather than assumed: a raw `100dvh`-minus-insets
+       figure here was off by the nav+banner's own height, letting the
+       card's computed max-height run past the bottom of the viewport.
+       `--map-edge-inset-bottom` is the same bottom clearance every other
+       floating map surface already respects. */
+    bottom: var(--map-edge-inset-bottom);
     left: calc(env(safe-area-inset-left, 0px) + 16px);
     z-index: 5;
     /* Pointer events on the card only; the map behind the card stays interactive. */
@@ -1893,6 +1932,30 @@
     max-width: min(380px, calc(100vw - 96px));
     color: var(--color-text-1);
     font-family: var(--sans);
+    /* SNOW-645 review: bounded height, added — there was none before, so
+       long copy (an off-season notice paragraph plus both taglines) grew
+       DOWN past the bottom controls with nothing to stop it, the same
+       defect class as the "Manage downloads" sheet's own unbounded
+       growth (templates/includes/_overlay_sheet.html). `max-height: 100%`
+       resolves against .home-intro's OWN height, which is now definite
+       (top AND bottom both set — see that rule's own comment for why a
+       plain `100dvh`-minus-insets figure computed HERE was wrong by the
+       nav bar's own height, verified against a live page rather than
+       assumed). The whole card scrolls as one unit when it overflows
+       (`overflow-y: auto`) — the same "no internal pinned regions"
+       default the favourites/report map sheets use, not the downloads
+       sheet's pinned-header/footer treatment: this card has no such
+       structure to split, and this fix is deliberately NOT the
+       anchored-top-and-bottom redesign a future bulletin-panel rework
+       may still do — see .home-intro's own comment for why a plain
+       bound is now the right amount of fix here. The "×" close button
+       (.home-intro-close, absolutely positioned WITHIN this card)
+       scrolls with the content as a result — Escape and the primary CTA
+       in .home-intro-actions (itself part of the scrolling content,
+       reached by scrolling down) remain the way to dismiss without
+       scrolling back up first. */
+    max-height: 100%;
+    overflow-y: auto;
 }
 
 .home-intro-identity {
@@ -2105,6 +2168,17 @@
     color: var(--color-text-1);
     font-family: var(--sans);
     transition: top 160ms ease, left 160ms ease;
+    /* SNOW-645 review: bounded height, added — this card is JS-positioned
+       per coachmark step (map_help.js computes `top`/`left` at runtime,
+       hence no fixed anchor to measure a precise remaining-room figure
+       from, unlike .home-intro-card / .map-legend-card above), so the
+       general viewport-minus-edge-insets cap every floating map surface
+       now uses is the right level of precision here: a longer step's
+       copy scrolls within the card rather than growing past whichever
+       edge JS happened to place it near. `dvh`, not `vh` — see
+       .home-intro-card's own comment for why. */
+    max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-edge-inset-bottom));
+    overflow-y: auto;
 }
 
 .map-help--no-motion .map-help-tooltip {

@@ -400,6 +400,15 @@
   --map-edge-inset-left:    calc(env(safe-area-inset-left, 0px) + var(--map-edge-gap));
   --map-edge-inset-right:   calc(env(safe-area-inset-right, 0px) + var(--map-edge-gap));
   --map-edge-inset-bottom:  calc(env(safe-area-inset-bottom, 0px) + var(--map-edge-gap));
+  /* SNOW-645 review: added so includes/_overlay_sheet.html can bound its
+     own max-height against "the room between the top of the screen and
+     its own bottom inset" — a bottom-docked sheet with enough content
+     (ten-plus downloads) grows upward past the top of the viewport with
+     nothing to stop it otherwise, pushing its own header off-screen.
+     Same env()-plus-gap shape as the other three, for the same reason
+     (the file's own header comment above explains why this has to be a
+     token, not an inline calc(env(...)) arbitrary value). */
+  --map-edge-inset-top:     calc(env(safe-area-inset-top, 0px) + var(--map-edge-gap));
 }
 
 

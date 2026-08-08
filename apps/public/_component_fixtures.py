@@ -1307,6 +1307,20 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "On",
         "context": {"id": "component-library-switch-on", "extra_attrs": "checked"},
     },
+    {
+        # SNOW-645 review: includes/_switch.html's own wrapping <label>
+        # carries has-[:disabled]:cursor-not-allowed/opacity-50, driven by
+        # the :disabled pseudo-class on the real <input> nested inside it —
+        # a state this fixture can render statically (unlike :focus-visible,
+        # which needs real interaction) by passing the bare `disabled`
+        # attribute through `extra_attrs`, the same mechanism `checked`
+        # above uses.
+        "caption": "Disabled",
+        "context": {
+            "id": "component-library-switch-disabled",
+            "extra_attrs": "disabled",
+        },
+    },
 )
 
 
