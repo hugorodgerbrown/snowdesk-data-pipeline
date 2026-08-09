@@ -640,6 +640,26 @@
   // the regions-fill paint below, keyed on the static ``covered`` property.
   const UNCOVERED_FILL_COLOUR = '#b5b5b5';
 
+  // The choropleth's two weights: the resting fill, and the heavier one a
+  // region gets while it is selected or being previewed from the sheet.
+  //
+  // These were `fill-opacity` values until the fill turned out to be
+  // alpha-blending with the basemap — the same rating rendered as a
+  // different colour on each of the five selectable basemaps, because each
+  // one draws something different underneath (see
+  // `choropleth_core.js`'s BACKDROP_COLOUR for the full account). They are
+  // now blend weights against a fixed backdrop instead, resolved to flat
+  // colours below and painted at `fill-opacity: 1`. Same appearance as
+  // before over a light basemap; no longer a function of which basemap is
+  // loaded.
+  const REGION_FILL_WEIGHT = 0.55;
+  const REGION_FILL_WEIGHT_EMPHASIS = 0.85;
+
+  // choropleth_core.js is a deferred classic script earlier in document
+  // order (see public/home.html), so it has already run — same assumption
+  // the paintRatingsFrame call sites below make.
+  const compositeOverBackdrop = self.pwaChoroplethCore.compositeOverBackdrop;
+
   // SNOW-570/SNOW-587: the cached-tiles overlay — one square per tile
   // actually in the pinned cache. Fainter than a download's live grid —
   // this is ambient state the user can leave switched on, not transient
@@ -787,6 +807,38 @@
     // property from the API) get a distinct flat grey instead of no_rating.
     // The case checks ``covered`` first; these regions never carry a rating, so
     // ordering is safe and the rating ``match`` handles every covered region.
+    //
+    // The fill is OPAQUE, and the translucency it used to have is baked into
+    // the colours instead. A translucent fill is composited by MapLibre
+    // against the basemap, and the five basemaps draw wildly different
+    // things under a region — so one rating came out a different colour on
+    // each of them, drifting away from the legend pill that names it. The
+    // blend now happens against a fixed backdrop, in
+    // ``compositeOverBackdrop``, which is where the reasoning lives.
+    const emphasised = [
+      'any',
+      ['boolean', ['feature-state', 'selected'], false],
+      ['boolean', ['feature-state', 'previewing'], false],
+    ];
+    // One rating→colour ``match`` at a given blend weight. Built twice, for
+    // the resting and emphasised weights, and chosen between by feature
+    // state — MapLibre has no expression for "blend these two colours", so
+    // the two colour sets have to be resolved up front.
+    const fillColoursAt = (weight) => [
+      'case',
+      ['==', ['get', 'covered'], false],
+      compositeOverBackdrop(UNCOVERED_FILL_COLOUR, weight),
+      [
+        'match',
+        ['feature-state', 'rating'],
+        'low',          compositeOverBackdrop(RATING_COLOURS.low, weight),
+        'moderate',     compositeOverBackdrop(RATING_COLOURS.moderate, weight),
+        'considerable', compositeOverBackdrop(RATING_COLOURS.considerable, weight),
+        'high',         compositeOverBackdrop(RATING_COLOURS.high, weight),
+        'very_high',    compositeOverBackdrop(RATING_COLOURS.very_high, weight),
+        compositeOverBackdrop(RATING_COLOURS.no_rating, weight),
+      ],
+    ];
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
@@ -797,27 +849,10 @@
       paint: {
         'fill-color': [
           'case',
-          ['==', ['get', 'covered'], false], UNCOVERED_FILL_COLOUR,
-          [
-            'match',
-            ['feature-state', 'rating'],
-            'low',          RATING_COLOURS.low,
-            'moderate',     RATING_COLOURS.moderate,
-            'considerable', RATING_COLOURS.considerable,
-            'high',         RATING_COLOURS.high,
-            'very_high',    RATING_COLOURS.very_high,
-            RATING_COLOURS.no_rating,
-          ],
+          emphasised, fillColoursAt(REGION_FILL_WEIGHT_EMPHASIS),
+          fillColoursAt(REGION_FILL_WEIGHT),
         ],
-        'fill-opacity': [
-          'case',
-          [
-            'any',
-            ['boolean', ['feature-state', 'selected'], false],
-            ['boolean', ['feature-state', 'previewing'], false],
-          ], 0.85,
-          0.55,
-        ],
+        'fill-opacity': 1,
       },
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
@@ -4283,8 +4318,47 @@
     // / mouseenter / mouseleave wires above) survive because they're
     // bound by layer id — re-adding a layer with the same id revives
     // them. Feature-state does not survive: we restore the selection
-    // outline here, and any non-today date paint via the URL-resident
-    // ``?d=`` and the shared ratings cache.
+    // outline here, and the whole choropleth via repaintAfterStyleSwap.
+
+    /**
+     * Repaint every region's rating after a style swap dropped the source.
+     *
+     * Reinstalling the 'regions' source wipes feature-state, and rating IS
+     * feature-state — so without this the entire choropleth falls through
+     * the paint expression's `match` to `no_rating` grey and the map goes
+     * blank the moment the user picks a different basemap.
+     *
+     * The date this reads used to be `readUrlDateParam()` alone, which is
+     * null whenever the map is showing its default date: the scrubber
+     * clears `?d=` for "today" (`commitDate`), and out of season it snaps
+     * silently to the season's last populated day without ever writing the
+     * param. That is the ordinary way to arrive on the page — so the bug
+     * this fixes was not an edge case, it was every visitor who had not
+     * deep-linked to a date and then changed basemap.
+     *
+     * The precedence between the committed date and `?d=` lives in
+     * `choropleth_core.js` so it can be unit-tested; this function is the
+     * MapLibre wiring around it, with the boot frame as the floor below
+     * both — some colours beat a grey map in every case.
+     */
+    const repaintAfterStyleSwap = () => {
+      const dateKey = self.pwaChoroplethCore.repaintDateForStyleSwap(
+        currentDisplayedDate, readUrlDateParam(),
+      );
+      if (!dateKey) {
+        // Nothing has committed a date: the boot frame is still the truth.
+        paintTodayRatings();
+        return;
+      }
+      getSeasonRatings()
+        .then((ratings) => repaintRegionsForDate(dateKey, ratings))
+        .catch(() => {
+          // Offline or a failed feed — the boot frame is the best colours
+          // available, and is strictly better than leaving the map grey.
+          paintTodayRatings();
+        });
+    };
+
     map.on('styledata', () => {
       if (!geojsonCache) return;          // initial load — handled above
       // Gate on the fill LAYER, not just the source: a setStyle that leaves
@@ -4388,12 +4462,7 @@
           { selected: true },
         );
       }
-      const dateKey = readUrlDateParam();
-      if (dateKey) {
-        getSeasonRatings()
-          .then((ratings) => repaintRegionsForDate(dateKey, ratings))
-          .catch(() => { /* network fail → leave today's colours */ });
-      }
+      repaintAfterStyleSwap();
 
       // A new basemap style has just loaded and its overlays are back.
       // Notify per-basemap consumers (the region-download icon re-probes its
@@ -4418,12 +4487,7 @@
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
       }
-      const dateKey = readUrlDateParam();
-      if (dateKey) {
-        getSeasonRatings()
-          .then((ratings) => repaintRegionsForDate(dateKey, ratings))
-          .catch(() => { /* offline → keep today's colours */ });
-      }
+      repaintAfterStyleSwap();
     });
 
     // SNOW-318: Refresh the open popup's colour, digit, date label, and bulletin

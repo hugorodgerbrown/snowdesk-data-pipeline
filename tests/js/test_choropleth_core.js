@@ -178,3 +178,88 @@ describe('rating lookup', () => {
     expect(painted.get(1)).toBe('no_rating');
   });
 });
+
+describe('compositeOverBackdrop', () => {
+  it('returns the foreground unchanged at full alpha', () => {
+    // The point of the whole exercise: an opaque fill painted with this
+    // colour is the colour it names, not the colour the basemap makes of it.
+    expect(core.compositeOverBackdrop('#ff9900', 1)).toBe('#ff9900');
+  });
+
+  it('returns the backdrop at zero alpha', () => {
+    expect(core.compositeOverBackdrop('#ff9900', 0)).toBe(core.BACKDROP_COLOUR);
+  });
+
+  it('blends each channel independently', () => {
+    // #000000 at 0.5 over #f2f0ec → each channel halved and rounded.
+    // 0xf2/2 = 121 = 0x79, 0xf0/2 = 120 = 0x78, 0xec/2 = 118 = 0x76.
+    expect(core.compositeOverBackdrop('#000000', 0.5)).toBe('#797876');
+  });
+
+  it('pads a channel that blends below 0x10', () => {
+    // Regression guard for the obvious hex-join bug: a channel of 9 must
+    // render '09', not '9', or the whole string shifts and MapLibre gets a
+    // 5-digit colour it will reject at style-validation time.
+    expect(core.compositeOverBackdrop('#000000', 0.99)).toBe('#020202');
+  });
+
+  it('accepts the 3-digit shorthand', () => {
+    expect(core.compositeOverBackdrop('#f00', 1)).toBe('#ff0000');
+  });
+
+  it('tolerates a missing leading hash', () => {
+    expect(core.compositeOverBackdrop('ff0000', 1)).toBe('#ff0000');
+  });
+
+  it('throws on a colour it cannot parse', () => {
+    // Loudly, not silently: a swallowed parse failure here would ship a
+    // wrong danger colour, which is the exact class of bug this module was
+    // extended to remove.
+    expect(() => core.compositeOverBackdrop('rebeccapurple', 0.55)).toThrow();
+    expect(() => core.compositeOverBackdrop('#ff99', 0.55)).toThrow();
+  });
+
+  it('keeps the danger scale distinguishable at the resting weight', () => {
+    // The five EAWS colours as map.js paints them, blended at the resting
+    // weight. If two of them ever collapsed onto the same output the map
+    // would be lying about the danger level, so pin that they don't.
+    const RATINGS = ['#ccff66', '#ffff00', '#ff9900', '#ff0000', '#a500a5'];
+    const blended = RATINGS.map((c) => core.compositeOverBackdrop(c, 0.55));
+
+    expect(new Set(blended).size).toBe(RATINGS.length);
+    for (const colour of blended) expect(colour).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});
+
+describe('repaintDateForStyleSwap', () => {
+  it('prefers the committed date over the URL param', () => {
+    // The scrubber can commit a date silently while leaving ?d= pointing
+    // at the day the visitor deep-linked to and has since scrubbed away
+    // from. What is on screen wins.
+    expect(core.repaintDateForStyleSwap('2026-05-18', '2026-04-09'))
+      .toBe('2026-05-18');
+  });
+
+  it('uses the committed date when there is no URL param', () => {
+    // The regression this exists for. `?d=` is absent on the ordinary
+    // visit — the scrubber strips it for today and never writes one for
+    // the out-of-season snap — and the old code did nothing at all here,
+    // so every region went grey the moment the basemap changed.
+    expect(core.repaintDateForStyleSwap('2026-05-18', null)).toBe('2026-05-18');
+  });
+
+  it('falls back to the URL param before anything has committed', () => {
+    expect(core.repaintDateForStyleSwap(null, '2026-04-09')).toBe('2026-04-09');
+  });
+
+  it('returns null when neither is known', () => {
+    // Signals "no date" to the caller, which then repaints its boot frame
+    // rather than leaving the choropleth wiped.
+    expect(core.repaintDateForStyleSwap(null, null)).toBeNull();
+  });
+
+  it('treats an empty string as absent rather than as a date', () => {
+    expect(core.repaintDateForStyleSwap('', '2026-04-09')).toBe('2026-04-09');
+    expect(core.repaintDateForStyleSwap('', '')).toBeNull();
+  });
+});
