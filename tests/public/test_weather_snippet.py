@@ -100,6 +100,72 @@ class TestFetchWeatherSnippetGuards:
 
 
 @pytest.mark.django_db
+class TestUppercaseRegionIdInTheUrl:
+    """The URL the template actually builds — uppercase — must work (SNOW-650).
+
+    ``_weather_panel.html`` builds its ``hx-post`` from the raw ``region_id``
+    field, and every EAWS id is uppercase, so every retry in production hits
+    the canonicalisation redirect. Until SNOW-650 that was a 301: the browser
+    replayed it as a GET, ``@require_POST`` answered 405, and the swap never
+    happened. Every existing test in this module posts to the lowercase URL
+    directly, which is precisely why the bug shipped.
+    """
+
+    def test_uppercase_post_redirects_with_308(self) -> None:
+        """The redirect is a 308, so the user agent replays the POST."""
+        client = Client()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        url = _weather_url("CH-4115", "2026-01-15")
+
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 308
+        assert response["Location"] == _weather_url("ch-4115", "2026-01-15")
+        assert region.region_id == "CH-4115"
+
+    def test_uppercase_post_followed_through_is_not_405(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Following the redirect lands on the view as a POST, not a 405 GET.
+
+        This is the assertion that fails on the 301: the followed request
+        arrives as a GET and ``@require_POST`` rejects it.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = timezone.localdate()
+        # .build() so no DB row exists and the fetch path is exercised — the
+        # deliberate exception to the .create() rule used across this module.
+        snapshot = WeatherSnapshotFactory.build(
+            region=region,
+            valid_for_date=today,
+            weather_code=0,
+        )
+        monkeypatch.setattr(
+            "apps.public.views.fetch_weather_for_region",
+            lambda *args, **kwargs: (snapshot, True),
+        )
+
+        client = Client()
+        url = _weather_url("CH-4115", today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true", follow=True)
+
+        assert response.status_code == 200
+        assert response.redirect_chain == [(_weather_url("ch-4115", today.isoformat()), 308)]
+        assert 'data-testid="bulletin-header-hero-icon"' in response.content.decode()
+
+    def test_uppercase_post_preserves_the_panel_variant(self) -> None:
+        """``?variant=panel`` — the resort page's form — survives the redirect."""
+        client = Client()
+        MicroRegionFactory.create(region_id="CH-4115")
+        url = f"{_weather_url('CH-4115', '2026-01-15')}?variant=panel"
+
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 308
+        assert response["Location"].endswith("?variant=panel")
+
+
+@pytest.mark.django_db
 class TestFetchWeatherSnippetForecastPath:
     """Forecast path: target_date == today, uses fetch_weather_for_region."""
 

@@ -2116,6 +2116,96 @@ class TestAddRegion:
 
 
 # ---------------------------------------------------------------------------
+# Uppercase region ids in the URL — SNOW-650
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUppercaseRegionIdInTheUrl:
+    """The URLs the templates actually build must work (SNOW-650).
+
+    ``accounts/manage.html`` builds its ``hx-post`` from
+    ``subscription.region.region_id`` — the raw, case-preserved field — and
+    every EAWS id is uppercase. Until SNOW-650 ``@lowercase_region_id``
+    answered 301, the browser replayed the POST as a GET, ``@require_POST``
+    returned 405, and the Remove button did nothing for every user on every
+    click. Every other test in this module posts to the lowercase URL, which
+    is exactly why nothing caught it.
+    """
+
+    def test_remove_region_uppercase_redirects_with_308(self) -> None:
+        """The canonicalisation redirect preserves the method."""
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        SubscriptionFactory.create(account=account, region=region)
+        client = _make_session_client(account)
+
+        response = client.post(
+            reverse("accounts:remove_region", kwargs={"region_id": "CH-4115"}),
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 308
+        assert response["Location"] == reverse(
+            "accounts:remove_region", kwargs={"region_id": "ch-4115"}
+        )
+
+    def test_remove_region_uppercase_followed_through_deletes_the_row(self) -> None:
+        """Following the redirect actually removes the subscription.
+
+        On the old 301 this lands as a GET and returns 405 with the row
+        still in place — the user-visible bug in its purest form.
+        """
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        SubscriptionFactory.create(account=account, region=region)
+        client = _make_session_client(account)
+
+        response = client.post(
+            reverse("accounts:remove_region", kwargs={"region_id": "CH-4115"}),
+            follow=True,
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert not Subscription.objects.filter(account=account, region=region).exists()
+
+    def test_add_region_uppercase_followed_through_creates_the_row(self) -> None:
+        """The same fix covers the one-click add from a bulletin page."""
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        client = _make_session_client(account)
+
+        response = client.post(
+            reverse("accounts:add_region", kwargs={"region_id": "CH-4115"}),
+            follow=True,
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert Subscription.objects.filter(account=account, region=region).exists()
+
+    def test_remove_region_from_bulletin_uppercase_followed_through(self) -> None:
+        """And the bulletin page's unsubscribe control."""
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        SubscriptionFactory.create(account=account, region=region)
+        client = _make_session_client(account)
+
+        response = client.post(
+            reverse(
+                "accounts:remove_region_from_bulletin",
+                kwargs={"region_id": "CH-4115"},
+            ),
+            follow=True,
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert not Subscription.objects.filter(account=account, region=region).exists()
+
+
+# ---------------------------------------------------------------------------
 # remove_region_from_bulletin
 # ---------------------------------------------------------------------------
 

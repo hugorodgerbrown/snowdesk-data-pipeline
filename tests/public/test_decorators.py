@@ -9,6 +9,9 @@ Covers the ``lowercase_region_id`` decorator:
   - Only the first occurrence of ``region_id`` in the path is replaced,
     so a path like ``/CH-4115/some-slug/CH-4115-detail/`` rewrites only
     the first segment.
+  - ``preserve_method=True`` (SNOW-650) redirects with 308 instead, so a
+    POST to an uppercase URL is replayed as a POST rather than downgraded
+    to a GET and rejected by ``@require_POST`` with a 405.
 """
 
 from __future__ import annotations
@@ -16,7 +19,10 @@ from __future__ import annotations
 import pytest
 from django.http import HttpRequest, HttpResponse, HttpResponsePermanentRedirect
 
-from apps.public.decorators import lowercase_region_id
+from apps.public.decorators import (
+    HttpResponsePermanentRedirectPreserveMethod,
+    lowercase_region_id,
+)
 
 
 def _make_request(path: str, query_string: str = "") -> HttpRequest:
@@ -105,3 +111,73 @@ class TestLowercaseRegionId:
         request = _make_request(path)
         response = decorated(request, region_id=region_id)
         assert response.status_code == 200
+
+
+class TestPreserveMethod:
+    """The ``preserve_method=True`` form, added by SNOW-650.
+
+    Every EAWS region id is uppercase and the templates POST to it raw, so
+    the redirect fires on every click of an htmx control. A 301 makes the
+    user agent replay the request as a GET, which then hits ``@require_POST``
+    and answers 405 — the swap never happens. 308 replays the POST instead.
+    """
+
+    def test_redirects_with_308_not_301(self) -> None:
+        """The redirect is a 308, so the method and body survive it."""
+        decorated = lowercase_region_id(preserve_method=True)(_dummy_view)
+        request = _make_request("/partials/weather/CH-4115/2026-08-07/")
+        request.method = "POST"
+        response = decorated(request, region_id="CH-4115")
+        assert isinstance(response, HttpResponsePermanentRedirectPreserveMethod)
+        assert response.status_code == 308
+
+    def test_location_is_the_canonical_path(self) -> None:
+        """308 canonicalises the path exactly as the 301 form does."""
+        decorated = lowercase_region_id(preserve_method=True)(_dummy_view)
+        request = _make_request("/partials/weather/CH-4115/2026-08-07/")
+        response = decorated(request, region_id="CH-4115")
+        assert response["Location"] == "/partials/weather/ch-4115/2026-08-07/"
+
+    def test_preserves_query_string(self) -> None:
+        """The panel's ``?variant=panel`` survives the redirect."""
+        decorated = lowercase_region_id(preserve_method=True)(_dummy_view)
+        request = _make_request(
+            "/partials/weather/CH-4115/2026-08-07/", query_string="variant=panel"
+        )
+        response = decorated(request, region_id="CH-4115")
+        assert response["Location"] == (
+            "/partials/weather/ch-4115/2026-08-07/?variant=panel"
+        )
+
+    def test_already_lowercase_passes_through(self) -> None:
+        """No redirect at all when the id is already canonical."""
+        decorated = lowercase_region_id(preserve_method=True)(_dummy_view)
+        request = _make_request("/partials/weather/ch-4115/2026-08-07/")
+        response = decorated(request, region_id="ch-4115")
+        assert response.status_code == 200
+        assert b"ok:ch-4115" in response.content
+
+    def test_functools_wraps_preserves_name(self) -> None:
+        """The argument form still copies the wrapped function's metadata."""
+        decorated = lowercase_region_id(preserve_method=True)(_dummy_view)
+        assert decorated.__name__ == "_dummy_view"
+
+    def test_explicit_false_is_the_301_default(self) -> None:
+        """``preserve_method=False`` is the plain 301, not an accidental 308."""
+        decorated = lowercase_region_id(preserve_method=False)(_dummy_view)
+        request = _make_request("/CH-4115/valais/2025-03-15/")
+        response = decorated(request, region_id="CH-4115")
+        assert response.status_code == 301
+
+    def test_bare_form_is_unchanged(self) -> None:
+        """The six GET-only call sites using the bare form still get 301.
+
+        This is the regression guard on the dual-form wiring — the change is
+        opt-in, and ``bulletin_detail``'s canonical-URL behaviour must not
+        move.
+        """
+        decorated = lowercase_region_id(_dummy_view)
+        request = _make_request("/CH-4115/valais/2025-03-15/")
+        response = decorated(request, region_id="CH-4115")
+        assert response.status_code == 301
+        assert not isinstance(response, HttpResponsePermanentRedirectPreserveMethod)

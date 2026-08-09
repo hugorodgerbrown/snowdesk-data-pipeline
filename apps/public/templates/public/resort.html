@@ -59,7 +59,17 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    None, so the panel fires the
                                    belt-and-braces HTMX retry.
 {% endcomment %}
-{% load i18n snowdesk_time %}
+{% load i18n static snowdesk_time %}
+
+{# SNOW-650: this page emits hx-post in two places — the favourite toggle    #}
+{# (favourites/partials/_resort_favourite_button.html) and the weather       #}
+{# panel's belt-and-braces retry — but public/base.html does not load htmx   #}
+{# globally, so both were inert from SNOW-509 until now. Self-loaded here,   #}
+{# following accounts/manage.html. tests/public/test_htmx_pages.py is the    #}
+{# guard that keeps any hx-* page from shipping without the script again.    #}
+{% block extra_head %}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+{% endblock %}
 
 {# SNOW-553: this page is the sharpest case the sharing-metadata rule    #}
 {# exists for — SNOW-504 built /resorts/<id>/<slug>/ specifically as an  #}

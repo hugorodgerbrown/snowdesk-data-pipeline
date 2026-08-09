@@ -4139,7 +4139,11 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-@lowercase_region_id
+# @lowercase_region_id is outermost so the casing check short-circuits before the
+# HTMX and method guards. preserve_method=True makes it a 308: the panel builds
+# its retry URL from the uppercase EAWS id, and a 301 here would replay it as a
+# GET and hit @require_POST's 405 (SNOW-650).
+@lowercase_region_id(preserve_method=True)
 @require_htmx
 @require_POST
 def fetch_weather_snippet(
