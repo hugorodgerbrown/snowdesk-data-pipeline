@@ -166,9 +166,7 @@ class TestFailureReporting:
         ):
             call_command("seed_test_week", commit=True, verbosity=0)
 
-    def test_render_model_failure_fails_the_command(
-        self, one_slf_record: dict
-    ) -> None:
+    def test_render_model_failure_fails_the_command(self, one_slf_record: dict) -> None:
         """A stored-but-broken record fails the command too.
 
         ``upsert_bulletin`` does not raise when a render model cannot be built —
