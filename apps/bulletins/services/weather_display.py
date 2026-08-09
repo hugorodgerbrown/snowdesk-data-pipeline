@@ -390,7 +390,7 @@ def build_point_forecast_panel(
     snapshots: list["ForecastPointWeather"], now: datetime.datetime
 ) -> ForecastPanel | None:
     """
-    Build the template context for the favourite-card multi-day forecast panel.
+    Build the template context for the multi-day point-forecast panel.
 
     Reuses :func:`build_weather_display` for the icon/condition-label
     portion of each day, then layers on the multi-day fields the compact
