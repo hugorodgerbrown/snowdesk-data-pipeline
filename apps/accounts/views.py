@@ -1159,9 +1159,12 @@ def _delete_subscription_with_cascade(
 # ---------------------------------------------------------------------------
 
 
-# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
-# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
-@lowercase_region_id
+# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
+# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
+# so the browser replays the POST at the canonical path; a 301 would downgrade it
+# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
+# uppercase and the templates post to it raw, so this fires on every click.
+@lowercase_region_id(preserve_method=True)
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="5/m", block=False)
@@ -1238,9 +1241,12 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
-# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
-@lowercase_region_id
+# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
+# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
+# so the browser replays the POST at the canonical path; a 301 would downgrade it
+# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
+# uppercase and the templates post to it raw, so this fires on every click.
+@lowercase_region_id(preserve_method=True)
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="10/m", block=False)
@@ -1486,9 +1492,12 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
-# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
-@lowercase_region_id
+# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
+# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
+# so the browser replays the POST at the canonical path; a 301 would downgrade it
+# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
+# uppercase and the templates post to it raw, so this fires on every click.
+@lowercase_region_id(preserve_method=True)
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="10/m", block=False)
