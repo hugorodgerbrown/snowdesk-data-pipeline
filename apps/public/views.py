@@ -3996,9 +3996,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
                 resort.forecast_point, today
             )[:POINT_FORECAST_DAYS]
         )
-        forecast_panel = build_point_forecast_panel(
-            forecast_snapshots, timezone.now()
-        )
+        forecast_panel = build_point_forecast_panel(forecast_snapshots, timezone.now())
 
     context = {
         "resort": resort,

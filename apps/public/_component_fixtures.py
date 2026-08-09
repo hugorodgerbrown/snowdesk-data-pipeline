@@ -2707,9 +2707,7 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
     )
 
 
-FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
-    _build_forecast_panel_variants()
-)
+FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
 
 
 # Favourite problem card (SNOW-422) -------------------------------------------
