@@ -47,7 +47,9 @@ _HX_ATTRIBUTE_RE = re.compile(r"\shx-[a-z-]+\s*=")
 
 def _hx_attributes(html: str) -> set[str]:
     """Return the distinct ``hx-*`` attribute names present in ``html``."""
-    return {match.strip().rstrip("=").strip() for match in _HX_ATTRIBUTE_RE.findall(html)}
+    return {
+        match.strip().rstrip("=").strip() for match in _HX_ATTRIBUTE_RE.findall(html)
+    }
 
 
 @pytest.fixture

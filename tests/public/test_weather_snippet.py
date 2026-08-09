@@ -150,7 +150,9 @@ class TestUppercaseRegionIdInTheUrl:
         response = client.post(url, HTTP_HX_REQUEST="true", follow=True)
 
         assert response.status_code == 200
-        assert response.redirect_chain == [(_weather_url("ch-4115", today.isoformat()), 308)]
+        assert response.redirect_chain == [
+            (_weather_url("ch-4115", today.isoformat()), 308)
+        ]
         assert 'data-testid="bulletin-header-hero-icon"' in response.content.decode()
 
     def test_uppercase_post_preserves_the_panel_variant(self) -> None:
