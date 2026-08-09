@@ -11,8 +11,8 @@ apps/weather/dev_views.py — Development-only Open-Meteo mirror view.
 
 The view is wired up only when ``settings.DEBUG`` is true (see
 ``config/urls.py``); production never imports this module. The companion
-command ``fetch_weather --source local-mirror`` uses it to replay
-committed sample data end-to-end through the production fetch path. The
+command ``fetch_weather --local-mirror`` uses it to replay committed
+sample data end-to-end through the production fetch path. The
 SLF and ALBINA mirrors live in ``apps.bulletins.dev_views``.
 """
 

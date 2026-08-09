@@ -5,6 +5,8 @@ Covers:
   - Factory produces a valid instance via .create().
   - to_string() / __str__() format.
   - WeatherSnapshotQuerySet.for_date() filter.
+  - WeatherSnapshotQuerySet.latest_date() across the table and off a
+    chained queryset.
   - unique_together constraint raises IntegrityError on duplicate (region, date).
   - ordering: newest date first, then region_id ascending.
   - Deleting the linked MicroRegion cascades to WeatherSnapshot.
@@ -199,3 +201,38 @@ class TestWeatherSnapshotTzAware:
         snapshot = WeatherSnapshotFactory.create()
         snapshot.refresh_from_db()
         assert snapshot.fetched_at.tzinfo is not None
+
+
+@pytest.mark.django_db
+class TestWeatherSnapshotLatestDate:
+    """Tests for ``WeatherSnapshotQuerySet.latest_date()``.
+
+    Lived in ``tests/regions/models/test_models.py`` until SNOW-654 moved
+    the model into ``apps.weather``; tests mirror the source tree.
+    """
+
+    def test_returns_none_when_empty(self) -> None:
+        """Empty queryset returns ``None`` rather than raising."""
+        assert WeatherSnapshot.objects.latest_date() is None
+
+    def test_returns_max_valid_for_date(self) -> None:
+        """Returns the maximum ``valid_for_date`` across snapshots."""
+        WeatherSnapshotFactory.create(valid_for_date=datetime.date(2026, 4, 10))
+        WeatherSnapshotFactory.create(valid_for_date=datetime.date(2026, 4, 20))
+        WeatherSnapshotFactory.create(valid_for_date=datetime.date(2026, 4, 15))
+
+        assert WeatherSnapshot.objects.latest_date() == datetime.date(2026, 4, 20)
+
+    def test_honours_queryset_filters(self) -> None:
+        """Works off the chained queryset rather than the full table."""
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        WeatherSnapshotFactory.create(
+            region=region_a, valid_for_date=datetime.date(2026, 4, 20)
+        )
+        WeatherSnapshotFactory.create(
+            region=region_b, valid_for_date=datetime.date(2026, 4, 10)
+        )
+
+        result = WeatherSnapshot.objects.filter(region=region_b).latest_date()
+        assert result == datetime.date(2026, 4, 10)

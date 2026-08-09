@@ -45,7 +45,7 @@ ARCHIVE = "archive"
 #
 # These must stay in step with the ``OPEN_METEO_*_BASE_URL`` defaults in
 # ``config/settings/base.py``; the "shipped defaults send no key" test in
-# tests/bulletins/services/test_open_meteo.py fails if they drift apart.
+# tests/weather/services/test_open_meteo.py fails if they drift apart.
 FREE_HOSTNAMES = frozenset(
     {
         "api.open-meteo.com",

@@ -1,4 +1,13 @@
-"""Smoke tests for the weather app shell (SNOW-654)."""
+"""
+tests/weather/test_app_config.py — Tests for the weather AppConfig.
+
+Covers:
+  - The app is registered under the short ``weather`` label, not
+    ``apps.weather``, because every migration, ContentType row and admin
+    URL name is derived from that label (SNOW-654).
+  - The app owns exactly the four Open-Meteo models and nothing else, so
+    a model drifting back into ``bulletins`` fails here.
+"""
 
 from django.apps import apps
 

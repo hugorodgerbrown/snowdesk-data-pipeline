@@ -40,11 +40,16 @@ NEW_LABEL = "weather"
 def _relabel(apps: Apps, from_label: str, to_label: str) -> None:
     """Move the four moved models' ContentType rows between app labels.
 
-    Idempotent in both directions: a model that already has a row under
-    ``to_label`` is left alone and any leftover duplicate under
-    ``from_label`` is deleted, so re-running (or running against a fresh
-    database where ``post_migrate`` got there first) converges on exactly
-    one row per model.
+    Idempotent in both directions, and converges on exactly one row per
+    model whichever order things happened in.
+
+    When both labels somehow hold a row for the same model, the
+    ``from_label`` one is always the survivor: it is the pre-split row, so
+    it is the one every ``auth_permission`` and admin ``LogEntry`` points
+    at via ``content_type_id``. The ``to_label`` row in that case was
+    minted by ``post_migrate`` and carries no history, so it is the one
+    that can be dropped without losing anything. Deleting the wrong one
+    cascades exactly the rows this migration exists to preserve.
 
     Args:
         apps: The historical app registry supplied by ``RunPython``.
@@ -62,15 +67,16 @@ def _relabel(apps: Apps, from_label: str, to_label: str) -> None:
             # Nothing to move — a fresh database, or already migrated.
             continue
 
-        if target is None:
-            source.app_label = to_label
-            source.save(update_fields=["app_label"])
-        else:
-            # A row already exists under the destination label (a fresh
-            # database whose post_migrate ran first). Drop the stale one so
-            # the (app_label, model) unique constraint is not left with two
-            # rows describing the same table.
-            source.delete()
+        if target is not None:
+            # Drop the history-less duplicate first: (app_label, model) is
+            # unique, so the rename below would collide with it. Permission
+            # codenames don't embed the app label, so the permissions that
+            # follow ``source`` across are already correctly named and
+            # post_migrate re-creates nothing.
+            target.delete()
+
+        source.app_label = to_label
+        source.save(update_fields=["app_label"])
 
     # The real ContentType manager caches lookups per (app_label, model);
     # the historical model above has no such cache, so clear it on the

@@ -307,39 +307,3 @@ class TestBulletinEarliestValidFromDate:
         assert Bulletin.objects.filter(lang="en").earliest_valid_from_date() == date(
             2026, 4, 10
         )
-
-
-@pytest.mark.django_db
-class TestWeatherSnapshotLatestDate:
-    """Tests for ``WeatherSnapshotQuerySet.latest_date()``."""
-
-    def test_returns_none_when_empty(self) -> None:
-        """Empty queryset returns ``None`` rather than raising."""
-        from apps.weather.models import WeatherSnapshot
-
-        assert WeatherSnapshot.objects.latest_date() is None
-
-    def test_returns_max_valid_for_date(self) -> None:
-        """Returns the maximum ``valid_for_date`` across snapshots."""
-        from tests.factories import WeatherSnapshotFactory
-
-        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 10))
-        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 20))
-        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 15))
-
-        from apps.weather.models import WeatherSnapshot
-
-        assert WeatherSnapshot.objects.latest_date() == date(2026, 4, 20)
-
-    def test_honours_queryset_filters(self) -> None:
-        """Works off the chained queryset rather than the full table."""
-        from apps.weather.models import WeatherSnapshot
-        from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
-
-        region_a = MicroRegionFactory.create()
-        region_b = MicroRegionFactory.create()
-        WeatherSnapshotFactory.create(region=region_a, valid_for_date=date(2026, 4, 20))
-        WeatherSnapshotFactory.create(region=region_b, valid_for_date=date(2026, 4, 10))
-
-        result = WeatherSnapshot.objects.filter(region=region_b).latest_date()
-        assert result == date(2026, 4, 10)
