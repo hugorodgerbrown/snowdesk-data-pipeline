@@ -24,6 +24,7 @@ from collections.abc import Callable
 from typing import Any, overload
 
 from django.http import HttpRequest, HttpResponse, HttpResponsePermanentRedirect
+from django.utils.http import url_has_allowed_host_and_scheme
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,22 @@ def lowercase_region_id(
                 canonical_path = request.path.replace(region_id, region_id.lower(), 1)
                 qs = request.META.get("QUERY_STRING", "")
                 location = f"{canonical_path}?{qs}" if qs else canonical_path
+                # The Location is derived from request.path, so it is
+                # remote-source-derived even though it cannot in practice carry
+                # a host: RegionIdConverter's regex admits no dot or slash, and
+                # Django's root resolver anchors on a single leading "/", so a
+                # protocol-relative path never routes here in the first place.
+                # The check is free, and refusing to hand a user agent an
+                # off-site Location is worth more than the argument that it
+                # cannot happen. An unsafe path falls through to the view
+                # uncanonicalised rather than redirecting.
+                if not url_has_allowed_host_and_scheme(location, allowed_hosts=None):
+                    logger.warning(
+                        "Refusing to canonicalise %r — off-site redirect target %s",
+                        region_id,
+                        location,
+                    )
+                    return func(request, *args, **kwargs)
                 logger.debug(
                     "Redirecting non-canonical region_id %r to %s",
                     region_id,

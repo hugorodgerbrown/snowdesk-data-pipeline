@@ -113,6 +113,34 @@ class TestLowercaseRegionId:
         assert response.status_code == 200
 
 
+class TestRedirectTargetIsSameOrigin:
+    """The Location can never point off-site.
+
+    ``RegionIdConverter``'s regex admits no dot or slash and Django's root
+    resolver anchors on a single leading ``/``, so a protocol-relative path
+    does not route to a decorated view at all. The guard is belt-and-braces
+    against that reasoning ever ceasing to hold — a decorator whose Location
+    is built from ``request.path`` should not be one route change away from
+    an open redirect.
+    """
+
+    def test_protocol_relative_path_is_not_redirected(self) -> None:
+        """A ``//host/`` path falls through to the view, not an off-site 301."""
+        decorated = lowercase_region_id(_dummy_view)
+        request = _make_request("//evil.example/CH-4115/")
+        response = decorated(request, region_id="CH-4115")
+        assert response.status_code == 200
+        assert "Location" not in response
+
+    def test_normal_path_still_redirects(self) -> None:
+        """The guard does not disturb the ordinary same-origin case."""
+        decorated = lowercase_region_id(_dummy_view)
+        request = _make_request("/CH-4115/valais/")
+        response = decorated(request, region_id="CH-4115")
+        assert response.status_code == 301
+        assert response["Location"] == "/ch-4115/valais/"
+
+
 class TestPreserveMethod:
     """The ``preserve_method=True`` form, added by SNOW-650.
 
