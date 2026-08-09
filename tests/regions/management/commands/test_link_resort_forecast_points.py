@@ -15,7 +15,7 @@ Covers ``link_resort_forecast_points`` (SNOW-503):
     batch — the other resort is still linked.
 
 ``fetch_elevation`` is mocked at the ``apps.weather.services.forecast_points``
-module seam (the same seam ``tests/bulletins/services/test_forecast_points.py``
+module seam (the same seam ``tests/weather/services/test_forecast_points.py``
 patches) so no live Open-Meteo call happens anywhere in this suite.
 """
 

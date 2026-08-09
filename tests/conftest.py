@@ -4,7 +4,7 @@ tests/conftest.py — shared pytest fixtures.
 The ``_force_sync_weather_fetch`` autouse fixture forces
 ``settings.WEATHER_FETCH_ASYNC = False`` so any direct call to
 ``fetch_weather_async`` in tests runs synchronously on the main thread
-(see tests/bulletins/services/test_weather_fetcher.py::TestFetchWeatherAsync).
+(see tests/weather/services/test_weather_fetcher.py::TestFetchWeatherAsync).
 The ``finally`` clause inside the helper skips ``connections.close_all()``
 on the main thread, so the test's transaction connection is preserved.
 
