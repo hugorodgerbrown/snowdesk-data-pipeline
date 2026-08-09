@@ -250,6 +250,82 @@
     }
   }
 
+  /**
+   * Backfill absent `template` / `basemapKey` on `regionId`'s stored
+   * record, from values the caller has just PROVEN by probing real cache
+   * contents. Never overwrites a value that is already there.
+   *
+   * A record written before SNOW-632 (no `template`) or SNOW-645 (no
+   * `basemapKey`) is missing exactly the two fields every other surface
+   * keys off, and nothing rewrites it: the record is only ever written by
+   * a fresh download, so a region downloaded once and never re-downloaded
+   * stays incomplete for the life of the install. That is what made the
+   * roundel and the map disagree — see `basemapDownloadedTemplates()`
+   * (map_basemap_downloads.js) for the other half.
+   *
+   * Called only from `_probeDone`'s same-template branch, and only when
+   * the probe came back `done`: at that moment the region's whole tile set
+   * has been found in the pinned cache UNDER THE ACTIVE TEMPLATE, so
+   * writing the active template and key records something verified, not
+   * assumed. A `false` probe proves nothing about which basemap the record
+   * belongs to and heals nothing.
+   *
+   * Best-effort and non-fatal, like `_recordRegionDownload`: a failed heal
+   * leaves the record as it was and the next probe tries again.
+   *
+   * @param {string} regionId
+   * @param {{template: string, basemapKey: string | null}} fields
+   * @returns {Promise<void>}
+   */
+  async function _healRegionRecord(regionId, fields) {
+    if (!window.pwaDb) return;
+    try {
+      const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
+      const value = Array.isArray(row && row.value) ? row.value : [];
+      let changed = false;
+      for (const entry of value) {
+        if (!entry || entry.region_id !== regionId) continue;
+        for (const [name, next] of Object.entries(fields)) {
+          if (!next || entry[name]) continue;
+          entry[name] = next;
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: value });
+    } catch (err) {
+      console.warn('basemap download record heal failed', err);
+    }
+  }
+
+  /**
+   * The basemap key some OTHER recorded area already associates with
+   * `template`, or `''` when nothing on record names it.
+   *
+   * A pre-SNOW-645 record carries a template but no key, so the ring it
+   * drives has no identity colour to take and falls back to the "basemap
+   * unknown" green — which reads as a different, wronger thing than the
+   * rust/blue/teal the same download shows once it IS named. Any other
+   * record fetched under that same template answers the question, and
+   * `basemapDownloadedTemplates()` already collects exactly those
+   * (template, key) pairs and already prefers a named key over an unnamed
+   * one for the same template. No new storage, and no guessing from URL
+   * shape: a template on record under a named basemap IS that basemap.
+   *
+   * @param {string} template
+   * @returns {Promise<string>} `''` when unresolvable — `setState` reads
+   *   that as "another basemap, unnamed", the same as before.
+   */
+  async function _basemapKeyForTemplate(template) {
+    try {
+      const pairs = await basemapDownloadedTemplates();
+      const named = pairs.find((pair) => pair.template === template && pair.basemapKey);
+      return named ? named.basemapKey : '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
   // Memoised full-blob fetches for `_probeDone`'s fallback path (no local
   // record, or a pre-SNOW-583 one) — keyed by region id, successes and
   // in-flight promises only. A region's blob never changes once computed
@@ -352,9 +428,14 @@
    *     bucket has since been evicted (never promise tiles that aren't
    *     there — falls through to `idle` exactly as "never downloaded"
    *     does);
-   *   - `record.basemapKey || ''` when it IS that state — `''` for a
-   *     pre-SNOW-645 record with no key, read by `setState` as "another
-   *     basemap", unnamed.
+   *   - the record's own `basemapKey` when it IS that state; for a
+   *     pre-SNOW-645 record with no key, whatever `_basemapKeyForTemplate`
+   *     can name from another record sharing the same template, and only
+   *     `''` ("another basemap", unnamed) when nothing on record names it.
+   *     The resolved key is used for DISPLAY only and never written back —
+   *     same rule `orphanBasemapKey` (map_basemap_downloads.js) sets for
+   *     an inferred basemap. Only `_healRegionRecord` writes, and only
+   *     from a value the cache itself has just proven.
    *
    * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<{done: boolean, otherBasemapKey: string | null} | null>}
@@ -376,10 +457,20 @@
     const stored = await _storedRegionRecord(data.regionId);
     if (stored) {
       if (!stored.template || stored.template === template) {
-        return {
-          done: core.blobFullyCached(template, { z: stored.z }, cached),
-          otherBasemapKey: null,
-        };
+        const done = core.blobFullyCached(template, { z: stored.z }, cached);
+        // The tile set is verified present under the ACTIVE template, so
+        // an incomplete record can be completed from what was just proven
+        // rather than left for the overlay to trip over. Awaited, not
+        // fire-and-forget: the caller's next paint (and the overlay
+        // refresh that follows a render) should read the healed record,
+        // not race the write.
+        if (done) {
+          await _healRegionRecord(data.regionId, {
+            template: template,
+            basemapKey: activeBasemapKey(),
+          });
+        }
+        return { done: done, otherBasemapKey: null };
       }
       // SNOW-645: a record for a DIFFERENT basemap. Verify its tiles are
       // still actually on disk before promising them back — an evicted
@@ -390,10 +481,14 @@
         { z: stored.z },
         cached,
       );
-      return {
-        done: false,
-        otherBasemapKey: otherStillCached ? stored.basemapKey || '' : null,
-      };
+      if (!otherStillCached) return { done: false, otherBasemapKey: null };
+      // A keyless record's basemap can still be named, from any other
+      // record sharing its template — so the ring takes that basemap's
+      // identity colour rather than the "unknown" green, which is what
+      // made one download read rust on its own basemap and green from
+      // another. Only consulted when the record itself is silent.
+      const key = stored.basemapKey || (await _basemapKeyForTemplate(stored.template));
+      return { done: false, otherBasemapKey: key || '' };
     }
 
     try {
