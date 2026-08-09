@@ -1,13 +1,27 @@
 ---
 name: resort-page-weather-shows-region-snapshot
-description: Resort page renders the region's WeatherSnapshot via _weather_panel; no per-resort fetch; point weather stays favourite-only
-status: current
-last-reviewed: 2026-07-24
+description: Historical — resort page region-snapshot-only weather decision, superseded by resort-page-shows-point-forecast (SNOW-572)
+status: historical
+last-reviewed: 2026-08-09
 ---
 
 # Resort-page weather shows the region snapshot, not a per-resort forecast
 
-**Decision.** The public resort page (`/resorts/<id>/<slug>/`,
+**Superseded by
+[`resort-page-shows-point-forecast`](resort-page-shows-point-forecast.md)
+(SNOW-572).** SNOW-503 anchored a `bulletins.ForecastPoint` to every
+geocoded resort and folded those points into the `fetch_weather` point
+pass, after this decision was written — falsifying the "no per-resort
+fetch cost exists" premise below. The resort page now shows the resort's
+own point forecast (when linked and populated) alongside the region
+snapshot this document describes, which remains the page header and
+fallback. The `_weather_panel.html` full-extraction rationale and the
+`?variant=panel` retry consequence below are still accurate and carried
+forward into the superseding file.
+
+---
+
+**Original decision.** The public resort page (`/resorts/<id>/<slug>/`,
 `apps.public.views.resort_detail`) renders the *parent region's* `WeatherSnapshot`
 — the same one `bulletin_detail` shows on that region's bulletin page — via
 the shared `templates/includes/_weather_panel.html` partial. It does not

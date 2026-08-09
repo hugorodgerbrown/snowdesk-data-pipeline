@@ -40,8 +40,8 @@ from apps.public._component_fixtures import (
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
-    FAVOURITE_FORECAST_PANEL_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_PANEL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1192,17 +1192,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="favourite-forecast-panel",
-        label="Favourite forecast panel",
+        slug="forecast-panel",
+        label="Forecast panel",
         description=(
-            "Multi-day point forecast panel on the favourite detail card "
-            "(SNOW-417): a compact day strip (weekday, icon, hi/lo, "
-            "snowfall chip) plus an expandable hourly detail for the "
-            "near-term days, built from _collapsible_panel.html + _chip.html."
+            "Multi-day point forecast panel (SNOW-417, promoted to a shared "
+            "partial by SNOW-572): a compact day strip (weekday, icon, "
+            "hi/lo, snowfall chip) plus an expandable hourly detail for the "
+            "near-term days, built from _collapsible_panel.html + "
+            "_chip.html. Rendered on the favourite detail card ('Weather — "
+            "this spot') and, when the resort has a linked ForecastPoint "
+            "with rows, the resort page ('Weather — this resort')."
         ),
         kind="components",
-        partial="favourites/partials/_favourite_forecast_panel.html",
-        variants=FAVOURITE_FORECAST_PANEL_VARIANTS,
+        partial="includes/_forecast_panel.html",
+        variants=FORECAST_PANEL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

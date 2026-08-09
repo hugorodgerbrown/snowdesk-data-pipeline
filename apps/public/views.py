@@ -86,6 +86,7 @@ from apps.bulletins.models import (
     Bulletin,
     BulletinShare,
     BulletinShareClick,
+    ForecastPointWeather,
     RegionBulletin,
     RegionDayRating,
     WeatherSnapshot,
@@ -103,8 +104,12 @@ from apps.bulletins.services.render_model import (
     derive_problem_family,
     detect_prose_spatial,
 )
-from apps.bulletins.services.weather_display import build_weather_display
+from apps.bulletins.services.weather_display import (
+    build_point_forecast_panel,
+    build_weather_display,
+)
 from apps.bulletins.services.weather_fetcher import (
+    POINT_FORECAST_DAYS,
     fetch_archive_for_region,
     fetch_weather_async,
     fetch_weather_for_region,
@@ -3927,12 +3932,18 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     coordinates (SNOW-508) — falling back to the region-wide count when the
     resort has no coordinates.
 
-    Weather (SNOW-509, product decision: Option 1) shows the *parent
-    region's* ``WeatherSnapshot`` — never a per-resort forecast — so the
-    page issues zero Open-Meteo fetches of its own; the belt-and-braces
-    HTMX retry (when no snapshot exists yet) hits
-    ``public:weather_snippet``, same as the bulletin masthead. Point
-    weather stays a favourite-page-only feature.
+    Weather has two layers. The parent region's ``WeatherSnapshot`` remains
+    the page header and the fallback for every resort (SNOW-509) — the
+    page issues zero Open-Meteo fetches of its own for it; the
+    belt-and-braces HTMX retry (when no snapshot exists yet) hits
+    ``public:weather_snippet``, same as the bulletin masthead. Below it,
+    when ``resort.forecast_point`` is set and its forward window has rows,
+    the resort's own multi-day point forecast renders too (SNOW-572) —
+    the same ``ForecastPointWeather`` window and
+    ``includes/_forecast_panel.html`` partial the favourite detail card
+    uses, so no resort loses weather and a linked resort shows richer,
+    point-local data. See
+    ``docs/decisions/resort-page-shows-point-forecast.md``.
 
     Args:
         request: The incoming HTTP request.
@@ -3945,7 +3956,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region"),
+        Resort.objects.select_related("region", "forecast_point"),
         pk=resort_id,
     )
 
@@ -3963,16 +3974,29 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
-    # Weather (SNOW-509, product decision: Option 1) — the resort page shows
-    # the parent region's WeatherSnapshot, not a per-resort forecast. This
-    # keeps the page free of any per-resort Open-Meteo fetch; point weather
-    # stays a favourite-page feature. Same lookup pattern as
+    # Weather (SNOW-509) — the region snapshot remains the page header and
+    # the fallback for every resort; this keeps that part of the page free
+    # of any per-resort Open-Meteo fetch. Same lookup pattern as
     # ``_bulletin_detail_response`` — ``.first()`` is safe because
     # ``unique_together = (region, valid_for_date)``.
     weather_snapshot = (
         WeatherSnapshot.objects.for_date(today).filter(region=region).first()
     )
     weather_display = build_weather_display(weather_snapshot, timezone.now())
+
+    # Point forecast (SNOW-572) — the resort's own multi-day forecast, read
+    # from the ForecastPointWeather window already written by the
+    # fetch_weather point pass (SNOW-503). None when the resort has no
+    # linked forecast_point, or the point has no rows in the forward
+    # window yet — the resort-forecast section is simply omitted then.
+    forecast_panel = None
+    if resort.forecast_point is not None:
+        forecast_snapshots = list(
+            ForecastPointWeather.objects.forecast_for_point(
+                resort.forecast_point, today
+            )[:POINT_FORECAST_DAYS]
+        )
+        forecast_panel = build_point_forecast_panel(forecast_snapshots, timezone.now())
 
     context = {
         "resort": resort,
@@ -3995,6 +4019,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         ),
         "weather_display": weather_display,
         "weather_htmx_trigger": weather_display is None,
+        "forecast_panel": forecast_panel,
     }
     return render(request, "public/resort.html", context)
 

@@ -20,11 +20,20 @@ Sections, top to bottom:
      (``favourites/partials/_resort_favourite_button.html``).
   4. Weather (SNOW-509) — the parent region's ``WeatherSnapshot``, via the
      shared ``includes/_weather_panel.html`` partial (no region ``<h1>``, no
-     share button; this page already has its own resort ``<h1>``). Product
-     decision: Option 1 — no per-resort Open-Meteo fetch; point weather
-     stays a favourite-page feature. See
-     ``docs/decisions/resort-page-weather-shows-region-snapshot.md``.
-  5. Field-observation counts (SNOW-508) — point-local, scoped to
+     share button; this page already has its own resort ``<h1>``). Remains
+     the page header and the fallback for every resort — unconditional,
+     unchanged since SNOW-509. See
+     ``docs/decisions/resort-page-shows-point-forecast.md`` (supersedes
+     ``docs/decisions/resort-page-weather-shows-region-snapshot.md``).
+  5. Point forecast (SNOW-572) — below the region weather panel, the
+     resort's own multi-day forecast via the shared
+     ``includes/_forecast_panel.html`` partial (promoted from the
+     favourite-card-only partial of the same shape), when
+     ``forecast_panel`` is set. No empty-state branch — omitted entirely
+     when the resort has no linked ``forecast_point`` or the point has no
+     rows in the forward window; the region panel above already covers
+     that resort, so no resort loses weather.
+  6. Field-observation counts (SNOW-508) — point-local, scoped to
      ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
      coordinates, falling back to the region-wide count (the ``bulletin.html``
      pattern) when the resort has no coordinates.
@@ -58,6 +67,12 @@ Context expected (built by ``apps.public.views.resort_detail``):
   weather_htmx_trigger           — bool: True when ``weather_display`` is
                                    None, so the panel fires the
                                    belt-and-braces HTMX retry.
+  forecast_panel                 — ForecastPanel | None (SNOW-572), from
+                                   ``build_point_forecast_panel()`` over
+                                   ``resort.forecast_point``'s forward
+                                   ``ForecastPointWeather`` window; None
+                                   when the resort has no linked point or
+                                   the point has no rows yet.
 {% endcomment %}
 {% load i18n static snowdesk_time %}
 
@@ -130,6 +145,19 @@ Context expected (built by ``apps.public.views.resort_detail``):
         <section data-testid="resort-weather-section">
             {% include "includes/_weather_panel.html" with weather_display=weather_display weather_htmx_trigger=weather_htmx_trigger region_id=region_id page_date=target_date htmx_variant=True region_name="" subregion_name="" panel_testid="resort-weather" testid_prefix="resort-weather" panel_extra_classes="rounded-card mb-4" %}
         </section>
+
+        {# ── Point forecast (SNOW-572) — resort's own ForecastPointWeather window ── #}
+        {% if forecast_panel %}
+            <section
+                class="mb-6"
+                data-testid="resort-forecast-section"
+                aria-labelledby="resort-forecast-heading"
+            >
+                {% translate "Weather — this resort" as resort_forecast_eyebrow_label %}
+                {% include "includes/_eyebrow.html" with text=resort_forecast_eyebrow_label id="resort-forecast-heading" class_extra="mb-2" %}
+                {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="resort-forecast" %}
+            </section>
+        {% endif %}
 
         {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
         {% if local_observations.visible %}

@@ -1,29 +1,43 @@
 {% load i18n static %}
 {% comment %}
-favourites/partials/_favourite_forecast_panel.html — Multi-day point forecast panel.
+includes/_forecast_panel.html — Multi-day point forecast panel.
 
-Rendered by apps.favourites.views.favourite_card, included from
-_favourite_card.html's "Weather — this spot" section when a
-``forecast_panel`` context exists (SNOW-417). Two parts:
+Promoted from favourites/partials/_favourite_forecast_panel.html (SNOW-572)
+so a resort page can reuse it rather than inline a second copy — design
+system rule 1 is reuse-then-extract. Two consumers today:
+
+  * favourites/partials/_favourite_card.html — includes this partial from
+    the "Weather — this spot" section when a ``forecast_panel`` context
+    exists (SNOW-417). Uses the default ``testid_prefix``, so its rendered
+    output is byte-for-byte unchanged by the move.
+  * public/templates/public/resort.html — includes this partial with
+    ``testid_prefix="resort-forecast"`` from the "Weather — this resort"
+    section (SNOW-572) when the resort's linked ``ForecastPoint`` has rows
+    in the forward window.
+
+Two parts:
 
   1. Compact day strip — one column per forecast day: weekday label,
      weather icon, hi/lo temperature, and a snowfall chip when the day's
      ``snowfall_sum`` is non-zero.
   2. Expandable hourly detail — one ``_collapsible_panel.html`` per
      near-term day (``day.hourly`` non-empty), listing that day's hourly
-     series via ``_favourite_forecast_hourly_body.html``.
+     series via ``_forecast_hourly_body.html``.
 
 Context:
     panel : ForecastPanel — {"days": [ForecastPanelDay, ...]}, from
             apps.bulletins.services.weather_display.build_point_forecast_panel.
+    testid_prefix : str — prefix for every ``data-testid`` in this partial
+            and its included children. Defaults to ``favourite-forecast``,
+            matching the favourite card's pre-move testids.
 {% endcomment %}
-<div class="space-y-3" data-testid="favourite-forecast-panel">
+<div class="space-y-3" data-testid="{{ testid_prefix|default:'favourite-forecast' }}-panel">
     {# 1. Compact day strip #}
     <div class="flex gap-2 overflow-x-auto pb-1">
         {% for day in panel.days %}
             <div
                 class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-3 py-2 min-w-[76px] shrink-0"
-                data-testid="favourite-forecast-day"
+                data-testid="{{ testid_prefix|default:'favourite-forecast' }}-day"
                 data-date="{{ day.date|date:'Y-m-d' }}"
             >
                 <span class="text-xs font-mono uppercase tracking-widest text-text-3">{{ day.weekday_label }}</span>
@@ -41,7 +55,7 @@ Context:
                     {% blocktrans with cm=day.snowfall_sum|floatformat:0 trimmed asvar snowfall_chip_text %}
                         {{ cm }} cm
                     {% endblocktrans %}
-                    {% include "includes/_chip.html" with text=snowfall_chip_text data_testid="favourite-forecast-snowfall" %}
+                    {% include "includes/_chip.html" with text=snowfall_chip_text data_testid=testid_prefix|default:'favourite-forecast'|add:'-snowfall' %}
                 {% endif %}
             </div>
         {% endfor %}
@@ -53,7 +67,7 @@ Context:
             {% blocktrans with weekday=day.weekday_label trimmed asvar hourly_title %}
                 Hourly detail — {{ weekday }}
             {% endblocktrans %}
-            {% include "includes/_collapsible_panel.html" with title=hourly_title data_testid="favourite-forecast-hourly" body_template="favourites/partials/_favourite_forecast_hourly_body.html" hourly=day.hourly %}
+            {% include "includes/_collapsible_panel.html" with title=hourly_title data_testid=testid_prefix|default:'favourite-forecast'|add:'-hourly' body_template="includes/_forecast_hourly_body.html" hourly=day.hourly %}
         {% endif %}
     {% endfor %}
 </div>

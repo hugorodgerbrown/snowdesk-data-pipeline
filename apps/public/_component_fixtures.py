@@ -2623,14 +2623,14 @@ RATING_BLOCK_ALBINA_BAND_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Favourite forecast panel (SNOW-417) ----------------------------------------
+# Forecast panel (SNOW-417, promoted to a shared partial by SNOW-572) --------
 # One variant: a 3-day window mirroring build_point_forecast_panel's shape —
 # two near-term days carry an hourly series (exercising the expandable
 # _collapsible_panel.html detail), the third carries none (exercising the
 # "no hourly" branch of the compact day strip alone).
 
 
-def _build_favourite_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
+def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
     """Build a representative ForecastPanel fixture for the component library."""
     days = (
         {
@@ -2707,9 +2707,7 @@ def _build_favourite_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
     )
 
 
-FAVOURITE_FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
-    _build_favourite_forecast_panel_variants()
-)
+FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
 
 
 # Favourite problem card (SNOW-422) -------------------------------------------
