@@ -663,6 +663,21 @@ async function basemapDownloadedAreas() {
  * template), the non-empty key wins — an unresolved basemap should never
  * shadow a known one.
  *
+ * A record with NO `template` (written before SNOW-632) falls back to the
+ * ACTIVE basemap's template rather than being skipped. Skipping it was the
+ * bug behind "the roundel says Downloaded but the map draws no squares":
+ * `_probeDone` (map_region_download.js) reads a missing template as "the
+ * active basemap's", so the roundel resolves `done` off real cached tiles,
+ * while this function — the overlay's only source of templates — dropped
+ * the record entirely and the overlay had nothing to scan for. The two
+ * surfaces disagreed about a download that was genuinely on disk.
+ *
+ * The fallback cannot invent coverage: the caller still runs
+ * `cachedTilesFromURLs` against real Cache Storage contents, so a record
+ * whose tiles were fetched under some OTHER basemap simply matches nothing
+ * and contributes no squares — the same empty answer as before, just
+ * reached by looking rather than by skipping.
+ *
  * @returns {Promise<Array<{template: string, basemapKey: string}>>}
  *   `basemapKey` is always a string, `''` for unknown — never `null` —
  *   so a caller can use it as a MapLibre `match` arm directly. Empty when
@@ -671,12 +686,21 @@ async function basemapDownloadedAreas() {
  */
 async function basemapDownloadedTemplates() {
   const byTemplate = new Map();
+  // Resolved once, not per record: it reads the live style, and every
+  // templateless record falls back to the same answer. Null (no style
+  // settled yet) leaves those records skipped exactly as before.
+  const activeTemplate = activeBasemapTileTemplate(MAP);
+  const activeKey = activeBasemapKey();
   const record = (template, basemapKey) => {
-    if (!template) return;
-    const key = basemapKey || '';
-    const existing = byTemplate.get(template);
+    const resolved = template || activeTemplate;
+    if (!resolved) return;
+    // A templateless record borrows the active basemap's KEY too — its own
+    // is equally absent, and the pair has to stay consistent or the
+    // overlay would colour the active basemap's tiles as "unknown" green.
+    const key = (template ? basemapKey : basemapKey || activeKey) || '';
+    const existing = byTemplate.get(resolved);
     if (existing === undefined || (!existing && key)) {
-      byTemplate.set(template, key);
+      byTemplate.set(resolved, key);
     }
   };
 
