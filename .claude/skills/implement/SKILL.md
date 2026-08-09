@@ -8,7 +8,7 @@ description: |
   feature branch is already checked out. Do NOT use for: scoping a ticket
   (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
   either a SNOW-NN reference or an existing SNOW-NN branch checked out.
-allowed-tools: Task, Bash, Read, Edit, Write, Grep, Glob, mcp__linear
+allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear-server
 ---
 
 # Implement SNOW-$1
@@ -51,10 +51,13 @@ slow tiers on every iteration.
 **Local gate (run before the branch's FIRST push — steps 4 and 5):**
 
 - Targeted `uv run pytest <touched paths>` while implementing.
-- `uv run tox` — the **default envlist**
-  (`fmt, lint, mypy, django-checks, ds-lint, docs-lint, sw-version, test, js`).
-  This is the pre-push gate. It is fast and deterministic. `js` (Vitest) is in
-  it, so JavaScript changes are covered automatically — no separate step.
+- `uv run tox` — the **default envlist**, whose canonical definition is the
+  `envlist` in [`tox.ini`](tox.ini); read it there rather than trusting a copy
+  in this file. At the time of writing: `fmt, lint, mypy, django-checks,
+  ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, migrations-lint,
+  test, js`. This is the pre-push gate. It is fast and deterministic. `js`
+  (Vitest) is in it, so JavaScript changes are covered automatically — no
+  separate step.
 - `monitor_query_counts` (step 5a).
 
 **Follow-up commits onto an already-open PR: targeted tests only.** Run
@@ -167,16 +170,42 @@ with the resume message. Otherwise continue to step 4.
 
 ### 4a. Implementer agent
 
-Use the Task tool to invoke the `implementer` subagent. Pass it:
+Use the Agent tool to invoke the `implementer` subagent. Pass it:
 
 - The Linear ticket number & branch name
 - A reminder to consult the Linear ticket scope (in comments) and the
   approved plan from this session's context
 - An instruction to commit incrementally with conventional commit messages,
   run tests as it goes, and report back when the plan is fully implemented
+- If the plan touches templates or `static/js/*.js`, the checklist below
 
 The implementer runs in its own context. Its exploration and intermediate
 work do not pollute the main thread.
+
+**Template / JS checklist — pass this on when the plan touches either.**
+`bin/ds-lint` enforces it mechanically on every PR (`tox -e ds-lint`, in the
+default envlist), so catching a violation here is cheaper than fixing it at
+review time:
+
+- Does an existing partial in `templates/includes/`, `public/templates/`, or
+  `accounts/templates/.../partials/` already render this shape? If yes, use
+  it — don't write a fresh copy.
+- Is the same shape currently inlined in another template that I'm about to
+  inline again? If yes, extract a new partial and register it in
+  `public/design_tokens.py` (with a fixture in
+  `public/_component_fixtures.py`) rather than producing a second inline copy.
+- Are all colours expressed via design tokens (`bg-card`, `text-text-1`,
+  `border-border`, `bg-status-*`) rather than raw Tailwind palette utilities
+  (`bg-slate-200`, `text-red-600`)?
+- Are all radii expressed via named tokens (`rounded-card`, `rounded-tag`,
+  `rounded-pill`, `rounded-sm`) rather than bracket literals
+  (`rounded-[12px]`)?
+- Do any new hex colours, raw palettes, or radius literals carry a
+  `{# ds-lint-allow: <specific reason> #}` comment a reviewer can judge cold?
+  Vague reasons ("intentional", "needed here") don't pass review.
+
+Never add a file to `PATH_ALLOWLIST` to silence `ds-lint` — fix the violation
+or write the per-line allow with a real reason.
 
 ### 4b. Reviewer agent
 

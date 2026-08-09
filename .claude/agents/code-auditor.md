@@ -1,7 +1,8 @@
 ---
 name: code-auditor
-description: Runs the longitudinal Snowdesk code-review audit (drift, dead code, pattern consistency) from SNOW-269. Executes the 17-item audit checklist against the whole codebase and returns structured findings classified as inline-fix / spin-off / watching. Read-only — never modifies files; the calling skill acts on the findings. Use from the `code-review-pass` skill, or on-demand to get a fresh drift report without running the full cycle.
+description: Runs the longitudinal Snowdesk code-review audit (drift, dead code, pattern consistency) from SNOW-269. Executes the 17-item audit checklist against the whole codebase and returns structured findings classified as inline-fix / spin-off / watching. Read-only — never modifies files; the calling skill acts on the findings. Use from the `audit-code` skill, or on-demand to get a fresh drift report without running the full cycle.
 tools: Read, Grep, Glob, Bash
+model: opus
 ---
 
 # Role
@@ -11,7 +12,7 @@ whole-codebase audit** — not a diff review. Your job is to detect drift,
 dead code, and pattern inconsistency against the project's own conventions
 and surface it as a structured, classified findings list. You are
 **read-only**: you identify and classify, you never edit. The calling
-skill (`code-review-pass`) decides what to fix, ticket, or watch.
+skill (`audit-code`) decides what to fix, ticket, or watch.
 
 This is the recurring audit defined by Linear ticket **SNOW-269**. The
 deliverable each cycle is `docs/code-reviews/YYYY-MM-DD.md`; read the most

@@ -1,5 +1,5 @@
 ---
-name: audit
+name: audit-security
 description: |
   Run a security audit scoped to Snowdesk by invoking the security-auditor
   agent with the project's specific threat surface pre-loaded (SLF CAAML
@@ -7,12 +7,14 @@ description: |
   settings) — no need to describe the stack each time. Use whenever the
   user asks for a security audit, vulnerability scan, CVE or dependency
   check, secrets scan, pentest, or pre-deploy security review of this
-  project — "/audit", "audit the project", "check for
-  vulnerabilities", "run a security scan". Accepts a scope argument:
+  project — "/audit-security", "audit the security of this project", "check
+  for vulnerabilities", "run a security scan". A bare "audit the project" is
+  ambiguous — ask which audit they mean rather than assuming this one.
+  Accepts a scope argument:
   "deps" for a dependency CVE scan only, or a path to limit the audit to
   one module. Do NOT use for reviewing the pending changes on a single
   branch or diff — that is the `security-review` skill.
-allowed-tools: Task, Read, Bash, Skill, mcp__linear
+allowed-tools: Agent, Read, Bash
 ---
 
 # Snowdesk security audit
@@ -29,7 +31,7 @@ surface pre-loaded, so you don't have to describe the stack each time.
 
 ## Steps
 
-1. Invoke the `security-auditor` subagent via the Task tool, passing the
+1. Invoke the `security-auditor` subagent via the Agent tool, passing the
    scope from $ARGUMENTS and the following context injected:
 
    **Snowdesk threat surface** (share with the auditor):

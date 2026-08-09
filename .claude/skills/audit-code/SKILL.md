@@ -1,18 +1,20 @@
 ---
-name: code-review-pass
+name: audit-code
 description: |
-  Run a longitudinal Snowdesk code-review cycle (SNOW-269): execute the
+  Audit the whole Snowdesk codebase for drift (SNOW-269): execute the
   17-item audit checklist, write the dated findings doc
   `docs/code-reviews/YYYY-MM-DD.md`, land trivial fixes inline, spin off
   non-trivial findings as Linear child tickets, run tox, and open a PR. Use
-  when the user says "run a code review pass", "do the code review cycle",
-  "start a new review cycle", or references SNOW-269. Also driven by a weekly
-  Routine — when invoked with `routine` (or `weekly` / `--no-approval`) in
-  the args, runs end-to-end with no approval gate. Do NOT use for a per-PR /
-  per-diff review (that's the built-in `/code-review` skill and the
-  `reviewer` agent) — this is the whole-codebase drift audit.
+  when the user says "audit the code", "run a code review pass", "do the code
+  review cycle", "start a new review cycle", or references SNOW-269. Supports
+  unattended Routine use — when invoked with `routine` (or `weekly` /
+  `--no-approval`) in the args, runs end-to-end with no approval gate. Do NOT
+  use for a per-PR / per-diff review (that's the built-in `/code-review` skill
+  and the `reviewer` agent) — this is the whole-codebase drift audit.
 user-invocable: true
-allowed-tools: Task, Bash, Read, Edit, Write, Grep, Glob, mcp__linear
+# Both Linear server names: the local MCP config and the claude.ai connector
+# (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
+allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear-server, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Code review pass (SNOW-269)
@@ -110,7 +112,7 @@ Verify the working tree is clean first. If the branch already exists, stop
 
 ## Step 4 — Run the audit
 
-Invoke the **`code-auditor`** subagent via the Task tool. Pass it:
+Invoke the **`code-auditor`** subagent via the Agent tool. Pass it:
 
 - The repo root and the cycle date.
 - The previous-cycle doc path (from Step 1), so it frames findings as

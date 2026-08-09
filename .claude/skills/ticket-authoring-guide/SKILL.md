@@ -1,6 +1,6 @@
 ---
 name: ticket-authoring-guide
-description: Use when creating a new Linear ticket, updating an existing ticket's description, or posting a scoping comment on a ticket. Covers the scoping comment contract, ticket decomposition rules (one ticket per independently-shippable unit), MCP parameter gotchas (priority/estimate enums, state name matching, `blocks` relationship quirk), and the rule that only a clean scoping comment promotes a ticket to `Ready for dev`. Do NOT use when implementing a ticket that's already scoped — use ticket-implementation-guide for that.
+description: Use when creating a new Linear ticket, updating an existing ticket's description, or posting a scoping comment on a ticket. Covers the scoping comment contract, ticket decomposition rules (one ticket per independently-shippable unit), MCP parameter gotchas (priority/estimate enums, state name matching, `blocks` relationship quirk), and the rule that only a clean scoping comment promotes a ticket to `Ready for dev`. Do NOT use when implementing a ticket that's already scoped — that is the `implement` skill.
 ---
 
 # Linear ticket authoring guide
@@ -19,10 +19,12 @@ window — if it matters, it goes on the ticket.
 - Posting a scoping comment on an existing ticket to move it to
   `Ready for dev`.
 - Updating a ticket's description, labels, priority, or estimate.
-- Posting a project update on a Linear project.
+
+Posting a **project** status update is a different job — that's the
+`post-project-update` skill, which gathers the shipped work and posts it.
 
 If the user is asking to **implement** a ticket that's already scoped,
-stop — that's the `ticket-implementation-guide` skill's job.
+stop — that's the `implement` skill's job.
 
 ## The two creation modes
 
@@ -137,14 +139,14 @@ This is a workaround, not a preference. Revisit if the MCP surface changes.
 
 When asked to "post a project update" for a Linear project, post it as a
 Linear **project update** — not a comment on a project, not a document.
-`create_project_update` is not exposed via the current MCP surface, so:
+Downgrading to a comment puts it in the wrong place and breaks the project
+update feed.
 
-1. Write the formatted text of the update.
-2. Hand it back along with the direct project URL in the form
-   `https://linear.app/hugorodgerbrown/project/[slug]` for manual paste.
-
-Don't silently downgrade to posting a comment — that puts the update in the
-wrong place and breaks the project update feed.
+Use **`save_status_update`** with `type: "project"`. (An older version of
+this guide said `create_project_update` was unavailable and told you to hand
+the text back for manual pasting — that is out of date; `save_status_update`
+is exposed and is what `post-project-update` calls. Pass the prior update's
+`id` to edit rather than duplicate.)
 
 ## House style
 

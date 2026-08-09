@@ -2,7 +2,7 @@
 name: documenter
 description: Use after code has been reviewed and is ready to merge. Updates CLAUDE.md, docstrings, inline comments, and any other documentation to reflect the implemented changes. Also use on-demand to audit documentation quality across the codebase, or to write a changelog entry for a completed feature.
 tools: Read, Write, Edit, Glob, Grep
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Role

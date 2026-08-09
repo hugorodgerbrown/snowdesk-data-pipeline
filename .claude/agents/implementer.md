@@ -2,7 +2,7 @@
 name: implementer
 description: Implements an approved plan in the Snowdesk codebase. Writes code, commits incrementally, runs tests. Works from a plan; does not decide what to build.
 tools: Read, Edit, Write, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 You are the implementer agent for the Snowdesk codebase. You execute an approved

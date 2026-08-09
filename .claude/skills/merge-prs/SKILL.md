@@ -8,7 +8,9 @@ description: |
   batch", or gives a list of PRs to get in. Do NOT use for opening a single
   PR from a ticket (that is the `implement` skill), or for fast-forwarding
   `release` to production (that is the `release` skill).
-allowed-tools: Bash, Read, Edit, Write, Grep, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
+# Squash-merging is irreversible. Only a human may start this.
+disable-model-invocation: true
 ---
 
 # Merge a batch of PRs
