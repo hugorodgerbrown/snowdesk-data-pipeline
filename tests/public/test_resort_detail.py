@@ -14,9 +14,15 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
     resort has coordinates, region-wide fallback when it doesn't, and
     empty-state copy when nothing is nearby.
   - Weather (SNOW-509): the page shows the parent region's WeatherSnapshot
-    (never a per-resort forecast), falls back to the no-snapshot panel with
-    the ``?variant=panel`` HTMX retry when none exists, and renders
+    as the page header and fallback, falls back to the no-snapshot panel
+    with the ``?variant=panel`` HTMX retry when none exists, and renders
     regardless of favourite/auth state or ``needs_review``/coordinate gaps.
+  - Point forecast (SNOW-572): below the region panel, a resort with a
+    linked ``forecast_point`` carrying rows shows its own multi-day
+    forecast (day strip + expandable hourly detail); a resort with no
+    linked point, or a linked point with no rows in the window, shows no
+    forecast section — the region panel above still covers it. One added
+    query, guarded by the view's ``select_related("forecast_point")``.
 """
 
 from __future__ import annotations
@@ -24,16 +30,20 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import RegionDayRating
+from apps.bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
 from apps.observations.models import FieldObservation
 from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
     ForecastPointFactory,
+    ForecastPointWeatherFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     ResortFactory,
@@ -497,6 +507,162 @@ class TestResortDetailWeather:
         content = response.content.decode()
         assert 'sr-only">Temperature<' not in content
         assert 'sr-only">Snowfall<' not in content
+
+
+@pytest.mark.django_db
+class TestResortDetailPointForecast:
+    """The resort's own multi-day point forecast (SNOW-572).
+
+    Reads the same forward ``ForecastPointWeather`` window and
+    ``build_point_forecast_panel`` the favourite detail card uses, rendered
+    below the region weather panel via the shared
+    ``includes/_forecast_panel.html`` partial with
+    ``testid_prefix="resort-forecast"``. No empty-state branch: a resort
+    with no linked point, or a linked point with no rows, simply omits the
+    section — the region panel above already covers that resort.
+    """
+
+    def test_linked_point_with_rows_renders_day_strip(self) -> None:
+        """A linked forecast_point with a forward row renders the day strip."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        today = timezone.localdate()
+        ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=today, hourly_series=[]
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'data-testid="resort-forecast-section"' in content
+        assert "Weather — this resort" in content
+        assert 'data-testid="resort-forecast-day"' in content
+        # Still present — the region panel is unaffected by the addition.
+        assert 'data-testid="resort-weather-section"' in content
+
+    def test_hourly_rows_render_expandable_detail(self) -> None:
+        """A row carrying an hourly_series renders the expandable detail (rendered-markup check).
+
+        Covers the hourly expand in pytest rather than Playwright — see the
+        plan's "Deviation from the scope" note: ``<details>``/``<summary>``
+        is native, zero-JavaScript markup, so the assertion belongs here.
+        """
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        today = timezone.localdate()
+        # Default factory hourly_series is non-empty.
+        ForecastPointWeatherFactory.create(forecast_point=point, valid_for_date=today)
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert 'data-testid="resort-forecast-hourly"' in content
+        assert "<details" in content
+        assert 'data-testid="resort-forecast-hourly-list"' in content
+
+    def test_no_forecast_point_omits_section(self) -> None:
+        """No linked forecast_point → no forecast section; region panel unaffected."""
+        resort = ResortFactory.create(forecast_point=None)
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        content = response.content.decode()
+        assert response.context["forecast_panel"] is None
+        assert "resort-forecast-section" not in content
+        assert 'data-testid="resort-weather-section"' in content
+
+    def test_linked_point_with_no_rows_omits_section(self) -> None:
+        """A linked point with no ForecastPointWeather rows omits the section."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        # Deliberately no ForecastPointWeather rows for this point.
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert response.context["forecast_panel"] is None
+        assert "resort-forecast-section" not in response.content.decode()
+
+    def test_other_points_rows_do_not_leak(self) -> None:
+        """Rows for a different point never surface on this resort's page."""
+        point = ForecastPointFactory.create()
+        other_point = ForecastPointFactory.create(
+            latitude=47.0, longitude=8.0, elevation=2000.0
+        )
+        resort = ResortFactory.create(forecast_point=point)
+        today = timezone.localdate()
+        ForecastPointWeatherFactory.create(
+            forecast_point=other_point, valid_for_date=today
+        )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        assert response.context["forecast_panel"] is None
+        assert "resort-forecast-section" not in response.content.decode()
+
+    def test_only_forward_rows_within_window_appear(self) -> None:
+        """A yesterday row is excluded and the window caps at POINT_FORECAST_DAYS."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        today = timezone.localdate()
+        ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=today - datetime.timedelta(days=1)
+        )
+        for offset in range(POINT_FORECAST_DAYS + 3):
+            ForecastPointWeatherFactory.create(
+                forecast_point=point,
+                valid_for_date=today + datetime.timedelta(days=offset),
+            )
+
+        client = Client()
+        response = client.get(resort.get_absolute_url())
+
+        panel = response.context["forecast_panel"]
+        assert panel is not None
+        dates = [day["date"] for day in panel["days"]]
+        assert len(dates) == POINT_FORECAST_DAYS
+        assert today - datetime.timedelta(days=1) not in dates
+        assert min(dates) == today
+
+    def test_added_query_is_the_only_added_query(self) -> None:
+        """One query is added when a forecast_point exists; select_related prevents a second.
+
+        Compares the query count for a resort with no linked point against
+        an otherwise-identical resort whose point has one forward row. Any
+        drift beyond exactly one extra query would mean the
+        ``select_related("forecast_point")`` on the view's ``get_object_or_404``
+        stopped doing its job — an unrelated-FK lazy fetch would show up as
+        a second added query.
+        """
+        region = MicroRegionFactory.create()
+        resort_without = ResortFactory.create(region=region, forecast_point=None)
+        point = ForecastPointFactory.create()
+        resort_with = ResortFactory.create(region=region, forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=timezone.localdate()
+        )
+
+        client = Client()
+        # Uncounted warm-up — the first request in a run costs extra queries
+        # for one-off cache fills (waffle flag lookup, CSP-rule lookup — see
+        # tests/favourites/test_views.py's
+        # test_rating_lookup_is_batched_not_n_plus_one for the same idiom).
+        client.get(resort_without.get_absolute_url())
+
+        with CaptureQueriesContext(connection) as ctx_without:
+            response_without = client.get(resort_without.get_absolute_url())
+        assert response_without.status_code == 200
+        baseline = len(ctx_without.captured_queries)
+
+        with CaptureQueriesContext(connection) as ctx_with:
+            response_with = client.get(resort_with.get_absolute_url())
+        assert response_with.status_code == 200
+
+        assert len(ctx_with.captured_queries) == baseline + 1
 
 
 @pytest.mark.django_db
