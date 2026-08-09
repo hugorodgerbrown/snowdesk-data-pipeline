@@ -1058,6 +1058,17 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        # SNOW-654 moved the Open-Meteo code out of apps.bulletins, and its
+        # loggers are named after the module, so without this entry every
+        # fetch_weather / weather_fetcher INFO and DEBUG line falls through
+        # to the root logger — which sits at WARNING and has no
+        # file_pipeline handler. They would be dropped, and pipeline.log
+        # would lose the weather half of the ingest it has always carried.
+        "apps.weather": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
         "apps.accounts": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",

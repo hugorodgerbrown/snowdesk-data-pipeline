@@ -82,10 +82,16 @@ def openmeteo_mirror(
             break
 
     if matched_region is None:
+        # The requested coordinates are deliberately not logged. They arrive
+        # from the query string, so to a static analyser they are arbitrary
+        # caller-supplied geolocation reaching a log sink
+        # (py/clear-text-logging-sensitive-data) — even though in practice
+        # the fetcher only ever sends a MicroRegion centre back. Nothing is
+        # lost: the 404 body below carries them to the one caller that
+        # exists, which is where the fetcher surfaces them anyway.
         logger.debug(
-            "openmeteo_mirror: no region found for lat=%s lon=%s kind=%s",
-            latitude,
-            longitude,
+            "openmeteo_mirror: no region centre matched the requested "
+            "coordinates (kind=%s); see the 404 body for the values",
             kind,
         )
         return JsonResponse(
