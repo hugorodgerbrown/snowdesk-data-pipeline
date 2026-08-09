@@ -2,7 +2,7 @@
 name: weather-header
 description: Weather header/resort panel — build_weather_display buckets, is_day, _weather_panel.html, ForecastPanel, WeatherSnapshot temp/snowfall
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-09
 ---
 
 # Weather-driven bulletin header
@@ -16,7 +16,7 @@ The bulletin page always renders `templates/includes/bulletin_header.html` — a
 `includes/_weather_panel.html` is a parameterised partial with two callers:
 
 * **Bulletin masthead** (`includes/bulletin_header.html`) — `panel_tag="header"`, region `<h1>`, subregion eyebrow, share button. Rendered output is unchanged from before the SNOW-509 extraction.
-* **Resort page** (`apps/public/templates/public/resort.html`) — no region `<h1>` (the page has its own resort `<h1>`), no share button, shows the *parent region's* `WeatherSnapshot` — never a per-resort forecast. See [`docs/decisions/resort-page-weather-shows-region-snapshot.md`](decisions/resort-page-weather-shows-region-snapshot.md) for why. Point-local weather (a favourited pin's own forecast) stays a favourite-page-only feature — see the ForecastPanel section below.
+* **Resort page** (`apps/public/templates/public/resort.html`) — no region `<h1>` (the page has its own resort `<h1>`), no share button, shows the *parent region's* `WeatherSnapshot` as the page header and fallback for every resort. Below it, when the resort has a linked `forecast_point` with rows, its own multi-day forecast renders too — see the ForecastPanel section below and [`docs/decisions/resort-page-shows-point-forecast.md`](decisions/resort-page-shows-point-forecast.md) (SNOW-572; supersedes the earlier region-snapshot-only decision).
 
 `apps.public.views.fetch_weather_snippet` (the belt-and-braces HTMX retry, below) accepts `?variant=panel` to select which of the two templates the retry response uses.
 
@@ -45,7 +45,7 @@ WeatherSnapshot         build_weather_display(...)        _weather_panel.html
 
 Both `fetch_weather_for_region` (forecast) and `fetch_archive_for_region` (archive) in [`apps/bulletins/services/weather_fetcher.py`](../apps/bulletins/services/weather_fetcher.py) request `REGION_DAILY_VARIABLES`, reading the three extras via the same degrade-to-`None` accessor shape as the `ForecastPointWeather` fetch path — an Open-Meteo response that omits one of them still creates the row, with `None` for the missing field(s). `_archive_daily_dates` validates only the four required arrays (`time`/`weather_code`/`sunrise`/`sunset`); the extras are never folded into that check, so an omitted array can never reject a whole archive batch.
 
-`build_weather_display` surfaces the three as `temp_max`/`temp_min`/`snowfall_sum` on the `WeatherDisplay` dict, read via `getattr(weather, ..., None)` so the function stays honest about accepting either `WeatherSnapshot` or `ForecastPointWeather`. The template renders the hi/lo temperature group whenever either bound is non-null (`4°/-2°`, `&mdash;` for a missing half — the same idiom as `_favourite_forecast_panel.html`'s day strip) and the snowfall group whenever `snowfall_sum` is non-null, **including an explicit `0`** — deliberately unlike the favourite panel's snowfall chip, which hides a zero. On an avalanche bulletin "no new snow" is a statement worth showing, not noise.
+`build_weather_display` surfaces the three as `temp_max`/`temp_min`/`snowfall_sum` on the `WeatherDisplay` dict, read via `getattr(weather, ..., None)` so the function stays honest about accepting either `WeatherSnapshot` or `ForecastPointWeather`. The template renders the hi/lo temperature group whenever either bound is non-null (`4°/-2°`, `&mdash;` for a missing half — the same idiom as `includes/_forecast_panel.html`'s day strip) and the snowfall group whenever `snowfall_sum` is non-null, **including an explicit `0`** — deliberately unlike the forecast panel's snowfall chip, which hides a zero. On an avalanche bulletin "no new snow" is a statement worth showing, not noise.
 
 ## Bucket map
 
@@ -137,17 +137,17 @@ Meteocons is MIT-licensed. The full licence text and provenance note live in [`s
 * **Snapshot for a different region**: filtered out by the `.filter(region=region)` clause; cannot leak into another region's page.
 * **Unknown WMO code**: falls back to `cloudy` rather than raising. A warning would be over-alert: the data set already includes long-tail codes Open-Meteo occasionally adds, and a single rogue value should not 500 the page.
 
-## ForecastPanel — multi-day point forecast (SNOW-417)
+## ForecastPanel — multi-day point forecast (SNOW-417, resort page SNOW-572)
 
 `build_weather_display` also accepts a `ForecastPointWeather` row (a
-favourited pin's per-day forecast) alongside `WeatherSnapshot` — both expose
-the same `weather_code`/`sunrise`/`sunset` trio, so the single-day builder is
-shared unchanged.
+per-day forecast for a linked point) alongside `WeatherSnapshot` — both
+expose the same `weather_code`/`sunrise`/`sunset` trio, so the single-day
+builder is shared unchanged.
 
-For the favourite detail card's multi-day panel, `build_point_forecast_panel(snapshots, now)` in the same module wraps `build_weather_display` per day and layers on the fields a compact day strip + expandable hourly detail need:
+For the multi-day panel, `build_point_forecast_panel(snapshots, now)` in the same module wraps `build_weather_display` per day and layers on the fields a compact day strip + expandable hourly detail need:
 
 ```
-[ForecastPointWeather, ...]     build_point_forecast_panel(...)      _favourite_forecast_panel.html
+[ForecastPointWeather, ...]     build_point_forecast_panel(...)      includes/_forecast_panel.html
 (7-day window, ascending  ───▶  ┌─ days: [ForecastPanelDay, ...]  ─▶  day strip (weekday, icon,
  via forecast_for_point())      │    each reusing build_weather_        hi/lo temp, snowfall chip)
                                 │    display's icon_bucket/            + expandable hourly detail
@@ -157,12 +157,28 @@ For the favourite detail card's multi-day panel, `build_point_forecast_panel(sna
                                 └─ None when snapshots is empty
 ```
 
-`apps.favourites.views.favourite_card` queries
-`ForecastPointWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
-`-valid_for_date`, the opposite of what a forward-looking panel wants),
-slices to `POINT_FORECAST_DAYS`, and passes the panel or `None` into
-`_favourite_card.html` as `forecast_panel`. `None` renders the existing
-"Point forecast coming soon" empty state.
+`includes/_forecast_panel.html` and its `includes/_forecast_hourly_body.html`
+child (promoted from favourite-only partials by SNOW-572 — design system
+rule 1 is reuse-then-extract) take a `testid_prefix` parameter so each
+consumer's `data-testid`s stay distinct: `favourite-forecast` (the
+default) and `resort-forecast`.
+
+Two consumers query the same window, each with its own ~six-line call
+rather than a shared helper (the favourite card also needs
+`latest_fetched_at` for its freshness stamp, which the resort page has no
+use for):
+
+* `apps.favourites.views._point_forecast_panel` — queries
+  `ForecastPointWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
+  `-valid_for_date`, the opposite of what a forward-looking panel wants),
+  slices to `POINT_FORECAST_DAYS`, and passes the panel or `None` into
+  `_favourite_card.html` as `forecast_panel`. `None` renders the existing
+  "Point forecast coming soon" empty state.
+* `apps.public.views.resort_detail` — same query and slice over
+  `resort.forecast_point` (only when set), no empty-state copy: `None`
+  simply omits the resort-forecast section, leaving the region
+  `WeatherSnapshot` panel above as the page's only weather. See
+  [`docs/decisions/resort-page-shows-point-forecast.md`](decisions/resort-page-shows-point-forecast.md).
 
 `hourly` on each `ForecastPanelDay` is that row's `hourly_series` (or `[]`)
 — populated for only the first `POINT_HOURLY_DAYS` rows of the fetcher's
