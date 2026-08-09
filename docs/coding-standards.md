@@ -290,8 +290,10 @@ fetch, or mutate other records.
 
 - Located in each app's `services/` subdirectory (e.g.
   [apps/bulletins/services/](../apps/bulletins/services/)). The bulletin ingestion
-  (SLF, ALBINA, Météo-France), render-model, day-rating, weather-fetching,
-  weather-display, and archive services all live under `apps/bulletins/services/`.
+  (SLF, ALBINA, Météo-France), render-model, day-rating, and bulletin-archive
+  services all live under `apps/bulletins/services/`; the Open-Meteo
+  weather-fetching, weather-display, forecast-point and elevation services
+  live under [apps/weather/services/](../apps/weather/services/) (SNOW-654).
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.

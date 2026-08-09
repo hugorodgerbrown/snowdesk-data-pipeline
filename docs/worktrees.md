@@ -133,9 +133,9 @@ contains so it can be relied on and extended safely.
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
 | `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
-| `bulletins.weathersnapshot` | 178 | `seed_test_data` |
-| `bulletins.forecastpoint` | 5 | `seed_test_data` |
-| `bulletins.forecastpointweather` | 150 | `seed_test_data` |
+| `weather.weathersnapshot` | 178 | `seed_test_data` |
+| `weather.forecastpoint` | 5 | `seed_test_data` |
+| `weather.forecastpointweather` | 150 | `seed_test_data` |
 | `favourites.favourite` | 5 | `seed_test_data` (owned by the normal dev user) |
 | `auth.user` | 2 | `seed_test_data` (superuser + subscribed normal user) |
 | `accounts.subscriber` | 1 | `seed_test_data` (the normal dev user) |

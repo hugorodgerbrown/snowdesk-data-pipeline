@@ -9,7 +9,7 @@ last-reviewed: 2026-08-09
 
 **Superseded by
 [`resort-page-shows-point-forecast`](resort-page-shows-point-forecast.md)
-(SNOW-572).** SNOW-503 anchored a `bulletins.ForecastPoint` to every
+(SNOW-572).** SNOW-503 anchored a `weather.ForecastPoint` to every
 geocoded resort and folded those points into the `fetch_weather` point
 pass, after this decision was written — falsifying the "no per-resort
 fetch cost exists" premise below. The resort page now shows the resort's

@@ -522,7 +522,7 @@ incident that invalidates derived state:
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
 - `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
-  anchors every geocoded, unlinked `Resort` to a shared `bulletins.ForecastPoint`
+  anchors every geocoded, unlinked `Resort` to a shared `weather.ForecastPoint`
   via `apps.weather.services.forecast_points.resolve_forecast_point` (the same
   SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
   `ForecastPoint.objects.active()` (favourite-OR-resort) so the scheduled

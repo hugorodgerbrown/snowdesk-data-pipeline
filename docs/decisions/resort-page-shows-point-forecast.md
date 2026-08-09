@@ -24,7 +24,7 @@ weather.
 (SNOW-509) was correct when written: no per-resort `ForecastPoint` existed,
 so showing point weather here would have meant minting one per resort and
 paying its fetch cost specifically for this page. SNOW-503 anchored a
-`bulletins.ForecastPoint` to every geocoded resort
+`weather.ForecastPoint` to every geocoded resort
 (`Resort.forecast_point`) and folded those points into the existing
 `fetch_weather` point pass — the cost SNOW-509 was avoiding is already
 paid, on a schedule, for every linked resort. The richest weather data in

@@ -2,7 +2,7 @@
 name: weather-snapshot-vs-forecast-point-weather
 description: WeatherSnapshot and ForecastPointWeather stay separate models — the split is archive vs forecast, not region vs point
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-09
 ---
 
 # WeatherSnapshot and ForecastPointWeather stay separate models

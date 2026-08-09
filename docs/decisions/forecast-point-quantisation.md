@@ -2,7 +2,7 @@
 name: forecast-point-quantisation
 description: ForecastPoint grid cell (0.01 lat / 0.015 lon) and 200m elevation band sizing; reuse-nearest precedes cell creation
 status: current
-last-reviewed: 2026-07-23
+last-reviewed: 2026-08-09
 ---
 
 # ForecastPoint grid and elevation-band sizing
