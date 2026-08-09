@@ -349,6 +349,21 @@ each region, so the choropleth fill layer reads exclusively from feature-state
 ratings response; their feature-state is left unset and the `match` expression
 defaults to `no_rating`.
 
+Because rating is feature-state, and `MAP.setStyle()` (the basemap picker)
+wipes feature-state along with the source, **every basemap swap has to
+repaint the whole choropleth** — otherwise every region falls through to
+`no_rating` and the map goes grey. `map.js`'s `repaintAfterStyleSwap` does
+that, taking the date from `currentDisplayedDate` in preference to `?d=`:
+`?d=` is absent on the ordinary visit, because the scrubber strips it for
+today and never writes one for the out-of-season snap to the season's last
+populated day.
+
+The fill itself is painted **opaque**, with the translucency baked into the
+colours by `compositeOverBackdrop()` in `static/js/choropleth_core.js` — a
+translucent fill blends with the basemap, which made one rating render as a
+different colour on each of the five basemap styles. See
+[`decisions/choropleth-blended-not-translucent.md`](decisions/choropleth-blended-not-translucent.md).
+
 The shared top-nav partial used on the map and other public pages is
 documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).
 
