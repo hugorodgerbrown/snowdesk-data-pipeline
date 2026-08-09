@@ -9,7 +9,7 @@ description: |
   use for: starting work on an already-scoped ticket, asking questions about a
   ticket without producing a scope, or any message that doesn't explicitly
   reference a SNOW-NN identifier.
-allowed-tools: Task, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear
+allowed-tools: Agent, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear-server
 ---
 
 # Scope SNOW-$1
@@ -28,7 +28,7 @@ wrong-state ticket.
 
 ## Step 2 — Delegate scoping to the scoper agent
 
-Invoke the `scoper` subagent via the Task tool. Pass it:
+Invoke the `scoper` subagent via the Agent tool. Pass it:
 - The Linear ticket ID (`SNOW-$1`)
 - The Linear ticket git branch name as fetched
 - The ticket title and description as fetched

@@ -2,7 +2,7 @@
 name: reviewer
 description: Use after the implementer agent has written code, or when reviewing a specific file or diff for quality issues. Checks for security vulnerabilities, performance problems, Django anti-patterns, test coverage gaps, and convention violations. Read-only — never modifies files. Produces a prioritised list of issues for the implementer to address.
 tools: Read, Grep, Glob, Bash
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Role

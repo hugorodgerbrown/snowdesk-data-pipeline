@@ -1,6 +1,17 @@
 ---
 name: security-auditor
-description: Use PROACTIVELY for security audits, vulnerability scans, CVE checks, dependency reviews, pre-deploy reviews, or any request mentioning "security audit", "pentest", "check for vulnerabilities", "CVE check", "secrets scan", or "OWASP review". Performs full-spectrum security audit on Snowdesk (Django + HTMX + Tailwind, hosted on Render — no Dockerfile): SAST (semgrep), dependency CVEs (pip-audit via the existing `tox -e audit` env, npm audit), secrets scanning (gitleaks), Django settings hardening across the split-settings layout, HTMX-specific risks, OWASP Top 10, and CI/Render-deploy review. Read-only — produces a triage-first markdown report at `.claude/security-audits/`, never modifies source.
+description: >
+  Use PROACTIVELY for security audits, vulnerability scans, CVE checks,
+  dependency reviews, pre-deploy reviews, or any request mentioning "security
+  audit", "pentest", "check for vulnerabilities", "CVE check", "secrets scan",
+  or "OWASP review". Invoked by the `audit-security` skill, which pre-loads
+  Snowdesk's threat surface. Performs a full-spectrum security audit on
+  Snowdesk (Django + HTMX + Tailwind, hosted on Render — no Dockerfile) —
+  SAST (semgrep), dependency CVEs (pip-audit via the existing `tox -e audit`
+  env, npm audit), secrets scanning (gitleaks), Django settings hardening
+  across the split-settings layout, HTMX-specific risks, OWASP Top 10, and
+  CI/Render-deploy review. Read-only — produces a triage-first markdown
+  report at `.claude/security-audits/`, never modifies source.
 tools: Read, Grep, Glob, Bash, WebFetch
 model: opus
 ---

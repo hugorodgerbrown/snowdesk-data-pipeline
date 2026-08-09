@@ -12,6 +12,9 @@ description: >
   `--no-approval`) in the args, runs end-to-end without an approval
   gate.
 user-invocable: true
+# Both Linear server names: the local MCP config and the claude.ai connector
+# (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
+allowed-tools: Bash, Read, Write, EnterPlanMode, ExitPlanMode, mcp__linear-server, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Project status update workflow

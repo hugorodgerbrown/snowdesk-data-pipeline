@@ -18,16 +18,19 @@ Weekly (automated Routine) or on-demand. One cycle per Linear ticket.
 
 ## Starting a new cycle
 
-The cycle is automated by the **`code-review-pass` skill**
-(`.claude/skills/code-review-pass/`), which drives the read-only
+The cycle is automated by the **`audit-code` skill**
+(`.claude/skills/audit-code/`), which drives the read-only
 **`code-auditor` agent** (`.claude/agents/code-auditor.md`) through the
 17-item checklist:
 
-- **On-demand:** run `/code-review-pass` (interactive — proposes the doc,
-  inline fixes, and tickets for approval before shipping).
-- **Weekly:** a scheduled Routine invokes `/code-review-pass routine`, which
-  runs end-to-end with no approval gate — branch → audit → dated doc →
-  inline fixes → deduped child tickets → tox → PR.
+- **On-demand:** run `/audit-code` (interactive — proposes the doc,
+  inline fixes, and tickets for approval before shipping). This is how
+  every cycle to date has been run.
+- **Unattended:** `/audit-code routine` runs end-to-end with no approval
+  gate — branch → audit → dated doc → inline fixes → deduped child
+  tickets → tox → PR. The skill supports this mode, but **no Routine is
+  currently scheduled to call it**; wire one up with `/schedule` if you
+  want the cycle to run itself.
 
 The skill performs these steps each cycle:
 

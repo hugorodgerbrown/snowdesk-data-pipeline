@@ -8,7 +8,9 @@ description: |
   release", "ship to production", "do a release", or "release to prod". Do
   NOT use for a normal feature PR onto main (that is the `implement` skill),
   or for scoping/implementing a ticket.
-allowed-tools: Bash, Read, Write, Skill, EnterPlanMode, ExitPlanMode
+allowed-tools: Bash, Read
+# Advancing `release` deploys production. Only a human may start this.
+disable-model-invocation: true
 ---
 
 # Cut a Snowdesk release
