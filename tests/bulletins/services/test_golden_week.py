@@ -28,9 +28,11 @@ from __future__ import annotations
 
 import collections
 import datetime
+from collections.abc import Iterator
 
 import pytest
 from django.core.management import call_command
+from pytest_django import DjangoDbBlocker
 
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.day_rating import target_day_for_valid_from
@@ -262,8 +264,8 @@ class TestRegionPartition:
 
 
 @pytest.mark.django_db
-class TestGoldenWeekLoad:
-    """Loading the week through the production ingest path."""
+class TestGoldenWeekDryRun:
+    """Dry-running the week leaves the database unchanged."""
 
     @pytest.fixture(autouse=True)
     def _regions(self) -> None:
@@ -276,17 +278,46 @@ class TestGoldenWeekLoad:
         assert Bulletin.objects.count() == 0
         assert RegionDayRating.objects.count() == 0
 
+
+@pytest.fixture(scope="class")
+def _loaded_golden_week(
+    django_db_setup: None,
+    django_db_blocker: DjangoDbBlocker,
+) -> Iterator[None]:
+    """Load the realistic corpus once for the read-only integration assertions.
+
+    The previous function-scoped setup loaded the same region fixtures and
+    ingested the same archive once per assertion. The assertions do not mutate
+    the corpus, so a class-scoped load preserves isolation while avoiding four
+    identical production ingest passes. The explicit flush prevents the
+    persistent fixture rows leaking into later tests on the worker.
+    """
+    del django_db_setup
+    with django_db_blocker.unblock():
+        call_command("loaddata", *_REGION_FIXTURES, verbosity=0)
+        call_command("seed_test_week", commit=True, verbosity=0)
+
+    yield
+
+    with django_db_blocker.unblock():
+        call_command("flush", interactive=False, verbosity=0)
+
+
+@pytest.mark.django_db
+@pytest.mark.xdist_group(name="golden_week_loaded")
+@pytest.mark.usefixtures("_loaded_golden_week")
+class TestGoldenWeekLoad:
+    """Loading the week through the production ingest path."""
+
     def test_commit_loads_every_selected_record(
         self, selected: dict[str, list[dict]]
     ) -> None:
         """--commit persists one Bulletin per selected record, none failed."""
-        call_command("seed_test_week", commit=True, verbosity=0)
         expected = sum(len(records) for records in selected.values())
         assert Bulletin.objects.count() == expected
 
     def test_every_loaded_bulletin_has_a_current_render_model(self) -> None:
         """No bulletin lands with the version-0 error sentinel."""
-        call_command("seed_test_week", commit=True, verbosity=0)
         stale = Bulletin.objects.exclude(render_model_version=RENDER_MODEL_VERSION)
         assert not stale.exists(), (
             f"{stale.count()} bulletin(s) did not build a current render model"
@@ -299,8 +330,6 @@ class TestGoldenWeekLoad:
         every map-date region ``moderate``, so nothing that depends on danger
         spread or change over time can be tested against it.
         """
-        call_command("seed_test_week", commit=True, verbosity=0)
-
         rated_days = set(
             RegionDayRating.objects.values_list("date", flat=True).distinct()
         )
@@ -322,8 +351,6 @@ class TestGoldenWeekLoad:
         for every region the two share. This is the cross-day behaviour the
         corpus exists to make testable.
         """
-        call_command("seed_test_week", commit=True, verbosity=0)
-
         contested = 0
         for day in golden_week_dates():
             previous_evening = day - datetime.timedelta(days=1)
