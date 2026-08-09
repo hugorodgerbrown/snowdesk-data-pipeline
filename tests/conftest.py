@@ -17,7 +17,7 @@ hangs CI on a real ``requests.get`` to the Open-Meteo archive endpoint.
 Tests that need to assert the warmup IS scheduled re-patch the same
 attribute with a spy; ``monkeypatch.setattr`` is LIFO so the spy wins
 over this autouse no-op. Tests that exercise the helper itself import it
-from ``apps.bulletins.services.weather_fetcher`` and are unaffected by the
+from ``apps.weather.services.weather_fetcher`` and are unaffected by the
 ``apps.public.views`` patch.
 
 The ``_disable_posthog`` autouse fixture (SNOW-548) pins the analytics
@@ -90,7 +90,7 @@ def _disable_inline_weather_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
     on real network calls. Tests that need to verify the warmup is
     scheduled override this with their own ``monkeypatch.setattr`` (last
     setattr wins). Tests that drive ``fetch_weather_async`` directly
-    import it from ``apps.bulletins.services.weather_fetcher`` and bypass
+    import it from ``apps.weather.services.weather_fetcher`` and bypass
     this patch entirely.
     """
     monkeypatch.setattr(

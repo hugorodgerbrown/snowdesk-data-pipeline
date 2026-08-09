@@ -22,7 +22,7 @@ import datetime
 from types import SimpleNamespace
 from typing import Any
 
-from apps.bulletins.services.weather_display import (
+from apps.weather.services.weather_display import (
     _ICON_BUCKET_LABEL,
     _WMO_CODE_TO_BUCKET,
     _WMO_CODE_TO_ICON_BUCKET,

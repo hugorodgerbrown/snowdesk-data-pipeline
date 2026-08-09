@@ -29,7 +29,6 @@ from django.contrib.auth.models import User
 from django.db import connection
 from pytest_django.fixtures import SettingsWrapper
 
-from apps.bulletins.models import ForecastPoint
 from apps.favourites.models import Favourite
 from apps.favourites.services import (
     FavouriteLimitReached,
@@ -38,6 +37,7 @@ from apps.favourites.services import (
     create_resort_favourite,
     delete_favourite,
 )
+from apps.weather.models import ForecastPoint
 from tests.factories import (
     ForecastPointFactory,
     MicroRegionFactory,

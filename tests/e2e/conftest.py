@@ -122,7 +122,7 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     unaffected.
     """
     monkeypatch.setattr(
-        "apps.bulletins.services.forecast_points.fetch_elevation",
+        "apps.weather.services.forecast_points.fetch_elevation",
         lambda latitude, longitude, base_url=None: 1500.0,
     )
 

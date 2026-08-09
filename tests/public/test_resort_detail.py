@@ -37,8 +37,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import RegionDayRating
-from apps.bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
 from apps.observations.models import FieldObservation
+from apps.weather.services.weather_fetcher import POINT_FORECAST_DAYS
 from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,

@@ -315,7 +315,7 @@ class TestWeatherSnapshotLatestDate:
 
     def test_returns_none_when_empty(self) -> None:
         """Empty queryset returns ``None`` rather than raising."""
-        from apps.bulletins.models import WeatherSnapshot
+        from apps.weather.models import WeatherSnapshot
 
         assert WeatherSnapshot.objects.latest_date() is None
 
@@ -327,13 +327,13 @@ class TestWeatherSnapshotLatestDate:
         WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 20))
         WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 15))
 
-        from apps.bulletins.models import WeatherSnapshot
+        from apps.weather.models import WeatherSnapshot
 
         assert WeatherSnapshot.objects.latest_date() == date(2026, 4, 20)
 
     def test_honours_queryset_filters(self) -> None:
         """Works off the chained queryset rather than the full table."""
-        from apps.bulletins.models import WeatherSnapshot
+        from apps.weather.models import WeatherSnapshot
         from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
         region_a = MicroRegionFactory.create()

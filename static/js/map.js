@@ -1747,7 +1747,7 @@
   };
 
   // SNOW-573: forecast points are quantised at ~1.1 km
-  // (apps.bulletins.services.forecast_points) and would pile up illegibly
+  // (apps.weather.services.forecast_points) and would pile up illegibly
   // at low zoom if every symbol were forced to draw regardless of overlap
   // — minzoom plus MapLibre's native symbol collision (icon-allow-overlap:
   // false) handles legibility instead.

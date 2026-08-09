@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Mean earth radius in kilometres (IUGG). Mirrors
-# ``apps/bulletins/services/forecast_points.py::_haversine_m`` and
+# ``apps/weather/services/forecast_points.py::_haversine_m`` and
 # ``apps/mcp_server/resolvers.py::_haversine_km`` — kept as an independent copy
 # per ``docs/decisions/forecast-point-quantisation.md`` (a shared ``core``
 # extraction is deferred until a third distinct caller shape emerges).
@@ -43,7 +43,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Return the great-circle distance in kilometres between two lat/lon pairs.
 
-    Pure-Python haversine, mirroring ``apps/bulletins/services/forecast_points.py::
+    Pure-Python haversine, mirroring ``apps/weather/services/forecast_points.py::
     _haversine_m`` and ``apps/mcp_server/resolvers.py::_haversine_km`` (same earth
     radius constant, kept as an independent copy — see
     ``docs/decisions/forecast-point-quantisation.md``).

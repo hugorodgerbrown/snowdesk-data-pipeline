@@ -1,10 +1,11 @@
 """
 apps/bulletins/apps.py — AppConfig for the bulletins application.
 
-Owns every model sourced from an external API (SLF avalanche bulletins,
-Open-Meteo weather snapshots) plus the fetch and denormalisation
-services that produce them. The static reference data (EAWS hierarchy,
-resorts) lives in ``regions``; cross-cutting plumbing (HTMX
+Owns the CAAML avalanche bulletins fetched from the three providers (SLF,
+ALBINA, Météo-France) plus the fetch and denormalisation services that
+produce them. The Open-Meteo weather models and services live in
+``weather`` (split out by SNOW-654); the static reference data (EAWS
+hierarchy, resorts) lives in ``regions``; cross-cutting plumbing (HTMX
 decorators, security middleware, HTML utilities) lives in ``core``.
 """
 

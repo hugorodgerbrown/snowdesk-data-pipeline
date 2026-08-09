@@ -52,14 +52,16 @@ from apps.bulletins.management.commands.seed_test_data import (
 from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
-    ForecastPoint,
-    ForecastPointWeather,
     RegionBulletin,
     RegionDayRating,
-    WeatherSnapshot,
 )
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
+from apps.weather.models import (
+    ForecastPoint,
+    ForecastPointWeather,
+    WeatherSnapshot,
+)
 
 User = get_user_model()
 

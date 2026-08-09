@@ -69,12 +69,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
-from apps.bulletins.models import ForecastPointWeather, RegionDayRating
-from apps.bulletins.services.weather_display import (
-    build_point_forecast_panel,
-    build_point_weather_days,
-)
-from apps.bulletins.services.weather_fetcher import POINT_FORECAST_DAYS
+from apps.bulletins.models import RegionDayRating
 from apps.core.coordinates import validate_coordinates
 from apps.core.decorators import require_htmx
 from apps.core.freshness import (
@@ -94,9 +89,15 @@ from apps.favourites.services import (
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 from apps.regions.models import Resort
+from apps.weather.models import ForecastPointWeather
+from apps.weather.services.weather_display import (
+    build_point_forecast_panel,
+    build_point_weather_days,
+)
+from apps.weather.services.weather_fetcher import POINT_FORECAST_DAYS
 
 if TYPE_CHECKING:
-    from apps.bulletins.services.weather_display import ForecastPanel
+    from apps.weather.services.weather_display import ForecastPanel
 
 logger = logging.getLogger(__name__)
 

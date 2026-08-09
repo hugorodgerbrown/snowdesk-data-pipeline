@@ -7,7 +7,7 @@ Provides ``create_favourite``, ``create_resort_favourite``, and
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
-``apps.bulletins.services.forecast_points.resolve_forecast_point`` and
+``apps.weather.services.forecast_points.resolve_forecast_point`` and
 ``apps.regions.services.point_match.region_for_point`` (both lat-first since
 SNOW-426).
 """
@@ -22,9 +22,9 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 
-from apps.bulletins.services.forecast_points import resolve_forecast_point
 from apps.favourites.models import Favourite
 from apps.regions.services.point_match import region_for_point
+from apps.weather.services.forecast_points import resolve_forecast_point
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User

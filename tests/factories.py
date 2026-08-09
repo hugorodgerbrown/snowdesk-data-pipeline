@@ -28,22 +28,13 @@ from apps.bulletins.models import (
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
-    ForecastPoint,
-    ForecastPointWeather,
-    ForecastPointWeatherHistory,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
-    WeatherSnapshot,
 )
 from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     target_day_for_valid_from,
-)
-from apps.bulletins.services.forecast_points import (
-    quantise_elevation,
-    quantise_lat,
-    quantise_lon,
 )
 from apps.core.models import RequestLog
 from apps.favourites.models import Favourite
@@ -56,6 +47,17 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
+from apps.weather.models import (
+    ForecastPoint,
+    ForecastPointWeather,
+    ForecastPointWeatherHistory,
+    WeatherSnapshot,
+)
+from apps.weather.services.forecast_points import (
+    quantise_elevation,
+    quantise_lat,
+    quantise_lon,
+)
 
 # A small representative Alpine bbox (roughly Valais) used as
 # MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework

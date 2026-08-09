@@ -75,8 +75,9 @@ from apps.bulletins.services.render_model import (
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.bulletins.models import Bulletin, ForecastPoint
+    from apps.bulletins.models import Bulletin
     from apps.regions.models import MicroRegion
+    from apps.weather.models import ForecastPoint
 
 logger = logging.getLogger(__name__)
 
