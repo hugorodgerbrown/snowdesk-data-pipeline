@@ -124,13 +124,16 @@
   const OVERLAY_LAYER_IDS = {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
-    // ``bulletin-groupings-line`` rides in the l4 list rather than owning a
-    // row of its own: the boundary has no toggle and is shown whenever the
-    // micro-region tier is, so the picker flips it in lockstep with L4's own
-    // layers. There is no l3 entry here for the same reason.
-    l4: [
-      'regions-fill', 'regions-line', 'regions-label', 'bulletin-groupings-line',
-    ],
+    // SNOW-656: ``l4`` is the micro-region GEOGRAPHY alone now — the boundary
+    // and its label. The choropleth (``regions-fill``) and the dissolved
+    // bulletin boundary (``bulletin-groupings-line``) that used to ride in
+    // this list are the BULLETINS row, and they are not in this table at all:
+    // both are driven by map.js's applyBulletinsVisibility, because the fill
+    // is hidden by opacity rather than visibility (it has to stay
+    // hit-testable) and the boundary answers to a suppression the picker
+    // knows nothing about. There is no ``l3`` entry for the same reason there
+    // never was one.
+    l4: ['regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
     favourites: ['favourites-pin', 'favourites-label'],
     community_reports: [
@@ -171,6 +174,31 @@
           document.dispatchEvent(new CustomEvent('snowdesk:overlays-changed', {
             detail: { key: overlayKey, visible: next },
           }));
+        }
+
+        // SNOW-656: the Bulletins row delegates wholesale, the same way
+        // country.* does below. Its state is not a plain "is this layer
+        // visible" — it is a persisted preference AND-ed with whatever is
+        // currently suppressing it (the downloads overlay, resort-edit mode),
+        // and turning it on has to switch the downloads overlay off. All of
+        // that lives in the main IIFE, so this handler contributes the click
+        // and nothing else. It does not even write localStorage, unlike every
+        // branch below: the state machine owns the value that gets stored.
+        //
+        // The optimistic aria-checked write above is correct for this row
+        // too — ``choose`` clears the downloads suppression whenever the new
+        // preference is on, so the effective value the main IIFE writes back
+        // always equals ``next``.
+        if (overlayKey === 'bulletins') {
+          // Same recovery as L4's below: a prior style swap can have dropped
+          // the regions layers, and this row's fill is one of them.
+          if (next && MAP && !MAP.getLayer('regions-fill')) {
+            document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+          }
+          document.dispatchEvent(new CustomEvent('snowdesk:bulletins-toggle', {
+            detail: { next },
+          }));
+          return;
         }
 
         // SNOW-172: handle country.* toggles by delegating to the main IIFE
@@ -224,18 +252,10 @@
             if (next && overlayKey === 'l4' && !MAP.getLayer('regions-fill')) {
               document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
             }
-            // Enabling L4 also brings its companion bulletin boundary back.
-            // That layer IS lazy — its per-date data may never have been
-            // fetched (first enable) or may belong to a day the user scrubbed
-            // past while it was hidden — so it needs the load path, not just
-            // the visibility flip below. The main IIFE re-reads L4's key to
-            // decide the final visibility, so this is safe if the user
-            // toggles off again before the fetch settles.
-            if (next && overlayKey === 'l4') {
-              document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
-                detail: { key: 'l3' },
-              }));
-            }
+            // SNOW-656: the companion bulletin-boundary load that used to sit
+            // here moved to the Bulletins branch above, with the layer it
+            // belongs to. Enabling the micro-region GEOGRAPHY says nothing
+            // about whether that day's bulletin grouping should be drawn.
             for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
               if (MAP.getLayer(layerId)) {
                 MAP.setLayoutProperty(

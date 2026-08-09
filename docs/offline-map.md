@@ -851,6 +851,20 @@ custom-area roundel to switch it off again. A fresh page load always
 starts it off — `OVERLAY_STORAGE_KEY.downloaded` (`static/js/map_state.js`)
 is documented dead rather than revived.
 
+**And it is mutually exclusive with the Bulletins layer (SNOW-656).** The
+squares are translucent and are drawn over the same polygons the danger
+choropleth fills opaquely, so the two together are unreadable. Turning "Show
+areas on the map" on therefore switches the layers menu's **Bulletins** row
+off, and turning it off returns that row to whatever the user's stored
+preference was; switching Bulletins back on from the layers menu switches the
+squares off. The two controls visibly mirror each other, so the colour never
+just goes missing. `show()`/`hide()` are the single choke point — they are
+already the only writers of this overlay's visibility, so every caller
+inherits the lockstep — and the binding is deliberately to THAT visibility
+rather than to the sheet's open/closed lifecycle, for exactly the reason the
+paragraph above gives. Full rule:
+[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
+
 **Every basemap at once, each in its own colour (SNOW-645).** The overlay
 used to key off the ACTIVE basemap's tile template alone, so downloading
 under Standard and switching to Swisstopo emptied it outright.
@@ -1564,6 +1578,13 @@ label — "Show areas on the map" — sits in its own `bg-tag` rounded panel,
 reading as a view control for the map BEHIND the sheet rather than a fact
 about what is stored, which is also why it leads the sheet ahead of the
 list it governs.
+
+It is no longer the only writer of that state (SNOW-656): switching the
+layers menu's **Bulletins** row on switches this off, since the two are
+mutually exclusive. `map_downloads_manager.js` therefore listens for
+`snowdesk:downloaded-overlay-changed` and sets the checkbox from it —
+`render()`'s read-back of `isVisible()` on every open covers a sheet being
+opened, but not one already open behind the layers menu.
 
 **A real bug shipped in this control's first cut, found by Hugo clicking
 it in a live browser (not by `render_to_string`, which cannot show a

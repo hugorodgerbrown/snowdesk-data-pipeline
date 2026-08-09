@@ -46,13 +46,14 @@
  *                          (SNOW-521) — so the label says "region data
  *                          available offline", not a bare "available
  *                          offline".
- *   l1, l2, l4, resorts  — same-origin GeoJSON feeds cached by sw.js's
+ *   l1, l2, l4,
+ *   bulletins, resorts   — same-origin GeoJSON feeds cached by sw.js's
  *                          STATIC_PATHS shell cache. Probed via the
  *                          GLOBAL ``caches.match()`` (searches every
  *                          cache, so nothing here hardcodes the
  *                          versioned CACHE_VERSION shell-cache name).
- *                          l1/l2/l4 are ``?country=``-scoped, and the SW
- *                          caches per full URL, so they are probed
+ *                          All but resorts are ``?country=``-scoped, and
+ *                          the SW caches per full URL, so they are probed
  *                          EXACTLY, once per enabled country, and go green
  *                          only when cached for every country switched on
  *                          — otherwise a tier dot could sit green above a
@@ -182,6 +183,19 @@
       path: '/api/regions.geojson',
       countryScoped: true,
     }),
+    // SNOW-656: the Bulletins row — the danger choropleth painted onto the
+    // l4 geometry above. Its dot reports the RATINGS feed, not the geometry
+    // one: the geometry is already the Micro regions row's answer, and a
+    // Bulletins row that went green on cached polygons with no ratings
+    // behind them would be claiming an offline choropleth it cannot draw.
+    // (The bulletin-groupings boundary this row also carries is network-only
+    // and never cached — it is deliberately not part of the signal, the same
+    // way markCached no-ops for l3.)
+    bulletins: Object.freeze({
+      kind: 'geojson',
+      path: '/api/ratings/',
+      countryScoped: true,
+    }),
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
@@ -225,9 +239,11 @@
   const COUNTRY_KEY_PREFIX = 'country.';
 
   // SNOW-524: the country-scoped tiers a country toggle also populates —
-  // ``ensureCountryLoaded`` fetches all three regardless of which are switched
-  // on, so all three go pending on a country click.
-  const COUNTRY_SCOPED_TIER_KEYS = Object.freeze(['l1', 'l2', 'l4']);
+  // ``ensureCountryLoaded`` fetches all four feeds regardless of which rows
+  // are switched on, so every row they back goes pending on a country click.
+  // SNOW-656 added ``bulletins``, whose feed (``/api/ratings/``) is one of
+  // the four.
+  const COUNTRY_SCOPED_TIER_KEYS = Object.freeze(['l1', 'l2', 'l4', 'bulletins']);
 
   // Minimum time a row stays in the pulsing "syncing" state before it may go
   // green, so the transition is perceptible even when the fetch resolves in

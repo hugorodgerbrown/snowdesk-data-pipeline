@@ -575,6 +575,29 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
     expect(window.pwaDownloadedOverlay.hide).toHaveBeenCalledTimes(1);
   });
+
+  it('mirrors a change made from outside the sheet (SNOW-656)', async () => {
+    // The in-sheet switch is no longer the only writer: switching the
+    // Bulletins row on from the layers menu switches the squares off, and a
+    // sheet still open behind that menu must not sit on a checked switch for
+    // an overlay that is no longer drawn.
+    seed({});
+    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const toggle = document.getElementById('map-downloads-overlay-toggle');
+    expect(toggle.checked).toBe(true);
+
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:downloaded-overlay-changed', {
+        detail: { visible: false },
+      }),
+    );
+
+    expect(toggle.checked).toBe(false);
+  });
 });
 
 describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a swatch)', () => {

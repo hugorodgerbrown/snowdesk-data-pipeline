@@ -252,11 +252,28 @@
   // that a bottom-docked full-width mobile sheet then covered the very
   // squares it drew — see downloadedOverlayVisible's own comment for the
   // shape this settled on instead.
+  //
+  // SNOW-656: 'l4' means the micro-region BOUNDARY and its label alone now —
+  // the choropleth it used to carry with them lives behind 'bulletins', a
+  // separate row. Both default on, so the map opens exactly as it did.
+  // 'bulletins' is the user's PREFERENCE; what is actually painted is that
+  // AND-ed with any active suppression, held in bulletinsVisibility below.
   const overlayState = {
-    l1: false, l2: false, l4: true, resorts: false,
+    l1: false, l2: false, l4: true, bulletins: true, resorts: false,
     favourites: true, community_reports: false,
     weather: false,
   };
+
+  // SNOW-656: the Bulletins row's live state — the persisted preference plus
+  // whatever is currently suppressing it (the downloads overlay, resort-edit
+  // mode). Reassigned wholesale by the transitions in
+  // static/js/layer_visibility_core.js, which are pure; every write is
+  // followed by applyBulletinsVisibility() so the map and both toggles
+  // cannot drift from it. Seeded below, once overlayState has been read out
+  // of localStorage.
+  const BULLETINS_CORE = self.pwaLayerVisibilityCore;
+  const BULLETINS_SUPPRESSION = BULLETINS_CORE.SUPPRESSION;
+  let bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
 
   // SNOW-645 review, twice over: NOT persisted and NOT seeded from
   // overlayState's boot loop or its basemap-swap re-seed below — see the
@@ -276,18 +293,25 @@
   let downloadedOverlayVisible = false;
 
   // The bulletin-boundary layer (internal key ``l3``) is not an overlay the
-  // user toggles — it is a companion to the micro-region tier, drawn whenever
-  // L4 is drawn. It keeps its own key for the lazy-load machinery (its data is
-  // per-date and fetched separately from the region geometry), but its
-  // visibility is governed by L4's state rather than its own. This maps an
-  // overlay key to the key that governs it; a key absent here governs itself.
+  // user toggles — it is a companion to the choropleth, drawn whenever the
+  // choropleth is. It keeps its own key for the lazy-load machinery (its data
+  // is per-date and fetched separately from the region geometry), but its
+  // visibility is governed by another key's state rather than its own. This
+  // maps an overlay key to the key that governs it; a key absent here governs
+  // itself.
   //
   // Rationale: the boundary answers "which of these regions share one
-  // bulletin?", which is only a meaningful question while the regions it
-  // subdivides are on screen. Shown alone it is a set of outlines around
-  // nothing; hidden while L4 is on, the choropleth implies each micro-region
-  // was judged independently when most were not.
-  const OVERLAY_VISIBILITY_GOVERNOR = { l3: 'l4' };
+  // bulletin?", which is only a meaningful question while that day's bulletin
+  // data is on screen. Shown alone it is a set of outlines around nothing;
+  // hidden while the choropleth is on, the fill implies each micro-region was
+  // judged independently when most were not.
+  //
+  // SNOW-656: the governor moved from ``l4`` to ``bulletins``. The boundary is
+  // a BULLETIN concept — the dissolved outer boundary of every micro-region
+  // sharing one bulletin — and, like the choropleth and unlike the
+  // micro-region geography, it is date-bound. It rode on ``l4``'s key only
+  // because that key used to mean both things.
+  const OVERLAY_VISIBILITY_GOVERNOR = { l3: 'bulletins' };
   const governorFor = (key) => OVERLAY_VISIBILITY_GOVERNOR[key] || key;
 
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
@@ -297,6 +321,16 @@
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+  // SNOW-656: seeded from the legacy ``l4`` key until ``bulletins`` has been
+  // written once, so a device carrying ``l4=false`` comes back with BOTH rows
+  // off. Raw reads, not readBoolStorage, because "absent" and "explicitly
+  // false" have to stay distinguishable for that hand-over to work.
+  overlayState.bulletins = BULLETINS_CORE.seedFromLegacy(
+    readStorage(OVERLAY_STORAGE_KEY.bulletins),
+    readStorage(OVERLAY_STORAGE_KEY.l4),
+    true,
+  );
+  bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
   overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
@@ -839,12 +873,24 @@
         compositeOverBackdrop(RATING_COLOURS.no_rating, weight),
       ],
     ];
+    // SNOW-656: the fill answers to the "Bulletins" row, not to "Micro
+    // regions" — and it is hidden by OPACITY, not by visibility. This layer
+    // is the map's hit-test target (``queryRenderedFeatures`` on click, the
+    // hover cursor's mouseenter/mouseleave), and a layer at
+    // ``visibility: none`` returns nothing from that query, so switching
+    // Bulletins off that way would leave visible borders that cannot be
+    // tapped. ``regionsFillLayout`` derives both values from the two rows —
+    // see its own docstring for the four-quadrant table, including why the
+    // layer IS dropped when neither row is on.
+    const fillLayout = BULLETINS_CORE.regionsFillLayout(
+      overlayState.l4, bulletinsVisibility,
+    );
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
       source: 'regions',
       layout: {
-        visibility: overlayState.l4 ? 'visible' : 'none',
+        visibility: fillLayout.visibility,
       },
       paint: {
         'fill-color': [
@@ -852,7 +898,7 @@
           emphasised, fillColoursAt(REGION_FILL_WEIGHT_EMPHASIS),
           fillColoursAt(REGION_FILL_WEIGHT),
         ],
-        'fill-opacity': 1,
+        'fill-opacity': fillLayout.opacity,
       },
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
@@ -1865,9 +1911,12 @@
   // weight alone can't carry. Inserted above 'regions-line-selected' so it
   // sits between the choropleth and the selection ring in the layer stack.
   //
-  // Visibility is seeded from overlayState.l4 — the boundary is a companion
-  // to the micro-region tier and has no state of its own (see
-  // OVERLAY_VISIBILITY_GOVERNOR).
+  // Visibility is seeded from the Bulletins row's EFFECTIVE state — the
+  // boundary is a companion to the choropleth and has no state of its own
+  // (see OVERLAY_VISIBILITY_GOVERNOR, which SNOW-656 moved from ``l4`` to
+  // ``bulletins``). Unlike ``regions-fill`` this one really does use
+  // ``visibility``: it is a line layer, hit-tests nothing, and so has no
+  // reason to stay installed-but-invisible.
   // SNOW-323: the FC currently drawn into the bulletin-groupings source (kept
   // so the basemap-swap handler can re-install the layer without a refetch),
   // and whether that layer is currently showing data vs blanked for scrub.
@@ -1883,7 +1932,7 @@
         type: 'line',
         source: 'bulletin-groupings',
         layout: {
-          visibility: overlayState.l4 ? 'visible' : 'none',
+          visibility: BULLETINS_CORE.isEffective(bulletinsVisibility) ? 'visible' : 'none',
           'line-join': 'round',
           'line-cap': 'round',
         },
@@ -1996,8 +2045,12 @@
   // (line-opacity with a feature-state case expression), since MapLibre v4
   // does not support feature-state expressions inside layer filters.  The
   // selection ring only appears on features the user has actually clicked
-  // (which must already be visible through regions-fill), so skipping the
-  // country filter here is safe — a user cannot click a hidden fill feature.
+  // (which must already be present in regions-fill), so skipping the country
+  // filter here is safe — a user cannot click a fill feature the country
+  // FILTER has excluded, which is what matters here. SNOW-656 made the fill
+  // hideable by opacity rather than visibility, and a transparent feature IS
+  // still clickable — deliberately, so borders stay tappable with the colour
+  // off — but that is orthogonal: filtering removes the feature outright.
   //
   // 'match' is used instead of 'in' for the country filter because MapLibre's
   // 'in' expression requires a literal keyword as its first argument; passing
@@ -2523,6 +2576,14 @@
   // to l1 / l2 / resorts. l4 is not lazy — its layers are installed
   // eagerly in installRegionsLayers; the other tiers fetch their
   // GeoJSON on first enable.
+  //
+  // SNOW-656: there is no ``bulletins`` entry here and there is no
+  // ``regions-fill`` entry anywhere in this map. The Bulletins row's two
+  // layers are driven differently from every other overlay — the fill by
+  // opacity (it must stay hit-testable), the groupings boundary through the
+  // ``l3`` entry below via OVERLAY_VISIBILITY_GOVERNOR — so both go through
+  // applyBulletinsVisibility rather than the generic visibility loop this
+  // table feeds.
   // Mirrors OVERLAY_LAYER_IDS in basemapPickerInit but scoped here so
   // the snowdesk:overlay-load handler below can reach them without
   // crossing IIFE boundaries.
@@ -2571,7 +2632,19 @@
       const gov = governorFor(key);
       const stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[gov], overlayState[gov]);
       overlayState[gov] = stillEnabled;
-      const visibility = stillEnabled ? 'visible' : 'none';
+      // SNOW-656: for the Bulletins row the stored value is the user's
+      // PREFERENCE, and what gets painted is that AND-ed with any active
+      // suppression — a boundary made visible here while the downloads
+      // overlay is on would be exactly the fight this ticket removed. This
+      // is a re-read of persisted state rather than a click, so it takes
+      // ``setPreference`` (mechanical) and not ``choose`` (which would clear
+      // the downloads suppression on the user's behalf).
+      if (gov === 'bulletins') {
+        bulletinsVisibility = BULLETINS_CORE.setPreference(bulletinsVisibility, stillEnabled);
+      }
+      const visibility = (
+        gov === 'bulletins' ? BULLETINS_CORE.isEffective(bulletinsVisibility) : stillEnabled
+      ) ? 'visible' : 'none';
       for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', visibility);
@@ -2602,6 +2675,122 @@
       // (network-only, genuinely never cached) so that dot stays grey.
       if (overlayLoaded[key]) window.pwaLayerSyncStatus?.markCached(key);
     }).catch(() => {});
+  });
+
+  // ==== SNOW-656: the Bulletins row ====
+  //
+  // Everything that can change what the choropleth and the bulletin boundary
+  // are doing funnels through ``applyBulletinsVisibility``: the layers-menu
+  // row, the downloads sheet's "Show areas on the map" switch, resort-edit
+  // mode, and every re-install after a basemap swap. Three independent
+  // writers of one layer's visibility is how this drifts — before this
+  // ticket there were already two (the picker's toggle loop and
+  // map_edit_resorts.js's direct hide), and the download exclusivity would
+  // have been the third.
+
+  /**
+   * Paint the two Bulletins layers from ``bulletinsVisibility``, and mirror
+   * the result onto the layers-menu row.
+   *
+   * ``regions-fill`` is hidden by OPACITY rather than visibility — it is the
+   * map's hit-test target, and a layer at ``visibility: none`` returns
+   * nothing from ``queryRenderedFeatures``, so hiding it that way would
+   * leave visible borders that cannot be tapped. See
+   * ``regionsFillLayout``'s own docstring for the four-quadrant table.
+   *
+   * The row shows the EFFECTIVE value, not the stored preference, so a user
+   * whose choropleth just vanished behind the download squares can see why
+   * rather than finding it mysteriously missing.
+   *
+   * @returns {void}
+   */
+  const applyBulletinsVisibility = () => {
+    const effective = BULLETINS_CORE.isEffective(bulletinsVisibility);
+    const fill = BULLETINS_CORE.regionsFillLayout(overlayState.l4, bulletinsVisibility);
+    if (map.getLayer('regions-fill')) {
+      map.setLayoutProperty('regions-fill', 'visibility', fill.visibility);
+      map.setPaintProperty('regions-fill', 'fill-opacity', fill.opacity);
+    }
+    if (map.getLayer('bulletin-groupings-line')) {
+      map.setLayoutProperty(
+        'bulletin-groupings-line', 'visibility', effective ? 'visible' : 'none',
+      );
+    }
+    // Same direct-DOM mirror the weather row's availability gate already uses
+    // — the picker lives in a sibling IIFE and the row IS its own state.
+    const row = document.querySelector('#basemap-menu [data-overlay-key="bulletins"]');
+    if (row) row.setAttribute('aria-checked', effective ? 'true' : 'false');
+  };
+
+  /**
+   * Add or remove a suppression on the Bulletins layers and repaint.
+   *
+   * Exposed to the sibling IIFEs that need it — ``map_edit_resorts.js``
+   * suppresses for the length of resort-edit mode — so they never reach for
+   * ``setLayoutProperty('regions-fill', …)`` themselves. The downloads
+   * exclusivity uses it from inside this IIFE, through show()/hide() below.
+   *
+   * @param {string} reason A ``BULLETINS_SUPPRESSION`` value.
+   * @param {boolean} active Whether the reason is now in force.
+   * @returns {void}
+   */
+  const setBulletinsSuppressed = (reason, active) => {
+    bulletinsVisibility = active
+      ? BULLETINS_CORE.suppress(bulletinsVisibility, reason)
+      : BULLETINS_CORE.unsuppress(bulletinsVisibility, reason);
+    applyBulletinsVisibility();
+  };
+
+  // The named channel for modules outside this IIFE — currently
+  // map_edit_resorts.js, which suppresses for the length of resort-edit mode.
+  // A window bridge rather than a bare identifier for the reason map_state.js
+  // spells out: a top-level ``const`` in a classic script is NOT a window
+  // property, so a consumer reaching for ``window.setBulletinsSuppressed``
+  // would silently get ``undefined`` (finding M1). Frozen, and a function
+  // rather than a property, because the state changes after this is built.
+  window.pwaBulletinsLayer = Object.freeze({
+    setSuppressed: setBulletinsSuppressed,
+    isVisible: () => BULLETINS_CORE.isEffective(bulletinsVisibility),
+  });
+
+  // The Micro regions row owns ``regions-line``/``regions-label`` — the
+  // picker flips those itself — but ``regions-fill``'s VISIBILITY is derived
+  // from both rows (it is dropped only when neither is on), so this IIFE has
+  // to hear about an L4 flip too. ``overlayState.l4`` is otherwise re-seeded
+  // only at boot and after a basemap swap, which would leave the derivation
+  // reading a stale value for the rest of the session.
+  document.addEventListener('snowdesk:overlays-changed', (e) => {
+    if (!e.detail || e.detail.key !== 'l4') return;
+    overlayState.l4 = !!e.detail.visible;
+    applyBulletinsVisibility();
+  });
+
+  // Bridge for basemapPickerInit, mirroring the snowdesk:country-toggle one
+  // below: the picker owns the click, this IIFE owns the state. It is a
+  // ``choose`` rather than a mechanical write, so turning Bulletins on here
+  // switches the downloads overlay off — the other half of the exclusivity,
+  // and the reason both directions can be read in one place.
+  document.addEventListener('snowdesk:bulletins-toggle', (e) => {
+    const next = !!(e.detail && e.detail.next);
+    bulletinsVisibility = BULLETINS_CORE.choose(bulletinsVisibility, next);
+    overlayState.bulletins = bulletinsVisibility.preference;
+    writeStorage(OVERLAY_STORAGE_KEY.bulletins, String(overlayState.bulletins));
+    // ``choose`` has already dropped the downloads suppression from the
+    // state; this switches the squares themselves off and mirrors the
+    // sheet's own switch. hideDownloadedOverlay re-enters
+    // setBulletinsSuppressed, which is idempotent, so the ordering is safe.
+    if (next && downloadedOverlayVisible) hideDownloadedOverlay();
+    applyBulletinsVisibility();
+    // The boundary is per-date and lazily fetched: a first enable has never
+    // loaded it, and a re-enable may be holding a day the user scrubbed past
+    // while it was hidden. The overlay-load handler re-reads the state
+    // before making anything visible, so this is safe if the user toggles
+    // off again before the fetch settles.
+    if (next) {
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
+        detail: { key: 'l3' },
+      }));
+    }
   });
 
   // SNOW-518: the layers menu is a live cache-state dashboard. When the user
@@ -2771,8 +2960,39 @@
   };
 
   /**
+   * Broadcast a change in the downloaded-areas overlay's visibility.
+   *
+   * SNOW-656: the "Show areas on the map" switch inside the downloads sheet
+   * is no longer the only thing that can change this — turning the Bulletins
+   * row on from the layers menu switches the squares off, and the user has
+   * to see the switch move rather than reopen the sheet to find out. The
+   * sheet owns its own DOM, so it listens for this instead of this IIFE
+   * reaching into it.
+   *
+   * @returns {void}
+   */
+  const announceDownloadedOverlay = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:downloaded-overlay-changed', {
+      detail: { visible: downloadedOverlayVisible },
+    }));
+  };
+
+  /**
    * Switch the overlay on and (re)probe it. Called only from
    * window.pwaDownloadedOverlay.show() — see that export for callers.
+   *
+   * SNOW-656: this is also where the choropleth yields. The download squares
+   * are translucent and are drawn over the same polygons the choropleth
+   * fills, so the two together are unreadable — and in practice they are
+   * mutually exclusive anyway, since downloading is a date-independent
+   * utility about having the map available offline. show()/hide() are the
+   * ONLY writers of this overlay's visibility, which makes them the single
+   * choke point for the lockstep: every caller inherits it, including any
+   * added later. Note that it is bound to the overlay's own visibility and
+   * NOT to the sheet's open/closed lifecycle — open() calls show()
+   * unconditionally but closing the sheet calls nothing, so binding to the
+   * sheet would leave the squares and the infill painted together the moment
+   * it was dismissed.
    *
    * @returns {Promise<void>}
    */
@@ -2781,12 +3001,20 @@
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
     }
+    setBulletinsSuppressed(BULLETINS_SUPPRESSION.DOWNLOADS, true);
+    announceDownloadedOverlay();
     return refreshDownloadedOverlay();
   };
 
   /**
    * Switch the overlay off. No re-probe needed — hidden means nothing on
    * screen to be wrong, same as the toggle-off branch this replaces.
+   *
+   * SNOW-656: lifting the suppression restores the Bulletins row to whatever
+   * the user's stored PREFERENCE was, which is why the preference is the
+   * only persisted value and there is no remembered second copy — a user who
+   * had already switched Bulletins off does not get it switched back on for
+   * them here.
    *
    * @returns {void}
    */
@@ -2795,6 +3023,8 @@
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
     }
+    setBulletinsSuppressed(BULLETINS_SUPPRESSION.DOWNLOADS, false);
+    announceDownloadedOverlay();
   };
 
   // Any downloaded basemap can gain or lose tiles while the overlay is on —
@@ -2927,19 +3157,18 @@
   // settle-debounced fetch for that day. Playback fires this per frame, so
   // the debounce collapses a run of frames into a single fetch once motion
   // stops — the boundary is only ever drawn for a day the user rests on.
-  // Also skipped while L4 is off: the boundary is hidden then, so refetching
-  // it per scrubbed date would be pure network cost for nothing on screen.
+  // Also skipped while the boundary is hidden — refetching it per scrubbed
+  // date would be pure network cost for nothing on screen.
   //
-  // L4's state is read from localStorage, not from ``overlayState``: the
-  // picker writes the key on every click but only a toggle-ON reaches the
-  // ``snowdesk:overlay-load`` handler that refreshes ``overlayState``, so
-  // after a toggle-OFF the in-memory copy still says true for the rest of
-  // the session and this guard never fires. localStorage is the picker's
-  // live source of truth — the same read the overlay-load handler makes
-  // (``stillEnabled`` above), for the same reason.
+  // SNOW-656: that used to read L4's localStorage key directly, on the
+  // reasoning that the picker writes it on every click while ``overlayState``
+  // is only refreshed on a toggle-ON. The Bulletins row has no such gap:
+  // every transition goes through ``bulletinsVisibility``, which is the live
+  // state (and the only thing that knows about suppression — a boundary
+  // hidden because the downloads overlay is on must not be refetched either).
   document.addEventListener('snowdesk:date-changed', (e) => {
     if (!overlayLoaded.l3) return;
-    if (!readBoolStorage(OVERLAY_STORAGE_KEY.l4, overlayState.l4)) return;
+    if (!BULLETINS_CORE.isEffective(bulletinsVisibility)) return;
     const dk = (e.detail && e.detail.date) || null;
     if (!dk) return;
     scheduleGroupingsForDate(dk);
@@ -3135,12 +3364,15 @@
       if (overlayState[key]) restoreOverlay(key);
     }
 
-    // The bulletin boundary rides along with the micro-region tier rather
-    // than having a toggle of its own, so it loads at boot whenever L4 is on
-    // (which is the default). Its data is per-date and network-only, so this
-    // is a real fetch on every boot, not a cache read — it degrades silently
-    // when it fails (see the l3 branch of _loadOverlay).
-    if (overlayState.l4) restoreOverlay('l3');
+    // The bulletin boundary rides along with the Bulletins row rather than
+    // having a toggle of its own (SNOW-656 moved it off L4 — see
+    // OVERLAY_VISIBILITY_GOVERNOR), so it loads at boot whenever that row is
+    // on, which is the default. Its data is per-date and network-only, so
+    // this is a real fetch on every boot, not a cache read — it degrades
+    // silently when it fails (see the l3 branch of _loadOverlay). No
+    // suppression can be active this early: the downloads overlay starts off
+    // and edit mode suppresses from a MAP_READY_PROMISE callback.
+    if (overlayState.bulletins) restoreOverlay('l3');
 
     // SNOW-414: favourites is default-ON (unlike the tiers above), so an
     // eligible user's saved pins load at boot rather than waiting for a
@@ -4382,9 +4614,21 @@
       for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
-      // l4 is re-seeded before any install fn runs because the bulletin
-      // boundary's visibility is derived from it, not from a key of its own.
+      // l4 and bulletins are re-seeded before any install fn runs: the fill's
+      // layout is derived from both, and the bulletin boundary's visibility
+      // from bulletins alone rather than a key of its own.
       overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+      // SNOW-656: ``setPreference``, not ``choose`` — a basemap swap is not a
+      // click, and must leave the downloads suppression (and the downloads
+      // overlay itself, per the note above) exactly as it found them.
+      overlayState.bulletins = BULLETINS_CORE.seedFromLegacy(
+        readStorage(OVERLAY_STORAGE_KEY.bulletins),
+        readStorage(OVERLAY_STORAGE_KEY.l4),
+        true,
+      );
+      bulletinsVisibility = BULLETINS_CORE.setPreference(
+        bulletinsVisibility, overlayState.bulletins,
+      );
       overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
 
       // SNOW-478: the new basemap has its own glyph server and fonts, so

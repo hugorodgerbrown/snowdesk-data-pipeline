@@ -1,15 +1,26 @@
 /*
- * tests/js/test_map_groupings_guard.js — Vitest test for the L4 guard on
- * the bulletin-groupings refetch in static/js/map.js.
+ * tests/js/test_map_groupings_guard.js — Vitest test for the guard on the
+ * bulletin-groupings refetch in static/js/map.js.
  *
- * The bulletin boundary (L3) follows the Micro-regions toggle (L4): while
- * L4 is off the boundary is hidden, so every scrubbed date that refetches
+ * The bulletin boundary (L3) follows the **Bulletins** toggle: while it is
+ * hidden, every scrubbed date that refetches
  * `/api/bulletin-groupings.geojson` is network cost for nothing on screen.
- * The `snowdesk:date-changed` handler guards on that — but the 2026-08-03
- * JS review (finding M9) found the guard reading `overlayState.l4`, an
- * in-memory copy only a toggle-ON refreshes, so after a toggle-OFF it stayed
- * true for the session and the guard never fired. The picker's live source
- * of truth is localStorage, which is what the guard now reads.
+ * The `snowdesk:date-changed` handler guards on that.
+ *
+ * SNOW-656 changed WHICH toggle, and what "hidden" means. The boundary used
+ * to follow Micro regions (L4) because one key drove the whole tier; it now
+ * follows Bulletins, because the dissolved outline of the regions sharing a
+ * bulletin is a bulletin concept and, like the choropleth and unlike the
+ * micro-region geography, is date-bound. "Hidden" also gained a second
+ * cause: the downloaded-areas overlay suppresses Bulletins while it is on,
+ * and a boundary hidden for that reason must not be refetched either.
+ *
+ * The 2026-08-03 JS review (finding M9) is why this file exists: the guard
+ * then read `overlayState.l4`, an in-memory copy only a toggle-ON refreshed,
+ * so after a toggle-OFF it stayed true for the session and the guard never
+ * fired. It read localStorage for a while afterwards. It now reads the
+ * Bulletins state machine, which every transition writes through — so the
+ * toggle-OFF case below is still the assertion that matters.
  *
  * Booting map.js in jsdom: the file is one script of top-level IIFEs, so
  * importing it runs the lot; the main IIFE needs a `#map` element and a
@@ -28,7 +39,7 @@ import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
 const GROUPINGS_URL = '/api/bulletin-groupings.geojson';
-const L4_STORAGE_KEY = 'snowdesk.map.overlay.l4';
+const BULLETINS_STORAGE_KEY = 'snowdesk.map.overlay.bulletins';
 // GROUPINGS_SETTLE_MS is 250 in map.js — the debounce a scrubbed date waits
 // out before its fetch.
 const PAST_SETTLE_MS = 320;
@@ -135,11 +146,19 @@ async function commitDate(dateKey) {
   await tick(PAST_SETTLE_MS);
 }
 
+/** Toggle the Bulletins row the way the layers menu does. */
+function toggleBulletins(next) {
+  document.dispatchEvent(
+    new CustomEvent('snowdesk:bulletins-toggle', { detail: { next } }),
+  );
+}
+
 beforeAll(async () => {
   buildFixture();
   stubMapLibre();
-  // L4 starts on, as it does for a user who has never touched the picker.
-  localStorage.setItem(L4_STORAGE_KEY, 'true');
+  // Bulletins starts on, as it does for a user who has never touched the
+  // picker.
+  localStorage.setItem(BULLETINS_STORAGE_KEY, 'true');
   vi.stubGlobal(
     'fetch',
     vi.fn(() =>
@@ -173,21 +192,43 @@ beforeEach(() => {
 });
 
 describe('bulletin-groupings refetch on a scrubbed date', () => {
-  it('does not fetch once the picker has toggled L4 off', async () => {
-    // What the picker writes on a toggle-off. It updates no in-memory
-    // state — that omission is the bug this guards against.
-    localStorage.setItem(L4_STORAGE_KEY, 'false');
+  it('does not fetch once the picker has toggled Bulletins off', async () => {
+    toggleBulletins(false);
 
     await commitDate('2026-05-20');
 
     expect(groupingsFetches()).toEqual([]);
   });
 
-  it('still fetches while L4 is on', async () => {
-    localStorage.setItem(L4_STORAGE_KEY, 'true');
+  it('still fetches while Bulletins is on', async () => {
+    toggleBulletins(true);
+    globalThis.fetch.mockClear();
 
     await commitDate('2026-05-19');
 
     expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-19`]);
+  });
+
+  it('does not fetch while the downloaded-areas overlay is suppressing it', async () => {
+    // SNOW-656: Bulletins' own preference is still on here — this is the
+    // suppression, not a toggle. A boundary the user cannot see because the
+    // download squares have taken the map is no more worth fetching than one
+    // they switched off.
+    toggleBulletins(true);
+    await window.pwaDownloadedOverlay.show();
+    globalThis.fetch.mockClear();
+
+    await commitDate('2026-05-18');
+
+    expect(groupingsFetches()).toEqual([]);
+  });
+
+  it('fetches again once the overlay is switched off and the preference returns', async () => {
+    window.pwaDownloadedOverlay.hide();
+    globalThis.fetch.mockClear();
+
+    await commitDate('2026-05-17');
+
+    expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-17`]);
   });
 });

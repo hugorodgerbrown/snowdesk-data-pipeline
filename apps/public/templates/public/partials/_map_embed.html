@@ -306,6 +306,31 @@ Optional context:
                         {% trans "Micro regions" %}
                     </button>
                 </li>
+                {# SNOW-656: the bulletin DATA painted onto the micro-region  #}
+                {# geography — the danger choropleth and the dissolved        #}
+                {# boundary of every region sharing one bulletin — split out  #}
+                {# of the Micro regions row above, which now carries the      #}
+                {# geography alone. Two reasons they are separate rows: the   #}
+                {# borders never interfere with anything and can stay up      #}
+                {# throughout, and the choropleth is mutually exclusive with  #}
+                {# the downloads sheet's "Show areas on the map" (both paint  #}
+                {# the same polygons). Flipping either control visibly flips  #}
+                {# the other — see window.pwaLayerVisibilityCore.             #}
+                {# Persisted under snowdesk.map.overlay.bulletins, seeded     #}
+                {# once from the old .l4 value so a device that had the tier  #}
+                {# switched off comes back with both rows off.                #}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="bulletins"
+                        aria-checked="true"
+                    >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        {% trans "Bulletins" %}
+                    </button>
+                </li>
                 {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
                 {# circle pins above the L4 choropleth. Off by default;  #}
                 {# state persists in localStorage under                  #}

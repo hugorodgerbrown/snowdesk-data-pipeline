@@ -113,8 +113,11 @@ def test_map_page_renders_micro_regions_overlay_toggle() -> None:
     """
     SNOW-390: the Micro regions checkbox is a normal overlay toggle, matching
     L1 / L2 / L3 / Resorts. Default is ``aria-checked="true"`` — the
-    danger-rating choropleth is visible on first paint — but the button is no
+    micro-region boundary is visible on first paint — but the button is no
     longer locked with ``disabled`` / ``aria-disabled`` / a "required" tooltip.
+
+    SNOW-656 narrowed what this row carries: the danger-rating choropleth it
+    used to drive alongside the boundary is the separate Bulletins row below.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -129,6 +132,31 @@ def test_map_page_renders_micro_regions_overlay_toggle() -> None:
     assert 'aria-disabled="true"' not in button_scope
     assert "disabled" not in button_scope
     assert "required" not in button_scope
+
+
+@pytest.mark.django_db
+def test_map_page_renders_bulletins_overlay_toggle() -> None:
+    """
+    SNOW-656: the danger choropleth and the dissolved bulletin boundary are
+    their own overlay row, split out of Micro regions so the borders can stay
+    up while the infill yields to the downloaded-areas overlay.
+
+    Default is ``aria-checked="true"`` — the choropleth is still visible on
+    first paint — and it renders immediately after the Micro regions row, so
+    the two halves of the old single tier read as a pair.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    assert 'data-overlay-key="bulletins"' in content
+    bulletins_idx = content.index('data-overlay-key="bulletins"')
+    button_close_idx = content.index("</button>", bulletins_idx)
+    button_scope = content[bulletins_idx:button_close_idx]
+    assert 'aria-checked="true"' in button_scope
+    assert "Bulletins" in button_scope
+
+    assert content.index('data-overlay-key="l4"') < bulletins_idx
 
 
 @pytest.mark.django_db
@@ -427,18 +455,20 @@ def test_map_layer_menu_section_order() -> None:
 @pytest.mark.django_db
 def test_map_layer_menu_renders_sync_status_dots() -> None:
     """
-    SNOW-505: each always-rendered overlay row (l1/l2/l4/resorts) carries
-    a server-rendered ``.sync-dot`` starting at ``data-sync-state="unknown"``
-    — ``map_layer_sync_status.js`` resolves it to cached/uncached the first
-    time the popover opens.
+    SNOW-505: each always-rendered overlay row (l1/l2/l4/bulletins/resorts)
+    carries a server-rendered ``.sync-dot`` starting at
+    ``data-sync-state="unknown"`` — ``map_layer_sync_status.js`` resolves it
+    to cached/uncached the first time the popover opens.
 
     SNOW-521 dropped the L3 (bulletin groupings) overlay row entirely.
+    SNOW-656 added the Bulletins row, whose dot reports the ratings feed
+    rather than the region geometry the l4 row already answers for.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    for key in ("l1", "l2", "l4", "resorts"):
+    for key in ("l1", "l2", "l4", "bulletins", "resorts"):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_close_idx = content.index("</button>", key_idx)
         button_scope = content[key_idx:button_close_idx]

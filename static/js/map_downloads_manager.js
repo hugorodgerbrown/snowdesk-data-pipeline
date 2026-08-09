@@ -942,6 +942,27 @@
     }
   });
 
+  // SNOW-656: the in-sheet switch is no longer the only thing that can turn
+  // the overlay off. Bulletins and "Show areas on the map" are mutually
+  // exclusive and the two controls MIRROR each other, so switching Bulletins
+  // on from the layers menu switches the squares off — and a sheet that is
+  // still open behind that menu has to show it, rather than sitting on a
+  // checked switch for an overlay that is no longer drawn.
+  //
+  // Sets the checkbox rather than re-rendering: render() re-clones the whole
+  // body template and re-reads IndexedDB, and nothing else on the sheet
+  // depends on this state (its own change handler already skips the
+  // re-render for the same reason). Not skipped while hidden either — this
+  // is one attribute write on an element that stays in the DOM, and leaving
+  // it stale would only be corrected by render()'s read-back on the next
+  // open, which is exactly the drift this closes.
+  document.addEventListener('snowdesk:downloaded-overlay-changed', function (event) {
+    const overlayToggle = /** @type {HTMLInputElement|null} */ (
+      sheet.querySelector('#map-downloads-overlay-toggle')
+    );
+    if (overlayToggle) overlayToggle.checked = !!(event.detail && event.detail.visible);
+  });
+
   // SNOW-637: a sheet left open when the connection drops has to reflect it
   // there and then — waiting for the next open would leave a live-looking
   // trigger on screen for as long as the user keeps the sheet up. Same

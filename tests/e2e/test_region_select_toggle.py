@@ -29,6 +29,22 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     )
 
 
+def _assert_transparent_fill_is_still_queryable(page: Page) -> None:
+    """Switch Bulletins off, then prove the fill still answers a hit test."""
+    page.wait_for_function(
+        "() => MAP.queryRenderedFeatures({ layers: ['regions-fill'] }).length > 0"
+    )
+    page.evaluate(
+        "() => document.querySelector('[data-overlay-key=\"bulletins\"]').click()"
+    )
+    page.wait_for_function(
+        "() => MAP.getPaintProperty('regions-fill', 'fill-opacity') === 0"
+    )
+    assert page.evaluate(
+        "() => MAP.queryRenderedFeatures({ layers: ['regions-fill'] }).length > 0"
+    )
+
+
 def _stub_region_hit_test(page: Page) -> str:
     """Pin the fill-layer hit-test to one real region feature and record every
     ``snowdesk:region-selected`` detail. Returns that feature's id.
@@ -82,6 +98,14 @@ def test_region_tap_selects_without_opening_a_popup(
 ) -> None:
     """A region tap selects the region and overlays nothing on the map."""
     _navigate_home(page, live_server.url)
+
+    # SNOW-656: with Bulletins switched off the choropleth goes TRANSPARENT,
+    # not hidden, because the fill is the hit-test target. That a fully
+    # transparent layer still answers ``queryRenderedFeatures`` is a fact
+    # about MapLibre rather than anything our code computes, so it needs a
+    # real browser — tests/js pins the layer state, this pins the consequence.
+    _assert_transparent_fill_is_still_queryable(page)
+
     _stub_region_hit_test(page)
 
     _tap_region(page)

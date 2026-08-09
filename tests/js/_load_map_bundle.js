@@ -44,6 +44,31 @@ const STATIC_JS = path.resolve(
   '../../static/js',
 );
 
+/*
+ * SNOW-656: the `*_core.js` modules `map.js` reads AT PARSE TIME, evaluated
+ * ahead of the bundle exactly as home.html loads them ahead of it.
+ *
+ * Most cores are reached from a call site — `choropleth_core.js` from
+ * `installRegionsLayers`, `search_core.js` from the search box — so a suite
+ * that never exercises that path boots fine without them, and the ones that
+ * do import them explicitly. `layer_visibility_core.js` is different:
+ * `map.js`'s boot IIFE resolves the Bulletins preference through it while
+ * seeding `overlayState`, so a bundle booted without it throws before any
+ * test has run. That is a property of the bundle, not of any one suite, so
+ * it belongs here rather than in an import every future suite has to
+ * remember.
+ *
+ * Deliberately declared BEFORE the bundle array below: SNOW-647's
+ * `tests/public/test_map_script_order.py` parses that array out of this
+ * file's text by splitting on its export statement, so anything above it is
+ * invisible to that check — which is right, since these are not bundle
+ * members and home.html loads them outside the bundle's contiguous run.
+ * (That same parse is why this paragraph paraphrases the export rather than
+ * quoting it: a second occurrence of the literal it splits on lands the
+ * parse in the wrong half of the file and yields nothing.)
+ */
+const PARSE_TIME_CORES = ['layer_visibility_core.js'];
+
 /** home.html's script order for the map bundle. */
 export const MAP_BUNDLE = [
   // Declarations — must precede map.js.
@@ -75,7 +100,7 @@ export const MAP_BUNDLE = [
  * @returns {void}
  */
 export function loadMapBundle(files = MAP_BUNDLE) {
-  const source = files
+  const source = PARSE_TIME_CORES.concat(files)
     .map((name) => `//# ${name}\n${readFileSync(path.join(STATIC_JS, name), 'utf8')}`)
     .join('\n;\n');
   // eslint-disable-next-line no-new-func

@@ -65,7 +65,26 @@ let AUTOZOOM = false;
 const OVERLAY_STORAGE_KEY = {
   l1: 'snowdesk.map.overlay.l1',
   l2: 'snowdesk.map.overlay.l2',
+  // SNOW-656: 'l4' NARROWED. It used to mean "the micro-region boundary AND
+  // the bulletin data painted onto it" — one key driving regions-fill,
+  // regions-line, regions-label and bulletin-groupings-line together. It now
+  // means the boundary and its label ALONE (the "Micro regions" row); the
+  // choropleth and the dissolved bulletin boundary moved to 'bulletins'
+  // below. The key name is unchanged because the DOM contract
+  // (data-overlay-key="l4"), the sync-status resource and the country-scoped
+  // tier list all key off it and none of them changed meaning.
   l4: 'snowdesk.map.overlay.l4',
+  // SNOW-656: the "Bulletins" row — regions-fill (the danger choropleth) and
+  // bulletin-groupings-line. Unlike the micro-region geography these are
+  // DATE-BOUND, and they are mutually exclusive with the downloads sheet's
+  // "Show areas on the map" (both paint the same polygons). This key stores
+  // the user's PREFERENCE only; the exclusivity is a session-scoped
+  // suppression on top of it — see static/js/layer_visibility_core.js.
+  //
+  // A device that has never seen this key seeds it from 'l4' exactly once
+  // (seedFromLegacy), so an existing 'l4=false' comes back with both rows
+  // off rather than silently acquiring a choropleth the user switched off.
+  bulletins: 'snowdesk.map.overlay.bulletins',
   resorts: 'snowdesk.map.overlay.resorts',
   // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
   // key is only ever read/written) when data-favourites-eligible="true".
@@ -91,7 +110,8 @@ const OVERLAY_STORAGE_KEY = {
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
-// persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR.
+// persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
+// SNOW-656 points it at ``bulletins`` rather than ``l4``.
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';

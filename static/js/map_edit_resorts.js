@@ -966,7 +966,19 @@
   const enterEditModeVisuals = () => {
     if (typeof MAP === 'undefined' || !MAP) return;
     // Hide the choropleth fill + labels; dim the outlines for region context.
-    try { MAP.setLayoutProperty('regions-fill', 'visibility', 'none'); } catch (_) {}
+    //
+    // SNOW-656: the fill is suppressed through map.js's shared path rather
+    // than hidden here with a direct setLayoutProperty. Three independent
+    // writers of one layer's visibility is how this drifts, and there are now
+    // two others — the Bulletins row itself and the downloaded-areas
+    // exclusivity. The shared path also knows that the fill must go
+    // TRANSPARENT rather than absent while any region geometry is still
+    // drawn, which matters here: edit mode selects regions by clicking them,
+    // and ``queryRenderedFeatures`` returns nothing from a layer at
+    // ``visibility: none``.
+    window.pwaBulletinsLayer?.setSuppressed(
+      self.pwaLayerVisibilityCore.SUPPRESSION.EDIT_RESORTS, true,
+    );
     try { MAP.setLayoutProperty('regions-label', 'visibility', 'none'); } catch (_) {}
     // Dim every region outline to 0.2 except the one currently selected
     // for editing (feature-state ``edit-selected`` flipped on by
@@ -1134,9 +1146,18 @@
         // handler is idempotent (setLayoutProperty / re-fetching the
         // resort layer is safe when it has already happened).
         MAP.on('styledata', () => {
+          // "The regions layers are back and still in NORMAL-mode dress" —
+          // i.e. map.js has just re-installed them and the edit-mode visuals
+          // need re-applying. SNOW-656 moved this off ``regions-fill``:
+          // that layer is now hidden by opacity rather than visibility, so
+          // its visibility no longer goes to 'none' in edit mode and the
+          // condition would be permanently true, re-running the whole block
+          // (including a setStyle attempt) on every styledata event.
+          // ``regions-label`` is still hidden the old way, so it is the
+          // honest sentinel — and it is re-installed by the same call.
           if (
-            MAP.getLayer('regions-fill') &&
-            MAP.getLayoutProperty('regions-fill', 'visibility') !== 'none'
+            MAP.getLayer('regions-label') &&
+            MAP.getLayoutProperty('regions-label', 'visibility') !== 'none'
           ) {
             enterEditModeVisuals();
             // The regions source has just been re-installed by
