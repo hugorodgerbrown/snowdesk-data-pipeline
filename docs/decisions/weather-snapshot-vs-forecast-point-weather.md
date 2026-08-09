@@ -2,7 +2,7 @@
 name: weather-snapshot-vs-forecast-point-weather
 description: WeatherSnapshot and ForecastPointWeather stay separate models — the split is archive vs forecast, not region vs point
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-09
 ---
 
 # WeatherSnapshot and ForecastPointWeather stay separate models
@@ -48,13 +48,13 @@ reuse-first quantisation rather than being unique per region.
 **Consequences.**
 
 - `_build_snapshot_defaults` (region) and `_build_point_defaults` (point)
-  in `apps/bulletins/services/weather_fetcher.py` stay separate functions,
+  in `apps/weather/services/weather_fetcher.py` stay separate functions,
   even though both now read `temperature_2m_max`/`temperature_2m_min`/
   `snowfall_sum` via the same degrade-to-`None` accessor shape. A future
   field added to one model's daily block does not automatically apply to
   the other — each addition is a deliberate per-model decision, not a
   shared-schema side effect.
-- `build_weather_display()` (`apps/bulletins/services/weather_display.py`)
+- `build_weather_display()` (`apps/weather/services/weather_display.py`)
   is the integration point that already treats the two models
   interchangeably for the fields they share (`weather_code`/`sunrise`/
   `sunset`, and now `temp_max`/`temp_min`/`snowfall_sum` via `getattr(...,

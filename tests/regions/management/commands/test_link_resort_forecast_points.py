@@ -14,8 +14,8 @@ Covers ``link_resort_forecast_points`` (SNOW-503):
     CommandError (non-zero exit), and does not abort the rest of the
     batch — the other resort is still linked.
 
-``fetch_elevation`` is mocked at the ``apps.bulletins.services.forecast_points``
-module seam (the same seam ``tests/bulletins/services/test_forecast_points.py``
+``fetch_elevation`` is mocked at the ``apps.weather.services.forecast_points``
+module seam (the same seam ``tests/weather/services/test_forecast_points.py``
 patches) so no live Open-Meteo call happens anywhere in this suite.
 """
 
@@ -30,17 +30,17 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.bulletins.models import ForecastPoint
 from apps.regions.management.commands.link_resort_forecast_points import (
     _non_negative_float,
 )
+from apps.weather.models import ForecastPoint
 from tests.factories import ForecastPointFactory, ResortFactory
 
 
 def _patch_elevation(elevation: float) -> AbstractContextManager[MagicMock]:
     """Patch fetch_elevation (module seam) to return a fixed elevation."""
     return patch(
-        "apps.bulletins.services.forecast_points.fetch_elevation",
+        "apps.weather.services.forecast_points.fetch_elevation",
         return_value=elevation,
     )
 
@@ -158,7 +158,7 @@ class TestLinkResortForecastPointsCommit:
             return 1500.0 if latitude == 46.1 else 1750.0
 
         with patch(
-            "apps.bulletins.services.forecast_points.fetch_elevation",
+            "apps.weather.services.forecast_points.fetch_elevation",
             side_effect=_elevation_side_effect,
         ):
             call_command(
@@ -213,7 +213,7 @@ class TestLinkResortForecastPointsFailureIsolation:
             return 1500.0
 
         with patch(
-            "apps.bulletins.services.forecast_points.fetch_elevation",
+            "apps.weather.services.forecast_points.fetch_elevation",
             side_effect=_elevation_side_effect,
         ):
             with pytest.raises(CommandError, match="1 resort failure"):

@@ -2,7 +2,7 @@
 name: icon-ch-domain-bounding-box
 description: ICON-CH point-forecast model selection is gated by a loose lat/lon bounding box, not a polygon, with a day-0 fallback to the default chain
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-09
 ---
 
 # ICON-CH selection is gated by a deliberately loose bounding box

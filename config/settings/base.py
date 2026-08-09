@@ -156,6 +156,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.regions",
     "apps.bulletins",
+    "apps.weather",
     "apps.public",
     "apps.accounts",
     "apps.analytics",
@@ -529,16 +530,6 @@ SLF_ARCHIVE_PATH = (
     BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "slf_archive.ndjson"
 )
 
-# On-disk archive of every Open-Meteo weather record captured by
-# ``fetch_weather --stash`` runs.
-# NDJSON: one record per ``(region_id, date)`` pair per line, sorted
-# ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
-# with the later ``captured_at`` winning. Both the stash writer and the
-# local Open-Meteo mirror view read from this path.
-OPENMETEO_ARCHIVE_PATH = (
-    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
-)
-
 # ALBINA bulletin API. The CDN publishes per-date, per-region files
 # at ``{base}/{date}/{date}_{region}_en_CAAMLv6.json``. Each file is a JSON
 # array of bulletins (same shape the SLF list API returns). Covers the
@@ -558,6 +549,64 @@ ALBINA_ARCHIVE_PATH = (
 # top-level avalanche.report CDN paths: Tyrol (AT-07), South Tyrol (IT-32-BZ),
 # and Trentino (IT-32-TN).
 ALBINA_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
+
+# MeteoFrance / DPBRA bulletin API.
+# Live endpoint:
+#   GET {METEOFRANCE_API_BASE_URL}/massif/{id}/BRA
+#   apikey: {METEOFRANCE_API_KEY}
+# For local-mirror / integration testing set METEOFRANCE_API_LOCAL_MIRROR_URL
+# to a ``file://`` directory URI; the fetcher then reads
+# ``massif-{NN:03d}.xml`` files from that directory instead of calling the
+# live APIM, so no API key is required.
+METEOFRANCE_API_BASE_URL = config(
+    "METEOFRANCE_API_BASE_URL",
+    default="https://public-api.meteofrance.fr/public/DPBRA/v1",
+)
+
+METEOFRANCE_API_KEY = config("METEOFRANCE_API_KEY", default="")
+
+# When non-empty, overrides METEOFRANCE_API_BASE_URL with a file:// URI so
+# the fetcher reads from a local directory instead of calling the live API.
+# Populated in development.py and by tests; empty in production.
+METEOFRANCE_API_LOCAL_MIRROR_URL = config(
+    "METEOFRANCE_API_LOCAL_MIRROR_URL",
+    default="",
+)
+
+# On-disk archive of MeteoFrance bulletins captured by ``fetch_bulletins
+# --stash`` runs. NDJSON: one translated CAAML record per line, sorted
+# ascending by ``validTime.startTime``, deduped by ``bulletinID``.
+METEOFRANCE_ARCHIVE_PATH = (
+    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "meteofrance_archive.ndjson"
+)
+
+# MeteoFrance DPBRA massif IDs covered by the fetcher.
+# Alps: 1–23. Corse: 40–41. Pyrenees: 64–70, 72–74.
+# Massif 71 (Andorre / Andorra) is delegated to the Spanish agency and raises
+# MeteoFranceDelegatedRegionError — excluded here to keep the loop clean.
+METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
+    *range(1, 24),  # Alps (1–23)
+    40,
+    41,  # Corse
+    *range(64, 71),  # Pyrenees first group (64–70)
+    *range(72, 75),  # Pyrenees second group (72–74)
+)
+
+# ---------------------------------------------------------------------------
+# Weather (Open-Meteo) — apps/weather
+# ---------------------------------------------------------------------------
+# Every setting the weather app reads lives here (SNOW-654). The env var
+# names are unchanged by the app split — nothing on Render needs editing.
+
+# On-disk archive of every Open-Meteo weather record captured by
+# ``fetch_weather --stash`` runs.
+# NDJSON: one record per ``(region_id, date)`` pair per line, sorted
+# ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
+# with the later ``captured_at`` winning. Both the stash writer and the
+# local Open-Meteo mirror view read from this path.
+OPENMETEO_ARCHIVE_PATH = (
+    BASE_DIR / "apps" / "weather" / "local_mirrors" / "openmeteo_archive.ndjson"
+)
 
 # Open-Meteo weather / elevation API (SNOW-577).
 # Live endpoints:
@@ -604,46 +653,14 @@ FETCH_WEATHER_ADD_HISTORY = config(
     cast=bool,
 )
 
-# MeteoFrance / DPBRA bulletin API.
-# Live endpoint:
-#   GET {METEOFRANCE_API_BASE_URL}/massif/{id}/BRA
-#   apikey: {METEOFRANCE_API_KEY}
-# For local-mirror / integration testing set METEOFRANCE_API_LOCAL_MIRROR_URL
-# to a ``file://`` directory URI; the fetcher then reads
-# ``massif-{NN:03d}.xml`` files from that directory instead of calling the
-# live APIM, so no API key is required.
-METEOFRANCE_API_BASE_URL = config(
-    "METEOFRANCE_API_BASE_URL",
-    default="https://public-api.meteofrance.fr/public/DPBRA/v1",
-)
-
-METEOFRANCE_API_KEY = config("METEOFRANCE_API_KEY", default="")
-
-# When non-empty, overrides METEOFRANCE_API_BASE_URL with a file:// URI so
-# the fetcher reads from a local directory instead of calling the live API.
-# Populated in development.py and by tests; empty in production.
-METEOFRANCE_API_LOCAL_MIRROR_URL = config(
-    "METEOFRANCE_API_LOCAL_MIRROR_URL",
-    default="",
-)
-
-# On-disk archive of MeteoFrance bulletins captured by ``fetch_bulletins
-# --stash`` runs. NDJSON: one translated CAAML record per line, sorted
-# ascending by ``validTime.startTime``, deduped by ``bulletinID``.
-METEOFRANCE_ARCHIVE_PATH = (
-    BASE_DIR / "apps" / "bulletins" / "local_mirrors" / "meteofrance_archive.ndjson"
-)
-
-# MeteoFrance DPBRA massif IDs covered by the fetcher.
-# Alps: 1–23. Corse: 40–41. Pyrenees: 64–70, 72–74.
-# Massif 71 (Andorre / Andorra) is delegated to the Spanish agency and raises
-# MeteoFranceDelegatedRegionError — excluded here to keep the loop clean.
-METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
-    *range(1, 24),  # Alps (1–23)
-    40,
-    41,  # Corse
-    *range(64, 71),  # Pyrenees first group (64–70)
-    *range(72, 75),  # Pyrenees second group (72–74)
+# Warm weather snapshots on a background daemon thread when bulletin_detail
+# renders a past-date page with no snapshot (SNOW-164). Default True; tests
+# pin this False in tests/conftest.py so the fetch runs synchronously and
+# the test assertion sees the written snapshot.
+WEATHER_FETCH_ASYNC = config(
+    "WEATHER_FETCH_ASYNC",
+    default=True,
+    cast=bool,
 )
 
 # ---------------------------------------------------------------------------
@@ -895,15 +912,6 @@ TASKS = {
     }
 }
 
-# Warm weather snapshots on a background daemon thread when bulletin_detail
-# renders a past-date page with no snapshot (SNOW-164). Default True; tests
-# pin this False in tests/conftest.py so the fetch runs synchronously and
-# the test assertion sees the written snapshot.
-WEATHER_FETCH_ASYNC = config(
-    "WEATHER_FETCH_ASYNC",
-    default=True,
-    cast=bool,
-)
 
 # ---------------------------------------------------------------------------
 # Email — SMTP everywhere.  Dev uses Mailpit (localhost:1025, no auth, no
@@ -1046,6 +1054,17 @@ LOGGING = {
             "propagate": False,
         },
         "apps.bulletins": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        # SNOW-654 moved the Open-Meteo code out of apps.bulletins, and its
+        # loggers are named after the module, so without this entry every
+        # fetch_weather / weather_fetcher INFO and DEBUG line falls through
+        # to the root logger — which sits at WARNING and has no
+        # file_pipeline handler. They would be dropped, and pipeline.log
+        # would lose the weather half of the ingest it has always carried.
+        "apps.weather": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

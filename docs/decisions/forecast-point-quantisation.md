@@ -2,7 +2,7 @@
 name: forecast-point-quantisation
 description: ForecastPoint grid cell (0.01 lat / 0.015 lon) and 200m elevation band sizing; reuse-nearest precedes cell creation
 status: current
-last-reviewed: 2026-07-23
+last-reviewed: 2026-08-09
 ---
 
 # ForecastPoint grid and elevation-band sizing
@@ -33,7 +33,7 @@ geometry.
 that has no existing candidate within both thresholds, even for pins whose
 cell matches an existing row's cell exactly (elevation can still exceed the
 band tolerance). `_haversine_m()` is a private copy local to
-`apps/bulletins/services/forecast_points.py`, mirroring
+`apps/weather/services/forecast_points.py`, mirroring
 `apps/mcp_server/resolvers.py::_haversine_km`. Extracting a shared `core`
 haversine helper is deferred — the `mcp_server` copy is private to that
 app, and refactoring it as part of this ticket would be scope creep; a

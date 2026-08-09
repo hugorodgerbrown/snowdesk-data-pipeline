@@ -522,8 +522,8 @@ incident that invalidates derived state:
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
 - `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
-  anchors every geocoded, unlinked `Resort` to a shared `bulletins.ForecastPoint`
-  via `apps.bulletins.services.forecast_points.resolve_forecast_point` (the same
+  anchors every geocoded, unlinked `Resort` to a shared `weather.ForecastPoint`
+  via `apps.weather.services.forecast_points.resolve_forecast_point` (the same
   SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
   `ForecastPoint.objects.active()` (favourite-OR-resort) so the scheduled
   `fetch_weather` point pass picks up linked resorts automatically — no
@@ -1041,7 +1041,7 @@ uv run python manage.py fetch_weather \
 # settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
 uv run python manage.py fetch_weather --local-mirror --commit
 
-# Capture the default window to apps/bulletins/local_mirrors/openmeteo_archive.ndjson.
+# Capture the default window to apps/weather/local_mirrors/openmeteo_archive.ndjson.
 uv run python manage.py fetch_weather --stash
 
 # Full-fidelity: persist and stash.
@@ -1063,7 +1063,7 @@ uv run python manage.py fetch_weather --commit --add-history
 #   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
 #   --commit                   persist WeatherSnapshot/ForecastPointWeather rows;
 #                              omit for a read-only run
-#   --local-mirror             replay from apps/bulletins/local_mirrors/openmeteo_archive.ndjson
+#   --local-mirror             replay from apps/weather/local_mirrors/openmeteo_archive.ndjson
 #                              via the dev-only view (development.py only); the
 #                              active-ForecastPoint pass is skipped under this flag
 #   --delay        SECONDS     seconds between per-region archive calls (default 1.0;

@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the nine Django apps (SNOW-557 — moved
+apps/            Parent package for the ten Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -28,12 +28,19 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures) and the
                  curated resort sheet + its import_resorts command
-  bulletins/     Everything that originates from provider APIs — the models
-                 (Bulletin, RegionBulletin, PipelineRun, RegionDayRating,
-                 WeatherSnapshot, …), the per-provider fetchers/translators
-                 and render-model services under services/, the ingestion
-                 commands (see docs/management-commands.md), and their admin
-                 classes
+  bulletins/     Everything that originates from the three CAAML bulletin
+                 providers — the models (Bulletin, RegionBulletin,
+                 PipelineRun, RegionDayRating, …), the per-provider
+                 fetchers/translators and render-model services under
+                 services/, the ingestion commands (see
+                 docs/management-commands.md), and their admin classes
+  weather/       The Open-Meteo domain, split out of bulletins by SNOW-654 —
+                 WeatherSnapshot / ForecastPoint / ForecastPointWeather /
+                 ForecastPointWeatherHistory, the fetch, quantisation,
+                 elevation and display services under services/, and the
+                 fetch_weather + prune_forecast_points commands. The models
+                 still read the bulletins_* tables (Meta.db_table is pinned);
+                 renaming them is a separate ticket
   accounts/      Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Account`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself — SNOW-514 collapsed the former
@@ -62,7 +69,9 @@ logs/            Log files (gitignored except .gitkeep)
 ```
 
 The `apps/bulletins/` ↔ `apps/regions/` split is deliberate — rationale in
-[`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md).
+[`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md);
+`apps/weather/` was later carved out of `apps/bulletins/` for the reasons in
+[`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md).
 
 ## Running locally
 
@@ -570,6 +579,7 @@ Read these when working in the relevant area:
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
+| Why the Open-Meteo domain is its own app (db_table pinning, ContentType move) | [`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |

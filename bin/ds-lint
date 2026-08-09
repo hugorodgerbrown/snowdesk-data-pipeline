@@ -49,6 +49,7 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "apps" / "public" / "templates",
     REPO_ROOT / "apps" / "accounts" / "templates",
     REPO_ROOT / "apps" / "bulletins" / "templates",
+    REPO_ROOT / "apps" / "weather" / "templates",
     REPO_ROOT / "apps" / "observations" / "templates",
     REPO_ROOT / "apps" / "favourites" / "templates",
 )
@@ -65,6 +66,7 @@ JS_ROOTS: tuple[Path, ...] = (REPO_ROOT / "static" / "js",)
 # over adding entries here; file-level suppression is a last resort.
 PATH_ALLOWLIST: tuple[str, ...] = (
     "apps/bulletins/templates/admin/*",
+    "apps/weather/templates/admin/*",
     "apps/accounts/templates/accounts/emails/*",
     # Country-flag colours are mandated by each country's flag spec; they
     # are not stylistic choices and cannot be tokenized.

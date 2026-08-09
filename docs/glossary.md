@@ -63,11 +63,11 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 
 | Term | Meaning | Code |
 |------|---------|------|
-| WeatherSnapshot | Open-Meteo weather for one (region, date): WMO `weather_code` 0–99, sunrise/sunset, plus the nullable daily aggregates `temperature_2m_max` / `temperature_2m_min` (°C) and `snowfall_sum` (cm) added in SNOW-571 | `apps/bulletins/models.py`; fetched by `apps/bulletins/services/weather_fetcher.py` |
-| is_day projection | Render-time check that "now" falls between that region's sunrise and sunset — never stored | `is_day()` in `apps/bulletins/services/weather_display.py` |
-| Bulletin header | Context dict for `templates/includes/bulletin_header.html` ("weather header" is its historical name) | `bulletin_header_context()` in `apps/bulletins/services/weather_display.py` |
+| WeatherSnapshot | Open-Meteo weather for one (region, date): WMO `weather_code` 0–99, sunrise/sunset, plus the nullable daily aggregates `temperature_2m_max` / `temperature_2m_min` (°C) and `snowfall_sum` (cm) added in SNOW-571 | `apps/weather/models.py`; fetched by `apps/weather/services/weather_fetcher.py` |
+| is_day projection | Render-time check that "now" falls between that region's sunrise and sunset — never stored | `is_day()` in `apps/weather/services/weather_display.py` |
+| Bulletin header | Context dict for `templates/includes/bulletin_header.html` ("weather header" is its historical name) | `bulletin_header_context()` in `apps/weather/services/weather_display.py` |
 | Weather panel | Shared bucket-coloured weather partial (SNOW-509); included by both the bulletin masthead and the resort page | `templates/includes/_weather_panel.html` |
-| Forecast convergence | How the forecast for one day changed as that day approached; read from the retained per-issue-date series rather than the single surviving day-of row (SNOW-575) | `ForecastPointWeatherHistory.objects.convergence_for()` in `apps/bulletins/models.py` |
+| Forecast convergence | How the forecast for one day changed as that day approached; read from the retained per-issue-date series rather than the single surviving day-of row (SNOW-575) | `ForecastPointWeatherHistory.objects.convergence_for()` in `apps/weather/models.py` |
 | Lead days | `valid_for_date - issued_date` — how far ahead a forecast was looking when it was fetched. `0` is the day-of view | `lead_days` on `ForecastPointWeatherHistory` |
 | Issued date | The run anchor a forecast was fetched on, part of the history key so one forecast day can be stored once per issue date | `issued_date` on `ForecastPointWeatherHistory` |
 

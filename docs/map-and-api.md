@@ -162,7 +162,7 @@ below) carries resort-anchored points only — a `Favourite`-only
 `ForecastPoint` never appears there; a signed-in visitor's own pins are
 merged into the same `weather` MapLibre source client-side from
 `favourites.geojson`'s `days` property (also flag-gated), which
-`apps.bulletins.services.weather_display.build_point_weather_days` builds
+`apps.weather.services.weather_display.build_point_weather_days` builds
 identically for both endpoints so the two can't drift.
 
 Point weather is forecast-only (`POINT_FORECAST_DAYS = 7` days from today,

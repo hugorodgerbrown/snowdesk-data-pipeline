@@ -16,12 +16,10 @@ def test_bulletins_app_is_registered() -> None:
 def test_bulletins_app_owns_the_expected_models() -> None:
     """SNOW-92 moved Bulletin / RegionBulletin / PipelineRun / RegionDayRating here.
 
-    SNOW-97 adds WeatherSnapshot.
     SNOW-217 adds BulletinShare and BulletinShareClick.
     SNOW-323 adds BulletinGrouping.
-    SNOW-412 adds ForecastPoint.
-    SNOW-416 adds ForecastPointWeather.
-    SNOW-575 adds ForecastPointWeatherHistory.
+    SNOW-654 moved the four Open-Meteo models out to ``apps.weather``, so
+    they are deliberately absent from this set.
     """
     config = apps.get_app_config("bulletins")
     model_names = {m.__name__ for m in config.get_models()}
@@ -31,10 +29,6 @@ def test_bulletins_app_owns_the_expected_models() -> None:
         "RegionBulletin",
         "PipelineRun",
         "RegionDayRating",
-        "WeatherSnapshot",
         "BulletinShare",
         "BulletinShareClick",
-        "ForecastPoint",
-        "ForecastPointWeather",
-        "ForecastPointWeatherHistory",
     }

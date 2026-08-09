@@ -86,10 +86,8 @@ from apps.bulletins.models import (
     Bulletin,
     BulletinShare,
     BulletinShareClick,
-    ForecastPointWeather,
     RegionBulletin,
     RegionDayRating,
-    WeatherSnapshot,
 )
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services.render_model import (
@@ -104,16 +102,6 @@ from apps.bulletins.services.render_model import (
     derive_problem_family,
     detect_prose_spatial,
 )
-from apps.bulletins.services.weather_display import (
-    build_point_forecast_panel,
-    build_weather_display,
-)
-from apps.bulletins.services.weather_fetcher import (
-    POINT_FORECAST_DAYS,
-    fetch_archive_for_region,
-    fetch_weather_async,
-    fetch_weather_for_region,
-)
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
@@ -122,6 +110,20 @@ from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
+from apps.weather.models import (
+    ForecastPointWeather,
+    WeatherSnapshot,
+)
+from apps.weather.services.weather_display import (
+    build_point_forecast_panel,
+    build_weather_display,
+)
+from apps.weather.services.weather_fetcher import (
+    POINT_FORECAST_DAYS,
+    fetch_archive_for_region,
+    fetch_weather_async,
+    fetch_weather_for_region,
+)
 
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance

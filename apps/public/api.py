@@ -82,12 +82,10 @@ from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
     BulletinShare,
-    ForecastPointWeather,
     RegionDayRating,
 )
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.settled import earliest_mutable_date
-from apps.bulletins.services.weather_display import build_point_weather_days
 from apps.core.freshness import apply_freshness_headers
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
@@ -99,6 +97,8 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import blob_summary
+from apps.weather.models import ForecastPointWeather
+from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
 from .views import (
@@ -527,7 +527,7 @@ def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
         }
 
     Point weather is forecast-only (``POINT_FORECAST_DAYS`` days from
-    today, often fewer — see ``apps.bulletins.services.weather_fetcher``),
+    today, often fewer — see ``apps.weather.services.weather_fetcher``),
     so ``days`` defaults to the whole stored forecast window, mirroring
     ``/api/ratings/``'s date-keyed shape. Pass ``?d=YYYY-MM-DD`` to narrow
     ``days`` to a single date — the scrubber uses the unfiltered default so

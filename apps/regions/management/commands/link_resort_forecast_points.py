@@ -2,11 +2,11 @@
 link_resort_forecast_points — anchor geocoded Resorts to a shared ForecastPoint.
 
 One-shot backfill that anchors every geocoded ``Resort`` with no
-``forecast_point`` yet to a shared ``bulletins.ForecastPoint`` (SNOW-503),
+``forecast_point`` yet to a shared ``weather.ForecastPoint`` (SNOW-503),
 reusing the SNOW-416 machinery
-(``apps.bulletins.services.forecast_points.resolve_forecast_point``). Widening
+(``apps.weather.services.forecast_points.resolve_forecast_point``). Widening
 ``ForecastPoint.objects.active()`` to favourite-OR-resort (see
-``apps/bulletins/models.py``) means the scheduled ``fetch_weather`` point pass
+``apps/weather/models.py``) means the scheduled ``fetch_weather`` point pass
 picks up every linked resort automatically — no scheduler change needed.
 
 For each candidate resort, ``resolve_forecast_point`` performs its own
@@ -48,8 +48,8 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.bulletins.services.forecast_points import resolve_forecast_point
 from apps.regions.models import Resort
+from apps.weather.services.forecast_points import resolve_forecast_point
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class Command(BaseCommand):
 
     help = (
         "Resolve every geocoded, unlinked Resort to a shared ForecastPoint "
-        "via apps.bulletins.services.forecast_points.resolve_forecast_point, "
+        "via apps.weather.services.forecast_points.resolve_forecast_point, "
         "widening the point-weather polling set to cover resorts. "
         "Read-only unless --commit is passed."
     )
