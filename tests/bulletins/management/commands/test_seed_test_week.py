@@ -18,25 +18,59 @@ morning supersession, danger spread) live in
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest import mock
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
+from pytest_django import DjangoDbBlocker
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.golden_week import GoldenWeekResult
+from apps.bulletins.services.golden_week import (
+    SOURCE_SLF,
+    GoldenWeekResult,
+    select_records,
+)
 from apps.bulletins.services.render_model import RenderModelBuildError
 
 # Region fixtures the week spans — CH (SLF), AT + IT (ALBINA), FR (Météo-France).
 _REGION_FIXTURES = ("eaws_CH", "eaws_AT", "eaws_IT", "eaws_FR")
 
 
-@pytest.fixture
-def _regions() -> None:
-    """Load the four region fixtures the week's bulletins reference."""
-    call_command("loaddata", *_REGION_FIXTURES, verbosity=0)
+@pytest.fixture(scope="class")
+def _regions(
+    django_db_setup: None,
+    django_db_blocker: DjangoDbBlocker,
+) -> Iterator[None]:
+    """Load region fixtures once per command-test class, then clean the worker DB."""
+    del django_db_setup
+    with django_db_blocker.unblock():
+        call_command("loaddata", *_REGION_FIXTURES, verbosity=0)
+
+    yield
+
+    with django_db_blocker.unblock():
+        call_command("flush", interactive=False, verbosity=0)
+
+
+@pytest.fixture(scope="module")
+def one_slf_record() -> dict:
+    """Return one real selected bulletin for the render-failure contract test."""
+    return select_records(SOURCE_SLF)[0]
+
+
+@pytest.fixture(scope="class")
+def _loaded_golden_week(
+    _regions: None,
+    django_db_blocker: DjangoDbBlocker,
+) -> Iterator[None]:
+    """Perform the first committed load once for the commit-contract tests."""
+    del _regions
+    with django_db_blocker.unblock():
+        call_command("seed_test_week", commit=True, verbosity=0)
+    yield
 
 
 @pytest.mark.django_db
@@ -60,6 +94,7 @@ class TestGuards:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_week_read_only")
 @pytest.mark.usefixtures("_regions")
 class TestReadOnlyByDefault:
     """No writes happen without --commit."""
@@ -83,14 +118,13 @@ class TestReadOnlyByDefault:
 
 
 @pytest.mark.django_db
-@pytest.mark.usefixtures("_regions")
+@pytest.mark.xdist_group(name="seed_week_commit")
+@pytest.mark.usefixtures("_loaded_golden_week")
 class TestCommit:
     """--commit persists the corpus and records the run."""
 
     def test_commit_creates_bulletins_and_a_successful_run(self) -> None:
         """Rows are written and the PipelineRun is marked successful."""
-        call_command("seed_test_week", commit=True, verbosity=0)
-
         assert Bulletin.objects.exists()
         run = PipelineRun.objects.get()
         assert run.status == PipelineRun.Status.SUCCESS
@@ -103,7 +137,6 @@ class TestCommit:
         ``upsert_bulletin`` keys on ``bulletinID``, so re-seeding a populated
         database must not multiply the corpus.
         """
-        call_command("seed_test_week", commit=True, verbosity=0)
         first = Bulletin.objects.count()
 
         call_command("seed_test_week", commit=True, verbosity=0)
@@ -116,6 +149,7 @@ class TestCommit:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_week_failures")
 @pytest.mark.usefixtures("_regions")
 class TestFailureReporting:
     """A partially failed batch is a command failure (contract rule 4)."""
@@ -132,7 +166,9 @@ class TestFailureReporting:
         ):
             call_command("seed_test_week", commit=True, verbosity=0)
 
-    def test_render_model_failure_fails_the_command(self) -> None:
+    def test_render_model_failure_fails_the_command(
+        self, one_slf_record: dict
+    ) -> None:
         """A stored-but-broken record fails the command too.
 
         ``upsert_bulletin`` does not raise when a render model cannot be built —
@@ -141,6 +177,10 @@ class TestFailureReporting:
         degraded to error sentinels would report success.
         """
         with (
+            mock.patch(
+                "apps.bulletins.services.golden_week.select_records",
+                side_effect=([one_slf_record], [], []),
+            ),
             mock.patch(
                 "apps.bulletins.services.slf_fetcher.build_render_model",
                 side_effect=RenderModelBuildError("bad payload"),
@@ -166,6 +206,7 @@ class TestFailureReporting:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_week_verbosity")
 @pytest.mark.usefixtures("_regions")
 class TestVerbosity:
     """--verbosity is respected."""
