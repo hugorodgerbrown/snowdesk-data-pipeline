@@ -154,7 +154,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
                 aria-labelledby="resort-forecast-heading"
             >
                 {% translate "Weather — this resort" as resort_forecast_eyebrow_label %}
-                {% include "includes/_eyebrow.html" with text=resort_forecast_eyebrow_label id="resort-forecast-heading" class_extra="mb-2" %}
+                {% include "includes/_eyebrow.html" with text=resort_forecast_eyebrow_label heading_id="resort-forecast-heading" class_extra="mb-2" %}
                 {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="resort-forecast" %}
             </section>
         {% endif %}

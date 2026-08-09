@@ -3,13 +3,17 @@
   Context:
     text        — heading copy (required).
     tag         — HTML element, default "h2".
-    id          — optional id attribute value (SNOW-572: lets a wrapping
+    heading_id  — optional id attribute value (SNOW-572: lets a wrapping
                    ``<section aria-labelledby="…">`` reference this heading).
+                   Deliberately not named ``id`` — an include inherits the
+                   parent context, so a bare ``id`` in any caller's context
+                   (a ``{% for id in … %}`` loop, say) would silently land
+                   on the heading.
     data_testid — optional data-testid attribute value.
     class_extra — optional extra Tailwind classes (e.g. "mb-3", "mb-6").
 {% endcomment %}
 <{{ tag|default:"h2" }}
     class="text-xs font-mono uppercase tracking-widest text-text-3{% if class_extra %} {{ class_extra }}{% endif %}"
-    {% if id %}id="{{ id }}"{% endif %}
+    {% if heading_id %}id="{{ heading_id }}"{% endif %}
     {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
 >{{ text }}</{{ tag|default:"h2" }}>
