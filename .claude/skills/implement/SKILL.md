@@ -48,7 +48,7 @@ loop is a *duplicate* of what the PR will run anyway — its only value is
 catching a failure one round-trip earlier, which is not worth paying for the
 slow tiers on every iteration.
 
-**Local gate (run before push — steps 4 and 5):**
+**Local gate (run before the branch's FIRST push — steps 4 and 5):**
 
 - Targeted `uv run pytest <touched paths>` while implementing.
 - `uv run tox` — the **default envlist**
@@ -56,6 +56,17 @@ slow tiers on every iteration.
   This is the pre-push gate. It is fast and deterministic. `js` (Vitest) is in
   it, so JavaScript changes are covered automatically — no separate step.
 - `monitor_query_counts` (step 5a).
+
+**Follow-up commits onto an already-open PR: targeted tests only.** Run
+`uv run pytest` over the paths the commit touches, then push. Do **not**
+re-run the full `uv run tox` — the PR already has CI wired to it, so the
+full suite is running on every push anyway and the local repeat buys
+nothing but delay. That delay is not free: a PR can be reviewed and merged
+while a trivial follow-up sits unpushed behind a ten-minute local suite,
+which is exactly how SNOW-572's `heading_id` rename missed its own PR and
+needed a second one. Push promptly and let CI be the gate; step 6 is
+already watching the checks and will catch anything the targeted run
+missed.
 
 **Delegated to CI — do NOT run in the loop (slow / flaky):**
 
@@ -228,6 +239,10 @@ mismatch against `perf/query_counts.txt`.
 Run the default envlist once before pushing — the fast, deterministic tier
 that catches the "works on my machine" cross-env gaps. It includes `js`
 (Vitest); do **not** add `-e e2e`, which runs on CI (see Test tiers).
+
+This is the **first** push of the branch, before any PR exists, so there is
+no CI running yet and the local gate is the only one. Once the PR is open,
+follow-up commits run targeted tests only and rely on CI — see Test tiers.
 
 ```bash
 uv run tox
