@@ -26,9 +26,9 @@ The meta strip's temperature and snowfall groups (SNOW-571) render whenever
 ``weather_display.temp_max``/``temp_min``/``snowfall_sum`` are non-null,
 independently of each other — a partially-populated snapshot (e.g. temps
 only) still shows what it has rather than falling back to nothing.
-Snowfall renders on an explicit ``0`` too, unlike the favourite forecast
-panel's snowfall chip (``_favourite_forecast_panel.html``), which hides a
-zero: on an avalanche bulletin "no new snow" is itself worth stating.
+Snowfall renders on an explicit ``0`` too, unlike the forecast panel's
+snowfall chip (``includes/_forecast_panel.html``), which hides a zero: on
+an avalanche bulletin "no new snow" is itself worth stating.
 
 Context:
   weather_display     — dict from ``build_weather_display()``, or None.
@@ -185,7 +185,7 @@ Context:
                     {% if weather_display.temp_max is not None or weather_display.temp_min is not None %}
                         <span aria-hidden="true">·</span>
                         {# Hi/lo temperature — same floatformat:0/&mdash; idiom as        #}
-                        {# _favourite_forecast_panel.html's day strip, so the two temp    #}
+                        {# includes/_forecast_panel.html's day strip, so the two temp     #}
                         {# readouts on the site look identical.                           #}
                         <span class="inline-flex items-center gap-x-1">
                             <span class="sr-only">{% trans "Temperature" %}</span>

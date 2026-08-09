@@ -1,13 +1,15 @@
 {% comment %}
-favourites/partials/_favourite_forecast_hourly_body.html — Hourly detail body.
+includes/_forecast_hourly_body.html — Hourly detail body.
 
-Rendered inside _collapsible_panel.html's body wrapper for the near-term
-forecast days (SNOW-417). Reads ``hourly`` from the inherited context — a
-list of dicts with keys time/temperature_2m/snowfall/precipitation/
-wind_speed_10m/wind_gusts_10m/freezing_level_height, copied from
-ForecastPointWeather.hourly_series.
+Promoted from favourites/partials/_favourite_forecast_hourly_body.html
+(SNOW-572) alongside _forecast_panel.html. Rendered inside
+_collapsible_panel.html's body wrapper for the near-term forecast days
+(SNOW-417). Reads ``hourly`` and ``testid_prefix`` from the inherited
+context — ``hourly`` is a list of dicts with keys time/temperature_2m/
+snowfall/precipitation/wind_speed_10m/wind_gusts_10m/freezing_level_height,
+copied from ForecastPointWeather.hourly_series.
 {% endcomment %}
-<ul class="divide-y divide-border text-sm" data-testid="favourite-forecast-hourly-list">
+<ul class="divide-y divide-border text-sm" data-testid="{{ testid_prefix|default:'favourite-forecast' }}-hourly-list">
     {% for hour in hourly %}
         <li class="flex items-center justify-between gap-3 py-1.5">
             {# hour.time is a plain "YYYY-MM-DDTHH:MM" string (Open-Meteo's #}

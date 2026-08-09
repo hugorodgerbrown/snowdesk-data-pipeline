@@ -114,7 +114,7 @@ Context:
         {% translate "Weather — this spot" as weather_eyebrow_label %}
         {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" %}
         {% if forecast_panel %}
-            {% include "favourites/partials/_favourite_forecast_panel.html" with panel=forecast_panel %}
+            {% include "includes/_forecast_panel.html" with panel=forecast_panel %}
         {% else %}
             <p class="text-sm text-text-3" data-testid="favourite-card-weather-empty">
                 {% blocktrans trimmed %}

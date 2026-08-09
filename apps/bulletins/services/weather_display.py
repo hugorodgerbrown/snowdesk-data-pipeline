@@ -36,9 +36,11 @@ read via ``getattr(weather, ..., None)`` so a stub object missing them still
 produces a usable dict rather than raising.
 
 ``build_point_forecast_panel`` (SNOW-417) builds the multi-day
-``ForecastPanel`` context consumed by the favourite detail card's forecast
-panel — a compact day strip plus an expandable near-term hourly detail —
-from a chronologically-ordered list of ``ForecastPointWeather`` rows.
+``ForecastPanel`` context consumed by ``includes/_forecast_panel.html`` — a
+compact day strip plus an expandable near-term hourly detail — from a
+chronologically-ordered list of ``ForecastPointWeather`` rows. Rendered on
+the favourite detail card's forecast panel and, since SNOW-572, on the
+resort page when the resort's linked ``ForecastPoint`` has rows.
 """
 
 from __future__ import annotations
@@ -379,7 +381,7 @@ class ForecastPanelDay(TypedDict):
 
 
 class ForecastPanel(TypedDict):
-    """Context dict consumed by ``_favourite_forecast_panel.html`` (SNOW-417)."""
+    """Context dict consumed by ``includes/_forecast_panel.html`` (SNOW-417)."""
 
     days: list[ForecastPanelDay]
 
