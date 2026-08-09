@@ -62,5 +62,5 @@ surface pre-loaded, so you don't have to describe the stack each time.
      are violated
 
 4. Ask the user if they want to create Linear tickets for any Critical or
-   High findings. If yes, create them via the `ticket-authoring-guide`
+   High findings. If yes, create them via the `create-ticket`
    skill so the tickets follow the standard contract.

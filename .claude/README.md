@@ -17,7 +17,7 @@ updates).
 │   ├── audit-security/         ← security audit of the codebase
 │   ├── audit-code/             ← whole-codebase drift audit (SNOW-269)
 │   ├── post-project-update/    ← Linear project status update (used by Routine)
-│   └── ticket-authoring-guide/ ← canonical rules for ticket create/scope
+│   └── create-ticket/          ← make a Linear ticket (front of the lifecycle)
 └── agents/
     ├── scoper.md               ← used by scope
     ├── implementer.md          ← used by implement
@@ -43,15 +43,20 @@ commands and skills are now a unified mechanism, and the one command,
 - **kebab-case, lowercase.**
 - **No namespace prefixes** (`snow-`, `linear-`): project skills are already
   scoped to this project. Prefixes are for plugins.
-- **Action skills** — things you ask for — are imperative verb phrases: the
-  name completes "Claude, …" (`scope`, `implement`, `work-on`, `merge-prs`,
+- **Every skill is an imperative verb phrase** — the name completes
+  "Claude, …" (`scope`, `implement`, `create-ticket`, `work-on`, `merge-prs`,
   `post-project-update`). Keep the name as short as unambiguity allows; add
   the object as soon as the bare verb could mean two things — which is why
   the security audit is `audit-security` and the drift audit is `audit-code`,
   not a bare `audit` that competes with both.
-- **Reference skills** — rulebooks Claude consults while doing something
-  else — are noun phrases ending in `-guide` (`ticket-authoring-guide`).
-  They are usually model-invoked, not typed.
+
+  There is **no separate "reference skill" category**, and no `-guide`
+  suffix. There used to be two, and both turned out to be misfiled: one
+  duplicated `implement`'s trigger and was deleted; the other described the
+  procedure for making a ticket and is now simply `create-ticket`. If a skill
+  earns its keep, it is because Claude *does* something with it — name the
+  act. Genuine background knowledge that isn't an action belongs in
+  `CLAUDE.md` or `docs/`, not in a skill with a noun for a name.
 - **Agents are agent-nouns naming the role** (`scoper`, `implementer`,
   `reviewer`, `code-auditor`, `security-auditor`). Where an agent is the sole
   worker for a skill, the pair should read as verb → actor on the same
@@ -64,7 +69,9 @@ commands and skills are now a unified mechanism, and the one command,
   audit-security → security-auditor
   ```
 
-  An agent nothing invokes and nobody asks for is dead weight — delete it
+  Not every skill needs an agent — `create-ticket`, `merge-prs`, `release`
+  and `post-project-update` do their work inline, and that is fine. An agent
+  nothing invokes and nobody asks for is dead weight, though: delete it
   rather than rename it. (`qa` was removed on exactly those grounds: no
   caller, no use in 464 sessions.)
 
@@ -99,16 +106,22 @@ skill that isn't a meaningful thing to type.
 ## Ticket lifecycle
 
 ```
-Backlog ──▶ Todo ──"scope NN"──▶ Ready for dev ──"implement NN"──▶ In Progress
-                      │                                │
-                 (scope skill +                  (implement skill:
-                  scoper agent)                   branch + plan gate,
-                                                  implementer ⇄ reviewer,
-                                                  push + PR)
-                                                       ▼
-                                  PR opened ──▶ In Review ──merge──▶ Done
-                                                          (GitHub–Linear
-                                                           integration)
+(conversation) ──"make a ticket"──▶ Backlog / Todo ──"scope NN"──▶ Ready for dev
+                       │                                  │
+                 (create-ticket:                    (scope skill +
+                  may post a clean                   scoper agent)
+                  scope and land                          │
+                  straight in Ready)                      │
+                                                          ▼
+                            "implement NN" ──────▶ In Progress
+                                    │
+                            (implement skill:
+                             branch + plan gate,
+                             implementer ⇄ reviewer,
+                             push + PR)
+                                    ▼
+              PR opened ──▶ In Review ──merge──▶ Done
+                                  (GitHub–Linear integration)
 ```
 
 `work-on NN` chains the two: scope (if the ticket is still in Todo) then
@@ -119,6 +132,7 @@ implementation plan.
 
 You don't need to remember slash commands — say what you want:
 
+- "make a ticket for that" / "log this as a bug" → create-ticket
 - "scope SNOW-42" → scope
 - "implement 42" / "go ahead and build it" → implement
 - "work on 42" / "take 42 through to review" → work-on
@@ -137,11 +151,16 @@ mean, or Claude will ask.
 
 Each workflow skill enforces a hard precondition on Linear ticket state:
 
-| Skill     | Required state         | Transitions to              |
-|-----------|------------------------|-----------------------------|
-| scope     | Todo                   | Ready for dev               |
-| implement | Ready for dev          | In Progress, then In Review |
-| work-on   | Todo or Ready for dev  | In Review                   |
+| Skill         | Required state         | Transitions to              |
+|---------------|------------------------|-----------------------------|
+| create-ticket | — (creates the ticket) | Backlog, Todo, or Ready for dev |
+| scope         | Todo                   | Ready for dev               |
+| implement     | Ready for dev          | In Progress, then In Review |
+| work-on       | Todo or Ready for dev  | In Review                   |
+
+`create-ticket` is the only one with no required starting state — it makes the
+ticket. It lands in `Ready for dev` only when it can post a scoping comment
+with no open questions; otherwise `Todo`, or `Backlog` if untriaged.
 
 Tickets in the wrong state cause the skill to stop and explain why.
 
