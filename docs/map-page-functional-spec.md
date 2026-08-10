@@ -363,6 +363,15 @@ Bulletins on switches the downloaded-area squares off, because the two
 paint the same polygons, and the roundel says so without the panel being
 open. It survives a basemap switch, which re-draws every layer.
 
+**The rim states what is drawn, not what was asked for.** Switch an
+overlay on with no data to draw — offline, first enable, a fetch that
+fails — and the switch stays ON (the setting took, and will be restored
+next time) while the rim stays off, because nothing reached the map. The
+two disagreeing is the point: it is the only way to see that a request
+has not landed. Positioning a pin clears every overlay off the map for
+the duration of the placement, and all three rims go out with them and
+come back when it ends, for the same reason.
+
 The downloads roundel used to carry a different signal — "this device
 holds at least one downloaded area" — which is a fact about storage, not
 about what is on the map. It was removed rather than kept alongside: two
