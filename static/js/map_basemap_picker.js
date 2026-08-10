@@ -359,6 +359,13 @@
   const flyout = document.getElementById('map-fill-flyout');
   if (!toggle || !flyout) return;
 
+  // SNOW-658: this flyout's name in the shared map-overlay registry — the
+  // panel's own id, so a failing exclusivity assertion names something
+  // greppable. The overlay is the FLYOUT, not #map-fill-pill: the pill is the
+  // roundel, which stays on screen (and keeps its `data-state`) whether the
+  // flyout is up or not.
+  const FLYOUT_OVERLAY_NAME = 'map-fill-flyout';
+
   // The flyout is a child of .map-controls-br, not of the roundel — the
   // roundel lives inside #map-controls-collapsible, which is `overflow:
   // hidden` for its height animation and would clip a panel extending left
@@ -376,6 +383,10 @@
   };
 
   const setOpen = (open) => {
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before the flyout is unhidden, so whatever it replaces is gone by the
+    // time this is on screen.
+    if (open) window.pwaMapOverlays?.opening(FLYOUT_OVERLAY_NAME);
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     flyout.hidden = !open;
@@ -383,14 +394,32 @@
     if (open) alignToRoundel();
   };
 
+  // SNOW-658: the flyout closes whenever any other map overlay opens, and
+  // closes every other one when it opens.
+  //
+  // The two handlers below do NOT make this redundant, and neither was doing
+  // this job. The toggle's `stopPropagation` (it has to be there, or the
+  // flyout's own opening click would immediately read as "outside") means
+  // opening the flyout reached no OTHER surface's outside-click dismiss, so it
+  // opened over an open layers menu — and every other surface's toggle stops
+  // propagation for the same reason, so its own dismiss below never saw them
+  // open either. The strip observer answers a third question again: it closes
+  // the flyout when the collapsible group hides the roundel it is anchored to,
+  // which is not another overlay opening.
+  window.pwaMapOverlays?.register(FLYOUT_OVERLAY_NAME, {
+    isOpen: () => !flyout.hidden,
+    close: () => setOpen(false),
+  });
+
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     setOpen(flyout.hidden);
   });
 
-  // Outside-click dismiss. `click`, not `pointerdown`, so a step inside the
-  // flyout fires its own handler before this one can close it — the same
-  // reasoning the basemap menu's dismiss carries.
+  // Outside-click dismiss — a tap on the map itself, which is no overlay and
+  // so announces nothing to the registry. `click`, not `pointerdown`, so a
+  // step inside the flyout fires its own handler before this one can close
+  // it — the same reasoning the basemap menu's dismiss carries.
   document.addEventListener('click', (e) => {
     if (flyout.hidden) return;
     if (pill.contains(e.target)) return;

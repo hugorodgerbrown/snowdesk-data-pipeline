@@ -5,9 +5,10 @@
  * The registry's own behaviour is covered in
  * tests/js/test_map_overlay_exclusivity.js against fakes. THIS file loads
  * the real surfaces — the layers menu, the favourites panel, the field-
- * observations panel, the downloads panel, the legend card and the help
- * tour's coachmark — into one document, the way public/home.html does, and
- * runs the full ordered matrix over them: open A, open B, A must be shut.
+ * observations panel, the downloads panel, the legend card, the help
+ * tour's coachmark and the bulletin fill-strength flyout — into one
+ * document, the way public/home.html does, and runs the full ordered
+ * matrix over them: open A, open B, A must be shut.
  *
  * Why a matrix rather than the pairs a bug report would name: the wiring
  * this ticket replaced WAS the named pairs, three of the fifteen
@@ -20,19 +21,20 @@
  * The anchored detail popup is registered too (map.js), and is covered in
  * tests/js/test_map_detail_popup_exclusivity.js — reaching it needs the
  * whole map bundle booted against a MapLibre stub, which is a fixture of
- * its own rather than a sixth entry in this one.
+ * its own rather than an eighth entry in this one.
  *
- * The fixture is a hand-copy of the six surfaces' markup, reduced to what
+ * The fixture is a hand-copy of the seven surfaces' markup, reduced to what
  * the modules bind to — the standing trade-off for this harness (Vitest
  * cannot render a Django template). Each panel's own contents are asserted
  * in its own suite; what matters here is only which of them is on screen.
  *
- * Two of the six hide themselves differently, which is the point of asking
+ * One of the seven hides itself differently, which is the point of asking
  * each surface how to read its own state rather than assuming: the four
- * panels use the `hidden` attribute, the legend uses `data-state` on its
- * CLUSTER (#map-legend, the card's parent — the (i) toggle and the date
- * ribbon are siblings of the card and stay up when it collapses), and the
- * coachmark uses `hidden` on an overlay that is `pointer-events: none`.
+ * panels, the coachmark and the fill flyout use the `hidden` attribute (the
+ * coachmark's overlay is additionally `pointer-events: none`), while the
+ * legend uses `data-state` on its CLUSTER (#map-legend, the card's parent —
+ * the (i) toggle and the date ribbon are siblings of the card and stay up
+ * when it collapses).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,13 +52,14 @@ function shownByAttribute(id) {
 }
 
 /**
- * The six surfaces, by their registered name: how to open each one the way
+ * The seven surfaces, by their registered name: how to open each one the way
  * a user does — through its own roundel or pill — and how to read whether
  * it is on screen.
  *
  * The registered name is the element's own DOM id in every case. The read
- * is per-surface because the idiom is: `hidden` for the four panels and the
- * coachmark, `data-state` on the legend card's parent cluster.
+ * is per-surface because the idiom is: `hidden` for the four panels, the
+ * coachmark and the fill flyout, `data-state` on the legend card's parent
+ * cluster.
  *
  * The downloads sheet is driven through its bridge rather than a DOM
  * click: its roundel (#map-custom-download-control) belongs to
@@ -90,6 +93,10 @@ const SURFACES = {
     open: () => document.getElementById('map-help-toggle').click(),
     isOpen: () => shownByAttribute('map-help-overlay'),
   },
+  'map-fill-flyout': {
+    open: () => document.getElementById('map-fill-toggle').click(),
+    isOpen: () => shownByAttribute('map-fill-flyout'),
+  },
 };
 
 const SURFACE_NAMES = Object.keys(SURFACES);
@@ -106,7 +113,7 @@ const TOGGLING_SURFACE_NAMES = SURFACE_NAMES.filter(
   (name) => name !== 'map-help-overlay',
 );
 
-/** home.html's markup for the six surfaces, cut to what the modules bind. */
+/** home.html's markup for the seven surfaces, cut to what the modules bind. */
 function buildFixture() {
   document.body.innerHTML = `
     <div id="map"></div>
@@ -155,6 +162,20 @@ function buildFixture() {
     <template id="map-downloads-row-template">
       <li><span data-row-label></span><span data-row-meta></span><span data-row-value></span></li>
     </template>
+    <div class="map-controls-br" id="map-controls-br" data-expanded="true">
+      <div id="map-controls-collapsible">
+        <div class="map-controls-collapsible-inner">
+          <div class="map-utility-pill map-utility-pill--fill" id="map-fill-pill" data-state="collapsed">
+            <button id="map-fill-toggle" type="button" aria-expanded="false"
+                    aria-controls="map-fill-flyout"></button>
+          </div>
+        </div>
+      </div>
+      <div id="map-fill-flyout" class="map-fill-flyout" role="group" hidden>
+        <button type="button" role="radio" aria-checked="true"
+                class="map-fill-step" data-bulletins-step="0.5"></button>
+      </div>
+    </div>
     <div id="map-legend" data-state="collapsed">
       <div id="map-legend-card"></div>
       <button id="map-legend-toggle" type="button" aria-expanded="false"></button>
@@ -179,7 +200,10 @@ function buildFixture() {
 }
 
 /**
- * Load the registry and the six surface modules in home.html's order.
+ * Load the registry and the surface modules in home.html's order.
+ *
+ * Seven surfaces, six modules: map_basemap_picker.js carries both the layers
+ * menu and the bulletin fill-strength flyout, in two IIFEs.
  *
  * @returns {Promise<void>}
  */
@@ -270,8 +294,8 @@ describe('opening one overlay closes every other', () => {
 });
 
 describe('the registry alone closes a surface', () => {
-  // The matrix above goes through each surface's own control, and three of
-  // the six ALSO carry an outside-click dismiss that a click on another
+  // The matrix above goes through each surface's own control, and most of
+  // the seven ALSO carry an outside-click dismiss that a click on another
   // control happens to satisfy — so a cell could pass with the registration
   // missing. This asks the registry directly, with no click in play, which
   // only a registered controller whose close() drives the real DOM can

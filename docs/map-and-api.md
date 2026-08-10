@@ -61,8 +61,9 @@ deliberately not asserted.
 Eight surfaces float over the map, and only one is ever meaningful at once:
 the layers menu, the three UGC panels (downloads, favourites, field
 observations), the anchored detail popup a resort or favourite pin opens,
-the legend card (`#map-legend-card`) and the help tour's coachmark
-(`#map-help-overlay`). Each registers with `window.pwaMapOverlays`
+the legend card (`#map-legend-card`), the help tour's coachmark
+(`#map-help-overlay`) and the bulletin fill-strength flyout
+(`#map-fill-flyout`). Each registers with `window.pwaMapOverlays`
 (`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
@@ -83,12 +84,15 @@ opened, matching the layers pill. The one exception is the help "?"
 roundel, which always re-opens the tour from step 1 — the deliberate "show
 me again" affordance it has had since SNOW-457.
 
-The legend and the coachmark joined last, and neither was covered by the
-outside-click dismiss it already had: their toggles call `stopPropagation`
-(without it the opening click reads as a click away), so no other surface's
-document handler ever saw them open, and a surface opened programmatically
-— the downloads panel from its roundel, the detail popup from a MapLibre
-canvas event — reached no document handler at all. The coachmark closes
+The legend, the coachmark and the fill flyout joined last, and none was
+covered by the outside-click dismiss it already had: their toggles call
+`stopPropagation` (without it the opening click reads as a click away), so
+no other surface's document handler ever saw them open, and a surface
+opened programmatically — the downloads panel from its roundel, the detail
+popup from a MapLibre canvas event — reached no document handler at all.
+The fill flyout's third dismiss path, the observer that closes it when the
+collapsible strip hides the roundel it is anchored to, answers a different
+question again and stays. The coachmark closes
 without persisting `snowdesk.map.help`: being displaced is not the user
 saying "seen", which is what Done / Escape / "×" mean. Registering it is
 safe because every tour step targets map chrome — a roundel, the readout,
