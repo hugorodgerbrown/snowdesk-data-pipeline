@@ -88,8 +88,10 @@
  * renders ``row.label``.
  *
  * SNOW-658 (Hugo's map-panel design): renaming happens IN PLACE on the
- * row's label. The pencil, or a click on the label, reveals the editor
- * the row template already rendered; ``window.pwaInlineRename`` owns the
+ * row's label, opened by the row's PENCIL — the label itself was a second
+ * trigger for a day and is inert again (see static/js/inline_rename.js's
+ * ``rowFor``). The pencil reveals the editor the row template already
+ * rendered; ``window.pwaInlineRename`` owns the
  * interaction — shared with the favourites panel, which renames the same
  * way — and this module supplies only the commit:
  * ``window.pwaBasemapDownloads.rename(areaId, name)`` (map.js's own
@@ -726,10 +728,17 @@
     //
     // SNOW-658: what that gates is now the whole inline-edit affordance,
     // not just a button — the pencil, the row's own `data-row-renameable`
-    // marker (which is what static/js/inline_rename.js recognises), the
-    // hidden editor, and the label's hover treatment. The template renders
-    // all four unconditionally, because one <template> serves both kinds
-    // of row; a row that cannot be renamed sheds them here.
+    // marker (which is what static/js/inline_rename.js recognises) and the
+    // hidden editor. The template renders all three unconditionally,
+    // because one <template> serves both kinds of row; a row that cannot
+    // be renamed sheds them here.
+    //
+    // The label is no longer in that list. It used to carry a
+    // `cursor-text` + hover-border pair stripped on this branch, because
+    // clicking it opened the editor; Hugo's "we have inline editing & the
+    // pencil - choose one" left the pencil as the only trigger, so the
+    // label now looks and behaves the same on every row of every panel and
+    // there is nothing here to take off it.
     const renameBtn = fragment.querySelector('[data-downloads-rename]');
     const editor = fragment.querySelector('[data-row-rename-input]');
     const item = fragment.querySelector('li');
@@ -746,7 +755,6 @@
     } else {
       if (renameBtn) renameBtn.remove();
       if (editor) editor.remove();
-      if (label) label.classList.remove('cursor-text', 'hover:border-border-strong');
     }
     return fragment;
   }
@@ -872,7 +880,7 @@
    * rebuilt on Hugo's design by SNOW-658), factored out so the listener
    * above can dispatch to it after ruling out the add-trigger.
    *
-   * The pencil and the label both open the row's own inline editor.
+   * The row's pencil opens its own inline editor.
    * window.pwaInlineRename owns that interaction — shared with the
    * favourites panel — and calls back once with a name worth writing:
    * Escape, an unchanged name and an emptied field never reach here.

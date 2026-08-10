@@ -1400,6 +1400,27 @@ class TestFavouriteList:
 
         assert "Alpstein · saved 3 Feb 2026" in response.content.decode()
 
+    def test_map_variant_label_is_not_a_rename_trigger(self, client: Client) -> None:
+        """The label carries no click affordance — the pencil is the trigger.
+
+        SNOW-658, Hugo: "We have inline editing & the pencil - choose one."
+        The label is a ``<span>``, so its click was mouse-only; the pencil
+        is a real 44x44 button in the tab order. What went with it is the
+        pair of classes that advertised the label as editable.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "cursor-text" not in content
+        assert "hover:border-border-strong" not in content
+        # The pencil is still there — this is a choice between two, not a
+        # removal of both.
+        assert "data-row-rename" in content
+
     def test_map_variant_renames_in_place_on_the_label(self, client: Client) -> None:
         """The row carries its own inline editor, hidden until asked for.
 

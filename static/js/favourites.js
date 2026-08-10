@@ -17,12 +17,12 @@
  * row (favourites/partials/_favourite_row_map.html) is the shared UGC row:
  * a label, a muted meta line, and two icon controls — a pencil and a
  * trash. Remove is that row's own HTMX form and needs nothing here;
- * Rename puts the row's own label into an inline edit
- * (static/js/inline_rename.js, shared with the downloads panel) and posts
- * the committed name from below. The panel offers [data-panel-add] to
- * place another, and
- * carries the "Display on the map" switch that used to be a row in
- * the layers menu (it drives window.pwaFavouritesOverlay in map.js). This
+ * Rename — the pencil, and only the pencil — puts the row's own label
+ * into an inline edit (static/js/inline_rename.js, shared with the
+ * downloads panel) and posts the committed name from below. The panel
+ * offers [data-panel-add] to place another, and carries the "Display on
+ * the map" switch that used to be a row in the layers menu (it drives
+ * window.pwaFavouritesOverlay in map.js). This
  * follows SNOW-634's downloads pattern: user-generated data gets its own
  * roundel, its own panel, and its panel owns the overlay switch.
  *
@@ -354,12 +354,13 @@
   /** Handle a click that starts a row's inline rename (SNOW-658).
    *
    * Hugo's design: "Where a row can be renamed, that happens in place on
-   * the label." The pencil and the label both open the editor already
-   * sitting hidden in the row's own markup; window.pwaInlineRename owns
-   * the focus/keyboard/blur state machine — shared with the downloads
-   * panel, which renames the same way — and calls back exactly once, with
-   * a name worth writing. Escape, an unchanged name and an emptied field
-   * never reach here.
+   * the label." The row's pencil opens the editor already sitting hidden
+   * in the row's own markup; window.pwaInlineRename owns the
+   * focus/keyboard/blur state machine — shared with the downloads panel,
+   * which renames the same way — and calls back exactly once, with a name
+   * worth writing. Escape, an unchanged name and an emptied field never
+   * reach here. The label was a second trigger for a day; Hugo's "we have
+   * inline editing & the pencil - choose one" left the pencil.
    *
    * This replaces a window.prompt that lasted one day: it covered the row
    * being renamed, could not be styled, and read as browser chrome on a

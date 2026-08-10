@@ -122,7 +122,7 @@ function buildFixture() {
       <li>
         <span data-row-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <span>
-          <span data-row-label class="text-text-1 cursor-text hover:border-border-strong"></span>
+          <span data-row-label class="text-text-1"></span>
           <input type="text" data-row-rename-input hidden aria-label="Area name">
           <span data-row-meta class="text-text-2"></span>
         </span>
@@ -1073,9 +1073,11 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
   });
 
   it('strips the whole inline-edit affordance from a region row', async () => {
-    // Not just the pencil: the editor, the row marker and the label's own
-    // hover treatment all have to go, or a region reads as editable and a
-    // click on its name opens an editor that can never commit.
+    // Not just the pencil: the editor and the row marker go too, or
+    // inline_rename.js still recognises the row and a region reads as
+    // editable. SNOW-658: the label itself is no longer part of this — it
+    // stopped being a rename trigger on every row, so there is nothing on
+    // it to strip.
     seed({ 'basemap.regions': REGIONS });
     await loadModule();
     openSheet();
@@ -1084,9 +1086,6 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
     const region = document.querySelector('[data-downloads-list-region] li');
     expect(region.hasAttribute('data-row-renameable')).toBe(false);
     expect(region.querySelector('[data-row-rename-input]')).toBeNull();
-    expect(region.querySelector('[data-row-label]').className).not.toContain(
-      'cursor-text',
-    );
   });
 
   it('opens the editor seeded with the current (numbered default) label', async () => {
@@ -1104,9 +1103,10 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
     expect(customRow().querySelector('[data-row-label]').hidden).toBe(true);
   });
 
-  it('opens the editor from a click on the label itself', async () => {
-    // The design's own words: the label is clickable too. It is the
-    // obvious target, and the one a pointer user reaches for first.
+  it('does not open the editor from a click on the label (SNOW-658)', async () => {
+    // The label was a second trigger for a day. Hugo: "We have inline
+    // editing & the pencil - choose one." Both renameable panels dropped
+    // it in the same change, since both go through inline_rename.js.
     seed({ 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
@@ -1114,7 +1114,8 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
 
     customRow().querySelector('[data-row-label]').click();
 
-    expect(customRow().querySelector('[data-row-rename-input]').hidden).toBe(false);
+    expect(customRow().querySelector('[data-row-rename-input]').hidden).toBe(true);
+    expect(customRow().querySelector('[data-row-label]').hidden).toBe(false);
   });
 
   it('writes the trimmed name back on Enter and re-renders showing it', async () => {

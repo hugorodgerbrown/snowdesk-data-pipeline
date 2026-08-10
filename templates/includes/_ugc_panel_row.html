@@ -33,10 +33,12 @@ detail page). Hugo's design removes both:
     detail page is reached by tapping its pin on the map, which is where
     the user already is;
   * rename happens IN PLACE on the label, not behind a window.prompt.
-    Pencil — or a click on the label itself — turns the label into an
-    inline edit; Enter or blur commits, Escape cancels, and a trimmed
-    empty input leaves the title unchanged (static/js/inline_rename.js
-    owns that state machine, and both panels that can rename share it).
+    The pencil turns the label into an inline edit; Enter or blur
+    commits, Escape cancels, and a trimmed empty input leaves the title
+    unchanged (static/js/inline_rename.js owns that state machine, and
+    both panels that can rename share it). The label itself opened the
+    editor too for a day — see the note on the label below for why the
+    pencil is the one that stayed.
 
 Serving both render paths. Downloads builds its rows in JS
 (map_downloads_manager.js's `buildRow` clones this markup out of a
@@ -63,11 +65,13 @@ Parameters (passed via {% include … with … %}):
                 class's own keyless fallback is the "downloaded,
                 basemap unknown" green — a claim neither of them can
                 make.
-  renameable    (bool, optional) — render the inline-rename affordance:
-                the label gains a hover outline and a cursor, and a
-                hidden `[data-row-rename-input]` sits beside it for
-                inline_rename.js to reveal. The owning module supplies
-                the pencil in its own actions template, and commits.
+  renameable    (bool, optional) — render the inline-rename affordance: a
+                hidden `[data-row-rename-input]` beside the label, for
+                inline_rename.js to reveal, and `data-row-renameable` on
+                the row so it can find the pair. The owning module
+                supplies the pencil in its own actions template, and
+                commits. The label's appearance does not change — it is
+                not a trigger.
   rename_label  (string, optional) — the edit field's aria-label; the
                 revealed input has no visible label of its own.
   js_filled     (bool, optional) — render every hook, and the rename
@@ -98,14 +102,29 @@ Parameters (passed via {% include … with … %}):
     <span class="flex min-w-0 flex-1 flex-col gap-0.5">
         {# The label's own box is the inline editor's box: identical        #}
         {# padding, radius and negative margins in both states, so          #}
-        {# committing a rename does not make the row jump. A row that       #}
-        {# cannot be renamed carries the same box with a transparent        #}
-        {# border and no hover — the border is what would otherwise shift   #}
-        {# the text by a pixel between the two shapes.                      #}
+        {# committing a rename does not make the row jump. The transparent  #}
+        {# border is part of that — it is what would otherwise shift the    #}
+        {# text by a pixel when the editor's own border appears.            #}
+        {#                                                                  #}
+        {# The label is NOT a rename trigger, on any panel. It carried      #}
+        {# `cursor-text hover:border-border-strong` for a day, and clicking #}
+        {# it opened the editor. Hugo: "We have inline editing & the pencil #}
+        {# - choose one." The pencil is the one kept: this is a `<span>`,   #}
+        {# so its click was mouse-only — nothing to tab to, nothing for a   #}
+        {# screen reader to announce — while the pencil is a real 44×44     #}
+        {# button naming the row it renames. With the label inert, a        #}
+        {# renameable row also reads exactly like a non-renameable one at   #}
+        {# rest, which is the point of a shared row.                        #}
+        {#                                                                  #}
+        {# The -6px bleed stays: it puts the label's TEXT on the row's own  #}
+        {# left edge, in line with the meta line below it, in both states.  #}
+        {# What made it visible as a defect was the scroll container it     #}
+        {# bled out of — fixed where that container is declared, in         #}
+        {# includes/_ugc_panel.html.                                        #}
         <span
             data-row-label
             {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-            class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1{% if renameable or js_filled %} cursor-text hover:border-border-strong{% endif %}"
+            class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
         >{{ label }}</span>
         {% if renameable or js_filled %}
             {# Hidden until inline_rename.js reveals it. Rendered here      #}

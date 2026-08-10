@@ -137,12 +137,15 @@ describe('renaming a favourite in place', () => {
     expect(row.querySelector('[data-row-label]').hidden).toBe(true);
   });
 
-  it('opens the editor from a click on the label itself', () => {
+  it('does not open the editor from a click on the label (SNOW-658)', () => {
+    // The label opened it too for a day. Hugo: "We have inline editing &
+    // the pencil - choose one."
     const row = openPanelWithRow();
 
     row.querySelector('[data-row-label]').click();
 
-    expect(row.querySelector('[data-row-rename-input]').hidden).toBe(false);
+    expect(row.querySelector('[data-row-rename-input]').hidden).toBe(true);
+    expect(row.querySelector('[data-row-label]').hidden).toBe(false);
   });
 
   it('posts the new name to the rename endpoint for that uuid', async () => {

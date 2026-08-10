@@ -15,9 +15,13 @@ Rename is a `data-favourite-rename` button, not a form and not a prompt:
 static/js/favourites.js puts the row's own label into an inline edit
 (static/js/inline_rename.js) and posts the committed name. The uuid rides
 on the button so the delegated handler needs no closure over the rendered
-row. A click on the label itself does the same thing — the button is what
-makes it reachable from the keyboard, and what names the action for a
-screen reader.
+row.
+
+This button is the ONLY way in. A click on the label opened the same
+editor for a day (SNOW-658); Hugo: "We have inline editing & the pencil -
+choose one." The pencil stayed because it is the one that works for
+everybody — a real button, in the tab order, named for a screen reader —
+where the label is a `<span>` only a pointer can reach.
 
 Remove stays a plain HTMX form — the delete endpoint returns an empty
 200, so ``hx-target``/``hx-swap`` on this row's own id removes exactly

@@ -203,12 +203,18 @@ describe('binding and unbinding', () => {
 });
 
 describe('rowFor — which clicks open an edit', () => {
-  it('recognises the pencil and the label', () => {
+  it('recognises the pencil', () => {
     expect(window.pwaInlineRename.rowFor(row.querySelector('[data-row-rename]'))).toBe(
       row,
     );
+  });
+
+  it('ignores the label — the pencil is the only trigger (SNOW-658)', () => {
+    // Hugo: "We have inline editing & the pencil - choose one." The label
+    // is a <span>, so its click was mouse-only; the pencil is a real
+    // button, in the tab order and named for a screen reader.
     expect(window.pwaInlineRename.rowFor(row.querySelector('[data-row-label]'))).toBe(
-      row,
+      null,
     );
   });
 
@@ -221,7 +227,7 @@ describe('rowFor — which clicks open an edit', () => {
   it('ignores a row that is not renameable', () => {
     row.removeAttribute('data-row-renameable');
 
-    expect(window.pwaInlineRename.rowFor(row.querySelector('[data-row-label]'))).toBe(
+    expect(window.pwaInlineRename.rowFor(row.querySelector('[data-row-rename]'))).toBe(
       null,
     );
   });

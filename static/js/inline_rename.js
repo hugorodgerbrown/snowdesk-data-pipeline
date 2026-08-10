@@ -3,10 +3,14 @@
  *
  * The DOM half of includes/_ugc_panel_row.html's `renameable` state. Hugo's
  * "Map panels — common format" design: "Where a row can be renamed, that
- * happens in place on the label." The pencil, or a click on the label
- * itself, swaps the label for the editor already sitting hidden beside it;
- * Enter or blur commits, Escape cancels, and a trimmed-empty input leaves
- * the title unchanged.
+ * happens in place on the label." The row's pencil swaps the label for the
+ * editor already sitting hidden beside it; Enter or blur commits, Escape
+ * cancels, and a trimmed-empty input leaves the title unchanged.
+ *
+ * ONE TRIGGER, NOT TWO. A click on the label opened the editor too for a
+ * day. Hugo: "We have inline editing & the pencil - choose one." The
+ * pencil is what stayed — see ``rowFor``'s own note for why the label
+ * could not be the one kept.
  *
  * WHAT THIS REPLACES. Both renameable panels used ``window.prompt`` —
  * downloads since SNOW-635, favourites for one day after SNOW-658's first
@@ -45,11 +49,17 @@
    * The renameable row a click belongs to, if the click should start an
    * edit.
    *
-   * Two things open an edit, and both are the design's: the pencil (a real
-   * button, so the interaction is reachable from the keyboard and named for
-   * a screen reader) and the label itself (the obvious target, and the one
-   * a pointer user reaches for first). A click anywhere else in the row —
-   * the trash, the meta line — is not a rename.
+   * ONE thing opens an edit: the pencil. A click anywhere else in the row —
+   * the label, the meta line, the trash — is not a rename.
+   *
+   * SNOW-658, Hugo: "We have inline editing & the pencil - choose one."
+   * The pencil wins. The label is a ``<span>``, so a click on it is
+   * mouse-only: there is nothing to tab to, nothing to press Enter on, and
+   * nothing for a screen reader to announce, which makes it an affordance
+   * only some users have. The pencil is a real 44×44 button carrying the
+   * row's own name in its aria-label. And with the label inert, a
+   * favourites row reads exactly like a downloads or observations row at
+   * rest — which is the point of a shared row.
    *
    * @param {EventTarget|null} target The click's target.
    * @returns {HTMLElement|null} The row, or null when this was not a
@@ -60,7 +70,7 @@
     if (!el || !el.closest) return null;
     var row = el.closest(ROW_SELECTOR);
     if (!row) return null;
-    if (!el.closest(TRIGGER_SELECTOR) && !el.closest(LABEL_SELECTOR)) return null;
+    if (!el.closest(TRIGGER_SELECTOR)) return null;
     return /** @type {HTMLElement} */ (row);
   }
 
