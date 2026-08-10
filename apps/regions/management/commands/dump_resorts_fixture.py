@@ -103,10 +103,32 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Wrote {_FIXTURE_PATH.relative_to(Path.cwd())} — review "
+                    f"Wrote {_display_path(_FIXTURE_PATH)} — review "
                     "the diff and commit when satisfied."
                 )
             )
+
+
+def _display_path(path: Path) -> str:
+    """Return ``path`` relative to the cwd, or absolute if it isn't below it.
+
+    ``Path.relative_to`` raises ``ValueError`` rather than falling back, so
+    calling it unguarded made this message crash for any destination outside
+    the working directory — and it runs *after* the write, so the fixture was
+    already on disk and only the confirmation was lost (SNOW-659).
+
+    Args:
+        path: The destination the fixture was written to.
+
+    Returns:
+        The repo-relative path for the normal case of a run from the project
+        root, else the absolute path.
+
+    """
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
 
 
 def _write_resorts_fixture(
