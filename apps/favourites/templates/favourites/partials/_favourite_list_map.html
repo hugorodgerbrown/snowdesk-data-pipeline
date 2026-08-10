@@ -6,14 +6,18 @@ Rendered by apps.favourites.views.favourite_list for ``?variant=map`` and
 swapped into [data-favourites-rows] inside the map's favourites panel
 (public/partials/_favourites_surface.html) by static/js/favourites.js.
 
-The lean sibling of _favourite_list.html. Same rows, same roster sidecar,
-three things dropped — each because the sheet is not the manage page:
+The lean sibling of _favourite_list.html. Same favourites, same roster
+sidecar, a different row — _favourite_row_map.html rather than
+_favourite.html — and two things dropped, each because the sheet is not
+the manage page:
 
   #favourite-card-panel   the sheet is height-bounded and scrolls, so
                           swapping a full detail card into it is the wrong
                           shape. Without a panel to target, the detail
-                          control here is a plain link — a GET, navigating,
-                          which is what it always was.
+                          control here is a plain link — a GET,
+                          navigating, which is what it always was. It is
+                          the row's own title now (SNOW-658, second pass):
+                          see _favourite_row_map.html.
   "View favourites on the map →"
                           it would point at the page the user is already
                           looking at. The sheet's own "Show favourites on
@@ -22,10 +26,15 @@ three things dropped — each because the sheet is not the manage page:
 
 Kept: the roster_payload sidecar. static/js/favourites_offline.js writes it
 through into data:favourites on htmx:afterOnLoad, and offline reads matter
-more on the map than on the manage page, not less.
+more on the map than on the manage page, not less. It sits OUTSIDE the
+``<ul>`` — ``json_script`` emits a ``<script>`` element, which is not a
+valid child of a list.
 
-Target shape, matching the field-observations panel this sheet sits beside:
-editable name · Remove · one detail link.
+The rows are a real ``<ul>``: each row is a ``<li>`` from
+includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
+rather than sitting in a bordered box of its own — the shape the "Manage
+downloads" sheet's lists use, which is the reference for all three UGC
+panels.
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
@@ -34,25 +43,16 @@ Context:
                      favourite; written through into data:favourites by
                      favourites_offline.js.
 {% endcomment %}
-<div class="flex flex-col gap-2" data-testid="favourite-list">
+<div data-testid="favourite-list">
     {{ roster_payload|json_script:"favourites-roster-cache" }}
-
-    {% for favourite in favourites %}
-        <div class="flex items-center gap-2" data-testid="favourite-list-row">
-            <div class="flex-1">
-                {% include "favourites/partials/_favourite.html" with favourite=favourite %}
-            </div>
-            <a
-                href="{% url 'favourites:detail' favourite.uuid %}"
-                class="shrink-0 text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                data-testid="favourite-list-detail-link"
-            >
-                {% trans "Details →" %}
-            </a>
-        </div>
-    {% empty %}
-        <p class="text-sm text-text-2" data-testid="favourite-list-empty">
+    <ul class="flex flex-col">
+        {% for favourite in favourites %}
+            {% include "favourites/partials/_favourite_row_map.html" with favourite=favourite %}
+        {% endfor %}
+    </ul>
+    {% if not favourites %}
+        <p class="py-2 text-sm text-text-2" data-testid="favourite-list-empty">
             {% trans "You have no saved favourites yet." %}
         </p>
-    {% endfor %}
+    {% endif %}
 </div>

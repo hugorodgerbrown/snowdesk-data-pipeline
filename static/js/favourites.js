@@ -13,9 +13,13 @@
  *
  * SNOW-658: the roundel opens a PANEL, not the create form. The panel
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
- * own pins — loaded over HTMX from favourites:list, the same endpoint and
- * partials the manage page uses, so each row arrives with its own
- * rename/delete wiring — offers [data-favourites-add] to place another, and
+ * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
+ * row (favourites/partials/_favourite_row_map.html) is the shared UGC row:
+ * a linked title, a muted subtitle and a "…" menu holding Rename and
+ * Remove. Remove is that row's own HTMX form and needs nothing here;
+ * Rename is a prompt-then-post handled below, mirroring
+ * map_downloads_manager.js's own. The panel offers [data-panel-add] to
+ * place another, and
  * carries the "Show favourites on the map" switch that used to be a row in
  * the layers menu (it drives window.pwaFavouritesOverlay in map.js). This
  * follows SNOW-634's downloads pattern: user-generated data gets its own
@@ -25,7 +29,7 @@
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
  * which on touch screens is occluded by the dragging finger:
  *   1. Tap #favourite-add-btn — opens the sheet on the list panel; tap
- *      [data-favourites-add] inside it to show the create form (cloned from
+ *      [data-panel-add] inside it to show the create form (cloned from
  *      #favourite-create-template, which carries a real {% csrf_token %}
  *      rendered server-side — there is no per-request form-load endpoint
  *      here, unlike report_form_url), seeded from the map's current centre,
@@ -93,6 +97,10 @@
     'unnamed-pin': 'Unnamed pin',
     'name-label': 'Favourite name',
     remove: 'Remove',
+    // SNOW-658: the map row's Rename moved into its "…" menu and is driven
+    // from here now — a prompt, then a post.
+    'rename-prompt': 'Name this pin',
+    'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
   });
 
@@ -252,17 +260,35 @@
     const toggle = sheet.querySelector('#map-favourites-overlay-toggle');
     if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isVisible?.();
 
-    const rows = sheet.querySelector('[data-favourites-rows]');
     if (!IS_ELIGIBLE) {
-      const addButton = sheet.querySelector('[data-favourites-add]');
+      const addButton = sheet.querySelector('[data-panel-add]');
       if (addButton) addButton.remove();
+      const rows = sheet.querySelector('[data-favourites-rows]');
       if (rows) rows.replaceChildren(buildSigninCta());
       return true;
     }
-    if (rows && LIST_URL && typeof htmx !== 'undefined') {
-      htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
-    }
+    loadRows();
     return true;
+  }
+
+  /** (Re)load the panel's rows from favourites:list over HTMX.
+   *
+   * The URL is used VERBATIM — the server puts ``?variant=map`` on it so
+   * the sheet gets the lean row template (favourites/partials/
+   * _favourite_list_map.html), and rebuilding the path here would silently
+   * drop it and render the manage page's markup instead.
+   *
+   * Called on open, and again after a rename lands — the same
+   * re-read-the-truth move map_downloads_manager.js's rename makes when it
+   * calls render(), rather than patching the row in place from what we
+   * think we just wrote.
+   *
+   * @returns {void}
+   */
+  function loadRows() {
+    const rows = sheet.querySelector('[data-favourites-rows]');
+    if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 
   btn.addEventListener('click', function () {
@@ -314,11 +340,77 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    if (!target.closest('[data-favourites-add]')) return;
+    if (handleRenameClick(event)) return;
+    if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
     startCreateFlow();
   });
+
+  /** Handle a click on a row's Rename menu item (SNOW-658).
+   *
+   * The map row's always-visible name `<input>` is gone — every panel's
+   * state-changing actions live in the row's "…" menu now, and a field
+   * that is permanently in edit mode is not a row at rest. Renaming is
+   * therefore a prompt-then-post, exactly the shape
+   * map_downloads_manager.js's own rename has had since SNOW-635: the same
+   * interaction on the same kind of row in the sheet next door, rather
+   * than a second one invented here.
+   *
+   * NOT stopPropagation'd, unlike the add CTA above: this handler leaves
+   * the sheet's body in place, so the click must still reach
+   * overflow_menu.js's document listener to close the menu it came from.
+   *
+   * Online-only, matching the manage page's own rename (a plain HTMX post)
+   * and this module's resort-unfavourite path — creates are queued for
+   * offline replay, edits to existing rows are not.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether a Rename item was the click's target, so
+   *   the caller stops rather than also testing the add CTA.
+   */
+  function handleRenameClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const button = target.closest('[data-favourite-rename]');
+    if (!button) return false;
+    if (!RENAME_URL_TEMPLATE || typeof window.prompt !== 'function') return true;
+
+    const favUuid = button.getAttribute('data-favourite-rename');
+    if (!favUuid) return true;
+
+    const current = button.getAttribute('data-favourite-current-name') || '';
+    const next = window.prompt(STRINGS['rename-prompt'], current);
+    // null is Cancel; an unchanged result is treated the same way — nothing
+    // to write, so no write is made. A BLANK result is a real edit here,
+    // unlike a downloaded area's name: a favourite with no name is a
+    // supported state ("Unnamed pin"), so clearing one is allowed.
+    if (next === null) return true;
+    const trimmed = next.trim();
+    if (trimmed === current) return true;
+
+    fetch(RENAME_URL_TEMPLATE.replace('__UUID__', favUuid), {
+      method: 'POST',
+      headers: {
+        // favourite_rename is @require_htmx; this is a plain fetch.
+        'HX-Request': 'true',
+        'X-CSRFToken': getCsrfToken(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ name: trimmed }).toString(),
+    })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('rename failed');
+        // Re-read the list rather than patch the row: the response is the
+        // MANAGE page's row partial, which is deliberately a different
+        // shape from the map's, so it cannot be swapped in here.
+        loadRows();
+        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+      })
+      .catch(function () {
+        showToast(STRINGS['rename-failed']);
+      });
+    return true;
+  }
 
   // SNOW-658: the overlay switch drives window.pwaFavouritesOverlay directly —
   // show()/hide() are the only writers of that overlay's visibility, and
@@ -491,6 +583,12 @@
   // ---------------------------------------------------------------------------
 
   const DETAIL_REQUEST_MARK = 'snowdeskFavouriteDetailRequest';
+  // SNOW-658: the same mark idiom for a request made from a row INSIDE the
+  // panel — today only its Remove form, which posts and swaps itself out.
+  // Marked on beforeRequest for the same reason the detail one is: an
+  // outerHTML swap detaches the element, so by afterRequest there is no
+  // tree left to ask where it came from.
+  const PANEL_ROW_REQUEST_MARK = 'snowdeskFavouritePanelRowRequest';
 
   document.addEventListener('htmx:beforeRequest', function (event) {
     const detail = event.detail || {};
@@ -499,6 +597,21 @@
     detail.xhr[DETAIL_REQUEST_MARK] = !!(
       elt && elt.closest && elt.closest('[data-favourite-detail]')
     );
+    detail.xhr[PANEL_ROW_REQUEST_MARK] = !!(
+      elt && elt.closest && elt.closest('[data-favourites-rows]')
+    );
+  });
+
+  // A row removed from the panel is a favourite that no longer exists, so the
+  // map's own pins have to be refetched — nothing else does it. Deleting from
+  // the pin popup already dispatched this (above); deleting from the panel
+  // silently did not, and the pin stayed on the map until a reload.
+  document.addEventListener('htmx:afterRequest', function (event) {
+    const xhr = event.detail && event.detail.xhr;
+    if (!xhr || !xhr[PANEL_ROW_REQUEST_MARK]) return;
+    if (!event.detail.successful) return;
+    window.pwaTelemetry?.emit('map.favourite.deleted', {});
+    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
   });
 
   document.addEventListener('htmx:afterRequest', function (event) {

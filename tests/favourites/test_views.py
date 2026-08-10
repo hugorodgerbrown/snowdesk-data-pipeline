@@ -1347,6 +1347,71 @@ class TestFavouriteList:
         assert _detail_url(favourite.uuid) in content
         assert 'id="favourites-roster-cache"' in content
 
+    def test_map_variant_links_from_the_rows_own_title(self, client: Client) -> None:
+        """The detail link IS the row's title (SNOW-658, second pass).
+
+        A GET is a link, so navigation cannot move into the "…" menu — and
+        making the title itself the link removes the separate "Details →"
+        control that competed with it for the same tap.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        marker = 'data-testid="favourite-list-detail-link"'
+        opener = content[: content.index(marker)].rsplit("<", 1)[1]
+        assert opener.startswith("a ") or opener.startswith("a\n")
+        # It is the row's primary line, not a control beside it.
+        assert "data-row-label" in opener
+        assert "Details" not in content
+
+    def test_map_variant_puts_rename_and_remove_in_the_overflow_menu(
+        self, client: Client
+    ) -> None:
+        """Both POSTs are menu items on the map row (SNOW-658).
+
+        The always-visible rename ``<input>`` is gone — the three UGC
+        panels' rows have to read alike at rest, and a field permanently in
+        edit mode is not at rest. Rename is a prompt-then-post driven by
+        favourites.js (``data-favourite-rename``); Remove stays a plain
+        HTMX form targeting the row's own id.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        menu_start = content.index(f'id="favourite-menu-{favourite.uuid}"')
+        menu_end = content.index("</ul>", menu_start)
+        menu = content[menu_start:menu_end]
+        assert f'data-favourite-rename="{favourite.uuid}"' in menu
+        assert _delete_url(favourite.uuid) in menu
+        # No editable name field anywhere in the map variant.
+        assert 'name="name"' not in content
+
+    def test_manage_variant_keeps_its_always_visible_rename_field(
+        self, client: Client
+    ) -> None:
+        """_favourite.html is untouched by the map row's redesign (SNOW-658).
+
+        The manage page is a page for managing favourites; the map sheet is
+        a list glanced at. Only the map variant conforms to the shared row.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert 'name="name"' in content
+        assert "data-favourite-rename" not in content
+
     def test_map_variant_empty_state(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy in the sheet."""
         user = UserFactory.create()

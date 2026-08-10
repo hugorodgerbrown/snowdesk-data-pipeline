@@ -29,7 +29,7 @@ document.body.innerHTML = `
   <template id="favourite-list-template">
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
-      <button type="button" data-favourites-add>Add a favourite</button>
+      <button type="button" data-panel-add>Add a favourite</button>
       <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
@@ -74,7 +74,7 @@ describe('anonymous tap on the favourites roundel', () => {
   });
 
   it('drops the add CTA, which has nothing to save to', () => {
-    expect(sheet.querySelector('[data-favourites-add]')).toBeNull();
+    expect(sheet.querySelector('[data-panel-add]')).toBeNull();
   });
 
   it('keeps the overlay switch — a hidden control reads as a bug', () => {

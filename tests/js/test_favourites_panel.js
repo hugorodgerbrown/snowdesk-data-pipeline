@@ -54,7 +54,7 @@ document.body.innerHTML = `
   <template id="favourite-list-template">
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
-      <button type="button" data-favourites-add>Add a favourite</button>
+      <button type="button" data-panel-add>Add a favourite</button>
       <label for="map-favourites-overlay-toggle">Show favourites on the map</label>
       <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
@@ -148,7 +148,7 @@ describe('tapping the roundel opens the panel, not the create form', () => {
 describe('the add CTA', () => {
   it('shows the create form and arms the place-picker at the map centre', () => {
     btn.click();
-    sheet.querySelector('[data-favourites-add]').click();
+    sheet.querySelector('[data-panel-add]').click();
 
     const form = sheet.querySelector('#favourite-create-form');
     expect(form).not.toBeNull();
@@ -162,7 +162,7 @@ describe('the add CTA', () => {
     btn.click();
     btn.click();
 
-    sheet.querySelector('[data-favourites-add]').click();
+    sheet.querySelector('[data-panel-add]').click();
 
     expect(sheet.querySelector('#favourite-create-form')).not.toBeNull();
   });
@@ -233,5 +233,50 @@ describe('a list load that fails', () => {
     );
 
     expect(container.textContent).toContain('Loading your favourites');
+  });
+});
+
+describe('removing a row from the panel', () => {
+  it('tells the map its pins changed, so the deleted one goes', () => {
+    // SNOW-658: the row's Remove is a plain HTMX form (nothing in this
+    // module handles it), but nothing else refetches the map's own pins
+    // either — deleting from the panel used to leave the pin on the map
+    // until a reload, while deleting from the pin popup did not.
+    btn.click();
+    const container = rows();
+    container.innerHTML = '<ul><li id="favourite-a1b2"><button></button></li></ul>';
+    const button = container.querySelector('button');
+
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', changed);
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: button } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:favourites-changed', changed);
+  });
+
+  it('stays quiet for a request that came from outside the rows', () => {
+    btn.click();
+
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', changed);
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: document.body } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(changed).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:favourites-changed', changed);
   });
 });

@@ -1,0 +1,44 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_row_map.html — One saved-pin row, map sheet
+only (SNOW-658).
+
+The map variant of favourites/partials/_favourite.html. That file is NOT
+forked or changed: the account manage page renders it and keeps its
+always-visible rename field, which is right for a page whose whole purpose
+is managing favourites and wrong for a list glanced at on the map. This
+row is includes/_ugc_panel_row.html instead — the shape extracted from the
+"Manage downloads" sheet, so all three UGC panels' rows read alike at
+rest: one primary line, one muted secondary line, one "…" menu.
+
+The primary line is the LINK to the favourite's own page. A GET is a link
+and a state change is a control, so navigation cannot become a menu item
+faking it; and making the title itself the link removes the separate
+"Details →" control that used to sit beside the row competing with it for
+the same tap. Rename and Remove — both POSTs — live in the menu
+(favourites/partials/_favourite_row_map_menu_items.html).
+
+The row's id is what the Remove form's hx-target addresses, and it matches
+_favourite.html's own ``favourite-<uuid>`` so the two variants stay
+addressable the same way.
+
+Subtitle: the pin's region when one matched, else its coordinates. A pin
+can fall outside every known boundary (region is nullable), and an
+unnamed pin's coordinates are the only thing distinguishing it from
+another — an empty secondary line would leave rows uneven and say
+nothing.
+
+Context:
+    favourite : Favourite — the saved pin to render.
+{% endcomment %}
+{% with uuid=favourite.uuid|stringformat:"s" row_subtitle=favourite.region.name %}
+    {% if not favourite.region %}
+        {% blocktrans trimmed with lat=favourite.latitude|floatformat:4 lon=favourite.longitude|floatformat:4 asvar row_subtitle %}{{ lat }},
+            {{ lon }}{% endblocktrans %}
+    {% endif %}
+    {% trans "Unnamed pin" as unnamed_pin %}
+    {% url 'favourites:detail' favourite.uuid as favourite_detail_url %}
+    {% blocktrans trimmed with name=favourite.name|default:unnamed_pin asvar row_menu_label %}More actions for
+        {{ name }}{% endblocktrans %}
+    {% include "includes/_ugc_panel_row.html" with row_id="favourite-"|add:uuid label=favourite.name|default:unnamed_pin label_href=favourite_detail_url label_testid="favourite-list-detail-link" subtitle=row_subtitle trigger_id="favourite-menu-trigger-"|add:uuid menu_id="favourite-menu-"|add:uuid trigger_label=row_menu_label menu_items_template="favourites/partials/_favourite_row_map_menu_items.html" %}
+{% endwith %}

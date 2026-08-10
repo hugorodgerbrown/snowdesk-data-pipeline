@@ -1,0 +1,20 @@
+{% load i18n %}
+{% comment %}
+public/partials/_favourites_panel_rows.html — the favourites panel's
+scroll region (SNOW-658).
+
+includes/_ugc_panel.html's `rows_template` slot. One container, filled at
+open time by static/js/favourites.js: eligible users get favourites:list
+over HTMX (the same endpoint the manage page uses, at ``?variant=map``,
+so each row arrives with its own delete wiring already attached);
+a visitor gets the sign-in CTA in its place.
+
+It starts with a loading line rather than empty: the request can fail
+(this panel is reachable offline, its list is not), and an empty container
+would read as "you have no favourites" — a wrong statement about the
+user's own data. favourites.js swaps in a distinct error line on
+htmx:responseError / htmx:sendError for that target.
+{% endcomment %}
+<div data-favourites-rows>
+    <p class="text-sm text-text-2">{% trans "Loading your favourites…" %}</p>
+</div>
