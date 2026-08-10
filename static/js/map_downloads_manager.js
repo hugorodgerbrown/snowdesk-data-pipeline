@@ -163,15 +163,19 @@
  *                                reports that it can see nothing, which
  *                                is the truthful answer when the module
  *                                that owns the records hasn't loaded.
- *   window.pwaLayersMenu         ``close()``. Optional — without it the
- *                                menu is simply left open behind the
- *                                sheet (SNOW-634: the roundel that opens
- *                                this sheet lives outside that menu, but
- *                                the menu can still be open behind it —
- *                                e.g. a user who opened it, then clicked
- *                                the roundel without closing it first).
- *                                Mirroring its three DOM writes here would
- *                                be a duplicate free to drift.
+ *   window.pwaMapOverlays        ``register()`` + ``opening()`` (SNOW-658).
+ *                                This sheet used to close ONE named
+ *                                sibling on its way in
+ *                                (``window.pwaLayersMenu.close()``) and
+ *                                nothing else, and nothing closed it. It
+ *                                now registers with the shared map-overlay
+ *                                registry
+ *                                (static/js/map_overlay_exclusivity.js)
+ *                                and announces its own open, so it closes
+ *                                every other overlay and every other
+ *                                overlay closes it, without either naming
+ *                                the other. Optional — without it the
+ *                                overlays simply stop being exclusive.
  *   window.pwaCustomAreaDownload SNOW-634's third bridge: ``openFraming()``,
  *                                called by ``[data-panel-add]`` below
  *                                once this sheet has hidden itself. Optional
@@ -776,6 +780,13 @@
     // render() reads window.pwaDownloadedOverlay.isVisible() to paint the
     // switch, so it now shows the overlay's real state on every open rather
     // than a state this function just imposed.
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before this sheet is unhidden, so whatever it replaces — the layers
+    // menu, one of the two other panels, an anchored detail popup — is gone
+    // by the time this one is on screen. It replaces the single hand-wired
+    // ``window.pwaLayersMenu?.close()`` this function used to make, which
+    // covered the one sibling it happened to know about.
+    window.pwaMapOverlays?.opening(SHEET_ID);
     await render();
     sheet.hidden = false;
     // SNOW-658: inset the sheet past the scrubber and the roundel column on
@@ -783,12 +794,40 @@
     // other two UGC sheets. This module does not go through that controller
     // (it owns `sheet.hidden` itself), so it makes the call directly.
     window.pwaOverlayBounds?.positionSheet(sheet);
-    // SNOW-634: the roundel (#map-custom-download-control) is the only way
-    // in now, but the layers menu can still be open behind it — a user who
-    // opened the menu, then clicked the roundel without closing it first —
-    // and leaving it open would cover the sheet that just opened.
-    window.pwaLayersMenu?.close();
     sheet.focus();
+  }
+
+  /**
+   * Close the sheet.
+   *
+   * The half of the registry's contract this module has to state itself:
+   * every other overlay reaches it through
+   * ``window.pwaMapOverlays``. Hiding directly, matching ``open()``'s own
+   * ``sheet.hidden = false`` — the body is re-cloned on the next open, so
+   * there is no teardown to run.
+   *
+   * @returns {void}
+   */
+  function close() {
+    sheet.hidden = true;
+  }
+
+  /**
+   * Open the sheet, or close it when it is already open (SNOW-658).
+   *
+   * What ``#map-custom-download-control`` calls. A roundel that opens a
+   * surface closes it on the second tap — the layers pill has always
+   * behaved that way, and Hugo's report is that the three panels should
+   * behave alike.
+   *
+   * @returns {Promise<void>}
+   */
+  async function toggle() {
+    if (!sheet.hidden) {
+      close();
+      return;
+    }
+    await open();
   }
 
   // Delegated on the sheet: cloned along with the body template on every
@@ -980,8 +1019,19 @@
     render();
   });
 
+  // SNOW-658: one open map overlay at a time. Registered here rather than
+  // through MapSheet.attach (this sheet does not use that controller — it
+  // owns `sheet.hidden` itself), but the contract is identical.
+  window.pwaMapOverlays?.register(SHEET_ID, {
+    isOpen: function () {
+      return !sheet.hidden;
+    },
+    close: close,
+  });
+
   window.pwaDownloadsManager = Object.freeze({
     open: open,
+    toggle: toggle,
     refresh: render,
   });
 })();

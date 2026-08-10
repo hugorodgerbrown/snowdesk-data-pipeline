@@ -56,6 +56,10 @@ beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
   locateRequests = [];
   document.addEventListener('snowdesk:locate-request', () => locateRequests.push(true));
+  // SNOW-658: the roundel toggles, so each test has to start from a closed
+  // sheet — otherwise every second tap in this beforeEach would close the
+  // panel the test is about to read.
+  sheet.hidden = true;
   btn.click();
 });
 

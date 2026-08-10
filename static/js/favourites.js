@@ -148,25 +148,19 @@
   // teardown. report.js attaches to its own sheet the same way.
   // ---------------------------------------------------------------------------
 
+  // SNOW-658: the two hand-wired exclusivity pairs this attach used to carry
+  // — an ``onBeforeOpen`` dispatching snowdesk:favourite-detail-close, and a
+  // snowdesk:map-detail-opening listener closing this sheet — are gone. Both
+  // said "this sheet and the anchored detail popup are mutually exclusive",
+  // one direction each, and neither said anything about the layers menu, the
+  // downloads sheet or the report sheet. MapSheet.attach now registers every
+  // sheet with window.pwaMapOverlays (static/js/map_overlay_exclusivity.js),
+  // which closes whatever else is open whichever surface opens.
   const controller = window.MapSheet.attach(sheet, {
     triggerSelector: '#favourite-add-btn',
-    // SNOW-499: the create/placement sheet and an anchored detail popup are
-    // mutually exclusive map-detail surfaces — opening the sheet closes any
-    // open resort/favourite detail popup (map.js listens for this).
-    onBeforeOpen: function () {
-      document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
-    },
   });
-  const openSheet = controller.open;
   const closeSheet = controller.close;
   const showToast = window.MapSheet.toast;
-
-  // SNOW-499: map.js dispatches this as it opens an anchored detail popup
-  // (resort tap or existing-favourite tap) — close the create/placement
-  // sheet so the two surfaces never overlap.
-  document.addEventListener('snowdesk:map-detail-opening', function () {
-    if (controller.isOpen()) closeSheet();
-  });
 
   // SNOW-658: ``buildSheetHeader`` lived here — a DOM-API reimplementation of
   // templates/includes/_sheet_header.html for the one state that had no
@@ -293,8 +287,16 @@
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 
+  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
+  // roundel — a second tap on the control that opened the panel closes it.
+  // Bound on the button, so it runs before MapSheet's own document-level
+  // click-outside handler, which then sees a closed sheet and does nothing.
   btn.addEventListener('click', function () {
-    openSheet();
+    if (controller.isOpen()) {
+      closeSheet();
+      return;
+    }
+    controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The create flow is still reachable,
     // and a visitor still gets the sign-in CTA — an empty sheet would be a
@@ -546,9 +548,11 @@
     if (!favUuid || !container) return;
 
     window.PlacePicker?.deactivate();
-    // The create/placement sheet and the detail popup are mutually exclusive.
-    if (controller.isOpen()) closeSheet();
-
+    // SNOW-658: this used to close the sheet itself, because the sheet and
+    // the detail popup are mutually exclusive. map.js announces the popup's
+    // own open to window.pwaMapOverlays, which closes this sheet along with
+    // every other overlay — so the closing happens either way, and no longer
+    // needs one surface to know about another.
     container.appendChild(buildDetailRow(favUuid, detail.name || ''));
     if (typeof htmx !== 'undefined') htmx.process(container);
   });

@@ -29,6 +29,13 @@
  * treat as an outside click, and any work to do before the sheet is
  * revealed.
  *
+ * SNOW-658: it also registers the sheet with
+ * ``window.pwaMapOverlays`` (static/js/map_overlay_exclusivity.js) under
+ * the sheet's own DOM id, and announces every open through it — so
+ * opening either sheet closes the layers menu, the downloads sheet and
+ * any anchored detail popup, and each of those closes this one. Both
+ * sheets get that from ``attach``; neither names a sibling.
+ *
  * The teardown — deactivate the place-picker, empty the sheet — runs on
  * every route, including a dismissal that ``overlays.js`` handled. That
  * shared handler (SNOW-486) hides a ``[data-overlay]`` element on any
@@ -153,6 +160,10 @@
     }
 
     function open() {
+      // SNOW-658: only one overlay is open over the map at a time. Announce
+      // BEFORE the sheet is revealed, so the surface being replaced is gone
+      // by the time this one is on screen.
+      window.pwaMapOverlays?.opening(el.id);
       if (opts.onBeforeOpen) opts.onBeforeOpen();
       el.removeAttribute('hidden');
       // SNOW-658: on desktop the sheet is a floating card, and
@@ -172,6 +183,7 @@
       el.setAttribute('hidden', '');
       teardown();
     }
+
 
     document.addEventListener('overlay:dismissed', function (event) {
       if ((event.detail && event.detail.overlay) !== el) return;
@@ -197,6 +209,12 @@
       if (target.closest('[data-place-picker]')) return;
       close();
     });
+
+    // SNOW-658: one mechanism for "only one overlay at a time", registered
+    // here rather than by each caller — both sheets reach the map through
+    // this controller, so this is the one place that knows they are map
+    // overlays at all.
+    window.pwaMapOverlays?.register(el.id, { isOpen: isOpen, close: close });
 
     return { open: open, close: close, isOpen: isOpen, element: el };
   }

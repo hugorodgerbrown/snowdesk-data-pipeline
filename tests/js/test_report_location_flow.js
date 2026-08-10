@@ -40,7 +40,12 @@ const LIST_URL = '/partials/report/list/';
  * no longer asks for a fix; it lists what the user has already filed.
  */
 function startReport() {
-  document.getElementById('report-btn').click();
+  const btn = document.getElementById('report-btn');
+  // SNOW-658: the roundel TOGGLES — a tap while the sheet is up closes it.
+  // A flow started with the sheet already open (this suite's re-entrancy
+  // test) therefore closes and re-opens, which is what a user does.
+  if (!document.getElementById('report-sheet').hidden) btn.click();
+  btn.click();
   const add = document.querySelector('[data-panel-add]');
   if (add) add.click();
 }

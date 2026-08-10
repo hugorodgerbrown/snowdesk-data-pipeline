@@ -142,12 +142,18 @@
   // owns the open/focus cycle, the three dismissal routes (Escape,
   // click-outside, overlays.js's [data-action="dismiss"]) and their common
   // teardown. favourites.js attaches to its own sheet the same way.
+  //
+  // SNOW-658: attaching also registers this sheet with
+  // window.pwaMapOverlays, so opening it closes the layers menu, the other
+  // two panels and any anchored detail popup — and each of those closes
+  // this one. This surface had no exclusivity wiring of its own at all
+  // before that, which is what made the old hand-wired pairs read as
+  // arbitrary: it opened over whatever happened to be up.
   // ---------------------------------------------------------------------------
 
   const controller = window.MapSheet.attach(sheet, {
     triggerSelector: '#report-btn',
   });
-  const openSheet = controller.open;
   const closeSheet = controller.close;
   const showToast = window.MapSheet.toast;
 
@@ -480,8 +486,16 @@
     return true;
   }
 
+  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
+  // roundel — a second tap on the control that opened the panel closes it.
+  // Bound on the button, so it runs before MapSheet's own document-level
+  // click-outside handler, which then sees a closed sheet and does nothing.
   btn.addEventListener('click', function () {
-    openSheet();
+    if (controller.isOpen()) {
+      closeSheet();
+      return;
+    }
+    controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The flow is still reachable, and an
     // ineligible user still gets told why it is not — an empty sheet would be

@@ -1313,8 +1313,12 @@
   // offline, which is exactly when storage pressure is felt). Confirming
   // a NEW download is still gated on connectivity, both by the sheet's own
   // add-trigger and by this overlay's own Download button.
+  // SNOW-658: `toggle()`, not `open()` — a second tap on the roundel closes
+  // the sheet it opened, matching the layers pill and the other two panel
+  // roundels. `open()` re-rendered an already-open sheet, so the tap read as
+  // doing nothing.
   btn.addEventListener('click', () => {
-    window.pwaDownloadsManager?.open();
+    window.pwaDownloadsManager?.toggle();
   });
 
   confirmBtn.addEventListener('click', () => handleConfirm());

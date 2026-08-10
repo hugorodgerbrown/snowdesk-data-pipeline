@@ -80,6 +80,20 @@ function overlaySwitch() {
   return sheet.querySelector('#map-favourites-overlay-toggle');
 }
 
+/**
+ * Close the panel and open it again.
+ *
+ * SNOW-658: the roundel toggles, so a re-open is two taps — the first
+ * closes what is on screen. It used to be one, because a second tap simply
+ * re-opened an already-open sheet.
+ *
+ * @returns {void}
+ */
+function reopen() {
+  btn.click();
+  btn.click();
+}
+
 /** The rows container inside the currently-rendered panel body. */
 function rows() {
   return sheet.querySelector('[data-favourites-rows]');
@@ -139,9 +153,10 @@ describe('tapping the roundel opens the panel, not the create form', () => {
     btn.click();
     rows().innerHTML = '<div id="stale-row"></div>';
 
-    btn.click();
+    reopen();
 
     expect(document.getElementById('stale-row')).toBeNull();
+    expect(rows()).not.toBeNull();
   });
 });
 
@@ -160,7 +175,7 @@ describe('the add CTA', () => {
 
   it('still works after a re-open, because the listener is on the sheet', () => {
     btn.click();
-    btn.click();
+    reopen();
 
     sheet.querySelector('[data-panel-add]').click();
 
@@ -175,7 +190,7 @@ describe('the overlay switch', () => {
     expect(overlaySwitch().checked).toBe(false);
 
     overlay.isVisible.mockReturnValue(true);
-    btn.click();
+    reopen();
     expect(overlaySwitch().checked).toBe(true);
   });
 
@@ -194,7 +209,7 @@ describe('the overlay switch', () => {
 
   it('still works after a re-open, because the listener is on the sheet', () => {
     btn.click();
-    btn.click();
+    reopen();
 
     const toggle = overlaySwitch();
     toggle.checked = false;

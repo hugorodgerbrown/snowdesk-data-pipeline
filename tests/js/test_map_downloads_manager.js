@@ -375,7 +375,13 @@ beforeEach(() => {
     'snowdesk-basemap-pinned-region-CH-2101',
     'snowdesk-basemap-pinned-custom-a1',
   ]);
-  window.pwaLayersMenu = { close: vi.fn() };
+  // SNOW-658: the sheet takes part in the shared "one overlay at a time"
+  // registry (static/js/map_overlay_exclusivity.js) instead of closing the
+  // one sibling it used to know about by name. A stub stands in for the
+  // module so this suite can assert the announcement without loading it;
+  // the registry's own behaviour is covered in
+  // tests/js/test_map_overlay_exclusivity.js.
+  window.pwaMapOverlays = { register: vi.fn(), opening: vi.fn() };
   // SNOW-645 review: open() calls show() unconditionally before render(),
   // and the "Available offline" toggle calls show()/hide() directly (see
   // that block's own describe below) — a stub missing either used to fail
@@ -461,13 +467,43 @@ describe('opening the sheet', () => {
     );
   });
 
-  it('closes the layers menu it was opened from', async () => {
+  it('announces its open so every other map overlay closes', async () => {
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(window.pwaLayersMenu.close).toHaveBeenCalled();
+    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith(
+      'map-downloads-sheet',
+    );
+  });
+
+  it('registers itself so every other map overlay can close it', async () => {
+    seed({});
+    await loadModule();
+
+    expect(window.pwaMapOverlays.register).toHaveBeenCalledWith(
+      'map-downloads-sheet',
+      expect.objectContaining({
+        isOpen: expect.any(Function),
+        close: expect.any(Function),
+      }),
+    );
+  });
+
+  it('toggles shut when the roundel is tapped a second time', async () => {
+    // The roundel's own handler is one line — `pwaDownloadsManager.toggle()`
+    // — in map_custom_download.js, which this suite does not load; the
+    // bridge it calls is the equivalent entry point (see openSheet).
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await window.pwaDownloadsManager.toggle();
+    await settle();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+
+    await window.pwaDownloadsManager.toggle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
   });
 
   it('shows the empty state, and no rows, on a device with no downloads', async () => {

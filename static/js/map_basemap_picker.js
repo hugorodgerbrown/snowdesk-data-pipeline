@@ -36,6 +36,11 @@
 
   const STORAGE_KEY = BASEMAP_STORAGE_KEY;
 
+  // SNOW-658: this menu's name in the shared map-overlay registry — the
+  // element's own id, so a failing exclusivity assertion names something
+  // greppable.
+  const MENU_OVERLAY_NAME = 'basemap-menu';
+
   // SNOW-511: the menu is bottom-anchored (CSS `bottom: -96px`) and grows
   // upward. On a short viewport a tall menu grows past the top of #map,
   // sliding its first rows (the Countries section) up behind the nav and
@@ -96,6 +101,10 @@
   };
 
   const setMenuOpen = (open) => {
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before the menu is unhidden, so whatever it replaces is gone by the
+    // time this is on screen.
+    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME);
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
@@ -111,16 +120,16 @@
     if (open) positionMenu();
   };
 
-  // SNOW-588: let the "Manage downloads" sheet close this menu when it
-  // opens over it. The menu's open state is three DOM writes held in this
-  // closure; mirroring them in map_downloads_manager.js would be a
-  // duplicate free to drift from the real one, so expose the setter
-  // instead — the same bridge pattern pwaDownloadedOverlay uses for the
-  // download controls in sibling IIFEs.
-  window.pwaLayersMenu = Object.freeze({
-    close() {
-      setMenuOpen(false);
-    },
+  // SNOW-588 exposed ``window.pwaLayersMenu.close()`` here so the "Manage
+  // downloads" sheet could close this menu on its way in. SNOW-658 replaces
+  // that one-directional bridge — and its single caller — with a
+  // registration: the menu says how to ask whether it is open and how to
+  // close it, and window.pwaMapOverlays
+  // (static/js/map_overlay_exclusivity.js) closes it whenever ANY other map
+  // overlay opens, not just the one surface that remembered to call.
+  window.pwaMapOverlays?.register(MENU_OVERLAY_NAME, {
+    isOpen: () => !menu.hidden,
+    close: () => setMenuOpen(false),
   });
 
   // SNOW-511: keep the cap correct if the viewport changes while the menu is

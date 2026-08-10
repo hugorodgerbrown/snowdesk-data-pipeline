@@ -3855,15 +3855,27 @@
       p.remove();
     };
 
+    // SNOW-658: the anchored detail popup is a map overlay like the layers
+    // menu and the three UGC panels, so it takes part in the same
+    // "only one at a time" rule through window.pwaMapOverlays
+    // (static/js/map_overlay_exclusivity.js) rather than through the pair of
+    // custom events it and favourites.js used to swap.
+    window.pwaMapOverlays?.register('map-detail-popup', {
+      isOpen: () => !!activeDetailPopup,
+      close: closeDetailPopup,
+    });
+
     // Anchor a detail popup at ``lngLat`` with server HTML (``content.html``)
     // or a client-built DOM node (``content.node``). Replaces any open detail
-    // popup, dismisses the region popup, and closes the favourite create
-    // sheet — only one map-detail surface is meaningful at a time.
+    // popup, dismisses the region popup, and closes every other map overlay —
+    // only one map-detail surface is meaningful at a time.
     const mountDetailPopup = (lngLat, content) => {
       closeDetailPopup();
       dismissActivePopupSilently();
-      // Close the favourite create/placement sheet if it is open.
-      document.dispatchEvent(new CustomEvent('snowdesk:map-detail-opening'));
+      // SNOW-658: replaces the snowdesk:map-detail-opening dispatch, which
+      // only favourites.js listened for — so this popup opened over the
+      // report sheet, the downloads sheet and the layers menu alike.
+      window.pwaMapOverlays?.opening('map-detail-popup');
 
       const popup = new maplibregl.Popup({
         closeButton: true,
