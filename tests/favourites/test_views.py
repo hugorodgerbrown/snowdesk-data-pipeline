@@ -53,7 +53,8 @@ Covers:
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
-                        (null for a plain pin, SNOW-499); with the
+                        (null for a plain pin, SNOW-499) and created_at as
+                        ISO-8601 (SNOW-658); with the
                         weather_layer flag active, each feature also
                         carries a days property (SNOW-573) — absent when
                         the flag is inactive.
@@ -1629,6 +1630,23 @@ class TestFavouritesGeojson:
 
         data = response.json()
         assert data["features"][0]["properties"]["resort_id"] == resort.pk
+
+    def test_created_at_is_an_iso_timestamp(self, client: Client) -> None:
+        """Each feature carries the pin's save time as ISO-8601 (SNOW-658).
+
+        The map's pin popup renders it as a relative "saved" subheader, and
+        reads it off the feature so the popup still opens offline.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = _create_via_service(user)
+
+        response = client.get(GEOJSON_URL)
+
+        data = response.json()
+        created_at = data["features"][0]["properties"]["created_at"]
+        assert created_at == favourite.created_at.isoformat()
+        assert datetime.datetime.fromisoformat(created_at) == favourite.created_at
 
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""

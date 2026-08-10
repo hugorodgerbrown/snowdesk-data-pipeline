@@ -847,12 +847,17 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     """Return a FeatureCollection of the requesting user's own favourites.
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
-    (RFC 7946) and properties ``uuid``, ``name``, and ``resort_id`` (SNOW-499;
-    ``null`` for a plain dropped-pin favourite). ``resort_id`` lets the map
-    client hide a favourited resort from the public resorts layer — it
-    should render only as a favourite star, never as a plain dot as well.
-    Not ``@require_htmx`` — consumed by the map's saved-pins layer via a JS
-    ``fetch()`` call, not an HTMX swap.
+    (RFC 7946) and properties ``uuid``, ``name``, ``created_at`` and
+    ``resort_id`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
+    ``resort_id`` lets the map client hide a favourited resort from the
+    public resorts layer — it should render only as a favourite star, never
+    as a plain dot as well. Not ``@require_htmx`` — consumed by the map's
+    saved-pins layer via a JS ``fetch()`` call, not an HTMX swap.
+
+    SNOW-658: ``created_at`` is an ISO-8601 timestamp, and it is on the
+    feature rather than behind a per-pin fetch because the pin popup that
+    renders it as a relative "saved" line must open offline, from the
+    payload the map already holds.
 
     SNOW-573: when the ``weather_layer`` waffle flag is active, every
     feature also carries a ``days`` property — the same date-keyed shape
@@ -903,6 +908,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
         properties: dict[str, Any] = {
             "uuid": str(favourite.uuid),
             "name": favourite.name,
+            "created_at": favourite.created_at.isoformat(),
             "resort_id": favourite.resort_id,
         }
         if weather_layer_active:
