@@ -4,7 +4,7 @@
  *
  * The four bullets in the ticket are a state machine, not a pair of
  * booleans, and the one that is easy to get wrong is the restore: turning
- * "Show areas on the map" OFF must return Bulletins to whatever it was
+ * the downloaded-areas overlay OFF must return Bulletins to whatever it was
  * BEFORE, so a user who had already switched it off does not get it
  * switched back on for them. That falls out of never overwriting the
  * preference — which is exactly the property a test has to pin, because the

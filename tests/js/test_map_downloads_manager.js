@@ -111,7 +111,7 @@ function buildFixture() {
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
         <div>
-          <label for="map-downloads-overlay-toggle">Show areas on the map</label>
+          <label for="map-downloads-overlay-toggle">Display on the map</label>
           <label for="map-downloads-overlay-toggle">
             <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
           </label>
@@ -578,7 +578,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     ).toBe(true);
   });
 
-  it('the "Show areas on the map" toggle drives show()/hide() directly', async () => {
+  it('the "Display on the map" toggle drives show()/hide() directly', async () => {
     seed({});
     await loadModule();
     openSheet();

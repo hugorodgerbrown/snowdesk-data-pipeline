@@ -109,8 +109,8 @@ every scrubbed day. Separating them lets the borders stay up throughout, since
 they never interfere with anything, while the infill can yield to the
 downloaded-areas overlay — which paints translucent squares over the very same
 polygons and is unreadable on top of a coloured fill. **The fill and the
-downloads sheet's "Show areas on the map" can never both be on**, and the two
-controls mirror each other:
+downloads panel's own map switch ("Display on the map") can never both be
+on**, and the two controls mirror each other:
 [`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
 
 **The fill's strength is the user's choice, in five steps** — 0, 25%, 50%
@@ -307,9 +307,10 @@ published data**. Its sections say what their rows are:
 
 **Favourites and community reports are not in it.** Both are
 user-generated, and each already has a roundel of its own, so each toggle
-lives in the panel that roundel opens — "Show favourites on the map" and
-"Show community reports on the map" — alongside the list of what the user
-has saved and the control to add another. That is the pattern SNOW-634 set
+lives in the panel that roundel opens — as the footer switch labelled
+"Display on the map", the same wording on all three UGC panels (SNOW-658)
+— alongside the list of what the user has saved and the control to add
+another. That is the pattern SNOW-634 set
 for offline downloads, generalised: one subject, one way in. Their
 offline-status dots did not move with them; see
 [`offline-map.md`](offline-map.md).

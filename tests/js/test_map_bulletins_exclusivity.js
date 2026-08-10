@@ -5,7 +5,7 @@
  * `tests/js/test_layer_visibility_core.js` covers the state machine in
  * isolation. This file covers the wiring: that `map.js` actually paints what
  * the machine says, that both toggles mirror each other, and that the two
- * entry points — the layers-menu row and the sheet's "Show areas on the map"
+ * entry points — the layers-menu row and the downloads panel's "Display on the map"
  * switch, which are separate IIFEs talking over CustomEvents — cannot get
  * out of step.
  *
@@ -297,7 +297,7 @@ describe('the step control paints regions-fill', () => {
   });
 });
 
-describe('mutual exclusion with "Show areas on the map"', () => {
+describe('mutual exclusion with "Display on the map"', () => {
   it('switching the overlay ON hides the choropleth and drops the control to 0', async () => {
     clickStep(0.75);
 

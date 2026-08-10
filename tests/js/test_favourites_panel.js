@@ -55,7 +55,7 @@ document.body.innerHTML = `
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
       <button type="button" data-panel-add>Add a favourite</button>
-      <label for="map-favourites-overlay-toggle">Show favourites on the map</label>
+      <label for="map-favourites-overlay-toggle">Display on the map</label>
       <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>

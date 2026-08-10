@@ -946,7 +946,7 @@
   });
 
   // SNOW-656: the in-sheet switch is no longer the only thing that can turn
-  // the overlay off. Bulletins and "Show areas on the map" are mutually
+  // the overlay off. Bulletins and "Display on the map" are mutually
   // exclusive and the two controls MIRROR each other, so switching Bulletins
   // on from the layers menu switches the squares off — and a sheet that is
   // still open behind that menu has to show it, rather than sitting on a

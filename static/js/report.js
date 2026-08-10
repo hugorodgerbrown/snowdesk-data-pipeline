@@ -17,7 +17,7 @@
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
  * with its own delete wiring — offers [data-panel-add] to file another,
- * and carries the "Show community reports on the map" switch that used to
+ * and carries the "Display on the map" switch that used to
  * be a row in the layers menu (it drives window.pwaCommunityReportsOverlay
  * in map.js). This follows SNOW-634's downloads pattern: user-generated
  * data gets its own roundel, its own panel, and its panel owns the overlay

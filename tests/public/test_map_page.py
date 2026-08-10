@@ -551,8 +551,8 @@ def test_map_layer_menu_has_no_user_data_rows() -> None:
     gone from this menu — and so, deliberately, are their sync dots.
 
     Both are USER-GENERATED data with a roundel of their own, so each toggle
-    moved into the panel that roundel opens ("Show favourites on the map",
-    "Show community reports on the map"), driving
+    moved into the panel that roundel opens (its "Display on the map"
+    footer switch), driving
     ``window.pwaFavouritesOverlay`` / ``window.pwaCommunityReportsOverlay``.
     The dots did not move with them: a panel is not a cache-state dashboard,
     which is the same call SNOW-645 made for the downloaded-areas row.

@@ -841,7 +841,7 @@ permanently covered by the sheet showing them, on the platform that needs
 offline maps most. It settled on: opening the sheet still turns the
 overlay ON (`map_downloads_manager.js`'s `open()` calls
 `window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
-turns it off. A second toggle — a switch, "Show areas on the map" — now
+turns it off. A second toggle — a switch, "Display on the map" — now
 lives INSIDE the sheet, in its own panel above the row groups (see
 "Manage downloads" sheet below) and is the ONLY thing that ever calls
 `hide()`. This is a deliberately
@@ -1381,7 +1381,7 @@ basemap's template alone, and the row had no way to say that was why. The
 row is gone; opening the "Manage downloads" sheet now turns the overlay
 on (`window.pwaDownloadedOverlay.show()`, called from
 `map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
-turn it off — an in-sheet switch ("Show areas on the map") is the only
+turn it off — an in-sheet switch ("Display on the map") is the only
 thing that calls `hide()` (see "Manage downloads" sheet below for why: the
 sheet covers the whole screen on mobile, so binding visibility to "sheet
 open" made the overlay unreachable there). Session-scoped, never
@@ -1528,9 +1528,13 @@ subtitle underneath the title carries the basemap's own translated name
 ("Swisstopo (CH)", "Standard") when resolvable, dropped entirely when it
 isn't (a legacy record, or an unrecognised key) — colour is never the
 only signal, so the rule and the subtitle always agree on whether
-anything is claimed. Trailing: the size, then a "…" overflow trigger
-(`includes/_overflow_menu.html`) replacing the two inline Rename/Remove
-buttons every row used to carry.
+anything is claimed. Trailing: the size, then the row's actions —
+`includes/_map_downloads_row_actions.html`, a pencil (renameable rows only)
+and a trash, each a 44×44 icon control. SNOW-658 tried a "…" overflow menu
+here for a day; Hugo's "Map panels — common format" design has no ellipsis
+menu on any panel, and Remove is one tap in the same place on all three.
+Rename opens the row's own inline label editor (`static/js/inline_rename.js`,
+shared with the favourites panel) rather than a `window.prompt`.
 
 **Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
 (`manageRows` falls back to `id` only when there is no record — true only
@@ -1580,7 +1584,8 @@ screenshot).
 `input[type="checkbox" role="switch"]` drawn as a track+thumb with
 Tailwind's `peer` variant, no JS; see that partial's own docstring for why
 (there was no switch primitive in the design system before this). Its
-label — "Show areas on the map" — sits in its own `bg-tag` rounded panel,
+label — "Display on the map" since SNOW-658, one sentence for the same
+control on all three UGC panels — sits in its own `bg-tag` rounded panel,
 reading as a view control for the map BEHIND the sheet rather than a fact
 about what is stored, which is also why it leads the sheet ahead of the
 list it governs.
@@ -1618,16 +1623,16 @@ server (not `render_to_string`) — centre-of-label, edge-of-hitbox, and a
 second click to toggle back, plus a keyboard Space-on-focus check, and the
 `/_components/switch/` fixture panel — all toggle correctly.
 
-**The overflow menu.** `includes/_overflow_menu.html` + the delegated,
-instance-agnostic `static/js/overflow_menu.js` — see that partial's own
-docstring for the full contract (dismiss on outside click/Escape,
-keyboard-reachable, why it is delegated rather than per-instance-bound).
-`buildRow` rewrites the row template's placeholder `trigger_id`/`menu_id`
-to a per-row id (`_domSafeId(row.id)`-suffixed) once cloned, for
-`aria-controls` correctness with any number of rows on screen — the
-open/close logic itself never depends on the ids being unique. Menu
-contents: Rename (custom areas only — `buildRow` removes the whole `<li>`
-for a non-renameable row, not just the button) and Remove.
+**The row actions.** Two visible icon controls, not a menu (SNOW-658 —
+`includes/_overflow_menu.html` and `static/js/overflow_menu.js` survive with
+no callers, since retiring a primitive was not that ticket's call). Remove
+is a 44×44 trash, last in the row on every panel; Rename is a pencil before
+it, on a custom area only. `buildRow` strips the pencil, the hidden editor
+and the row's own `data-row-renameable` marker together for a row that
+cannot be renamed — a region's name is its real name, and an orphan has no
+record to write one onto — and interpolates each control's per-row
+aria-label ("Remove Custom area 1"), which a `<template>` cloned per row
+cannot carry from the server.
 
 **Basemap subtitle label.** The basemap name shown in a row's subtitle
 (when resolvable) is the same label the picker itself shows: `buildRow`
@@ -1877,8 +1882,8 @@ guarded out, so SNOW-532 removed it along with the hollow
 **Favourites and community reports are absent too, from SNOW-658.** Both had
 a row here with its own IndexedDB-backed dot (`kind: 'idb'` in
 `OVERLAY_RESOURCES`). SNOW-658 moved each overlay's toggle into the panel its
-own roundel opens — "Show favourites on the map", "Show community reports on
-the map" — so there is no row left to hang a dot on, and both entries were
+own roundel opens — the footer switch reading "Display on the map" on all
+three — so there is no row left to hang a dot on, and both entries were
 dropped from `OVERLAY_RESOURCES` rather than relocated. That follows the call
 SNOW-645 made for the downloaded-areas row: **a panel is not a cache-state
 dashboard**, and this menu's invariant is about the rows it lists.

@@ -21,7 +21,7 @@
  * (static/js/inline_rename.js, shared with the downloads panel) and posts
  * the committed name from below. The panel offers [data-panel-add] to
  * place another, and
- * carries the "Show favourites on the map" switch that used to be a row in
+ * carries the "Display on the map" switch that used to be a row in
  * the layers menu (it drives window.pwaFavouritesOverlay in map.js). This
  * follows SNOW-634's downloads pattern: user-generated data gets its own
  * roundel, its own panel, and its panel owns the overlay switch.

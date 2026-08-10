@@ -77,7 +77,8 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-656: the "Bulletins" row — regions-fill (the danger choropleth) and
   // bulletin-groupings-line. Unlike the micro-region geography these are
   // DATE-BOUND, and they are mutually exclusive with the downloads sheet's
-  // "Show areas on the map" (both paint the same polygons). This key stores
+  // the downloads panel's "Display on the map" (both paint the same
+  // polygons). This key stores
   // the user's PREFERENCE only; the exclusivity is a session-scoped
   // suppression on top of it — see static/js/layer_visibility_core.js.
   //

@@ -172,8 +172,8 @@ change the frozenset + document the property shape here.
 - **Community reports** (SNOW-419 — same `map.*` namespace):
   `map.community_reports.overlay_toggled` with `properties.visible`
   (SNOW-658: emitted by `window.pwaCommunityReportsOverlay`'s own
-  show/hide in `static/js/map.js`, driven by the "Show community reports
-  on the map" switch inside the field-observation panel — it was the
+  show/hide in `static/js/map.js`, driven by the "Display on the map"
+  switch at the foot of the field-observation panel — it was the
   basemap-menu overlay-toggle handler until that row was removed), and
   `map.community_reports.marker_tapped` with
   `properties.observation_type` (the `community-reports-point` layer's

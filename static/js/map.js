@@ -2791,7 +2791,7 @@
   //
   // Everything that can change what the choropleth and the bulletin boundary
   // are doing funnels through ``applyBulletinsVisibility``: the layers-menu
-  // row, the downloads sheet's "Show areas on the map" switch, resort-edit
+  // row, the downloads panel's "Display on the map" switch, resort-edit
   // mode, and every re-install after a basemap swap. Three independent
   // writers of one layer's visibility is how this drifts — before this
   // ticket there were already two (the picker's toggle loop and
@@ -3081,7 +3081,7 @@
   /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
-   * SNOW-656: the "Show areas on the map" switch inside the downloads sheet
+   * SNOW-656: the "Display on the map" switch inside the downloads sheet
    * is no longer the only thing that can change this — turning the Bulletins
    * row on from the layers menu switches the squares off, and the user has
    * to see the switch move rather than reopen the sheet to find out. The

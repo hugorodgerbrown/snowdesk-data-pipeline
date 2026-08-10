@@ -34,7 +34,7 @@
  * of what is currently effective, and — because Bulletins and the downloads
  * overlay are mutually exclusive — turning it on clears the downloads
  * suppression. `choose` owns that rule so both entry points (the layers
- * menu, and the sheet's "Show areas on the map" switch) inherit it.
+ * menu, and the downloads panel's "Display on the map" switch) inherit it.
  *
  * Lives here rather than in `map.js` for the usual reason: `map.js` is one
  * file of IIFEs that cannot be imported under jsdom, and the four-quadrant
@@ -62,7 +62,7 @@
    * The reasons something other than the user's own preference can hide the
    * Bulletins layers.
    *
-   * `DOWNLOADS` is the "Show areas on the map" exclusivity: the download
+   * `DOWNLOADS` is the downloaded-areas exclusivity: the download
    * squares are drawn over the same polygons the choropleth fills, and the
    * two together are unreadable. `EDIT_RESORTS` is the staff resort-edit
    * mode, which hid `regions-fill` directly before this module existed —

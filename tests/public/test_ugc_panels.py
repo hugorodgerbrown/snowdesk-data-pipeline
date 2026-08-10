@@ -19,6 +19,16 @@ The skeleton is derived, not transcribed: it is every class string the
 shared partial renders minus every class string its rows slot renders, so
 a legitimate change to the partial updates the expectation automatically
 and a change to ONE panel does not.
+
+Class-string containment cannot see everything, though, and Hugo's "Map
+panels — common format" design adds three parts whose whole value is in
+their CONTENT rather than their shape: the header icon (which roundel is
+this?), the context strip (where does this data live?) and the section
+label (what is this a list of?). A panel could render all three with the
+right classes and the wrong words — the wrong glyph, a strip that no
+longer says whether the contents leave the device — and be exactly as
+broken as one that hand-rolled its chrome. So those three are asserted
+per panel, by content, below the derived-skeleton checks.
 """
 
 from __future__ import annotations
@@ -30,11 +40,47 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
-# The three panel bodies, by the <template> id each surface renders them in.
-PANEL_TEMPLATE_IDS = (
-    "map-downloads-body-template",
-    "favourite-list-template",
-    "report-list-template",
+# The three panel bodies, by the <template> id each surface renders them
+# in, each with the glyph its own roundel carries — one distinctive path
+# from includes/_icon_*.html. The header icon is the panel's only identity
+# mark: it is what confirms which roundel was tapped, so a panel wearing
+# another panel's glyph (or none) is a real defect, not a cosmetic one.
+PANEL_ICONS = {
+    # The viewfinder's top-left bracket.
+    "map-downloads-body-template": "M3 7V5a2 2 0 0 1 2-2h2",
+    # The star's first two points.
+    "favourite-list-template": "12 2 15.09 8.26",
+    # The warning triangle's exclamation dot.
+    "report-list-template": "M12 17h.01",
+}
+
+PANEL_TEMPLATE_IDS = tuple(PANEL_ICONS)
+
+# The context strip — one line under each title saying where that panel's
+# data lives. Written out here rather than derived, because the POINT is
+# the sentence: a panel that stopped saying whether its contents leave the
+# device would still render a strip, and still pass a shape-only check.
+PANEL_CONTEXT_LINES = {
+    "map-downloads-body-template": "Downloads and budget stay on this device.",
+    "favourite-list-template": "Favourites are private and not shared.",
+    "report-list-template": "Reports are shared with the community.",
+}
+
+# The mono uppercase section label heading each panel's list. Downloads has
+# two, because it groups its rows by kind.
+PANEL_SECTION_LABELS = {
+    "map-downloads-body-template": ("Regions", "Custom areas"),
+    "favourite-list-template": ("Places",),
+    "report-list-template": ("Reports",),
+}
+
+# The overlay switch's label — ONE sentence for all three panels, fixed
+# inside the shared partial. These three are what it replaced.
+OVERLAY_TOGGLE_LABEL = "Display on the map"
+SUPERSEDED_TOGGLE_LABELS = (
+    "Show areas on the map",
+    "Show favourites on the map",
+    "Show community reports on the map",
 )
 
 # A rows slot that renders something, so the panel's scroll region is not
@@ -96,14 +142,35 @@ def skeleton_classes() -> set[str]:
         "includes/_ugc_panel.html",
         {
             "title": "Title",
+            "icon_template": "includes/_icon_favourite.html",
+            "context_line": "Where this panel's data lives.",
+            "section_label": "Things",
             "rows_template": DEMO_ROWS_TEMPLATE,
             "cta_label": "Add one",
             "toggle_id": "skeleton-toggle",
-            "toggle_label": "Show them on the map",
         },
     )
     rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
     return _class_strings(panel) - _class_strings(rows)
+
+
+@pytest.fixture(scope="module")
+def section_label_classes() -> str:
+    """Return the class string a panel's section label renders with.
+
+    Derived by rendering includes/_eyebrow.html exactly as the panels ask
+    for it, so a change to that primitive updates the expectation rather
+    than failing these tests.
+
+    Returns:
+        The label's class-attribute value.
+
+    """
+    label = render_to_string(
+        "includes/_eyebrow.html",
+        {"tag": "p", "text": "Things", "class_extra": "pb-1 font-medium"},
+    )
+    return next(iter(_class_strings(label)))
 
 
 @pytest.fixture()
@@ -142,23 +209,92 @@ class TestUgcPanelSkeleton:
         assert skeleton_classes <= present, skeleton_classes - present
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
-    def test_panel_runs_header_list_cta_switch_in_that_order(
+    def test_panel_runs_the_five_parts_in_that_order(
         self, home_html: str, template_id: str
     ) -> None:
-        """The four parts appear in the reading order the design sets.
+        """The five shell parts appear in the reading order the design sets.
 
-        Hugo's own instruction on the downloads sheet (SNOW-645 review) put
-        the overlay switch LAST, so the map behind the sheet is the last
-        thing read rather than the first — and the CTA above it, below the
-        list it adds to. Class-string containment alone would not catch a
-        panel that shipped those in a different order.
+        Header, context strip, list, add CTA, map toggle — and the toggle
+        LAST is Hugo's own instruction from the downloads sheet (SNOW-645
+        review), so the map behind the sheet is the last thing read rather
+        than the first. Class-string containment alone would not catch a
+        panel that shipped these in a different order.
         """
         body = _panel_body(home_html, template_id)
         header = body.index("text-lg font-semibold")
+        strip = body.index(PANEL_CONTEXT_LINES[template_id])
         scroll = body.index("overflow-y-auto")
         cta = body.index("data-panel-add")
         switch = body.index("rounded-tag bg-tag")
-        assert header < scroll < cta < switch
+        assert header < strip < scroll < cta < switch
+
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_panel_header_carries_its_own_roundels_glyph(
+        self, home_html: str, template_id: str
+    ) -> None:
+        """Each panel wears the icon of the roundel that opens it.
+
+        The design makes it the panel's ONLY identity mark — three panels
+        with the same chrome and no glyph are three panels a user cannot
+        tell apart once one is open. So each carries its own, and none
+        carries another's.
+        """
+        body = _panel_body(home_html, template_id)
+        assert PANEL_ICONS[template_id] in body
+        for other_id, path in PANEL_ICONS.items():
+            if other_id != template_id:
+                assert path not in body
+
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_panel_states_where_its_data_lives(
+        self, home_html: str, template_id: str
+    ) -> None:
+        """One line under the title, saying it in that panel's own words.
+
+        Asserted by CONTENT: the shape of the strip is chrome and is
+        covered by the derived skeleton above, but a strip that stopped
+        saying whether the contents leave the device would keep its
+        classes and lose its whole reason for being there.
+        """
+        body = _panel_body(home_html, template_id)
+        assert PANEL_CONTEXT_LINES[template_id] in body
+
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_panel_heads_its_list_with_a_mono_section_label(
+        self,
+        home_html: str,
+        section_label_classes: str,
+        template_id: str,
+    ) -> None:
+        """Every list sits under the shared mono uppercase label.
+
+        Downloads has two (it groups its rows by kind) and renders them
+        from inside its own rows template; the other two take the shared
+        partial's ``section_label``. Either way the label comes from
+        includes/_eyebrow.html, so all four are one shape.
+        """
+        body = _panel_body(home_html, template_id)
+        labels = PANEL_SECTION_LABELS[template_id]
+        assert body.count(section_label_classes) == len(labels)
+        for label in labels:
+            assert f">{label}<" in body
+
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_panel_labels_its_switch_the_same_way_as_the_others(
+        self, home_html: str, template_id: str
+    ) -> None:
+        """One sentence for one control, on all three panels.
+
+        "Show areas on the map" / "Show favourites on the map" / "Show
+        community reports on the map" were three sentences for the same
+        switch — the divergence this partial exists to end, in copy rather
+        than markup. The string is fixed inside the shared partial, so
+        there is nothing for a caller to restate.
+        """
+        body = _panel_body(home_html, template_id)
+        assert body.count(OVERLAY_TOGGLE_LABEL) == 1
+        for superseded in SUPERSEDED_TOGGLE_LABELS:
+            assert superseded not in home_html
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_has_exactly_one_add_cta(

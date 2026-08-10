@@ -1294,7 +1294,8 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Switch (SNOW-645) -----------------------------------------------------------
-# First use: the "Manage downloads" sheet's "Show areas on the map" control.
+# First use: the "Manage downloads" sheet's map-overlay control (labelled
+# "Display on the map" on every UGC panel since SNOW-658).
 # Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
 # states render correctly from the `checked` attribute alone.
 
