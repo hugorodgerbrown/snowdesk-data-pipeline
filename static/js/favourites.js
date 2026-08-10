@@ -206,7 +206,7 @@
   }
 
   /** Build the anonymous sign-in CTA — a prompt plus a link to the sign-in
-   * page. Built with createElement (matching buildDetailRow) rather than
+   * page. Built with createElement (matching buildDetailCard) rather than
    * innerHTML string concatenation: the same DOM-not-markup discipline the
    * rest of this module uses for anything URL/name-bearing.
    * @returns {HTMLDivElement}
