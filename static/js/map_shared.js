@@ -83,6 +83,15 @@ const formatRelativeTime = (isoString) => {
   return `${Math.round(diffMinutes / 60)} h ago`;
 };
 
+// SNOW-658: the favourite pin's popup carries the same relative-time
+// subheader as the observation pin's, and favourites.js builds it — but
+// that module is NOT part of the map bundle, so the bare identifier above
+// is not a contract it can rely on (its own load order sits in a surface
+// partial, not in home.html's bundle run). Publish the formatter on a named
+// channel instead, the way map_state.js publishes window.snowdeskMapState:
+// one greppable name, and no second implementation of "5 h ago".
+window.snowdeskMapFormat = Object.freeze({ relativeTime: formatRelativeTime });
+
 // Lazily-fetched, cached payload from /api/ratings/?country=ch. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
