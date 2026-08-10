@@ -41,9 +41,11 @@ Context expected:
 {# CTA to add another, and the map-overlay switch that used to be a row in  #}
 {# the layers menu. Cloned by favourites.js on every open (so a stale row   #}
 {# can never survive a re-open), which then loads the rows themselves over  #}
-{# HTMX from favourites:list — the SAME endpoint and the same partials the  #}
-{# manage page uses, so each row arrives with its rename/delete wiring       #}
-{# already attached and this file needs no copy of it.                       #}
+{# HTMX from favourites:list at ?variant=map — the same endpoint the manage #}
+{# page uses, but its own lean row (_favourite_row_map.html), so each row    #}
+{# arrives with its Remove form already wired and this file needs no copy of #}
+{# it. Rename is the one action that needs JS: it is a prompt-then-post in    #}
+{# favourites.js, driven by the row's own menu item.                          #}
 {#                                                                           #}
 {# Adding a pin is an action INSIDE the panel now ([data-panel-add]),        #}
 {# not the roundel's own click — the shape SNOW-634 set for downloads, and   #}
