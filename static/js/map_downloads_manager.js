@@ -19,7 +19,7 @@
  * while the roundel opened a DIFFERENT surface directly (the "Download a
  * custom area" framing overlay); SNOW-634 collapsed the two — that menu
  * row is gone, and "Download a custom area" moved INTO this sheet instead,
- * as the ``[data-downloads-add]`` trigger handled below.
+ * as the ``[data-panel-add]`` trigger handled below.
  *
  * ## What it reads and writes
  *
@@ -85,18 +85,26 @@
  * time). By the time a row reaches this module, ``row.label`` is already
  * the right text to show — stored name or numbered default, uniformly —
  * so this module needs no ``ordinal``-aware fallback of its own; it just
- * renders ``row.label``. The Rename control next to a renameable row's
- * own Remove uses ``window.prompt``, pre-filled with that same label,
- * matching the sheet's existing ``window.confirm`` for delete (itself
- * following ``pwa_reset.js``'s destructive-action idiom): no new markup,
- * no focus trap, no Escape handling — a richer inline editor is a
- * deliberate non-goal. The handler writes the trimmed result back onto
- * the area's record via ``window.pwaBasemapDownloads.rename(areaId,
- * name)`` (map.js's own bridge — see the bridges section below) and
- * re-renders. Only a ``renameable`` row (a custom area with a real record
- * behind it, per ``basemap_manage_core.js``'s ``manageRows``) ever shows
- * the control — a region's name is its real name, and an orphaned bucket
- * has no record entry left to write one onto.
+ * renders ``row.label``.
+ *
+ * SNOW-658 (Hugo's map-panel design): renaming happens IN PLACE on the
+ * row's label, opened by the row's PENCIL — the label itself was a second
+ * trigger for a day and is inert again (see static/js/inline_rename.js's
+ * ``rowFor``). The pencil reveals the editor the row template already
+ * rendered; ``window.pwaInlineRename`` owns the
+ * interaction — shared with the favourites panel, which renames the same
+ * way — and this module supplies only the commit:
+ * ``window.pwaBasemapDownloads.rename(areaId, name)`` (map.js's own
+ * bridge — see the bridges section below), then a re-render. The
+ * ``window.prompt`` this replaces was defended as "no new markup, no
+ * focus trap, no Escape handling"; the design's answer is that a modal
+ * browser dialogue covering the row it renames is not a saving.
+ *
+ * Only a ``renameable`` row (a custom area with a real record behind it,
+ * per ``basemap_manage_core.js``'s ``manageRows``) shows the pencil or
+ * carries the editor — a region's name is its real name, and an orphaned
+ * bucket has no record entry left to write one onto. ``buildRow`` strips
+ * both from every other row.
  *
  * ## Why it re-clones its body on every open
  *
@@ -112,7 +120,7 @@
  * Everything this sheet does to what is ALREADY stored — listing, sizing,
  * renaming, deleting — works offline, and must: storage pressure is felt
  * exactly when there is no connection to relieve it. Starting a NEW
- * download is the one thing that cannot, so ``[data-downloads-add]`` is
+ * download is the one thing that cannot, so ``[data-panel-add]`` is
  * disabled and relabelled while ``navigator.onLine`` is false, keeping the
  * control visible rather than hiding it (the treatment
  * map_layer_sync_status.js established for uncached rows offline).
@@ -131,8 +139,12 @@
  * exposes:
  *
  *   window.pwaDownloadedOverlay  (SNOW-645 review) ``show()``, ``hide()``
- *                                and ``isVisible()`` for the downloaded-
- *                                tiles map overlay. ``open()`` calls
+ *                                and ``isEnabled()`` for the downloaded-
+ *                                tiles map overlay (SNOW-658 review: its
+ *                                ``isVisible()`` answers from the drawn
+ *                                layers instead, which is the roundel
+ *                                ring's question, not this switch's).
+ *                                ``open()`` calls
  *                                ``show()`` unconditionally; the in-sheet
  *                                "Available offline" toggle's own change
  *                                handler is the ONLY thing that ever calls
@@ -157,17 +169,21 @@
  *                                reports that it can see nothing, which
  *                                is the truthful answer when the module
  *                                that owns the records hasn't loaded.
- *   window.pwaLayersMenu         ``close()``. Optional — without it the
- *                                menu is simply left open behind the
- *                                sheet (SNOW-634: the roundel that opens
- *                                this sheet lives outside that menu, but
- *                                the menu can still be open behind it —
- *                                e.g. a user who opened it, then clicked
- *                                the roundel without closing it first).
- *                                Mirroring its three DOM writes here would
- *                                be a duplicate free to drift.
+ *   window.pwaMapOverlays        ``register()`` + ``opening()`` (SNOW-658).
+ *                                This sheet used to close ONE named
+ *                                sibling on its way in
+ *                                (``window.pwaLayersMenu.close()``) and
+ *                                nothing else, and nothing closed it. It
+ *                                now registers with the shared map-overlay
+ *                                registry
+ *                                (static/js/map_overlay_exclusivity.js)
+ *                                and announces its own open, so it closes
+ *                                every other overlay and every other
+ *                                overlay closes it, without either naming
+ *                                the other. Optional — without it the
+ *                                overlays simply stop being exclusive.
  *   window.pwaCustomAreaDownload SNOW-634's third bridge: ``openFraming()``,
- *                                called by ``[data-downloads-add]`` below
+ *                                called by ``[data-panel-add]`` below
  *                                once this sheet has hidden itself. Optional
  *                                — without it the trigger is a dead click,
  *                                which is no worse than the sheet failing
@@ -225,22 +241,26 @@
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
     'remove-failed': "That download couldn't be removed. Try again.",
-    // SNOW-634: [data-downloads-add]'s offline refusal.
+    // SNOW-634: [data-panel-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
     // SNOW-637: the same refusal as the disabled trigger's own label — the
     // toast above is phrased as a reply to a tap, which reads wrong on a
     // control nobody has touched yet.
     'add-disabled': 'Downloading needs a connection',
-    // SNOW-635: the Rename control's own prompt/failure copy. The default
-    // "Custom area N" label itself lives in map.js's MAP_STRINGS
+    // SNOW-658: the rename PROMPT's copy is gone with the prompt — the
+    // inline editor's aria-label is server-rendered on the row itself.
+    // Only the failure line is still written from here. The default
+    // "Custom area N" label lives in map.js's MAP_STRINGS
     // (_map_embed.html), not here — see this module's "Renaming" header
     // note for why.
-    'rename-prompt': 'Name this area',
     'rename-failed': "That name couldn't be saved. Try again.",
-    // SNOW-645 review: the overflow trigger's per-row aria-label —
-    // includes/_overflow_menu.html's own default ("More actions") is
-    // ambiguous with many rows on screen at once.
-    'row-menu-label': 'More actions for %(name)s',
+    // SNOW-658: each row action names the row it acts on. "Rename" alone
+    // names nothing with a list of areas on screen — the same reason the
+    // "…" trigger this replaces carried a per-row label. The favourite and
+    // observation rows interpolate theirs in the template; a row cloned
+    // from a <template> has no name at render time, so it is done here.
+    'rename-row-label': 'Rename %(name)s',
+    'remove-row-label': 'Remove %(name)s',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -352,11 +372,11 @@
     // basemap is available offline, which one fewer pinned bucket can
     // change.
     window.pwaLayerSyncStatus?.refresh();
-    // SNOW-634: and the roundel that opens this sheet — a delete can take
-    // the device from "done" (something downloaded) back to "idle"
-    // (nothing left), and nothing else re-probes it once this sheet is
-    // the only surface that ever changes what is on disk here.
-    window.pwaCustomAreaDownload?.refresh();
+    // SNOW-658 removed a `window.pwaCustomAreaDownload?.refresh()` here.
+    // SNOW-634 added it so a delete could take the roundel that opens this
+    // sheet from "done" back to "idle"; that state is gone (the roundel
+    // says whether its overlay is on the map, not what is on disk), and
+    // this sheet's own re-render is what reports the delete.
     return true;
   }
 
@@ -426,11 +446,16 @@
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
 
-    // SNOW-645 review: reflects the overlay's REAL visibility —
-    // window.pwaDownloadedOverlay.isVisible() — rather than a flag of its
-    // own that could drift from it. open() calls show() before this runs
-    // (see its own comment), so a freshly opened sheet always paints this
-    // already checked.
+    // SNOW-645 review: reflects the overlay's REAL state —
+    // window.pwaDownloadedOverlay — rather than a flag of its own that could
+    // drift from it.
+    //
+    // SNOW-658 review: isEnabled(), the session's inspection-mode flag that
+    // show()/hide() write — NOT isVisible(), which now answers from the
+    // squares MapLibre is drawing. Same split as the other two panels' own
+    // switches: this states what the user asked for. The two only diverge
+    // while something else has cleared the map (a placement flow), and this
+    // sheet is not open then.
     //
     // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
     // includes/_switch.html dropped its extra_attrs passthrough (a live
@@ -441,7 +466,7 @@
       sheet.querySelector('#map-downloads-overlay-toggle')
     );
     if (overlayToggle) {
-      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
+      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isEnabled?.();
     }
 
     // SNOW-645 review: the budget figure itself is no longer stated in
@@ -553,7 +578,7 @@
     // offline branch needs writing for the same reason: the next render
     // starts from a pristine clone, so coming back online restores the
     // enabled control and its original label without an else.
-    const addButton = sheet.querySelector('[data-downloads-add]');
+    const addButton = sheet.querySelector('[data-panel-add]');
     if (addButton && !navigator.onLine) {
       addButton.setAttribute('disabled', '');
       // Alongside the native property, not instead of it: `disabled` is
@@ -562,19 +587,6 @@
       addButton.setAttribute('aria-disabled', 'true');
       addButton.textContent = STRINGS['add-disabled'] || '';
     }
-  }
-
-  /**
-   * A DOM-id-safe version of an area id, for the per-row overflow-menu
-   * trigger/menu id pair below — an area id (``region-<regionId>`` /
-   * ``custom-<uuid>``) is already id-safe in practice, but this is
-   * defensive rather than assumed.
-   *
-   * @param {string} areaId
-   * @returns {string}
-   */
-  function _domSafeId(areaId) {
-    return String(areaId).replace(/[^A-Za-z0-9_-]/g, '-');
   }
 
   /**
@@ -633,7 +645,7 @@
     // subtitle line rather than showing an unknown basemap — colour is
     // never the only signal, so the rule below and this line always agree
     // on whether anything is claimed.
-    const subtitle = fragment.querySelector('[data-row-subtitle]');
+    const subtitle = fragment.querySelector('[data-row-meta]');
     if (subtitle) {
       if (row.orphaned) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
@@ -693,34 +705,13 @@
     // SNOW-645 review: dims to `text-text-3` for an orphan (the template's
     // own default is `text-text-2`) — see the title's own comment above
     // for why the whole row dims together, not just the rule.
-    const size = fragment.querySelector('[data-row-size]');
+    const size = fragment.querySelector('[data-row-value]');
     if (size) {
       size.textContent = row.size;
       if (row.orphaned) {
         size.classList.remove('text-text-2');
         size.classList.add('text-text-3');
       }
-    }
-
-    // SNOW-645 review: the "…" overflow menu replaces the two inline
-    // Rename/Remove buttons. trigger_id/menu_id are placeholders in the
-    // template (see its own comment) — rewritten here to a per-row id so
-    // aria-controls resolves correctly with any number of rows on screen;
-    // overflow_menu.js's own open/close logic never depends on this
-    // (DOM-traversal-scoped, not id-scoped).
-    const suffix = _domSafeId(row.id);
-    const trigger = fragment.querySelector('[data-overflow-trigger]');
-    const menu = fragment.querySelector('[role="menu"]');
-    if (trigger && menu) {
-      const triggerId = 'downloads-row-overflow-trigger-' + suffix;
-      const menuId = 'downloads-row-overflow-menu-' + suffix;
-      trigger.id = triggerId;
-      menu.id = menuId;
-      trigger.setAttribute('aria-controls', menuId);
-      trigger.setAttribute(
-        'aria-label',
-        interpolate(STRINGS['row-menu-label'], { name: row.label }),
-      );
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
@@ -730,26 +721,49 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
+      // SNOW-658: and the control names the row it acts on. A server-
+      // rendered panel interpolates this in its own template; a row cloned
+      // from a <template> has no name until here.
+      button.setAttribute(
+        'aria-label',
+        interpolate(STRINGS['remove-row-label'], { name: row.label }),
+      );
     }
 
     // SNOW-635: only a renameable row (a custom area with a real record
-    // behind it — see manageRows's own docstring) shows the control. A
-    // region's name is its real name, and an orphaned bucket has no
-    // record entry left to write one onto. Removes the whole <li> — the
-    // menu item's wrapper (SNOW-645 review: was just the standalone
-    // button) — not just the button, so no empty row is left in the menu.
+    // behind it — see manageRows's own docstring) can be renamed. A
+    // region's name is its real name, and an orphaned bucket has no record
+    // entry left to write one onto.
+    //
+    // SNOW-658: what that gates is now the whole inline-edit affordance,
+    // not just a button — the pencil, the row's own `data-row-renameable`
+    // marker (which is what static/js/inline_rename.js recognises) and the
+    // hidden editor. The template renders all three unconditionally,
+    // because one <template> serves both kinds of row; a row that cannot
+    // be renamed sheds them here.
+    //
+    // The label is no longer in that list. It used to carry a
+    // `cursor-text` + hover-border pair stripped on this branch, because
+    // clicking it opened the editor; Hugo's "we have inline editing & the
+    // pencil - choose one" left the pencil as the only trigger, so the
+    // label now looks and behaves the same on every row of every panel and
+    // there is nothing here to take off it.
     const renameBtn = fragment.querySelector('[data-downloads-rename]');
-    if (renameBtn) {
-      if (row.renameable) {
+    const editor = fragment.querySelector('[data-row-rename-input]');
+    const item = fragment.querySelector('li');
+    if (row.renameable) {
+      if (item) item.setAttribute('data-row-renameable', '');
+      if (renameBtn) {
         renameBtn.setAttribute('data-downloads-rename', row.id);
-        // Pre-fills window.prompt with whatever is currently showing, so
-        // accepting it unchanged is a no-op rather than blanking the name.
-        renameBtn.setAttribute('data-downloads-current-name', row.label);
-      } else {
-        const item = renameBtn.closest('li');
-        if (item) item.remove();
-        else renameBtn.remove();
+        renameBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['rename-row-label'], { name: row.label }),
+        );
       }
+      if (editor) editor.value = row.label;
+    } else {
+      if (renameBtn) renameBtn.remove();
+      if (editor) editor.remove();
     }
     return fragment;
   }
@@ -780,17 +794,57 @@
     // and window.pwaDownloadedOverlay's comment in map.js for why visibility
     // is bound to the switch rather than to the sheet's lifecycle).
     //
-    // render() reads window.pwaDownloadedOverlay.isVisible() to paint the
+    // render() reads window.pwaDownloadedOverlay.isEnabled() to paint the
     // switch, so it now shows the overlay's real state on every open rather
     // than a state this function just imposed.
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before this sheet is unhidden, so whatever it replaces — the layers
+    // menu, one of the two other panels, an anchored detail popup — is gone
+    // by the time this one is on screen. It replaces the single hand-wired
+    // ``window.pwaLayersMenu?.close()`` this function used to make, which
+    // covered the one sibling it happened to know about.
+    window.pwaMapOverlays?.opening(SHEET_ID);
     await render();
     sheet.hidden = false;
-    // SNOW-634: the roundel (#map-custom-download-control) is the only way
-    // in now, but the layers menu can still be open behind it — a user who
-    // opened the menu, then clicked the roundel without closing it first —
-    // and leaving it open would cover the sheet that just opened.
-    window.pwaLayersMenu?.close();
+    // SNOW-658: inset the sheet past the scrubber and the roundel column on
+    // desktop — the same call MapSheet.attach()'s own open() makes for the
+    // other two UGC sheets. This module does not go through that controller
+    // (it owns `sheet.hidden` itself), so it makes the call directly.
+    window.pwaOverlayBounds?.positionSheet(sheet);
     sheet.focus();
+  }
+
+  /**
+   * Close the sheet.
+   *
+   * The half of the registry's contract this module has to state itself:
+   * every other overlay reaches it through
+   * ``window.pwaMapOverlays``. Hiding directly, matching ``open()``'s own
+   * ``sheet.hidden = false`` — the body is re-cloned on the next open, so
+   * there is no teardown to run.
+   *
+   * @returns {void}
+   */
+  function close() {
+    sheet.hidden = true;
+  }
+
+  /**
+   * Open the sheet, or close it when it is already open (SNOW-658).
+   *
+   * What ``#map-custom-download-control`` calls. A roundel that opens a
+   * surface closes it on the second tap — the layers pill has always
+   * behaved that way, and Hugo's report is that the three panels should
+   * behave alike.
+   *
+   * @returns {Promise<void>}
+   */
+  async function toggle() {
+    if (!sheet.hidden) {
+      close();
+      return;
+    }
+    await open();
   }
 
   // Delegated on the sheet: cloned along with the body template on every
@@ -812,7 +866,7 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    const addButton = target.closest('[data-downloads-add]');
+    const addButton = target.closest('[data-panel-add]');
     if (addButton) {
       if (!navigator.onLine) {
         window.MapSheet.toast(STRINGS['add-offline']);
@@ -831,42 +885,40 @@
   });
 
   /**
-   * The Rename-button half of the sheet's delegated click handler
-   * (SNOW-635), factored out so the listener above can dispatch to it
-   * after ruling out the add-trigger.
+   * The rename half of the sheet's delegated click handler (SNOW-635;
+   * rebuilt on Hugo's design by SNOW-658), factored out so the listener
+   * above can dispatch to it after ruling out the add-trigger.
+   *
+   * The row's pencil opens its own inline editor.
+   * window.pwaInlineRename owns that interaction — shared with the
+   * favourites panel — and calls back once with a name worth writing:
+   * Escape, an unchanged name and an emptied field never reach here.
    *
    * @param {MouseEvent} event
-   * @returns {boolean} Whether a rename button was the click's target —
-   *   tells the caller not to also try the delete handler.
+   * @returns {boolean} Whether this click was a rename — tells the caller
+   *   not to also try the delete handler.
    */
   function _handleRenameClick(event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (!target || !target.closest) return false;
-    const button = target.closest('[data-downloads-rename]');
-    if (!button) return false;
+    const row = window.pwaInlineRename?.rowFor(event.target);
+    if (!row) return false;
 
-    const areaId = button.getAttribute('data-downloads-rename');
-    if (!areaId) return true;
+    const button = row.querySelector('[data-downloads-rename]');
+    const areaId = button ? button.getAttribute('data-downloads-rename') : '';
+    if (!areaId || !window.pwaBasemapDownloads) return true;
 
-    // window.prompt, matching the sheet's own window.confirm for delete —
-    // see this module's "Renaming" header note for why no richer editor.
-    if (typeof window.prompt !== 'function') return true;
-    const current = button.getAttribute('data-downloads-current-name') || '';
-    const next = window.prompt(STRINGS['rename-prompt'], current);
-    // null means Cancel; an unchanged or blank result is treated the same
-    // way — nothing to write, so no write is made.
-    if (next === null) return true;
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === current) return true;
-
-    if (!window.pwaBasemapDownloads) return true;
-    window.pwaBasemapDownloads.rename(areaId, trimmed).then(function (ok) {
-      if (ok) {
-        render();
-        return;
-      }
-      button.textContent = STRINGS['rename-failed'] || '';
-      button.setAttribute('disabled', '');
+    window.pwaInlineRename.begin(row, function (name) {
+      window.pwaBasemapDownloads.rename(areaId, name).then(function (ok) {
+        if (ok) {
+          render();
+          return;
+        }
+        // The name did not land, so it is not shown: the editor has
+        // already closed and the label still reads what the record says.
+        // A toast rather than text written onto the failing control — the
+        // shape delete uses — because that control is now a glyph, and
+        // there is nowhere on it for a sentence to go.
+        window.MapSheet?.toast(STRINGS['rename-failed']);
+      });
     });
     return true;
   }
@@ -950,7 +1002,7 @@
   });
 
   // SNOW-656: the in-sheet switch is no longer the only thing that can turn
-  // the overlay off. Bulletins and "Show areas on the map" are mutually
+  // the overlay off. Bulletins and "Display on the map" are mutually
   // exclusive and the two controls MIRROR each other, so switching Bulletins
   // on from the layers menu switches the squares off — and a sheet that is
   // still open behind that menu has to show it, rather than sitting on a
@@ -984,8 +1036,19 @@
     render();
   });
 
+  // SNOW-658: one open map overlay at a time. Registered here rather than
+  // through MapSheet.attach (this sheet does not use that controller — it
+  // owns `sheet.hidden` itself), but the contract is identical.
+  window.pwaMapOverlays?.register(SHEET_ID, {
+    isOpen: function () {
+      return !sheet.hidden;
+    },
+    close: close,
+  });
+
   window.pwaDownloadsManager = Object.freeze({
     open: open,
+    toggle: toggle,
     refresh: render,
   });
 })();

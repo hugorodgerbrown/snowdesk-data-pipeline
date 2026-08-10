@@ -1,0 +1,32 @@
+{% comment %}
+templates/includes/_icon_trash.html — the remove glyph: a waste bin
+(SNOW-658).
+
+One source for one mark. Remove is the one action every UGC panel row has,
+so this glyph is rendered by all three panels' row-action templates
+(downloads, favourites, field observations) and is always the LAST control
+in the row — the design's rule, so a reader's thumb finds the destructive
+control in the same place on every list.
+
+Stroke width 2, matching every other glyph in this codebase, rather than
+the design source's 1.8 — see includes/_icon_pencil.html's own note.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M4 7h16M10 4h4M6.5 7l.9 12.1h9.2L17.5 7M10.5 10.5v6M13.5 10.5v6" />
+</svg>

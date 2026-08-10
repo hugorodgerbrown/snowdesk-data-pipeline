@@ -42,6 +42,7 @@ from apps.public._component_fixtures import (
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORECAST_PANEL_VARIANTS,
+    MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -66,6 +67,8 @@ from apps.public._component_fixtures import (
     TENDENCY_OUTLOOK_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
+    UGC_PANEL_ROW_VARIANTS,
+    UGC_PANEL_VARIANTS,
     WEATHER_HEADER_VARIANTS,
     WEATHER_PANEL_VARIANTS,
 )
@@ -1151,7 +1154,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "a 44×44 tap target and the title an optional title_class "
             "override in SNOW-645 review). The × carries the close_action "
             "value as its data-action attribute, so it triggers the owning "
-            "sheet's existing delegated close listener."
+            "sheet's existing delegated close listener. SNOW-658 adds an "
+            "optional icon_template: the three UGC panels put the glyph of "
+            "the roundel that opens them before the title, as the panel's "
+            "one identity mark."
         ),
         kind="components",
         partial="includes/_sheet_header.html",
@@ -1174,17 +1180,72 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="map-overlay-toggle",
+        label="Map overlay toggle",
+        description=(
+            "The 'Show X on the map' footer panel shared by the three map "
+            "sheets (SNOW-658) — a label plus includes/_switch.html in a "
+            "bg-tag box. A view control for the map BEHIND the sheet, not a "
+            "row in the list the sheet is about; the owning JS module binds "
+            "the switch by id and drives the matching window.pwa*Overlay "
+            "bridge in static/js/map.js."
+        ),
+        kind="components",
+        partial="includes/_map_overlay_toggle.html",
+        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel",
+        label="UGC panel",
+        description=(
+            "The skeleton shared by the three map panels that manage a "
+            "user's own data (SNOW-658) — downloads, favourites, field "
+            "observations. Five parts, always in this order: header (the "
+            "opening roundel's icon plus the title, at one size for all "
+            "three), context strip (one line saying where the data lives), "
+            "list (mono uppercase section label, then hairline-separated "
+            "rows — never cards), one add-CTA, and the 'Display on the "
+            "map' switch at the foot. The icon, rows and header-extra slots "
+            "take template paths, since Django has no slot mechanism."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel.html",
+        variants=UGC_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel-row",
+        label="UGC panel row",
+        description=(
+            "One row inside a UGC panel's list (SNOW-658). Five slots in a "
+            "fixed order: an optional semantic rule, the label, a muted "
+            "meta line, an optional mono value (measured quantities only), "
+            "and right-aligned icon actions with the trash always last. "
+            "Rows are not cards — a hairline separates them and nothing "
+            "boxes them. A renameable row edits its label in place. Serves "
+            "both a server-side loop and a JS-cloned <template>."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel_row.html",
+        variants=UGC_PANEL_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="overflow-menu",
         label="Overflow menu",
         description=(
             "Reusable ellipsis kebab overflow menu (SNOW-645) — a trigger "
             "button opening a role=menu popover, dismissed on outside "
             "click or Escape by the delegated, instance-agnostic "
-            "static/js/overflow_menu.js. First use: the Manage downloads "
-            "sheet's per-row Rename/Remove actions, replacing two inline "
-            "buttons. The Open variants below are rendered pre-expanded "
-            "(this page loads no interaction JS) so the menu contents are "
-            "visible without a click."
+            "static/js/overflow_menu.js. The Open variants below are "
+            "rendered pre-expanded (this page loads no interaction JS) so "
+            "the menu contents are visible without a click. NO CURRENT "
+            "CALLERS: its one use was the UGC panel rows' Rename/Remove, "
+            "and SNOW-658 replaced that with visible icon controls on "
+            'Hugo\'s design ("no ellipsis menu"). Kept as a primitive '
+            "rather than deleted — the decision to retire it is not this "
+            "ticket's to take."
         ),
         kind="components",
         partial="includes/_overflow_menu.html",

@@ -13,7 +13,10 @@ before the queued mutation has replayed.
 Context:
     region : MicroRegion | None — the matched region (may be None).
 {% endcomment %}
-<div class="flex flex-col items-center gap-4 py-4 text-center">
+{# SNOW-658: `min-h-0 flex-1 overflow-y-auto` — the report sheet is    #}
+{# scroll_body=True now, so every body rendered into it owns its own   #}
+{# scroll region rather than overflowing the bounded sheet.            #}
+<div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
     <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
     <p class="text-base font-medium text-text-1">{% trans "Thank you for your report!" %}</p>
     {% if region %}

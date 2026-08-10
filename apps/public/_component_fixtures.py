@@ -1294,7 +1294,8 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Switch (SNOW-645) -----------------------------------------------------------
-# First use: the "Manage downloads" sheet's "Show areas on the map" control.
+# First use: the "Manage downloads" sheet's map-overlay control (labelled
+# "Display on the map" on every UGC panel since SNOW-658).
 # Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
 # states render correctly from the `checked` attribute alone.
 
@@ -1317,6 +1318,36 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "id": "component-library-switch-disabled",
             "disabled": True,
+        },
+    },
+)
+
+
+# Map overlay toggle (SNOW-658) ------------------------------------------------
+# The "Show X on the map" footer panel shared by the three map sheets
+# (downloads, favourites, field observations). Pure markup — the owning JS
+# module binds the switch by id, and none of that JS runs on this page, so
+# both variants render exactly as a sheet paints them on open.
+
+MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        # SNOW-658: one string on all three panels now — "Show areas on
+        # the map" / "Show favourites on the map" / "Show community
+        # reports on the map" were three sentences for one control, and
+        # includes/_ugc_panel.html fixes the replacement rather than
+        # passing it in. The partial keeps its `label` parameter: it is a
+        # generic control, and this page is where its shape is reviewed.
+        "caption": "As every UGC panel renders it",
+        "context": {
+            "id": "component-library-map-overlay-toggle-downloads",
+            "label": "Display on the map",
+        },
+    },
+    {
+        "caption": "A longer label, to check the switch holds its size",
+        "context": {
+            "id": "component-library-map-overlay-toggle-favourites",
+            "label": "Display the community's field observations on the map",
         },
     },
 )
@@ -1364,6 +1395,87 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
                 {"label": "Remove"},
             ],
             "open": True,
+        },
+    },
+)
+
+
+# UGC panel + row (SNOW-658) ---------------------------------------------------
+# The skeleton and row shape shared by the three map panels that manage a
+# user's own data — downloads, favourites, field observations. Hugo's "Map
+# panels — common format" design: five shell parts in a fixed order, one
+# row anatomy of five slots.
+#
+# `rows_template`, `icon_template` and `actions_template` all take a
+# template PATH because Django has no slot mechanism (see
+# includes/_ugc_panel.html's own header). The library hands the panel a
+# demo template rendering two static rows — every real caller's list
+# either loads over HTMX or is filled by JS, and this page runs neither.
+#
+# There is no `toggle_label`: the footer switch reads "Display on the map"
+# on all three panels, so the shared partial owns the string.
+
+UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Favourites panel (no header extra)",
+        "context": {
+            "title": "Favourites",
+            "icon_template": "includes/_icon_favourite.html",
+            "context_line": "Favourites are private and not shared.",
+            "section_label": "Places",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            "cta_label": "Add a favourite",
+            "toggle_id": "component-library-ugc-panel-toggle-favourites",
+        },
+    },
+    {
+        "caption": "Downloads panel (budget block in the header slot)",
+        "context": {
+            "title": "Downloads on this device",
+            "icon_template": "includes/_icon_downloads.html",
+            "context_line": "Downloads and budget stay on this device.",
+            # No section_label: this panel groups its rows under two
+            # headings of its own, rendered from its rows template.
+            "header_template": "public/partials/_map_downloads_header.html",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            "cta_label": "Download a custom area",
+            "toggle_id": "component-library-ugc-panel-toggle-downloads",
+        },
+    },
+)
+
+
+UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        # Every variant here takes the downloads panel's actions template,
+        # which is the only one that renders without a model instance in
+        # context. It is also the fullest: a pencil and a trash. A panel
+        # with one action renders the same row minus the pencil.
+        "caption": "Plain row — label, meta line, actions",
+        "context": {
+            "label": "Arolla ridge",
+            "meta": "Val d'Hérens",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        "caption": "Renameable row — the label itself is the edit target",
+        "context": {
+            "label": "Cabane des Dix",
+            "meta": "Val des Dix",
+            "renameable": True,
+            "rename_label": "Favourite name",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        "caption": "Downloads row — colour rule and trailing measured value",
+        "context": {
+            "label": "Verbier",
+            "meta": "Snowdesk Terrain",
+            "value": "18.2 MB",
+            "rule": True,
+            "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },
 )

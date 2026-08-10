@@ -1,0 +1,34 @@
+{% comment %}
+templates/includes/_icon_pencil.html — the rename glyph: a pencil
+(SNOW-658).
+
+One source for one mark, the same reason the three roundel glyphs beside
+it are partials. Its callers are the row actions of the two UGC panels
+whose rows can be renamed — a favourite (favourites/partials/
+_favourite_row_map_actions.html) and a downloaded custom area
+(includes/_map_downloads_row_actions.html). Both open the SAME interaction:
+the row's own label turns into an inline edit (static/js/inline_rename.js).
+
+Stroke width 2, matching every other glyph in this codebase, rather than
+the design source's 1.8 — one idiom for every icon is worth more than a
+0.2px difference nobody can see at 17px.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3" />
+</svg>

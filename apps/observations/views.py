@@ -1,13 +1,21 @@
 """
 apps/observations/views.py — HTMX endpoints for the field-report feature.
 
-Provides two HTMX-only fragment views used by the floating Report button on
-the map page (SNOW-324):
+Provides the HTMX-only fragment views behind the floating Report roundel on
+the map page (SNOW-324; the list/delete pair added by SNOW-658, when that
+roundel started opening a panel of the user's own reports rather than the
+location flow directly):
 
 - ``report_form`` (GET)   — reads optional GPS fix and location_source from
   query params, resolves the point to a MicroRegion when coords are present,
   returns the one-tap problem-selection form.  No coords are required: when
   absent the form renders in "choose on map" state (MANUAL path).
+- ``observation_list`` (GET) — the requesting user's own reports, newest
+  first, rendered as the row list inside the map's field-observation panel
+  (SNOW-658).
+- ``observation_delete`` (POST) — deletes one of the requesting user's own
+  reports and returns an empty body, so the row's ``hx-swap="outerHTML"``
+  removes it.
 - ``report_submit`` (POST) — validates lat/lon, location_source, and
   observation_type; creates a FieldObservation row; returns the thank-you
   confirmation fragment.  Also accepts an optional client-supplied
@@ -18,7 +26,7 @@ the map page (SNOW-324):
   Validated for shape and plausibility (see ``_parse_observed_at``); falls
   back to the model's ``timezone.now`` default when absent.
 
-Both endpoints are:
+Every endpoint here is:
   - authentication-gated (403 for anonymous users);
   - verification-gated (403 unless the user has a verified ``Account``,
     SNOW-430);
@@ -33,14 +41,15 @@ from __future__ import annotations
 import datetime
 import logging
 from typing import cast
+from uuid import UUID
 
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.accounts.models import user_is_verified
@@ -359,3 +368,73 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         "observations/partials/_report_confirmation.html",
         {"region": region},
     )
+
+
+@require_htmx
+@require_GET
+def observation_list(request: HttpRequest) -> HttpResponse:
+    """Return the requesting user's own field observations as a row list.
+
+    Powers the map's field-observation panel (SNOW-658), which lazy-loads this
+    endpoint into ``[data-report-rows]`` when the roundel is tapped.  Scoped to
+    the requesting user by ``for_user`` — a report is a personal record here,
+    not the anonymised community overlay (that is
+    ``apps.public.api.community_reports_geojson``).
+
+    Ordering is the model's own ``-observed_at``, so the most recent report
+    leads the list.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_observation_list.html`` partial, or an error response.
+
+    """
+    gate = _auth_gate(request)
+    if gate is not None:
+        return gate
+
+    # _auth_gate above guarantees an authenticated User; cast narrows for mypy
+    # (the same idiom report_submit uses).
+    observations = FieldObservation.objects.for_user(
+        cast(User, request.user)
+    ).select_related("region")
+    return render(
+        request,
+        "observations/partials/_observation_list.html",
+        {"observations": observations},
+    )
+
+
+@require_htmx
+@require_POST
+def observation_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Delete one of the requesting user's own field observations.
+
+    Returns an empty 200 so the row's own ``hx-swap="outerHTML"`` removes it
+    from the list — the same shape ``apps.favourites.views.favourite_delete``
+    uses, so the two lists behave identically.
+
+    The lookup is scoped to the requesting user, so another user's uuid is a
+    404 rather than a deletion: ownership is enforced by the query, not by
+    trusting the id in the URL.
+
+    Args:
+        request: The incoming HTMX POST request.
+        uuid: The observation's uuid.
+
+    Returns:
+        An empty 200, or an error response.
+
+    """
+    gate = _auth_gate(request)
+    if gate is not None:
+        return gate
+
+    observation = get_object_or_404(
+        FieldObservation, uuid=uuid, user=cast(User, request.user)
+    )
+    observation.delete()
+    logger.info("FieldObservation deleted: user=%s uuid=%s", request.user.pk, uuid)
+    return HttpResponse("")

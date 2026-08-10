@@ -1,0 +1,159 @@
+{% comment %}
+templates/includes/_ugc_panel_row.html — one row inside a
+includes/_ugc_panel.html list (SNOW-658).
+
+Hugo's "Map panels — common format" design gives every UGC panel's rows
+one anatomy, five slots, always in this order:
+
+  rule    an optional 3px bar, SEMANTIC only. Downloads keeps it (it
+          carries the basemap the download derives from); favourites and
+          observations have no equivalent, so they omit the slot
+          entirely rather than render it empty.
+  label   15px/500, truncates.
+  meta    13px muted, optional — region · date · location.
+  value   mono, optional, right-aligned, ONLY for a measured quantity
+          (downloads' size). The other two panels have none: a date is
+          not a measurement, and putting one here would make the column
+          mean two different things on two panels.
+  action  right-aligned icon controls, TRASH ALWAYS LAST. Remove is the
+          only action every panel has; favourites and a renameable
+          download add a pencil before it.
+
+Rows are not cards. There are no boxes inside a panel — each row draws a
+hairline (`border-t`) and nothing else, so a list reads as a list.
+
+WHAT REPLACED WHAT (this partial's first pass, earlier the same day, put
+every action in a "…" overflow menu and made the primary line a link to a
+detail page). Hugo's design removes both:
+
+  * no ellipsis menu. Remove is a visible trash control in the same place
+    on every row — one tap, not two, and the same shape on all three
+    panels;
+  * no inline "Remove" text button and no "Details →" link. A favourite's
+    detail page is reached by tapping its pin on the map, which is where
+    the user already is;
+  * rename happens IN PLACE on the label, not behind a window.prompt.
+    The pencil turns the label into an inline edit; Enter or blur
+    commits, Escape cancels, and a trimmed empty input leaves the title
+    unchanged (static/js/inline_rename.js owns that state machine, and
+    both panels that can rename share it). The label itself opened the
+    editor too for a day — see the note on the label below for why the
+    pencil is the one that stayed.
+
+Serving both render paths. Downloads builds its rows in JS
+(map_downloads_manager.js's `buildRow` clones this markup out of a
+server-rendered `<template>` and fills `[data-row-label]`,
+`[data-row-meta]`, `[data-row-rule]` and `[data-row-value]`); favourites
+and observations render theirs from a server-side loop, filling the same
+hooks directly. `js_filled` is what reconciles the two: a server row omits
+an element it has no text for, while a JS-filled row needs every hook
+present and empty for `buildRow` to find.
+
+Parameters (passed via {% include … with … %}):
+  label         (string) — the primary line's text. Empty for a
+                JS-filled row.
+  label_testid  (string, optional) — `data-testid` on the primary line,
+                for a server-rendered row a pytest asserts on.
+  meta          (string, optional) — the muted secondary line.
+  value         (string, optional) — trailing mono figure (downloads'
+                size). Measured quantities only.
+  rule          (bool, optional) — render the coloured vertical rule
+                down the left edge. Downloads only: it carries the
+                basemap identity colour (`.basemap-identity-fill` +
+                `data-basemap-key`, painted by buildRow). The other two
+                panels have no such per-row identity, and the shared
+                class's own keyless fallback is the "downloaded,
+                basemap unknown" green — a claim neither of them can
+                make.
+  renameable    (bool, optional) — render the inline-rename affordance: a
+                hidden `[data-row-rename-input]` beside the label, for
+                inline_rename.js to reveal, and `data-row-renameable` on
+                the row so it can find the pair. The owning module
+                supplies the pencil in its own actions template, and
+                commits. The label's appearance does not change — it is
+                not a trigger.
+  rename_label  (string, optional) — the edit field's aria-label; the
+                revealed input has no visible label of its own.
+  js_filled     (bool, optional) — render every hook, and the rename
+                input, even with no text: this copy is a `<template>`
+                that JS clones and fills. buildRow strips the rename
+                affordance from a row that cannot be renamed.
+  row_id        (string, optional) — DOM id. The favourite and
+                observation rows carry one so their Remove form can
+                `hx-target` exactly this row and swap it out on the
+                empty 200 the delete endpoints return.
+  actions_template (string, optional) — template path rendering this
+                row's icon controls. Receives this include's full
+                context, so a server row's own object is in scope for
+                the action's hx-post URLs. Trash last, always.
+{% endcomment %}
+<li
+    class="flex items-center gap-2 border-t border-border py-2.25"
+    {% if row_id %}id="{{ row_id }}"{% endif %}
+    {% if renameable %}data-row-renameable{% endif %}
+>
+    {% if rule %}
+        <span
+            data-row-rule
+            aria-hidden="true"
+            class="basemap-identity-fill w-0.75 shrink-0 self-stretch rounded-pill"
+        ></span>
+    {% endif %}
+    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+        {# The label's own box is the inline editor's box: identical        #}
+        {# padding, radius and negative margins in both states, so          #}
+        {# committing a rename does not make the row jump. The transparent  #}
+        {# border is part of that — it is what would otherwise shift the    #}
+        {# text by a pixel when the editor's own border appears.            #}
+        {#                                                                  #}
+        {# The label is NOT a rename trigger, on any panel. It carried      #}
+        {# `cursor-text hover:border-border-strong` for a day, and clicking #}
+        {# it opened the editor. Hugo: "We have inline editing & the pencil #}
+        {# - choose one." The pencil is the one kept: this is a `<span>`,   #}
+        {# so its click was mouse-only — nothing to tab to, nothing for a   #}
+        {# screen reader to announce — while the pencil is a real 44×44     #}
+        {# button naming the row it renames. With the label inert, a        #}
+        {# renameable row also reads exactly like a non-renameable one at   #}
+        {# rest, which is the point of a shared row.                        #}
+        {#                                                                  #}
+        {# The -6px bleed stays: it puts the label's TEXT on the row's own  #}
+        {# left edge, in line with the meta line below it, in both states.  #}
+        {# What made it visible as a defect was the scroll container it     #}
+        {# bled out of — fixed where that container is declared, in         #}
+        {# includes/_ugc_panel.html.                                        #}
+        <span
+            data-row-label
+            {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
+            class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
+        >{{ label }}</span>
+        {% if renameable or js_filled %}
+            {# Hidden until inline_rename.js reveals it. Rendered here      #}
+            {# rather than created in JS so its own copy (the aria-label)   #}
+            {# passes through a template, where makemessages can see it.    #}
+            {#                                                              #}
+            {# No `w-full`: as a stretched flex child this box already      #}
+            {# fills the line, and `width: 100%` PLUS the -6px margins made #}
+            {# it 12px narrower than the label on the right — the two are   #}
+            {# meant to be the same box (measured in Chromium: label        #}
+            {# 11–373, editor 11–361).                                      #}
+            <input
+                type="text"
+                data-row-rename-input
+                hidden
+                value="{{ label }}"
+                maxlength="100"
+                aria-label="{{ rename_label }}"
+                class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
+            >
+        {% endif %}
+        {% if meta or js_filled %}
+            <span data-row-meta class="truncate text-summary text-text-3">{{ meta }}</span>
+        {% endif %}
+    </span>
+    {% if value or js_filled %}
+        <span data-row-value class="shrink-0 font-mono text-summary text-text-2">{{ value }}</span>
+    {% endif %}
+    {% if actions_template %}
+        <span class="flex shrink-0 items-center">{% include actions_template %}</span>
+    {% endif %}
+</li>

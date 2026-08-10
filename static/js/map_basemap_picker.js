@@ -36,6 +36,11 @@
 
   const STORAGE_KEY = BASEMAP_STORAGE_KEY;
 
+  // SNOW-658: this menu's name in the shared map-overlay registry — the
+  // element's own id, so a failing exclusivity assertion names something
+  // greppable.
+  const MENU_OVERLAY_NAME = 'basemap-menu';
+
   // SNOW-511: the menu is bottom-anchored (CSS `bottom: -96px`) and grows
   // upward. On a short viewport a tall menu grows past the top of #map,
   // sliding its first rows (the Countries section) up behind the nav and
@@ -59,8 +64,11 @@
   // 253px of map below it went unused. Dropping the baseline to just above
   // the scrubber roughly doubles the room and removes the scroll at that
   // size.
-  const MENU_TOP_GAP = 8;
-  const MENU_BOTTOM_GAP = 8;
+  // SNOW-658: both gaps, and the floor/cap arithmetic that used them, moved
+  // to static/js/map_overlay_bounds.js — the three UGC sheets need the same
+  // answer, and a second copy of it would be free to drift from this one.
+  // What stays here is the translation into the menu's own coordinate base,
+  // which is the half the sheets cannot share (see that module's header).
 
   /**
    * Place the menu's lower edge and cap its height to the room that leaves.
@@ -74,16 +82,8 @@
    * @returns {void}
    */
   const positionMenu = () => {
-    const mapEl = document.getElementById('map');
-    if (!mapEl) return;
-    const mapBox = mapEl.getBoundingClientRect();
-
-    // The lowest the menu may reach. The scrubber owns the foot of the map,
-    // so stop above it; with no scrubber on the page, the map's own bottom
-    // edge is the floor.
-    const scrubber = document.getElementById('season-scrubber');
-    const floor = (scrubber ? scrubber.getBoundingClientRect().top : mapBox.bottom)
-      - MENU_BOTTOM_GAP;
+    const bounds = window.pwaOverlayBounds?.compute();
+    if (!bounds) return;
 
     // `bottom` is measured from the pill (the menu's containing block) and is
     // negative downward, so this is the offset that puts the menu's lower
@@ -92,16 +92,19 @@
     // ancestor would still yield zeros.
     const pillBottom = pill.getBoundingClientRect().bottom;
     if (pillBottom > 0) {
-      menu.style.bottom = `${Math.round(pillBottom - floor)}px`;
+      menu.style.bottom = `${Math.round(pillBottom - bounds.floorY)}px`;
     }
 
     // Then the height that baseline leaves above it, so the first rows never
     // clip behind the header (SNOW-511's original point).
-    const available = Math.max(0, Math.round(floor - mapBox.top - MENU_TOP_GAP));
-    menu.style.maxHeight = `${available}px`;
+    menu.style.maxHeight = `${bounds.maxHeight}px`;
   };
 
   const setMenuOpen = (open) => {
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before the menu is unhidden, so whatever it replaces is gone by the
+    // time this is on screen.
+    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME);
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
@@ -117,16 +120,16 @@
     if (open) positionMenu();
   };
 
-  // SNOW-588: let the "Manage downloads" sheet close this menu when it
-  // opens over it. The menu's open state is three DOM writes held in this
-  // closure; mirroring them in map_downloads_manager.js would be a
-  // duplicate free to drift from the real one, so expose the setter
-  // instead — the same bridge pattern pwaDownloadedOverlay uses for the
-  // download controls in sibling IIFEs.
-  window.pwaLayersMenu = Object.freeze({
-    close() {
-      setMenuOpen(false);
-    },
+  // SNOW-588 exposed ``window.pwaLayersMenu.close()`` here so the "Manage
+  // downloads" sheet could close this menu on its way in. SNOW-658 replaces
+  // that one-directional bridge — and its single caller — with a
+  // registration: the menu says how to ask whether it is open and how to
+  // close it, and window.pwaMapOverlays
+  // (static/js/map_overlay_exclusivity.js) closes it whenever ANY other map
+  // overlay opens, not just the one surface that remembered to call.
+  window.pwaMapOverlays?.register(MENU_OVERLAY_NAME, {
+    isOpen: () => !menu.hidden,
+    close: () => setMenuOpen(false),
   });
 
   // SNOW-511: keep the cap correct if the viewport changes while the menu is
@@ -179,12 +182,13 @@
     // never was one.
     l4: ['regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
-    favourites: ['favourites-pin', 'favourites-label'],
-    community_reports: [
-      'community-reports-clusters',
-      'community-reports-cluster-count',
-      'community-reports-point',
-    ],
+    // SNOW-658: the 'favourites' and 'community_reports' entries went with
+    // their menu rows. Both overlays are switched from the panel their own
+    // roundel opens now, through window.pwaFavouritesOverlay /
+    // window.pwaCommunityReportsOverlay — bridges INSIDE map.js's main IIFE,
+    // which is why they need nothing here at all: the visibility loop below
+    // exists only to let this separate IIFE reach layers it cannot otherwise
+    // touch.
     // SNOW-645: the 'downloaded' entry that lived here (cached-tiles-fill/
     // -line) went with the layers-menu row — the overlay is now bound to
     // the "Manage downloads" sheet being open, not a togglable layer (see
@@ -223,23 +227,27 @@
         // SNOW-172: handle country.* toggles by delegating to the main IIFE
         // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
         // are all scoped to the main IIFE and are not accessible here.
+        //
+        // SNOW-658: one dispatch PER CODE. A row is a bulletin provider now,
+        // and ALBINA publishes for two countries — but nothing downstream
+        // learned about providers: countryState, the per-code storage keys and
+        // applyCountryFilters are all still per-code, so the merge is handled
+        // here, by sending the same event twice. countryCodesFor
+        // (static/js/map_state.js) is the one place the grouping is declared.
         if (overlayKey.startsWith('country.')) {
-          const code = overlayKey.slice(8); // 'country.fr' → 'fr'
-          document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
-            detail: { code, next },
-          }));
+          for (const code of countryCodesFor(overlayKey)) {
+            document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+              detail: { code, next },
+            }));
+          }
           return;
         }
 
-        // SNOW-414: notify telemetry when the favourites overlay is flipped.
-        if (overlayKey === 'favourites') {
-          window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: next });
-        }
-        // SNOW-419: notify telemetry when the community-reports overlay is
-        // flipped.
-        if (overlayKey === 'community_reports') {
-          window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', { visible: next });
-        }
+        // SNOW-658: the favourites and community-reports telemetry emits that
+        // sat here moved to their bridges in map.js, with the switches that
+        // now drive them. Leaving them would not have double-counted — the
+        // rows are gone, so these branches were simply unreachable — but the
+        // next reader wiring a row back would have found two emitters.
         // SNOW-573: notify telemetry when the weather overlay is flipped.
         if (overlayKey === 'weather') {
           window.pwaTelemetry?.emit('map.weather.overlay_toggled', { visible: next });
@@ -247,7 +255,7 @@
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports' || overlayKey === 'weather')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'weather')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE
@@ -283,17 +291,13 @@
               }
             }
           }
-          // SNOW-499: bridge to the main IIFE so the resort layer's
-          // favourited-resort exclusion is recomputed against the new
-          // favourites visibility — otherwise a favourited resort stays
-          // hidden (no dot, no star) when the overlay is switched off.
-          // Dispatched for both directions; the toggle-on lazy path is
-          // also covered by the overlay-load handler once its fetch settles.
-          if (overlayKey === 'favourites') {
-            document.dispatchEvent(
-              new CustomEvent('snowdesk:favourites-visibility-changed'),
-            );
-          }
+          // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood
+          // here, recomputing the resort layer's favourited-resort exclusion
+          // whenever the favourites overlay was flipped from this menu.
+          // SNOW-658 took that row away; window.pwaFavouritesOverlay calls
+          // applyResortsFavouritedFilter directly on both edges instead, being
+          // inside the IIFE that owns it. The listener itself stays — other
+          // callers still fire that event.
         }
         return;
       }
@@ -355,6 +359,13 @@
   const flyout = document.getElementById('map-fill-flyout');
   if (!toggle || !flyout) return;
 
+  // SNOW-658: this flyout's name in the shared map-overlay registry — the
+  // panel's own id, so a failing exclusivity assertion names something
+  // greppable. The overlay is the FLYOUT, not #map-fill-pill: the pill is the
+  // roundel, which stays on screen (and keeps its `data-state`) whether the
+  // flyout is up or not.
+  const FLYOUT_OVERLAY_NAME = 'map-fill-flyout';
+
   // The flyout is a child of .map-controls-br, not of the roundel — the
   // roundel lives inside #map-controls-collapsible, which is `overflow:
   // hidden` for its height animation and would clip a panel extending left
@@ -372,6 +383,10 @@
   };
 
   const setOpen = (open) => {
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before the flyout is unhidden, so whatever it replaces is gone by the
+    // time this is on screen.
+    if (open) window.pwaMapOverlays?.opening(FLYOUT_OVERLAY_NAME);
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     flyout.hidden = !open;
@@ -379,14 +394,32 @@
     if (open) alignToRoundel();
   };
 
+  // SNOW-658: the flyout closes whenever any other map overlay opens, and
+  // closes every other one when it opens.
+  //
+  // The two handlers below do NOT make this redundant, and neither was doing
+  // this job. The toggle's `stopPropagation` (it has to be there, or the
+  // flyout's own opening click would immediately read as "outside") means
+  // opening the flyout reached no OTHER surface's outside-click dismiss, so it
+  // opened over an open layers menu — and every other surface's toggle stops
+  // propagation for the same reason, so its own dismiss below never saw them
+  // open either. The strip observer answers a third question again: it closes
+  // the flyout when the collapsible group hides the roundel it is anchored to,
+  // which is not another overlay opening.
+  window.pwaMapOverlays?.register(FLYOUT_OVERLAY_NAME, {
+    isOpen: () => !flyout.hidden,
+    close: () => setOpen(false),
+  });
+
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     setOpen(flyout.hidden);
   });
 
-  // Outside-click dismiss. `click`, not `pointerdown`, so a step inside the
-  // flyout fires its own handler before this one can close it — the same
-  // reasoning the basemap menu's dismiss carries.
+  // Outside-click dismiss — a tap on the map itself, which is no overlay and
+  // so announces nothing to the registry. `click`, not `pointerdown`, so a
+  // step inside the flyout fires its own handler before this one can close
+  // it — the same reasoning the basemap menu's dismiss carries.
   document.addEventListener('click', (e) => {
     if (flyout.hidden) return;
     if (pill.contains(e.target)) return;

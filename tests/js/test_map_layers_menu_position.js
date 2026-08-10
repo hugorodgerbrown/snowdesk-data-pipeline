@@ -57,6 +57,14 @@ function buildFixture({ pillBottom = 359, scrubber = true } = {}) {
 async function openMenu() {
   vi.resetModules();
   await import('../../static/js/map_state.js').catch(() => {});
+  // SNOW-658: the floor/cap arithmetic itself now lives in
+  // map_overlay_bounds.js (window.pwaOverlayBounds), shared with the three
+  // UGC sheets, which need the same answer in their own coordinate base.
+  // home.html loads it ahead of the map bundle; here it is imported
+  // explicitly, the way every other suite loads a module the file under test
+  // reads off `window`. Every assertion below is unchanged — the numbers the
+  // menu writes are what proves the extraction preserved its behaviour.
+  await import('../../static/js/map_overlay_bounds.js');
   await import('../../static/js/map_basemap_picker.js');
   document.getElementById('basemap-toggle').click();
   return document.getElementById('basemap-menu');

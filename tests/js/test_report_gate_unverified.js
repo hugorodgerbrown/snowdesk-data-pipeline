@@ -28,6 +28,18 @@ document.body.innerHTML = `
           data-signin-url="${SIGNIN_URL}"
           data-report-form-url="/partials/report/form/"></button>
   <div id="report-sheet" hidden></div>
+  <template id="report-list-template">
+    <div>
+      <div class="flex items-center justify-between px-2 pt-1 pb-3">
+        <span>Field observations</span>
+        <button type="button" data-action="dismiss" aria-label="Close">×</button>
+      </div>
+      <div data-report-gate></div>
+      <div data-report-rows><p>Loading your reports…</p></div>
+      <button type="button" data-panel-add>Report an observation</button>
+      <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
+    </div>
+  </template>
 `;
 
 globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()) };
@@ -43,6 +55,10 @@ beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
   locateRequests = [];
   document.addEventListener('snowdesk:locate-request', () => locateRequests.push(true));
+  // SNOW-658: the roundel toggles, so each test has to start from a closed
+  // sheet — otherwise every second tap in this beforeEach would close the
+  // panel the test is about to read.
+  sheet.hidden = true;
   btn.click();
 });
 

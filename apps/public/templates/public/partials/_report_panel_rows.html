@@ -1,0 +1,29 @@
+{% load i18n %}
+{% comment %}
+public/partials/_report_panel_rows.html — the field-observation panel's
+scroll region (SNOW-658).
+
+includes/_ugc_panel.html's `rows_template` slot. Two containers, both
+filled at open time by static/js/report.js:
+
+  [data-report-gate] holds the two ineligible states — "verify your
+  email" (SNOW-477) and the anonymous sign-in CTA — in place of the list
+  and the add CTA, which report.js removes for those users. The overlay
+  switch at the panel's foot stays in all three states: the community-
+  reports overlay is public data with no eligibility gate at all, so
+  hiding its control from a visitor would take away something they can
+  actually use.
+
+  [data-report-rows] receives observations:list over HTMX, so each row
+  arrives with its own delete wiring already attached.
+
+The rows container starts with a loading line rather than empty: this
+panel opens offline, its list does not load offline, and an empty
+container would read as "you have no reports" — a wrong statement about
+the user's own data. report.js swaps in a distinct error line on
+htmx:responseError / htmx:sendError for that target.
+{% endcomment %}
+<div data-report-gate></div>
+<div data-report-rows>
+    <p class="text-sm text-text-2">{% trans "Loading your reports…" %}</p>
+</div>

@@ -147,6 +147,19 @@ describe('enter()', () => {
     expect(seen).toEqual([true]);
   });
 
+  it('tells the overlay roundels the map has been cleared', () => {
+    // SNOW-658 review: the three roundel rings mean "this overlay is drawn
+    // on the map", read from the layers themselves — which this module has
+    // just hidden without going through any of map.js's overlay bridges.
+    // Nothing else would say so, since no overlay PREFERENCE has moved.
+    const seen = [];
+    document.addEventListener('snowdesk:overlay-visibility-changed', () => seen.push('changed'));
+
+    focus.enter();
+
+    expect(seen).toEqual(['changed']);
+  });
+
   it('is a no-op when the map has not initialised', async () => {
     delete globalThis.MAP;
     focus = await loadModule();
@@ -201,6 +214,18 @@ describe('exit()', () => {
     focus.exit();
 
     expect(seen).toEqual([false]);
+  });
+
+  it('tells the overlay roundels the layers are back', () => {
+    focus.enter();
+    const seen = [];
+    document.addEventListener('snowdesk:overlay-visibility-changed', () => seen.push('changed'));
+
+    focus.exit();
+
+    // Once, not once per restored layer: the rings come back in a single
+    // repaint, so a placement flow costs two transitions, not a flicker.
+    expect(seen).toEqual(['changed']);
   });
 
   it('is a no-op when focus was never entered', () => {
@@ -277,5 +302,20 @@ describe('basemap swap during placement', () => {
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 
     expect(visibilityOf(map, OVERLAY_LAYER_IDS)).toEqual(OVERLAY_LAYER_IDS.map(() => undefined));
+  });
+
+  it('tells the roundels the re-installed overlays are hidden again', () => {
+    // map.js announces its own re-install at the end of the swap — with the
+    // rings back on, since every layer is briefly visible again. Re-hiding
+    // them without a second announcement would leave all three claiming
+    // "shown on the map" for the rest of the placement.
+    focus.enter();
+    map.visibility = {};
+    const seen = [];
+    document.addEventListener('snowdesk:overlay-visibility-changed', () => seen.push('changed'));
+
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+
+    expect(seen).toEqual(['changed']);
   });
 });

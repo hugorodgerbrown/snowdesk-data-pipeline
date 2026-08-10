@@ -32,14 +32,45 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 
 const FORM_URL = '/partials/report/form/';
+const LIST_URL = '/partials/report/list/';
+
+/**
+ * SNOW-658: start the report flow the way a user now does — tap the roundel
+ * to open the panel, then its "Report an observation" CTA. The roundel alone
+ * no longer asks for a fix; it lists what the user has already filed.
+ */
+function startReport() {
+  const btn = document.getElementById('report-btn');
+  // SNOW-658: the roundel TOGGLES — a tap while the sheet is up closes it.
+  // A flow started with the sheet already open (this suite's re-entrancy
+  // test) therefore closes and re-opens, which is what a user does.
+  if (!document.getElementById('report-sheet').hidden) btn.click();
+  btn.click();
+  const add = document.querySelector('[data-panel-add]');
+  if (add) add.click();
+}
+
+/** Every htmx.ajax call that was a report-form load, not the panel's list. */
+function formLoads() {
+  return globalThis.htmx.ajax.mock.calls.filter((call) => String(call[1]).startsWith(FORM_URL));
+}
 
 document.body.innerHTML = `
   <button id="report-btn"
           data-report-eligible="true"
           data-report-unverified="false"
           data-signin-url="/sign-in/"
+          data-report-list-url="${LIST_URL}"
           data-report-form-url="${FORM_URL}"></button>
   <div id="report-sheet" hidden></div>
+  <template id="report-list-template">
+    <div>
+      <div data-report-gate></div>
+      <div data-report-rows><p>Loading your reports…</p></div>
+      <button type="button" data-panel-add>Report an observation</button>
+      <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
+    </div>
+  </template>
 `;
 
 /**
@@ -58,7 +89,7 @@ const sheet = document.getElementById('report-sheet');
 
 /** The parsed query of the most recent htmx.ajax GET. */
 function lastFormParams() {
-  const url = globalThis.htmx.ajax.mock.calls.at(-1)[1];
+  const url = formLoads().at(-1)[1];
   return new URLSearchParams(url.slice(url.indexOf('?') + 1));
 }
 
@@ -100,32 +131,32 @@ function emitGeolocateError() {
 
 describe('tapping Report asks the map for a fix', () => {
   it('dispatches snowdesk:locate-request rather than calling geolocation itself', () => {
-    btn.click();
+    startReport();
     expect(locateRequests).toHaveLength(1);
   });
 
   it('opens the sheet immediately, before any fix arrives', () => {
-    btn.click();
+    startReport();
     expect(sheet.hidden).toBe(false);
     expect(sheet.textContent).toContain('Finding your location');
   });
 
   it('does not load the form until the control answers', () => {
-    btn.click();
-    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+    startReport();
+    expect(formLoads()).toHaveLength(0);
   });
 
   it('ignores a re-entrant tap while a fix is already pending', () => {
-    btn.click();
-    btn.click();
-    btn.click();
+    startReport();
+    startReport();
+    startReport();
     expect(locateRequests).toHaveLength(1);
   });
 });
 
 describe('GPS path — a fix arrives', () => {
   it('stamps location_source=GPS', () => {
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
     expect(lastFormParams().get('location_source')).toBe('GPS');
   });
@@ -134,7 +165,7 @@ describe('GPS path — a fix arrives', () => {
     // The two pairs diverge only after a Refine; on first load they are the
     // same point, and gps_lat/gps_lon must be populated so a later
     // GPS_REFINED submission still carries the original device fix.
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
     const params = lastFormParams();
     expect(params.get('lat')).toBe('46.1');
@@ -145,23 +176,23 @@ describe('GPS path — a fix arrives', () => {
   });
 
   it('requests the form from the configured endpoint', () => {
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
-    const [method, url] = globalThis.htmx.ajax.mock.calls.at(-1);
+    const [method, url] = formLoads().at(-1);
     expect(method).toBe('GET');
     expect(url.startsWith(FORM_URL + '?')).toBe(true);
   });
 
   it('does not arm the place-picker — the GPS point stands until Refine', () => {
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
     expect(window.PlacePicker.activate).not.toHaveBeenCalled();
   });
 
   it('releases the re-entrancy guard so a second report can be started', () => {
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
-    btn.click();
+    startReport();
     expect(locateRequests).toHaveLength(2);
   });
 
@@ -169,22 +200,22 @@ describe('GPS path — a fix arrives', () => {
     // The GeolocateControl can broadcast again as the device refines its
     // position. Without the cleanup, that would silently reload the form
     // underneath a user already filling it in.
-    btn.click();
+    startReport();
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
     emitFix({ lat: 46.9, lon: 7.9, accuracy: 3 });
-    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(formLoads()).toHaveLength(1);
   });
 });
 
 describe('MANUAL path — the control reports an error', () => {
   it('stamps location_source=MANUAL', async () => {
-    btn.click();
+    startReport();
     emitGeolocateError();
     expect(lastFormParams().get('location_source')).toBe('MANUAL');
   });
 
   it('sends no coordinates at all — there is no fix to claim', async () => {
-    const params = (btn.click(), emitGeolocateError(), lastFormParams());
+    const params = (startReport(), emitGeolocateError(), lastFormParams());
     expect(params.has('lat')).toBe(false);
     expect(params.has('lon')).toBe(false);
     expect(params.has('accuracy')).toBe(false);
@@ -193,7 +224,7 @@ describe('MANUAL path — the control reports an error', () => {
   });
 
   it('keeps the sheet open rather than closing it on a denied fix', async () => {
-    btn.click();
+    startReport();
     emitGeolocateError();
     await Promise.resolve();
     expect(sheet.hidden).toBe(false);
@@ -203,7 +234,7 @@ describe('MANUAL path — the control reports an error', () => {
     // Ordering is load-bearing: PlacePicker's immediate onChange writes into
     // the form's hidden inputs, so arming it before the swap would write
     // into a form that does not exist yet.
-    btn.click();
+    startReport();
     emitGeolocateError();
     expect(window.PlacePicker.activate).not.toHaveBeenCalled();
     await Promise.resolve();
@@ -212,7 +243,7 @@ describe('MANUAL path — the control reports an error', () => {
   });
 
   it('tells the place-picker the sheet occludes the pin', async () => {
-    btn.click();
+    startReport();
     emitGeolocateError();
     await Promise.resolve();
     await Promise.resolve();
@@ -220,7 +251,7 @@ describe('MANUAL path — the control reports an error', () => {
   });
 
   it('writes MANUAL — never GPS — through the picker onChange', async () => {
-    btn.click();
+    startReport();
     emitGeolocateError();
     await Promise.resolve();
     await Promise.resolve();
@@ -243,32 +274,32 @@ describe('MANUAL path — the control reports an error', () => {
 describe('safety-net timeout — the control never answers', () => {
   it('routes into the MANUAL path after 20 seconds', () => {
     vi.useFakeTimers();
-    btn.click();
-    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+    startReport();
+    expect(formLoads()).toHaveLength(0);
 
     vi.advanceTimersByTime(20000);
 
-    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(formLoads()).toHaveLength(1);
     expect(lastFormParams().get('location_source')).toBe('MANUAL');
   });
 
   it('does not fire early — a fix at 19s still wins', () => {
     vi.useFakeTimers();
-    btn.click();
+    startReport();
     vi.advanceTimersByTime(19000);
     emitFix({ lat: 46.1, lon: 7.2, accuracy: 12 });
     vi.advanceTimersByTime(5000);
 
-    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(formLoads()).toHaveLength(1);
     expect(lastFormParams().get('location_source')).toBe('GPS');
   });
 
   it('is cancelled by an error answer, so MANUAL is not loaded twice', () => {
     vi.useFakeTimers();
-    btn.click();
+    startReport();
     emitGeolocateError();
     vi.advanceTimersByTime(30000);
 
-    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(formLoads()).toHaveLength(1);
   });
 });

@@ -1,0 +1,40 @@
+{% comment %}
+templates/includes/_map_overlay_toggle.html — "Show X on the map" switch
+panel (SNOW-658).
+
+Extracted verbatim from public/partials/_map_downloads_sheet.html, where
+SNOW-645 built it inline as the downloads sheet's own footer control. It is
+a partial now because SNOW-658 gives the favourites and field-observation
+panels the same footer: a map-overlay view control belonging to the map
+BEHIND the sheet, not a row in the list the sheet is about.
+
+The panel is a label plus includes/_switch.html, in its own light-grey
+rounded box (`bg-tag` — the same token the problem/chip tags use), so it
+reads as "and here's the map view this affects" after everything the panel
+itself holds.
+
+The label is a `<label for="{{ id }}">` and a SIBLING of the switch include,
+never a wrapper: _switch.html's own outer element is itself a `<label>`, and
+labels must not nest. See that partial's docstring for why the visible text
+is the caller's job.
+
+NOTHING here binds a listener. Each owning module selects its own switch by
+id — `#map-downloads-overlay-toggle`, `#map-favourites-overlay-toggle`,
+`#map-community-reports-overlay-toggle` — and drives the matching
+`window.pwa*Overlay` bridge in static/js/map.js. Bodies that are re-cloned
+on every open (all three) must bind that listener on the SHEET, not on the
+switch, so it survives the clone.
+
+Parameters (passed via {% include … with … %}):
+  id    (string) — DOM id for the switch input, so the label's `for`
+        addresses it and the owning module can select this exact instance.
+        Required.
+  label (string) — the visible, translated label text. Required.
+{% endcomment %}
+<div class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2">
+    {# SNOW-645 review: 14px/500/text-1 (not text-sm/text-2, i.e. 400   #}
+    {# weight) — reconciled against the design, which reads this label  #}
+    {# with more weight than a purely descriptive one.                  #}
+    <label for="{{ id }}" class="text-sm font-medium text-text-1">{{ label }}</label>
+    {% include "includes/_switch.html" with id=id %}
+</div>

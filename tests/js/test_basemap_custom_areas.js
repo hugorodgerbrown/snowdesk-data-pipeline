@@ -14,11 +14,12 @@
  * level, so unlike FEATURE_BY_REGION_ID none of this needs the stubbed
  * `map.on('load')` handler to fire.
  *
- * The migration runs inside `basemapDownloadedAreas()`, which is on the
- * BOOT PATH (the roundel's own probe, post-SNOW-634) — so it must be
- * best-effort like everything else that sits there: a failed write
- * degrades to reading the legacy row, never throws. That is asserted
- * directly here by making `pwaDb.put` reject.
+ * The migration runs inside `basemapDownloadedAreas()`, which every reader
+ * of the downloaded-area records goes through (the downloads sheet, the
+ * eviction planner, the budget banner) — so it must be best-effort: a
+ * failed write degrades to reading the legacy row, never throws. That is
+ * asserted directly here by making `pwaDb.put` reject. It was on the BOOT
+ * path too until SNOW-658 removed the roundel's own probe.
  *
  * Review fix (blocker): `evictBasemapAreas` used to run a per-id
  * read-filter-write inside `Promise.all`, a read-modify-write race the
@@ -565,24 +566,26 @@ describe('renaming a custom area', () => {
   });
 });
 
-describe("the custom roundel stays monochrome (SNOW-645 review, superseding an earlier basemap-colour pass)", () => {
-  // An earlier SNOW-645 pass painted this roundel the ACTIVE basemap's
-  // identity colour (fixing a report that it showed Standard's blue while
-  // Swisstopo was on screen). That traded one wrong answer for another —
-  // the sheet this roundel opens spans every basemap's downloads at once,
-  // so the trigger cannot honestly describe its contents with a single
-  // basemap's colour. It is monochrome now (map.css's --ink, scoped to
-  // this control's own id) regardless of what is stored or what basemap
-  // is active — this block is the regression test for THAT, replacing the
-  // colour-tracking coverage this file used to carry. `refresh` is
-  // `_renderControl` itself (map_custom_download.js's own bridge), so
-  // awaiting it settles the async coalescer before each assertion.
+describe('the custom roundel describes nothing about what is downloaded', () => {
+  // This roundel has twice been given a state derived from storage, and
+  // both are gone. SNOW-645 removed the PAINT: three attempts at a fill (an
+  // active-basemap colour, a flat neutral, a theme-inverting neutral) each
+  // fixed the previous complaint and re-created it in a new shape, because
+  // a panel opener describing its own contents was the problem, not which
+  // colour it used. SNOW-658 removed the remaining ATTRIBUTE,
+  // `data-download-state="idle|done"` ("this device holds at least one
+  // downloaded area") — the roundel now carries `data-overlay-shown`, which
+  // means what it means on the other two overlay roundels, and one roundel
+  // cannot carry two states and still be readable.
+  //
+  // So this block asserts the ABSENCE, in the presence of real records and
+  // across a basemap switch: no probe, no key, no download state.
 
   function customControl() {
     return document.getElementById('map-custom-download-control');
   }
 
-  it('never carries a data-basemap-key attribute, downloads or not', async () => {
+  it('carries no download state and no basemap key, with an area on disk', async () => {
     installDbStub({
       'basemap.customAreas': [
         {
@@ -595,26 +598,28 @@ describe("the custom roundel stays monochrome (SNOW-645 review, superseding an e
         },
       ],
     });
-    await window.pwaCustomAreaDownload.refresh();
+    // Whatever a boot probe would have settled by now, it has had the time.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(customControl().dataset.basemapKey).toBeUndefined();
+    expect(customControl().dataset.downloadState).toBeUndefined();
   });
 
-  it('stays keyless and unchanged across a basemap switch — the regression test for the reported bug', async () => {
+  it('does not react to a basemap switch — the regression test for the reported bug', async () => {
     // SNOW-634 dropped this control's snowdesk:basemap-changed listener; a
-    // later SNOW-645 pass reinstated it to track the colour; this pass
-    // drops it again, now for good — the colour it existed to keep in
-    // sync is gone. A switch fires the same event this control used to
-    // listen for; the roundel's dataset must simply not react to it.
+    // later SNOW-645 pass reinstated it to track the colour; it is gone for
+    // good, and so is everything it kept in sync. A switch fires the same
+    // event; the roundel's dataset must simply not react to it.
     installDbStub({});
-    await window.pwaCustomAreaDownload.refresh();
-    expect(customControl().dataset.downloadState).toBe('idle');
-
     switchBasemap('swisstopo_winter');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(customControl().dataset.basemapKey).toBeUndefined();
-    expect(customControl().dataset.downloadState).toBe('idle');
+    expect(customControl().dataset.downloadState).toBeUndefined();
+  });
+
+  it('exposes only openFraming — no refresh for a state it no longer has', () => {
+    expect(Object.keys(window.pwaCustomAreaDownload)).toEqual(['openFraming']);
   });
 });
 

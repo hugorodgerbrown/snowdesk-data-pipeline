@@ -799,9 +799,14 @@ class TestFavouritesContext:
 class TestHomePageFavouritesParity:
     """The favourites map controls render on / per SNOW-414's eligibility rules."""
 
-    def test_add_control_shown_for_anonymous(self) -> None:
-        """Anonymous visitors see the Add-favourite control (with a sign-in CTA)
-        but not the overlay toggle (eligible-only) or the geojson URL.
+    def test_controls_shown_for_anonymous(self) -> None:
+        """Anonymous visitors see the favourites roundel (with a sign-in CTA)
+        but not the per-user geojson URL.
+
+        SNOW-658: the overlay toggle is no longer a layers-menu row — it is
+        the switch inside the panel the roundel opens, which renders for
+        every visitor (a control that vanishes reads as a bug; the sign-in
+        path is beside it).
         """
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
@@ -809,11 +814,13 @@ class TestHomePageFavouritesParity:
         assert 'data-favourites-eligible="false"' in content
         assert "data-signin-url" in content
         assert 'data-overlay-key="favourites"' not in content
+        assert 'id="map-favourites-overlay-toggle"' in content
         assert "data-favourites-url" not in content
 
     def test_add_control_and_overlay_eligible_for_account(self) -> None:
-        """A logged-in account sees the Add control, the overlay toggle,
-        and #map carries the per-user geojson URL.
+        """A logged-in account sees the roundel, the panel's overlay switch,
+        the list endpoint it loads its rows from, and #map carries the
+        per-user geojson URL.
         """
         account = AccountFactory.create()
         client = Client(SERVER_NAME="localhost")
@@ -821,7 +828,12 @@ class TestHomePageFavouritesParity:
         content = client.get(reverse("public:home")).content.decode()
         assert "favourite-add-btn" in content
         assert 'data-favourites-eligible="true"' in content
-        assert 'data-overlay-key="favourites"' in content
+        # SNOW-658: the layers-menu row became the panel's own switch.
+        assert 'data-overlay-key="favourites"' not in content
+        assert 'id="map-favourites-overlay-toggle"' in content
+        # ?variant=map: the sheet asks for the lean row template, not the
+        # manage page's (no in-page card panel, no "view on the map" link).
+        assert f"{reverse('favourites:list')}?variant=map" in content
         assert reverse("favourites:geojson") in content
 
 
@@ -861,10 +873,16 @@ class TestHomePageCommunityReportsParity:
     """The community-reports map controls render on / per SNOW-419's rules."""
 
     def test_controls_shown(self) -> None:
-        """Overlay toggle and #map geojson URL always render."""
+        """The overlay switch and #map geojson URL always render.
+
+        SNOW-658: the switch is inside the field-observation panel now, not a
+        layers-menu row — but it is still unconditional, because community
+        reports are public data with no eligibility split.
+        """
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
-        assert 'data-overlay-key="community_reports"' in content
+        assert 'data-overlay-key="community_reports"' not in content
+        assert 'id="map-community-reports-overlay-toggle"' in content
         assert 'data-community-reports-eligible="true"' in content
         assert reverse("api:community_reports_geojson") in content
 

@@ -841,7 +841,7 @@ permanently covered by the sheet showing them, on the platform that needs
 offline maps most. It settled on: opening the sheet still turns the
 overlay ON (`map_downloads_manager.js`'s `open()` calls
 `window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
-turns it off. A second toggle — a switch, "Show areas on the map" — now
+turns it off. A second toggle — a switch, "Display on the map" — now
 lives INSIDE the sheet, in its own panel above the row groups (see
 "Manage downloads" sheet below) and is the ONLY thing that ever calls
 `hide()`. This is a deliberately
@@ -1194,49 +1194,43 @@ SNOW-635 mints a fresh id per confirm (`generateCustomAreaId`, a
 independent area with its own bucket. A pre-SNOW-635 device's one area is
 lazily migrated into the array on first read (`map.js`'s
 `_readCustomAreas`, inside the same `basemapDownloadedAreas()` the
-roundel already calls on boot), keeping id `'custom'` — Cache Storage has
+downloads sheet and the eviction planner both go through), keeping id
+`'custom'` — Cache Storage has
 no rename, so that id has to survive unchanged for its existing bucket to
 keep resolving.
 
-The roundel's `done` state is **read from storage, not probed** — this is
-where it stops resembling the per-region control. SNOW-634 deleted the
-custom control's `_probeDone` (which checked every tile of the one saved
-bbox against the pinned caches via `blobFullyCached`) along with the
-single saved area it was about. `done` now means "the device holds at
-least one downloaded area", region **or** custom, counted straight off
-`basemapDownloadedAreas()` — the same reader the downloads sheet lists
-from, so the roundel and the sheet can never disagree. A user with five
-downloaded regions and no custom area used to read `idle`, which was
-false: there is plainly something to manage offline. Orphaned buckets
-(SNOW-612 — a failed part-download with no completed record) are excluded;
-they are reclaimable quota, not an area you have offline.
+**The roundel says nothing about what is downloaded (SNOW-658).** It has
+had two such states in turn, and both are gone. SNOW-634 deleted
+`_probeDone` (every tile of the one saved bbox checked against the pinned
+caches via `blobFullyCached`) along with the single saved area it was
+about, and replaced it with a storage READ: `data-download-state="done"`
+meaning "the device holds at least one downloaded area", region **or**
+custom, counted off `basemapDownloadedAreas()`. SNOW-645 then removed that
+state's paint after three attempts at a fill (an active-basemap colour,
+then a flat neutral, then a theme-inverting one) each drew the same
+report — a solid disc among glass roundels reads as an alert, not a
+status — leaving the attribute driving only an aria-label. SNOW-658
+removed the attribute itself, together with `_renderControl`, its boot
+probe, and the `refresh` member of `window.pwaCustomAreaDownload`.
 
-Two consequences worth naming. Neither connectivity nor the active
-basemap affects the roundel's `done`/`idle` STATE any more, so it has no
-style-settle retry (there is no tile-template dependency left to wait on)
-and does not listen for `snowdesk:connectivity-changed`. And switching
-basemap no longer flips `done` back to `idle` — the bucket still holds the
-*previous* basemap's tiles, so the device does hold an offline area, just
-not one for the basemap now selected. That per-basemap DETAIL (which area,
-under which basemap) lives in the sheet; the roundel's `done`/`idle` signal
-is deliberately coarser.
+What it carries instead is `data-overlay-shown`, and that means here
+exactly what it means on the favourites and field-observation roundels:
+the overlay this roundel's panel switches is drawn on the map right now
+(see §3.8 of
+[`docs/map-page-functional-spec.md`](map-page-functional-spec.md)). One
+roundel, one state, the same state on all three. The question the old one
+answered is answered properly by the sheet the roundel opens — a row list,
+per-area swatches, a budget bar — which is where it belonged.
 
-Its COLOUR is a different story (SNOW-645 review). Hugo's report: on the
-Swisstopo map, the roundel painted Standard's blue, because his custom
-areas had all been downloaded under Standard — an earlier version of this
-ticket aggregated the colour over the stored areas' own basemap keys. The
-fix aligns this roundel with every other one on the map: its colour is
-`activeBasemapKey()`, unconditionally, the same rule the per-region
-roundel's `setState` uses — never an aggregate over what is stored (see
-"Basemap identity colour (SNOW-645)" above). That reintroduces exactly the
-dependency the `done`/`idle` state does NOT have, so the
-`snowdesk:basemap-changed` listener SNOW-634 removed is back too — calling
-the same coalesced `renderControl` every other trigger in this file uses.
-`_renderControl`'s own busy guard (unchanged) already stops a basemap
-switch mid-run from clobbering anything: the roundel sits inside
-`#map-controls-br`, hidden for a run's whole life, so there is nothing on
-screen for a repaint to interfere with, and the run's own settle path
-already calls `renderControl()` once it finishes.
+Two consequences worth naming. The roundel has no style-settle retry and
+listens for neither `snowdesk:connectivity-changed` nor
+`snowdesk:basemap-changed`: there is no tile-template dependency, no
+storage read, and no colour left for either to invalidate. (The
+`snowdesk:basemap-changed` listener has been removed, reinstated and
+removed again across SNOW-634/645/658 — do not re-add it without a real
+dependency.) And a basemap switch changes nothing about the roundel at
+all, where it once flipped `done` back to `idle`; which area is held under
+which basemap is a per-basemap DETAIL, and details live in the sheet.
 
 Opening framing no longer re-centres the map on any previously-downloaded
 area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
@@ -1381,7 +1375,7 @@ basemap's template alone, and the row had no way to say that was why. The
 row is gone; opening the "Manage downloads" sheet now turns the overlay
 on (`window.pwaDownloadedOverlay.show()`, called from
 `map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
-turn it off — an in-sheet switch ("Show areas on the map") is the only
+turn it off — an in-sheet switch ("Display on the map") is the only
 thing that calls `hide()` (see "Manage downloads" sheet below for why: the
 sheet covers the whole screen on mobile, so binding visibility to "sheet
 open" made the overlay unreachable there). Session-scoped, never
@@ -1485,8 +1479,13 @@ discoverability. The overlay now starts off and waits to be asked.
 Closing the sheet does NOT call `.hide()` either — the
 `#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is
 the only thing that does. `render()` sets it from
-`window.pwaDownloadedOverlay.isVisible()` on every open, so the sheet always
-reflects the overlay's real state rather than one it just imposed.
+`window.pwaDownloadedOverlay.isEnabled()` on every open, so the sheet always
+reflects the overlay's real state rather than one it just imposed. That is
+`isEnabled()`, not `isVisible()`, since SNOW-658's review split the bridge's
+two questions: `isVisible()` now answers from the squares MapLibre is
+actually drawing (the roundel ring's question), while `isEnabled()` is the
+session's inspection-mode flag `show()`/`hide()` write — what this switch
+states the user asked for.
 
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:
@@ -1528,9 +1527,13 @@ subtitle underneath the title carries the basemap's own translated name
 ("Swisstopo (CH)", "Standard") when resolvable, dropped entirely when it
 isn't (a legacy record, or an unrecognised key) — colour is never the
 only signal, so the rule and the subtitle always agree on whether
-anything is claimed. Trailing: the size, then a "…" overflow trigger
-(`includes/_overflow_menu.html`) replacing the two inline Rename/Remove
-buttons every row used to carry.
+anything is claimed. Trailing: the size, then the row's actions —
+`includes/_map_downloads_row_actions.html`, a pencil (renameable rows only)
+and a trash, each a 44×44 icon control. SNOW-658 tried a "…" overflow menu
+here for a day; Hugo's "Map panels — common format" design has no ellipsis
+menu on any panel, and Remove is one tap in the same place on all three.
+Rename opens the row's own inline label editor (`static/js/inline_rename.js`,
+shared with the favourites panel) rather than a `window.prompt`.
 
 **Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
 (`manageRows` falls back to `id` only when there is no record — true only
@@ -1580,7 +1583,8 @@ screenshot).
 `input[type="checkbox" role="switch"]` drawn as a track+thumb with
 Tailwind's `peer` variant, no JS; see that partial's own docstring for why
 (there was no switch primitive in the design system before this). Its
-label — "Show areas on the map" — sits in its own `bg-tag` rounded panel,
+label — "Display on the map" since SNOW-658, one sentence for the same
+control on all three UGC panels — sits in its own `bg-tag` rounded panel,
 reading as a view control for the map BEHIND the sheet rather than a fact
 about what is stored, which is also why it leads the sheet ahead of the
 list it governs.
@@ -1589,7 +1593,7 @@ It is no longer the only writer of that state (SNOW-656): choosing any
 bulletin-fill step above 0 switches this off, since the two are mutually
 exclusive. `map_downloads_manager.js` therefore listens for
 `snowdesk:downloaded-overlay-changed` and sets the checkbox from it —
-`render()`'s read-back of `isVisible()` on every open covers a sheet being
+`render()`'s read-back of `isEnabled()` on every open covers a sheet being
 opened, but not one already open behind another control.
 
 **A real bug shipped in this control's first cut, found by Hugo clicking
@@ -1618,16 +1622,16 @@ server (not `render_to_string`) — centre-of-label, edge-of-hitbox, and a
 second click to toggle back, plus a keyboard Space-on-focus check, and the
 `/_components/switch/` fixture panel — all toggle correctly.
 
-**The overflow menu.** `includes/_overflow_menu.html` + the delegated,
-instance-agnostic `static/js/overflow_menu.js` — see that partial's own
-docstring for the full contract (dismiss on outside click/Escape,
-keyboard-reachable, why it is delegated rather than per-instance-bound).
-`buildRow` rewrites the row template's placeholder `trigger_id`/`menu_id`
-to a per-row id (`_domSafeId(row.id)`-suffixed) once cloned, for
-`aria-controls` correctness with any number of rows on screen — the
-open/close logic itself never depends on the ids being unique. Menu
-contents: Rename (custom areas only — `buildRow` removes the whole `<li>`
-for a non-renameable row, not just the button) and Remove.
+**The row actions.** Two visible icon controls, not a menu (SNOW-658 —
+`includes/_overflow_menu.html` and `static/js/overflow_menu.js` survive with
+no callers, since retiring a primitive was not that ticket's call). Remove
+is a 44×44 trash, last in the row on every panel; Rename is a pencil before
+it, on a custom area only. `buildRow` strips the pencil, the hidden editor
+and the row's own `data-row-renameable` marker together for a row that
+cannot be renamed — a region's name is its real name, and an orphan has no
+record to write one onto — and interpolates each control's per-row
+aria-label ("Remove Custom area 1"), which a `<template>` cloned per row
+cannot carry from the server.
 
 **Basemap subtitle label.** The basemap name shown in a row's subtitle
 (when resolvable) is the same label the picker itself shows: `buildRow`
@@ -1713,10 +1717,9 @@ renders disabled
 is re-cloned from its `<template>` on every open, and re-applied on every
 `snowdesk:connectivity-changed` so an open sheet reacts in place); online
 it hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()`
-— map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
-are driven by `_renderControl` reading `basemapDownloadedAreas()` — "done"
-means the device holds at least one downloaded area, region or custom, not
-that this one custom area is fully cached.
+— map.js's own bridge for it, and since SNOW-658 its only member. The
+roundel carries no state describing what is downloaded; see "The roundel
+says nothing about what is downloaded" above.
 
 **Why it lives on the map, not under account settings.** Downloading
 happens here, so managing downloads belongs here too. It also has to be
@@ -1873,6 +1876,33 @@ entry (`kind: 'dated-geojson'`) plus a date-scoped probe; with no matching
 DOM element `_overlayDot('l3')` returned `null` and the whole branch was
 guarded out, so SNOW-532 removed it along with the hollow
 "never cacheable" dot state it was the only user of.
+
+**Favourites and community reports are absent too, from SNOW-658.** Both had
+a row here with its own IndexedDB-backed dot (`kind: 'idb'` in
+`OVERLAY_RESOURCES`). SNOW-658 moved each overlay's toggle into the panel its
+own roundel opens — the footer switch reading "Display on the map" on all
+three — so there is no row left to hang a dot on, and both entries were
+dropped from `OVERLAY_RESOURCES` rather than relocated. That follows the call
+SNOW-645 made for the downloaded-areas row: **a panel is not a cache-state
+dashboard**, and this menu's invariant is about the rows it lists.
+
+Nothing was lost that the dashboard was answering. Both overlays are per-user
+or near-real-time data that a device fetches on demand and caches
+write-through (`window.pwaMapOverlayCache`); neither is something a user
+deliberately downloads for a trip, which is what the dots exist to report on.
+`map.js` still calls `markCached('favourites')` on the lazy-load path — it
+no-ops now, because `OVERLAY_RESOURCES` membership is the allowlist and
+`_overlayDot` returns `null` for a row that is not there.
+
+**One country row can cover two countries (SNOW-658).** The menu lists
+bulletin PROVIDERS, and ALBINA publishes for Austria and Italy, so its single
+row carries `data-country-codes="at it"`. Its dot goes green only when all
+four feeds are cached for **both** codes: tapping that row switches both
+countries on, so a green dot with only Austria cached would promise an
+offline map that comes up missing Italy — exactly the class of lie SNOW-524
+built these dots to prevent. The enabled-country set the tier dots (l1/l2/l4)
+are judged against is flat-mapped over each checked row's codes for the same
+reason.
 
 The boundary's offline state is therefore **not surfaced**, by choice: it is
 a companion outline with no control and no user action attached to its cache

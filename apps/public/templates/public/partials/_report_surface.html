@@ -30,8 +30,35 @@ Context expected:
 {% endcomment %}
 {# Sheet container — hidden until report.js opens it. SNOW-486:         #}
 {# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
+{# SNOW-658: scroll_body=True, matching the downloads sheet — the panel's #}
+{# header and its CTA/switch foot stay pinned while only the list between #}
+{# them scrolls. Every body this sheet renders (the panel, the form, the  #}
+{# confirmation) therefore carries `min-h-0 flex-1` and owns its own      #}
+{# scroll region; see that partial's docstring for the mechanism.         #}
 {% trans "Field observation report" as report_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True %}
+{# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
+{# to add another, and the map-overlay switch that used to be the layers      #}
+{# menu's "Community reports" row. Cloned by report.js on every open; the     #}
+{# rows load over HTMX from observations:list, so each arrives with its own   #}
+{# delete wiring and this file needs no copy of it.                            #}
+{#                                                                             #}
+{# SNOW-658 (second pass): the layout is includes/_ugc_panel.html — the shared #}
+{# skeleton extracted from the "Manage downloads" sheet, which is the          #}
+{# reference design. This panel used to imitate that sheet by hand and got     #}
+{# every part of it slightly different: a smaller title, its own body wrapper, #}
+{# a whole-sheet scroll. All that is gone; what stays here is the panel's own  #}
+{# strings and its rows template (public/partials/_report_panel_rows.html).    #}
+<template id="report-list-template">
+    {% trans "Field observations" as report_list_title %}
+    {% trans "Report an observation" as report_add_label %}
+    {# The context strip — where this panel's data lives. This is the one   #}
+    {# panel of the three whose contents LEAVE the device, so its line says #}
+    {# so before the user adds another.                                     #}
+    {% trans "Reports are shared with the community." as report_context_line %}
+    {% trans "Reports" as report_section_label %}
+    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" %}
+</template>
 {# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}
 {# header comment.                                                      #}
@@ -49,11 +76,20 @@ Context expected:
         data-string="cannot-queue"
     >{% trans "Could not save your report on this device — please try again." %}</span>
     <span data-string="generic">{% trans "Something went wrong — please try again." %}</span>
-    <span data-string="sheet-title">{% trans "Report" %}</span>
-    <span data-string="close">{% trans "Close" %}</span>
+    {# SNOW-658: "sheet-title" / "close" lived here for report.js's own HTML- #}
+    {# string sheet header. Every state the module renders now clones a       #}
+    {# template that includes the real includes/_sheet_header.html, so both   #}
+    {# strings went with that copy.                                           #}
     <span
         data-string="verify-email"
     >{% trans "Verify your email to submit a field observation. Check your inbox for the verification link." %}</span>
     <span data-string="signin-prompt">{% trans "Sign in to submit a field observation." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
+    {# SNOW-658: the panel's own failure line. Distinct from                   #}
+    {# observations:list's empty state ("You haven't reported any field        #}
+    {# observations yet.") on purpose — this panel opens offline, its list      #}
+    {# does not load offline, and telling a user they have reported nothing     #}
+    {# when the request merely failed is a wrong statement about their data.    #}
+    <span data-string="list-failed">{% trans "Your reports couldn't be loaded — check your connection." %}</span>
+    <span data-string="locating">{% trans "Finding your location…" %}</span>
 </template>

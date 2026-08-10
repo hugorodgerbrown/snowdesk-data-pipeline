@@ -98,7 +98,7 @@ Optional context:
             <button
                 id="search-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Find a region" %}'
                 aria-expanded="false"
                 aria-controls="search-input"
@@ -173,7 +173,7 @@ Optional context:
             <button
                 id="basemap-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Choose basemap" %}'
                 aria-haspopup="menu"
                 aria-expanded="false"
@@ -196,67 +196,68 @@ Optional context:
                 </svg>
             </button>
             <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
-                {# SNOW-172: Country toggles — show/hide each country's region     #}
-                {# outlines. CH is on by default. FR/AT/IT are off; their        #}
-                {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
-                {# localStorage under snowdesk.map.overlay.country.<code>.       #}
+                {# SNOW-172: country toggles — show/hide each country's region     #}
+                {# outlines. CH is on by default. The rest are off; their          #}
+                {# GeoJSON is lazy-fetched on first toggle-on. State persists in   #}
+                {# localStorage under snowdesk.map.overlay.country.<code>.         #}
+                {#                                                                 #}
+                {# SNOW-658: the section is "Bulletins" and each row names its     #}
+                {# PROVIDER, because that is what the row actually switches on —   #}
+                {# one provider's bulletins, drawn over the countries it publishes #}
+                {# for. Austria and Italy were two rows for one provider; ALBINA   #}
+                {# publishes the EUREGIO bulletin for both, so they are one row    #}
+                {# now, and toggling it fires one snowdesk:country-toggle PER      #}
+                {# CODE (map_basemap_picker.js). Nothing below the menu learned    #}
+                {# about providers: countryState, the storage keys and the country #}
+                {# filter are all still per-code.                                  #}
+                {#                                                                 #}
+                {# ``data-country-codes`` is the DOM projection of COUNTRY_GROUPS  #}
+                {# in static/js/map_state.js, read by map_layer_sync_status.js     #}
+                {# (which loads before the map bundle and so cannot read that      #}
+                {# declaration directly). tests/public/test_map_country_groups.py  #}
+                {# fails if the two ever disagree.                                 #}
                 <li role="none" class="basemap-menu-section-label">
-                    {% trans "Countries" %}
+                    {% trans "Bulletins" %}
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="country.ch"
+                        data-country-codes="ch"
                         aria-checked="true"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
+                        {# SNOW-524: per-row sync dot — green only when all four #}
+                        {# feeds are cached, for every country the row switches.  #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Switzerland" %}
+                        {% trans "SLF (CH)" %}
                     </button>
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="country.fr"
+                        data-country-codes="fr"
                         aria-checked="false"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "France" %}
+                        {% trans "MétéoFrance (FR)" %}
                     </button>
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.at"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                        data-overlay-key="country.albina"
+                        data-country-codes="at it"
                         aria-checked="false"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Austria" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.it"
-                        aria-checked="false"
-                    >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Italy" %}
+                        {% trans "ALBINA (AT, IT)" %}
                     </button>
                 </li>
                 {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
@@ -264,60 +265,71 @@ Optional context:
                 {# above the L4 choropleth. State persists in localStorage    #}
                 {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
                 {# defaults to visible, like the other overlay tiers.         #}
+                {# SNOW-658: "Overlays" → "Boundaries", and each tier names its    #}
+                {# EAWS level. "Major / Minor / Micro" is this app's own shorthand  #}
+                {# for a published hierarchy, and the levels are what the data      #}
+                {# actually is — so the row carries both: the familiar word, and    #}
+                {# the standard's own name for it. The keys (l1/l2/l4) are          #}
+                {# unchanged; every consumer of the DOM contract keys off those.    #}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
-                    {% trans "Overlays" %}
+                    {% trans "Boundaries" %}
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l1"
                         aria-checked="false"
                     >
                         {# SNOW-505: sync-status dot — hidden (unknown) until #}
                         {# map_layer_sync_status.js resolves it on menu-open. #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Major regions" %}
+                        {% trans "Major (EAWS Level 1)" %}
                     </button>
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l2"
                         aria-checked="false"
                     >
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Minor regions" %}
+                        {% trans "Minor (EAWS L2)" %}
                     </button>
                 </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l4"
                         aria-checked="true"
                     >
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Micro regions" %}
+                        {% trans "Micro (EAWS L4)" %}
                     </button>
                 </li>
-                {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
-                {# circle pins above the L4 choropleth. Off by default;  #}
-                {# state persists in localStorage under                  #}
-                {# snowdesk.map.overlay.resorts. SNOW-499: pin click     #}
-                {# opens a minimal popup (name, region, favourite star,  #}
-                {# bulletin link) rather than selecting the parent       #}
-                {# region.                                               #}
+                {# SNOW-658: resorts are places, not boundaries, so they get     #}
+                {# their own section rather than trailing the tier list.         #}
+                {# SNOW-78: Resorts overlay — geocoded ski resorts as circle     #}
+                {# pins above the L4 choropleth. Off by default; state persists  #}
+                {# in localStorage under snowdesk.map.overlay.resorts.           #}
+                {# SNOW-499: pin click opens a minimal popup (name, region,      #}
+                {# favourite star, bulletin link) rather than selecting the      #}
+                {# parent region.                                                #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Locations" %}
+                </li>
                 <li role="none">
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="resorts"
                         aria-checked="false"
                     >
@@ -325,58 +337,43 @@ Optional context:
                         {% trans "Resorts" %}
                     </button>
                 </li>
-                {# SNOW-414: Favourites overlay — the signed-in user's own saved   #}
-                {# pins, as star markers above the L4 choropleth. Eligible-only   #}
-                {# (authenticated) since the layer is per-user data.              #}
-                {# Default-on (map.js seeds overlayState.favourites from          #}
-                {# localStorage with a `true` fallback) — this static             #}
-                {# aria-checked="true" is the first-paint default; map.js         #}
-                {# reconciles it against the persisted preference on load.        #}
-                {% if favourites_eligible %}
-                    <li role="none">
-                        <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay"
-                            data-overlay-key="favourites"
-                            aria-checked="true"
-                        >
-                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                            {% trans "Favourites" %}
-                        </button>
-                    </li>
-                {% endif %}
-                {# SNOW-419: Community reports overlay — anonymised, clustered   #}
-                {# FieldObservation pins from the last 48 hours. Public data,    #}
-                {# no per-user eligibility split (unlike Favourites). Off by     #}
-                {# default — a user opts in to a shared layer rather than       #}
-                {# having it appear unannounced.                                 #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="community_reports"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Community reports" %}
-                    </button>
-                </li>
+                {# SNOW-658: the Favourites row (SNOW-414) and the Community      #}
+                {# reports row (SNOW-419) were here. Both are USER-GENERATED      #}
+                {# data with a roundel of their own, so each toggle moved into    #}
+                {# the panel that roundel opens — "Show favourites on the map"    #}
+                {# in _favourites_surface.html, "Show community reports on the    #}
+                {# map" in _report_surface.html — driving                         #}
+                {# window.pwaFavouritesOverlay / window.pwaCommunityReportsOverlay#}
+                {# in map.js. That is SNOW-634's downloads pattern generalised:   #}
+                {# one subject, one way in. Their sync dots went with the rows    #}
+                {# rather than moving into the panels, following SNOW-645's own   #}
+                {# call for the downloaded-areas row.                            #}
+                {#                                                                #}
+                {# SNOW-658: weather is a CONDITION, not a boundary or a place,   #}
+                {# so it gets a heading of its own below rather than being folded #}
+                {# into one it doesn't belong to.                                 #}
                 {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
                 {# plus the day's max temperature at each resort-anchored     #}
                 {# (and, for a signed-in visitor, favourite-anchored)         #}
-                {# forecast point. Flag-gated on weather_layer; off by       #}
-                {# default like Community reports. static/js/map.js disables #}
-                {# this row (with a reason, via a second namespaced marker   #}
-                {# — see DISABLED_MARKER in map_layer_sync_status.js) for    #}
-                {# any scrubbed date outside the stored forecast window.     #}
+                {# forecast point. Flag-gated on weather_layer; off by        #}
+                {# default. static/js/map.js disables this row (with a        #}
+                {# reason, via a second namespaced marker — see               #}
+                {# DISABLED_MARKER in map_layer_sync_status.js) for any       #}
+                {# scrubbed date outside the stored forecast window.          #}
+                {# SNOW-658: the heading and its separator sit INSIDE the      #}
+                {# flag check — this is the section's only row, so rendering   #}
+                {# them unconditionally would leave an empty "Conditions"      #}
+                {# heading for every visitor without the flag.                 #}
                 {% if weather_layer_eligible %}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Conditions" %}
+                    </li>
                     <li role="none">
                         <button
                             type="button"
                             role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay"
+                            class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                             data-overlay-key="weather"
                             aria-checked="false"
                         >
@@ -416,7 +413,7 @@ Optional context:
                 {# sheet (public/partials/_map_custom_download_control.html #}
                 {# — its behaviour, not its glyph, changed), and "Download  #}
                 {# a custom area" moved INTO the sheet as its own action    #}
-                {# ([data-downloads-add], _map_downloads_sheet.html) rather #}
+                {# ([data-panel-add], _map_downloads_sheet.html) rather      #}
                 {# than the roundel's own click. This row is therefore      #}
                 {# gone — the roundel is the way in now, matching every     #}
                 {# other roundel-opens-its-own-surface pattern on the map   #}
@@ -431,7 +428,7 @@ Optional context:
                         <button
                             type="button"
                             role="menuitemradio"
-                            class="basemap-menu-item"
+                            class="basemap-menu-item hover-affordance"
                             data-basemap-key="{{ bm.key }}"
                             data-basemap-url="{{ bm.url }}"
                             aria-checked="false"
@@ -456,7 +453,7 @@ Optional context:
             <button
                 id="locate-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Locate me" %}'
             >
                 <svg
@@ -512,7 +509,7 @@ Optional context:
                     <button
                         id="map-fill-toggle"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         aria-label='{% trans "Bulletin fill strength" %}'
                         aria-haspopup="true"
                         aria-expanded="false"
@@ -545,68 +542,73 @@ Optional context:
                 {# sibling above), so the group's height never changes under the  #}
                 {# user. See public/partials/_map_custom_download_control.html.   #}
                 {% include "public/partials/_map_custom_download_control.html" %}
-                {# SNOW-414: "Add favourite" control — rendered regardless of           #}
+                {# SNOW-414: "Favourites" control — rendered regardless of              #}
                 {# authentication state, so anonymous visitors see the affordance and  #}
                 {# get a sign-in CTA on tap (favourites.js branches on                 #}
                 {# data-favourites-eligible, mirroring #report-btn's                   #}
                 {# data-report-eligible anon branch).                                  #}
+                {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
+                {# favourite" CTA, and the "Show favourites on the map" switch that     #}
+                {# used to be a layers-menu row — rather than jumping straight into     #}
+                {# pin placement. The id is unchanged (favourites.js binds it by id,    #}
+                {# and map_help.js targets it), but the label is: it manages now.       #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         data-favourite-create-url="{{ favourite_create_url }}"
+                        data-favourite-list-url="{{ favourite_list_url }}"
                         data-favourite-rename-url-template="{{ favourite_rename_url_template }}"
                         data-favourite-delete-url-template="{{ favourite_delete_url_template }}"
                         data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
                         data-signin-url="{{ favourites_signin_url }}"
-                        aria-label='{% trans "Add a favourite pin" %}'
+                        aria-label='{% trans "Your favourites" %}'
+                        {# SNOW-658: "the favourites overlay is on the map right  #}
+                        {# now" — one attribute, one meaning, on all three        #}
+                        {# overlay roundels. Server-rendered false because that   #}
+                        {# is the truth with JS off (nothing draws the overlay);  #}
+                        {# map_roundel_overlay_state.js paints the real answer at #}
+                        {# boot and on every change.                              #}
+                        data-overlay-shown="false"
                     >
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                        </svg>
+                        {# SNOW-658: the star's paths live in                    #}
+                        {# includes/_icon_favourite.html — the favourites panel  #}
+                        {# this roundel opens carries the same mark in its       #}
+                        {# header (its only identity mark), and one glyph        #}
+                        {# rendered in two places needs one source.              #}
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
                     </button>
                 </div>
                 {# SNOW-333: field-report / observations roundel — folded into the      #}
                 {# bottom-right stack (was an independently-positioned pill) so the      #}
                 {# stack bottom-anchors as one unit. report.js binds #report-btn by id,  #}
                 {# so the relocation is DOM-only.                                        #}
+                {# SNOW-658: it opens a PANEL now — the user's own reports, a "Report    #}
+                {# an observation" CTA, and the "Show community reports on the map"      #}
+                {# switch that used to be a layers-menu row — rather than jumping        #}
+                {# straight into the GPS-fix flow. The id is unchanged; the label is.    #}
                 <div class="map-utility-pill map-report-control">
                     <button
                         id="report-btn"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         data-report-form-url="{{ report_form_url }}"
+                        data-report-list-url="{{ report_list_url }}"
                         data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
                         data-report-unverified="{{ report_unverified|yesno:'true,false' }}"
                         data-signin-url="{{ report_signin_url }}"
-                        aria-label='{% trans "Report a field observation" %}'
+                        aria-label='{% trans "Your field observations" %}'
+                        {# SNOW-658: see #favourite-add-btn above — same          #}
+                        {# attribute, same meaning, same painter.                 #}
+                        data-overlay-shown="false"
                     >
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-                            <path d="M12 9v4" />
-                            <path d="M12 17h.01" />
-                        </svg>
+                        {# SNOW-658: the triangle's paths live in                #}
+                        {# includes/_icon_observation.html — the field-          #}
+                        {# observation panel this roundel opens carries the same #}
+                        {# mark in its header (its only identity mark), and one  #}
+                        {# glyph rendered in two places needs one source.        #}
+                        {% include "includes/_icon_observation.html" with size=18 only %}
                     </button>
                 </div>
                 {# SNOW-457: help / coachmark tour roundel — the "how to use the map"    #}
@@ -616,7 +618,7 @@ Optional context:
                     <button
                         id="map-help-toggle"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         aria-label='{% trans "How to use the map" %}'
                     >
                         <svg
@@ -662,7 +664,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_0 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0"
             >
                 <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
@@ -672,7 +674,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_25 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.25"
             >
                 <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
@@ -682,7 +684,7 @@ Optional context:
                 role="radio"
                 aria-checked="true"
                 aria-label="{{ step_label_50 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.5"
             >
                 <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
@@ -692,7 +694,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_75 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.75"
             >
                 <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
@@ -702,7 +704,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_100 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="1"
             >
                 <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
@@ -711,7 +713,7 @@ Optional context:
         <button
             type="button"
             id="map-controls-toggle"
-            class="map-utility-pill map-controls-toggle"
+            class="map-utility-pill map-controls-toggle hover-affordance"
             aria-controls="map-controls-collapsible"
             aria-expanded="true"
             aria-label='{% trans "Hide map controls" %}'
@@ -866,7 +868,7 @@ Optional context:
         <button
             id="map-legend-toggle"
             type="button"
-            class="map-legend-toggle"
+            class="map-legend-toggle hover-affordance"
             aria-label='{% trans "Map information" %}'
             aria-expanded="false"
             aria-controls="map-legend-card"
@@ -968,11 +970,15 @@ Optional context:
         <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
             {% trans "View and manage offline regions, download custom areas and manage storage." %}
         </li>
-        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
-            {% trans "Pin a spot to your favourites for easy future access." %}
+        {# SNOW-658: both roundels open a panel that LISTS what the user has    #}
+        {# already saved before offering to add another, and each panel owns    #}
+        {# the map-overlay switch that used to be a layers-menu row — so both   #}
+        {# steps describe managing, not only adding.                            #}
+        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Your favourites" %}'>
+            {% trans "See your saved pins, add another, and show or hide them on the map." %}
         </li>
-        <li data-help-target="#report-btn" data-help-title='{% trans "Report warning sign" %}'>
-            {% trans "Share a field observation or condition warning." %}
+        <li data-help-target="#report-btn" data-help-title='{% trans "Field observations" %}'>
+            {% trans "See your reports, share a new field observation, and show or hide the community's on the map." %}
         </li>
         {# The tour explains its own trigger. It was the only control in the   #}
         {# stack with no step, which read as an oversight once every           #}
@@ -1179,7 +1185,7 @@ Optional context:
         </div>
     {% endif %}
     {# SNOW-522: framing overlay for "Download a custom area" — reached      #}
-    {# (SNOW-634) via [data-downloads-add] inside the downloads sheet        #}
+    {# (SNOW-634) via [data-panel-add] inside the downloads sheet            #}
     {# (public/partials/_map_downloads_sheet.html), not directly from        #}
     {# #map-custom-download-control any more — that roundel opens the sheet  #}
     {# itself now. A Google-Maps-style dim mask with a fixed, centred frame  #}
@@ -1199,13 +1205,13 @@ Optional context:
     {# data-run-state (SNOW-634): mirrors the run in flight — 'idle' |       #}
     {# 'busy' | 'done' | 'error' | 'offline' — written by map.js's           #}
     {# `paintRun`. It exists because #map-custom-download-control's own      #}
-    {# `data-download-state` stopped tracking a run in flight at all (it is  #}
-    {# now derived from storage and only ever reads 'idle'/'done'), and that #}
-    {# roundel is hidden for the overlay's entire open life anyway           #}
-    {# (.map-framing hides #map-controls-br, static/css/map.css) — so a run  #}
-    {# needed an observable surface that IS visible while it runs. Not       #}
-    {# decoration: an e2e test reads this to synchronise on a run in         #}
-    {# progress, in place of the roundel state it used to poll.              #}
+    {# `data-download-state` stopped tracking a run in flight (it became     #}
+    {# storage-derived, and SNOW-658 removed it outright), and that roundel  #}
+    {# is hidden for the overlay's entire open life anyway (.map-framing     #}
+    {# hides #map-controls-br, static/css/map.css) — so a run needed an      #}
+    {# observable surface that IS visible while it runs. Not decoration: an  #}
+    {# e2e test reads this to synchronise on a run in progress, in place of  #}
+    {# the roundel state it used to poll.                                    #}
     <div
         id="map-frame-overlay"
         hidden
@@ -1408,12 +1414,11 @@ Optional context:
     <span data-string="frame-readout-done">{% blocktrans %}%(mb)s downloaded{% endblocktrans %}</span>
     <span data-string="frame-budget-banner">{% blocktrans %}%(used)s / %(budget)s downloaded{% endblocktrans %}</span>
     <span data-string="action-close">{% trans "Close" %}</span>
-    {# SNOW-634: #map-custom-download-control's own two labels. It now      #}
-    {# opens the downloads sheet rather than framing directly, so its copy #}
-    {# is about what is on THIS DEVICE generally, not this one area — see  #}
-    {# mapCustomDownloadControlInit's `_renderControl`.                    #}
-    <span data-string="custom-control-idle">{% trans "Manage offline downloads" %}</span>
-    <span data-string="custom-control-done">{% trans "Offline downloads available" %}</span>
+    {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
+    {# #map-custom-download-control's two labels for a downloads state it  #}
+    {# no longer carries. Its label is server-rendered on the button       #}
+    {# itself now, and the roundel's one live state is composed onto it    #}
+    {# from map-roundel-strings-template below.                            #}
     {# SNOW-635: an unrenamed custom area's default display name — filled  #}
     {# in by basemapDownloadedAreas() itself (in memory only, never        #}
     {# persisted) so every downstream reader (the eviction confirm banner, #}
@@ -1463,4 +1468,19 @@ Optional context:
     {# attribute) for any scrubbed date outside the stored forecast       #}
     {# window — see updateWeatherRowAvailability in map.js.               #}
     <span data-string="weather-out-of-window">{% trans "No forecast for this date" %}</span>
+</template>
+{# SNOW-658: the three overlay roundels' shared "…and its overlay is on the #}
+{# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}
+{# string, not one pair per roundel: each roundel keeps its own name        #}
+{# ("Your favourites", "Manage offline downloads") as the server-rendered   #}
+{# aria-label, and this composes the state onto it — so the shared fact is  #}
+{# stated once and translated once. blocktrans, because a locale is free    #}
+{# to put the name anywhere in the sentence.                                #}
+{#                                                                          #}
+{# Its own template rather than a key inside map-strings-template above:    #}
+{# tests/test_js_strings_are_translatable.py maps each template id to the   #}
+{# ONE module that reads it, so a second reader of that id would make its   #}
+{# own keys look orphaned.                                                  #}
+<template id="map-roundel-strings-template">
+    <span data-string="roundel-overlay-shown">{% blocktrans %}%(label)s — shown on the map{% endblocktrans %}</span>
 </template>

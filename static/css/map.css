@@ -158,9 +158,6 @@
     cursor: pointer;
 }
 
-.map-controls-toggle:hover {
-    filter: brightness(1.04);
-}
 
 /* Chevron points up when collapsed ("open upward") and flips to point down
    when expanded ("close downward"), so it always indicates what the next tap
@@ -214,9 +211,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--basemap:hover {
-    filter: brightness(1.04);
-}
 
 /* SNOW-328: Locate-me roundel — same geometry as the basemap pill: a
    40×40 flex-centred circle that anchors the #locate-toggle button. No
@@ -227,9 +221,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--locate:hover {
-    filter: brightness(1.04);
-}
 
 /* Hide the MapLibre GeolocateControl's own rendered control — our
    #locate-toggle pill is the visible affordance. Hiding only the button left
@@ -329,9 +320,6 @@
     box-shadow: inset 0 0 0 2.5px var(--color-card);
 }
 
-.basemap-menu-item:hover {
-    background: rgba(0, 0, 0, 0.04);
-}
 
 .basemap-menu-item:focus-visible {
     outline: 2px solid var(--color-text-1);
@@ -474,6 +462,10 @@
 .basemap-menu-item[disabled]:hover,
 .basemap-menu-item[aria-disabled="true"]:hover {
     background: transparent;
+    /* SNOW-658: and no shared hover infill either — `.hover-affordance`
+       covers `[aria-disabled]` itself, but an offline row uses the plain
+       `disabled` attribute, and this rule is the one that knows that. */
+    background-image: none;
 }
 
 /* Search pill — collapsed to a round 40×40 by default; on expansion
@@ -506,6 +498,14 @@
     cursor: pointer;
 }
 
+/* SNOW-658: the shared hover fill paints THIS element (the 40x40 button),
+   which sits inside the pill's own 40x40 circle — so it has to be a circle
+   too, or the fill renders as a square inside a round roundel. The radius
+   was already stated for :focus-visible below, for the same reason. */
+.map-utility-button {
+    border-radius: 999px;
+}
+
 .map-utility-button:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
@@ -535,9 +535,6 @@
     justify-content: center;
 }
 
-.map-report-control:hover {
-    filter: brightness(1.04);
-}
 
 /* SNOW-414: "Add favourite" pill — same 40x40 icon-button geometry as
    the basemap / locate pills, stacked inside #map-controls-br (not
@@ -549,9 +546,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--favourite:hover {
-    filter: brightness(1.04);
-}
 
 /* Search input inside the expanded pill — hidden until the pill is
    in the expanded state. Width/opacity transition in sync with the
@@ -872,9 +866,6 @@
     cursor: pointer;
 }
 
-.map-fill-step:hover {
-    background: var(--color-bg);
-}
 
 .map-fill-step:focus-visible {
     outline: 2px solid var(--color-text-1);
@@ -1606,18 +1597,13 @@
     text-decoration: none;
 }
 
-/* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
-   a bigger box-shadow — a bespoke hover treatment invented for this control
-   alone, with no dark-mode counterpart either. Every .map-utility-pill
-   variant (basemap/locate/favourite/help — same 40×40 glass-roundel family)
-   already has a hover idiom that needs no light/dark counterpart at all:
-   filter: brightness(1.04), which brightens whatever is actually painted
-   rather than assuming what colour it is. Matched here rather than inventing
-   a parallel one. */
-.region-readout-action:hover,
-.region-readout-action:focus-visible {
-    filter: brightness(1.04);
-}
+/* This control has had three hover treatments. It began with a bespoke
+   lighter rgba(255, 255, 255, …) background plus a bigger box-shadow, with
+   no dark-mode counterpart; the post-SNOW-645 review matched it to the
+   roundel family's filter: brightness(1.04); SNOW-658 replaced that family
+   idiom, here and everywhere, with the shared `.hover-affordance` class the
+   markup now carries — see the note above `.map-download-control`, the
+   roundel this one sits beside in the same ribbon header. */
 
 /* SNOW-642: disabled — nothing is focused, so there is no bulletin to open.
    map.js sets aria-disabled and drops the href; this is the matching visual.
@@ -1771,10 +1757,17 @@
    …` this rule used to animate and the `prefers-reduced-motion` override
    that existed only to cancel it — a plain filter swap needs neither,
    matching every sibling .map-utility-pill--* hover exactly. */
-.map-download-control:hover,
-.map-download-control:focus-visible {
-    filter: brightness(1.04);
-}
+/* SNOW-658: the hover treatment for every control in this file now comes
+   from the one shared `.hover-affordance` class (src/css/main.css) that the
+   markup carries — pointer cursor plus a translucent --color-chip-strong
+   infill. Four treatments were removed to get there: `filter:
+   brightness(1.04)` on the glass roundels (a ~4% lift on a frosted
+   background, close to invisible), a hardcoded `rgba(0, 0, 0, 0.04)` on the
+   layers-menu rows (no dark-mode counterpart), `--color-bg` on the
+   bulletin-fill steps, and the panels' own `hover:bg-chip-strong`. Hugo:
+   "The affordances are inconsistent... it should be consistent on hover -
+   change the mouse pointer, and add infill". A new control here takes the
+   class rather than growing a fifth. */
 
 /* Review (post-SNOW-645, Hugo's dark-mode report): --ink/--muted-coloured
    TEXT and glyphs sitting directly on top of the glass surfaces just above
@@ -1892,6 +1885,15 @@
     z-index: 1;
 }
 
+/* SNOW-658: the custom-area roundel has no `data-download-state` at all any
+   more (its idle/done meaning went — see its own template comment), so it
+   matches none of the state-keyed rules below and its glyph would never be
+   revealed. It has exactly one glyph and one appearance, so it is stated
+   unconditionally rather than given a state to satisfy a display rule. */
+#map-custom-download-control .map-download-control-icon--idle {
+    display: block;
+}
+
 .map-download-control[data-download-state="idle"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="no-region"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
@@ -1986,25 +1988,21 @@
    this roundel restating any part of that answer as a fill colour was
    always redundant with a surface that already answers it properly.
 
-   So: no fill, in either state, in either theme. content: none removes
-   the pseudo-element outright rather than leaving it transparent, so
-   nothing here can be re-lit by a future edit to the shared green
-   busy/done rule above (which still paints a REAL status fill for
-   #map-download-control, the region control — see its own docstring;
-   that one is unchanged and stays in scope). Scoped by id, so it wins
-   over the shared class rule without !important regardless of theme —
-   no `.dark` variant needed, because there is nothing left to invert. */
-#map-custom-download-control[data-download-state="busy"]::before,
-#map-custom-download-control[data-download-state="done"]::before {
-    content: none;
-}
+   Two `#map-custom-download-control[data-download-state="busy"|"done"]`
+   rules used to sit here (a `content: none` cancelling the shared fill,
+   and a `color: inherit` for the glyph on top of it). SNOW-658 deleted
+   them along with the attribute they were keyed on: this roundel no longer
+   has a download state to cancel the paint of. The paragraph above stays,
+   because the reasoning it records — a panel opener does not describe its
+   own contents — is what stops the fill coming back a fourth time. The
+   shared busy/done fill below still paints a REAL status for
+   #map-download-control, the region control; that one is unchanged. */
 
 /* Done: the fill is pinned full — a solid disc matching the sync dot's
-   colour language: green on the region roundel. (The custom-area control
-   used to share this fill mechanism under its own monochrome colour; see
-   the review comment above for why it now paints no fill at all — this
-   rule is region-control-only in practice again, the same as before that
-   detour.) */
+   colour language: green on the region roundel. The custom-area control
+   briefly shared this fill mechanism under its own monochrome colour; it
+   carries no download state at all now (SNOW-658), so this and the white
+   glyph below are region-control-only in fact as well as in intent. */
 .map-download-control[data-download-state="done"]::before {
     height: 100%;
 }
@@ -2015,21 +2013,6 @@
    see the display rules above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
-}
-
-/* Review: the shared rule above is written for the REGION control's
-   coloured fill and would otherwise also paint #map-custom-download-
-   control's glyph white — on that control's now-plain glass chrome (no
-   fill at all, see above), a white glyph would be exactly the kind of
-   one-off, doesn't-match-its-neighbours treatment this whole review
-   exists to remove. `inherit` hands it back to the roundel's own base
-   `color` (--ink in light, --color-text-1 in dark under the .dark
-   .map-download-control rule below) — the SAME value idle and
-   other-basemap already use, in both themes, with no new token needed
-   here at all. Scoped by id so it wins over the shared rule above without
-   !important. */
-#map-custom-download-control[data-download-state="done"] .map-download-control-icon--idle {
-    color: inherit;
 }
 
 /* SNOW-645: 'other-basemap' — the region IS downloaded, just for a
@@ -2109,6 +2092,55 @@
 /* The numeric percentage is replaced by the fill above; kept out of view. */
 .map-download-control-percent {
     display: none;
+}
+
+/* SNOW-658: "the overlay this roundel's panel switches is on the map right
+   now" — the one state shared by all three overlay roundels (downloads,
+   favourites, field observations), painted from one attribute by one module
+   (static/js/map_roundel_overlay_state.js). Keyed on the attribute alone,
+   with no class in the selector, deliberately: the downloads roundel is a
+   .map-download-control and the other two are .map-utility-buttons inside a
+   pill, and a per-family rule is exactly how the three signals diverged
+   before this ticket. A fourth roundel gets this by carrying the attribute.
+
+   WHY A RING AND NOT A FILL. SNOW-645 removed a FILLED disc from
+   #map-custom-download-control after three attempts at it (an active-basemap
+   colour, then a flat neutral, then a theme-inverting neutral) all drew the
+   same complaint: a solid disc among glass roundels reads as an error or an
+   alert, not as a status. The lesson there was that the problem was painting
+   a colour at all, not which colour — so this deliberately does not reach
+   for a fill again. A 2px inset ring leaves the glass chrome and the glyph
+   exactly as they are in the off state and changes only the rim, which is
+   the same "third answer, not a shade of the other two" device the
+   'other-basemap' state above already uses on the region roundel.
+
+   The colour is --color-accent, and it is not a new choice: it is the ON
+   colour of the switch that drives this state (the track in
+   templates/includes/_switch.html is `peer-checked:bg-accent`). The control
+   and its remote indicator say the same thing in the same colour, in both
+   themes — main.css mirrors --color-accent under .dark.
+
+   Drawn on ::after rather than the element's own box-shadow so it cannot
+   contend with .map-download-control's drop shadow or with the ::before that
+   busy/done/other-basemap already own. `border-radius: inherit` gives the
+   pseudo-element its own circular geometry rather than leaning on a host
+   clip — see the 'other-basemap' rule's own comment for the bug that
+   reasoning shipped last time. If a stale static/css/output.css leaves
+   --color-accent undefined the ring simply does not paint; the state is
+   still in each roundel's aria-label, which is the accessible expression it
+   carries for its own sake. */
+[data-overlay-shown="true"] {
+    position: relative;
+}
+
+[data-overlay-shown="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 2px var(--color-accent);
+    pointer-events: none;
+    z-index: 1;
 }
 
 /* The max-width:640px rule that hid the major/minor download icons went with
@@ -2397,9 +2429,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--help:hover {
-    filter: brightness(1.04);
-}
 
 #map-help-overlay {
     position: fixed;
@@ -2953,20 +2982,20 @@ body.map-framing #map-legend {
     color: var(--color-text-1, #1a1a1a);
 }
 
-/* The existing-favourite popup hosts the client-built rename/delete row
- * (favourites.js buildDetailRow, and the _favourite.html the rename swaps
- * back in) — both carry their own card border/background for the manage-page
- * list. Inside the glass popup that reads as a box-in-box, so flatten it to
- * sit flush on the glass, matching the resort/region/observation content. */
-.detail-popup [data-favourite-uuid] {
-    border: 0;
-    background: transparent;
-    padding: 0;
-}
-
-/* Keep the editable name legible as a field on the glass — a subtle underline
- * signals "editable" without the full card border. */
-.detail-popup [data-favourite-uuid] input[name="name"] {
-    border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.18));
-    padding-bottom: 2px;
+/* SNOW-658: two rules lived here to flatten the client-built rename/delete
+ * row (and the _favourite.html a rename swapped in) against the glass, and
+ * to underline its editable name field. The favourite popup carries neither
+ * now — renaming and removing moved to the favourites panel, and what is
+ * left is a name plus a saved time, styled by the same token utilities as
+ * the observation popup's own two lines.
+ *
+ * The 200px floor above was sized for that rename field and its Remove
+ * button, and the resort popup still needs it — but a two-line favourite
+ * card in a box a third wider than the observation card it now mirrors
+ * reads as a different component. Keyed off the card's own attribute
+ * (favourites.js buildDetailCard) rather than a popup-level modifier class,
+ * so map.js's shared mountDetailPopup keeps one className for both. */
+.detail-popup .maplibregl-popup-content:has([data-favourite-card]) {
+    min-width: 0;
+    padding: 10px 34px 10px 14px;
 }

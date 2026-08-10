@@ -54,8 +54,10 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
 /**
  * Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row;
  * SNOW-635: Rename; SNOW-645 review: grouped by kind, budget folded into
- * the header, an overflow "…" menu per row instead of two inline
- * buttons, the toggle moved to the foot).
+ * the header, the toggle moved to the foot; SNOW-658: Hugo's map-panel
+ * design — the "…" menu is gone from every panel, so a row's actions are
+ * two visible icon controls and its rename is an inline edit on its own
+ * label).
  *
  * The node ORDER here is kept in step with the real template even though
  * nothing in this file depends on it — the module addresses every element
@@ -64,13 +66,11 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
  * JS. A fixture that drifted out of order would still pass while quietly
  * ceasing to be a description of the thing under test.
  *
- * The row template's overflow menu is a hand-copy of
- * includes/_overflow_menu.html + includes/_map_downloads_row_menu_items.html
- * rather than the shared partials themselves — Vitest cannot render a
- * Django template (see the file header) — kept close enough that
- * buildRow's own [data-overflow-trigger]/[role="menu"] id-rewriting and
- * overflow_menu.js's [data-overflow-menu]/[data-overflow-trigger] scoping
- * both have something real to act on.
+ * The row template is a hand-copy of includes/_ugc_panel_row.html +
+ * includes/_map_downloads_row_actions.html rather than the partials
+ * themselves — Vitest cannot render a Django template (see the file
+ * header) — carrying every hook buildRow fills or strips, including the
+ * hidden `[data-row-rename-input]` the inline editor reveals.
  */
 function buildFixture() {
   document.body.innerHTML = `
@@ -108,10 +108,10 @@ function buildFixture() {
           <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
         </div>
         <div>
-          <button type="button" data-downloads-add>Download a custom area</button>
+          <button type="button" data-panel-add>Download a custom area</button>
         </div>
         <div>
-          <label for="map-downloads-overlay-toggle">Show areas on the map</label>
+          <label for="map-downloads-overlay-toggle">Display on the map</label>
           <label for="map-downloads-overlay-toggle">
             <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
           </label>
@@ -123,18 +123,13 @@ function buildFixture() {
         <span data-row-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <span>
           <span data-row-label class="text-text-1"></span>
-          <span data-row-subtitle class="text-text-2"></span>
+          <input type="text" data-row-rename-input hidden aria-label="Area name">
+          <span data-row-meta class="text-text-2"></span>
         </span>
         <span>
-          <span data-row-size class="text-text-2"></span>
-          <div data-overflow-menu>
-            <button type="button" id="row-overflow-trigger" data-overflow-trigger
-                    aria-haspopup="menu" aria-expanded="false" aria-controls="row-overflow-menu">…</button>
-            <ul id="row-overflow-menu" role="menu" hidden>
-              <li role="none"><button type="button" role="menuitem" data-downloads-rename>Rename</button></li>
-              <li role="none"><button type="button" role="menuitem" data-downloads-delete>Remove</button></li>
-            </ul>
-          </div>
+          <span data-row-value class="text-text-2"></span>
+          <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
+          <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
         </span>
       </li>
     </template>
@@ -310,6 +305,10 @@ async function loadModule() {
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_manage_core.js');
+  // SNOW-658: renaming a row is an inline edit on its label, and the
+  // interaction lives in its own module shared with the favourites panel.
+  // home.html loads it ahead of this one; so does this fixture.
+  await import('../../static/js/inline_rename.js');
   await import('../../static/js/map_downloads_manager.js');
 }
 
@@ -376,7 +375,13 @@ beforeEach(() => {
     'snowdesk-basemap-pinned-region-CH-2101',
     'snowdesk-basemap-pinned-custom-a1',
   ]);
-  window.pwaLayersMenu = { close: vi.fn() };
+  // SNOW-658: the sheet takes part in the shared "one overlay at a time"
+  // registry (static/js/map_overlay_exclusivity.js) instead of closing the
+  // one sibling it used to know about by name. A stub stands in for the
+  // module so this suite can assert the announcement without loading it;
+  // the registry's own behaviour is covered in
+  // tests/js/test_map_overlay_exclusivity.js.
+  window.pwaMapOverlays = { register: vi.fn(), opening: vi.fn() };
   // SNOW-645 review: open() calls show() unconditionally before render(),
   // and the "Available offline" toggle calls show()/hide() directly (see
   // that block's own describe below) — a stub missing either used to fail
@@ -386,7 +391,7 @@ beforeEach(() => {
     refresh: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
-    isVisible: vi.fn(() => false),
+    isEnabled: vi.fn(() => false),
   };
   window.pwaLayerSyncStatus = { refresh: vi.fn() };
   // SNOW-634: window.pwaCustomAreaDownload — map.js's own bridge, the
@@ -395,7 +400,6 @@ beforeEach(() => {
   window.pwaCustomAreaDownload = { openFraming: vi.fn(), refresh: vi.fn() };
   window.MapSheet = { toast: vi.fn() };
   vi.stubGlobal('confirm', vi.fn(() => true));
-  vi.stubGlobal('prompt', vi.fn(() => 'Home run'));
   setOnline(true);
 });
 
@@ -406,6 +410,7 @@ afterEach(() => {
   delete window.pwaDownloadsManager;
   delete window.pwaBasemapDownloads;
   delete window.pwaCustomAreaDownload;
+  delete window.pwaOverlayBounds;
   delete window.MapSheet;
 });
 
@@ -423,7 +428,7 @@ describe('opening the sheet', () => {
     // SNOW-635: an unrenamed custom area's default label is numbered.
     expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
     expect(
-      Array.from(sheet.querySelectorAll('[data-row-size]')).map((el) => el.textContent),
+      Array.from(sheet.querySelectorAll('[data-row-value]')).map((el) => el.textContent),
     ).toEqual(['40.0 MB', '120 MB']);
   });
 
@@ -445,13 +450,60 @@ describe('opening the sheet', () => {
     ).toBe('500');
   });
 
-  it('closes the layers menu it was opened from', async () => {
+  it('places itself inside the map area (SNOW-658)', async () => {
+    // The geometry belongs to static/js/map_overlay_bounds.js and is covered
+    // in tests/js/test_map_overlay_sheet_position.js. This module is the one
+    // sheet that does NOT go through MapSheet.attach() — it owns
+    // `sheet.hidden` itself — so its own open() is the only place the call
+    // can be made, and the only thing that can be asserted here.
+    window.pwaOverlayBounds = { positionSheet: vi.fn() };
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(window.pwaLayersMenu.close).toHaveBeenCalled();
+    expect(window.pwaOverlayBounds.positionSheet).toHaveBeenCalledWith(
+      document.getElementById('map-downloads-sheet'),
+    );
+  });
+
+  it('announces its open so every other map overlay closes', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith(
+      'map-downloads-sheet',
+    );
+  });
+
+  it('registers itself so every other map overlay can close it', async () => {
+    seed({});
+    await loadModule();
+
+    expect(window.pwaMapOverlays.register).toHaveBeenCalledWith(
+      'map-downloads-sheet',
+      expect.objectContaining({
+        isOpen: expect.any(Function),
+        close: expect.any(Function),
+      }),
+    );
+  });
+
+  it('toggles shut when the roundel is tapped a second time', async () => {
+    // The roundel's own handler is one line — `pwaDownloadsManager.toggle()`
+    // — in map_custom_download.js, which this suite does not load; the
+    // bridge it calls is the equivalent entry point (see openSheet).
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await window.pwaDownloadsManager.toggle();
+    await settle();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+
+    await window.pwaDownloadsManager.toggle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
   });
 
   it('shows the empty state, and no rows, on a device with no downloads', async () => {
@@ -552,7 +604,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
 
   it("paints the toggle from the overlay's real visibility, not a flag of its own", async () => {
     seed({});
-    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
     await loadModule();
     openSheet();
     await settle();
@@ -562,7 +614,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     ).toBe(true);
   });
 
-  it('the "Show areas on the map" toggle drives show()/hide() directly', async () => {
+  it('the "Display on the map" toggle drives show()/hide() directly', async () => {
     seed({});
     await loadModule();
     openSheet();
@@ -585,7 +637,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     // sheet still open behind that menu must not sit on a checked switch for
     // an overlay that is no longer drawn.
     seed({});
-    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
     await loadModule();
     openSheet();
     await settle();
@@ -621,7 +673,7 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
       'swisstopo_winter',
     ]);
     const subtitles = Array.from(
-      document.querySelectorAll('#map-downloads-sheet [data-row-subtitle]'),
+      document.querySelectorAll('#map-downloads-sheet [data-row-meta]'),
     );
     expect(subtitles.map((el) => el.textContent)).toEqual(['Standard', 'Swisstopo (CH)']);
   });
@@ -633,7 +685,7 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-subtitle]')).toBeNull();
+    expect(document.querySelector('#map-downloads-sheet [data-row-meta]')).toBeNull();
   });
 
   it('shows "Incomplete" for an orphaned bucket, never a guessed basemap subtitle', async () => {
@@ -652,7 +704,7 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     await settle();
 
     expect(
-      document.querySelector('#map-downloads-sheet [data-row-subtitle]').textContent,
+      document.querySelector('#map-downloads-sheet [data-row-meta]').textContent,
     ).toBe('Incomplete');
   });
 
@@ -665,7 +717,7 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-subtitle]')).toBeNull();
+    expect(document.querySelector('#map-downloads-sheet [data-row-meta]')).toBeNull();
   });
 });
 
@@ -690,7 +742,7 @@ describe('orphan dimming and the pale rule (SNOW-645 review)', () => {
 
     const row = orphanRow();
     const label = row.querySelector('[data-row-label]');
-    const size = row.querySelector('[data-row-size]');
+    const size = row.querySelector('[data-row-value]');
     const rule = row.querySelector('[data-row-rule]');
     expect(label.classList.contains('text-text-2')).toBe(true);
     expect(label.classList.contains('text-text-1')).toBe(false);
@@ -829,7 +881,7 @@ describe('the budget readout', () => {
 
 describe('the add-trigger', () => {
   // SNOW-634: "Download a custom area" moved from the roundel's own click
-  // into this sheet, as [data-downloads-add] above the list.
+  // into this sheet, as [data-panel-add] above the list.
 
   it('hides the sheet and opens framing when online', async () => {
     seed({});
@@ -837,7 +889,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
@@ -854,7 +906,7 @@ describe('the add-trigger', () => {
     await settle();
     setOnline(false);
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
@@ -874,7 +926,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(true);
     expect(add.getAttribute('aria-disabled')).toBe('true');
     expect(add.textContent).toBe('Downloading needs a connection');
@@ -886,7 +938,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(false);
     expect(add.hasAttribute('aria-disabled')).toBe(false);
     expect(add.textContent).toBe('Download a custom area');
@@ -899,7 +951,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
@@ -912,7 +964,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
     expect(
-      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+      document.querySelector('[data-panel-add]').hasAttribute('disabled'),
     ).toBe(false);
 
     setOnline(false);
@@ -922,7 +974,7 @@ describe('the add-trigger', () => {
     await settle();
 
     expect(
-      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+      document.querySelector('[data-panel-add]').hasAttribute('disabled'),
     ).toBe(true);
   });
 
@@ -939,7 +991,7 @@ describe('the add-trigger', () => {
     );
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(false);
     expect(add.textContent).toBe('Download a custom area');
   });
@@ -971,7 +1023,7 @@ describe('the add-trigger', () => {
     await settle();
     delete window.pwaCustomAreaDownload;
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     // Optional chaining swallows the missing bridge; the sheet still
@@ -980,7 +1032,32 @@ describe('the add-trigger', () => {
   });
 });
 
-describe('renaming an area (SNOW-635)', () => {
+describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
+  /** The row for the first (largest) custom area.
+   *
+   * @returns {HTMLElement}
+   */
+  function customRow() {
+    return document.querySelector('[data-downloads-list-custom] li');
+  }
+
+  /** Type into an open editor and finish the edit.
+   *
+   * @param {HTMLElement} row The row being edited.
+   * @param {string} value What the user typed.
+   * @param {string} key 'Enter' or 'Escape'; anything else blurs instead.
+   * @returns {void}
+   */
+  function finishEdit(row, value, key) {
+    const input = row.querySelector('[data-row-rename-input]');
+    input.value = value;
+    if (key === 'Enter' || key === 'Escape') {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      return;
+    }
+    input.dispatchEvent(new FocusEvent('blur'));
+  }
+
   it('shows Rename only on a renameable (custom) row, never on a region', async () => {
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
@@ -988,59 +1065,115 @@ describe('renaming an area (SNOW-635)', () => {
     await settle();
 
     const rows = Array.from(document.querySelectorAll('#map-downloads-sheet li'));
-    const customRow = rows.find((li) => li.textContent.includes('Custom area'));
-    const regionRow = rows.find((li) => li.textContent.includes('Aletsch'));
-    expect(customRow.querySelector('[data-downloads-rename]')).toBeTruthy();
-    expect(regionRow.querySelector('[data-downloads-rename]')).toBeNull();
+    const custom = rows.find((li) => li.textContent.includes('Custom area'));
+    const region = rows.find((li) => li.textContent.includes('Aletsch'));
+    expect(custom.querySelector('[data-downloads-rename]')).toBeTruthy();
+    expect(custom.hasAttribute('data-row-renameable')).toBe(true);
+    expect(region.querySelector('[data-downloads-rename]')).toBeNull();
   });
 
-  it('pre-fills the prompt with the current (numbered default) label', async () => {
+  it('strips the whole inline-edit affordance from a region row', async () => {
+    // Not just the pencil: the editor and the row marker go too, or
+    // inline_rename.js still recognises the row and a region reads as
+    // editable. SNOW-658: the label itself is no longer part of this — it
+    // stopped being a rename trigger on every row, so there is nothing on
+    // it to strip.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const region = document.querySelector('[data-downloads-list-region] li');
+    expect(region.hasAttribute('data-row-renameable')).toBe(false);
+    expect(region.querySelector('[data-row-rename-input]')).toBeNull();
+  });
+
+  it('opens the editor seeded with the current (numbered default) label', async () => {
     seed({ 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-rename]').click();
+    customRow().querySelector('[data-downloads-rename]').click();
 
-    expect(window.prompt).toHaveBeenCalledWith('Name this area', 'Custom area 1');
+    const input = customRow().querySelector('[data-row-rename-input]');
+    expect(input.hidden).toBe(false);
+    expect(input.value).toBe('Custom area 1');
+    // The label steps aside for it rather than sitting above it.
+    expect(customRow().querySelector('[data-row-label]').hidden).toBe(true);
   });
 
-  it('writes the trimmed name back and re-renders showing it', async () => {
+  it('does not open the editor from a click on the label (SNOW-658)', async () => {
+    // The label was a second trigger for a day. Hugo: "We have inline
+    // editing & the pencil - choose one." Both renameable panels dropped
+    // it in the same change, since both go through inline_rename.js.
+    seed({ 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    customRow().querySelector('[data-row-label]').click();
+
+    expect(customRow().querySelector('[data-row-rename-input]').hidden).toBe(true);
+    expect(customRow().querySelector('[data-row-label]').hidden).toBe(false);
+  });
+
+  it('writes the trimmed name back on Enter and re-renders showing it', async () => {
     const rows = seed({ 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
-    window.prompt.mockReturnValue('  Home run  ');
 
-    document.querySelector('[data-downloads-rename]').click();
+    customRow().querySelector('[data-downloads-rename]').click();
+    finishEdit(customRow(), '  Home run  ', 'Enter');
     await settle();
 
     expect(rows.get('basemap.customAreas')[0].name).toBe('Home run');
     expect(rowLabels()).toEqual(['Home run']);
   });
 
-  it('does nothing when the prompt is cancelled', async () => {
+  it('commits on blur too — leaving the field is not a cancel', async () => {
     const rows = seed({ 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
-    window.prompt.mockReturnValue(null);
 
-    document.querySelector('[data-downloads-rename]').click();
+    customRow().querySelector('[data-downloads-rename]').click();
+    finishEdit(customRow(), 'Home run', 'blur');
+    await settle();
+
+    expect(rows.get('basemap.customAreas')[0].name).toBe('Home run');
+  });
+
+  it('writes nothing on Escape, and does not then commit on the blur', async () => {
+    // The regression this guards: hiding a focused input fires blur, and
+    // blur commits — so a cancel that unbinds too late saves the very
+    // edit the user just refused.
+    const rows = seed({ 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = customRow();
+    row.querySelector('[data-downloads-rename]').click();
+    finishEdit(row, 'Home run', 'Escape');
+    row.querySelector('[data-row-rename-input]').dispatchEvent(new FocusEvent('blur'));
     await settle();
 
     expect(rows.get('basemap.customAreas')[0].name).toBeUndefined();
     expect(rowLabels()).toEqual(['Custom area 1']);
   });
 
-  it('does nothing when the trimmed result is blank', async () => {
+  it('writes nothing when the field is emptied', async () => {
+    // The design's own commit(): a trimmed-empty input leaves the title
+    // unchanged. An area with no name at all has none to fall back on.
     const rows = seed({ 'basemap.customAreas': CUSTOM_AREAS });
     await loadModule();
     openSheet();
     await settle();
-    window.prompt.mockReturnValue('   ');
 
-    document.querySelector('[data-downloads-rename]').click();
+    customRow().querySelector('[data-downloads-rename]').click();
+    finishEdit(customRow(), '   ', 'Enter');
     await settle();
 
     expect(rows.get('basemap.customAreas')[0].name).toBeUndefined();
@@ -1060,16 +1193,32 @@ describe('renaming an area (SNOW-635)', () => {
     await loadModule();
     openSheet();
     await settle();
-    window.prompt.mockReturnValue('Home run');
 
     // Rows render largest-first; the first area (120 MB) sorts first.
-    document.querySelector('[data-downloads-rename]').click();
+    customRow().querySelector('[data-downloads-rename]').click();
+    finishEdit(customRow(), 'Home run', 'Enter');
     await settle();
 
     const stored = rows.get('basemap.customAreas');
     expect(stored.find((a) => a.id === 'custom-a1').name).toBe('Home run');
     expect(stored.find((a) => a.id === 'custom-b2').name).toBeUndefined();
     expect(rowLabels()).toEqual(['Home run', 'Custom area 2']);
+  });
+
+  it('toasts, and keeps the old label, when the write does not land', async () => {
+    seed({ 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+    window.pwaBasemapDownloads.rename = vi.fn(async () => false);
+
+    customRow().querySelector('[data-downloads-rename]').click();
+    finishEdit(customRow(), 'Home run', 'Enter');
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledTimes(1);
+    expect(window.MapSheet.toast.mock.calls[0][0]).toContain("couldn't be saved");
+    expect(rowLabels()).toEqual(['Custom area 1']);
   });
 });
 
@@ -1158,9 +1307,13 @@ describe('deleting an area', () => {
 
     expect(window.pwaDownloadedOverlay.refresh).toHaveBeenCalled();
     expect(window.pwaLayerSyncStatus.refresh).toHaveBeenCalled();
-    // SNOW-634: and the roundel that opens this sheet — a delete can take
-    // the device from "done" back to "idle".
-    expect(window.pwaCustomAreaDownload.refresh).toHaveBeenCalled();
+    // SNOW-658: the roundel that opens this sheet is deliberately NOT
+    // refreshed. SNOW-634 refreshed it because a delete could take it from
+    // "done" back to "idle"; it carries no downloads state at all now (it
+    // says whether ITS overlay is on the map), so a delete is not its
+    // business — asserted rather than dropped, because re-adding the call
+    // would be re-adding the state.
+    expect(window.pwaCustomAreaDownload.refresh).not.toHaveBeenCalled();
   });
 
   it('names the area and the space freed in its confirmation', async () => {

@@ -52,12 +52,41 @@ non-focusable div. It matters now that the favourite create form no
 longer focuses its name input on open — focusing that input raised the
 on-screen keyboard before the user had placed the pin.
 
+TWO LAYOUTS, ONE SHEET — AND THE DIFFERENCE IS DELIBERATE (SNOW-658).
+Below the ``sm`` breakpoint (640px) this sheet spans the full width of the
+viewport and docks to its bottom edge, so an open panel covers the map.
+At ``sm`` and above it is width-capped (``sm:w-96``) and inset into the
+bottom-right corner, so the map stays usable beside it. That is not an
+accident of the classes: a docked sheet is the right shape on a phone (the
+list is what is being read, there is no room to show it beside anything,
+and the bottom edge is where the thumb is), and on a desktop the map is
+large enough that covering it would be the loss. Both layouts are bounded
+and scroll internally — see "Bounded height" below.
+
+Expect "the panel fills the screen on mobile" as a REPORT rather than a
+bug: it is the intended behaviour, documented in §3.7 of
+docs/map-page-functional-spec.md so it does not get "fixed".
+
 On mobile the sheet is inset from the viewport edges rather than
 full-bleed, via the shared --map-edge-inset-* tokens (src/css/main.css) —
 the same distance the map control roundels use, so the sheet's edges line
 up with the stack above it, on notched devices too. Being inset on all
 sides, it also takes a full border and radius rather than the top-only
 pair it used while it was docked flush to the bottom.
+
+Desktop placement is refined in JS (SNOW-658). The ``sm:`` classes below
+put the sheet in a fixed viewport corner, which knows nothing about the
+season scrubber along the foot of the map or the roundel column at its
+right edge — so on desktop the sheet opened over both. Each map caller
+(map_sheet.js's ``open()`` for the favourite and report sheets,
+map_downloads_manager.js's own ``open()`` for downloads) hands the
+element to ``window.pwaOverlayBounds.positionSheet``
+(static/js/map_overlay_bounds.js), which measures the room those leave
+and writes ``bottom`` / ``right`` / ``max-height`` inline. The classes
+here stay as the fallback: they are what renders with JS unavailable,
+below the ``sm`` breakpoint (where nothing is written and any previous
+inline value is cleared), and for the ``static`` component-library
+render, which is inline rather than fixed and is never positioned.
 
 Bounded height (SNOW-645 review). This element used to set no
 max-height at all — content-driven height on a ``fixed``, bottom-docked

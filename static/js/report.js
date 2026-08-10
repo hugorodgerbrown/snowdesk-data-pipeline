@@ -11,9 +11,21 @@
  *                                         email is not yet verified (SNOW-477).
  *   data-signin-url="<url>"             — Sign-in page URL for the anon CTA.
  *   data-report-form-url="<url>"        — HTMX form endpoint (eligible only).
+ *   data-report-list-url="<url>"        — HTMX list endpoint (eligible only).
+ *
+ * SNOW-658: the roundel opens a PANEL, not the location flow. The panel
+ * (#report-list-template, in _report_surface.html) lists the user's own
+ * reports — loaded over HTMX from observations:list, so each row arrives
+ * with its own delete wiring — offers [data-panel-add] to file another,
+ * and carries the "Display on the map" switch that used to
+ * be a row in the layers menu (it drives window.pwaCommunityReportsOverlay
+ * in map.js). This follows SNOW-634's downloads pattern: user-generated
+ * data gets its own roundel, its own panel, and its panel owns the overlay
+ * switch. favourites.js took the same treatment in the same ticket.
  *
  * Flow when eligible (authenticated):
- *   1. User taps the floating #report-btn.
+ *   1. User taps the floating #report-btn, then [data-panel-add] in the
+ *      panel it opens.
  *   2. We reuse the page's single geolocation source — SNOW-328's MapLibre
  *      GeolocateControl, owned by map.js — by dispatching
  *      ``snowdesk:locate-request`` and awaiting the position it broadcasts on
@@ -44,10 +56,13 @@
  *     Route into MANUAL path rather than closing the sheet.
  *
  * Flow when not eligible:
- *   Authenticated but unverified (data-report-unverified) → tap opens the
- *   sheet with a "verify your email" prompt. Anonymous → tap opens the sheet
- *   with a sign-in / sign-up CTA pointing at the sign-in page
- *   (data-signin-url). No geolocation attempt is made in either case.
+ *   Authenticated but unverified (data-report-unverified) → the panel shows
+ *   a "verify your email" prompt in place of the list and the add CTA.
+ *   Anonymous → the same slot holds a sign-in / sign-up CTA pointing at the
+ *   sign-in page (data-signin-url). No geolocation attempt is made in either
+ *   case. The overlay switch stays in both states: community reports are
+ *   public data with no eligibility gate at all, so its control is useful to
+ *   a visitor even when filing one is not.
  *
  * Submission (SNOW-420 — offline-first via the mutation queue):
  *   The form's GET (loadForm, above) still goes through HTMX — only the
@@ -89,6 +104,9 @@
   const btn = document.getElementById('report-btn');
   const sheet = document.getElementById('report-sheet');
   if (!btn || !sheet) return;
+  // SNOW-658: the panel body. Optional on purpose — a surface without it
+  // still reaches the report flow straight from the roundel.
+  const listTemplate = document.getElementById('report-list-template');
 
   // SNOW-620: server-translated toast copy, read back from the template
   // _report_surface.html renders. The literals are the English fallback —
@@ -97,19 +115,21 @@
     'no-signal-type': 'Could not submit your report — please tap a signal type.',
     'cannot-queue': 'Could not save your report on this device — please try again.',
     generic: 'Something went wrong — please try again.',
-    // Mirrors includes/_sheet_header.html, which these states reimplement
-    // as an HTML string rather than clone.
-    'sheet-title': 'Report',
-    close: 'Close',
+    // SNOW-658: 'sheet-title' and 'close' went with SHEET_HEADER_HTML — every
+    // state this module renders now clones a template that includes the real
+    // includes/_sheet_header.html.
     'verify-email':
       'Verify your email to submit a field observation. Check your inbox for the verification link.',
     'signin-prompt': 'Sign in to submit a field observation.',
     'signin-cta': 'Sign in',
+    'list-failed': "Your reports couldn't be loaded — check your connection.",
+    locating: 'Finding your location…',
   });
 
   const esc = self.pwaStrings.escapeHtml;
 
   const FORM_URL = btn.dataset.reportFormUrl;
+  const LIST_URL = btn.dataset.reportListUrl;
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.reportEligible === 'true';
   // Authenticated but email not yet verified (SNOW-477): not eligible for the
@@ -122,12 +142,18 @@
   // owns the open/focus cycle, the three dismissal routes (Escape,
   // click-outside, overlays.js's [data-action="dismiss"]) and their common
   // teardown. favourites.js attaches to its own sheet the same way.
+  //
+  // SNOW-658: attaching also registers this sheet with
+  // window.pwaMapOverlays, so opening it closes the layers menu, the other
+  // two panels and any anchored detail popup — and each of those closes
+  // this one. This surface had no exclusivity wiring of its own at all
+  // before that, which is what made the old hand-wired pairs read as
+  // arbitrary: it opened over whatever happened to be up.
   // ---------------------------------------------------------------------------
 
   const controller = window.MapSheet.attach(sheet, {
     triggerSelector: '#report-btn',
   });
-  const openSheet = controller.open;
   const closeSheet = controller.close;
   const showToast = window.MapSheet.toast;
 
@@ -381,64 +407,185 @@
   // Guard against re-entrant taps while a fix is pending.
   let locating = false;
 
-  // SNOW-474: persistent × header for states built as innerHTML strings
-  // (the anonymous sign-in CTA below), mirroring templates/includes/
-  // _sheet_header.html and favourites.js's buildSheetHeader() exactly.
-  // SNOW-620: the two strings are escaped on the way in — this is an HTML
-  // string, and a locale whose copy contains a quote would otherwise close
-  // aria-label="…" early and turn the rest of its own sentence into
-  // attributes.
-  const SHEET_HEADER_HTML =
-    '<div class="flex items-center justify-between px-2 pt-1 pb-3">' +
-    '<span class="text-sm font-semibold text-text-1">' +
-    esc(STRINGS['sheet-title']) +
-    '</span>' +
-    '<button type="button" data-action="dismiss" aria-label="' +
-    esc(STRINGS.close) +
-    '" ' +
-    'class="text-text-2 hover:text-text-1 text-lg leading-none px-1">×</button>' +
-    '</div>';
+  // SNOW-658: ``SHEET_HEADER_HTML`` lived here — an HTML-string
+  // reimplementation of templates/includes/_sheet_header.html (SNOW-474) for
+  // the two ineligible states, which had no server-rendered markup of their
+  // own. Both now render inside #report-list-template, which includes the
+  // real partial, so the copy has no callers and the two can no longer drift.
 
-  btn.addEventListener('click', function () {
-    // Ineligible users: open the sheet with a prompt; no geolocation. Two
-    // cases — an authenticated-but-unverified user is told to verify their
-    // email (SNOW-477); an anonymous user gets a sign-in CTA.
+  /** The ineligible states' body, as an HTML string: a "verify your email"
+   * prompt (SNOW-477) for an authenticated-but-unverified user, or the
+   * anonymous sign-in CTA. SNOW-658 moved both inside the panel's
+   * [data-report-gate] slot, so they no longer carry their own sheet header.
+   * @returns {string}
+   */
+  function gateHtml() {
+    if (IS_UNVERIFIED) {
+      return '<p class="text-sm text-text-2">' + esc(STRINGS['verify-email']) + '</p>';
+    }
+    if (SIGNIN_URL) {
+      return (
+        '<p class="text-sm text-text-2 mb-3">' +
+        esc(STRINGS['signin-prompt']) +
+        '</p>' +
+        '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">' +
+        esc(STRINGS['signin-cta']) +
+        '</a>'
+      );
+    }
+    return '<p class="text-sm text-text-2">' + esc(STRINGS['signin-prompt']) + '</p>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // The panel (SNOW-658) — the sheet's default body: the user's own reports, a
+  // CTA to file another, and the map-overlay switch that used to be a layers-
+  // menu row.
+  //
+  // Re-cloned from the template on every open rather than updated in place,
+  // mirroring map_downloads_manager.js's render(): a stale row can then never
+  // survive a re-open. That is exactly why every listener below is delegated
+  // on the SHEET — a per-element listener would have to be rebound each time.
+  // ---------------------------------------------------------------------------
+
+  /** Clone #report-list-template into the sheet and populate it.
+   *
+   * Eligible: the rows load over HTMX from observations:list. Otherwise the
+   * rows and the add CTA are removed and the gate slot carries the verify /
+   * sign-in prompt — but the overlay switch stays, because community reports
+   * are public data and its control is useful to a visitor.
+   *
+   * @returns {boolean} Whether the panel was rendered — false when the
+   *   surface carries no list template, so the caller can fall back.
+   */
+  function showListPanel() {
+    if (!listTemplate) return false;
+    sheet.replaceChildren();
+    sheet.appendChild(listTemplate.content.cloneNode(true));
+
+    // Reflect the overlay's REAL state rather than a flag of this module's
+    // own, the way map_downloads_manager.js's render() does.
+    //
+    // SNOW-658 review: isEnabled(), the persisted preference — NOT
+    // isVisible(), which now answers from the layers MapLibre is drawing.
+    // See the matching note in static/js/favourites.js: the switch states
+    // what the user asked for, the roundel's ring states whether it reached
+    // the map, and offline-with-nothing-cached is the case where the user
+    // needs to be able to see the two disagree.
+    const toggle = sheet.querySelector('#map-community-reports-overlay-toggle');
+    if (toggle) toggle.checked = !!window.pwaCommunityReportsOverlay?.isEnabled?.();
+
+    const gate = sheet.querySelector('[data-report-gate]');
+    const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
-      openSheet();
-      if (IS_UNVERIFIED) {
-        sheet.innerHTML =
-          SHEET_HEADER_HTML +
-          '<p class="px-2 py-4 text-sm text-text-2">' +
-          esc(STRINGS['verify-email']) +
-          '</p>';
-      } else if (SIGNIN_URL) {
-        sheet.innerHTML =
-          SHEET_HEADER_HTML +
-          '<div class="px-2 py-4">' +
-          '<p class="text-sm text-text-2 mb-3">' +
-          esc(STRINGS['signin-prompt']) +
-          '</p>' +
-          '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">' +
-          esc(STRINGS['signin-cta']) +
-          '</a>' +
-          '</div>';
-      } else {
-        sheet.innerHTML =
-          SHEET_HEADER_HTML +
-          '<p class="px-2 py-4 text-sm text-text-2">' +
-          esc(STRINGS['signin-prompt']) +
-          '</p>';
-      }
+      const addButton = sheet.querySelector('[data-panel-add]');
+      if (addButton) addButton.remove();
+      if (rows) rows.remove();
+      // Every value interpolated here is escaped by gateHtml() — the strings
+      // are server-translated copy, not user content, but a locale carrying a
+      // quote would still break out of the attribute it sits in.
+      if (gate) gate.innerHTML = gateHtml();
+      return true;
+    }
+    if (gate) gate.remove();
+    if (rows && LIST_URL && typeof htmx !== 'undefined') {
+      htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
+    }
+    return true;
+  }
+
+  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
+  // roundel — a second tap on the control that opened the panel closes it.
+  // Bound on the button, so it runs before MapSheet's own document-level
+  // click-outside handler, which then sees a closed sheet and does nothing.
+  btn.addEventListener('click', function () {
+    if (controller.isOpen()) {
+      closeSheet();
       return;
     }
+    controller.open();
+    if (showListPanel()) return;
+    // No list template on this surface. The flow is still reachable, and an
+    // ineligible user still gets told why it is not — an empty sheet would be
+    // a dead end with no explanation.
+    if (IS_ELIGIBLE) startReportFlow();
+    else sheet.innerHTML = gateHtml();
+  });
 
+  // SNOW-658: "Report an observation" — what the roundel itself used to do.
+  // Delegated on the sheet so it survives the body being re-cloned.
+  //
+  // stopPropagation is load-bearing, not caution. MapSheet's click-outside
+  // dismissal asks ``sheet.contains(event.target)`` from a DOCUMENT listener,
+  // which runs after this one — and by then this handler has replaced the
+  // sheet's body, so the button that was clicked is detached and no longer
+  // "inside" anything. The sheet would close itself the instant the locating
+  // state appeared, with nothing on screen to explain it.
+  //
+  // The trade-off: this hides the click from EVERY document-level listener,
+  // not just that one (map_basemap_picker.js's outside-click close,
+  // map_legend.js, overlays.js's [data-action="dismiss"]).
+  // None of them needs it today — each of those surfaces has already closed by
+  // the time this sheet is open — but a future document-level listener that
+  // must see clicks inside this sheet would fail silently here.
+  sheet.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (!target.closest('[data-panel-add]')) return;
+    event.stopPropagation();
+    if (!IS_ELIGIBLE) return;
+    startReportFlow();
+  });
+
+  // SNOW-658: the overlay switch drives window.pwaCommunityReportsOverlay
+  // directly — show()/hide() are the only writers of that overlay's
+  // visibility, and showListPanel() reads isVisible() back, so the two can
+  // never drift. No re-render: nothing else in the panel depends on it.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches) return;
+    if (!target.matches('#map-community-reports-overlay-toggle')) return;
+    if (target.checked) window.pwaCommunityReportsOverlay?.show();
+    else window.pwaCommunityReportsOverlay?.hide();
+  });
+
+  // SNOW-658: the list is fetched, and this panel opens offline while its
+  // list does not load offline. Say so, rather than leaving the loading line
+  // up forever — and never fall through to observations:list's own empty
+  // state, which would tell the user they have reported nothing when the
+  // request merely failed. Both htmx failure events are covered:
+  // responseError is a non-2xx reply, sendError is no reply at all.
+  //
+  // Registered before the general htmx:responseError handler above would
+  // reach it — that one keys off `target === sheet` (the form load), which
+  // this target is not, so the two cannot both fire for one request.
+  for (const name of ['htmx:responseError', 'htmx:sendError']) {
+    document.addEventListener(name, function (event) {
+      const rows = sheet.querySelector('[data-report-rows]');
+      if (!rows || !event.detail || event.detail.target !== rows) return;
+      const p = document.createElement('p');
+      p.className = 'text-sm text-text-2';
+      p.textContent = STRINGS['list-failed'];
+      rows.replaceChildren(p);
+    });
+  }
+
+  /** Ask the map for a fix and load the report form from whatever comes back.
+   *
+   * Unchanged from the flow the roundel used to run directly (SNOW-658 only
+   * moved its trigger into the panel): GPS path, MANUAL path, and the
+   * twenty-second safety net that routes into MANUAL rather than leaving the
+   * sheet stuck on "Finding your location…".
+   *
+   * @returns {void}
+   */
+  function startReportFlow() {
     if (locating) return;
     locating = true;
 
-    // Open the sheet immediately with a locating state so the tap feels
-    // responsive while the control acquires a fix.
-    openSheet();
-    sheet.innerHTML = '<p class="py-4 text-center text-sm text-text-2">Finding your location…</p>';
+    // Replace the panel with a locating state so the tap feels responsive
+    // while the control acquires a fix.
+    sheet.innerHTML =
+      '<p class="py-4 text-center text-sm text-text-2">' + esc(STRINGS.locating) + '</p>';
 
     function cleanup() {
       locating = false;
@@ -486,5 +633,5 @@
 
     // Ask SNOW-328's GeolocateControl (owned by map.js) for a fresh fix.
     document.dispatchEvent(new CustomEvent('snowdesk:locate-request'));
-  });
+  }
 }());

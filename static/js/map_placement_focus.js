@@ -49,6 +49,11 @@
  * entry — a card anchored to a region that is no longer drawn would be a
  * leftover distraction. Popups are not restored on exit: the map has
  * usually been panned by then, so the old anchor is meaningless.
+ *
+ * Every transition also dispatches ``snowdesk:overlay-visibility-changed``,
+ * so the three overlay roundels drop their "shown on the map" ring for the
+ * duration of the placement and take it back afterwards — see
+ * announceOverlayVisibility() below.
  */
 
 (function () {
@@ -128,6 +133,26 @@
     return previous;
   }
 
+  /** Tell the overlay roundels that what is drawn on the map has changed.
+   *
+   * SNOW-658 review: this module hides and restores every app layer without
+   * going through any of map.js's three overlay bridges, so it is a writer
+   * of all three overlays' visibility — and since those bridges answer
+   * ``isVisible()`` from the layers themselves, their answer changes the
+   * moment enter()/exit() runs. Nothing else would say so: the preference
+   * behind each overlay has not moved, and map.js announces from its own
+   * writers only. Without this, the three rings would go on claiming
+   * "shown on the map" over a map cleared down to the basemap.
+   *
+   * The same event map.js's ``announceOverlayVisibility`` dispatches, sent
+   * directly rather than by asking map.js to send it: this module's writes
+   * are its own, and the event deliberately carries no detail, so a second
+   * dispatcher costs nothing and adds no state to keep in step.
+   */
+  function announceOverlayVisibility() {
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+  }
+
   /** Announce a focus transition so map.js (which owns the popups) can
    * react. Kept as an event rather than a direct call because map.js's
    * popup handles are closure-scoped inside its main IIFE — the same
@@ -138,6 +163,7 @@
     document.dispatchEvent(
       new CustomEvent('snowdesk:placement-focus', { detail: { active } }),
     );
+    announceOverlayVisibility();
   }
 
   window.PlacementFocus = {
@@ -186,5 +212,11 @@
     const map = getMap();
     if (!map) return;
     snapshot = hideOverlays(map);
+    // The re-install map.js just did announced the overlays as drawn (it
+    // fires this event at the end of that work), and the line above has
+    // hidden them again — so say so, or the rings come back mid-placement
+    // and stay on. Not announce(), which would re-declare a placement
+    // transition that never happened and close popups a second time.
+    announceOverlayVisibility();
   });
 }());

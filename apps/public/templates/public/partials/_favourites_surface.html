@@ -30,8 +30,44 @@ Context expected:
 {# Sheet container — hidden until favourites.js opens it. SNOW-486:    #}
 {# delegated to the shared sheet primitive (includes/_overlay_sheet.html) — #}
 {# same shape as #report-sheet so the two surfaces read as one family. #}
+{# SNOW-658: scroll_body=True, matching the downloads sheet — the panel's #}
+{# header and its CTA/switch foot stay pinned while only the list between #}
+{# them scrolls. Every body this sheet renders (the panel, the create     #}
+{# form, the confirmation) therefore carries `min-h-0 flex-1` and owns    #}
+{# its own scroll region; see that partial's docstring for the mechanism. #}
 {% trans "Favourite" as favourite_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label scroll_body=True %}
+{# SNOW-658: the panel the roundel now opens — the user's saved pins, a     #}
+{# CTA to add another, and the map-overlay switch that used to be a row in  #}
+{# the layers menu. Cloned by favourites.js on every open (so a stale row   #}
+{# can never survive a re-open), which then loads the rows themselves over  #}
+{# HTMX from favourites:list at ?variant=map — the same endpoint the manage #}
+{# page uses, but its own lean row (_favourite_row_map.html), so each row    #}
+{# arrives with its Remove form already wired and this file needs no copy of #}
+{# it. Rename is the one action that needs JS: the row's pencil (or its own   #}
+{# label) opens the inline editor the row already carries, and favourites.js  #}
+{# posts what it commits.                                                     #}
+{#                                                                           #}
+{# Adding a pin is an action INSIDE the panel now ([data-panel-add]),        #}
+{# not the roundel's own click — the shape SNOW-634 set for downloads, and   #}
+{# the reason the roundel's aria-label says "manage" rather than "add".      #}
+{#                                                                           #}
+{# SNOW-658 (second pass): the layout is includes/_ugc_panel.html — the shared #}
+{# skeleton extracted from the "Manage downloads" sheet, which is the          #}
+{# reference design. This panel used to imitate that sheet by hand and got     #}
+{# every part of it slightly different: a smaller title, its own body wrapper, #}
+{# a whole-sheet scroll. All that is gone; what stays here is the panel's own  #}
+{# strings and its rows template (public/partials/_favourites_panel_rows.html).#}
+<template id="favourite-list-template">
+    {% trans "Favourites" as favourite_list_title %}
+    {% trans "Add a favourite" as favourite_add_label %}
+    {# The context strip — where this panel's data lives. A favourite is    #}
+    {# the user's own and is never published, unlike a field observation;   #}
+    {# the strip is where each panel says so in its own words.              #}
+    {% trans "Favourites are private and not shared." as favourites_context_line %}
+    {% trans "Places" as favourites_section_label %}
+    {% include "includes/_ugc_panel.html" with title=favourite_list_title icon_template="includes/_icon_favourite.html" context_line=favourites_context_line section_label=favourites_section_label rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" %}
+</template>
 {# Create-form template — cloned by favourites.js once a pin has been  #}
 {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}
 {# submit is intercepted by favourites.js and routed through the client #}
@@ -45,7 +81,13 @@ Context expected:
         id="favourite-create-form"
         method="post"
         action="{{ favourite_create_url }}"
-        class="flex flex-col gap-3 px-2 py-4"
+        {# SNOW-658: this sheet is scroll_body=True now, so every body    #}
+        {# rendered into it is a flex child of a bounded, overflow-hidden #}
+        {# column and must own its own scroll region. `min-h-0` is        #}
+        {# load-bearing: without it a flex child refuses to shrink below  #}
+        {# its content and the form overflows the sheet instead of        #}
+        {# scrolling inside it.                                           #}
+        class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-4"
     >
         {% trans "Add favourite" as favourite_create_title %}
         {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="dismiss" %}
@@ -88,7 +130,10 @@ Context expected:
 {# so the "will sync" reassurance would be misleading. Mirrors          #}
 {# observations/partials/_report_confirmation.html.                     #}
 <template id="favourite-confirmation-template">
-    <div class="flex flex-col items-center gap-4 py-4 text-center">
+    {# SNOW-658: `min-h-0 flex-1 overflow-y-auto` — this sheet is         #}
+    {# scroll_body=True now, so every body rendered into it owns its own  #}
+    {# scroll region rather than overflowing the bounded sheet.           #}
+    <div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
         <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
         <p class="text-base font-medium text-text-1">{% trans "Pin saved!" %}</p>
         <p class="text-sm text-text-2">
@@ -119,11 +164,26 @@ Context expected:
 {# it. Read back via window.pwaStrings.read(); the module keeps the English  #}
 {# literal as the fallback. See static/js/i18n_strings.js.                   #}
 <template id="favourites-strings-template">
-    <span data-string="sheet-title">{% trans "Favourite" %}</span>
-    <span data-string="close">{% trans "Close" %}</span>
+    {# SNOW-658: "sheet-title" / "close" lived here for favourites.js's own    #}
+    {# DOM-built sheet header. Every state the module renders now clones a     #}
+    {# template that includes the real includes/_sheet_header.html, so both    #}
+    {# strings went with that copy.                                            #}
     <span data-string="signin-prompt">{% trans "Sign in to save a favourite." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
+    {# SNOW-658: the pin popup's title for a favourite saved without a name.  #}
+    {# "name-label" (the popup's editable name field) and "remove" (its       #}
+    {# Remove button) went with those controls — the panel renames and        #}
+    {# removes now, from server-rendered rows makemessages can already see.   #}
     <span data-string="unnamed-pin">{% trans "Unnamed pin" %}</span>
-    <span data-string="name-label">{% trans "Favourite name" %}</span>
-    <span data-string="remove">{% trans "Remove" %}</span>
+    {# SNOW-658: the map row renames in place on its own label. The editor  #}
+    {# is server-rendered (includes/_ugc_panel_row.html), so its aria-label #}
+    {# needs nothing here — but the FAILURE line is written into a toast by #}
+    {# favourites.js and does.                                              #}
+    <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
+    {# SNOW-658: the panel's own failure line. Distinct from the empty state  #}
+    {# favourites:list renders ("You have no saved favourites yet.") on       #}
+    {# purpose: this panel opens offline, its list does not load offline, and #}
+    {# telling a user they have no pins when the request merely failed is a   #}
+    {# wrong statement about their own data.                                  #}
+    <span data-string="list-failed">{% trans "Your favourites couldn't be loaded — check your connection." %}</span>
 </template>

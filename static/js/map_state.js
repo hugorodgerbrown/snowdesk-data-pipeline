@@ -77,7 +77,8 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-656: the "Bulletins" row — regions-fill (the danger choropleth) and
   // bulletin-groupings-line. Unlike the micro-region geography these are
   // DATE-BOUND, and they are mutually exclusive with the downloads sheet's
-  // "Show areas on the map" (both paint the same polygons). This key stores
+  // the downloads panel's "Display on the map" (both paint the same
+  // polygons). This key stores
   // the user's PREFERENCE only; the exclusivity is a session-scoped
   // suppression on top of it — see static/js/layer_visibility_core.js.
   //
@@ -112,6 +113,49 @@ const OVERLAY_STORAGE_KEY = {
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
 // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
 // SNOW-656 points it at ``bulletins`` rather than ``l4``.
+
+// SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF
+// (CH), MétéoFrance (FR), ALBINA (AT, IT) — because that is what a row
+// actually switches on: one provider's bulletins. ALBINA publishes for both
+// Austria and Italy, so its single row drives TWO country codes.
+//
+// Nothing below the menu changed shape for that. ``countryState``, the
+// per-code localStorage keys and ``applyCountryFilters``'s country filter are
+// all still per-code, and one row now simply writes two of them. Which is why
+// this mapping is a ROUTING table, declared once here and read by every
+// consumer, rather than a new "albina" pseudo-country threaded through the
+// filter code.
+//
+// A key absent from this table maps to the single code in its own suffix, so
+// ``country.ch`` needs no entry.
+const COUNTRY_GROUPS = {
+  'country.albina': ['at', 'it'],
+};
+
+/**
+ * The country codes a layers-menu overlay key switches.
+ *
+ * @param {string} overlayKey - e.g. ``'country.albina'`` or ``'country.ch'``.
+ * @returns {string[]} One or more lowercase country codes.
+ */
+function countryCodesFor(overlayKey) {
+  return COUNTRY_GROUPS[overlayKey] || [overlayKey.slice('country.'.length)];
+}
+
+/**
+ * The layers-menu overlay key that owns a country code — the inverse of
+ * ``countryCodesFor``. Used to find the row to paint (or revert) for a code
+ * the map itself is working with.
+ *
+ * @param {string} code - a lowercase country code, e.g. ``'it'``.
+ * @returns {string} The overlay key, e.g. ``'country.albina'``.
+ */
+function overlayKeyForCountry(code) {
+  for (const [key, codes] of Object.entries(COUNTRY_GROUPS)) {
+    if (codes.includes(code)) return key;
+  }
+  return `country.${code}`;
+}
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
@@ -148,12 +192,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'frame-readout-done': '%(mb)s downloaded',
   'frame-budget-banner': '%(used)s / %(budget)s downloaded',
   'action-close': 'Close',
-  // SNOW-634: the custom-area roundel's own two labels — it now opens the
-  // downloads sheet rather than framing directly (see
-  // mapCustomDownloadControlInit's `_renderControl`), so its copy is about
-  // what is on THIS DEVICE generally, not this one area.
-  'custom-control-idle': 'Manage offline downloads',
-  'custom-control-done': 'Offline downloads available',
+  // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
+  // custom-area roundel's two labels for a state it no longer has (see
+  // map_custom_download.js's header). Its label is server-rendered now,
+  // and the one thing that varies is composed onto it by
+  // map_roundel_overlay_state.js from its own strings template.
   // SNOW-635: an unrenamed custom area's default display name, filled in
   // by basemapDownloadedAreas() itself — see that function's own comment.
   'default-custom-name': 'Custom area %(n)s',

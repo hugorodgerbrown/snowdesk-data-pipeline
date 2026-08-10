@@ -2,16 +2,23 @@
 {% comment %}
 favourites/partials/_favourite_list.html — Owner favourites list.
 
-Rendered by apps.favourites.views.favourite_list. Lazy-loaded into the manage
-page's "My favourites" section via hx-get on page load (SNOW-415).
+Rendered by apps.favourites.views.favourite_list for the manage page, which
+lazy-loads it into its "My favourites" section via hx-get on page load
+(SNOW-415). The map sheet gets the leaner _favourite_list_map.html instead
+(``?variant=map``) — see that file's header for what it drops and why.
 
 Each row reuses the SNOW-413 rename/remove controls
-(favourites/partials/_favourite.html) plus a "Details" button that
-hx-gets favourites:card into the #favourite-card-panel div below, so the
-card renders in-page without leaving the manage page, and an "Open page →"
-permalink to the favourite's own full page (favourites:detail, SNOW-507) —
-the in-panel card stays (it drives the SNOW-418 offline cache
-write-through via favourites_offline.js, which a plain link would lose).
+(favourites/partials/_favourite.html) plus ONE detail control. It used to
+be two: a "Details" button hx-getting favourites:card into
+#favourite-card-panel, and an "Open page →" link to favourites:detail
+(SNOW-507). Both showed the same thing — favourite_detail.html includes the
+very same _favourite_card.html the card endpoint renders — and a GET wearing
+a button is the wrong element for it. SNOW-658 collapsed them into a single
+progressively-enhanced link: href navigates to the real page without JS,
+hx-get renders the card into the panel below with it. The hx-get is
+load-bearing beyond convenience — it is what drives the SNOW-418 offline
+cache write-through in favourites_offline.js, which fires on htmx:afterOnLoad
+and would never see a plain full-page navigation.
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
@@ -22,7 +29,7 @@ Context:
 {% endcomment %}
 <div data-testid="favourite-list">
     {{ roster_payload|json_script:"favourites-roster-cache" }}
-    {# Target for the "Details" hx-get below — starts empty. #}
+    {# Target for the detail link's hx-get below — starts empty. #}
     <div id="favourite-card-panel" class="mb-4" data-testid="favourite-card-panel"></div>
 
     {% for favourite in favourites %}
@@ -30,21 +37,15 @@ Context:
             <div class="flex-1">
                 {% include "favourites/partials/_favourite.html" with favourite=favourite %}
             </div>
-            <button
-                type="button"
+            <a
+                href="{% url 'favourites:detail' favourite.uuid %}"
                 hx-get="{% url 'favourites:card' favourite.uuid %}"
                 hx-target="#favourite-card-panel"
                 hx-swap="innerHTML"
-                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-            >
-                {% trans "Details" %}
-            </button>
-            <a
-                href="{% url 'favourites:detail' favourite.uuid %}"
                 class="shrink-0 text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                data-testid="favourite-list-open-page-link"
+                data-testid="favourite-list-detail-link"
             >
-                {% trans "Open page →" %}
+                {% trans "Details →" %}
             </a>
         </div>
     {% empty %}
@@ -53,6 +54,10 @@ Context:
         </p>
     {% endfor %}
 
+    {# Plain navigation off the manage page, so a link is the right element.  #}
+    {# The map sheet's variant drops it: there it would point at the page the #}
+    {# user is already on, and the sheet's own "Display on the map"           #}
+    {# switch is the control that actually changes what the map shows.        #}
     <div class="mt-2">
         <a
             href="{% url 'public:map' %}"

@@ -1,4 +1,4 @@
-{% load i18n static components %}
+{% load i18n static %}
 {% comment %}
 public/partials/_map_downloads_sheet.html — "Manage downloads" sheet
 (SNOW-588; the way in rewritten by SNOW-634; SNOW-635 lets more than one
@@ -17,7 +17,7 @@ SNOW-588 through SNOW-632 reached this sheet only via a
 while the roundel opened a DIFFERENT surface (the "Download a custom area"
 framing overlay) directly. SNOW-634 collapses the two: the roundel now
 opens THIS sheet, the menu row is gone, and "Download a custom area"
-became an action INSIDE the sheet instead — the ``[data-downloads-add]``
+became an action INSIDE the sheet instead — the ``[data-panel-add]``
 trigger, handled by map_downloads_manager.js's delegated click listener
 (offline: disabled and relabelled — SNOW-637; online: hide this sheet and
 call ``window.pwaCustomAreaDownload.openFraming()``, map.js's own bridge
@@ -29,9 +29,9 @@ TOP, folded into the header block itself, because Hugo's design reads it
 as part of "what this sheet is" rather than a footnote below the list —
 the opposite conclusion SNOW-641 drew, and worth noting so a future reader
 does not assume SNOW-641's reasoning still holds. A second SNOW-645
-review pass moved the "Show areas on the map" overlay switch from
-between the budget caption and the REGIONS heading down to the very
-foot, below the add-custom-area CTA — Hugo's own instruction, so the map
+review pass moved the overlay switch ("Show areas on the map" then,
+"Display on the map" since SNOW-658) from between the budget caption and
+the REGIONS heading down to the very foot, below the add-custom-area CTA — Hugo's own instruction, so the map
 BEHIND the sheet is the last thing read, not the first. Nothing here is
 positional as far as the JS is concerned: every element is addressed by
 data-attribute, never by index or sibling relationship, so reordering
@@ -50,354 +50,67 @@ is written to say so.
 Structure mirrors _favourites_surface.html: the shared sheet primitive
 (includes/_overlay_sheet.html) as an empty container, plus server-rendered
 ``<template>``s the JS clones. The templates exist so every string stays in
-a ``{% trans %}`` tag rather than being concatenated in JS where
-makemessages cannot see it.
+a translation tag rather than being concatenated in JS where makemessages
+cannot see it.
 
-The budget ``<select>``'s options are NOT rendered here — they are built by
-map_downloads_manager.js from ``pwaBasemapManageCore.BUDGET_CHOICES_MB``,
-so the offered sizes live in one place (the core, next to the floor that
-pins them to ``DOWNLOAD_CEILING_MB``) instead of being duplicated into
-markup that could drift from it. Their labels are pure numerals plus "MB",
-so nothing translatable is lost by generating them.
+SNOW-658: this sheet's own layout is now includes/_ugc_panel.html and its
+row is includes/_ugc_panel_row.html — extracted FROM here, because this
+sheet came from Hugo's own mock and is the reference the favourites and
+field-observation panels were told to conform to. Nothing about the
+rendered result changed but the add-CTA's hook (``data-downloads-add`` →
+the shared ``data-panel-add``); what moved out of this file is the panel
+chrome, the budget block (``_map_downloads_header.html``) and the row
+groups (``_map_downloads_rows.html``).
 
 htmx.min.js / db.js are loaded earlier by home.html / base.html — not
-repeated here.
+repeated here, and neither is inline_rename.js (SNOW-658): both this
+panel's custom areas and the favourites panel's pins rename in place on
+the row's own label, so home.html loads that module once for both.
 {% endcomment %}
 {% trans "Downloads on this device" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
 {# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
 {# between them scroll; see includes/_overlay_sheet.html's own docstring  #}
-{# for the mechanism and why favourites/report do NOT opt into this.      #}
+{# for the mechanism — all three panels opt into it now (SNOW-658).       #}
 {% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label scroll_body=True %}
 {# Sheet body — cloned into #map-downloads-sheet by map_downloads_manager.js #}
 {# each time the sheet is opened, then populated from the basemap.areas     #}
 {# record. Re-cloned rather than updated in place so a stale row can never  #}
 {# survive a re-open.                                                        #}
+{#                                                                          #}
+{# SNOW-658: the layout is includes/_ugc_panel.html — the five-part shell   #}
+{# Hugo's design gives all three UGC panels. Two slots stay this sheet's     #}
+{# own: `header_template` (the budget meter — the one legitimate per-panel   #}
+{# extra, since neither of the other two costs the device anything to hold)  #}
+{# and `rows_template` (the REGIONS / CUSTOM AREAS groups). Nothing here is  #}
+{# positional as far as the JS is concerned: every element is addressed by   #}
+{# data-attribute, never by index or sibling relationship.                   #}
 <template id="map-downloads-body-template">
-    {# SNOW-645 review — reconciled against the Claude Design source        #}
-    {# ("Downloads Panel.dc.html", panel 1c): 18px between the header       #}
-    {# block, the row groups, the CTA and the toggle — Tailwind's own       #}
-    {# dynamic spacing scale (v4: any utility is `calc(var(--spacing) * N)` #}
-    {# for any N, not a fixed named list) makes `gap-4.5` (4.5 × 4px = 18px)#}
-    {# a real, non-arbitrary utility, so this needed no new token.          #}
-    {#                                                                      #}
-    {# SNOW-645 review — scrolling: this <div> is the sole child of         #}
-    {# #map-downloads-sheet, which includes/_overlay_sheet.html's           #}
-    {# scroll_body=True renders as `flex flex-col overflow-hidden` — so     #}
-    {# this element needs `min-h-0 flex-1` to actually fill (and be         #}
-    {# allowed to SHRINK within) that bounded box, rather than pushing it   #}
-    {# taller than the sheet's own max-height the way plain block content   #}
-    {# would. `min-h-0` is load-bearing, not decorative: a flex child       #}
-    {# defaults to `min-height: auto`, which means "never shrink below my   #}
-    {# own content's height" — without overriding that, the row list below  #}
-    {# refuses to scroll and pushes the CTA/toggle off-screen instead,      #}
-    {# which looks exactly like this work never having been done.           #}
-    <div class="flex min-h-0 flex-1 flex-col gap-4.5">
-        {# SNOW-645 review: the title reads noticeably larger/bolder than    #}
-        {# every other sheet's — _sheet_header.html's own title_class        #}
-        {# override, added for exactly this. `text-lg` (18px, Tailwind's     #}
-        {# default) is a deliberate 1px reuse of an existing size rather     #}
-        {# than a new 17px token — the design's own value, `font-semibold`   #}
-        {# (600, matching the design's own weight — was `font-bold`/700 in   #}
-        {# an earlier pass). The × itself is unchanged from every other      #}
-        {# sheet: that partial's 44×44 tap-target fix applies everywhere     #}
-        {# already.                                                          #}
-        {# Title and the budget row below are wrapped together, OUTSIDE      #}
-        {# the outer flex-col's own `gap-4.5` rhythm, so the pair can sit    #}
-        {# close and read as one block, at the design's own 10px internal    #}
-        {# gap (`gap-2.5`) — Hugo's report: the mock has the bar close       #}
-        {# under the title. The small `-mt-0.5` (-2px) on the budget block   #}
-        {# below is the ONLY remaining offset: `_sheet_header.html`'s own    #}
-        {# `pb-3` (12px) is shared with the other two sheets and cannot      #}
-        {# change here, so 2px comes off it to land on the design's 10px     #}
-        {# net gap exactly (12 − 2 = 10), rather than the cruder `-mt-2`     #}
-        {# (-8px, a 4px net gap — approximately right, not exactly) this     #}
-        {# replaces.                                                        #}
-        <div>
-            {% trans "Downloads on this device" as downloads_sheet_title %}
-            {% include "includes/_sheet_header.html" with title=downloads_sheet_title close_action="dismiss" title_class="text-lg font-semibold" %}
-            {# SNOW-645 review: the budget control, the running total and     #}
-            {# its segmented bar, folded into the header block itself — one   #}
-            {# row: the bar (fills the remaining width), the used figure,     #}
-            {# then the budget <select> styled as a rounded pill showing      #}
-            {# e.g. "500 MB". The bar/track/select hooks themselves           #}
-            {# (data-downloads-bar/-track/-budget/-summary) are UNCHANGED     #}
-            {# from before this review — map_downloads_manager.js's render()  #}
-            {# populates them exactly as it always has; only their position   #}
-            {# in the markup (and, now, the gap above them) moved.            #}
-            <div class="-mt-0.5 flex flex-col gap-2.5">
-                <div class="flex items-center gap-2">
-                    {# 8px tall (`h-2`), radius `rounded-pill` (this          #}
-                    {# project's --radius-pill = 4px, which the design's own  #}
-                    {# 4px bar radius already matches exactly — unlike the    #}
-                    {# switch's track, THIS one keeps rounded-pill). Track    #}
-                    {# fill is `bg-chip` (src/css/main.css §1) — a 6%-black   #}
-                    {# token added this review, reconciled against the        #}
-                    {# design rather than reusing `bg-border` (9%, a BORDER   #}
-                    {# token, not a fill).                                    #}
-                    <div
-                        data-downloads-track
-                        class="h-2 flex-1 overflow-hidden rounded-pill bg-chip"
-                        aria-hidden="true"
-                    >
-                        <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
-                    </div>
-                    {# The bar is decorative (aria-hidden, above) — the same  #}
-                    {# figure is stated in words here, so a screen reader     #}
-                    {# gets the number rather than a percentage role.         #}
-                    {# SNOW-645 review: the used figure splits into two       #}
-                    {# spans, reconciled against the design — the number+unit #}
-                    {# in mono/medium/text-1 (data-downloads-summary-value,   #}
-                    {# set by render() directly: core.formatMegabytes() is a  #}
-                    {# locale-invariant numeral, not translatable text, so it #}
-                    {# needs no strings-template entry at all), then a plain  #}
-                    {# " of" in text-2 — a STATIC translated node, since      #}
-                    {# "of" alone never changes and needs no JS to populate   #}
-                    {# it. This replaces the single flat `usage-used`         #}
-                    {# interpolated string ("%(used)s of") the previous pass  #}
-                    {# used, which could not style the two parts differently. #}
-                    <p data-downloads-summary class="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-xs">
-                        <span data-downloads-summary-value class="font-mono font-medium text-text-1"></span>
-                        <span class="text-text-2">{% trans "of" %}</span>
-                    </p>
-                    {# mono, `bg-tag`, `rounded-tag` (8px), 1px border,       #}
-                    {# 3px/6px padding — reconciled against the design; was   #}
-                    {# sans, `bg-card`, `rounded-pill` (4px), 2px/8px.        #}
-                    {# `py-0.75`/`px-1.5` are Tailwind's own dynamic spacing  #}
-                    {# scale (0.75 × 4px = 3px, 1.5 × 4px = 6px) — exact, not #}
-                    {# an arbitrary bracket value.                            #}
-                    <select
-                        id="map-downloads-budget"
-                        data-downloads-budget
-                        class="shrink-0 rounded-tag border border-border bg-tag px-1.5 py-0.75 font-mono text-xs text-text-1 focus:outline-none"
-                    >
-                    </select>
-                </div>
-                <p class="text-xs text-text-3">
-                    {% trans "Downloads and budget stay on this device." %}
-                </p>
-            </div>
-        </div>
-        {# Shown only when stored downloads exceed the budget — reachable    #}
-        {# by lowering the budget below what is already held, which is       #}
-        {# allowed deliberately: the alternative is refusing a setting on    #}
-        {# a device that has run out of room. Nothing is evicted here; the   #}
-        {# next download is what reconciles it (SNOW-586), so the copy says  #}
-        {# what will happen rather than warning about what has.              #}
-        <p
-            data-downloads-over
-            hidden
-            class="rounded-tag bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text"
-        >
-            {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
-        </p>
-        {# SNOW-645 review: rows are grouped by kind under a small, muted,   #}
-        {# uppercase heading — REGIONS, then CUSTOM AREAS — rather than one  #}
-        {# flat list. Both groups exist unconditionally in this markup;      #}
-        {# map_downloads_manager.js's render() hides a group's OWN wrapper   #}
-        {# (heading and list together) when it has no rows, rather than      #}
-        {# showing an empty heading. Within a group the order is unchanged   #}
-        {# — basemap_manage_core.js's manageRows still sorts largest-first,  #}
-        {# groupRowsByKind only partitions that same order by kind, so a     #}
-        {# group's own biggest area still leads it.                         #}
-        {#                                                                   #}
-        {# Heading style reconciled against the design: mono, `font-medium`  #}
-        {# (500), `tracking-wide` (Tailwind's own 0.025em — the design's own  #}
-        {# 0.03em is a 0.005em difference, not worth a new token for),        #}
-        {# `text-xs` (12px, exact). `uppercase` stays a CSS transform on the  #}
-        {# rendered string, never applied to the {% trans %} msgid itself —   #}
-        {# "Regions"/"Custom areas" stay natural-cased and translatable.      #}
-        {#                                                                    #}
-        {# Rule placement reconciled against the design too: NO border under  #}
-        {# the heading any more (`border-b` removed) — each ROW now carries   #}
-        {# its own `border-t` instead (map-downloads-row-template, below),    #}
-        {# so the heading/first-row boundary is still drawn, just by the      #}
-        {# row's own top edge rather than the heading's bottom one. The       #}
-        {# LAST visible group additionally gets a `border-b` on its own       #}
-        {# `<ul>`, closing the list off — `divide-y` never drew that either.  #}
-        {# Which group counts as "last" is data-driven (either group can be   #}
-        {# empty/hidden), so render() sets it via a `border-b`/`border-border`#}
-        {# class toggle on whichever list is genuinely last-visible, not      #}
-        {# something expressible as a fixed CSS selector here.                #}
-        {#                                                                    #}
-        {# SNOW-645 review — scrolling: THIS is the scroll region             #}
-        {# includes/_overlay_sheet.html's own docstring describes — the       #}
-        {# header above (title, budget, over-budget warning) and the footer   #}
-        {# below (CTA, toggle) are both ordinary flex children and stay       #}
-        {# pinned; only this `overflow-y-auto` div scrolls when there are     #}
-        {# enough areas to overflow the sheet's own bounded max-height.       #}
-        {# `min-h-0` is the same load-bearing override the outer wrapper      #}
-        {# needs, for the same reason — see that element's own comment.       #}
-        <div class="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto">
-            <div data-downloads-group="region" class="flex flex-col gap-1" hidden>
-                <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-                    {% trans "Regions" %}
-                </p>
-                <ul data-downloads-list-region class="flex flex-col"></ul>
-            </div>
-            <div data-downloads-group="custom" class="flex flex-col gap-1" hidden>
-                <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-                    {% trans "Custom areas" %}
-                </p>
-                <ul data-downloads-list-custom class="flex flex-col"></ul>
-            </div>
-            <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
-                {# "below" — the trigger this sentence points at is still below  #}
-                {# both groups, in its own CTA group. The two have to stay in    #}
-                {# step; a stale direction here is a wrong instruction, not just #}
-                {# untidy copy.                                                  #}
-                {% trans "You haven't downloaded any areas yet. Download a region from the map, or use the button below for a custom area." %}
-            </p>
-        </div>
-        {# SNOW-645 review: the add-trigger is its own group with a top      #}
-        {# border. SNOW-634: "Download a custom area" moved here from the    #}
-        {# roundel's own click — see this file's module header. SNOW-635 is  #}
-        {# what lets it be clicked again to add a SECOND (or third, …)       #}
-        {# custom area without leaving the sheet. Handled by                 #}
-        {# map_downloads_manager.js's delegated click listener, not a        #}
-        {# dedicated one — rows are re-cloned on every render and this       #}
-        {# trigger is cloned right along with them, so binding here would    #}
-        {# have to be redone on every open too. The label itself was         #}
-        {# "Download a custom area" through SNOW-634, changed to "Draw a     #}
-        {# custom area" for the first SNOW-645 review mock, and reverted     #}
-        {# back to "Download a custom area" for the second — Hugo's own      #}
-        {# call to make, and he reversed it.                                 #}
-        {# SNOW-637: offline, map_downloads_manager.js's render() disables    #}
-        {# this trigger and swaps its label for `add-disabled` below —       #}
-        {# starting a download needs a connection, so the control says so    #}
-        {# instead of staying live and failing on tap. The disabled          #}
-        {# utilities are the same pair used elsewhere for this               #}
-        {# (_report_form.html, edit_resorts_panel.html).                     #}
-        {#                                                                   #}
-        {# SNOW-645 review: the "+" is now a stroked SVG plus (16×16,        #}
-        {# `M12 5v14M5 12h14`, stroke-width 2, round caps — reconciled        #}
-        {# against the design) instead of a literal glyph, the same          #}
-        {# stroke-based idiom every other icon in this design uses.          #}
-        {# `button_classes variant="secondary"` already gives 14px/500       #}
-        {# (`text-sm font-medium`, `_BUTTON_BASE`) and `rounded-tag` (8px)    #}
-        {# exactly — the design's own values — so the shared button is kept  #}
-        {# unmodified rather than forked; its border is `border-text-1`      #}
-        {# (the variant's own colour), not `--color-border-strong` as the    #}
-        {# design specifies, and that ONE property is left as a known,       #}
-        {# deliberate deviation rather than overridden — reworking a shared  #}
-        {# button variant used across the whole app was judged out of scope  #}
-        {# for one sheet's CTA.                                              #}
-        <div class="border-t border-border pt-3">
-            <button
-                type="button"
-                data-downloads-add
-                class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50'
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    aria-hidden="true"
-                >
-                    <path d="M12 5v14M5 12h14" />
-                </svg>
-                {% trans "Download a custom area" %}
-            </button>
-        </div>
-        {# SNOW-645 review: moved here, LAST, from between the header's      #}
-        {# budget caption and the REGIONS heading — Hugo's second mock: "move #}
-        {# the Show areas toggle to the bottom". Same panel, same switch,     #}
-        {# same behaviour, only the position changed — see the (unmoved)      #}
-        {# comment on window.pwaDownloadedOverlay in map.js for the full      #}
-        {# show()/hide() contract this drives. A view control for the MAP     #}
-        {# BEHIND the sheet, not a row in the downloads list — its own        #}
-        {# light-grey rounded panel (bg-tag — the same token the              #}
-        {# problem/chip tags use). At the foot it reads as "and here's the    #}
-        {# map view this affects" after everything the sheet itself holds,    #}
-        {# rather than announcing itself before the reader has seen what is   #}
-        {# (or isn't) stored — including on the empty-sheet state, where a    #}
-        {# toggle offering to show areas on a map that has none downloaded    #}
-        {# is odd but harmless, not disabled: nothing about disabling it      #}
-        {# would help the layout, and the control still does something real   #}
-        {# (a downloaded-under-a-different-basemap area, say, still shows).   #}
-        <div class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2">
-            {# SNOW-645 review: 14px/500/text-1 (was text-sm/text-2, i.e.    #}
-            {# 400 weight) — reconciled against the design, which reads     #}
-            {# this label with more weight than a purely descriptive one.   #}
-            <label for="map-downloads-overlay-toggle" class="text-sm font-medium text-text-1">
-                {% trans "Show areas on the map" %}
-            </label>
-            {# SNOW-645 review (SAST): map_downloads_manager.js selects this  #}
-            {# instance by id (#map-downloads-overlay-toggle) directly — see  #}
-            {# _switch.html's own docstring for why the data-attribute hook   #}
-            {# this used to carry (extra_attrs) is gone.                      #}
-            {% include "includes/_switch.html" with id="map-downloads-overlay-toggle" %}
-        </div>
-    </div>
+    {% trans "Downloads on this device" as downloads_sheet_title %}
+    {% trans "Download a custom area" as downloads_add_label %}
+    {# The context strip: where this panel's data lives, in one line. It    #}
+    {# was a paragraph inside the budget block; the shared skeleton renders #}
+    {# it for every panel now, directly under the title, with the budget    #}
+    {# meter below it — the one place a panel may extend the strip.         #}
+    {% trans "Downloads and budget stay on this device." as downloads_context_line %}
+    {# No `section_label`: this panel has TWO groups (Regions, Custom       #}
+    {# areas) and renders both headings itself, through the same partial.   #}
+    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
 </template>
-{# One list row. ``data-downloads-delete`` carries the area id so the       #}
-{# delegated click handler needs no closure over the rendered row.          #}
-{# ``data-downloads-rename`` (SNOW-635) is removed outright by              #}
-{# map_downloads_manager.js's ``buildRow`` for a row that isn't renameable  #}
-{# (a region, or an orphaned bucket) — only a custom area with a real       #}
-{# record behind it ever keeps it.                                         #}
+{# One list row (includes/_ugc_panel_row.html — the one anatomy Hugo's      #}
+{# design gives all three UGC panels). `js_filled` renders every            #}
+{# [data-row-*] hook empty for buildRow to fill, including the inline-      #}
+{# rename input; `rule` adds the coloured left-edge rule, which only this   #}
+{# panel has (it carries the basemap identity colour).                      #}
 {#                                                                          #}
-{# SNOW-645 review — row shape: a coloured vertical rule down the left      #}
-{# edge (the basemap identity colour — see data-row-rule below), a bold     #}
-{# title and a muted subtitle instead of the old round swatch, the size,    #}
-{# and a "…" overflow trigger (includes/_overflow_menu.html) instead of     #}
-{# the two inline Rename/Remove buttons this replaces. The title NO LONGER  #}
-{# carries the row's kind ("Verbier (Region)") — that was this same        #}
-{# ticket's own earlier pass, reversed here: the group heading above says   #}
-{# kind now, so the title goes back to being the plain name.                #}
-{#                                                                          #}
-{# The overflow menu's `trigger_id`/`menu_id` here ("row-overflow-…") are   #}
-{# NOT unique — they exist so includes/_overflow_menu.html has something to #}
-{# render; buildRow rewrites both, and the trigger's aria-controls, to a    #}
-{# per-row id once cloned, the same way it already rewrites                 #}
-{# data-downloads-delete's value. The Rename item is present unconditionally #}
-{# here too — buildRow removes its whole <li> for a non-renameable row.     #}
-{# SNOW-645 review — sizing reconciled against the design:                  #}
-{#   - the rule: 3px wide / 26px tall / small radius, vertically CENTRED    #}
-{#     (was `w-1 self-stretch rounded-full` — full row height, fully        #}
-{#     rounded). `w-0.75`/`h-6.5` are Tailwind's own dynamic spacing scale   #}
-{#     (0.75 × 4px = 3px, 6.5 × 4px = 26px — exact, not an arbitrary        #}
-{#     value); `rounded-xs` is Tailwind's OWN unmodified default            #}
-{#     (`--radius-xs: 2px`, the one radius step this project's own @theme   #}
-{#     block does not override) rather than a new token, since it already  #}
-{#     equals the design's own 2px exactly. `self-center` overrides the    #}
-{#     `<li>`'s `items-stretch` for this one child.                        #}
-{#   - the title: `text-label font-medium` (15px/500 — was                 #}
-{#     `text-sm font-semibold`, 14px/600).                                  #}
-{#   - the size: `font-mono text-summary text-text-2` (13px mono — was     #}
-{#     `text-sm text-text-2`, 14px sans). `text-summary` (13px) is reused   #}
-{#     from its original collapsible-panel-summary role — the pixel value  #}
-{#     coincides, not the semantic name.                                   #}
-{#   - the row itself: `border-t border-border py-2.25` (9px vertical      #}
-{#     padding — `py-2.25` = 2.25 × 4px = 9px exact) replaces the `<ul>`'s  #}
-{#     removed `divide-y` (see the group `<div>`s above) and the old       #}
-{#     `py-2` (8px).                                                       #}
+{# ``data-downloads-delete`` carries the area id so the delegated click      #}
+{# handler needs no closure over the rendered row; ``data-downloads-rename`` #}
+{# (SNOW-635) is removed outright by map_downloads_manager.js's ``buildRow`` #}
+{# for a row that isn't renameable (a region, or an orphaned bucket), along  #}
+{# with that row's own inline-edit affordance.                               #}
 <template id="map-downloads-row-template">
-    <li class="flex items-stretch gap-3 border-t border-border py-2.25">
-        <span
-            data-row-rule
-            aria-hidden="true"
-            class="basemap-identity-fill h-6.5 w-0.75 shrink-0 self-center rounded-xs"
-        ></span>
-        <span class="flex min-w-0 flex-1 flex-col justify-center">
-            <span data-row-label class="truncate text-label font-medium text-text-1"></span>
-            {# SNOW-645: which basemap this area was downloaded under, or —  #}
-            {# for an orphan (SNOW-612) — the fixed "Incomplete" string      #}
-            {# (`kind-incomplete` below). A row with no resolvable basemap   #}
-            {# (a legacy record, or a key the picker no longer has) removes  #}
-            {# this whole line rather than showing an unknown basemap;       #}
-            {# colour is never the only signal.                              #}
-            <span data-row-subtitle class="truncate text-xs text-text-3"></span>
-        </span>
-        <span class="flex shrink-0 items-center gap-1">
-            <span data-row-size class="font-mono text-summary text-text-2"></span>
-            {% include "includes/_overflow_menu.html" with trigger_id="row-overflow-trigger" menu_id="row-overflow-menu" trigger_label="More actions" items_template="includes/_map_downloads_row_menu_items.html" %}
-        </span>
-    </li>
+    {% trans "Area name" as downloads_rename_label %}
+    {% include "includes/_ugc_panel_row.html" with rule=True js_filled=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
@@ -421,7 +134,7 @@ repeated here.
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
             download it again when you're back online.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
-    {# SNOW-634: [data-downloads-add]'s offline refusal — Offline-integrity #}
+    {# SNOW-634: [data-panel-add]'s offline refusal — Offline-integrity     #}
     {# mirrors #map-frame-overlay's own Download button: no new download    #}
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
@@ -437,16 +150,18 @@ repeated here.
     {# map-strings-template — kept in that ONE template rather than        #}
     {# duplicated here, since every consumer (this sheet included) now     #}
     {# just reads `area.name` uniformly.                                   #}
-    <span data-string="rename-prompt">{% trans "Name this area" %}</span>
+    {# SNOW-658: the rename PROMPT's copy went with the prompt — a row     #}
+    {# renames in place now, and its editor's aria-label is rendered on the #}
+    {# row itself. The failure line is still written from JS, into a toast. #}
     <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
-    {# SNOW-645 review: the "…" trigger's per-row aria-label — the glyph    #}
-    {# alone names nothing to a screen reader, and "More actions" alone     #}
-    {# (includes/_overflow_menu.html's own default) is ambiguous with many  #}
-    {# rows on screen at once.                                              #}
-    <span data-string="row-menu-label">{% blocktrans %}More actions for %(name)s{% endblocktrans %}</span>
+    {# SNOW-658: each row action names the row it acts on — "Remove" alone  #}
+    {# names nothing to a screen reader with a list of areas on screen. The #}
+    {# favourite and observation rows interpolate theirs in the template; a #}
+    {# row cloned from a <template> has no name until buildRow fills it.    #}
+    <span data-string="rename-row-label">{% blocktrans %}Rename %(name)s{% endblocktrans %}</span>
+    <span data-string="remove-row-label">{% blocktrans %}Remove %(name)s{% endblocktrans %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}
 <script defer src="{% static 'js/basemap_manage_core.js' %}"></script>
-<script defer src="{% static 'js/overflow_menu.js' %}"></script>
 <script defer src="{% static 'js/map_downloads_manager.js' %}"></script>

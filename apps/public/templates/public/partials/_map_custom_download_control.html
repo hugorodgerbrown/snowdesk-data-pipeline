@@ -22,19 +22,24 @@ buried in a menu about map layers.
 SNOW-634 collapses them: clicking this roundel now opens the downloads
 sheet (public/partials/_map_downloads_sheet.html) — the layers-menu row
 is gone, this IS the way in — and "Download a custom area" is an action
-inside that sheet ([data-downloads-add]) rather than the roundel's own
-click. The roundel is therefore reduced to two states (data-download-
-state: idle | done), driven by static/js/map.js's
-mapCustomDownloadControlInit's `_renderControl`: "done" means the DEVICE
-holds at least one downloaded area (region or custom, excluding an
-orphaned/incomplete bucket), not that this one custom area is fully
-cached — a user with five downloaded regions and no custom area now reads
-`done`, correctly, rather than the old per-area probe's `idle`. Clicking
-is unconditional — no busy state to guard (framing hides
+inside that sheet ([data-panel-add]) rather than the roundel's own
+click. Clicking is unconditional — no busy state to guard (framing hides
 #map-controls-br, this roundel's own container, for as long as it is
 open, so it can never be clicked mid-run) and no offline guard (the sheet
 lists and deletes offline, which is exactly when storage pressure is
 felt). aria-controls points at the sheet it now opens, not the overlay.
+
+SNOW-658: the roundel carries ONE state, `data-overlay-shown`, and it
+means here exactly what it means on the favourites and field-observation
+roundels — "the overlay my panel's 'Display on the map' switch controls is
+drawn on the map right now" (static/js/map_roundel_overlay_state.js). It
+replaces `data-download-state="idle|done"`, where "done" meant "this
+device holds at least one downloaded area": a true fact, but a different
+one, and one roundel cannot carry two states and still be readable. The
+sheet this roundel opens answers "what have I downloaded" properly — a row
+list, per-area swatches, a budget bar — so nothing was lost by taking that
+answer off the button that opens it. The label stays server-rendered
+below; the overlay state is composed onto it, never replacing it.
 
 SNOW-635: dropped the `data-area-label` attribute this element used to
 carry ("Custom area", the display name a completed download recorded onto
@@ -49,8 +54,8 @@ Takes no context.
 <button
     type="button"
     id="map-custom-download-control"
-    class="map-custom-download-control map-download-control"
-    data-download-state="idle"
+    class="map-custom-download-control map-download-control hover-affordance"
+    data-overlay-shown="false"
     aria-haspopup="dialog"
     aria-controls="map-downloads-sheet"
     aria-label='{% trans "Manage offline downloads" %}'
@@ -60,21 +65,10 @@ Takes no context.
     {# plain download-arrow glyph the per-region control uses. Unchanged   #}
     {# by SNOW-634: only this roundel's labels and behaviour changed, not  #}
     {# its icon.                                                           #}
-    <svg
-        class="map-download-control-icon map-download-control-icon--idle"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-        <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-        <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-        <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-    </svg>
+    {#                                                                     #}
+    {# SNOW-658: the paths moved into includes/_icon_downloads.html. The   #}
+    {# panel this roundel opens now carries the SAME mark in its header —  #}
+    {# it is the panel's only identity mark, confirming which roundel was  #}
+    {# tapped — and one glyph rendered in two places needs one source.     #}
+    {% include "includes/_icon_downloads.html" with size=18 svg_class="map-download-control-icon map-download-control-icon--idle" only %}
 </button>

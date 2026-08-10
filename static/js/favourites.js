@@ -11,15 +11,31 @@
  *   data-favourite-rename-url-template="<url>"   — __UUID__-templated rename endpoint.
  *   data-favourite-delete-url-template="<url>"   — __UUID__-templated delete endpoint.
  *
+ * SNOW-658: the roundel opens a PANEL, not the create form. The panel
+ * (#favourite-list-template, in _favourites_surface.html) lists the user's
+ * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
+ * row (favourites/partials/_favourite_row_map.html) is the shared UGC row:
+ * a label, a muted meta line, and two icon controls — a pencil and a
+ * trash. Remove is that row's own HTMX form and needs nothing here;
+ * Rename — the pencil, and only the pencil — puts the row's own label
+ * into an inline edit (static/js/inline_rename.js, shared with the
+ * downloads panel) and posts the committed name from below. The panel
+ * offers [data-panel-add] to place another, and carries the "Display on
+ * the map" switch that used to be a row in the layers menu (it drives
+ * window.pwaFavouritesOverlay in map.js). This
+ * follows SNOW-634's downloads pattern: user-generated data gets its own
+ * roundel, its own panel, and its panel owns the overlay switch.
+ *
  * Flow when eligible (authenticated), using the shared place-picker
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
  * which on touch screens is occluded by the dragging finger:
- *   1. Tap #favourite-add-btn — opens the sheet, shows the create form
- *      immediately (cloned from #favourite-create-template, which carries a
- *      real {% csrf_token %} rendered server-side — there is no per-request
- *      form-load endpoint here, unlike report_form_url), seeded from the
- *      map's current centre, and arms PlacePicker.activate() so the fixed
- *      centre pin appears and the form's coords track every pan.
+ *   1. Tap #favourite-add-btn — opens the sheet on the list panel; tap
+ *      [data-panel-add] inside it to show the create form (cloned from
+ *      #favourite-create-template, which carries a real {% csrf_token %}
+ *      rendered server-side — there is no per-request form-load endpoint
+ *      here, unlike report_form_url), seeded from the map's current centre,
+ *      and arm PlacePicker.activate() so the fixed centre pin appears and
+ *      the form's coords track every pan.
  *   2. writeCreateCoords (PlacePicker's onChange) keeps the form's hidden
  *      lat/lon inputs in sync with the map centre.
  *   3. Save is intercepted (SNOW-479) and routed through
@@ -36,22 +52,26 @@
  *      pwa:mutation-failed-permanent listener below.
  *
  * Pin-detail flow (existing favourite, tapped on the map):
- *   map.js dispatches snowdesk:favourite-selected {uuid, name} on a
- *   'favourites-pin' click. There is no "fetch one favourite" GET endpoint
- *   (SNOW-413 only shipped POST create/rename/delete), so the rename/delete
- *   row is reconstructed here via DOM APIs (never innerHTML of the
- *   user-supplied name — SNOW-414 must not `mark_safe` untrusted content)
- *   using the __UUID__-templated URLs and the CSRF token value already
- *   present (inert) inside #favourite-create-template. The reconstructed
- *   row deliberately mirrors favourites/partials/_favourite.html's shape
- *   (same element id, same hx-target) so once the *first* rename or delete
- *   round-trips, the server's own partial slots back into the same place
- *   and every subsequent interaction is handled by its own embedded
- *   hx-post/hx-target/hx-swap wiring with no further JS involved.
+ *   map.js dispatches snowdesk:favourite-selected {uuid, name, created_at}
+ *   on a 'favourites-pin' click, and this module fills the container it
+ *   passes with the popup's card via DOM APIs (never innerHTML of the
+ *   user-supplied name — SNOW-414 must not `mark_safe` untrusted content).
+ *
+ *   SNOW-658: that card is the pin's name and the time it was saved, and
+ *   nothing else — the shape the observation pin's popup already had.
+ *   Renaming and removing a favourite happen in the panel below, so the
+ *   popup's editable name field and Remove button are gone, and with them
+ *   the __UUID__-templated forms, their CSRF inputs and the htmx lifecycle
+ *   bookkeeping that scoped rename/delete responses to the popup. Every
+ *   value the card needs rides on the feature the map already holds, so it
+ *   opens offline — which the panel's HTMX list does not.
  *
  * Flow when not eligible (anonymous):
- *   Tap opens the sheet with a sign-in / sign-up CTA pointing at the
- *   sign-in page (data-signin-url) — no map interaction is armed.
+ *   Tap opens the panel with a sign-in / sign-up CTA pointing at the
+ *   sign-in page (data-signin-url) in place of the list and the add CTA —
+ *   no map interaction is armed. The overlay switch stays: it is a view
+ *   control for a layer that simply has nothing in it yet, and a control
+ *   that vanishes reads as a bug (SNOW-658).
  */
 
 (function () {
@@ -61,6 +81,9 @@
   const sheet = document.getElementById('favourite-sheet');
   const createTemplate = document.getElementById('favourite-create-template');
   if (!btn || !sheet || !createTemplate) return;
+  // SNOW-658: the panel body. Optional on purpose — a surface that renders
+  // the create template but not this one still gets the create flow.
+  const listTemplate = document.getElementById('favourite-list-template');
 
   // SNOW-620: server-translated copy, read back from the template
   // _favourites_surface.html renders. This module builds its whole sheet in
@@ -68,18 +91,26 @@
   // could not see them. The literals are the English fallback — see
   // static/js/i18n_strings.js.
   const STRINGS = self.pwaStrings.read('favourites-strings-template', {
-    // Mirrors includes/_sheet_header.html, which this module reimplements
-    // in JS rather than clones.
-    close: 'Close',
-    'sheet-title': 'Favourite',
+    // SNOW-658: 'close' and 'sheet-title' went with buildSheetHeader — every
+    // state this module renders now clones a template that includes the real
+    // includes/_sheet_header.html.
     'signin-prompt': 'Sign in to save a favourite.',
     'signin-cta': 'Sign in',
+    // Still the pin popup's title for a favourite saved without a name.
+    // 'name-label' and 'remove' went with the popup's editable name field
+    // and Remove button (SNOW-658) — the panel owns both, and renders its
+    // own copy server-side.
     'unnamed-pin': 'Unnamed pin',
-    'name-label': 'Favourite name',
-    remove: 'Remove',
+    // SNOW-658: the map row's Rename is an inline edit on the row's own
+    // label now, so the prompt's copy is gone — the editor's aria-label is
+    // rendered by the row template, where makemessages can see it. Only
+    // the failure line is still JS-rendered copy.
+    'rename-failed': "That name couldn't be saved. Try again.",
+    'list-failed': "Your favourites couldn't be loaded — check your connection.",
   });
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
+  const LIST_URL = btn.dataset.favouriteListUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.favouriteRenameUrlTemplate;
   const DELETE_URL_TEMPLATE = btn.dataset.favouriteDeleteUrlTemplate;
   const SIGNIN_URL = btn.dataset.signinUrl;
@@ -120,48 +151,25 @@
   // teardown. report.js attaches to its own sheet the same way.
   // ---------------------------------------------------------------------------
 
+  // SNOW-658: the two hand-wired exclusivity pairs this attach used to carry
+  // — an ``onBeforeOpen`` dispatching snowdesk:favourite-detail-close, and a
+  // snowdesk:map-detail-opening listener closing this sheet — are gone. Both
+  // said "this sheet and the anchored detail popup are mutually exclusive",
+  // one direction each, and neither said anything about the layers menu, the
+  // downloads sheet or the report sheet. MapSheet.attach now registers every
+  // sheet with window.pwaMapOverlays (static/js/map_overlay_exclusivity.js),
+  // which closes whatever else is open whichever surface opens.
   const controller = window.MapSheet.attach(sheet, {
     triggerSelector: '#favourite-add-btn',
-    // SNOW-499: the create/placement sheet and an anchored detail popup are
-    // mutually exclusive map-detail surfaces — opening the sheet closes any
-    // open resort/favourite detail popup (map.js listens for this).
-    onBeforeOpen: function () {
-      document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
-    },
   });
-  const openSheet = controller.open;
   const closeSheet = controller.close;
   const showToast = window.MapSheet.toast;
 
-  // SNOW-499: map.js dispatches this as it opens an anchored detail popup
-  // (resort tap or existing-favourite tap) — close the create/placement
-  // sheet so the two surfaces never overlap.
-  document.addEventListener('snowdesk:map-detail-opening', function () {
-    if (controller.isOpen()) closeSheet();
-  });
-
-  /** Build a sheet-header row (title + persistent × close button), mirroring
-   * templates/includes/_sheet_header.html for states built via DOM APIs
-   * rather than server-rendered markup (pin-detail, anonymous sign-in CTA).
-   * @param {string} titleText
-   * @returns {HTMLDivElement}
-   */
-  function buildSheetHeader(titleText) {
-    const header = document.createElement('div');
-    header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
-    const title = document.createElement('span');
-    title.className = 'text-sm font-semibold text-text-1';
-    title.textContent = titleText;
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('data-action', 'dismiss');
-    closeBtn.setAttribute('aria-label', STRINGS.close);
-    closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
-    closeBtn.textContent = '×';
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-    return header;
-  }
+  // SNOW-658: ``buildSheetHeader`` lived here — a DOM-API reimplementation of
+  // templates/includes/_sheet_header.html for the one state that had no
+  // server-rendered markup, the anonymous sign-in CTA. That state is now
+  // rendered inside #favourite-list-template, which includes the real partial,
+  // so the copy has no callers and the two can no longer drift.
 
   // ---------------------------------------------------------------------------
   // Create flow — show the create form and arm the place-picker (SNOW-475).
@@ -197,43 +205,124 @@
     // itself, so the form is still reachable from the keyboard.
   }
 
-  btn.addEventListener('click', function () {
-    // Anonymous users: open the sheet with a sign-in CTA; no map interaction.
+  /** Build the anonymous sign-in CTA — a prompt plus a link to the sign-in
+   * page. Built with createElement (matching buildDetailCard) rather than
+   * innerHTML string concatenation: the same DOM-not-markup discipline the
+   * rest of this module uses for anything URL/name-bearing.
+   * @returns {HTMLDivElement}
+   */
+  function buildSigninCta() {
+    const wrap = document.createElement('div');
+    const p = document.createElement('p');
+    p.className = 'text-sm text-text-2 mb-3';
+    p.textContent = STRINGS['signin-prompt'];
+    wrap.appendChild(p);
+    if (SIGNIN_URL) {
+      const a = document.createElement('a');
+      a.setAttribute('href', SIGNIN_URL);
+      a.className =
+        'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
+      a.textContent = STRINGS['signin-cta'];
+      wrap.appendChild(a);
+    }
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------------------
+  // The panel (SNOW-658) — the sheet's default body: the user's own pins, a
+  // CTA to add another, and the map-overlay switch that used to be a layers-
+  // menu row.
+  //
+  // Re-cloned from the template on every open rather than updated in place,
+  // mirroring map_downloads_manager.js's render(): a stale row can then never
+  // survive a re-open. That is exactly why every listener below is delegated
+  // on the SHEET — a per-element listener would have to be rebound each time.
+  // ---------------------------------------------------------------------------
+
+  /** Clone #favourite-list-template into the sheet and populate it.
+   *
+   * Eligible: the rows load over HTMX from favourites:list. Anonymous: the
+   * rows and the add CTA are removed and a sign-in CTA takes their place —
+   * but the overlay switch stays, because it is a view control for the map
+   * behind the sheet, not a row in a list the visitor doesn't have.
+   *
+   * @returns {boolean} Whether the panel was rendered — false when the
+   *   surface carries no list template, so the caller can fall back.
+   */
+  function showListPanel() {
+    if (!listTemplate) return false;
+    sheet.replaceChildren();
+    sheet.appendChild(listTemplate.content.cloneNode(true));
+
+    // Reflect the overlay's REAL state rather than a flag of this module's
+    // own, the way map_downloads_manager.js's render() does.
+    //
+    // SNOW-658 review: isEnabled(), the persisted preference — NOT
+    // isVisible(), which now answers from the layers MapLibre is drawing.
+    // The switch states what the user asked for; the roundel's ring states
+    // whether it reached the map. Offline with nothing cached the two
+    // disagree, and that is the point: the switch stays on (their choice
+    // took, and will restore at the next boot) while the ring is off
+    // (nothing is drawn). Painting this switch from paint would instead
+    // show the user's own setting silently flipping itself off.
+    const toggle = sheet.querySelector('#map-favourites-overlay-toggle');
+    if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isEnabled?.();
+
     if (!IS_ELIGIBLE) {
-      openSheet();
-      // Build the sign-in CTA with createElement (matching buildDetailRow)
-      // rather than innerHTML string concatenation — the same DOM-not-markup
-      // discipline the rest of this module uses for anything URL/name-bearing.
-      sheet.replaceChildren();
-      sheet.appendChild(buildSheetHeader(STRINGS['sheet-title']));
-      if (SIGNIN_URL) {
-        const wrap = document.createElement('div');
-        wrap.className = 'px-2 py-4';
-        const p = document.createElement('p');
-        p.className = 'text-sm text-text-2 mb-3';
-        p.textContent = STRINGS['signin-prompt'];
-        const a = document.createElement('a');
-        a.setAttribute('href', SIGNIN_URL);
-        a.className =
-          'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
-        a.textContent = STRINGS['signin-cta'];
-        wrap.appendChild(p);
-        wrap.appendChild(a);
-        sheet.appendChild(wrap);
-      } else {
-        const p = document.createElement('p');
-        p.className = 'px-2 py-4 text-sm text-text-2';
-        p.textContent = STRINGS['signin-prompt'];
-        sheet.appendChild(p);
-      }
+      const addButton = sheet.querySelector('[data-panel-add]');
+      if (addButton) addButton.remove();
+      const rows = sheet.querySelector('[data-favourites-rows]');
+      if (rows) rows.replaceChildren(buildSigninCta());
+      return true;
+    }
+    loadRows();
+    return true;
+  }
+
+  /** (Re)load the panel's rows from favourites:list over HTMX.
+   *
+   * The URL is used VERBATIM — the server puts ``?variant=map`` on it so
+   * the sheet gets the lean row template (favourites/partials/
+   * _favourite_list_map.html), and rebuilding the path here would silently
+   * drop it and render the manage page's markup instead.
+   *
+   * Called on open, and again after a rename lands — the same
+   * re-read-the-truth move map_downloads_manager.js's rename makes when it
+   * calls render(), rather than patching the row in place from what we
+   * think we just wrote.
+   *
+   * @returns {void}
+   */
+  function loadRows() {
+    const rows = sheet.querySelector('[data-favourites-rows]');
+    if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
+  }
+
+  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
+  // roundel — a second tap on the control that opened the panel closes it.
+  // Bound on the button, so it runs before MapSheet's own document-level
+  // click-outside handler, which then sees a closed sheet and does nothing.
+  btn.addEventListener('click', function () {
+    if (controller.isOpen()) {
+      closeSheet();
       return;
     }
+    controller.open();
+    if (showListPanel()) return;
+    // No list template on this surface. The create flow is still reachable,
+    // and a visitor still gets the sign-in CTA — an empty sheet would be a
+    // dead end with no explanation.
+    if (IS_ELIGIBLE) startCreateFlow();
+    else sheet.replaceChildren(buildSigninCta());
+  });
 
+  /** Show the create form seeded from the map centre and arm the place-picker.
+   * @returns {void}
+   */
+  function startCreateFlow() {
     const map = getMap();
     if (!map) return;
-
-    openSheet();
-
     // SNOW-475: show the create form immediately, seeded from the map's
     // current centre, then arm the shared place-picker so the fixed centre
     // pin appears and writeCreateCoords tracks every pan.
@@ -246,19 +335,149 @@
       onChange: writeCreateCoords,
       occludedBy: sheet,
     });
+  }
+
+  // SNOW-658: "Add a favourite" — what the roundel itself used to do.
+  // Delegated on the sheet so it survives the body being re-cloned.
+  //
+  // stopPropagation is load-bearing, not caution. MapSheet's click-outside
+  // dismissal asks ``sheet.contains(event.target)`` from a DOCUMENT listener,
+  // which runs after this one — and by then this handler has replaced the
+  // sheet's body, so the button that was clicked is detached and no longer
+  // "inside" anything. The sheet would close itself the instant the create
+  // form appeared, with nothing on screen to explain it.
+  //
+  // The trade-off: this hides the click from EVERY document-level listener,
+  // not just that one (map_basemap_picker.js's outside-click close,
+  // map_legend.js, overlays.js's [data-action="dismiss"]).
+  // None of them needs it today — each of those surfaces has already closed by
+  // the time this sheet is open — but a future document-level listener that
+  // must see clicks inside this sheet would fail silently here.
+  sheet.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (handleRenameClick(event)) return;
+    if (!target.closest('[data-panel-add]')) return;
+    event.stopPropagation();
+    if (!IS_ELIGIBLE) return;
+    startCreateFlow();
   });
 
+  /** Handle a click that starts a row's inline rename (SNOW-658).
+   *
+   * Hugo's design: "Where a row can be renamed, that happens in place on
+   * the label." The row's pencil opens the editor already sitting hidden
+   * in the row's own markup; window.pwaInlineRename owns the
+   * focus/keyboard/blur state machine — shared with the downloads panel,
+   * which renames the same way — and calls back exactly once, with a name
+   * worth writing. Escape, an unchanged name and an emptied field never
+   * reach here. The label was a second trigger for a day; Hugo's "we have
+   * inline editing & the pencil - choose one" left the pencil.
+   *
+   * This replaces a window.prompt that lasted one day: it covered the row
+   * being renamed, could not be styled, and read as browser chrome on a
+   * touch device.
+   *
+   * NOT stopPropagation'd, unlike the add CTA above: this handler leaves
+   * the sheet's body in place, so there is no reason to hide the click
+   * from every other document-level listener.
+   *
+   * Online-only, matching the manage page's own rename (a plain HTMX post)
+   * and this module's resort-unfavourite path — creates are queued for
+   * offline replay, edits to existing rows are not.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a rename, so the caller
+   *   stops rather than also testing the add CTA.
+   */
+  function handleRenameClick(event) {
+    const row = window.pwaInlineRename?.rowFor(event.target);
+    if (!row) return false;
+    if (!RENAME_URL_TEMPLATE) return true;
+
+    const button = row.querySelector('[data-favourite-rename]');
+    const favUuid = button ? button.getAttribute('data-favourite-rename') : '';
+    if (!favUuid) return true;
+
+    window.pwaInlineRename.begin(row, function (name) {
+      fetch(RENAME_URL_TEMPLATE.replace('__UUID__', favUuid), {
+        method: 'POST',
+        headers: {
+          // favourite_rename is @require_htmx; this is a plain fetch.
+          'HX-Request': 'true',
+          'X-CSRFToken': getCsrfToken(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ name: name }).toString(),
+      })
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('rename failed');
+          // Re-read the list rather than patch the row: the response is
+          // the MANAGE page's row partial, which is deliberately a
+          // different shape from the map's, so it cannot be swapped in
+          // here.
+          loadRows();
+          document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+        })
+        .catch(function () {
+          showToast(STRINGS['rename-failed']);
+        });
+    });
+    return true;
+  }
+
+  // SNOW-658: the overlay switch drives window.pwaFavouritesOverlay directly —
+  // show()/hide() are the only writers of that overlay's visibility, and
+  // showListPanel() reads isVisible() back, so the two can never drift. No
+  // re-render: nothing else in the panel depends on this state.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches) return;
+    if (!target.matches('#map-favourites-overlay-toggle')) return;
+    if (target.checked) window.pwaFavouritesOverlay?.show();
+    else window.pwaFavouritesOverlay?.hide();
+  });
+
+  // SNOW-658: the list is fetched, and this panel opens offline while its
+  // list does not load offline. Say so, rather than leaving the loading line
+  // up forever — and never fall through to favourites:list's own empty state,
+  // which would tell the user they have no pins when the request merely
+  // failed. Both htmx failure events are covered: responseError is a non-2xx
+  // reply, sendError is no reply at all (the offline case).
+  //
+  // This is not the only writer of that element: favourites_offline.js listens
+  // for the same two events and repaints the CACHED favourite cards over this
+  // line (SNOW-418). Cached data winning is the intended outcome — the line
+  // below is the fallback for a user with nothing cached, where
+  // favourites_offline.js returns early and leaves it standing. Two things
+  // produce that order, and breaking either silently inverts it: that module
+  // binds on document.body while this one binds on document (so it runs first
+  // as the event bubbles), and it awaits IndexedDB before writing (so its
+  // write lands after this synchronous one). Pinned by
+  // tests/js/test_favourites_panel_failed_load.js.
+  for (const name of ['htmx:responseError', 'htmx:sendError']) {
+    document.addEventListener(name, function (event) {
+      const rows = sheet.querySelector('[data-favourites-rows]');
+      if (!rows || !event.detail || event.detail.target !== rows) return;
+      const p = document.createElement('p');
+      p.className = 'text-sm text-text-2';
+      p.textContent = STRINGS['list-failed'];
+      rows.replaceChildren(p);
+    });
+  }
+
   // ---------------------------------------------------------------------------
-  // Pin-detail flow — rename / delete an existing favourite.
+  // Pin-detail flow — the card shown in the popup anchored to a saved pin.
   // ---------------------------------------------------------------------------
 
   // Escaping untrusted content (the user-supplied favourite name) is avoided
-  // entirely below — every dynamic value is set via DOM properties (.value,
-  // .textContent) rather than string-templated innerHTML. See buildDetailRow().
+  // entirely below — every dynamic value is set via DOM properties
+  // (.textContent) rather than string-templated innerHTML. See
+  // buildDetailCard().
 
   /** Read the CSRF token value from the (inert) create-form template — reused
-   * for the dynamically-built rename/delete forms since Django issues one
-   * CSRF token per session, valid across every form on the page.
+   * for this module's plain-fetch rename and delete calls, since Django
+   * issues one CSRF token per session, valid across every form on the page.
    * @returns {string}
    */
   function getCsrfToken() {
@@ -268,105 +487,81 @@
     return input ? input.value : '';
   }
 
-  /** Build a hidden CSRF input for a dynamically-constructed form.
-   * @returns {HTMLInputElement}
-   */
-  function buildCsrfInput() {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'csrfmiddlewaretoken';
-    input.value = getCsrfToken();
-    return input;
-  }
-
-  /** Build the rename+delete row for an existing favourite, mirroring
-   * favourites/partials/_favourite.html's shape/ids so the server's own
-   * partial can slot back into the same #favourite-<uuid> element on the
-   * first successful round-trip.
-   * @param {string} favUuid
-   * @param {string} name
+  /** Build the pin popup's card: the favourite's name, and the time it was
+   * saved as a muted relative subheader.
+   *
+   * SNOW-658: this replaces a card that carried an editable name field and a
+   * Remove button. Both moved to the favourites panel, which is where every
+   * other saved pin is renamed and removed; a second, differently-shaped
+   * editor on the map was the odd one out. What is left is the shape the
+   * observation pin's popup already had (map.js's activateCommunityReport) —
+   * a bold label, a muted relative time, and the popup's own close.
+   * A favourite will gain content of its own later; it has none today, so
+   * there is no placeholder for it.
+   *
+   * ``relativeTime`` comes from map_shared.js via window.snowdeskMapFormat
+   * rather than being re-implemented here, so both popups age their
+   * timestamps identically. It is computed on open, not baked at fetch time,
+   * which keeps it honest when the pin comes from the offline cache.
+   *
+   * @param {string} name The favourite's user-supplied name, possibly empty.
+   * @param {string} savedAt ISO-8601 timestamp the favourite was saved at.
    * @returns {HTMLDivElement}
    */
-  function buildDetailRow(favUuid, name) {
-    const row = document.createElement('div');
-    row.id = 'favourite-' + favUuid;
-    row.dataset.favouriteUuid = favUuid;
-    row.className = 'flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm';
+  function buildDetailCard(name, savedAt) {
+    const card = document.createElement('div');
+    card.setAttribute('data-favourite-card', '');
 
-    const renameForm = document.createElement('form');
-    renameForm.setAttribute('hx-post', RENAME_URL_TEMPLATE.replace('__UUID__', favUuid));
-    renameForm.setAttribute('hx-target', '#favourite-' + favUuid);
-    renameForm.setAttribute('hx-swap', 'outerHTML');
-    renameForm.setAttribute('hx-trigger', 'change');
-    renameForm.className = 'flex-1';
-    renameForm.appendChild(buildCsrfInput());
+    const title = document.createElement('div');
+    title.className = 'text-sm font-semibold text-text-1';
+    title.textContent = name || STRINGS['unnamed-pin'];
+    card.appendChild(title);
 
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.name = 'name';
-    nameInput.value = name || '';
-    nameInput.placeholder = STRINGS['unnamed-pin'];
-    nameInput.setAttribute('aria-label', STRINGS['name-label']);
-    nameInput.className = 'w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none';
-    renameForm.appendChild(nameInput);
-
-    const deleteForm = document.createElement('form');
-    deleteForm.setAttribute('hx-post', DELETE_URL_TEMPLATE.replace('__UUID__', favUuid));
-    deleteForm.setAttribute('hx-target', '#favourite-' + favUuid);
-    deleteForm.setAttribute('hx-swap', 'outerHTML');
-    deleteForm.appendChild(buildCsrfInput());
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'submit';
-    removeBtn.className = 'shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text';
-    removeBtn.textContent = STRINGS.remove;
-    deleteForm.appendChild(removeBtn);
-
-    row.appendChild(renameForm);
-    row.appendChild(deleteForm);
-    return row;
+    const relative = window.snowdeskMapFormat?.relativeTime?.(savedAt) || '';
+    if (relative) {
+      const meta = document.createElement('div');
+      meta.className = 'mt-0.5 text-xs text-text-2';
+      meta.textContent = relative;
+      card.appendChild(meta);
+    }
+    return card;
   }
 
-  // SNOW-414 / SNOW-499: an existing favourite's rename/delete detail now
-  // opens in a popup anchored to the pin (a fixed point → pinned overlay),
-  // not the docked create sheet. map.js owns anchoring, so it passes an empty
+  // SNOW-414 / SNOW-499: an existing favourite's detail opens in a popup
+  // anchored to the pin (a fixed point → pinned overlay), not the docked
+  // create sheet. map.js owns anchoring, so it passes an empty
   // ``detail.container`` ([data-favourite-detail]) for this module to fill —
-  // keeping the CSRF/URL/DOM-not-innerHTML wiring here — then anchors the
-  // filled container in the popup. The container id/attribute is what the
-  // htmx rename/delete lifecycle below scopes to (it used to scope to the
-  // sheet).
+  // keeping the DOM-not-innerHTML rendering of the user-supplied name here —
+  // then anchors the filled container in the popup.
   document.addEventListener('snowdesk:favourite-selected', function (event) {
-    if (!RENAME_URL_TEMPLATE || !DELETE_URL_TEMPLATE) return;
     const detail = event.detail || {};
     const favUuid = detail.uuid;
     const container = detail.container;
     if (!favUuid || !container) return;
 
     window.PlacePicker?.deactivate();
-    // The create/placement sheet and the detail popup are mutually exclusive.
-    if (controller.isOpen()) closeSheet();
-
-    container.appendChild(buildDetailRow(favUuid, detail.name || ''));
-    if (typeof htmx !== 'undefined') htmx.process(container);
+    // SNOW-658: this used to close the sheet itself, because the sheet and
+    // the detail popup are mutually exclusive. map.js announces the popup's
+    // own open to window.pwaMapOverlays, which closes this sheet along with
+    // every other overlay — so the closing happens either way, and no longer
+    // needs one surface to know about another.
+    container.appendChild(
+      buildDetailCard(detail.name || '', detail.created_at || ''),
+    );
   });
 
   // ---------------------------------------------------------------------------
-  // htmx response handling — rename success, delete success.
+  // htmx response handling — a row removed from the panel.
   //
   // Create is no longer htmx-driven: SNOW-479 routes it through the client
   // mutation queue (see the #favourite-create-form submit interceptor below).
-  // Only the pin-detail rename/delete forms built by buildDetailRow() still use
-  // hx-post, and (SNOW-499) they live in the anchored detail popup's
-  // [data-favourite-detail] container, not the create sheet. Two-step: mark on
-  // htmx:beforeRequest whether the element making the request lives inside that
-  // container (checked *before* any swap runs, so elt.closest() sees a properly
-  // attached tree — outerHTML swaps like the delete form's own row removal
-  // detach the element by the time a later event fires), then act on
-  // htmx:afterRequest (last event in htmx's lifecycle, so any swap has
-  // completed) by inspecting the container's current contents. A rename swaps
-  // its _favourite.html (carrying [data-favourite-uuid]) back into
-  // #favourite-<uuid> inside the container; a delete empties it, and we close
-  // the popup.
+  // The only htmx request this module still has to notice is the panel row's
+  // own Remove form, which posts and swaps itself out. Two-step: mark on
+  // htmx:beforeRequest whether the element making the request lives inside
+  // the panel's rows (checked *before* any swap runs, so elt.closest() sees a
+  // properly attached tree — an outerHTML swap like that row removal detaches
+  // the element by the time a later event fires), then act on
+  // htmx:afterRequest, the last event in htmx's lifecycle.
   //
   // The mark is stamped on the request's own XMLHttpRequest, not on a
   // module-level variable: both listeners are document-level, so every HTMX
@@ -376,45 +571,35 @@
   // correlate an afterRequest back to the beforeRequest that set it. htmx
   // carries the same xhr object on both events, so the mark rides the
   // request it describes.
+  //
+  // SNOW-658: the same idiom applied to the PIN POPUP's own rename/delete
+  // forms (DETAIL_REQUEST_MARK, scoped to [data-favourite-detail]). Those
+  // forms are gone — the popup is a name and a saved time now — and the
+  // panel row is the only htmx caller left, so that half went with them,
+  // along with the responseError toast that reported their failures.
   // ---------------------------------------------------------------------------
 
-  const DETAIL_REQUEST_MARK = 'snowdeskFavouriteDetailRequest';
+  const PANEL_ROW_REQUEST_MARK = 'snowdeskFavouritePanelRowRequest';
 
   document.addEventListener('htmx:beforeRequest', function (event) {
     const detail = event.detail || {};
     if (!detail.xhr) return;
     const elt = detail.elt;
-    detail.xhr[DETAIL_REQUEST_MARK] = !!(
-      elt && elt.closest && elt.closest('[data-favourite-detail]')
+    detail.xhr[PANEL_ROW_REQUEST_MARK] = !!(
+      elt && elt.closest && elt.closest('[data-favourites-rows]')
     );
   });
 
+  // A row removed from the panel is a favourite that no longer exists, so the
+  // map's own pins have to be refetched — nothing else does it. Deleting from
+  // the pin popup already dispatched this (above); deleting from the panel
+  // silently did not, and the pin stayed on the map until a reload.
   document.addEventListener('htmx:afterRequest', function (event) {
     const xhr = event.detail && event.detail.xhr;
-    if (!xhr || !xhr[DETAIL_REQUEST_MARK]) return;
-    if (!event.detail.successful) return; // errors handled by responseError below
-
-    const container = document.querySelector('[data-favourite-detail]');
-    if (container && container.querySelector('[data-favourite-uuid]')) {
-      // Renamed successfully (the detail row's _favourite.html swapped back in).
-      document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-      return;
-    }
-    // No row left in the container => delete succeeded (favourites:delete
-    // returns an empty 200 body, removing the row). Close the popup.
+    if (!xhr || !xhr[PANEL_ROW_REQUEST_MARK]) return;
+    if (!event.detail.successful) return;
     window.pwaTelemetry?.emit('map.favourite.deleted', {});
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-    document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
-  });
-
-  document.addEventListener('htmx:responseError', function (event) {
-    const elt = event.detail && event.detail.elt;
-    if (!elt || !elt.closest) return;
-    if (!elt.closest('[data-favourite-detail]')) return;
-    const message =
-      (event.detail.xhr && event.detail.xhr.responseText) ||
-      'Something went wrong — please try again.';
-    showToast(message);
   });
 
   // ---------------------------------------------------------------------------

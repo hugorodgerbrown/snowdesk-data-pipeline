@@ -482,29 +482,36 @@ def test_map_page_renders_scrubber_loading_state() -> None:
 @pytest.mark.django_db
 def test_map_layer_menu_section_order() -> None:
     """
-    SNOW-243: The basemap-menu popover must present sections in the order
-    Countries → Overlays → Base map.  This is a presentation reorder
-    only; all remaining items and their data-* attributes are unchanged.
+    SNOW-243: The basemap-menu popover must present its sections in a fixed
+    order.  This is a presentation reorder only; all remaining items and
+    their data-* attributes are unchanged.
 
     SNOW-521: the Options section (Auto-zoom) was removed along with the
     L3 bulletin-groupings overlay and the basemap sync-status caption —
     see ``test_layers_menu_removed_items.py`` (e2e) for the absence
     coverage.
+
+    SNOW-658 renamed the first two sections to say what their rows actually
+    are — "Bulletins" (one row per PROVIDER) and "Boundaries" (one per EAWS
+    level) — and split the trailing rows out of the tier list into their own
+    sections: "Locations" for resorts, "Conditions" for weather.  The weather
+    row is flag-gated and its heading is gated with it, so "Conditions" is
+    deliberately absent here.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     # Each label is unique in the rendered output; assert relative order.
-    idx_countries = content.index("basemap-menu-section-label")
-    # Find each label text after the first section-label class occurrence.
-    idx_countries_label = content.index("Countries", idx_countries)
-    idx_overlays_label = content.index("Overlays", idx_countries)
-    idx_basemap_label = content.index("Base map", idx_countries)
+    start = content.index("basemap-menu-section-label")
+    positions = [
+        content.index(label, start)
+        for label in ("Bulletins", "Boundaries", "Locations", "Base map")
+    ]
 
-    assert idx_countries_label < idx_overlays_label < idx_basemap_label, (
+    assert positions == sorted(positions), (
         "Map layer menu sections are not in the expected order "
-        "(Countries < Overlays < Base map)"
+        "(Bulletins < Boundaries < Locations < Base map)"
     )
     assert "Options" not in content
 
@@ -538,10 +545,20 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
 
 
 @pytest.mark.django_db
-def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
+def test_map_layer_menu_has_no_user_data_rows() -> None:
     """
-    SNOW-505: favourites (eligible-only) and community_reports also carry
-    a sync-dot.
+    SNOW-658: the favourites (eligible-only) and community_reports rows are
+    gone from this menu — and so, deliberately, are their sync dots.
+
+    Both are USER-GENERATED data with a roundel of their own, so each toggle
+    moved into the panel that roundel opens (its "Display on the map"
+    footer switch), driving
+    ``window.pwaFavouritesOverlay`` / ``window.pwaCommunityReportsOverlay``.
+    The dots did not move with them: a panel is not a cache-state dashboard,
+    which is the same call SNOW-645 made for the downloaded-areas row.
+
+    Asserted for a signed-in user, since the favourites row was rendered only
+    for one — an anonymous request never had it to lose.
     """
     account = AccountFactory.create()
     client = Client()
@@ -550,10 +567,10 @@ def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
     content = response.content.decode()
 
     for key in ("favourites", "community_reports"):
-        key_idx = content.index(f'data-overlay-key="{key}"')
-        button_close_idx = content.index("</button>", key_idx)
-        button_scope = content[key_idx:button_close_idx]
-        assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+        assert f'data-overlay-key="{key}"' not in content, key
+    # The switches that replaced them, in their own panels.
+    assert 'id="map-favourites-overlay-toggle"' in content
+    assert 'id="map-community-reports-overlay-toggle"' in content
 
 
 @pytest.mark.django_db
@@ -692,3 +709,79 @@ def test_report_unverified_for_authenticated_unverified_user() -> None:
     assert "report-btn" in content
     assert 'data-report-eligible="false"' in content
     assert 'data-report-unverified="true"' in content
+
+
+# ---------------------------------------------------------------------------
+# Hover affordance (SNOW-658)
+# ---------------------------------------------------------------------------
+
+# Every clickable control on the map, by the class that identifies it. Each
+# one had its own hover treatment before this ticket — four of them across
+# these seven names — and each now carries the shared ``hover-affordance``
+# class instead (src/css/main.css: pointer cursor plus a translucent
+# infill).
+MAP_CONTROL_CLASSES = (
+    "map-utility-button",
+    "basemap-menu-item",
+    "map-fill-step",
+    "map-download-control",
+    "map-legend-toggle",
+    "map-controls-toggle",
+)
+
+_CLASS_ATTR_RE = re.compile(r'class="([^"]*)"')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("control", MAP_CONTROL_CLASSES)
+def test_every_map_control_carries_the_shared_hover_affordance(
+    control: str,
+) -> None:
+    """A control a user can click says so under the pointer, the same way.
+
+    Hugo: "The affordances are inconsistent - for all interactive elements
+    (roundels, 'x' closure, 'add' buttons) it should be consistent on hover
+    - change the mouse pointer, and add infill." The treatment lives in one
+    class rather than in a hover pair per call site, which is what let four
+    of them drift apart; this test is what stops a new control — or a new
+    copy of an existing one — shipping without it.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    occurrences = [
+        classes
+        for classes in _CLASS_ATTR_RE.findall(content)
+        if control in classes.split()
+    ]
+    assert occurrences, f"no {control} rendered — has it been renamed?"
+    for classes in occurrences:
+        assert "hover-affordance" in classes.split(), classes
+
+
+@pytest.mark.django_db
+@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+@freeze_time("2026-02-17")
+def test_ribbon_action_carries_the_shared_hover_affordance() -> None:
+    """The ribbon's "view bulletin" roundel takes the same treatment.
+
+    It sits in the ribbon header beside the per-region download roundel, so
+    the two disagreeing on hover would be a new inconsistency in the very
+    row this ticket set out to make consistent. It renders only with a
+    focused region's season data, which is why it is not in the
+    parametrised sweep above.
+    """
+    region = MicroRegionFactory.create(region_id="CH-4115")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    client = Client()
+
+    content = client.get(reverse("public:home")).content.decode()
+
+    action = [
+        classes
+        for classes in _CLASS_ATTR_RE.findall(content)
+        if "region-readout-action" in classes.split()
+    ]
+    assert action, "the ribbon did not render — has its data gate changed?"
+    for classes in action:
+        assert "hover-affordance" in classes.split(), classes

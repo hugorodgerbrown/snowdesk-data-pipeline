@@ -50,7 +50,12 @@ ingests:
 | Italy — South Tyrol & Trentino (IT) | ALBINA / avalanche.report | Off (toggle on) |
 
 Switzerland is the launch focus and the only country shown at first
-paint; the other three are one toggle away in the layer menu, and their
+paint; the other three are one toggle away in the layer menu — where the
+rows are **one per provider**, so Austria and Italy share a single "ALBINA
+(AT, IT)" row (SNOW-658): a row switches one warning service's bulletins on,
+and ALBINA issues one EUREGIO bulletin covering both. Tapping it turns both
+countries on together, and its offline-status dot goes green only once both
+countries' data is cached. Their
 region geometry is fetched lazily the first time a visitor turns them on
 (so a CH-only visitor never pays for data they don't look at). Region
 coverage is data-shaped, not prefix-based — a cross-border ALBINA
@@ -81,7 +86,7 @@ page, not on the map. See
 Avalanche warnings are issued against a hierarchy of geographic regions
 defined by the EAWS (European Avalanche Warning Services). Snowdesk
 exposes three tiers of that hierarchy plus a derived "bulletin
-groupings" layer. All are toggled from the **Overlays** section of the
+groupings" layer. All are toggled from the **Boundaries** section of the
 layer menu; each remembers its state per-device in `localStorage`.
 
 | Layer | EAWS tier | What it is | Default |
@@ -104,8 +109,8 @@ every scrubbed day. Separating them lets the borders stay up throughout, since
 they never interfere with anything, while the infill can yield to the
 downloaded-areas overlay — which paints translucent squares over the very same
 polygons and is unreadable on top of a coloured fill. **The fill and the
-downloads sheet's "Show areas on the map" can never both be on**, and the two
-controls mirror each other:
+downloads panel's own map switch ("Display on the map") can never both be
+on**, and the two controls mirror each other:
 [`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
 
 **The fill's strength is the user's choice, in five steps** — 0, 25%, 50%
@@ -276,14 +281,103 @@ favourite pins too.
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
-| Favourites | Signed in | Owner only, 10/min | On (eligible users) | Private, per-user |
+| Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
 | Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
-| Community reports | Public | via Report flow below | Off | Anonymised, public |
+| Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
 `edit_map` remains a superuser-scoped feature flag during rollout;
 [`feature-flags.md`](feature-flags.md) is the operator reference.
+
+---
+
+## 3.6 What the layer menu lists (SNOW-658)
+
+The layer menu (the stacked-layers roundel) is the map's **view controls for
+published data**. Its sections say what their rows are:
+
+| Section | Rows | What a row switches |
+|---------|------|---------------------|
+| **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for |
+| **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
+| **Locations** | Resorts | Named places geocoded onto regions |
+| **Conditions** | Weather (flag-gated) | Forecast symbols at each point |
+| **Base map** | one row per basemap | The geographic backdrop |
+
+**Favourites and community reports are not in it.** Both are
+user-generated, and each already has a roundel of its own, so each toggle
+lives in the panel that roundel opens — as the footer switch labelled
+"Display on the map", the same wording on all three UGC panels (SNOW-658)
+— alongside the list of what the user has saved and the control to add
+another. That is the pattern SNOW-634 set
+for offline downloads, generalised: one subject, one way in. Their
+offline-status dots did not move with them; see
+[`offline-map.md`](offline-map.md).
+
+---
+
+## 3.7 The three overlay panels, and why they differ by viewport
+
+Downloads, Favourites and Field observations each open a panel from their
+own roundel in the bottom-right stack. The three share one shape — a
+header carrying the roundel's own mark, a list of what the user has, an
+"add" call to action, and a footer switch labelled "Display on the map" —
+and **two layouts**, chosen by viewport width at the `sm` breakpoint
+(640px).
+
+**Below `sm`, a panel is a docked sheet**: full-width, anchored to the
+bottom edge, covering the map beneath it. That is the right shape on a
+phone. The list is the thing being read, a phone has no room to show it
+beside anything, and bottom-docked puts it under the thumb — the same
+convention every native mobile sheet uses. A panel inset into a 375px
+viewport would be a small box floating in a map the user cannot see much
+of either.
+
+**At `sm` and above, a panel is inset**: width-capped and positioned clear
+of the season scrubber below it and the roundel column to its right, so
+the map stays usable beside it. On a desktop the map is large enough that
+covering it would be the loss, not the list — a user comparing a
+favourite against the danger fill under it needs both on screen at once.
+The inset is measured at open time from the real furniture rather than
+guessed, so it stays correct as the scrubber and the roundel stack change
+size (`static/js/map_overlay_bounds.js`).
+
+**This difference is deliberate, and it is not a bug in either direction.**
+"The panel fills the screen on my phone" and "the panel doesn't fill the
+screen on my laptop" are both the intended behaviour. Both layouts are
+bounded and scroll internally: a panel never grows past the viewport and
+never pushes its own content off-screen, whatever the list contains.
+
+## 3.8 Overlay roundel state — is it on the map right now?
+
+Each of the three roundels shows whether **its own** overlay is currently
+drawn: a coloured rim, in the same colour as the ON position of the
+"Display on the map" switch that controls it, plus the same fact in the
+roundel's accessible label ("Your favourites — shown on the map"). One
+signal, one meaning, on all three.
+
+It is live rather than a snapshot: the rim follows the panel switch, and
+also follows anything else that takes an overlay off the map — turning
+Bulletins on switches the downloaded-area squares off, because the two
+paint the same polygons, and the roundel says so without the panel being
+open. It survives a basemap switch, which re-draws every layer.
+
+**The rim states what is drawn, not what was asked for.** Switch an
+overlay on with no data to draw — offline, first enable, a fetch that
+fails — and the switch stays ON (the setting took, and will be restored
+next time) while the rim stays off, because nothing reached the map. The
+two disagreeing is the point: it is the only way to see that a request
+has not landed. Positioning a pin clears every overlay off the map for
+the duration of the placement, and all three rims go out with them and
+come back when it ends, for the same reason.
+
+The downloads roundel used to carry a different signal — "this device
+holds at least one downloaded area" — which is a fact about storage, not
+about what is on the map. It was removed rather than kept alongside: two
+meanings on one roundel is unreadable, and the downloads panel answers the
+storage question properly with a list, per-area sizes and a budget bar.
+See [`offline-map.md`](offline-map.md).
 
 ---
 

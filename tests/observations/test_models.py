@@ -410,6 +410,41 @@ class TestRecent:
 
 
 @pytest.mark.django_db
+class TestForUser:
+    """for_user(user) — the owner scope behind the map panel's list (SNOW-658)."""
+
+    def test_returns_only_that_users_rows(self) -> None:
+        """One user's reports never include another's."""
+        mine = FieldObservationFactory.create()
+        theirs = FieldObservationFactory.create()
+
+        result = FieldObservation.objects.for_user(mine.user)
+
+        assert mine in result
+        assert theirs not in result
+
+    def test_is_empty_for_a_user_with_no_reports(self) -> None:
+        """A user who has reported nothing gets an empty queryset, not an error."""
+        FieldObservationFactory.create()
+        user = UserFactory.create()
+
+        assert list(FieldObservation.objects.for_user(user)) == []
+
+    def test_is_chainable(self) -> None:
+        """It returns a queryset, so it composes with the other filters."""
+        user = UserFactory.create()
+        cutoff = datetime.datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+        recent = FieldObservationFactory.create(user=user, observed_at=cutoff)
+        FieldObservationFactory.create(
+            user=user, observed_at=cutoff - datetime.timedelta(days=1)
+        )
+
+        result = FieldObservation.objects.for_user(user).recent(cutoff)
+
+        assert list(result) == [recent]
+
+
+@pytest.mark.django_db
 class TestObservationTypeChoices:
     """OBSERVATION_TYPE TextChoices sanity checks."""
 

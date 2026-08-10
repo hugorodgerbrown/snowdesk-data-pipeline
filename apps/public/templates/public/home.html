@@ -97,6 +97,39 @@ in addition to the shared map assets.
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# SNOW-658: only one overlay is open over the map at a time              #}
+    {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
+    {# three UGC sheets, the anchored detail popup, the legend card and the   #}
+    {# help coachmark — registers with it and announces its own open, and it  #}
+    {# closes the rest. It replaces the                                       #}
+    {# hand-wired pairs each surface used to carry, which covered three of    #}
+    {# the fifteen relationships between them. Loaded HERE, ahead of every    #}
+    {# registering module: map_sheet.js registers from attach(), and both     #}
+    {# surface partials below (and the map bundle further down) register at   #}
+    {# their own parse time, so this has to have run first.                   #}
+    <script defer src="{% static 'js/map_overlay_exclusivity.js' %}"></script>
+    {# SNOW-658: where a map overlay may reach — the floor above the season   #}
+    {# scrubber, the height cap below #map's top edge, and the inset past the #}
+    {# bottom-right roundel column (window.pwaOverlayBounds). Shared by the   #}
+    {# layers menu (map_basemap_picker.js, in the bundle below) and the three #}
+    {# UGC sheets. Loaded here, outside the bundle's contiguous run: every    #}
+    {# consumer calls it from a user-triggered handler, never at parse time,  #}
+    {# so it only has to be on the page.                                      #}
+    <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
+    {# SNOW-658: renaming a UGC panel row in place — the interaction the    #}
+    {# two renameable panels (downloads, favourites) share, with each       #}
+    {# passing its own commit. Loaded here rather than from either surface  #}
+    {# for the same reason htmx/place_picker/map_sheet are: both callers    #}
+    {# are below, all these scripts are defer, so document order is         #}
+    {# execution order and window.pwaInlineRename exists before either.     #}
+    {#                                                                      #}
+    {# It replaces overflow_menu.js on this page. That module drove the "…" #}
+    {# menu each panel's rows carried for one day; Hugo's design has no     #}
+    {# ellipsis menu, so nothing on the map opens one and loading it here   #}
+    {# would ship a module with nothing to bind to. The module and its      #}
+    {# partial both remain — retiring a primitive is not this ticket's      #}
+    {# call — and the component library still renders it.                   #}
+    <script defer src="{% static 'js/inline_rename.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}
@@ -189,6 +222,14 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_autozoom.js' %}"></script>
     <script defer src="{% static 'js/map_geolocate.js' %}"></script>
     <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
+    {# SNOW-658: the three overlay roundels' shared "my overlay is on the    #}
+    {# map" state (data-overlay-shown). Reads window.pwaDownloadedOverlay /  #}
+    {# pwaFavouritesOverlay / pwaCommunityReportsOverlay, which map.js       #}
+    {# publishes at parse time — hence AFTER the bundle. Deliberately        #}
+    {# outside the bundle's contiguous run (it is not a bundle member: no    #}
+    {# bundle module reads it), which is what                                #}
+    {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
+    <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}

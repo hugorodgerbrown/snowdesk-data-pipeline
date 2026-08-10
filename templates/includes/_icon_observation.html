@@ -1,0 +1,46 @@
+{% comment %}
+templates/includes/_icon_observation.html — the field-observation glyph: a
+pair of binoculars (SNOW-333 drew a warning triangle; extracted here by
+SNOW-658 and redrawn on Hugo's request).
+
+One source for one mark. The glyph identifies the field-observation roundel
+(#report-btn, public/partials/_map_embed.html) AND, at 22px, the header of
+the panel that roundel opens — Hugo's design makes the roundel's own icon
+the panel's only identity mark, so a reader can confirm which roundel they
+tapped.
+
+Why binoculars rather than the warning triangle it replaces: the triangle
+said "hazard", which is the bulletin's job — the danger scale, the
+choropleth and the problem cards all carry it, and it collided with the
+avalanche-problem iconography elsewhere on the page. A field observation
+is a report of something SEEN.
+
+ATTRIBUTION — this path is Font Awesome Free v7.3.1 ("binoculars", solid),
+supplied by Hugo. Icons in Font Awesome Free are licensed CC BY 4.0
+(https://fontawesome.com/license/free), Copyright 2026 Fonticons, Inc.
+This project does not depend on the Font Awesome library; like the two
+glyphs in static/js/map.js, the path is inlined with its attribution
+rather than pulling in a webfont for one icon.
+
+NOTE ON STYLE — this glyph is FILLED (fill="currentColor", no stroke) on a
+512 grid, whereas its two siblings (_icon_favourite.html's outline star,
+_icon_downloads.html's viewfinder) are 24-grid 2px strokes. It therefore
+reads heavier than they do at the same box size. That is a deliberate
+choice by Hugo, not an oversight — do not "fix" it by redrawing this as a
+stroke, which is the version it replaced.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            roundel size; the panel header passes 22.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 512 512"
+    fill="currentColor"
+    aria-hidden="true"
+>
+    <path d="M128 32l32 0c17.7 0 32 14.3 32 32l0 32-96 0 0-32c0-17.7 14.3-32 32-32zm64 96l0 320c0 17.7-14.3 32-32 32L32 480c-17.7 0-32-14.3-32-32l0-59.1c0-34.6 9.4-68.6 27.2-98.3 13.7-22.8 22.5-48.2 25.8-74.6L60.5 156c2-16 15.6-28 31.8-28l99.8 0zm227.8 0c16.1 0 29.8 12 31.8 28L459 216c3.3 26.4 12.1 51.8 25.8 74.6 17.8 29.7 27.2 63.7 27.2 98.3l0 59.1c0 17.7-14.3 32-32 32l-128 0c-17.7 0-32-14.3-32-32l0-320 99.8 0zM320 64c0-17.7 14.3-32 32-32l32 0c17.7 0 32 14.3 32 32l0 32-96 0 0-32zm-32 64l0 160-64 0 0-160 64 0z" />
+</svg>

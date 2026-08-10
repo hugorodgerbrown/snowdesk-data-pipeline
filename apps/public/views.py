@@ -107,6 +107,7 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
 from apps.core.utils import html_to_markdown
+from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
@@ -1441,7 +1442,8 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``report_eligible``, ``report_unverified``,
-        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
+        ``report_form_url``, ``report_submit_url``, ``report_list_url``,
+        ``report_signin_url``.
 
     """
     report_eligible = user_is_verified(request.user)
@@ -1451,6 +1453,10 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         "report_unverified": report_unverified,
         "report_form_url": reverse("observations:report_form"),
         "report_submit_url": reverse("observations:report_submit"),
+        # SNOW-658: the roundel opens a panel listing the user's own reports
+        # before it offers to file another, so the panel needs the list
+        # endpoint.
+        "report_list_url": reverse("observations:list"),
         "report_signin_url": reverse("accounts:sign_in"),
     }
 
@@ -1475,7 +1481,8 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``favourites_eligible``, ``favourites_geojson_url``,
-        ``favourite_create_url``, ``favourite_rename_url_template``,
+        ``favourite_create_url``, ``favourite_list_url``,
+        ``favourite_rename_url_template``,
         ``favourite_delete_url_template``, and ``favourites_signin_url``.
 
     """
@@ -1488,6 +1495,14 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourites_eligible": favourites_eligible,
         "favourites_geojson_url": reverse("favourites:geojson"),
         "favourite_create_url": reverse("favourites:create"),
+        # SNOW-658: the roundel opens a panel listing the user's own pins
+        # before it offers to add one, so the panel needs the list endpoint.
+        # ``?variant=map`` asks for the sheet's lean row template — same
+        # rows and offline sidecar, without the manage page's in-page card
+        # panel or its "view on the map" link.
+        "favourite_list_url": (
+            f"{reverse('favourites:list')}?variant={FAVOURITE_LIST_MAP_VARIANT}"
+        ),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

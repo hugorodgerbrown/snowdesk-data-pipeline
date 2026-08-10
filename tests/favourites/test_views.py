@@ -43,12 +43,18 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; non-HTMX → 400;
                     empty state when the user has none (SNOW-415); each
-                    row carries an "Open page →" link to favourites:detail
-                    (SNOW-507).
+                    row carries one detail link to favourites:detail,
+                    hx-get-enhanced onto the card panel (SNOW-507,
+                    SNOW-658); ``?variant=map`` renders the sheet's lean
+                    template instead — same rows and roster sidecar, a
+                    plain detail link, no card panel and no "view on the
+                    map" link — and an unknown variant falls back to the
+                    manage-page template.
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
-                        (null for a plain pin, SNOW-499); with the
+                        (null for a plain pin, SNOW-499) and created_at as
+                        ISO-8601 (SNOW-658); with the
                         weather_layer flag active, each feature also
                         carries a days property (SNOW-573) — absent when
                         the flag is inactive.
@@ -1242,6 +1248,24 @@ class TestFavouriteCardProblems:
 # ---------------------------------------------------------------------------
 
 
+def _row_meta(html: str) -> str:
+    """Return the text of the first row's muted meta line.
+
+    The map row renders it as the shared row partial's
+    ``[data-row-meta]`` span (includes/_ugc_panel_row.html).
+
+    Args:
+        html: A rendered favourites list.
+
+    Returns:
+        The span's text content.
+
+    """
+    match = re.search(r"<span data-row-meta[^>]*>([^<]*)</span>", html)
+    assert match is not None, "no [data-row-meta] in the rendered list"
+    return match.group(1).strip()
+
+
 @pytest.mark.django_db
 class TestFavouriteList:
     """favourite_list — owner-scoped favourites list (SNOW-415)."""
@@ -1263,7 +1287,7 @@ class TestFavouriteList:
         assert str(mine.uuid) in content
 
     def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
-        """Each row carries an "Open page →" permalink to favourites:detail (SNOW-507)."""
+        """Each row carries one detail link to favourites:detail (SNOW-507)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
@@ -1272,8 +1296,242 @@ class TestFavouriteList:
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="favourite-list-open-page-link"' in content
+        assert 'data-testid="favourite-list-detail-link"' in content
         assert _detail_url(favourite.uuid) in content
+
+    def test_detail_link_is_htmx_enhanced_onto_the_card_panel(
+        self, client: Client
+    ) -> None:
+        """The manage page's detail link hx-gets the card into the panel.
+
+        SNOW-658 collapsed the "Details" button and the "Open page →" link
+        into this one element: an href for the no-JS navigation, an hx-get
+        so the card still renders in-page — and so favourites_offline.js
+        still sees an HTMX swap to write through (SNOW-418).
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        hx_get = f'hx-get="{_card_url(favourite.uuid)}"'
+        assert hx_get in content
+        assert 'hx-target="#favourite-card-panel"' in content
+        assert 'data-testid="favourite-card-panel"' in content
+        # The GET is carried by a link, never a button: a GET is a link, a
+        # POST is an active control. (The row's own buttons — rename,
+        # Remove — are POSTs, so they stay buttons.)
+        opener = content[: content.index(hx_get)].rsplit("<", 1)[1]
+        assert opener.startswith("a ") or opener.startswith("a\n")
+
+    def test_default_variant_offers_the_map_link(self, client: Client) -> None:
+        """The manage-page template keeps its "view on the map" navigation."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert b"View favourites on the map" in response.content
+
+    def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
+        """``?variant=map`` drops the card panel and the map link (SNOW-658)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Mine" in content
+        assert 'data-testid="favourite-card-panel"' not in content
+        assert f'hx-get="{_card_url(favourite.uuid)}"' not in content
+        assert "View favourites on the map" not in content
+
+    def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
+        """The sheet still caches the roster for offline reads."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert 'id="favourites-roster-cache"' in response.content.decode()
+
+    def test_map_variant_does_not_link_the_row_anywhere(self, client: Client) -> None:
+        """The map row has no navigation at all (SNOW-658, Hugo's design).
+
+        It had three, in turn, in three days: a "Details →" control beside
+        the title, the title itself as a link, and the title as a
+        click-to-rename target. The row's primary line is inert now — a
+        favourite's detail page is reached by tapping its pin on the map,
+        which is where the user already is, and renaming is the pencil's
+        job.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert _detail_url(favourite.uuid) not in content
+        assert "Details" not in content
+
+    def test_map_variant_meta_line_is_the_saved_date(self, client: Client) -> None:
+        """The row's second line dates the pin — it used to give coordinates.
+
+        SNOW-658, Hugo: "Replace the lat/lon on the favourite with the
+        timestamp." A pair of four-decimal numbers is precise, unmemorable
+        and impossible to place; the date is what orders a list of saved
+        places and tells two similar pins apart.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        with freeze_time("2026-02-03T09:00:00Z"):
+            favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert _row_meta(response.content.decode()) == "Saved 3 Feb 2026"
+        # The coordinates are gone entirely, not merely demoted. Asserted
+        # against the row's own meta line rather than the whole body: the
+        # roster sidecar this list still carries for offline reads
+        # (SNOW-418) is JSON, and legitimately holds the coordinates.
+        assert f"{favourite.latitude:.4f}" not in _row_meta(response.content.decode())
+
+    def test_map_variant_meta_line_prefixes_the_region(self, client: Client) -> None:
+        """A pin that matched a region reads "<region> · saved <date>".
+
+        Hugo's own design for this row — "Alpstein · saved 3 Feb". Region
+        is nullable (a pin can fall outside every known boundary), which is
+        why the date alone is the default rather than the exception.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(name="Alpstein")
+        with freeze_time("2026-02-03T09:00:00Z"):
+            FavouriteFactory.create(user=user, name="Mine", region=region)
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert _row_meta(response.content.decode()) == "Alpstein · saved 3 Feb 2026"
+
+    def test_map_variant_label_is_not_a_rename_trigger(self, client: Client) -> None:
+        """The label carries no click affordance — the pencil is the trigger.
+
+        SNOW-658, Hugo: "We have inline editing & the pencil - choose one."
+        The label is a ``<span>``, so its click was mouse-only; the pencil
+        is a real 44x44 button in the tab order. What went with it is the
+        pair of classes that advertised the label as editable.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "cursor-text" not in content
+        assert "hover:border-border-strong" not in content
+        # The pencil is still there — this is a choice between two, not a
+        # removal of both.
+        assert "data-row-rename" in content
+
+    def test_map_variant_renames_in_place_on_the_label(self, client: Client) -> None:
+        """The row carries its own inline editor, hidden until asked for.
+
+        Not an always-visible field (that is the manage page's row, and a
+        list of live inputs is not a list at rest) and not a
+        ``window.prompt`` (which is what this row had for a day). The
+        editor is server-rendered so its aria-label passes through a
+        template, and static/js/inline_rename.js reveals it.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "data-row-renameable" in content
+        assert "data-row-rename-input" in content
+        # Hidden at rest: the row reads as a row until the user asks.
+        editor = content[content.index("data-row-rename-input") :]
+        assert "hidden" in editor[: editor.index(">")]
+        # It is not a form field — the commit is a fetch, not a submit —
+        # so it carries no `name`, and the map variant still has none.
+        assert 'name="name"' not in content
+
+    def test_map_variant_offers_rename_and_remove_as_icon_controls(
+        self, client: Client
+    ) -> None:
+        """Both actions are visible controls on the row, trash last.
+
+        Hugo's design: no ellipsis menu on any panel. Remove is one tap in
+        the same place on every panel's rows, and Rename — this panel's own
+        extra — is the pencil immediately before it.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert 'role="menu"' not in content
+        rename = content.index(f'data-favourite-rename="{favourite.uuid}"')
+        remove = content.index(_delete_url(favourite.uuid))
+        assert rename < remove
+        # Each names the row it acts on — "Rename" alone names nothing
+        # with a list of pins on screen.
+        assert 'aria-label="Rename Mine"' in content
+        assert 'aria-label="Remove Mine"' in content
+
+    def test_manage_variant_keeps_its_always_visible_rename_field(
+        self, client: Client
+    ) -> None:
+        """_favourite.html is untouched by the map row's redesign (SNOW-658).
+
+        The manage page is a page for managing favourites; the map sheet is
+        a list glanced at. Only the map variant conforms to the shared row.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert 'name="name"' in content
+        assert "data-favourite-rename" not in content
+
+    def test_map_variant_empty_state(self, client: Client) -> None:
+        """A user with no favourites sees the empty-state copy in the sheet."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert b"no saved favourites" in response.content.lower()
+
+    @pytest.mark.parametrize("variant", ["", "unknown", "../../etc/passwd"])
+    def test_unknown_variant_falls_back_to_the_manage_template(
+        self, client: Client, variant: str
+    ) -> None:
+        """An unrecognised variant never reaches a template path."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant={variant}", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert b'data-testid="favourite-card-panel"' in response.content
 
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy."""
@@ -1372,6 +1630,23 @@ class TestFavouritesGeojson:
 
         data = response.json()
         assert data["features"][0]["properties"]["resort_id"] == resort.pk
+
+    def test_created_at_is_an_iso_timestamp(self, client: Client) -> None:
+        """Each feature carries the pin's save time as ISO-8601 (SNOW-658).
+
+        The map's pin popup renders it as a relative "saved" subheader, and
+        reads it off the feature so the popup still opens offline.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = _create_via_service(user)
+
+        response = client.get(GEOJSON_URL)
+
+        data = response.json()
+        created_at = data["features"][0]["properties"]["created_at"]
+        assert created_at == favourite.created_at.isoformat()
+        assert datetime.datetime.fromisoformat(created_at) == favourite.created_at
 
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""

@@ -16,6 +16,14 @@ Registers three template abstractions that replace copy-pasted markup:
   card given ``padding``, ``center`` and ``extra``.  Shared between the
   ``_card.html`` showcase partial and the ``card`` block tag so both always
   produce identical output.
+
+* ``icon_button_classes`` — simple tag returning the class string for a
+  44×44 icon-only control (SNOW-658).  Hugo's map-panel design gives every
+  icon control in a panel — the header close, a row's Rename, a row's
+  Remove — the same tap target and the same hover treatment, and those
+  controls are spread across five templates in three apps.  A tag keeps
+  that one decision in one place; five copies of the string would drift on
+  the first change to any of them.
 """
 
 from __future__ import annotations
@@ -46,6 +54,33 @@ _BUTTON_VARIANT_CLASSES: dict[str, str] = {
 _BUTTON_SIZE_CLASSES: dict[str, str] = {
     "standard": "px-5 py-2.5",
     "compact": "px-4 py-2",
+}
+
+# SNOW-658 — the 44×44 icon-only control shared by every UGC panel.
+#
+# 44×44 is the tap-target minimum, and the design applies it to the header
+# close and to each row action alike; ``shrink-0`` keeps it at that size
+# inside the row's flex line, where the label beside it is the part allowed
+# to give.
+#
+# The hover treatment is ``hover-affordance`` (src/css/main.css), the one
+# class every clickable control on the map and in its panels carries —
+# pointer cursor plus a translucent infill.  It replaces this string's own
+# ``transition-colors hover:bg-chip-strong``, which painted the same fill
+# and gave no cursor: a native ``<button>`` does not take the pointer from
+# the browser, so these controls read as inert under the mouse.
+_ICON_BUTTON_BASE = (
+    "hover-affordance flex h-11 w-11 shrink-0 items-center justify-center"
+    " rounded-tag text-text-2 transition-colors"
+)
+
+# ``destructive`` is Remove, the one action every panel's rows have.  It
+# differs only on hover: the control is neutral at rest (a row of red bins
+# reads as an error state), and names itself as destructive under the
+# pointer that is about to press it.
+_ICON_BUTTON_VARIANT_CLASSES: dict[str, str] = {
+    "default": "hover:text-text-1",
+    "destructive": "hover:text-status-error-text",
 }
 
 
@@ -148,6 +183,32 @@ def button_classes(
 
     """
     return _button_chrome_classes(variant, size, bool(full_width), bool(is_anchor))
+
+
+@register.simple_tag
+def icon_button_classes(variant: str = "default", extra: str = "") -> str:
+    """Return the Tailwind class string for a 44×44 icon-only control.
+
+    Used by the map panels' header close and row actions (SNOW-658), which
+    the design draws identically wherever they appear.
+
+    Args:
+        variant: ``"default"`` (neutral hover) or ``"destructive"`` (the
+            Remove control, which reddens on hover only).
+        extra: Any extra Tailwind utilities to append verbatim — the sheet
+            header's own negative margins are the only caller today.
+
+    Returns:
+        Space-joined Tailwind class string.
+
+    """
+    variant_cls = _ICON_BUTTON_VARIANT_CLASSES.get(
+        variant, _ICON_BUTTON_VARIANT_CLASSES["default"]
+    )
+    parts: list[str] = [_ICON_BUTTON_BASE, variant_cls]
+    if extra:
+        parts.append(extra)
+    return " ".join(parts)
 
 
 @register.simple_tag

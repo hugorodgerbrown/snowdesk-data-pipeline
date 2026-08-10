@@ -61,11 +61,11 @@ function switchMarkup({ id = 'sw', checked = false, disabled = false } = {}) {
         >
         <span
             aria-hidden="true"
-            class="pointer-events-none absolute inset-0 m-auto h-5 w-9 rounded-full bg-border-strong transition-colors peer-checked:bg-accent"
+            class="pointer-events-none absolute inset-0 m-auto h-6.5 w-11 rounded-full bg-border-strong transition-colors peer-checked:bg-accent"
         ></span>
         <span
             aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 left-1.5 my-auto h-4 w-4 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4"
+            class="pointer-events-none absolute inset-y-0 left-0.75 my-auto h-5 w-5 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4.5"
         ></span>
     </label>`;
 }
@@ -132,7 +132,7 @@ describe('a real click on the track activates the input (the dead-track regressi
     document.body.innerHTML = `
       <span class="relative inline-flex w-11 min-h-11">
         <input id="sw-old" type="checkbox" role="switch" class="peer sr-only">
-        <span aria-hidden="true" class="pointer-events-none absolute inset-0 m-auto h-5 w-9"></span>
+        <span aria-hidden="true" class="pointer-events-none absolute inset-0 m-auto h-6.5 w-11"></span>
       </span>`;
     const input = document.getElementById('sw-old');
     const track = document.querySelector('[aria-hidden="true"]');

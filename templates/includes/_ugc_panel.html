@@ -1,0 +1,184 @@
+{% load i18n components %}
+{% comment %}
+templates/includes/_ugc_panel.html — the shared skeleton for the three
+map panels that manage a user's own data (SNOW-658).
+
+Downloads, favourites and field observations all answer the same
+question — "what have I got here, and how do I add to it or get rid of
+one?" — and all three sit on the same map behind the same kind of
+roundel. Until this partial they shared exactly one element (the
+"Show X on the map" switch) and diverged at every other point of
+contact: three sheet-scroll models, two title sizes, three body
+wrappers, three row shapes. Hugo, opening all three side by side:
+"they serve the same function… and yet they are all different."
+
+The "Manage downloads" sheet is the reference — it came from Hugo's own
+mock (see the SNOW-645/SNOW-635 notes in
+public/partials/_map_downloads_sheet.html), so its skeleton is what got
+extracted here and the other two conform to it, not the reverse.
+
+SNOW-658 (Hugo's "Map panels — common format" design): the shell is five
+parts, always in this order, and what varies between the three panels is
+only ever their contents.
+
+  1. HEADER — includes/_sheet_header.html, carrying the icon of the
+     ROUNDEL that opens this panel and the sentence-case title at ONE
+     size for all three (`text-lg font-semibold`). Both are fixed here
+     rather than exposed as style parameters: a per-caller title size is
+     precisely the drift this partial exists to end, and the icon is the
+     panel's only identity mark — the thing that confirms which roundel
+     was tapped.
+  2. CONTEXT STRIP — one 13px muted line saying where this panel's data
+     lives ("…stay on this device", "…are private and not shared",
+     "…are shared with the community"). Downloads alone extends it, via
+     `header_template`, with its budget meter below that line.
+  3. LIST — a mono uppercase section label on a rule, then the rows,
+     which are separated by hairlines and are NOT cards: no boxes inside
+     the panel. The scroll region is the only part that scrolls, so the
+     header above and the CTA/switch below stay pinned.
+  4. ADD CTA — one full-width outlined button, exactly one per panel.
+  5. MAP TOGGLE — includes/_map_overlay_toggle.html at the foot, so the
+     map BEHIND the sheet is the last thing read rather than the first.
+
+The outer flex column runs at the 18px (`gap-4.5`) rhythm and carries
+`min-h-0 flex-1` so it fills — and is allowed to SHRINK inside — the
+bounded box includes/_overlay_sheet.html's `scroll_body=True` renders.
+`min-h-0` is load-bearing: a flex child defaults to `min-height: auto`
+("never shrink below my content"), and without the override the list
+refuses to scroll and pushes the CTA and the switch off-screen instead.
+
+Composition. Django has no slot mechanism, and the three shapes we need
+to vary (a rows region, an optional header extra) are markup, not
+strings. Of the three ways to do this — a caller-side wrapper that
+duplicates the chrome, a custom templatetag, or a template PATH passed
+in and `{% include %}`d — only the third leaves no class string
+duplicated across the three call sites and adds no new mechanism to the
+codebase: includes/_collapsible_panel.html's `body_template` already
+does exactly this, for exactly this reason. So each caller owns a small
+rows template and passes its path.
+
+The CTA's hook is `data-panel-add`, one name for all three panels,
+replacing `data-downloads-add` / `data-favourites-add` /
+`data-report-add`. Three names for one control is the same divergence
+this partial exists to remove, in attribute form. Each owning module
+binds its listener on its OWN sheet element (map_downloads_manager.js,
+favourites.js, report.js all delegate on the sheet, because the body is
+re-cloned on every open), so one shared hook is unambiguous — there is
+never more than one panel body in a given sheet.
+
+Parameters (passed via {% include … with … %}):
+  title           (string) — the sheet header's title. Required.
+  icon_template   (string) — template path for the header glyph: the icon
+                  of the roundel that opens this panel
+                  (includes/_icon_downloads.html, _icon_favourite.html,
+                  _icon_observation.html). Required — a panel with no
+                  identity mark is a state the design set out to fix.
+  context_line    (string) — the context strip: where this panel's data
+                  lives, in one translated sentence. Required, for the
+                  same reason.
+  section_label   (string, optional) — the list's mono uppercase heading
+                  ("Places", "Reports"). Optional only because downloads
+                  has TWO groups (Regions, Custom areas) and renders both
+                  headings itself, in the same style, inside its own rows
+                  template.
+  rows_template   (string) — template path rendered inside the scroll
+                  region. Owns the panel's list and, for a panel whose
+                  rows load over HTMX, the container they land in.
+                  Required.
+  header_template (string, optional) — template path rendered inside
+                  the title block, under the context strip, so the pair
+                  reads as one unit at its own tighter rhythm rather
+                  than at the outer `gap-4.5`. Downloads' budget meter
+                  is the only user: it is the one legitimate per-panel
+                  extra, since neither of the other two costs the device
+                  anything to hold.
+  cta_label       (string) — the add-CTA's visible, translated label.
+                  Required.
+  toggle_id       (string) — DOM id for the overlay switch. Required.
+
+The overlay switch's LABEL is not a parameter. It is "Display on the map"
+on all three panels — the design's own wording, replacing "Show areas on
+the map" / "Show favourites on the map" / "Show community reports on the
+map". Three sentences for one control is the same divergence the shared
+`data-panel-add` hook removed in attribute form, so the string is fixed
+here, where no caller can restate it.
+
+The CTA carries `disabled:` utilities unconditionally. Only downloads
+ever sets `disabled` on it today (SNOW-637: starting a download needs a
+connection), but the styling of a disabled control is chrome, and
+chrome is this partial's job — a panel that later grows a disabled
+state should not have to remember to bring its own.
+{% endcomment %}
+<div class="flex min-h-0 flex-1 flex-col gap-4.5">
+    <div>
+        {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" %}
+        {# The context strip. `px-2` puts it under the title rather than    #}
+        {# under the title's own left edge plus the sheet header's padding; #}
+        {# `-mt-1.5` trims that header's `pb-3` (12px) to the design's own  #}
+        {# 6px, the same trim the budget block used to make for itself.     #}
+        <p class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
+        {% if header_template %}{% include header_template %}{% endif %}
+    </div>
+    {# `-mx-1.5 px-1.5` is the row label's clipping fix (SNOW-658), not     #}
+    {# spacing: it moves 6px of this box from its content edge to its      #}
+    {# padding, so what renders is unchanged. A scroll container clips at  #}
+    {# its PADDING box, and declaring `overflow-y` computes `overflow-x`   #}
+    {# to `auto` as well — so the row label's own -6px bleed (see          #}
+    {# includes/_ugc_panel_row.html, where the bleed puts the label's TEXT #}
+    {# on the row's left edge rather than 6px in) fell outside this box    #}
+    {# and had its left border, its hover fill and 6px of its first letter #}
+    {# cut off. Measured in Chromium: the label's box started at x=11 in a #}
+    {# scroll box whose content began at x=17. Hugo: "The favourites name  #}
+    {# element is cut off at the left". The design it came from had no     #}
+    {# scroll container, which is why it worked there.                     #}
+    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
+        {# The section label belongs to the list it heads, so the two sit   #}
+        {# in one tight group rather than 18px apart at the scroll region's #}
+        {# own rhythm. Downloads passes no `section_label`: it has two      #}
+        {# groups and renders both headings through the same partial from   #}
+        {# inside its rows template.                                        #}
+        {% if section_label %}
+            <div class="flex flex-col gap-1">
+                {% include "includes/_eyebrow.html" with tag="p" text=section_label class_extra="pb-1 font-medium" %}
+                {% include rows_template %}
+            </div>
+        {% else %}
+            {% include rows_template %}
+        {% endif %}
+    </div>
+    <div class="border-t border-border pt-3">
+        <button
+            type="button"
+            data-panel-add
+            {# `h-11.5` is the design's own 46px — stated as a height       #}
+            {# rather than more padding, so the CTA is the same size on     #}
+            {# every panel whatever its label wraps to.                     #}
+            {# `hover-affordance` (src/css/main.css) is the one hover        #}
+            {# treatment every clickable control on the map and in these     #}
+            {# panels carries — pointer plus a translucent infill. The       #}
+            {# shared button chrome brings only an opacity shift, which on   #}
+            {# an outlined CTA is close to invisible, and no cursor at all.  #}
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5 disabled:opacity-50'
+        >
+            {# A stroked SVG plus, not a literal "+" glyph — the same        #}
+            {# stroke-based idiom every other icon in this design uses.      #}
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+            >
+                <path d="M12 5v14M5 12h14" />
+            </svg>
+            {{ cta_label }}
+        </button>
+    </div>
+    {# One string for all three panels — see the note above the parameter  #}
+    {# list for why this is not a parameter.                               #}
+    {% trans "Display on the map" as overlay_toggle_label %}
+    {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
+</div>

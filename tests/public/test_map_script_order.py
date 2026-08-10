@@ -124,10 +124,11 @@ class TestMapScriptOrder:
         page's scripts down to MAP_BUNDLE's members, so a NEW ``map_*.js`` tag
         added to the template but never registered in MAP_BUNDLE is silently
         filtered out and passes. Breaking contiguity is what makes that fail —
-        and it does so without an allowlist of the eight ``map*.js`` files
+        and it does so without an allowlist of the nine ``map*.js`` files
         (map_sheet, map_help, map_edit_resorts, map_layer_sync_status,
-        map_overlay_offline_cache, map_placement_focus, map_controls_collapse,
-        map_downloads_manager) that legitimately sit outside the bundle.
+        map_overlay_offline_cache, map_overlay_bounds, map_placement_focus,
+        map_controls_collapse, map_downloads_manager) that legitimately sit
+        outside the bundle.
 
         If a genuinely unrelated script ever has to be interleaved, this is the
         test to change — but it should be a deliberate edit, not a surprise.
