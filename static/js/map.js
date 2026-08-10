@@ -3138,6 +3138,96 @@
     isVisible: () => downloadedOverlayVisible,
   });
 
+  // ==== SNOW-658: the two user-data overlays, driven from their own panels ====
+  //
+  // Favourites and Community reports lost their layers-menu rows this ticket.
+  // The switch that drives each now lives in the panel its own roundel opens —
+  // the pattern SNOW-634 set for downloads — so the callers are favourites.js
+  // and report.js, separate IIFEs that reach this one through a frozen bridge
+  // of the same shape ``pwaDownloadedOverlay`` already publishes.
+  //
+  // Being INSIDE this IIFE, these do directly what map_basemap_picker.js had
+  // to ask for across the boundary: write the persisted preference, dispatch
+  // the lazy load, and — for favourites — recompute the favourited-resort
+  // exclusion. (``snowdesk:favourites-visibility-changed`` stays: other
+  // callers still fire it, and its listener is the same one-line call.)
+  //
+  // Unlike the downloads overlay these ARE persisted, exactly as the rows
+  // were: same localStorage key, same default, so a device carrying a
+  // preference from before this ticket keeps it.
+
+  /**
+   * Show a panel-driven overlay: persist the preference, then hand off to the
+   * lazy-load path, which fetches the GeoJSON (first enable only), installs
+   * the layers and makes them visible.
+   *
+   * @param {string} key - ``'favourites'`` or ``'community_reports'``.
+   * @returns {void}
+   */
+  const showPanelOverlay = (key) => {
+    // First: the overlay-load handler re-reads this persisted value before it
+    // paints (SNOW-493), so a write after the dispatch would be read too late.
+    writeStorage(OVERLAY_STORAGE_KEY[key], 'true');
+    overlayState[key] = true;
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
+      detail: { key },
+    }));
+    // SNOW-499: that handler calls this too, but only once its fetch settles —
+    // and ``ensureOverlayLoaded`` short-circuits for an already-loaded layer,
+    // so on a re-enable nothing would call it at all.
+    if (key === 'favourites') applyResortsFavouritedFilter();
+  };
+
+  /**
+   * Hide a panel-driven overlay: persist the preference and drop every layer
+   * it owns. No fetch and no re-probe — hidden means there is nothing on
+   * screen to be wrong, the same reasoning ``hideDownloadedOverlay`` carries.
+   *
+   * @param {string} key - ``'favourites'`` or ``'community_reports'``.
+   * @returns {void}
+   */
+  const hidePanelOverlay = (key) => {
+    writeStorage(OVERLAY_STORAGE_KEY[key], 'false');
+    overlayState[key] = false;
+    for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', 'none');
+      }
+    }
+    // SNOW-499: a favourited resort must get its plain dot back the moment its
+    // star is hidden, or it disappears from the map entirely — the side effect
+    // the picker's own off-path used to trigger by CustomEvent.
+    if (key === 'favourites') applyResortsFavouritedFilter();
+  };
+
+  window.pwaFavouritesOverlay = Object.freeze({
+    show() {
+      showPanelOverlay('favourites');
+      window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: true });
+    },
+    hide() {
+      hidePanelOverlay('favourites');
+      window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: false });
+    },
+    isVisible: () => !!overlayState.favourites,
+  });
+
+  window.pwaCommunityReportsOverlay = Object.freeze({
+    show() {
+      showPanelOverlay('community_reports');
+      window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', {
+        visible: true,
+      });
+    },
+    hide() {
+      hidePanelOverlay('community_reports');
+      window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', {
+        visible: false,
+      });
+    },
+    isVisible: () => !!overlayState.community_reports,
+  });
+
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
   // scope and cannot reference countryState / ensureCountryLoaded directly.
   // The picker dispatches this event; we own the state mutation here.
