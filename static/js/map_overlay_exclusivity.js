@@ -47,8 +47,17 @@
  *                               Hugo's screen.
  *
  * The registered set is the layers menu, the three UGC sheets (downloads,
- * favourites, field observations) and the anchored map-detail popup
- * (a resort or an existing favourite pin).
+ * favourites, field observations), the anchored map-detail popup (a resort
+ * or an existing favourite pin), the legend card and the help tour's
+ * coachmark.
+ *
+ * The last two came in behind the rest, and are the clearest illustration of
+ * why the pairwise wiring kept missing cases: both already had a dismiss
+ * handler that looked like it covered this — "any click outside me closes
+ * me" — and neither did. Their own toggles call ``stopPropagation`` (they
+ * have to; without it the opening click reads as a click away), so no other
+ * surface's identical handler ever saw them open, and a surface opened
+ * programmatically rather than by a document click never reached theirs.
  *
  * ``close()`` is only called on a surface that reports itself open, so a
  * controller's close path never runs for a surface already closed — the

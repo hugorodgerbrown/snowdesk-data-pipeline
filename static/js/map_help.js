@@ -32,6 +32,11 @@
  *   - prefers-reduced-motion disables the ring's pulse animation and the
  *     position transitions via a 'map-help--no-motion' class, mirroring
  *     home_intro.js's '--no-motion' pattern.
+ *   - SNOW-658: the tour is a map overlay, so it registers with
+ *     window.pwaMapOverlays (static/js/map_overlay_exclusivity.js) — opening
+ *     it closes every other map overlay, and opening any of them closes it.
+ *     Nothing in the walkthrough depends on another overlay staying open:
+ *     every step points at map chrome, never at a panel's contents.
  *
  * Mirrors the IIFE + localStorage-guard shape of home_intro.js.
  */
@@ -68,6 +73,10 @@
 
   const STORAGE_KEY = 'snowdesk.map.help';
   const DISMISSED_VALUE = 'seen';
+  // SNOW-658: this surface's name in the shared map-overlay registry — the
+  // element's own id, so a failing exclusivity assertion names something
+  // greppable.
+  const OVERLAY_NAME = 'map-help-overlay';
   const RING_PADDING = 4;
   const TOOLTIP_MARGIN = 12;
 
@@ -263,6 +272,15 @@
   const open = (fromStart) => {
     if (fromStart) currentIndex = 0;
     lastFocused = document.activeElement;
+    // SNOW-658: only one overlay is open over the map at a time. Announced
+    // before the tour is revealed, so the surface it replaces is gone by the
+    // time the ring and tooltip are on screen. Safe for the walkthrough
+    // itself: every step targets a piece of map CHROME — a roundel, the
+    // readout, the scrubber, the date ribbon — and not one of them lives
+    // inside another overlay, so nothing this closes is a step's target.
+    // (#map-legend-toggle is the nearest miss: it is a SIBLING of the legend
+    // card inside #map-legend, and stays on screen when the card collapses.)
+    window.pwaMapOverlays?.opening(OVERLAY_NAME);
     // Several step targets live in the collapsible control group, which clips
     // to height 0 when collapsed. They still match document.querySelector, so
     // the absent-target filter does not drop them and the highlight ring would
@@ -279,14 +297,22 @@
   /**
    * Close the overlay and, when persist=true, record the dismissed state.
    *
-   * @param {boolean} persist
+   * @param {boolean} persist Record the tour as seen, so it stops
+   *   auto-starting. True for the paths where the user ends the tour
+   *   deliberately (Done, Escape, the "×"); false when something else takes
+   *   the screen from it.
+   * @param {boolean} [restoreFocus=true] Return focus to whatever held it
+   *   when the tour opened. False when another overlay displaced the tour:
+   *   focus belongs to the surface the user just opened, not to the control
+   *   the tour borrowed it from.
    */
-  const close = (persist) => {
+  const close = (persist, restoreFocus = true) => {
     overlay.setAttribute('hidden', '');
     overlay.setAttribute('aria-hidden', 'true');
     // Hand the collapsible group back to the user's own preference.
     document.dispatchEvent(new CustomEvent('snowdesk:map-help-close'));
     if (persist) persistDismissed();
+    if (!restoreFocus) return;
     if (lastFocused && typeof lastFocused.focus === 'function') {
       lastFocused.focus();
     } else if (toggleBtn) {
@@ -321,6 +347,23 @@
     // deliberate "show me again" affordance.
     toggleBtn.addEventListener('click', () => open(true));
   }
+
+  // SNOW-658: the tour closes whenever any other map overlay opens, and
+  // closes every other one when it opens. It is non-modal by design (the
+  // overlay is `pointer-events: none` so the map stays usable underneath),
+  // which is precisely why it needed this: nothing stopped a user tapping a
+  // roundel mid-tour and ending up with a panel and a floating tooltip card
+  // fighting over the same corner.
+  //
+  // Closed without persisting: being displaced by another overlay is not the
+  // user saying "I have seen this", which is what the Done / Escape / "×"
+  // paths mean. The "?" roundel re-opens the tour at any time, and a tour
+  // that was interrupted rather than finished is still worth auto-starting
+  // on a page that has not opted out.
+  window.pwaMapOverlays?.register(OVERLAY_NAME, {
+    isOpen: isOpen,
+    close: () => close(false, false),
+  });
 
   // SNOW-535: the homepage's #home-intro "Explore the map" CTA asks for the
   // tour via this event (home_intro.js) rather than reaching into this
