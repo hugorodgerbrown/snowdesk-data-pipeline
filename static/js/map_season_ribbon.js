@@ -54,18 +54,35 @@
     return INT_TO_RATING[n];
   };
 
-  // Focus state. Empty region => no focus (grey track, hidden readout, no
-  // map highlight).
+  // Focus state. Empty region => no focus (grey track, "No region selected"
+  // readout, no map highlight).
+  //
+  // SNOW-656: the focus starts EMPTY. It used to be seeded from
+  // ``data-default-region-id`` (CH-4115, Martigny-Verbier), which meant every
+  // visitor arrived at a homepage presenting one arbitrary region as though
+  // they had chosen it: the chip named it and carried its danger swatch, the
+  // season ribbon was painted for it, the download roundel was armed for it,
+  // and — until this ticket's first pass — the map outlined it too. Nothing
+  // on the page explained why that region and not another, and its swatch
+  // colour read as a statement about the map rather than about one region.
+  //
+  // The empty state this falls back to is not a gap; SNOW-642 designed it
+  // deliberately, with a "No region selected" leaf and both header controls
+  // visible-but-disabled rather than hidden. The date is still seeded, since
+  // the timeline has a day whether or not a region is focused.
+  //
+  // ``data-default-region-id`` is still rendered and is still read by
+  // ``map_region_download.js``'s own seed — see the note there.
   let cache = null;
-  let regionId = ribbonEl.dataset.defaultRegionId || null;
-  let regionName = ribbonEl.dataset.defaultRegionName || null;
-  let regionSlug = ribbonEl.dataset.defaultRegionSlug || null;
+  let regionId = null;
+  let regionName = null;
+  let regionSlug = null;
   let dateKey = ribbonEl.dataset.defaultDate || null;
-  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb. Seeded
-  // from data attributes for the pre-selected region, then overwritten on every
-  // region-selected event (which carries the full hierarchy).
-  let regionSubName = ribbonEl.dataset.defaultSubregionName || '';
-  let regionMajorName = ribbonEl.dataset.defaultMajorName || '';
+  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb.
+  // Populated on every region-selected event, which carries the full
+  // hierarchy; empty until the visitor picks a region.
+  let regionSubName = '';
+  let regionMajorName = '';
   // Which region tiers are visible on the map (l1=Major, l2=Minor); the chip
   // breadcrumb mirrors these. Seeded from the persisted overlay state, updated
   // on snowdesk:overlays-changed. The leaf is the region name; it remains in
@@ -131,9 +148,22 @@
   // the popup (which is destroyed during playback). Driven from the
   // module-scope MAP + FEATURE_BY_REGION_ID. Re-asserted on every date change
   // so playback's popup-clear can't strip the selection outline.
+  //
+  // SNOW-656: ONLY for a region the user actually chose. ``regionId`` is
+  // seeded from ``data-default-region-id`` (CH-4115) so the ribbon has a
+  // timeline to draw before anything is picked — but pushing that seed onto
+  // the MAP meant the homepage always rendered with Martigny-Verbier
+  // selected: a black selection ring and an emphasised fill around one region
+  // out of 149, with nothing to explain why. Worse, the emphasis made it read
+  // as a different colour from its neighbours, so a default that was supposed
+  // to be a convenience looked like a data error.
+  //
+  // The seed still drives the ribbon and the readout chip; it just no longer
+  // claims a selection on the map. The map starts genuinely unselected.
   let highlightedFeatureId = null;
+  let userHasChosen = false;
   const setHighlight = () => {
-    if (!MAP) return;
+    if (!MAP || !userHasChosen) return;
     const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
     const fid = feature ? feature.id : null;
     if (highlightedFeatureId != null && highlightedFeatureId !== fid) {
@@ -260,8 +290,12 @@
     setHighlight();
   };
 
-  // Tap a region → it becomes the focus.
+  // Tap a region → it becomes the focus. This is the ONLY thing that lets
+  // setHighlight touch the map (SNOW-656) — it fires for a tap, a resort pin,
+  // a search hit and a ``#CH-xxxx`` deep link, i.e. every route by which a
+  // user genuinely picks a region, and for nothing else.
   document.addEventListener('snowdesk:region-selected', (e) => {
+    userHasChosen = true;
     regionId = (e.detail && e.detail.region_id) || null;
     regionName = (e.detail && e.detail.region_name) || null;
     regionSlug = (e.detail && e.detail.region_slug) || null;

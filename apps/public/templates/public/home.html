@@ -139,6 +139,13 @@ in addition to the shared map assets.
     {# (window.pwaSearchCore), extracted from map.js's main IIFE so it can  #}
     {# be unit-tested. Must load before map.js, whose search box uses it.   #}
     <script defer src="{% static 'js/search_core.js' %}"></script>
+    {# SNOW-656: the Bulletins layer's preference-vs-suppression state       #}
+    {# machine (window.pwaLayerVisibilityCore) — which of the two rows the   #}
+    {# old l4 tier split into is effective right now, and how regions-fill   #}
+    {# must be painted for it. Read by map.js at parse time (the boot seed   #}
+    {# resolves the Bulletins preference through seedFromLegacy), so it must #}
+    {# load before the bundle.                                              #}
+    <script defer src="{% static 'js/layer_visibility_core.js' %}"></script>
     {# SNOW-573: pure projection / merge / forecast-window math for the map   #}
     {# Weather overlay (window.pwaWeatherCore), extracted so it can be        #}
     {# unit-tested (tests/js/test_map_weather_core.js).                       #}

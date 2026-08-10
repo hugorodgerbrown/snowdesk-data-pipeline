@@ -86,10 +86,10 @@ layer menu; each remembers its state per-device in `localStorage`.
 
 | Layer | EAWS tier | What it is | Default |
 |-------|-----------|------------|---------|
-| **Micro regions** | L4 | The warning region — the smallest unit a bulletin, rating, and subscription attach to (e.g. `CH-4115`). **This is the choropleth**: the coloured fill that carries the danger rating. | **On** |
+| **Micro regions** | L4 | The warning region — the smallest unit a bulletin, rating, and subscription attach to (e.g. `CH-4115`). Its boundary and its label. | **On** |
+| **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. Not a layers-menu row: it has its own five-step strength control on the map (below). | **50%** |
 | **Minor regions** | L2 | Sub-region grouping of micro-regions (e.g. `CH-41`, Lower Valais). Outline only. | Off |
 | **Major regions** | L1 | Top-level area (e.g. `CH-4`, Valais). Outline only. | Off |
-| **Bulletin groupings** | derived | The dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day — two regions with the same outline are covered by one text. Outline only. | Off |
 
 The **micro-region choropleth is the map's core**: each L4 region is
 filled with the colour of its peak danger rating for the selected date.
@@ -98,12 +98,34 @@ Selecting a region — by tapping the fill, tapping a resort pin inside
 it, or picking it from search — opens the detail surface and outlines
 the region.
 
+**Why the geography and the bulletin fill are separate** (SNOW-656). The
+geography is fixed and date-independent; the data painted onto it changes with
+every scrubbed day. Separating them lets the borders stay up throughout, since
+they never interfere with anything, while the infill can yield to the
+downloaded-areas overlay — which paints translucent squares over the very same
+polygons and is unreadable on top of a coloured fill. **The fill and the
+downloads sheet's "Show areas on the map" can never both be on**, and the two
+controls mirror each other:
+[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
+
+**The fill's strength is the user's choice, in five steps** — 0, 25%, 50%
+(default), 75%, 100% — from a roundel in the bottom-right stack whose flyout
+opens to the left. 0 is the off position, so the control subsumes the on/off
+toggle it replaced rather than sitting beside one. The choropleth is
+translucent again as a result, which reverses an earlier decision and brings
+back its basemap drift knowingly:
+[`decisions/bulletin-fill-is-a-user-choice.md`](decisions/bulletin-fill-is-a-user-choice.md).
+
+At step 0 the fill goes *transparent*, not absent — it is the layer region
+taps resolve against, so borders stay tappable with the colour gone. Only when
+step 0 meets **Micro regions off** is it removed outright.
+
 The L1/L2 outlines are orientation aids: they let a visitor see which
 larger area a micro-region belongs to without leaving the map. The
-**bulletin groupings** layer is the one derived tier — it is not a fixed
-administrative boundary but a per-day artefact showing which micro-regions
-the forecaster treated as one unit, and so it changes as you scrub
-through the season.
+**bulletin groupings** boundary inside the Bulletins row is the one derived
+tier — it is not a fixed administrative boundary but a per-day artefact
+showing which micro-regions the forecaster treated as one unit, and so it
+changes as you scrub through the season.
 
 (EAWS defines an L3 tier as well; Snowdesk deliberately skips it. The
 "bulletin groupings" layer occupies the `l3` overlay key in code for

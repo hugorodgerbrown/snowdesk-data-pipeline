@@ -48,13 +48,56 @@
   // its baseline before applying the cap is stable. Recomputed on each open
   // and on resize because the banner (conditional) and the top safe-area
   // inset both move #map's top.
+  //
+  // SNOW-656 lowers the BASELINE as well, because clamping alone was solving
+  // the wrong half of the problem. The CSS `bottom` is measured from the
+  // basemap pill, and that pill is the FIRST roundel in a bottom-anchored
+  // column — so the taller the column, the higher the pill sits and the
+  // higher the baseline lands. On a 375x812 phone it put the menu's lower
+  // edge at y=455 with the scrubber at y=707: a 333px window over 580px of
+  // content, opening already scrolled past its own Countries section, while
+  // 253px of map below it went unused. Dropping the baseline to just above
+  // the scrubber roughly doubles the room and removes the scroll at that
+  // size.
   const MENU_TOP_GAP = 8;
-  const clampMenuHeight = () => {
+  const MENU_BOTTOM_GAP = 8;
+
+  /**
+   * Place the menu's lower edge and cap its height to the room that leaves.
+   *
+   * Both halves are measured rather than declared: the column's height varies
+   * with the collapsible group and with which roundels are eligible, and
+   * `#map`'s top moves with the nav, the conditional off-season banner and
+   * the safe-area inset. Recomputed on every open and on resize for the same
+   * reason.
+   *
+   * @returns {void}
+   */
+  const positionMenu = () => {
     const mapEl = document.getElementById('map');
     if (!mapEl) return;
-    const mapTop = mapEl.getBoundingClientRect().top;
-    const menuBottom = menu.getBoundingClientRect().bottom;
-    const available = Math.max(0, Math.round(menuBottom - mapTop - MENU_TOP_GAP));
+    const mapBox = mapEl.getBoundingClientRect();
+
+    // The lowest the menu may reach. The scrubber owns the foot of the map,
+    // so stop above it; with no scrubber on the page, the map's own bottom
+    // edge is the floor.
+    const scrubber = document.getElementById('season-scrubber');
+    const floor = (scrubber ? scrubber.getBoundingClientRect().top : mapBox.bottom)
+      - MENU_BOTTOM_GAP;
+
+    // `bottom` is measured from the pill (the menu's containing block) and is
+    // negative downward, so this is the offset that puts the menu's lower
+    // edge on the floor. Falls back to the CSS value if the pill has no box
+    // yet — the menu is unhidden before this runs, but a display:none
+    // ancestor would still yield zeros.
+    const pillBottom = pill.getBoundingClientRect().bottom;
+    if (pillBottom > 0) {
+      menu.style.bottom = `${Math.round(pillBottom - floor)}px`;
+    }
+
+    // Then the height that baseline leaves above it, so the first rows never
+    // clip behind the header (SNOW-511's original point).
+    const available = Math.max(0, Math.round(floor - mapBox.top - MENU_TOP_GAP));
     menu.style.maxHeight = `${available}px`;
   };
 
@@ -69,8 +112,9 @@
     // bucket, so repeated opens coalesce inside `refresh()` rather than
     // each starting their own pass.
     if (open) window.pwaLayerSyncStatus?.refresh();
-    // SNOW-511: size the menu to the visible map area once it's laid out.
-    if (open) clampMenuHeight();
+    // SNOW-511/SNOW-656: place the baseline and size the menu to the visible
+    // map area, once it's laid out.
+    if (open) positionMenu();
   };
 
   // SNOW-588: let the "Manage downloads" sheet close this menu when it
@@ -88,7 +132,7 @@
   // SNOW-511: keep the cap correct if the viewport changes while the menu is
   // open (orientation flip, mobile URL-bar show/hide, desktop resize).
   window.addEventListener('resize', () => {
-    if (!menu.hidden) clampMenuHeight();
+    if (!menu.hidden) positionMenu();
   });
 
   toggle.addEventListener('click', (e) => {
@@ -124,13 +168,16 @@
   const OVERLAY_LAYER_IDS = {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
-    // ``bulletin-groupings-line`` rides in the l4 list rather than owning a
-    // row of its own: the boundary has no toggle and is shown whenever the
-    // micro-region tier is, so the picker flips it in lockstep with L4's own
-    // layers. There is no l3 entry here for the same reason.
-    l4: [
-      'regions-fill', 'regions-line', 'regions-label', 'bulletin-groupings-line',
-    ],
+    // SNOW-656: ``l4`` is the micro-region GEOGRAPHY alone now — the boundary
+    // and its label. The choropleth (``regions-fill``) and the dissolved
+    // bulletin boundary (``bulletin-groupings-line``) that used to ride in
+    // this list are the BULLETINS row, and they are not in this table at all:
+    // both are driven by map.js's applyBulletinsVisibility, because the fill
+    // is hidden by opacity rather than visibility (it has to stay
+    // hit-testable) and the boundary answers to a suppression the picker
+    // knows nothing about. There is no ``l3`` entry for the same reason there
+    // never was one.
+    l4: ['regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
     favourites: ['favourites-pin', 'favourites-label'],
     community_reports: [
@@ -224,18 +271,10 @@
             if (next && overlayKey === 'l4' && !MAP.getLayer('regions-fill')) {
               document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
             }
-            // Enabling L4 also brings its companion bulletin boundary back.
-            // That layer IS lazy — its per-date data may never have been
-            // fetched (first enable) or may belong to a day the user scrubbed
-            // past while it was hidden — so it needs the load path, not just
-            // the visibility flip below. The main IIFE re-reads L4's key to
-            // decide the final visibility, so this is safe if the user
-            // toggles off again before the fetch settles.
-            if (next && overlayKey === 'l4') {
-              document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
-                detail: { key: 'l3' },
-              }));
-            }
+            // SNOW-656: the companion bulletin-boundary load that used to sit
+            // here moved to the Bulletins branch above, with the layer it
+            // belongs to. Enabling the micro-region GEOGRAPHY says nothing
+            // about whether that day's bulletin grouping should be drawn.
             for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
               if (MAP.getLayer(layerId)) {
                 MAP.setLayoutProperty(
@@ -290,4 +329,107 @@
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
+})();
+
+// SNOW-656: the bulletin-fill strength control — a roundel in the bottom-right
+// stack whose flyout opens to the LEFT with five opacity steps.
+//
+// Its own IIFE rather than part of basemapPickerInit above: it shares nothing
+// with the basemap popover but the side it opens from, and it must keep
+// working if that popover's early returns fire (no #basemap-pill on a page
+// that embeds the map without a picker).
+//
+// It lives in this file because this is where every map-chrome control that
+// delegates to the main IIFE is wired. The delegation follows the shape
+// `country.*` already uses: the value is a persisted preference AND-ed with
+// whatever is suppressing it (the downloads overlay, resort-edit mode), and
+// choosing any step above 0 has to switch the downloads overlay off. All of
+// that lives in the main IIFE, so this contributes the click and nothing
+// else — no localStorage write, and no optimistic `aria-checked`, because the
+// main IIFE mirrors the EFFECTIVE step back onto all five segments and a
+// write here could disagree with it.
+(function mapFillControlInit() {
+  const pill = document.getElementById('map-fill-pill');
+  if (!pill) return;
+  const toggle = document.getElementById('map-fill-toggle');
+  const flyout = document.getElementById('map-fill-flyout');
+  if (!toggle || !flyout) return;
+
+  // The flyout is a child of .map-controls-br, not of the roundel — the
+  // roundel lives inside #map-controls-collapsible, which is `overflow:
+  // hidden` for its height animation and would clip a panel extending left
+  // out of it. So its vertical position has to be measured rather than
+  // inherited: line its centre up with the roundel's, in the stack's own
+  // coordinates. Recomputed on every open because the roundel moves — the
+  // collapsible animates, and the stack reflows on resize.
+  const alignToRoundel = () => {
+    const stack = document.getElementById('map-controls-br');
+    if (!stack) return;
+    const stackBox = stack.getBoundingClientRect();
+    const pillBox = toggle.getBoundingClientRect();
+    const centre = pillBox.top + pillBox.height / 2 - stackBox.top;
+    flyout.style.top = `${Math.round(centre - flyout.offsetHeight / 2)}px`;
+  };
+
+  const setOpen = (open) => {
+    pill.dataset.state = open ? 'expanded' : 'collapsed';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    flyout.hidden = !open;
+    // After unhiding — offsetHeight is 0 while `hidden`.
+    if (open) alignToRoundel();
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(flyout.hidden);
+  });
+
+  // Outside-click dismiss. `click`, not `pointerdown`, so a step inside the
+  // flyout fires its own handler before this one can close it — the same
+  // reasoning the basemap menu's dismiss carries.
+  document.addEventListener('click', (e) => {
+    if (flyout.hidden) return;
+    if (pill.contains(e.target)) return;
+    setOpen(false);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !flyout.hidden) {
+      setOpen(false);
+      toggle.focus();
+    }
+  });
+
+  // The collapsible strip closing must take the flyout with it — otherwise it
+  // is left floating beside a roundel that is no longer on screen. The strip
+  // dispatches no event (map_controls_collapse.js only writes `data-expanded`
+  // on the stack), so observe that attribute rather than inventing a bridge
+  // for one listener.
+  const stack = document.getElementById('map-controls-br');
+  if (stack && typeof MutationObserver === 'function') {
+    new MutationObserver(() => {
+      if (stack.dataset.expanded !== 'true') setOpen(false);
+    }).observe(stack, { attributes: true, attributeFilter: ['data-expanded'] });
+  }
+
+  // Keep it beside its roundel if the viewport changes while it is open.
+  window.addEventListener('resize', () => {
+    if (!flyout.hidden) alignToRoundel();
+  });
+
+  flyout.addEventListener('click', (e) => {
+    const seg = e.target.closest && e.target.closest('[data-bulletins-step]');
+    if (!seg) return;
+    e.stopPropagation();
+    if (seg.getAttribute('aria-disabled') === 'true') return;
+    const step = Number(seg.dataset.bulletinsStep);
+    // Same recovery the L4 toggle makes: a prior style swap can have dropped
+    // the regions layers, and the choropleth is one of them.
+    if (step > 0 && MAP && !MAP.getLayer('regions-fill')) {
+      document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:bulletins-step', {
+      detail: { step },
+    }));
+  });
 })();

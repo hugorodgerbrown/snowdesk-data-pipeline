@@ -760,22 +760,29 @@
    * @returns {Promise<void>}
    */
   async function open() {
-    // SNOW-645 review: called BEFORE render(), not after — render() reads
-    // window.pwaDownloadedOverlay.isVisible() to paint the in-sheet toggle,
-    // and a user opening the sheet must see it already checked, not catch
-    // up on the render after this one. Optional chaining because map.js's
-    // IIFE (which owns the overlay) runs before this file but this module
-    // sits outside the map bundle's own load-order contract — see the
-    // module header.
+    // SNOW-656: opening the sheet no longer turns the overlay on.
     //
-    // Turns the overlay on UNCONDITIONALLY on every open — that is what
-    // makes it discoverable. It does NOT turn off when the sheet closes
-    // (see the toggle's own change handler, further down, which is now the
-    // ONLY thing that calls hide()): the sheet is bottom-docked and
-    // full-width on mobile (includes/_overlay_sheet.html), so binding
-    // visibility to "sheet is open" left the squares this draws
-    // permanently covered by the thing showing them.
-    window.pwaDownloadedOverlay?.show();
+    // SNOW-645 called `show()` unconditionally here, on the reasoning that a
+    // user who opens "Manage downloads" wants to see what they have, and an
+    // overlay nobody knows about is an overlay nobody uses. That was a cheap
+    // side effect while the squares were the only thing it changed.
+    //
+    // It is not cheap any more. The squares and the danger choropleth paint
+    // the same polygons, so they are now mutually exclusive — and with the
+    // auto-show in place, merely OPENING this sheet took the choropleth off
+    // the map and unchecked the layers menu's Bulletins row, neither of which
+    // the user asked for. An implicit action is a poor trade for
+    // discoverability when it silently undoes an explicit one.
+    //
+    // So the overlay is now entirely the switch's business: it starts off,
+    // the user turns it on, and it stays on until they turn it off (closing
+    // the sheet still does not hide it — see the toggle's own change handler,
+    // and window.pwaDownloadedOverlay's comment in map.js for why visibility
+    // is bound to the switch rather than to the sheet's lifecycle).
+    //
+    // render() reads window.pwaDownloadedOverlay.isVisible() to paint the
+    // switch, so it now shows the overlay's real state on every open rather
+    // than a state this function just imposed.
     await render();
     sheet.hidden = false;
     // SNOW-634: the roundel (#map-custom-download-control) is the only way
@@ -940,6 +947,27 @@
     } else {
       window.pwaDownloadedOverlay?.hide();
     }
+  });
+
+  // SNOW-656: the in-sheet switch is no longer the only thing that can turn
+  // the overlay off. Bulletins and "Show areas on the map" are mutually
+  // exclusive and the two controls MIRROR each other, so switching Bulletins
+  // on from the layers menu switches the squares off — and a sheet that is
+  // still open behind that menu has to show it, rather than sitting on a
+  // checked switch for an overlay that is no longer drawn.
+  //
+  // Sets the checkbox rather than re-rendering: render() re-clones the whole
+  // body template and re-reads IndexedDB, and nothing else on the sheet
+  // depends on this state (its own change handler already skips the
+  // re-render for the same reason). Not skipped while hidden either — this
+  // is one attribute write on an element that stays in the DOM, and leaving
+  // it stale would only be corrected by render()'s read-back on the next
+  // open, which is exactly the drift this closes.
+  document.addEventListener('snowdesk:downloaded-overlay-changed', function (event) {
+    const overlayToggle = /** @type {HTMLInputElement|null} */ (
+      sheet.querySelector('#map-downloads-overlay-toggle')
+    );
+    if (overlayToggle) overlayToggle.checked = !!(event.detail && event.detail.visible);
   });
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it

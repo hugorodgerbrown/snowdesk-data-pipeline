@@ -372,7 +372,13 @@
   // properties.download.
   let regionData = null;
 
-  let currentRegionId = (ribbonEl && ribbonEl.dataset.defaultRegionId) || null;
+  // SNOW-656: starts EMPTY, like the ribbon's own focus. This used to seed
+  // from ``data-default-region-id``, which armed the download roundel for
+  // Martigny-Verbier on every first paint — offering to download a region
+  // the visitor had not chosen and could not see was chosen. `setState`
+  // renders the 'no-region' variant until a region-selected event arrives,
+  // which is the honest reading of "nothing is focused yet".
+  let currentRegionId = null;
 
   /**
    * True when EVERY tile of `data`'s region is present in the pinned

@@ -182,6 +182,17 @@
       path: '/api/regions.geojson',
       countryScoped: true,
     }),
+    // SNOW-656: a ``bulletins`` entry lived here while the bulletin-fill
+    // control was a row in this menu. The control moved to the map canvas
+    // (``.map-fill-steps``, beside the scrubbed date), so there is no row to
+    // hang a dot on and no row for the offline gate to disable.
+    //
+    // Nothing is lost from the dashboard: the feed it reported
+    // (``/api/ratings/``) is one of the four COUNTRY_FEED_PATHS below, so a
+    // country whose ratings are missing already shows red on its own row —
+    // and the geometry the choropleth paints onto is the ``l4`` row's answer,
+    // unchanged. This menu's invariant is about the rows it lists; Bulletins
+    // is no longer one of them.
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),

@@ -38,6 +38,33 @@ CSRF_TRUSTED_ORIGINS = config(
 
 INTERNAL_IPS = ["127.0.0.1"]
 
+# ---------------------------------------------------------------------------
+# Static files must not be cached in development
+# ---------------------------------------------------------------------------
+# ``runserver``'s ``StaticFilesHandler`` serves ``/static/`` before the
+# middleware chain runs and sets no ``Cache-Control`` at all — only
+# ``Last-Modified``. Chrome then falls back to HEURISTIC caching (roughly a
+# tenth of the file's age at the moment it was cached), so a file that had sat
+# unchanged for a day is held for hours and an edit to, say, ``map.js`` simply
+# does not appear on reload. A hard refresh does not reliably clear it either,
+# and the service worker compounds it by precaching whatever the HTTP cache
+# handed it.
+#
+# WhiteNoise already serves static in production; pointing dev at it too — with
+# a zero max-age — makes every static response revalidate, so a reload always
+# runs the file on disk. ``runtimeArgs`` in ``.claude/launch.json`` passes
+# ``--nostatic`` so ``runserver`` yields ``/static/`` to this middleware rather
+# than intercepting it first.
+#
+# The e2e suite is unaffected: pytest-django's ``live_server`` installs its own
+# ``StaticFilesHandler`` and never consults ``--nostatic``.
+MIDDLEWARE = [  # noqa: F405
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    *MIDDLEWARE,  # noqa: F405
+]
+WHITENOISE_AUTOREFRESH = True
+WHITENOISE_MAX_AGE = 0
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

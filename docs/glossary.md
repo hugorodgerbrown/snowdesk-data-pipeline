@@ -58,6 +58,7 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Avalanche problem | EAWS problem token (new_snow, wind_slab, …) with rating, aspects, elevation | `AvalancheProblem` dataclass in `apps/bulletins/schema.py` |
 | Elevation band | Per-rating altitude banding (ALBINA / Météo-France only — SLF has none) | `RegionDayRating.bands` JSON |
 | Unscheduled bulletin | Out-of-cycle update flagged by the provider | `Bulletin.unscheduled` |
+| Bulletin fill | The bulletin DATA painted onto micro-regions — the `regions-fill` choropleth plus `bulletin-groupings-line`. Split from the Micro regions row (geography only) by SNOW-656. Strength is one of five user-chosen opacity steps, 0 being off; mutually exclusive with the downloaded-areas overlay | `static/js/layer_visibility_core.js`; `#map-fill-toggle` / `data-bulletins-step`; [bulletin-fill-is-a-user-choice.md](decisions/bulletin-fill-is-a-user-choice.md) |
 
 ## Weather
 
