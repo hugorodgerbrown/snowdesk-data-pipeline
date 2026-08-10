@@ -587,16 +587,21 @@ Optional context:
                 {# bottom-right stack (was an independently-positioned pill) so the      #}
                 {# stack bottom-anchors as one unit. report.js binds #report-btn by id,  #}
                 {# so the relocation is DOM-only.                                        #}
+                {# SNOW-658: it opens a PANEL now — the user's own reports, a "Report    #}
+                {# an observation" CTA, and the "Show community reports on the map"      #}
+                {# switch that used to be a layers-menu row — rather than jumping        #}
+                {# straight into the GPS-fix flow. The id is unchanged; the label is.    #}
                 <div class="map-utility-pill map-report-control">
                     <button
                         id="report-btn"
                         type="button"
                         class="map-utility-button"
                         data-report-form-url="{{ report_form_url }}"
+                        data-report-list-url="{{ report_list_url }}"
                         data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
                         data-report-unverified="{{ report_unverified|yesno:'true,false' }}"
                         data-signin-url="{{ report_signin_url }}"
-                        aria-label='{% trans "Report a field observation" %}'
+                        aria-label='{% trans "Your field observations" %}'
                     >
                         <svg
                             width="18"

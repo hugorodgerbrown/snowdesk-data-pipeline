@@ -1,0 +1,27 @@
+{% load i18n %}
+{% comment %}
+observations/partials/_observation_list.html — the user's own reports (SNOW-658).
+
+Rendered by apps.observations.views.observation_list and swapped into
+[data-report-rows] inside the map's field-observation panel
+(public/partials/_report_surface.html) by static/js/report.js.
+
+Mirrors favourites/partials/_favourite_list.html's shape: rows plus an empty
+clause. The empty clause states a fact about the user's data — it is only
+ever reached on a SUCCESSFUL response, and report.js writes its own distinct
+failure line when the request does not land, so "no reports" never stands in
+for "the request failed".
+
+Context:
+    observations : QuerySet[FieldObservation] — the requesting user's own
+                   reports, newest first (FieldObservation.objects.for_user()).
+{% endcomment %}
+<div class="flex flex-col gap-2" data-testid="observation-list">
+    {% for observation in observations %}
+        {% include "observations/partials/_observation.html" with observation=observation %}
+    {% empty %}
+        <p class="text-sm text-text-2" data-testid="observation-list-empty">
+            {% trans "You haven't reported any field observations yet." %}
+        </p>
+    {% endfor %}
+</div>

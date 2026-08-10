@@ -19,6 +19,14 @@ Covers:
                   observed_at (SNOW-420) — valid client instant is stored;
                   absent → falls back to timezone.now default; malformed,
                   too-far-future, or too-old → 400 with no row created.
+  observation_list (SNOW-658)
+                — non-HTMX → 400; anonymous → 403; unverified → 403;
+                  empty state; the user's own rows, newest first; another
+                  user's rows are never listed.
+  observation_delete (SNOW-658)
+                — non-HTMX → 400; anonymous/unverified → 403 with the row
+                  intact; GET → 405; owner → empty 200 and the row gone;
+                  another user's uuid → 404 with the row intact.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from django.utils import timezone
 from apps.observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
+    FieldObservationFactory,
     MicroRegionFactory,
     UserFactory,
 )
@@ -45,6 +54,21 @@ from tests.factories import (
 
 FORM_URL = "/partials/report/form/"
 SUBMIT_URL = "/partials/report/"
+LIST_URL = "/partials/report/list/"
+
+
+def _delete_url(observation: FieldObservation) -> str:
+    """Return the delete endpoint for one observation.
+
+    Args:
+        observation: The report whose delete URL is wanted.
+
+    Returns:
+        The ``observations:delete`` path for that row.
+
+    """
+    return f"/partials/report/{observation.uuid}/delete/"
+
 
 # Type annotation as dict[str, Any] matches the **extra kwargs expected by
 # Django's test Client.get/post — same pattern as tests/accounts/test_views.py.
@@ -967,3 +991,151 @@ class TestReportSubmitRateLimit:
 
         resp = report_submit(request)
         assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# observation_list — GET /partials/report/list/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestObservationList:
+    """The user's own reports, behind the same gate as the rest of the app."""
+
+    def test_non_htmx_gets_400(self, client: Client) -> None:
+        """A plain HTTP request is rejected by @require_htmx."""
+        client.force_login(_verified_user())
+        response = client.get(LIST_URL)
+        assert response.status_code == 400
+
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """Anonymous users are rejected with 403."""
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 403
+
+    def test_unverified_user_gets_403(self, client: Client) -> None:
+        """An authenticated but unverified user is rejected with 403."""
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=False)
+        client.force_login(user)
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 403
+
+    def test_empty_state_when_the_user_has_reported_nothing(
+        self, client: Client
+    ) -> None:
+        """A user with no reports gets the empty clause, not a blank body."""
+        client.force_login(_verified_user())
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        assert b"observation-list-empty" in response.content
+
+    def test_lists_the_users_own_reports(self, client: Client) -> None:
+        """Each of the user's own reports renders as its own row."""
+        user = _verified_user()
+        region = MicroRegionFactory.create(name="Martigny")
+        observation = FieldObservationFactory.create(
+            user=user,
+            region=region,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert f"observation-{observation.uuid}" in content
+        assert "Whumpfing" in content
+        assert "Martigny" in content
+
+    def test_never_lists_another_users_reports(self, client: Client) -> None:
+        """The list is owner-scoped — someone else's report is not in it."""
+        theirs = FieldObservationFactory.create()
+        client.force_login(_verified_user())
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert str(theirs.uuid) not in response.content.decode()
+
+    def test_newest_report_leads_the_list(self, client: Client) -> None:
+        """Ordering is the model's own -observed_at."""
+        user = _verified_user()
+        now = timezone.now()
+        older = FieldObservationFactory.create(
+            user=user, observed_at=now - timedelta(days=2)
+        )
+        newer = FieldObservationFactory.create(user=user, observed_at=now)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert content.index(str(newer.uuid)) < content.index(str(older.uuid))
+
+
+# ---------------------------------------------------------------------------
+# observation_delete — POST /partials/report/<uuid>/delete/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestObservationDelete:
+    """Deleting one of your own reports, and only your own."""
+
+    def test_non_htmx_gets_400(self, client: Client) -> None:
+        """A plain HTTP request is rejected by @require_htmx."""
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+        response = client.post(_delete_url(observation))
+        assert response.status_code == 400
+
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """Anonymous users are rejected with 403."""
+        observation = FieldObservationFactory.create()
+        response = client.post(_delete_url(observation), **HTMX_HEADERS)
+        assert response.status_code == 403
+        assert FieldObservation.objects.filter(pk=observation.pk).exists()
+
+    def test_unverified_user_gets_403(self, client: Client) -> None:
+        """An authenticated but unverified user is rejected with 403."""
+        user = UserFactory.create()
+        AccountFactory.create(user=user, is_verified=False)
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        response = client.post(_delete_url(observation), **HTMX_HEADERS)
+
+        assert response.status_code == 403
+        assert FieldObservation.objects.filter(pk=observation.pk).exists()
+
+    def test_get_is_rejected(self, client: Client) -> None:
+        """The endpoint mutates, so it is POST-only."""
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+        response = client.get(_delete_url(observation), **HTMX_HEADERS)
+        assert response.status_code == 405
+
+    def test_owner_deletes_and_gets_an_empty_body(self, client: Client) -> None:
+        """Deleting returns an empty 200 so hx-swap="outerHTML" removes the row."""
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        response = client.post(_delete_url(observation), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert response.content == b""
+        assert not FieldObservation.objects.filter(pk=observation.pk).exists()
+
+    def test_another_users_uuid_is_a_404_not_a_deletion(self, client: Client) -> None:
+        """Ownership is enforced by the query, not by trusting the URL."""
+        theirs = FieldObservationFactory.create()
+        client.force_login(_verified_user())
+
+        response = client.post(_delete_url(theirs), **HTMX_HEADERS)
+
+        assert response.status_code == 404
+        assert FieldObservation.objects.filter(pk=theirs.pk).exists()

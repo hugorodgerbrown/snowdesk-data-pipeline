@@ -27,6 +27,8 @@ from django.utils import timezone
 from apps.core.models import BaseModel
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
     from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,22 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
     """Custom queryset for FieldObservation."""
+
+    def for_user(self, user: "User") -> "FieldObservationQuerySet":
+        """Return observations submitted by the given user.
+
+        Mirrors ``apps.favourites.models.FavouriteQuerySet.for_user`` — the
+        owner scope behind the map panel's "your reports" list (SNOW-658) and
+        the only thing standing between one user's uuid and another's row.
+
+        Args:
+            user: The user to filter by.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.filter(user=user)
 
     def for_region_day(
         self,
@@ -242,6 +260,18 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
     def get_queryset(self) -> FieldObservationQuerySet:
         """Return the custom queryset."""
         return FieldObservationQuerySet(self.model, using=self._db)
+
+    def for_user(self, user: "User") -> FieldObservationQuerySet:
+        """Delegate to the queryset's for_user method.
+
+        Args:
+            user: The user to filter by.
+
+        Returns:
+            Filtered queryset of that user's own observations.
+
+        """
+        return self.get_queryset().for_user(user)
 
     def counts_for_region_day(
         self,

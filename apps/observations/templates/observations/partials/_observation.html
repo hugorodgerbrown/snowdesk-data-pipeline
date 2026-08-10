@@ -1,0 +1,47 @@
+{% load i18n %}
+{% comment %}
+observations/partials/_observation.html — One field-observation row (SNOW-658).
+
+Rendered by apps.observations.views.observation_list, one per row, inside the
+map's field-observation panel. Mirrors favourites/partials/_favourite.html:
+the row carries its own id and its Remove button posts with
+hx-target="#observation-<uuid>" / hx-swap="outerHTML", so the delete response
+(an empty body) removes exactly this row and nothing on the page has to know
+which row was clicked.
+
+There is no rename counterpart — an observation records what was seen and
+where, and none of that is editable after the fact.
+
+Context:
+    observation : FieldObservation — the report to render.
+{% endcomment %}
+<div
+    id="observation-{{ observation.uuid }}"
+    class="flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm"
+    data-observation-uuid="{{ observation.uuid }}"
+>
+    <div class="flex min-w-0 flex-1 flex-col">
+        <span class="truncate text-text-1">{{ observation.get_observation_type_display }}</span>
+        {# Region is best-effort on this model (a pin outside every known    #}
+        {# boundary is accepted with region=None), so the line is omitted    #}
+        {# rather than rendered as "unknown" — the date alone still          #}
+        {# identifies the row.                                               #}
+        <span class="truncate text-xs text-text-3">
+            {{ observation.observed_at|date:"j M Y, H:i" }}
+            {% if observation.region %}· {{ observation.region.name }}{% endif %}
+        </span>
+    </div>
+    <form
+        hx-post="{% url 'observations:delete' observation.uuid %}"
+        hx-target="#observation-{{ observation.uuid }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            class="shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text"
+        >
+            {% trans "Remove" %}
+        </button>
+    </form>
+</div>

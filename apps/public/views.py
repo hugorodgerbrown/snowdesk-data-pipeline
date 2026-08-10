@@ -1441,7 +1441,8 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``report_eligible``, ``report_unverified``,
-        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
+        ``report_form_url``, ``report_submit_url``, ``report_list_url``,
+        ``report_signin_url``.
 
     """
     report_eligible = user_is_verified(request.user)
@@ -1451,6 +1452,10 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         "report_unverified": report_unverified,
         "report_form_url": reverse("observations:report_form"),
         "report_submit_url": reverse("observations:report_submit"),
+        # SNOW-658: the roundel opens a panel listing the user's own reports
+        # before it offers to file another, so the panel needs the list
+        # endpoint.
+        "report_list_url": reverse("observations:list"),
         "report_signin_url": reverse("accounts:sign_in"),
     }
 

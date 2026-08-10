@@ -268,8 +268,11 @@
   btn.addEventListener('click', function () {
     openSheet();
     if (showListPanel()) return;
-    // No list template on this surface — the create flow is still reachable.
+    // No list template on this surface. The create flow is still reachable,
+    // and a visitor still gets the sign-in CTA — an empty sheet would be a
+    // dead end with no explanation.
     if (IS_ELIGIBLE) startCreateFlow();
+    else sheet.replaceChildren(buildSigninCta());
   });
 
   /** Show the create form seeded from the map centre and arm the place-picker.
