@@ -56,6 +56,30 @@ template and `MAP_BUNDLE` — and forgetting either is a failing test rather
 than a map that stops booting. `map.js`'s header list is prose and is
 deliberately not asserted.
 
+### One open overlay at a time (SNOW-658)
+
+Six surfaces float over the map, and only one is ever meaningful at once:
+the layers menu, the three UGC panels (downloads, favourites, field
+observations) and the anchored detail popup a resort or favourite pin
+opens. Each registers with `window.pwaMapOverlays`
+(`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
+`close()` — and calls `opening(name)` before it reveals itself; the
+registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
+so the two sheets that go through it need nothing of their own.
+
+It replaces the pairwise wiring the surfaces carried until then
+(`window.pwaLayersMenu.close()` from the downloads sheet;
+`snowdesk:map-detail-opening` / `snowdesk:favourite-detail-close` between
+the popup and the favourites sheet) — three of the fifteen relationships
+between six surfaces, each remembered by whichever ticket added the newest
+one, with the report sheet in none of them. A surface added later gets the
+whole matrix by registering, without naming a sibling;
+`tests/js/test_map_overlay_exclusivity_surfaces.js` runs that matrix, so
+one that forgets to register fails there.
+
+Each panel's own roundel toggles: a second tap closes what the first
+opened, matching the layers pill.
+
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
 so `{% url %}` in the template remains the single source of truth for all three
 API paths.
