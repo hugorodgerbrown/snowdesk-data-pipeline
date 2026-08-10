@@ -338,6 +338,17 @@
   // which would tell the user they have no pins when the request merely
   // failed. Both htmx failure events are covered: responseError is a non-2xx
   // reply, sendError is no reply at all (the offline case).
+  //
+  // This is not the only writer of that element: favourites_offline.js listens
+  // for the same two events and repaints the CACHED favourite cards over this
+  // line (SNOW-418). Cached data winning is the intended outcome — the line
+  // below is the fallback for a user with nothing cached, where
+  // favourites_offline.js returns early and leaves it standing. Two things
+  // produce that order, and breaking either silently inverts it: that module
+  // binds on document.body while this one binds on document (so it runs first
+  // as the event bubbles), and it awaits IndexedDB before writing (so its
+  // write lands after this synchronous one). Pinned by
+  // tests/js/test_favourites_panel_failed_load.js.
   for (const name of ['htmx:responseError', 'htmx:sendError']) {
     document.addEventListener(name, function (event) {
       const rows = sheet.querySelector('[data-favourites-rows]');
