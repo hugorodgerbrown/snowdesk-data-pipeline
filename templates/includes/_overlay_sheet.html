@@ -52,6 +52,21 @@ non-focusable div. It matters now that the favourite create form no
 longer focuses its name input on open — focusing that input raised the
 on-screen keyboard before the user had placed the pin.
 
+TWO LAYOUTS, ONE SHEET — AND THE DIFFERENCE IS DELIBERATE (SNOW-658).
+Below the ``sm`` breakpoint (640px) this sheet spans the full width of the
+viewport and docks to its bottom edge, so an open panel covers the map.
+At ``sm`` and above it is width-capped (``sm:w-96``) and inset into the
+bottom-right corner, so the map stays usable beside it. That is not an
+accident of the classes: a docked sheet is the right shape on a phone (the
+list is what is being read, there is no room to show it beside anything,
+and the bottom edge is where the thumb is), and on a desktop the map is
+large enough that covering it would be the loss. Both layouts are bounded
+and scroll internally — see "Bounded height" below.
+
+Expect "the panel fills the screen on mobile" as a REPORT rather than a
+bug: it is the intended behaviour, documented in §3.7 of
+docs/map-page-functional-spec.md so it does not get "fixed".
+
 On mobile the sheet is inset from the viewport edges rather than
 full-bleed, via the shared --map-edge-inset-* tokens (src/css/main.css) —
 the same distance the map control roundels use, so the sheet's edges line

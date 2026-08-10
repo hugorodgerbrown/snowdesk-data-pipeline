@@ -32,13 +32,29 @@
  * Returning a ready-made `bottom` would have to pick one of those and be
  * wrong for the other caller.
  *
- * ## Desktop only
+ * ## Desktop only — and the mobile silence is the design, not a gap
  *
- * Below Tailwind's `sm` breakpoint the sheets are edge-to-edge and
- * bottom-docked, which is the correct shape for a phone — so nothing is
- * written there, and anything written by a previous desktop-width pass is
- * cleared. Inline styles beat the CSS, so a stranded value from before a
- * resize would silently pin a mobile sheet to a desktop geometry.
+ * Below Tailwind's `sm` breakpoint (640px) this module writes NOTHING, and
+ * clears anything a previous desktop-width pass wrote. That is deliberate
+ * twice over.
+ *
+ * First, because there is nothing to compute: below `sm` the three panels
+ * are full-width and docked to the bottom edge, covering the map, and that
+ * IS the intended mobile behaviour — a docked sheet is the right shape on a
+ * phone (the list is what is being read, there is no room to show it beside
+ * anything, and the bottom edge is where the thumb is). A panel that had to
+ * clear the scrubber and the roundel column on a 375px screen would be a
+ * small box floating in a map the user can barely see. The two layouts and
+ * the reasoning are written up in §3.7 of
+ * docs/map-page-functional-spec.md, and in includes/_overlay_sheet.html's
+ * own header beside the classes that draw them; expect "the panel fills the
+ * screen on my phone" as a report, and read it as working.
+ *
+ * Second, because the mobile layout is left entirely to CSS on purpose:
+ * inline styles beat the stylesheet, so a stranded value from before a
+ * resize would silently pin a mobile sheet to a desktop geometry. Writing
+ * nothing on a phone means the sheet's own classes are always the whole
+ * answer there. Do not "complete" this module by giving it a mobile branch.
  *
  * ## What it does not do
  *

@@ -1216,7 +1216,7 @@ probe, and the `refresh` member of `window.pwaCustomAreaDownload`.
 What it carries instead is `data-overlay-shown`, and that means here
 exactly what it means on the favourites and field-observation roundels:
 the overlay this roundel's panel switches is drawn on the map right now
-(see "Overlay roundel state" in
+(see §3.8 of
 [`docs/map-page-functional-spec.md`](map-page-functional-spec.md)). One
 roundel, one state, the same state on all three. The question the old one
 answered is answered properly by the sheet the roundel opens — a row list,
