@@ -105,13 +105,20 @@ in addition to the shared map assets.
     {# consumer calls it from a user-triggered handler, never at parse time,  #}
     {# so it only has to be on the page.                                      #}
     <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
-    {# SNOW-658: the "…" row overflow menu. Loaded from the downloads sheet #}
-    {# alone until every UGC panel's rows grew one (they share              #}
-    {# includes/_ugc_panel_row.html now) — hoisted here so all three        #}
-    {# surfaces below get it once, the same reason htmx/place_picker/       #}
-    {# map_sheet are loaded here. The module is delegated and              #}
-    {# instance-agnostic, so one copy drives every row on the page.        #}
-    <script defer src="{% static 'js/overflow_menu.js' %}"></script>
+    {# SNOW-658: renaming a UGC panel row in place — the interaction the    #}
+    {# two renameable panels (downloads, favourites) share, with each       #}
+    {# passing its own commit. Loaded here rather than from either surface  #}
+    {# for the same reason htmx/place_picker/map_sheet are: both callers    #}
+    {# are below, all these scripts are defer, so document order is         #}
+    {# execution order and window.pwaInlineRename exists before either.     #}
+    {#                                                                      #}
+    {# It replaces overflow_menu.js on this page. That module drove the "…" #}
+    {# menu each panel's rows carried for one day; Hugo's design has no     #}
+    {# ellipsis menu, so nothing on the map opens one and loading it here   #}
+    {# would ship a module with nothing to bind to. The module and its      #}
+    {# partial both remain — retiring a primitive is not this ticket's      #}
+    {# call — and the component library still renders it.                   #}
+    <script defer src="{% static 'js/inline_rename.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}

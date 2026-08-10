@@ -41,8 +41,13 @@ Context:
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
+{# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
+{# recognise a rename click without knowing which panel it is on;          #}
+{# `data-favourite-rename` carries this row's uuid for the commit.         #}
 <button
     type="button"
+    data-row-rename
     data-favourite-rename="{{ favourite.uuid }}"
     aria-label="{{ rename_aria_label }}"
     class="{% icon_button_classes %}"

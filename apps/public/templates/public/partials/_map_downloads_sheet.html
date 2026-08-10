@@ -29,9 +29,9 @@ TOP, folded into the header block itself, because Hugo's design reads it
 as part of "what this sheet is" rather than a footnote below the list —
 the opposite conclusion SNOW-641 drew, and worth noting so a future reader
 does not assume SNOW-641's reasoning still holds. A second SNOW-645
-review pass moved the "Show areas on the map" overlay switch from
-between the budget caption and the REGIONS heading down to the very
-foot, below the add-custom-area CTA — Hugo's own instruction, so the map
+review pass moved the overlay switch ("Show areas on the map" then,
+"Display on the map" since SNOW-658) from between the budget caption and
+the REGIONS heading down to the very foot, below the add-custom-area CTA — Hugo's own instruction, so the map
 BEHIND the sheet is the last thing read, not the first. Nothing here is
 positional as far as the JS is concerned: every element is addressed by
 data-attribute, never by index or sibling relationship, so reordering
@@ -63,9 +63,9 @@ chrome, the budget block (``_map_downloads_header.html``) and the row
 groups (``_map_downloads_rows.html``).
 
 htmx.min.js / db.js are loaded earlier by home.html / base.html — not
-repeated here. overflow_menu.js moved to home.html too (SNOW-658): all
-three panels' rows carry a "…" menu now, so it is shared rather than this
-sheet's own.
+repeated here, and neither is inline_rename.js (SNOW-658): both this
+panel's custom areas and the favourites panel's pins rename in place on
+the row's own label, so home.html loads that module once for both.
 {% endcomment %}
 {% trans "Downloads on this device" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
@@ -78,16 +78,13 @@ sheet's own.
 {# record. Re-cloned rather than updated in place so a stale row can never  #}
 {# survive a re-open.                                                        #}
 {#                                                                          #}
-{# SNOW-658: the layout is includes/_ugc_panel.html now — the header block,  #}
-{# the 18px (`gap-4.5`) rhythm, the scroll region, the bordered CTA and the  #}
-{# "Show areas on the map" switch at the foot were extracted from here so    #}
-{# the favourites and field-observation panels stop imitating them by hand.  #}
-{# Two slots stay this sheet's own: `header_template` (the budget block —    #}
-{# the one legitimate per-panel extra, since neither of the other two costs  #}
-{# the device anything to hold) and `rows_template` (the REGIONS / CUSTOM    #}
-{# AREAS groups). Nothing here is positional as far as the JS is concerned:  #}
-{# every element is addressed by data-attribute, never by index or sibling   #}
-{# relationship.                                                             #}
+{# SNOW-658: the layout is includes/_ugc_panel.html — the five-part shell   #}
+{# Hugo's design gives all three UGC panels. Two slots stay this sheet's     #}
+{# own: `header_template` (the budget meter — the one legitimate per-panel   #}
+{# extra, since neither of the other two costs the device anything to hold)  #}
+{# and `rows_template` (the REGIONS / CUSTOM AREAS groups). Nothing here is  #}
+{# positional as far as the JS is concerned: every element is addressed by   #}
+{# data-attribute, never by index or sibling relationship.                   #}
 <template id="map-downloads-body-template">
     {% trans "Downloads on this device" as downloads_sheet_title %}
     {% trans "Download a custom area" as downloads_add_label %}
@@ -153,13 +150,16 @@ sheet's own.
     {# map-strings-template — kept in that ONE template rather than        #}
     {# duplicated here, since every consumer (this sheet included) now     #}
     {# just reads `area.name` uniformly.                                   #}
-    <span data-string="rename-prompt">{% trans "Name this area" %}</span>
+    {# SNOW-658: the rename PROMPT's copy went with the prompt — a row     #}
+    {# renames in place now, and its editor's aria-label is rendered on the #}
+    {# row itself. The failure line is still written from JS, into a toast. #}
     <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
-    {# SNOW-645 review: the "…" trigger's per-row aria-label — the glyph    #}
-    {# alone names nothing to a screen reader, and "More actions" alone     #}
-    {# (includes/_overflow_menu.html's own default) is ambiguous with many  #}
-    {# rows on screen at once.                                              #}
-    <span data-string="row-menu-label">{% blocktrans %}More actions for %(name)s{% endblocktrans %}</span>
+    {# SNOW-658: each row action names the row it acts on — "Remove" alone  #}
+    {# names nothing to a screen reader with a list of areas on screen. The #}
+    {# favourite and observation rows interpolate theirs in the template; a #}
+    {# row cloned from a <template> has no name until buildRow fills it.    #}
+    <span data-string="rename-row-label">{% blocktrans %}Rename %(name)s{% endblocktrans %}</span>
+    <span data-string="remove-row-label">{% blocktrans %}Remove %(name)s{% endblocktrans %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

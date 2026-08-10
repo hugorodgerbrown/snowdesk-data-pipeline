@@ -1,21 +1,19 @@
 /*
- * tests/js/test_favourites_panel_rename.js — Vitest DOM tests for the
- * favourites panel row's Rename menu item (SNOW-658, second pass).
+ * tests/js/test_favourites_panel_rename.js — Vitest DOM tests for renaming
+ * a favourite from the map panel (SNOW-658).
  *
- * The map row's always-visible name `<input>` is gone: every UGC panel's
- * state-changing actions live in the row's "…" menu now, and a field
- * permanently in edit mode is not a row at rest. Rename is therefore a
- * prompt-then-post — the same interaction map_downloads_manager.js has used
- * for a custom area since SNOW-635, rather than a second one invented here.
+ * Hugo's map-panel design: "Where a row can be renamed, that happens in
+ * place on the label." The pencil, or a click on the label, reveals the
+ * editor already sitting hidden in the row; Enter or blur commits, Escape
+ * cancels. It replaces a window.prompt that lasted one day, which itself
+ * replaced an always-visible name field.
  *
- * What is worth asserting, and why:
+ * The interaction itself is static/js/inline_rename.js's and is covered by
+ * tests/js/test_inline_rename.js. What is worth asserting HERE is the wiring
+ * this module owns:
  *
- *   - the prompt is seeded with the name currently showing, so accepting it
- *     unchanged is a no-op rather than a blanking;
- *   - Cancel and an unchanged name write nothing — a rename that fires on
- *     "I looked and left it alone" is a spurious mutation;
- *   - a BLANK name is a real edit, unlike a downloaded area's: a favourite
- *     with no name is a supported state ("Unnamed pin");
+ *   - the pencil and the label both open the editor, seeded from what the
+ *     row is currently showing;
  *   - the post carries HX-Request (the endpoint is @require_htmx) and the
  *     CSRF token read from the create template;
  *   - on success the LIST is re-read rather than the row patched. The
@@ -23,16 +21,16 @@
  *     deliberately a different shape from the map's and cannot be swapped
  *     in — re-reading the truth is also what downloads' own rename does;
  *   - a failure toasts rather than leaving the row silently stale;
+ *   - a cancel and an emptied field write nothing — a rename that fires on
+ *     "I looked and left it alone" is a spurious mutation;
  *   - the handler is delegated on the sheet, because the panel body is
  *     re-cloned on every open.
- *
- * The listener must NOT stopPropagation: the click has to keep bubbling to
- * overflow_menu.js's document listener, or the menu it came from stays open.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import '../../static/js/inline_rename.js';
 import '../../static/js/map_sheet.js';
 
 const LIST_URL = '/favourites/partials/list/?variant=map';
@@ -74,30 +72,48 @@ await import('../../static/js/favourites.js');
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
 
-/** Open the panel and put one row, with its Rename item, inside it.
+/** Open the panel and put one renameable row inside it.
  *
- * Stands in for what favourites:list swaps in — the menu item's shape is
- * favourites/partials/_favourite_row_map_menu_items.html's, asserted
+ * Stands in for what favourites:list swaps in — the row's shape is
+ * includes/_ugc_panel_row.html's plus
+ * favourites/partials/_favourite_row_map_actions.html's, both asserted
  * server-side in tests/favourites/test_views.py.
  *
- * @returns {HTMLButtonElement} The row's Rename menu item.
+ * @returns {HTMLElement} The row.
  */
 function openPanelWithRow() {
   btn.click();
   const rows = sheet.querySelector('[data-favourites-rows]');
   rows.innerHTML = `
-    <ul><li id="favourite-${UUID}">
-      <button type="button"
-              data-favourite-rename="${UUID}"
-              data-favourite-current-name="Old name">Rename</button>
+    <ul><li id="favourite-${UUID}" data-row-renameable>
+      <span data-row-label>Old name</span>
+      <input type="text" data-row-rename-input hidden aria-label="Favourite name">
+      <button type="button" data-row-rename
+              data-favourite-rename="${UUID}" aria-label="Rename Old name">✎</button>
     </li></ul>`;
-  return rows.querySelector('[data-favourite-rename]');
+  return rows.querySelector('li');
+}
+
+/** Type into the open editor and finish the edit.
+ *
+ * @param {HTMLElement} row The row being edited.
+ * @param {string} value What the user typed.
+ * @param {string} key 'Enter' or 'Escape'; anything else blurs instead.
+ * @returns {void}
+ */
+function finishEdit(row, value, key) {
+  const input = row.querySelector('[data-row-rename-input]');
+  input.value = value;
+  if (key === 'Enter' || key === 'Escape') {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    return;
+  }
+  input.dispatchEvent(new FocusEvent('blur'));
 }
 
 beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
   globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true }));
-  window.prompt = vi.fn(() => 'New name');
   window.PlacePicker = { activate: vi.fn(), deactivate: vi.fn() };
   window.snowdeskMapState = { map: { getCenter: () => ({ lat: 46.1, lng: 7.2 }) } };
 });
@@ -109,16 +125,31 @@ afterEach(() => {
   sheet.replaceChildren();
 });
 
-describe('the Rename menu item', () => {
-  it('prompts seeded with the name the row is currently showing', () => {
-    openPanelWithRow().click();
+describe('renaming a favourite in place', () => {
+  it('opens the editor from the pencil, seeded with the row’s own label', () => {
+    const row = openPanelWithRow();
 
-    expect(window.prompt).toHaveBeenCalledTimes(1);
-    expect(window.prompt.mock.calls[0][1]).toBe('Old name');
+    row.querySelector('[data-row-rename]').click();
+
+    const input = row.querySelector('[data-row-rename-input]');
+    expect(input.hidden).toBe(false);
+    expect(input.value).toBe('Old name');
+    expect(row.querySelector('[data-row-label]').hidden).toBe(true);
+  });
+
+  it('opens the editor from a click on the label itself', () => {
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-label]').click();
+
+    expect(row.querySelector('[data-row-rename-input]').hidden).toBe(false);
   });
 
   it('posts the new name to the rename endpoint for that uuid', async () => {
-    openPanelWithRow().click();
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'Enter');
     await Promise.resolve();
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -131,10 +162,23 @@ describe('the Rename menu item', () => {
     expect(opts.body).toBe('name=New+name');
   });
 
+  it('commits on blur too — leaving the field is not a cancel', async () => {
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'blur');
+    await Promise.resolve();
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('re-reads the list on success rather than patching the row', async () => {
     // One call for the open, one for the reload — and the reload goes to
     // the same URL, ?variant=map included.
-    openPanelWithRow().click();
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'Enter');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -145,8 +189,10 @@ describe('the Rename menu item', () => {
   it('tells the map its pins changed, so the renamed one repaints', async () => {
     const changed = vi.fn();
     document.addEventListener('snowdesk:favourites-changed', changed);
+    const row = openPanelWithRow();
 
-    openPanelWithRow().click();
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'Enter');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -154,36 +200,47 @@ describe('the Rename menu item', () => {
     document.removeEventListener('snowdesk:favourites-changed', changed);
   });
 
-  it('writes nothing on Cancel', () => {
-    window.prompt = vi.fn(() => null);
+  it('writes nothing on Escape', async () => {
+    const row = openPanelWithRow();
 
-    openPanelWithRow().click();
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  it('writes nothing when the name comes back unchanged', () => {
-    window.prompt = vi.fn(() => 'Old name');
-
-    openPanelWithRow().click();
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  it('accepts a blank name — an unnamed pin is a supported state', async () => {
-    window.prompt = vi.fn(() => '   ');
-
-    openPanelWithRow().click();
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'Escape');
     await Promise.resolve();
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    expect(globalThis.fetch.mock.calls[0][1].body).toBe('name=');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the name comes back unchanged', async () => {
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'Old name', 'Enter');
+    await Promise.resolve();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the field is emptied', async () => {
+    // The design's own commit(): a trimmed-empty input leaves the title
+    // unchanged. This is a CHANGE from the prompt this replaces, which
+    // treated a blank as "clear the name" — one rule for both renameable
+    // panels beats one exception, and a pin can still be created with no
+    // name at all.
+    const row = openPanelWithRow();
+
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, '   ', 'Enter');
+    await Promise.resolve();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('toasts when the rename does not land', async () => {
     globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false }));
+    const row = openPanelWithRow();
 
-    openPanelWithRow().click();
+    row.querySelector('[data-row-rename]').click();
+    finishEdit(row, 'New name', 'Enter');
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -192,13 +249,13 @@ describe('the Rename menu item', () => {
     expect(toast.textContent).toContain("couldn't be saved");
   });
 
-  it('lets the click through, so the open menu still closes', () => {
-    const item = openPanelWithRow();
-    // Registered after the panel is open, so only the Rename tap counts.
+  it('lets the click through — it swallows nothing the sheet still needs', () => {
+    const row = openPanelWithRow();
+    // Registered after the panel is open, so only the pencil tap counts.
     const seen = vi.fn();
     document.addEventListener('click', seen);
 
-    item.click();
+    row.querySelector('[data-row-rename]').click();
 
     expect(seen).toHaveBeenCalledTimes(1);
     document.removeEventListener('click', seen);

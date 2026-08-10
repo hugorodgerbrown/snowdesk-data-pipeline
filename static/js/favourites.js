@@ -15,10 +15,11 @@
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
  * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
  * row (favourites/partials/_favourite_row_map.html) is the shared UGC row:
- * a linked title, a muted subtitle and a "…" menu holding Rename and
- * Remove. Remove is that row's own HTMX form and needs nothing here;
- * Rename is a prompt-then-post handled below, mirroring
- * map_downloads_manager.js's own. The panel offers [data-panel-add] to
+ * a label, a muted meta line, and two icon controls — a pencil and a
+ * trash. Remove is that row's own HTMX form and needs nothing here;
+ * Rename puts the row's own label into an inline edit
+ * (static/js/inline_rename.js, shared with the downloads panel) and posts
+ * the committed name from below. The panel offers [data-panel-add] to
  * place another, and
  * carries the "Show favourites on the map" switch that used to be a row in
  * the layers menu (it drives window.pwaFavouritesOverlay in map.js). This
@@ -97,9 +98,10 @@
     'unnamed-pin': 'Unnamed pin',
     'name-label': 'Favourite name',
     remove: 'Remove',
-    // SNOW-658: the map row's Rename moved into its "…" menu and is driven
-    // from here now — a prompt, then a post.
-    'rename-prompt': 'Name this pin',
+    // SNOW-658: the map row's Rename is an inline edit on the row's own
+    // label now, so the prompt's copy is gone — the editor's aria-label is
+    // rendered by the row template, where makemessages can see it. Only
+    // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
   });
@@ -333,7 +335,7 @@
   //
   // The trade-off: this hides the click from EVERY document-level listener,
   // not just that one (map_basemap_picker.js's outside-click close,
-  // map_legend.js, overflow_menu.js, overlays.js's [data-action="dismiss"]).
+  // map_legend.js, overlays.js's [data-action="dismiss"]).
   // None of them needs it today — each of those surfaces has already closed by
   // the time this sheet is open — but a future document-level listener that
   // must see clicks inside this sheet would fail silently here.
@@ -347,68 +349,65 @@
     startCreateFlow();
   });
 
-  /** Handle a click on a row's Rename menu item (SNOW-658).
+  /** Handle a click that starts a row's inline rename (SNOW-658).
    *
-   * The map row's always-visible name `<input>` is gone — every panel's
-   * state-changing actions live in the row's "…" menu now, and a field
-   * that is permanently in edit mode is not a row at rest. Renaming is
-   * therefore a prompt-then-post, exactly the shape
-   * map_downloads_manager.js's own rename has had since SNOW-635: the same
-   * interaction on the same kind of row in the sheet next door, rather
-   * than a second one invented here.
+   * Hugo's design: "Where a row can be renamed, that happens in place on
+   * the label." The pencil and the label both open the editor already
+   * sitting hidden in the row's own markup; window.pwaInlineRename owns
+   * the focus/keyboard/blur state machine — shared with the downloads
+   * panel, which renames the same way — and calls back exactly once, with
+   * a name worth writing. Escape, an unchanged name and an emptied field
+   * never reach here.
+   *
+   * This replaces a window.prompt that lasted one day: it covered the row
+   * being renamed, could not be styled, and read as browser chrome on a
+   * touch device.
    *
    * NOT stopPropagation'd, unlike the add CTA above: this handler leaves
-   * the sheet's body in place, so the click must still reach
-   * overflow_menu.js's document listener to close the menu it came from.
+   * the sheet's body in place, so there is no reason to hide the click
+   * from every other document-level listener.
    *
    * Online-only, matching the manage page's own rename (a plain HTMX post)
    * and this module's resort-unfavourite path — creates are queued for
    * offline replay, edits to existing rows are not.
    *
    * @param {MouseEvent} event
-   * @returns {boolean} Whether a Rename item was the click's target, so
-   *   the caller stops rather than also testing the add CTA.
+   * @returns {boolean} Whether this click was a rename, so the caller
+   *   stops rather than also testing the add CTA.
    */
   function handleRenameClick(event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    const button = target.closest('[data-favourite-rename]');
-    if (!button) return false;
-    if (!RENAME_URL_TEMPLATE || typeof window.prompt !== 'function') return true;
+    const row = window.pwaInlineRename?.rowFor(event.target);
+    if (!row) return false;
+    if (!RENAME_URL_TEMPLATE) return true;
 
-    const favUuid = button.getAttribute('data-favourite-rename');
+    const button = row.querySelector('[data-favourite-rename]');
+    const favUuid = button ? button.getAttribute('data-favourite-rename') : '';
     if (!favUuid) return true;
 
-    const current = button.getAttribute('data-favourite-current-name') || '';
-    const next = window.prompt(STRINGS['rename-prompt'], current);
-    // null is Cancel; an unchanged result is treated the same way — nothing
-    // to write, so no write is made. A BLANK result is a real edit here,
-    // unlike a downloaded area's name: a favourite with no name is a
-    // supported state ("Unnamed pin"), so clearing one is allowed.
-    if (next === null) return true;
-    const trimmed = next.trim();
-    if (trimmed === current) return true;
-
-    fetch(RENAME_URL_TEMPLATE.replace('__UUID__', favUuid), {
-      method: 'POST',
-      headers: {
-        // favourite_rename is @require_htmx; this is a plain fetch.
-        'HX-Request': 'true',
-        'X-CSRFToken': getCsrfToken(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ name: trimmed }).toString(),
-    })
-      .then(function (resp) {
-        if (!resp.ok) throw new Error('rename failed');
-        // Re-read the list rather than patch the row: the response is the
-        // MANAGE page's row partial, which is deliberately a different
-        // shape from the map's, so it cannot be swapped in here.
-        loadRows();
-        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+    window.pwaInlineRename.begin(row, function (name) {
+      fetch(RENAME_URL_TEMPLATE.replace('__UUID__', favUuid), {
+        method: 'POST',
+        headers: {
+          // favourite_rename is @require_htmx; this is a plain fetch.
+          'HX-Request': 'true',
+          'X-CSRFToken': getCsrfToken(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ name: name }).toString(),
       })
-      .catch(function () {
-        showToast(STRINGS['rename-failed']);
-      });
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('rename failed');
+          // Re-read the list rather than patch the row: the response is
+          // the MANAGE page's row partial, which is deliberately a
+          // different shape from the map's, so it cannot be swapped in
+          // here.
+          loadRows();
+          document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+        })
+        .catch(function () {
+          showToast(STRINGS['rename-failed']);
+        });
+    });
     return true;
   }
 

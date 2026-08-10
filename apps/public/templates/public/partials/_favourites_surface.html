@@ -172,11 +172,10 @@ Context expected:
     <span data-string="unnamed-pin">{% trans "Unnamed pin" %}</span>
     <span data-string="name-label">{% trans "Favourite name" %}</span>
     <span data-string="remove">{% trans "Remove" %}</span>
-    {# SNOW-658: the map row's Rename lives in its "…" menu now and is driven #}
-    {# by favourites.js, not an always-visible field — so its prompt and its  #}
-    {# failure line are JS-rendered copy and have to be handed over from here. #}
-    {# Same pair, same wording shape as the downloads sheet's own rename.      #}
-    <span data-string="rename-prompt">{% trans "Name this pin" %}</span>
+    {# SNOW-658: the map row renames in place on its own label. The editor  #}
+    {# is server-rendered (includes/_ugc_panel_row.html), so its aria-label #}
+    {# needs nothing here — but the FAILURE line is written into a toast by #}
+    {# favourites.js and does.                                              #}
     <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
     {# SNOW-658: the panel's own failure line. Distinct from the empty state  #}
     {# favourites:list renders ("You have no saved favourites yet.") on       #}

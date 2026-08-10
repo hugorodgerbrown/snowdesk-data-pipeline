@@ -85,18 +85,24 @@
  * time). By the time a row reaches this module, ``row.label`` is already
  * the right text to show — stored name or numbered default, uniformly —
  * so this module needs no ``ordinal``-aware fallback of its own; it just
- * renders ``row.label``. The Rename control next to a renameable row's
- * own Remove uses ``window.prompt``, pre-filled with that same label,
- * matching the sheet's existing ``window.confirm`` for delete (itself
- * following ``pwa_reset.js``'s destructive-action idiom): no new markup,
- * no focus trap, no Escape handling — a richer inline editor is a
- * deliberate non-goal. The handler writes the trimmed result back onto
- * the area's record via ``window.pwaBasemapDownloads.rename(areaId,
- * name)`` (map.js's own bridge — see the bridges section below) and
- * re-renders. Only a ``renameable`` row (a custom area with a real record
- * behind it, per ``basemap_manage_core.js``'s ``manageRows``) ever shows
- * the control — a region's name is its real name, and an orphaned bucket
- * has no record entry left to write one onto.
+ * renders ``row.label``.
+ *
+ * SNOW-658 (Hugo's map-panel design): renaming happens IN PLACE on the
+ * row's label. The pencil, or a click on the label, reveals the editor
+ * the row template already rendered; ``window.pwaInlineRename`` owns the
+ * interaction — shared with the favourites panel, which renames the same
+ * way — and this module supplies only the commit:
+ * ``window.pwaBasemapDownloads.rename(areaId, name)`` (map.js's own
+ * bridge — see the bridges section below), then a re-render. The
+ * ``window.prompt`` this replaces was defended as "no new markup, no
+ * focus trap, no Escape handling"; the design's answer is that a modal
+ * browser dialogue covering the row it renames is not a saving.
+ *
+ * Only a ``renameable`` row (a custom area with a real record behind it,
+ * per ``basemap_manage_core.js``'s ``manageRows``) shows the pencil or
+ * carries the editor — a region's name is its real name, and an orphaned
+ * bucket has no record entry left to write one onto. ``buildRow`` strips
+ * both from every other row.
  *
  * ## Why it re-clones its body on every open
  *
@@ -231,16 +237,20 @@
     // toast above is phrased as a reply to a tap, which reads wrong on a
     // control nobody has touched yet.
     'add-disabled': 'Downloading needs a connection',
-    // SNOW-635: the Rename control's own prompt/failure copy. The default
-    // "Custom area N" label itself lives in map.js's MAP_STRINGS
+    // SNOW-658: the rename PROMPT's copy is gone with the prompt — the
+    // inline editor's aria-label is server-rendered on the row itself.
+    // Only the failure line is still written from here. The default
+    // "Custom area N" label lives in map.js's MAP_STRINGS
     // (_map_embed.html), not here — see this module's "Renaming" header
     // note for why.
-    'rename-prompt': 'Name this area',
     'rename-failed': "That name couldn't be saved. Try again.",
-    // SNOW-645 review: the overflow trigger's per-row aria-label —
-    // includes/_overflow_menu.html's own default ("More actions") is
-    // ambiguous with many rows on screen at once.
-    'row-menu-label': 'More actions for %(name)s',
+    // SNOW-658: each row action names the row it acts on. "Rename" alone
+    // names nothing with a list of areas on screen — the same reason the
+    // "…" trigger this replaces carried a per-row label. The favourite and
+    // observation rows interpolate theirs in the template; a row cloned
+    // from a <template> has no name at render time, so it is done here.
+    'rename-row-label': 'Rename %(name)s',
+    'remove-row-label': 'Remove %(name)s',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -565,19 +575,6 @@
   }
 
   /**
-   * A DOM-id-safe version of an area id, for the per-row overflow-menu
-   * trigger/menu id pair below — an area id (``region-<regionId>`` /
-   * ``custom-<uuid>``) is already id-safe in practice, but this is
-   * defensive rather than assumed.
-   *
-   * @param {string} areaId
-   * @returns {string}
-   */
-  function _domSafeId(areaId) {
-    return String(areaId).replace(/[^A-Za-z0-9_-]/g, '-');
-  }
-
-  /**
    * Build one list row.
    *
    * SNOW-645 review: the row's title is the plain name again — no longer
@@ -633,7 +630,7 @@
     // subtitle line rather than showing an unknown basemap — colour is
     // never the only signal, so the rule below and this line always agree
     // on whether anything is claimed.
-    const subtitle = fragment.querySelector('[data-row-subtitle]');
+    const subtitle = fragment.querySelector('[data-row-meta]');
     if (subtitle) {
       if (row.orphaned) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
@@ -693,34 +690,13 @@
     // SNOW-645 review: dims to `text-text-3` for an orphan (the template's
     // own default is `text-text-2`) — see the title's own comment above
     // for why the whole row dims together, not just the rule.
-    const size = fragment.querySelector('[data-row-size]');
+    const size = fragment.querySelector('[data-row-value]');
     if (size) {
       size.textContent = row.size;
       if (row.orphaned) {
         size.classList.remove('text-text-2');
         size.classList.add('text-text-3');
       }
-    }
-
-    // SNOW-645 review: the "…" overflow menu replaces the two inline
-    // Rename/Remove buttons. trigger_id/menu_id are placeholders in the
-    // template (see its own comment) — rewritten here to a per-row id so
-    // aria-controls resolves correctly with any number of rows on screen;
-    // overflow_menu.js's own open/close logic never depends on this
-    // (DOM-traversal-scoped, not id-scoped).
-    const suffix = _domSafeId(row.id);
-    const trigger = fragment.querySelector('[data-overflow-trigger]');
-    const menu = fragment.querySelector('[role="menu"]');
-    if (trigger && menu) {
-      const triggerId = 'downloads-row-overflow-trigger-' + suffix;
-      const menuId = 'downloads-row-overflow-menu-' + suffix;
-      trigger.id = triggerId;
-      menu.id = menuId;
-      trigger.setAttribute('aria-controls', menuId);
-      trigger.setAttribute(
-        'aria-label',
-        interpolate(STRINGS['row-menu-label'], { name: row.label }),
-      );
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
@@ -730,26 +706,43 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
+      // SNOW-658: and the control names the row it acts on. A server-
+      // rendered panel interpolates this in its own template; a row cloned
+      // from a <template> has no name until here.
+      button.setAttribute(
+        'aria-label',
+        interpolate(STRINGS['remove-row-label'], { name: row.label }),
+      );
     }
 
     // SNOW-635: only a renameable row (a custom area with a real record
-    // behind it — see manageRows's own docstring) shows the control. A
-    // region's name is its real name, and an orphaned bucket has no
-    // record entry left to write one onto. Removes the whole <li> — the
-    // menu item's wrapper (SNOW-645 review: was just the standalone
-    // button) — not just the button, so no empty row is left in the menu.
+    // behind it — see manageRows's own docstring) can be renamed. A
+    // region's name is its real name, and an orphaned bucket has no record
+    // entry left to write one onto.
+    //
+    // SNOW-658: what that gates is now the whole inline-edit affordance,
+    // not just a button — the pencil, the row's own `data-row-renameable`
+    // marker (which is what static/js/inline_rename.js recognises), the
+    // hidden editor, and the label's hover treatment. The template renders
+    // all four unconditionally, because one <template> serves both kinds
+    // of row; a row that cannot be renamed sheds them here.
     const renameBtn = fragment.querySelector('[data-downloads-rename]');
-    if (renameBtn) {
-      if (row.renameable) {
+    const editor = fragment.querySelector('[data-row-rename-input]');
+    const item = fragment.querySelector('li');
+    if (row.renameable) {
+      if (item) item.setAttribute('data-row-renameable', '');
+      if (renameBtn) {
         renameBtn.setAttribute('data-downloads-rename', row.id);
-        // Pre-fills window.prompt with whatever is currently showing, so
-        // accepting it unchanged is a no-op rather than blanking the name.
-        renameBtn.setAttribute('data-downloads-current-name', row.label);
-      } else {
-        const item = renameBtn.closest('li');
-        if (item) item.remove();
-        else renameBtn.remove();
+        renameBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['rename-row-label'], { name: row.label }),
+        );
       }
+      if (editor) editor.value = row.label;
+    } else {
+      if (renameBtn) renameBtn.remove();
+      if (editor) editor.remove();
+      if (label) label.classList.remove('cursor-text', 'hover:border-border-strong');
     }
     return fragment;
   }
@@ -836,42 +829,40 @@
   });
 
   /**
-   * The Rename-button half of the sheet's delegated click handler
-   * (SNOW-635), factored out so the listener above can dispatch to it
-   * after ruling out the add-trigger.
+   * The rename half of the sheet's delegated click handler (SNOW-635;
+   * rebuilt on Hugo's design by SNOW-658), factored out so the listener
+   * above can dispatch to it after ruling out the add-trigger.
+   *
+   * The pencil and the label both open the row's own inline editor.
+   * window.pwaInlineRename owns that interaction — shared with the
+   * favourites panel — and calls back once with a name worth writing:
+   * Escape, an unchanged name and an emptied field never reach here.
    *
    * @param {MouseEvent} event
-   * @returns {boolean} Whether a rename button was the click's target —
-   *   tells the caller not to also try the delete handler.
+   * @returns {boolean} Whether this click was a rename — tells the caller
+   *   not to also try the delete handler.
    */
   function _handleRenameClick(event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (!target || !target.closest) return false;
-    const button = target.closest('[data-downloads-rename]');
-    if (!button) return false;
+    const row = window.pwaInlineRename?.rowFor(event.target);
+    if (!row) return false;
 
-    const areaId = button.getAttribute('data-downloads-rename');
-    if (!areaId) return true;
+    const button = row.querySelector('[data-downloads-rename]');
+    const areaId = button ? button.getAttribute('data-downloads-rename') : '';
+    if (!areaId || !window.pwaBasemapDownloads) return true;
 
-    // window.prompt, matching the sheet's own window.confirm for delete —
-    // see this module's "Renaming" header note for why no richer editor.
-    if (typeof window.prompt !== 'function') return true;
-    const current = button.getAttribute('data-downloads-current-name') || '';
-    const next = window.prompt(STRINGS['rename-prompt'], current);
-    // null means Cancel; an unchanged or blank result is treated the same
-    // way — nothing to write, so no write is made.
-    if (next === null) return true;
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === current) return true;
-
-    if (!window.pwaBasemapDownloads) return true;
-    window.pwaBasemapDownloads.rename(areaId, trimmed).then(function (ok) {
-      if (ok) {
-        render();
-        return;
-      }
-      button.textContent = STRINGS['rename-failed'] || '';
-      button.setAttribute('disabled', '');
+    window.pwaInlineRename.begin(row, function (name) {
+      window.pwaBasemapDownloads.rename(areaId, name).then(function (ok) {
+        if (ok) {
+          render();
+          return;
+        }
+        // The name did not land, so it is not shown: the editor has
+        // already closed and the label still reads what the record says.
+        // A toast rather than text written onto the failing control — the
+        // shape delete uses — because that control is now a glyph, and
+        // there is nowhere on it for a sentence to go.
+        window.MapSheet?.toast(STRINGS['rename-failed']);
+      });
     });
     return true;
   }

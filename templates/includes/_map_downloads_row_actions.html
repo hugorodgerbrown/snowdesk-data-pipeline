@@ -21,8 +21,13 @@ one onto), together with the row's own inline-edit affordance.
 Trash last, as on every panel: the destructive control is in the same
 place wherever a user meets it.
 {% endcomment %}
+{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
+{# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
+{# recognise a rename click without knowing which panel it is on;          #}
+{# `data-downloads-rename` carries this row's area id for the commit.      #}
 <button
     type="button"
+    data-row-rename
     data-downloads-rename
     aria-label="{% trans 'Rename' %}"
     class="{% icon_button_classes %}"

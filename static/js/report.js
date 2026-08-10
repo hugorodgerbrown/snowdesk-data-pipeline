@@ -502,7 +502,7 @@
   //
   // The trade-off: this hides the click from EVERY document-level listener,
   // not just that one (map_basemap_picker.js's outside-click close,
-  // map_legend.js, overflow_menu.js, overlays.js's [data-action="dismiss"]).
+  // map_legend.js, overlays.js's [data-action="dismiss"]).
   // None of them needs it today — each of those surfaces has already closed by
   // the time this sheet is open — but a future document-level listener that
   // must see clicks inside this sheet would fail silently here.
