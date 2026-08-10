@@ -42,6 +42,7 @@ from apps.public._component_fixtures import (
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORECAST_PANEL_VARIANTS,
+    MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1171,6 +1172,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_switch.html",
         variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-overlay-toggle",
+        label="Map overlay toggle",
+        description=(
+            "The 'Show X on the map' footer panel shared by the three map "
+            "sheets (SNOW-658) — a label plus includes/_switch.html in a "
+            "bg-tag box. A view control for the map BEHIND the sheet, not a "
+            "row in the list the sheet is about; the owning JS module binds "
+            "the switch by id and drives the matching window.pwa*Overlay "
+            "bridge in static/js/map.js."
+        ),
+        kind="components",
+        partial="includes/_map_overlay_toggle.html",
+        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

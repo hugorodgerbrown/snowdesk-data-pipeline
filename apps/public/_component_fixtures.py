@@ -1322,6 +1322,30 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Map overlay toggle (SNOW-658) ------------------------------------------------
+# The "Show X on the map" footer panel shared by the three map sheets
+# (downloads, favourites, field observations). Pure markup — the owning JS
+# module binds the switch by id, and none of that JS runs on this page, so
+# both variants render exactly as a sheet paints them on open.
+
+MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Downloads sheet",
+        "context": {
+            "id": "component-library-map-overlay-toggle-downloads",
+            "label": "Show areas on the map",
+        },
+    },
+    {
+        "caption": "Favourites panel",
+        "context": {
+            "id": "component-library-map-overlay-toggle-favourites",
+            "label": "Show favourites on the map",
+        },
+    },
+)
+
+
 # Overflow menu (SNOW-645) -----------------------------------------------------
 # First use: the "Manage downloads" sheet's per-row Rename/Remove actions.
 # `open=True` on one variant so the menu's contents are visible without

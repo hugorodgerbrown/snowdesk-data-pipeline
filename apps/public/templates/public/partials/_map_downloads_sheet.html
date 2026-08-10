@@ -319,19 +319,13 @@ repeated here.
         {# is odd but harmless, not disabled: nothing about disabling it      #}
         {# would help the layout, and the control still does something real   #}
         {# (a downloaded-under-a-different-basemap area, say, still shows).   #}
-        <div class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2">
-            {# SNOW-645 review: 14px/500/text-1 (was text-sm/text-2, i.e.    #}
-            {# 400 weight) — reconciled against the design, which reads     #}
-            {# this label with more weight than a purely descriptive one.   #}
-            <label for="map-downloads-overlay-toggle" class="text-sm font-medium text-text-1">
-                {% trans "Show areas on the map" %}
-            </label>
-            {# SNOW-645 review (SAST): map_downloads_manager.js selects this  #}
-            {# instance by id (#map-downloads-overlay-toggle) directly — see  #}
-            {# _switch.html's own docstring for why the data-attribute hook   #}
-            {# this used to carry (extra_attrs) is gone.                      #}
-            {% include "includes/_switch.html" with id="map-downloads-overlay-toggle" %}
-        </div>
+        {# SNOW-658: the panel itself is now includes/_map_overlay_toggle.html #}
+        {# — the favourites and field-observation panels grew the same footer, #}
+        {# so the third copy became a partial instead. Behaviour is unchanged: #}
+        {# map_downloads_manager.js still selects this switch by its id        #}
+        {# (#map-downloads-overlay-toggle), which the include preserves.       #}
+        {% trans "Show areas on the map" as downloads_overlay_toggle_label %}
+        {% include "includes/_map_overlay_toggle.html" with id="map-downloads-overlay-toggle" label=downloads_overlay_toggle_label %}
     </div>
 </template>
 {# One list row. ``data-downloads-delete`` carries the area id so the       #}
