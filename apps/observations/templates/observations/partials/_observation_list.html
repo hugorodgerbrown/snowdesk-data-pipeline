@@ -11,11 +11,10 @@ data — it is only ever reached on a SUCCESSFUL response, and report.js
 writes its own distinct failure line when the request does not land, so
 "no reports" never stands in for "the request failed".
 
-The rows are a real ``<ul>`` (SNOW-658, second pass): each row is a
-``<li>`` from includes/_ugc_panel_row.html, and they draw their own
-separators via each row's ``border-t`` rather than a gap between boxes —
-the shape the "Manage downloads" sheet's own lists use, since that sheet
-is the reference the three UGC panels conform to.
+The rows are a real ``<ul>`` (SNOW-658): each row is a ``<li>`` from
+includes/_ugc_panel_row.html, and they draw their own separators via each
+row's ``border-t`` rather than a gap between boxes — rows are not cards,
+on any of the three panels.
 
 Context:
     observations : QuerySet[FieldObservation] — the requesting user's own

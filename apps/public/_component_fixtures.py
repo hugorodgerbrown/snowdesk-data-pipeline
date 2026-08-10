@@ -1447,7 +1447,11 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 
 UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Plain row — label, meta line, one action",
+        # Every variant here takes the downloads panel's actions template,
+        # which is the only one that renders without a model instance in
+        # context. It is also the fullest: a pencil and a trash. A panel
+        # with one action renders the same row minus the pencil.
+        "caption": "Plain row — label, meta line, actions",
         "context": {
             "label": "Arolla ridge",
             "meta": "Val d'Hérens",

@@ -44,8 +44,9 @@ Context expected:
 {# HTMX from favourites:list at ?variant=map — the same endpoint the manage #}
 {# page uses, but its own lean row (_favourite_row_map.html), so each row    #}
 {# arrives with its Remove form already wired and this file needs no copy of #}
-{# it. Rename is the one action that needs JS: it is a prompt-then-post in    #}
-{# favourites.js, driven by the row's own menu item.                          #}
+{# it. Rename is the one action that needs JS: the row's pencil (or its own   #}
+{# label) opens the inline editor the row already carries, and favourites.js  #}
+{# posts what it commits.                                                     #}
 {#                                                                           #}
 {# Adding a pin is an action INSIDE the panel now ([data-panel-add]),        #}
 {# not the roundel's own click — the shape SNOW-634 set for downloads, and   #}

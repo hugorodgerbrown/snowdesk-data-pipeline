@@ -13,16 +13,16 @@ the manage page:
 
   #favourite-card-panel   the sheet is height-bounded and scrolls, so
                           swapping a full detail card into it is the wrong
-                          shape. Without a panel to target, the detail
-                          control here is a plain link — a GET,
-                          navigating, which is what it always was. It is
-                          the row's own title now (SNOW-658, second pass):
-                          see _favourite_row_map.html.
+                          shape. The map row has no detail control at all
+                          now (SNOW-658, Hugo's design — see
+                          _favourite_row_map.html): a pin's own page is
+                          reached by tapping the pin, which is where the
+                          user already is.
   "View favourites on the map →"
                           it would point at the page the user is already
-                          looking at. The sheet's own "Show favourites on
-                          the map" switch is the control that changes what
-                          the map shows.
+                          looking at. The panel's own "Display on the map"
+                          switch is the control that changes what the map
+                          shows.
 
 Kept: the roster_payload sidecar. static/js/favourites_offline.js writes it
 through into data:favourites on htmx:afterOnLoad, and offline reads matter
@@ -32,9 +32,8 @@ valid child of a list.
 
 The rows are a real ``<ul>``: each row is a ``<li>`` from
 includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
-rather than sitting in a bordered box of its own — the shape the "Manage
-downloads" sheet's lists use, which is the reference for all three UGC
-panels.
+rather than sitting in a bordered box of its own — rows are not cards, on
+any of the three panels.
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
