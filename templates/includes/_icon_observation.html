@@ -3,27 +3,31 @@ templates/includes/_icon_observation.html — the field-observation glyph: a
 pair of binoculars (SNOW-333 drew a warning triangle; extracted here by
 SNOW-658 and redrawn on Hugo's request).
 
-Hugo asked for Font Awesome's ``fa-regular fa-binoculars``. Font Awesome is
-not a dependency of this project — every icon here is an inline SVG, and
-the only two mentions of it in the tree are CC BY 4.0 attribution comments
-in static/js/map.js for paths traced from the Free set. Adding the library
-for one glyph would also not have got that exact class: binoculars in the
-REGULAR style is Font Awesome Pro (Free carries it in solid only). This is
-the same mark drawn in the stroke style every other icon in this project
-uses, so it sits correctly beside the star and the viewfinder.
-
-Why binoculars rather than the warning triangle it replaces: the triangle
-said "hazard", which is the bulletin's job — the danger scale, the
-choropleth, the problem cards all carry it. A field observation is a
-report of something SEEN, and the panel is the user's own list of what
-they have looked at and logged. The triangle also collided with the
-avalanche-problem iconography elsewhere on the page.
-
 One source for one mark. The glyph identifies the field-observation roundel
 (#report-btn, public/partials/_map_embed.html) AND, at 22px, the header of
 the panel that roundel opens — Hugo's design makes the roundel's own icon
 the panel's only identity mark, so a reader can confirm which roundel they
 tapped.
+
+Why binoculars rather than the warning triangle it replaces: the triangle
+said "hazard", which is the bulletin's job — the danger scale, the
+choropleth and the problem cards all carry it, and it collided with the
+avalanche-problem iconography elsewhere on the page. A field observation
+is a report of something SEEN.
+
+ATTRIBUTION — this path is Font Awesome Free v7.3.1 ("binoculars", solid),
+supplied by Hugo. Icons in Font Awesome Free are licensed CC BY 4.0
+(https://fontawesome.com/license/free), Copyright 2026 Fonticons, Inc.
+This project does not depend on the Font Awesome library; like the two
+glyphs in static/js/map.js, the path is inlined with its attribution
+rather than pulling in a webfont for one icon.
+
+NOTE ON STYLE — this glyph is FILLED (fill="currentColor", no stroke) on a
+512 grid, whereas its two siblings (_icon_favourite.html's outline star,
+_icon_downloads.html's viewfinder) are 24-grid 2px strokes. It therefore
+reads heavier than they do at the same box size. That is a deliberate
+choice by Hugo, not an oversight — do not "fix" it by redrawing this as a
+stroke, which is the version it replaced.
 
 Parameters (passed via {% include … with … %}):
   size      (int, optional) — rendered px, both axes. Default 18, the
@@ -34,20 +38,9 @@ Parameters (passed via {% include … with … %}):
     {% if svg_class %}class="{{ svg_class }}"{% endif %}
     width="{{ size|default:18 }}"
     height="{{ size|default:18 }}"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    viewBox="0 0 512 512"
+    fill="currentColor"
     aria-hidden="true"
 >
-    {# Two barrels, each a rounded body under a small eyepiece, joined by the #}
-    {# bridge at 10-14. Drawn on the same 24x24 grid, 2px stroke and round    #}
-    {# joins as the star and the viewfinder beside it.                        #}
-    <path d="M10 10h4" />
-    <path d="M9 7V4a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v3" />
-    <path d="M19 7V4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3" />
-    <path d="M4 21a2 2 0 0 1-2-2v-3.85c0-1.39 2-2.96 2-4.83V7a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v11a3 3 0 0 1-3 3Z" />
-    <path d="M20 21a2 2 0 0 0 2-2v-3.85c0-1.39-2-2.96-2-4.83V7a1 1 0 0 0-1-1h-1a1 1 0 0 0-1 1v11a3 3 0 0 0 3 3Z" />
+    <path d="M128 32l32 0c17.7 0 32 14.3 32 32l0 32-96 0 0-32c0-17.7 14.3-32 32-32zm64 96l0 320c0 17.7-14.3 32-32 32L32 480c-17.7 0-32-14.3-32-32l0-59.1c0-34.6 9.4-68.6 27.2-98.3 13.7-22.8 22.5-48.2 25.8-74.6L60.5 156c2-16 15.6-28 31.8-28l99.8 0zm227.8 0c16.1 0 29.8 12 31.8 28L459 216c3.3 26.4 12.1 51.8 25.8 74.6 17.8 29.7 27.2 63.7 27.2 98.3l0 59.1c0 17.7-14.3 32-32 32l-128 0c-17.7 0-32-14.3-32-32l0-320 99.8 0zM320 64c0-17.7 14.3-32 32-32l32 0c17.7 0 32 14.3 32 32l0 32-96 0 0-32zm-32 64l0 160-64 0 0-160 64 0z" />
 </svg>

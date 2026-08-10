@@ -52,8 +52,8 @@ PANEL_ICONS = {
     "map-downloads-body-template": "M3 7V5a2 2 0 0 1 2-2h2",
     # The star's first two points.
     "favourite-list-template": "12 2 15.09 8.26",
-    # The binoculars' bridge, between the two barrels.
-    "report-list-template": "M10 10h4",
+    # The binoculars' left eyepiece (Font Awesome Free, 512 grid).
+    "report-list-template": "M128 32l32 0c17.7 0 32 14.3 32 32",
 }
 
 PANEL_TEMPLATE_IDS = tuple(PANEL_ICONS)
