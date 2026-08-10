@@ -255,9 +255,18 @@
     sheet.appendChild(listTemplate.content.cloneNode(true));
 
     // Reflect the overlay's REAL state rather than a flag of this module's
-    // own, the way map_downloads_manager.js's render() reads isVisible().
+    // own, the way map_downloads_manager.js's render() does.
+    //
+    // SNOW-658 review: isEnabled(), the persisted preference — NOT
+    // isVisible(), which now answers from the layers MapLibre is drawing.
+    // The switch states what the user asked for; the roundel's ring states
+    // whether it reached the map. Offline with nothing cached the two
+    // disagree, and that is the point: the switch stays on (their choice
+    // took, and will restore at the next boot) while the ring is off
+    // (nothing is drawn). Painting this switch from paint would instead
+    // show the user's own setting silently flipping itself off.
     const toggle = sheet.querySelector('#map-favourites-overlay-toggle');
-    if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isVisible?.();
+    if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isEnabled?.();
 
     if (!IS_ELIGIBLE) {
       const addButton = sheet.querySelector('[data-panel-add]');

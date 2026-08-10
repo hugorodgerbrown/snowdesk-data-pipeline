@@ -21,7 +21,7 @@
  *   - the add CTA and the switch are DELEGATED on the sheet, because the body
  *     is re-cloned on every open — a per-element listener would be bound to
  *     an element the next open throws away;
- *   - the switch reflects window.pwaFavouritesOverlay.isVisible() on open,
+ *   - the switch reflects window.pwaFavouritesOverlay.isEnabled() on open,
  *     rather than a flag of this module's own that could drift from it;
  *   - a failed list load says so. This panel opens offline and its list does
  *     not load offline, and falling through to the server partial's own
@@ -106,7 +106,7 @@ beforeEach(() => {
   overlay = {
     show: vi.fn(),
     hide: vi.fn(),
-    isVisible: vi.fn(() => true),
+    isEnabled: vi.fn(() => true),
   };
   window.pwaFavouritesOverlay = overlay;
   window.PlacePicker = { activate: vi.fn(), deactivate: vi.fn() };
@@ -185,11 +185,11 @@ describe('the add CTA', () => {
 
 describe('the overlay switch', () => {
   it('opens reflecting the overlay itself, not a flag of its own', () => {
-    overlay.isVisible.mockReturnValue(false);
+    overlay.isEnabled.mockReturnValue(false);
     btn.click();
     expect(overlaySwitch().checked).toBe(false);
 
-    overlay.isVisible.mockReturnValue(true);
+    overlay.isEnabled.mockReturnValue(true);
     reopen();
     expect(overlaySwitch().checked).toBe(true);
   });

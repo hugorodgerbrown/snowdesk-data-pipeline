@@ -139,8 +139,12 @@
  * exposes:
  *
  *   window.pwaDownloadedOverlay  (SNOW-645 review) ``show()``, ``hide()``
- *                                and ``isVisible()`` for the downloaded-
- *                                tiles map overlay. ``open()`` calls
+ *                                and ``isEnabled()`` for the downloaded-
+ *                                tiles map overlay (SNOW-658 review: its
+ *                                ``isVisible()`` answers from the drawn
+ *                                layers instead, which is the roundel
+ *                                ring's question, not this switch's).
+ *                                ``open()`` calls
  *                                ``show()`` unconditionally; the in-sheet
  *                                "Available offline" toggle's own change
  *                                handler is the ONLY thing that ever calls
@@ -442,11 +446,16 @@
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
 
-    // SNOW-645 review: reflects the overlay's REAL visibility —
-    // window.pwaDownloadedOverlay.isVisible() — rather than a flag of its
-    // own that could drift from it. open() calls show() before this runs
-    // (see its own comment), so a freshly opened sheet always paints this
-    // already checked.
+    // SNOW-645 review: reflects the overlay's REAL state —
+    // window.pwaDownloadedOverlay — rather than a flag of its own that could
+    // drift from it.
+    //
+    // SNOW-658 review: isEnabled(), the session's inspection-mode flag that
+    // show()/hide() write — NOT isVisible(), which now answers from the
+    // squares MapLibre is drawing. Same split as the other two panels' own
+    // switches: this states what the user asked for. The two only diverge
+    // while something else has cleared the map (a placement flow), and this
+    // sheet is not open then.
     //
     // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
     // includes/_switch.html dropped its extra_attrs passthrough (a live
@@ -457,7 +466,7 @@
       sheet.querySelector('#map-downloads-overlay-toggle')
     );
     if (overlayToggle) {
-      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isVisible?.();
+      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isEnabled?.();
     }
 
     // SNOW-645 review: the budget figure itself is no longer stated in
@@ -785,7 +794,7 @@
     // and window.pwaDownloadedOverlay's comment in map.js for why visibility
     // is bound to the switch rather than to the sheet's lifecycle).
     //
-    // render() reads window.pwaDownloadedOverlay.isVisible() to paint the
+    // render() reads window.pwaDownloadedOverlay.isEnabled() to paint the
     // switch, so it now shows the overlay's real state on every open rather
     // than a state this function just imposed.
     // SNOW-658: only one overlay is open over the map at a time. Announced

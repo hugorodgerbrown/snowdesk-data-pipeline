@@ -48,7 +48,7 @@ beforeEach(() => {
   window.pwaFavouritesOverlay = {
     show: vi.fn(),
     hide: vi.fn(),
-    isVisible: vi.fn(() => false),
+    isEnabled: vi.fn(() => false),
   };
   btn.click();
 });

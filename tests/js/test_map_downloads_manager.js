@@ -391,7 +391,7 @@ beforeEach(() => {
     refresh: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
-    isVisible: vi.fn(() => false),
+    isEnabled: vi.fn(() => false),
   };
   window.pwaLayerSyncStatus = { refresh: vi.fn() };
   // SNOW-634: window.pwaCustomAreaDownload — map.js's own bridge, the
@@ -604,7 +604,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
 
   it("paints the toggle from the overlay's real visibility, not a flag of its own", async () => {
     seed({});
-    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
     await loadModule();
     openSheet();
     await settle();
@@ -637,7 +637,7 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     // sheet still open behind that menu must not sit on a checked switch for
     // an overlay that is no longer drawn.
     seed({});
-    window.pwaDownloadedOverlay.isVisible.mockReturnValue(true);
+    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
     await loadModule();
     openSheet();
     await settle();

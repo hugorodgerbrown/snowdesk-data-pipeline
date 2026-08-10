@@ -1479,8 +1479,13 @@ discoverability. The overlay now starts off and waits to be asked.
 Closing the sheet does NOT call `.hide()` either — the
 `#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is
 the only thing that does. `render()` sets it from
-`window.pwaDownloadedOverlay.isVisible()` on every open, so the sheet always
-reflects the overlay's real state rather than one it just imposed.
+`window.pwaDownloadedOverlay.isEnabled()` on every open, so the sheet always
+reflects the overlay's real state rather than one it just imposed. That is
+`isEnabled()`, not `isVisible()`, since SNOW-658's review split the bridge's
+two questions: `isVisible()` now answers from the squares MapLibre is
+actually drawing (the roundel ring's question), while `isEnabled()` is the
+session's inspection-mode flag `show()`/`hide()` write — what this switch
+states the user asked for.
 
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:
@@ -1588,7 +1593,7 @@ It is no longer the only writer of that state (SNOW-656): choosing any
 bulletin-fill step above 0 switches this off, since the two are mutually
 exclusive. `map_downloads_manager.js` therefore listens for
 `snowdesk:downloaded-overlay-changed` and sets the checkbox from it —
-`render()`'s read-back of `isVisible()` on every open covers a sheet being
+`render()`'s read-back of `isEnabled()` on every open covers a sheet being
 opened, but not one already open behind another control.
 
 **A real bug shipped in this control's first cut, found by Hugo clicking

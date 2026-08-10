@@ -463,9 +463,16 @@
     sheet.appendChild(listTemplate.content.cloneNode(true));
 
     // Reflect the overlay's REAL state rather than a flag of this module's
-    // own, the way map_downloads_manager.js's render() reads isVisible().
+    // own, the way map_downloads_manager.js's render() does.
+    //
+    // SNOW-658 review: isEnabled(), the persisted preference — NOT
+    // isVisible(), which now answers from the layers MapLibre is drawing.
+    // See the matching note in static/js/favourites.js: the switch states
+    // what the user asked for, the roundel's ring states whether it reached
+    // the map, and offline-with-nothing-cached is the case where the user
+    // needs to be able to see the two disagree.
     const toggle = sheet.querySelector('#map-community-reports-overlay-toggle');
-    if (toggle) toggle.checked = !!window.pwaCommunityReportsOverlay?.isVisible?.();
+    if (toggle) toggle.checked = !!window.pwaCommunityReportsOverlay?.isEnabled?.();
 
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');

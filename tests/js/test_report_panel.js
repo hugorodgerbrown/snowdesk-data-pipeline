@@ -77,7 +77,7 @@ let overlay;
 
 beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
-  overlay = { show: vi.fn(), hide: vi.fn(), isVisible: vi.fn(() => false) };
+  overlay = { show: vi.fn(), hide: vi.fn(), isEnabled: vi.fn(() => false) };
   window.pwaCommunityReportsOverlay = overlay;
   window.PlacePicker = { activate: vi.fn(), deactivate: vi.fn() };
 });
@@ -147,11 +147,11 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
 
 describe('the overlay switch', () => {
   it('opens reflecting the overlay itself, not a flag of its own', () => {
-    overlay.isVisible.mockReturnValue(true);
+    overlay.isEnabled.mockReturnValue(true);
     btn.click();
     expect(overlaySwitch().checked).toBe(true);
 
-    overlay.isVisible.mockReturnValue(false);
+    overlay.isEnabled.mockReturnValue(false);
     reopen();
     expect(overlaySwitch().checked).toBe(false);
   });
