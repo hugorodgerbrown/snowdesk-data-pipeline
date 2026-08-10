@@ -11,7 +11,7 @@ classifiers = [
 ]
 dependencies = [
     "Django>=6.0.7,<7",
-    "django-htmx>=1.29.0,<2",
+    "django>=6.1,<7",
     "python-decouple>=3.8,<4",
     "requests>=2.32.3,<3",
     "psycopg[binary]>=3.3.4,<4",
@@ -27,11 +27,11 @@ dependencies = [
     "defusedxml>=0.7.1,<0.8",
     "geoip2>=5.2.0,<6",
     "pdfplumber>=0.11.9,<0.12",
-    "pywebpush>=2.3.0,<3",
+    "pywebpush>=2.4.0,<3",
     "django-tasks>=0.12.0,<0.13",
     "django-tasks-db>=0.12.0,<0.13",
     "apscheduler>=3.10,<4",
-    "posthog>=7.30.1,<8",
+    "posthog>=7.38.2,<8",
     "cryptography>=50.0.0,<51",
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",
@@ -45,17 +45,17 @@ dependencies = [
 # drags in playwright. `dev` composes all of them via `{include-group = ...}`
 # so a bare `uv sync` (local dev, bin/init-worktree) still installs everything.
 test = [
-    "coverage>=7,<8",
+    "coverage>=7.15.4,<8",
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.1.0,<8",
-    "pytest-django>=4.12.0,<5",
+    "pytest-django>=4.13.0,<5",
     "pytest-xdist>=3.8.0,<4",
     "factory-boy>=3.3.3,<4",
     "freezegun>=1.5.5,<2",
 ]
 type = [
     "mypy>=2.3.0,<2.4",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
-    "django-stubs>=6.0.2,<7",
+    "django-stubs>=6.0.9,<7",
     "types-requests>=2.33.0.20260408,<3",
     "types-bleach>=6.3.0.20260408,<7",
     "types-defusedxml>=0.7.0.20260504,<0.8",
@@ -70,7 +70,7 @@ lint = [
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
     # docs/coding-standards.md §6.5.
-    "ruff==0.16.1",
+    "ruff==0.16.2",
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [
@@ -81,7 +81,7 @@ e2e = [
     # build) broke test_offline_reload_preserves_sync_clock's offline-banner
     # timing deterministically in CI (SNOW-584 dependency-update run).
     # Investigate and lift this bound in SNOW-597.
-    "playwright>=1.0,<1.62",
+    "playwright>=1.62.0,<1.63",
     "pytest-playwright>=0.7,<0.9",
     # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
     # that can't be made fully deterministic (SNOW-516) — e2e-only, see
