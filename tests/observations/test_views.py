@@ -38,6 +38,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.observations.models import FieldObservation
@@ -1048,6 +1049,34 @@ class TestObservationList:
         assert f"observation-{observation.uuid}" in content
         assert "Whumpfing" in content
         assert "Martigny" in content
+
+    def test_remove_lives_in_the_rows_overflow_menu(self, client: Client) -> None:
+        """Remove is a menu item, not an inline control (SNOW-658).
+
+        Every state-changing action on every UGC panel row lives in the
+        "…" menu — an inline destructive control under the reader's thumb
+        on a list they are scrolling is a mis-tap waiting to happen. It is
+        still a plain HTMX form: the delete endpoint returns an empty 200
+        and the form targets this row's own id.
+        """
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        # The menu the item sits in, keyed to this row.
+        assert f'id="observation-menu-{observation.uuid}"' in content
+        assert f'id="observation-menu-trigger-{observation.uuid}"' in content
+        # The Remove button is inside that menu's <ul>, not in the row body.
+        menu_start = content.index(f'id="observation-menu-{observation.uuid}"')
+        menu_end = content.index("</ul>", menu_start)
+        assert 'role="menuitem"' in content[menu_start:menu_end]
+        assert (
+            reverse("observations:delete", args=[observation.uuid])
+            in content[menu_start:menu_end]
+        )
 
     def test_never_lists_another_users_reports(self, client: Client) -> None:
         """The list is owner-scoped — someone else's report is not in it."""

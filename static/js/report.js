@@ -16,7 +16,7 @@
  * SNOW-658: the roundel opens a PANEL, not the location flow. The panel
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
- * with its own delete wiring — offers [data-report-add] to file another,
+ * with its own delete wiring — offers [data-panel-add] to file another,
  * and carries the "Show community reports on the map" switch that used to
  * be a row in the layers menu (it drives window.pwaCommunityReportsOverlay
  * in map.js). This follows SNOW-634's downloads pattern: user-generated
@@ -24,7 +24,7 @@
  * switch. favourites.js took the same treatment in the same ticket.
  *
  * Flow when eligible (authenticated):
- *   1. User taps the floating #report-btn, then [data-report-add] in the
+ *   1. User taps the floating #report-btn, then [data-panel-add] in the
  *      panel it opens.
  *   2. We reuse the page's single geolocation source — SNOW-328's MapLibre
  *      GeolocateControl, owned by map.js — by dispatching
@@ -464,7 +464,7 @@
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
-      const addButton = sheet.querySelector('[data-report-add]');
+      const addButton = sheet.querySelector('[data-panel-add]');
       if (addButton) addButton.remove();
       if (rows) rows.remove();
       // Every value interpolated here is escaped by gateHtml() — the strings
@@ -509,7 +509,7 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    if (!target.closest('[data-report-add]')) return;
+    if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
     startReportFlow();

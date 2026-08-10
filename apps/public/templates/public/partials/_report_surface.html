@@ -1,4 +1,4 @@
-{% load i18n static components %}
+{% load i18n static %}
 {% comment %}
 public/partials/_report_surface.html — Field-report sheet and JS (SNOW-333).
 
@@ -30,55 +30,30 @@ Context expected:
 {% endcomment %}
 {# Sheet container — hidden until report.js opens it. SNOW-486:         #}
 {# delegated to the shared sheet primitive (includes/_overlay_sheet.html). #}
+{# SNOW-658: scroll_body=True, matching the downloads sheet — the panel's #}
+{# header and its CTA/switch foot stay pinned while only the list between #}
+{# them scrolls. Every body this sheet renders (the panel, the form, the  #}
+{# confirmation) therefore carries `min-h-0 flex-1` and owns its own      #}
+{# scroll region; see that partial's docstring for the mechanism.         #}
 {% trans "Field observation report" as report_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True %}
 {# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
 {# to add another, and the map-overlay switch that used to be the layers      #}
 {# menu's "Community reports" row. Cloned by report.js on every open; the     #}
 {# rows load over HTMX from observations:list, so each arrives with its own   #}
 {# delete wiring and this file needs no copy of it.                            #}
 {#                                                                             #}
-{# [data-report-gate] holds the two ineligible states — "verify your email"    #}
-{# (SNOW-477) and the anonymous sign-in CTA — in place of the list and the     #}
-{# add CTA, which report.js removes for those users. The SWITCH stays in all   #}
-{# three states: the community-reports overlay is public data with no          #}
-{# eligibility gate at all, so hiding its control from a visitor would take    #}
-{# away something they can actually use.                                       #}
-{#                                                                             #}
-{# The rows container starts with a loading line rather than empty, for the    #}
-{# reason _favourites_surface.html's own does: this panel opens offline, its   #}
-{# list does not load offline, and an empty container would read as "you have  #}
-{# no reports" — a wrong statement about the user's own data.                  #}
+{# SNOW-658 (second pass): the layout is includes/_ugc_panel.html — the shared #}
+{# skeleton extracted from the "Manage downloads" sheet, which is the          #}
+{# reference design. This panel used to imitate that sheet by hand and got     #}
+{# every part of it slightly different: a smaller title, its own body wrapper, #}
+{# a whole-sheet scroll. All that is gone; what stays here is the panel's own  #}
+{# strings and its rows template (public/partials/_report_panel_rows.html).    #}
 <template id="report-list-template">
-    <div class="flex flex-col gap-3 px-2 py-4">
-        {% trans "Field observations" as report_list_title %}
-        {% include "includes/_sheet_header.html" with title=report_list_title close_action="dismiss" %}
-        <div data-report-gate></div>
-        <div data-report-rows class="flex flex-col gap-2">
-            <p class="text-sm text-text-2">{% trans "Loading your reports…" %}</p>
-        </div>
-        <button
-            type="button"
-            data-report-add
-            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex items-center justify-center gap-1.5'
-        >
-            <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                aria-hidden="true"
-            >
-                <path d="M12 5v14M5 12h14" />
-            </svg>
-            {% trans "Report an observation" %}
-        </button>
-        {% trans "Show community reports on the map" as community_reports_overlay_toggle_label %}
-        {% include "includes/_map_overlay_toggle.html" with id="map-community-reports-overlay-toggle" label=community_reports_overlay_toggle_label %}
-    </div>
+    {% trans "Field observations" as report_list_title %}
+    {% trans "Report an observation" as report_add_label %}
+    {% trans "Show community reports on the map" as community_reports_overlay_toggle_label %}
+    {% include "includes/_ugc_panel.html" with title=report_list_title rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" toggle_label=community_reports_overlay_toggle_label %}
 </template>
 {# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}

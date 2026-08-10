@@ -41,7 +41,7 @@ const LIST_URL = '/partials/report/list/';
  */
 function startReport() {
   document.getElementById('report-btn').click();
-  const add = document.querySelector('[data-report-add]');
+  const add = document.querySelector('[data-panel-add]');
   if (add) add.click();
 }
 
@@ -62,7 +62,7 @@ document.body.innerHTML = `
     <div>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
-      <button type="button" data-report-add>Report an observation</button>
+      <button type="button" data-panel-add>Report an observation</button>
       <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>

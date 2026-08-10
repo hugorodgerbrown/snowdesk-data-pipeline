@@ -6,22 +6,30 @@ Rendered by apps.observations.views.observation_list and swapped into
 [data-report-rows] inside the map's field-observation panel
 (public/partials/_report_surface.html) by static/js/report.js.
 
-Mirrors favourites/partials/_favourite_list.html's shape: rows plus an empty
-clause. The empty clause states a fact about the user's data — it is only
-ever reached on a SUCCESSFUL response, and report.js writes its own distinct
-failure line when the request does not land, so "no reports" never stands in
-for "the request failed".
+Rows plus an empty clause. The empty clause states a fact about the user's
+data — it is only ever reached on a SUCCESSFUL response, and report.js
+writes its own distinct failure line when the request does not land, so
+"no reports" never stands in for "the request failed".
+
+The rows are a real ``<ul>`` (SNOW-658, second pass): each row is a
+``<li>`` from includes/_ugc_panel_row.html, and they draw their own
+separators via each row's ``border-t`` rather than a gap between boxes —
+the shape the "Manage downloads" sheet's own lists use, since that sheet
+is the reference the three UGC panels conform to.
 
 Context:
     observations : QuerySet[FieldObservation] — the requesting user's own
                    reports, newest first (FieldObservation.objects.for_user()).
 {% endcomment %}
-<div class="flex flex-col gap-2" data-testid="observation-list">
-    {% for observation in observations %}
-        {% include "observations/partials/_observation.html" with observation=observation %}
-    {% empty %}
-        <p class="text-sm text-text-2" data-testid="observation-list-empty">
+<div data-testid="observation-list">
+    <ul class="flex flex-col">
+        {% for observation in observations %}
+            {% include "observations/partials/_observation.html" with observation=observation %}
+        {% endfor %}
+    </ul>
+    {% if not observations %}
+        <p class="py-2 text-sm text-text-2" data-testid="observation-list-empty">
             {% trans "You haven't reported any field observations yet." %}
         </p>
-    {% endfor %}
+    {% endif %}
 </div>

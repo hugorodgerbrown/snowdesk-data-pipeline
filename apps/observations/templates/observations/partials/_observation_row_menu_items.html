@@ -1,0 +1,45 @@
+{% load i18n %}
+{% comment %}
+observations/partials/_observation_row_menu_items.html — the field-
+observation row's overflow-menu contents (SNOW-658).
+
+includes/_overflow_menu.html's `items_template` companion, reached
+through includes/_ugc_panel_row.html — which passes its own full context
+on, so ``observation`` is in scope here for the delete endpoint's URL.
+
+Remove is the only item. There is no rename counterpart: an observation
+records what was seen and where, and none of that is editable after the
+fact — which is why the always-visible name field the favourites row used
+to carry never existed here.
+
+Remove used to be an inline, link-styled button in the row body. It is a
+menu item on every panel now: a destructive control sitting under the
+reader's thumb on a list they are scrolling is a mis-tap waiting to
+happen.
+
+Still a plain HTMX form, not a JS-driven action — the delete endpoint
+returns an empty 200, so ``hx-target``/``hx-swap`` on this row's own id
+removes exactly this row and nothing on the page has to know which one
+was clicked. ``role="none"`` on the <form> keeps the <ul role="menu"> →
+<li> → <button role="menuitem"> ownership intact across the wrapper.
+
+Context:
+    observation : FieldObservation — the report this row describes.
+{% endcomment %}
+<li role="none">
+    <form
+        role="none"
+        hx-post="{% url 'observations:delete' observation.uuid %}"
+        hx-target="#observation-{{ observation.uuid }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            role="menuitem"
+            class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
+        >
+            {% trans "Remove" %}
+        </button>
+    </form>
+</li>

@@ -36,7 +36,7 @@ document.body.innerHTML = `
     <div>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
-      <button type="button" data-report-add>Report an observation</button>
+      <button type="button" data-panel-add>Report an observation</button>
       <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
@@ -98,7 +98,7 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
     btn.click();
     expect(seen).toHaveLength(0);
 
-    sheet.querySelector('[data-report-add]').click();
+    sheet.querySelector('[data-panel-add]').click();
     expect(seen).toHaveLength(1);
 
     document.removeEventListener('snowdesk:locate-request', handler);

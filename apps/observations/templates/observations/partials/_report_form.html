@@ -33,7 +33,13 @@ Context:
     id="report-form"
     method="post"
     action="{{ submit_url }}"
-    class="flex flex-col gap-4"
+    {# SNOW-658: the report sheet is scroll_body=True now (see            #}
+    {# public/partials/_report_surface.html), so this body is a flex      #}
+    {# child of a bounded, overflow-hidden column and must own its own    #}
+    {# scroll region. `min-h-0` is load-bearing: without it a flex child  #}
+    {# refuses to shrink below its content and the form overflows the     #}
+    {# sheet instead of scrolling inside it.                              #}
+    class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto"
     aria-label='{% trans "Field observation report" %}'
 >
     {% csrf_token %}

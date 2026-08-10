@@ -3,45 +3,45 @@
 observations/partials/_observation.html — One field-observation row (SNOW-658).
 
 Rendered by apps.observations.views.observation_list, one per row, inside the
-map's field-observation panel. Mirrors favourites/partials/_favourite.html:
-the row carries its own id and its Remove button posts with
-hx-target="#observation-<uuid>" / hx-swap="outerHTML", so the delete response
-(an empty body) removes exactly this row and nothing on the page has to know
-which row was clicked.
+map's field-observation panel.
 
-There is no rename counterpart — an observation records what was seen and
-where, and none of that is editable after the fact.
+SNOW-658 (second pass): the row is includes/_ugc_panel_row.html now — the
+shape extracted from the "Manage downloads" sheet, which is the reference
+design for all three UGC panels. It replaces the bordered box with an
+inline Remove link this file grew by imitating that sheet by hand: same
+primary/secondary lines, but Remove moved into the "…" overflow menu
+(observations/partials/_observation_row_menu_items.html), where every
+panel's state-changing actions now live.
+
+The row keeps its own id, so the Remove form's
+``hx-target="#observation-<uuid>"`` / ``hx-swap="outerHTML"`` still swaps
+out exactly this row on the empty body the delete endpoint returns, and
+nothing on the page has to know which row was clicked.
+
+The overflow menu's trigger/menu id pair is built from the uuid here.
+Downloads has to rewrite its own pair in JS after cloning a template; a
+server loop has the uuid in hand and renders a unique pair directly.
+
+There is no link on the primary line: an observation has no page of its
+own to navigate to. A favourite does, and that is what
+includes/_ugc_panel_row.html's ``label_href`` is for.
 
 Context:
     observation : FieldObservation — the report to render.
 {% endcomment %}
-<div
-    id="observation-{{ observation.uuid }}"
-    class="flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm"
-    data-observation-uuid="{{ observation.uuid }}"
->
-    <div class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate text-text-1">{{ observation.get_observation_type_display }}</span>
-        {# Region is best-effort on this model (a pin outside every known    #}
-        {# boundary is accepted with region=None), so the line is omitted    #}
-        {# rather than rendered as "unknown" — the date alone still          #}
-        {# identifies the row.                                               #}
-        <span class="truncate text-xs text-text-3">
-            {{ observation.observed_at|date:"j M Y, H:i" }}
-            {% if observation.region %}· {{ observation.region.name }}{% endif %}
-        </span>
-    </div>
-    <form
-        hx-post="{% url 'observations:delete' observation.uuid %}"
-        hx-target="#observation-{{ observation.uuid }}"
-        hx-swap="outerHTML"
-    >
-        {% csrf_token %}
-        <button
-            type="submit"
-            class="shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text"
-        >
-            {% trans "Remove" %}
-        </button>
-    </form>
-</div>
+{% with uuid=observation.uuid|stringformat:"s" when=observation.observed_at|date:"j M Y, H:i" %}
+    {# Region is best-effort on this model (a pin outside every known    #}
+    {# boundary is accepted with region=None), so it is appended when    #}
+    {# present rather than rendered as "unknown" — the date alone still  #}
+    {# identifies the row. The date on its own is the default; the       #}
+    {# translatable form only exists for the case that joins the two.    #}
+    {% with row_subtitle=when %}
+        {% if observation.region %}
+            {% blocktrans trimmed with region=observation.region.name asvar row_subtitle %}{{ when }} ·
+                {{ region }}{% endblocktrans %}
+        {% endif %}
+        {% blocktrans trimmed with kind=observation.get_observation_type_display asvar row_menu_label %}More actions for
+            {{ kind }}{% endblocktrans %}
+        {% include "includes/_ugc_panel_row.html" with row_id="observation-"|add:uuid label=observation.get_observation_type_display subtitle=row_subtitle trigger_id="observation-menu-trigger-"|add:uuid menu_id="observation-menu-"|add:uuid trigger_label=row_menu_label menu_items_template="observations/partials/_observation_row_menu_items.html" %}
+    {% endwith %}
+{% endwith %}
