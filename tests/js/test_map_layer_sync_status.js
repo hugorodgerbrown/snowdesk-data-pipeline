@@ -16,6 +16,15 @@
  * defaults it to `true`. `setOnline(false)` overrides it per-test (reset in
  * afterEach) to exercise the offline red-dot + row-disable behaviour.
  *
+ * SNOW-658: the `favourites` and `community_reports` rows this file used to
+ * cover are gone from OVERLAY_RESOURCES — both overlays moved into the panel
+ * their own roundel opens, so there is no row here to hang a dot on (see
+ * tests/js/test_favourites_panel.js and tests/js/test_report_panel.js). The
+ * same ticket merged the Austria and Italy country rows into one ALBINA
+ * provider row, which is why `countryRow` now takes a `codes` argument: the
+ * row carries its own `data-country-codes`, and a merged row's dot may only
+ * go green once EVERY code it switches is cached.
+ *
  * SNOW-645: the `downloaded` (pinned-tiles) row this file used to cover
  * (SNOW-586's multi-bucket union describe block, plus the `includeDownloaded`
  * fixture flag, the `pinnedBuckets`/`keys()`/`open()` CacheStorage fake
@@ -51,8 +60,6 @@ const SWISSTOPO_STYLE = 'https://tiles.example/swisstopo/style.json';
  * `.sync-dot` starting at `data-sync-state="unknown"`.
  */
 function buildFixture({
-  includeFavourites = true,
-  includeCommunityReports = true,
   // SNOW-524: country rows are opt-in so the pre-existing tier tests keep
   // exercising the country-blind fallback (no country enabled ⟹ ignoreSearch).
   countries = null,
@@ -69,12 +76,19 @@ function buildFixture({
       </button>
     </li>`;
 
-  // SNOW-524: one row per country, `checked` mirroring the picker's
+  // SNOW-524: one row per PROVIDER, `checked` mirroring the picker's
   // aria-checked (which is what _enabledCountryCodes reads).
-  const countryRow = ({ code, checked }) => `
+  //
+  // SNOW-658: `codes` is the row's own `data-country-codes`, the DOM
+  // projection of COUNTRY_GROUPS in static/js/map_state.js. It defaults to
+  // the key's suffix, so every pre-existing single-country fixture below is
+  // unchanged; the ALBINA row passes ['at', 'it'] explicitly.
+  const countryRow = ({ code, checked, codes }) => `
     <li role="none">
       <button type="button" class="basemap-menu-item basemap-menu-item--overlay"
-              data-overlay-key="country.${code}" aria-checked="${checked ? 'true' : 'false'}">
+              data-overlay-key="country.${code}"
+              data-country-codes="${(codes || [code]).join(' ')}"
+              aria-checked="${checked ? 'true' : 'false'}">
         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
         ${code}
       </button>
@@ -97,8 +111,6 @@ function buildFixture({
       ${overlayRow('l2')}
       ${overlayRow('l4')}
       ${overlayRow('resorts')}
-      ${includeFavourites ? overlayRow('favourites') : ''}
-      ${includeCommunityReports ? overlayRow('community_reports') : ''}
       ${includeWeather ? overlayRow('weather') : ''}
       ${basemapRow('standard', STANDARD_STYLE, true)}
       ${basemapRow('swisstopo', SWISSTOPO_STYLE, false)}
@@ -422,6 +434,39 @@ describe('country rows (SNOW-524)', () => {
     expect(dotState('country.at')).toBe('cached');
   });
 
+  it('greens a MERGED provider row only when BOTH countries are cached', async () => {
+    // SNOW-658: ALBINA publishes for Austria and Italy, so its single row
+    // switches both. A green dot with only Austria cached would promise an
+    // offline map that comes up missing Italy — the class of lie these dots
+    // exist to stop.
+    const albina = [{ code: 'albina', checked: true, codes: ['at', 'it'] }];
+
+    buildFixture({ countries: albina });
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('at') }));
+    await window.pwaLayerSyncStatus.refresh();
+    expect(dotState('country.albina')).toBe('uncached');
+
+    buildFixture({ countries: albina });
+    vi.stubGlobal(
+      'caches',
+      fakeCaches({ hitQueries: [...countryFeeds('at'), ...countryFeeds('it')] }),
+    );
+    await window.pwaLayerSyncStatus.refresh();
+    expect(dotState('country.albina')).toBe('cached');
+  });
+
+  it('scopes the tier dots to EVERY code a checked provider row switches', async () => {
+    // One checked ALBINA row means two enabled countries, so a tier is only
+    // honestly available offline when it is cached for both.
+    buildFixture({ countries: [{ code: 'albina', checked: true, codes: ['at', 'it'] }] });
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('at') }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l1')).toBe('uncached');
+    expect(dotState('l4')).toBe('uncached');
+  });
+
   it('markCached greens a country row optimistically', async () => {
     buildFixture({ countries: CH_AT });
     vi.stubGlobal('caches', fakeCaches());
@@ -436,41 +481,47 @@ describe('country rows (SNOW-524)', () => {
   });
 });
 
-describe('IndexedDB overlay rows (favourites/community_reports)', () => {
+describe('IndexedDB overlay rows (weather)', () => {
   it('resolves cached when window.pwaDb holds a row with .geojson, uncached when absent', async () => {
+    buildFixture({ includeWeather: true });
     vi.stubGlobal('caches', fakeCaches());
     window.pwaDb = {
       get: vi.fn(async (_store, key) => {
-        if (key === 'favourites') return { key: 'favourites', geojson: { type: 'FeatureCollection' } };
+        if (key === 'weather') return { key: 'weather', geojson: { type: 'FeatureCollection' } };
         return undefined;
       }),
     };
 
     await window.pwaLayerSyncStatus.refresh();
 
-    expect(dotState('favourites')).toBe('cached');
-    expect(dotState('community_reports')).toBe('uncached');
-    expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'favourites');
+    expect(dotState('weather')).toBe('cached');
+    expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'weather');
   });
 
   it('resolves uncached, not throw, when window.pwaDb is unavailable', async () => {
+    buildFixture({ includeWeather: true });
     vi.stubGlobal('caches', fakeCaches());
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
-    expect(dotState('favourites')).toBe('uncached');
-    expect(dotState('community_reports')).toBe('uncached');
+    expect(dotState('weather')).toBe('uncached');
   });
 
   it('skips rows absent from the DOM (conditionally rendered)', async () => {
-    buildFixture({ includeFavourites: false, includeCommunityReports: false });
+    // The weather row is flag-gated, so this is the live case. SNOW-658 also
+    // removed the favourites and community_reports rows outright — map.js
+    // still calls markCached('favourites') on its lazy-load path, so a
+    // missing row has to stay a no-op rather than a throw.
+    buildFixture();
     vi.stubGlobal('caches', fakeCaches());
     window.pwaDb = { get: vi.fn(async () => ({ geojson: {} })) };
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
+    expect(document.querySelector('[data-overlay-key="weather"]')).toBeNull();
     expect(document.querySelector('[data-overlay-key="favourites"]')).toBeNull();
     expect(document.querySelector('[data-overlay-key="community_reports"]')).toBeNull();
+    expect(() => window.pwaLayerSyncStatus.markCached('favourites')).not.toThrow();
   });
 });
 
@@ -573,7 +624,6 @@ describe('probes that throw', () => {
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
     expect(dotState('l1')).toBe('uncached');
-    expect(dotState('favourites')).toBe('uncached');
     expect(basemapDotState('swisstopo')).toBe('uncached');
     // The active basemap is available regardless of the probe outcome.
     expect(basemapDotState('standard')).toBe('cached');
@@ -586,7 +636,7 @@ describe('Cache Storage unsupported', () => {
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
-    for (const key of ['l1', 'l2', 'l4', 'resorts', 'favourites', 'community_reports']) {
+    for (const key of ['l1', 'l2', 'l4', 'resorts']) {
       expect(dotState(key)).toBe('unknown');
     }
     expect(basemapDotState('standard')).toBe('unknown');
@@ -598,10 +648,10 @@ describe('markCached (optimistic live update)', () => {
     expect('caches' in window).toBe(false);
 
     window.pwaLayerSyncStatus.markCached('l1');
-    window.pwaLayerSyncStatus.markCached('favourites');
+    window.pwaLayerSyncStatus.markCached('resorts');
 
     expect(dotState('l1')).toBe('cached');
-    expect(dotState('favourites')).toBe('cached');
+    expect(dotState('resorts')).toBe('cached');
   });
 
   it('clears an offline-disabled marker when it flips a row green', async () => {

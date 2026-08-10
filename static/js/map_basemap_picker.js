@@ -223,11 +223,19 @@
         // SNOW-172: handle country.* toggles by delegating to the main IIFE
         // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
         // are all scoped to the main IIFE and are not accessible here.
+        //
+        // SNOW-658: one dispatch PER CODE. A row is a bulletin provider now,
+        // and ALBINA publishes for two countries — but nothing downstream
+        // learned about providers: countryState, the per-code storage keys and
+        // applyCountryFilters are all still per-code, so the merge is handled
+        // here, by sending the same event twice. countryCodesFor
+        // (static/js/map_state.js) is the one place the grouping is declared.
         if (overlayKey.startsWith('country.')) {
-          const code = overlayKey.slice(8); // 'country.fr' → 'fr'
-          document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
-            detail: { code, next },
-          }));
+          for (const code of countryCodesFor(overlayKey)) {
+            document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+              detail: { code, next },
+            }));
+          }
           return;
         }
 

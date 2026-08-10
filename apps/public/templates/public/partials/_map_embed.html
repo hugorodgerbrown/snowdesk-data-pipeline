@@ -196,12 +196,28 @@ Optional context:
                 </svg>
             </button>
             <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
-                {# SNOW-172: Country toggles — show/hide each country's region     #}
-                {# outlines. CH is on by default. FR/AT/IT are off; their        #}
-                {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
-                {# localStorage under snowdesk.map.overlay.country.<code>.       #}
+                {# SNOW-172: country toggles — show/hide each country's region     #}
+                {# outlines. CH is on by default. The rest are off; their          #}
+                {# GeoJSON is lazy-fetched on first toggle-on. State persists in   #}
+                {# localStorage under snowdesk.map.overlay.country.<code>.         #}
+                {#                                                                 #}
+                {# SNOW-658: the section is "Bulletins" and each row names its     #}
+                {# PROVIDER, because that is what the row actually switches on —   #}
+                {# one provider's bulletins, drawn over the countries it publishes #}
+                {# for. Austria and Italy were two rows for one provider; ALBINA   #}
+                {# publishes the EUREGIO bulletin for both, so they are one row    #}
+                {# now, and toggling it fires one snowdesk:country-toggle PER      #}
+                {# CODE (map_basemap_picker.js). Nothing below the menu learned    #}
+                {# about providers: countryState, the storage keys and the country #}
+                {# filter are all still per-code.                                  #}
+                {#                                                                 #}
+                {# ``data-country-codes`` is the DOM projection of COUNTRY_GROUPS  #}
+                {# in static/js/map_state.js, read by map_layer_sync_status.js     #}
+                {# (which loads before the map bundle and so cannot read that      #}
+                {# declaration directly). tests/public/test_map_country_groups.py  #}
+                {# fails if the two ever disagree.                                 #}
                 <li role="none" class="basemap-menu-section-label">
-                    {% trans "Countries" %}
+                    {% trans "Bulletins" %}
                 </li>
                 <li role="none">
                     <button
@@ -209,12 +225,13 @@ Optional context:
                         role="menuitemcheckbox"
                         class="basemap-menu-item basemap-menu-item--overlay"
                         data-overlay-key="country.ch"
+                        data-country-codes="ch"
                         aria-checked="true"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
+                        {# SNOW-524: per-row sync dot — green only when all four #}
+                        {# feeds are cached, for every country the row switches.  #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Switzerland" %}
+                        {% trans "SLF (CH)" %}
                     </button>
                 </li>
                 <li role="none">
@@ -223,12 +240,11 @@ Optional context:
                         role="menuitemcheckbox"
                         class="basemap-menu-item basemap-menu-item--overlay"
                         data-overlay-key="country.fr"
+                        data-country-codes="fr"
                         aria-checked="false"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "France" %}
+                        {% trans "MétéoFrance (FR)" %}
                     </button>
                 </li>
                 <li role="none">
@@ -236,27 +252,12 @@ Optional context:
                         type="button"
                         role="menuitemcheckbox"
                         class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.at"
+                        data-overlay-key="country.albina"
+                        data-country-codes="at it"
                         aria-checked="false"
                     >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Austria" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.it"
-                        aria-checked="false"
-                    >
-                        {# SNOW-524: per-country sync dot — green only when all #}
-                        {# four of this country's feeds are cached.             #}
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Italy" %}
+                        {% trans "ALBINA (AT, IT)" %}
                     </button>
                 </li>
                 {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
@@ -264,9 +265,15 @@ Optional context:
                 {# above the L4 choropleth. State persists in localStorage    #}
                 {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
                 {# defaults to visible, like the other overlay tiers.         #}
+                {# SNOW-658: "Overlays" → "Boundaries", and each tier names its    #}
+                {# EAWS level. "Major / Minor / Micro" is this app's own shorthand  #}
+                {# for a published hierarchy, and the levels are what the data      #}
+                {# actually is — so the row carries both: the familiar word, and    #}
+                {# the standard's own name for it. The keys (l1/l2/l4) are          #}
+                {# unchanged; every consumer of the DOM contract keys off those.    #}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
-                    {% trans "Overlays" %}
+                    {% trans "Boundaries" %}
                 </li>
                 <li role="none">
                     <button
@@ -279,7 +286,7 @@ Optional context:
                         {# SNOW-505: sync-status dot — hidden (unknown) until #}
                         {# map_layer_sync_status.js resolves it on menu-open. #}
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Major regions" %}
+                        {% trans "Major (EAWS Level 1)" %}
                     </button>
                 </li>
                 <li role="none">
@@ -291,7 +298,7 @@ Optional context:
                         aria-checked="false"
                     >
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Minor regions" %}
+                        {% trans "Minor (EAWS L2)" %}
                     </button>
                 </li>
                 <li role="none">
@@ -303,16 +310,21 @@ Optional context:
                         aria-checked="true"
                     >
                         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Micro regions" %}
+                        {% trans "Micro (EAWS L4)" %}
                     </button>
                 </li>
-                {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
-                {# circle pins above the L4 choropleth. Off by default;  #}
-                {# state persists in localStorage under                  #}
-                {# snowdesk.map.overlay.resorts. SNOW-499: pin click     #}
-                {# opens a minimal popup (name, region, favourite star,  #}
-                {# bulletin link) rather than selecting the parent       #}
-                {# region.                                               #}
+                {# SNOW-658: resorts are places, not boundaries, so they get     #}
+                {# their own section rather than trailing the tier list.         #}
+                {# SNOW-78: Resorts overlay — geocoded ski resorts as circle     #}
+                {# pins above the L4 choropleth. Off by default; state persists  #}
+                {# in localStorage under snowdesk.map.overlay.resorts.           #}
+                {# SNOW-499: pin click opens a minimal popup (name, region,      #}
+                {# favourite star, bulletin link) rather than selecting the      #}
+                {# parent region.                                                #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Locations" %}
+                </li>
                 <li role="none">
                     <button
                         type="button"
@@ -325,53 +337,38 @@ Optional context:
                         {% trans "Resorts" %}
                     </button>
                 </li>
-                {# SNOW-414: Favourites overlay — the signed-in user's own saved   #}
-                {# pins, as star markers above the L4 choropleth. Eligible-only   #}
-                {# (authenticated) since the layer is per-user data.              #}
-                {# Default-on (map.js seeds overlayState.favourites from          #}
-                {# localStorage with a `true` fallback) — this static             #}
-                {# aria-checked="true" is the first-paint default; map.js         #}
-                {# reconciles it against the persisted preference on load.        #}
-                {% if favourites_eligible %}
-                    <li role="none">
-                        <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay"
-                            data-overlay-key="favourites"
-                            aria-checked="true"
-                        >
-                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                            {% trans "Favourites" %}
-                        </button>
-                    </li>
-                {% endif %}
-                {# SNOW-419: Community reports overlay — anonymised, clustered   #}
-                {# FieldObservation pins from the last 48 hours. Public data,    #}
-                {# no per-user eligibility split (unlike Favourites). Off by     #}
-                {# default — a user opts in to a shared layer rather than       #}
-                {# having it appear unannounced.                                 #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="community_reports"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Community reports" %}
-                    </button>
-                </li>
+                {# SNOW-658: the Favourites row (SNOW-414) and the Community      #}
+                {# reports row (SNOW-419) were here. Both are USER-GENERATED      #}
+                {# data with a roundel of their own, so each toggle moved into    #}
+                {# the panel that roundel opens — "Show favourites on the map"    #}
+                {# in _favourites_surface.html, "Show community reports on the    #}
+                {# map" in _report_surface.html — driving                         #}
+                {# window.pwaFavouritesOverlay / window.pwaCommunityReportsOverlay#}
+                {# in map.js. That is SNOW-634's downloads pattern generalised:   #}
+                {# one subject, one way in. Their sync dots went with the rows    #}
+                {# rather than moving into the panels, following SNOW-645's own   #}
+                {# call for the downloaded-areas row.                            #}
+                {#                                                                #}
+                {# SNOW-658: weather is a CONDITION, not a boundary or a place,   #}
+                {# so it gets a heading of its own below rather than being folded #}
+                {# into one it doesn't belong to.                                 #}
                 {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
                 {# plus the day's max temperature at each resort-anchored     #}
                 {# (and, for a signed-in visitor, favourite-anchored)         #}
-                {# forecast point. Flag-gated on weather_layer; off by       #}
-                {# default like Community reports. static/js/map.js disables #}
-                {# this row (with a reason, via a second namespaced marker   #}
-                {# — see DISABLED_MARKER in map_layer_sync_status.js) for    #}
-                {# any scrubbed date outside the stored forecast window.     #}
+                {# forecast point. Flag-gated on weather_layer; off by        #}
+                {# default. static/js/map.js disables this row (with a        #}
+                {# reason, via a second namespaced marker — see               #}
+                {# DISABLED_MARKER in map_layer_sync_status.js) for any       #}
+                {# scrubbed date outside the stored forecast window.          #}
+                {# SNOW-658: the heading and its separator sit INSIDE the      #}
+                {# flag check — this is the section's only row, so rendering   #}
+                {# them unconditionally would leave an empty "Conditions"      #}
+                {# heading for every visitor without the flag.                 #}
                 {% if weather_layer_eligible %}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Conditions" %}
+                    </li>
                     <li role="none">
                         <button
                             type="button"

@@ -482,29 +482,36 @@ def test_map_page_renders_scrubber_loading_state() -> None:
 @pytest.mark.django_db
 def test_map_layer_menu_section_order() -> None:
     """
-    SNOW-243: The basemap-menu popover must present sections in the order
-    Countries → Overlays → Base map.  This is a presentation reorder
-    only; all remaining items and their data-* attributes are unchanged.
+    SNOW-243: The basemap-menu popover must present its sections in a fixed
+    order.  This is a presentation reorder only; all remaining items and
+    their data-* attributes are unchanged.
 
     SNOW-521: the Options section (Auto-zoom) was removed along with the
     L3 bulletin-groupings overlay and the basemap sync-status caption —
     see ``test_layers_menu_removed_items.py`` (e2e) for the absence
     coverage.
+
+    SNOW-658 renamed the first two sections to say what their rows actually
+    are — "Bulletins" (one row per PROVIDER) and "Boundaries" (one per EAWS
+    level) — and split the trailing rows out of the tier list into their own
+    sections: "Locations" for resorts, "Conditions" for weather.  The weather
+    row is flag-gated and its heading is gated with it, so "Conditions" is
+    deliberately absent here.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     # Each label is unique in the rendered output; assert relative order.
-    idx_countries = content.index("basemap-menu-section-label")
-    # Find each label text after the first section-label class occurrence.
-    idx_countries_label = content.index("Countries", idx_countries)
-    idx_overlays_label = content.index("Overlays", idx_countries)
-    idx_basemap_label = content.index("Base map", idx_countries)
+    start = content.index("basemap-menu-section-label")
+    positions = [
+        content.index(label, start)
+        for label in ("Bulletins", "Boundaries", "Locations", "Base map")
+    ]
 
-    assert idx_countries_label < idx_overlays_label < idx_basemap_label, (
+    assert positions == sorted(positions), (
         "Map layer menu sections are not in the expected order "
-        "(Countries < Overlays < Base map)"
+        "(Bulletins < Boundaries < Locations < Base map)"
     )
     assert "Options" not in content
 
@@ -538,10 +545,20 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
 
 
 @pytest.mark.django_db
-def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
+def test_map_layer_menu_has_no_user_data_rows() -> None:
     """
-    SNOW-505: favourites (eligible-only) and community_reports also carry
-    a sync-dot.
+    SNOW-658: the favourites (eligible-only) and community_reports rows are
+    gone from this menu — and so, deliberately, are their sync dots.
+
+    Both are USER-GENERATED data with a roundel of their own, so each toggle
+    moved into the panel that roundel opens ("Show favourites on the map",
+    "Show community reports on the map"), driving
+    ``window.pwaFavouritesOverlay`` / ``window.pwaCommunityReportsOverlay``.
+    The dots did not move with them: a panel is not a cache-state dashboard,
+    which is the same call SNOW-645 made for the downloaded-areas row.
+
+    Asserted for a signed-in user, since the favourites row was rendered only
+    for one — an anonymous request never had it to lose.
     """
     account = AccountFactory.create()
     client = Client()
@@ -550,10 +567,10 @@ def test_map_layer_menu_renders_sync_status_dots_for_conditional_rows() -> None:
     content = response.content.decode()
 
     for key in ("favourites", "community_reports"):
-        key_idx = content.index(f'data-overlay-key="{key}"')
-        button_close_idx = content.index("</button>", key_idx)
-        button_scope = content[key_idx:button_close_idx]
-        assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+        assert f'data-overlay-key="{key}"' not in content, key
+    # The switches that replaced them, in their own panels.
+    assert 'id="map-favourites-overlay-toggle"' in content
+    assert 'id="map-community-reports-overlay-toggle"' in content
 
 
 @pytest.mark.django_db

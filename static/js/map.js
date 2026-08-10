@@ -362,8 +362,10 @@
       // SNOW-172: country toggle buttons use countryState, not overlayState.
       let checked;
       if (key && key.startsWith('country.')) {
-        const code = key.slice(8);
-        checked = countryState[code];
+        // SNOW-658: a provider row can own more than one country (ALBINA:
+        // AT + IT), so it is checked only when EVERY code it switches is on.
+        // Checked-when-any would claim coverage the map is not drawing.
+        checked = countryCodesFor(key).every((code) => countryState[code]);
       } else {
         checked = overlayState[key];
       }
@@ -2395,7 +2397,16 @@
       const allFeedsLoaded =
         (isBootCountry || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
       if (allFeedsLoaded) {
-        window.pwaLayerSyncStatus?.markCached('country.' + code);
+        // SNOW-658: the ROW's key, not the code's — AT and IT share the ALBINA
+      // row, whose dot may only green once both have landed. markCached is
+      // optimistic for a single-country row and would be a lie for this one,
+      // so a grouped row hands off to a real probe instead.
+      const rowKey = overlayKeyForCountry(code);
+      if (countryCodesFor(rowKey).length === 1) {
+        window.pwaLayerSyncStatus?.markCached(rowKey);
+      } else {
+        window.pwaLayerSyncStatus?.refresh();
+      }
       } else {
         // Partial load — let a real probe decide, rather than leaving the row
         // pulsing forever after an optimistic markSyncing.
@@ -2420,8 +2431,12 @@
       countryState[code] = false;
       COUNTRY_STATE[code] = false;
       writeStorage(COUNTRY_STORAGE_KEY(code), 'false');
+      // SNOW-658: the row that owns this code, which for AT or IT is the one
+      // ALBINA row rather than a row of its own. Unchecking it is honest
+      // either way — the row claims every code it switches, and one of them
+      // has just failed to load.
       const row = document.querySelector(
-        `#basemap-menu [data-overlay-key="country.${code}"]`,
+        `#basemap-menu [data-overlay-key="${overlayKeyForCountry(code)}"]`,
       );
       if (row) row.setAttribute('aria-checked', 'false');
       applyCountryFilters();
@@ -3254,7 +3269,10 @@
     // immediately without calling markCached.
     const willFetch = next && !!map && !loadedCountries.has(code);
     if (willFetch) {
-      sync?.markSyncing('country.' + code);
+      // SNOW-658: the ROW's key — a grouped provider row (ALBINA) receives one
+      // of these per code, and painting the same row "syncing" twice is
+      // harmless and correct: it is waiting on both.
+      sync?.markSyncing(overlayKeyForCountry(code));
       for (const tier of sync?.COUNTRY_SCOPED_TIER_KEYS || []) sync.markSyncing(tier);
     } else {
       // Nothing in flight — re-probe for the real state. On toggle-OFF this

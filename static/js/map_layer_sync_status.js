@@ -3,8 +3,8 @@
  * layers popover (SNOW-505).
  *
  * The layers popover (#basemap-menu in _map_embed.html) lists everything
- * the PWA can cache for offline use — the region overlays (L1/L2/L4),
- * resorts, favourites, community reports, and the active basemap — but
+ * the PWA can cache for offline use — the bulletin providers, the boundary
+ * tiers (L1/L2/L4), resorts, weather and the active basemap — but
  * previously gave no signal of which of those are actually available
  * offline. This module is the read side of the existing "Cache this area
  * for offline" control (SNOW-492): a small two-state dot beside each
@@ -35,12 +35,15 @@
  *
  * Row → resource map (the single source of truth driving every probe):
  *
- *   country.<code>       — (SNOW-524) the four ``?country=<code>``-scoped
+ *   country.<key>        — (SNOW-524) the four ``?country=<code>``-scoped
  *                          feeds a country load fetches: L1, L2, L4 and
  *                          ratings. Green only when ALL four are cached for
- *                          that code, Switzerland included — the first page
- *                          load is just "toggle CH on from blank", so there
- *                          is no default-country special case. Basemap tiles
+ *                          EVERY code the row switches (SNOW-658: a row is a
+ *                          bulletin provider now, and ALBINA covers AT and IT
+ *                          — its ``data-country-codes`` carries both),
+ *                          Switzerland included — the first page load is just
+ *                          "toggle CH on from blank", so there is no
+ *                          default-country special case. Basemap tiles
  *                          are NOT part of this signal — they have their own
  *                          rows and their own per-micro-region download flow
  *                          (SNOW-521) — so the label says "region data
@@ -58,14 +61,13 @@
  *                          — otherwise a tier dot could sit green above a
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
- *   favourites,
- *   community_reports,
- *   weather               — IndexedDB ``data:map_overlays`` rows written
- *                          by map_overlay_offline_cache.js. A truthy row
- *                          carrying ``.geojson`` counts as cached. weather
- *                          (SNOW-573) is public like community_reports but
- *                          uses the same idb kind, not geojson — see
- *                          OVERLAY_RESOURCES.weather below for why.
+ *   weather              — an IndexedDB ``data:map_overlays`` row written by
+ *                          map_overlay_offline_cache.js. A truthy row
+ *                          carrying ``.geojson`` counts as cached. (SNOW-658:
+ *                          ``favourites`` and ``community_reports`` were
+ *                          probed the same way until their rows left this
+ *                          menu for their own panels — see OVERLAY_RESOURCES
+ *                          below.)
  *   basemap (one dot)    — the active/any basemap's tile cache,
  *                          discovered by the ``snowdesk-basemap-``
  *                          prefix (SNOW-484's BASEMAP_CACHE) rather than
@@ -196,8 +198,16 @@
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
-    favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
-    community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
+    // SNOW-658: the ``favourites`` and ``community_reports`` entries lived
+    // here while those overlays were rows in this menu. Both moved into the
+    // panel their own roundel opens (favourites.js / report.js), so there is
+    // no row to hang a dot on — the same call SNOW-645 made for the
+    // downloaded-areas row: drop the dot rather than relocate it. This menu's
+    // invariant is about the rows it lists, and neither is one of them.
+    //
+    // ``markCached('favourites')`` is still called by map.js's lazy-load path.
+    // It no-ops now — the membership check in ``_markCachedNow`` is the
+    // allowlist, and ``_overlayDot`` returns null for a row that isn't there.
     // SNOW-573: the map weather layer's forecast payload. `idb`, not
     // `geojson` — its endpoint is flag-gated and public, but the payload
     // is a mutable forecast, not static reference data suited to sw.js's
@@ -262,9 +272,10 @@
 
   /**
    * The ``.sync-dot`` element for a given overlay row, or ``null`` when
-   * absent — favourites/community_reports rows are conditionally
-   * rendered (flag/eligibility gated), so a missing dot is expected and
-   * simply skipped rather than treated as an error.
+   * absent — the weather row is conditionally rendered (flag-gated), and
+   * SNOW-658 removed the favourites/community_reports rows outright while
+   * map.js still calls ``markCached`` for both, so a missing dot is expected
+   * and simply skipped rather than treated as an error.
    *
    * @param {string} key - an ``OVERLAY_RESOURCES`` key.
    * @returns {Element | null}
@@ -311,13 +322,29 @@
   }
 
   /**
-   * The country code carried by a country row, e.g. ``'fr'``.
+   * The country codes a row switches, e.g. ``['fr']`` — or ``['at', 'it']``
+   * for the ALBINA row, which is one bulletin provider covering two countries
+   * (SNOW-658).
+   *
+   * Read from the row's own ``data-country-codes`` attribute rather than from
+   * ``countryCodesFor`` in static/js/map_state.js, which is where the grouping
+   * is DECLARED: this module loads before the map bundle (see home.html) and
+   * is unit-tested on its own, so a bare cross-script identifier would be in
+   * its temporal dead zone at parse time and undefined in isolation. The
+   * template renders the attribute from that same declaration, and
+   * ``tests/public/test_map_country_groups.py`` fails if the two disagree.
+   *
+   * Falls back to the key's own suffix, so a row without the attribute
+   * behaves exactly as it did before this ticket.
    *
    * @param {HTMLElement} item
-   * @returns {string}
+   * @returns {string[]}
    */
-  function _countryCodeOf(item) {
-    return (item.dataset.overlayKey || '').slice(COUNTRY_KEY_PREFIX.length);
+  function _countryCodesOf(item) {
+    const declared = (item.dataset.countryCodes || '').trim();
+    if (declared) return declared.split(/\s+/);
+    const suffix = (item.dataset.overlayKey || '').slice(COUNTRY_KEY_PREFIX.length);
+    return suffix ? [suffix] : [];
   }
 
   /**
@@ -325,12 +352,16 @@
    * ``aria-checked`` rather than from map.js's ``countryState`` — that lives
    * in another IIFE, and the DOM is already the picker's source of truth.
    *
+   * Flat-mapped over each row's codes: one checked ALBINA row means both AT
+   * and IT are on, and the country-scoped tier probes below must judge
+   * against both.
+   *
    * @returns {string[]}
    */
   function _enabledCountryCodes() {
     return _countryItems()
       .filter((item) => item.getAttribute('aria-checked') === 'true')
-      .map(_countryCodeOf)
+      .flatMap(_countryCodesOf)
       .filter(Boolean);
   }
 
@@ -494,15 +525,22 @@
   }
 
   /**
-   * True when every feed in ``COUNTRY_FEED_PATHS`` is cached for ``code`` —
-   * the country row's own availability signal.
+   * True when every feed in ``COUNTRY_FEED_PATHS`` is cached for EVERY code
+   * the row switches — the provider row's own availability signal.
    *
-   * @param {string} code - a country code, e.g. ``'fr'``.
+   * SNOW-658: the ALBINA row covers two countries, and this dot must not go
+   * green on half of them. Tapping that row switches both on, so a green dot
+   * with only Austria cached would promise an offline map that comes up
+   * missing Italy — the exact class of lie SNOW-524 built these dots to stop.
+   *
+   * @param {string[]} codes - the row's country codes, e.g. ``['at', 'it']``.
    * @returns {Promise<boolean>}
    */
-  async function _probeCountry(code) {
+  async function _probeCountry(codes) {
     const results = await Promise.all(
-      COUNTRY_FEED_PATHS.map((path) => _probeExact(`${path}?country=${code}`)),
+      codes.flatMap((code) =>
+        COUNTRY_FEED_PATHS.map((path) => _probeExact(`${path}?country=${code}`)),
+      ),
     );
     return results.every(Boolean);
   }
@@ -660,10 +698,10 @@
     for (const item of _countryItems()) {
       const dot = item.querySelector('.sync-dot');
       if (!dot) continue;
-      const code = _countryCodeOf(item);
-      if (!code) continue;
+      const codes = _countryCodesOf(item);
+      if (codes.length === 0) continue;
       tasks.push(
-        _probeCountry(code)
+        _probeCountry(codes)
           .then((cached) =>
             _applyState(
               dot,

@@ -113,6 +113,49 @@ const OVERLAY_STORAGE_KEY = {
 // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
 // SNOW-656 points it at ``bulletins`` rather than ``l4``.
 
+// SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF
+// (CH), MétéoFrance (FR), ALBINA (AT, IT) — because that is what a row
+// actually switches on: one provider's bulletins. ALBINA publishes for both
+// Austria and Italy, so its single row drives TWO country codes.
+//
+// Nothing below the menu changed shape for that. ``countryState``, the
+// per-code localStorage keys and ``applyCountryFilters``'s country filter are
+// all still per-code, and one row now simply writes two of them. Which is why
+// this mapping is a ROUTING table, declared once here and read by every
+// consumer, rather than a new "albina" pseudo-country threaded through the
+// filter code.
+//
+// A key absent from this table maps to the single code in its own suffix, so
+// ``country.ch`` needs no entry.
+const COUNTRY_GROUPS = {
+  'country.albina': ['at', 'it'],
+};
+
+/**
+ * The country codes a layers-menu overlay key switches.
+ *
+ * @param {string} overlayKey - e.g. ``'country.albina'`` or ``'country.ch'``.
+ * @returns {string[]} One or more lowercase country codes.
+ */
+function countryCodesFor(overlayKey) {
+  return COUNTRY_GROUPS[overlayKey] || [overlayKey.slice('country.'.length)];
+}
+
+/**
+ * The layers-menu overlay key that owns a country code — the inverse of
+ * ``countryCodesFor``. Used to find the row to paint (or revert) for a code
+ * the map itself is working with.
+ *
+ * @param {string} code - a lowercase country code, e.g. ``'it'``.
+ * @returns {string} The overlay key, e.g. ``'country.albina'``.
+ */
+function overlayKeyForCountry(code) {
+  for (const [key, codes] of Object.entries(COUNTRY_GROUPS)) {
+    if (codes.includes(code)) return key;
+  }
+  return `country.${code}`;
+}
+
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
 
