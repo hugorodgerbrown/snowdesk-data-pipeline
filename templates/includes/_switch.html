@@ -47,30 +47,32 @@ click-to-activate-labelled-control behaviour needs no JS and cannot be
 defeated by `pointer-events-none` children, because the click event
 still bubbles to the label itself.
 
-The clickable region is `w-11 min-h-11` (44×44 minimum — the tap-target
-fix the × elsewhere in this design got). The VISUAL track is smaller —
-`w-9 h-5` (36×20, the Claude Design source's own measurement) — and sits
-CENTRED on both axes inside the 44×44 label via `inset-0 m-auto` plus an
-explicit height/width (the same centre-within-an-indeterminate-size-box
-technique the single-axis `inset-y-0 my-auto` version used before this
-review, just applied on both axes at once: `inset: 0` on all four sides
-plus `margin: auto` distributes the label's own extra room evenly in
-every direction, and does not depend on the label's own size being
-anything other than "whatever `min-h-11`/`w-11` resolve to"). SNOW-645
-review, Hugo's refinement: the track used to be sized via `rounded-pill`
-(this project's `--radius-pill` token, 4px — correct for the flat budget
-bar elsewhere in this sheet, wrong here) at the label's OWN full size,
-which on a 44px-tall label rendered as a barely-rounded rectangle rather
-than a capsule. `rounded-full` on the (now correctly small) 20px-tall
-track is the fix — 9999px and an explicit 10px radius are IDENTICAL on a
-20px-tall box, and `rounded-full` cannot drift out of sync if that height
-ever changes, unlike a fixed-pixel radius would.
+SIZING — SNOW-658 supersedes SNOW-645's measurements. This control was
+built to a 36×20 track with a 16px thumb, taken from the design source
+this project used at the time; Hugo's "Map panels — common format" design
+draws it at **44×26 with a 20px thumb**, and that is what the numbers
+below are. Anyone reconciling this partial against a mock should reconcile
+it against that one — the older figures are history, not authority.
 
-The thumb is `h-4 w-4` (16×16) — `rounded-full` again — resting `left-1.5`
-(6px from the label's own left edge: the track itself sits 4px in from
-centring, plus the design's own 2px inset from the track's edge). Checked
-state translates it `translate-x-4` (16px — exactly `36 − 16 − 4 = 16`,
-the room the track's own 2px-each-side padding leaves for it to travel).
+The clickable region is `w-11 min-h-11` (44×44 minimum — the tap-target
+fix the × elsewhere in this design got). The track now fills that width
+exactly (`w-11 h-6.5`, 44×26) and sits CENTRED on both axes inside the
+label via `inset-0 m-auto` plus an explicit height/width (`inset: 0` on
+all four sides plus `margin: auto` distributes the label's own extra room
+evenly in every direction, and does not depend on the label's own size
+being anything other than "whatever `min-h-11`/`w-11` resolve to").
+`rounded-full` rather than a fixed-pixel radius: 9999px and an explicit
+13px radius are IDENTICAL on a 26px-tall box, and `rounded-full` cannot
+drift out of sync if that height ever changes.
+
+The thumb is `h-5 w-5` (20×20) — `rounded-full` again — resting
+`left-0.75` (3px, the design's own inset from the track's edge; the track
+now starts at the label's own left edge, so there is no centring offset to
+add). Checked state translates it `translate-x-4.5` (18px — exactly
+`44 − 20 − 3 − 3 = 18`, the room the track's 3px-each-side padding leaves
+for it to travel). The travel is derived from the other three numbers, so
+changing any of them without recomputing it parks the thumb short of, or
+past, the track's own edge.
 
 Colour: `peer-checked:bg-accent` for the track's ON state — SNOW-645
 review: was `peer-checked:bg-status-info-text`, the nearest existing
@@ -124,10 +126,10 @@ directly instead of `[data-downloads-overlay-toggle]`).
     >
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute inset-0 m-auto h-5 w-9 rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
+        class="pointer-events-none absolute inset-0 m-auto h-6.5 w-11 rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-2 peer-focus-visible:ring-offset-2"
     ></span>
     <span
         aria-hidden="true"
-        class="pointer-events-none absolute inset-y-0 left-1.5 my-auto h-4 w-4 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4"
+        class="pointer-events-none absolute inset-y-0 left-0.75 my-auto h-5 w-5 rounded-full bg-accent-text shadow transition-transform peer-checked:translate-x-4.5"
     ></span>
 </label>
