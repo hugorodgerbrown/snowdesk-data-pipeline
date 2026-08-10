@@ -535,16 +535,18 @@ describe('opening the sheet', () => {
 });
 
 describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
-  it('turns the overlay on, unconditionally, before it renders', async () => {
+  it('does NOT turn the overlay on just because the sheet opened (SNOW-656)', async () => {
+    // SNOW-645 called show() unconditionally here, for discoverability. That
+    // was cheap while the squares were all it changed — but they are now
+    // mutually exclusive with the danger choropleth, so opening this sheet
+    // took the choropleth off the map and dropped the fill control to 0,
+    // neither of which the user asked for. The overlay is the switch's
+    // business now.
     seed({});
     await loadModule();
     openSheet();
 
-    // show() is called synchronously inside open(), before the async
-    // render() below even starts — see open()'s own comment for why the
-    // ordering (not just the call) matters: render() reads isVisible()
-    // back to paint the toggle already checked.
-    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalled();
+    expect(window.pwaDownloadedOverlay.show).not.toHaveBeenCalled();
     await settle();
   });
 
@@ -569,7 +571,8 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     const toggle = document.getElementById('map-downloads-overlay-toggle');
     toggle.checked = true;
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalledTimes(2); // open() + this
+    // Once, from this change alone — open() no longer calls it (SNOW-656).
+    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalledTimes(1);
 
     toggle.checked = false;
     toggle.dispatchEvent(new Event('change', { bubbles: true }));

@@ -131,9 +131,22 @@
   // the popup (which is destroyed during playback). Driven from the
   // module-scope MAP + FEATURE_BY_REGION_ID. Re-asserted on every date change
   // so playback's popup-clear can't strip the selection outline.
+  //
+  // SNOW-656: ONLY for a region the user actually chose. ``regionId`` is
+  // seeded from ``data-default-region-id`` (CH-4115) so the ribbon has a
+  // timeline to draw before anything is picked — but pushing that seed onto
+  // the MAP meant the homepage always rendered with Martigny-Verbier
+  // selected: a black selection ring and an emphasised fill around one region
+  // out of 149, with nothing to explain why. Worse, the emphasis made it read
+  // as a different colour from its neighbours, so a default that was supposed
+  // to be a convenience looked like a data error.
+  //
+  // The seed still drives the ribbon and the readout chip; it just no longer
+  // claims a selection on the map. The map starts genuinely unselected.
   let highlightedFeatureId = null;
+  let userHasChosen = false;
   const setHighlight = () => {
-    if (!MAP) return;
+    if (!MAP || !userHasChosen) return;
     const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
     const fid = feature ? feature.id : null;
     if (highlightedFeatureId != null && highlightedFeatureId !== fid) {
@@ -260,8 +273,12 @@
     setHighlight();
   };
 
-  // Tap a region → it becomes the focus.
+  // Tap a region → it becomes the focus. This is the ONLY thing that lets
+  // setHighlight touch the map (SNOW-656) — it fires for a tap, a resort pin,
+  // a search hit and a ``#CH-xxxx`` deep link, i.e. every route by which a
+  // user genuinely picks a region, and for nothing else.
   document.addEventListener('snowdesk:region-selected', (e) => {
+    userHasChosen = true;
     regionId = (e.detail && e.detail.region_id) || null;
     regionName = (e.detail && e.detail.region_name) || null;
     regionSlug = (e.detail && e.detail.region_slug) || null;

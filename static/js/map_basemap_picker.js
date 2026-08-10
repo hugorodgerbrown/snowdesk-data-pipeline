@@ -176,31 +176,6 @@
           }));
         }
 
-        // SNOW-656: the Bulletins row delegates wholesale, the same way
-        // country.* does below. Its state is not a plain "is this layer
-        // visible" — it is a persisted preference AND-ed with whatever is
-        // currently suppressing it (the downloads overlay, resort-edit mode),
-        // and turning it on has to switch the downloads overlay off. All of
-        // that lives in the main IIFE, so this handler contributes the click
-        // and nothing else. It does not even write localStorage, unlike every
-        // branch below: the state machine owns the value that gets stored.
-        //
-        // The optimistic aria-checked write above is correct for this row
-        // too — ``choose`` clears the downloads suppression whenever the new
-        // preference is on, so the effective value the main IIFE writes back
-        // always equals ``next``.
-        if (overlayKey === 'bulletins') {
-          // Same recovery as L4's below: a prior style swap can have dropped
-          // the regions layers, and this row's fill is one of them.
-          if (next && MAP && !MAP.getLayer('regions-fill')) {
-            document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
-          }
-          document.dispatchEvent(new CustomEvent('snowdesk:bulletins-toggle', {
-            detail: { next },
-          }));
-          return;
-        }
-
         // SNOW-172: handle country.* toggles by delegating to the main IIFE
         // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
         // are all scoped to the main IIFE and are not accessible here.
@@ -310,4 +285,107 @@
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
+})();
+
+// SNOW-656: the bulletin-fill strength control — a roundel in the bottom-right
+// stack whose flyout opens to the LEFT with five opacity steps.
+//
+// Its own IIFE rather than part of basemapPickerInit above: it shares nothing
+// with the basemap popover but the side it opens from, and it must keep
+// working if that popover's early returns fire (no #basemap-pill on a page
+// that embeds the map without a picker).
+//
+// It lives in this file because this is where every map-chrome control that
+// delegates to the main IIFE is wired. The delegation follows the shape
+// `country.*` already uses: the value is a persisted preference AND-ed with
+// whatever is suppressing it (the downloads overlay, resort-edit mode), and
+// choosing any step above 0 has to switch the downloads overlay off. All of
+// that lives in the main IIFE, so this contributes the click and nothing
+// else — no localStorage write, and no optimistic `aria-checked`, because the
+// main IIFE mirrors the EFFECTIVE step back onto all five segments and a
+// write here could disagree with it.
+(function mapFillControlInit() {
+  const pill = document.getElementById('map-fill-pill');
+  if (!pill) return;
+  const toggle = document.getElementById('map-fill-toggle');
+  const flyout = document.getElementById('map-fill-flyout');
+  if (!toggle || !flyout) return;
+
+  // The flyout is a child of .map-controls-br, not of the roundel — the
+  // roundel lives inside #map-controls-collapsible, which is `overflow:
+  // hidden` for its height animation and would clip a panel extending left
+  // out of it. So its vertical position has to be measured rather than
+  // inherited: line its centre up with the roundel's, in the stack's own
+  // coordinates. Recomputed on every open because the roundel moves — the
+  // collapsible animates, and the stack reflows on resize.
+  const alignToRoundel = () => {
+    const stack = document.getElementById('map-controls-br');
+    if (!stack) return;
+    const stackBox = stack.getBoundingClientRect();
+    const pillBox = toggle.getBoundingClientRect();
+    const centre = pillBox.top + pillBox.height / 2 - stackBox.top;
+    flyout.style.top = `${Math.round(centre - flyout.offsetHeight / 2)}px`;
+  };
+
+  const setOpen = (open) => {
+    pill.dataset.state = open ? 'expanded' : 'collapsed';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    flyout.hidden = !open;
+    // After unhiding — offsetHeight is 0 while `hidden`.
+    if (open) alignToRoundel();
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(flyout.hidden);
+  });
+
+  // Outside-click dismiss. `click`, not `pointerdown`, so a step inside the
+  // flyout fires its own handler before this one can close it — the same
+  // reasoning the basemap menu's dismiss carries.
+  document.addEventListener('click', (e) => {
+    if (flyout.hidden) return;
+    if (pill.contains(e.target)) return;
+    setOpen(false);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !flyout.hidden) {
+      setOpen(false);
+      toggle.focus();
+    }
+  });
+
+  // The collapsible strip closing must take the flyout with it — otherwise it
+  // is left floating beside a roundel that is no longer on screen. The strip
+  // dispatches no event (map_controls_collapse.js only writes `data-expanded`
+  // on the stack), so observe that attribute rather than inventing a bridge
+  // for one listener.
+  const stack = document.getElementById('map-controls-br');
+  if (stack && typeof MutationObserver === 'function') {
+    new MutationObserver(() => {
+      if (stack.dataset.expanded !== 'true') setOpen(false);
+    }).observe(stack, { attributes: true, attributeFilter: ['data-expanded'] });
+  }
+
+  // Keep it beside its roundel if the viewport changes while it is open.
+  window.addEventListener('resize', () => {
+    if (!flyout.hidden) alignToRoundel();
+  });
+
+  flyout.addEventListener('click', (e) => {
+    const seg = e.target.closest && e.target.closest('[data-bulletins-step]');
+    if (!seg) return;
+    e.stopPropagation();
+    if (seg.getAttribute('aria-disabled') === 'true') return;
+    const step = Number(seg.dataset.bulletinsStep);
+    // Same recovery the L4 toggle makes: a prior style swap can have dropped
+    // the regions layers, and the choropleth is one of them.
+    if (step > 0 && MAP && !MAP.getLayer('regions-fill')) {
+      document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:bulletins-step', {
+      detail: { step },
+    }));
+  });
 })();

@@ -30,13 +30,11 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
 
 
 def _assert_transparent_fill_is_still_queryable(page: Page) -> None:
-    """Switch Bulletins off, then prove the fill still answers a hit test."""
+    """Set the bulletin fill to its off step, then prove it still hit-tests."""
     page.wait_for_function(
         "() => MAP.queryRenderedFeatures({ layers: ['regions-fill'] }).length > 0"
     )
-    page.evaluate(
-        "() => document.querySelector('[data-overlay-key=\"bulletins\"]').click()"
-    )
+    page.evaluate("() => document.querySelector('[data-bulletins-step=\"0\"]').click()")
     page.wait_for_function(
         "() => MAP.getPaintProperty('regions-fill', 'fill-opacity') === 0"
     )

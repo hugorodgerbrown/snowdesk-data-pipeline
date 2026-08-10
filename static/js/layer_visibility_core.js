@@ -75,24 +75,79 @@
   });
 
   /**
-   * A new state holding a preference and no suppressions.
+   * The five steps the Bulletins control offers, weakest first.
    *
-   * @param {boolean} preference The user's persisted Bulletins choice.
-   * @returns {{preference: boolean, suppressedBy: string[]}} Frozen state.
+   * SNOW-656: this replaced an on/off toggle. The choropleth's right strength
+   * is not a binary — it depends on the basemap under it, on whether the user
+   * is reading danger or reading terrain, and on the display. A toggle forced
+   * that judgement into "all or nothing" and the answer was usually neither.
+   *
+   * Five fixed steps rather than a continuous slider: they are all reachable
+   * with one tap on a 44px target, they are the same on every device, and
+   * they persist as one of five known values rather than an arbitrary float
+   * nobody chose deliberately.
+   *
+   * `0` is the off position — the toggle this replaced, kept as one end of
+   * the range rather than a separate control.
    */
-  function create(preference) {
-    return Object.freeze({ preference: !!preference, suppressedBy: Object.freeze([]) });
+  const STEPS = Object.freeze([0, 0.25, 0.5, 0.75, 1]);
+
+  /** The step a device with no stored preference starts at. */
+  const DEFAULT_STEP = 0.5;
+
+  /**
+   * Snap an arbitrary number to the nearest step.
+   *
+   * Storage and the URL are both places a value can arrive from outside this
+   * module, so nothing downstream should have to trust that it is one of the
+   * five.
+   *
+   * @param {number} value
+   * @returns {number} A member of `STEPS`.
+   */
+  function nearestStep(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_STEP;
+    return STEPS.reduce((best, s) => (Math.abs(s - n) < Math.abs(best - n) ? s : best), STEPS[0]);
   }
 
   /**
-   * Whether the Bulletins layers should be painted right now: the
-   * preference AND-ed with the absence of any suppression.
+   * A new state holding a preference and no suppressions.
    *
-   * @param {{preference: boolean, suppressedBy: string[]}} state
+   * @param {number} preference The user's persisted Bulletins step, 0–1.
+   * @returns {{preference: number, suppressedBy: string[]}} Frozen state.
+   */
+  function create(preference) {
+    return Object.freeze({
+      preference: nearestStep(preference),
+      suppressedBy: Object.freeze([]),
+    });
+  }
+
+  /**
+   * The opacity the choropleth should actually be painted at: the user's
+   * step, or 0 while anything is suppressing it.
+   *
+   * @param {{preference: number, suppressedBy: string[]}} state
+   * @returns {number} 0–1.
+   */
+  function effectiveOpacity(state) {
+    return state.suppressedBy.length === 0 ? state.preference : 0;
+  }
+
+  /**
+   * Whether the Bulletins layers are drawn at all — the step is above zero
+   * and nothing is suppressing it.
+   *
+   * Kept as a named predicate because several callers ask the yes/no question
+   * (should the bulletin-boundary layer be visible, should a scrubbed date
+   * refetch it) and none of them care by how much.
+   *
+   * @param {{preference: number, suppressedBy: string[]}} state
    * @returns {boolean}
    */
   function isEffective(state) {
-    return !!state.preference && state.suppressedBy.length === 0;
+    return effectiveOpacity(state) > 0;
   }
 
   /**
@@ -112,7 +167,7 @@
    * @returns {{preference: boolean, suppressedBy: string[]}} A new state.
    */
   function setPreference(state, next) {
-    return Object.freeze({ preference: !!next, suppressedBy: state.suppressedBy });
+    return Object.freeze({ preference: nearestStep(next), suppressedBy: state.suppressedBy });
   }
 
   /**
@@ -132,10 +187,10 @@
    * @returns {{preference: boolean, suppressedBy: string[]}} A new state.
    */
   function choose(state, next) {
-    const wanted = !!next;
-    return wanted
-      ? unsuppress(setPreference(state, true), SUPPRESSION.DOWNLOADS)
-      : setPreference(state, false);
+    const wanted = nearestStep(next);
+    return wanted > 0
+      ? unsuppress(setPreference(state, wanted), SUPPRESSION.DOWNLOADS)
+      : setPreference(state, 0);
   }
 
   /**
@@ -205,10 +260,10 @@
    * @returns {{visibility: string, opacity: number}} MapLibre layout/paint values.
    */
   function regionsFillLayout(microRegionsOn, state) {
-    const effective = isEffective(state);
+    const opacity = effectiveOpacity(state);
     return {
-      visibility: microRegionsOn || effective ? 'visible' : 'none',
-      opacity: effective ? 1 : 0,
+      visibility: microRegionsOn || opacity > 0 ? 'visible' : 'none',
+      opacity: opacity,
     };
   }
 
@@ -233,19 +288,38 @@
    * @returns {boolean}
    */
   function seedFromLegacy(rawNew, rawLegacy, dflt) {
-    if (rawNew !== null && rawNew !== undefined) return rawNew === 'true';
-    if (rawLegacy !== null && rawLegacy !== undefined) return rawLegacy === 'true';
-    return !!dflt;
+    const fallback = nearestStep(dflt === undefined ? DEFAULT_STEP : dflt);
+    // The new key, which holds one of the five steps as a number. It also had
+    // a short life holding 'true'/'false', while the control was still a
+    // toggle — a device that saw that build has to come back on a step, not
+    // on NaN.
+    if (rawNew !== null && rawNew !== undefined) {
+      if (rawNew === 'true') return fallback;
+      if (rawNew === 'false') return 0;
+      return nearestStep(rawNew);
+    }
+    // The pre-split key, which meant "micro-region boundary AND the bulletin
+    // data painted on it". Off there has to mean off here — a device that had
+    // the tier switched off must not come back with a choropleth it never
+    // asked for.
+    if (rawLegacy !== null && rawLegacy !== undefined) {
+      return rawLegacy === 'false' ? 0 : fallback;
+    }
+    return fallback;
   }
 
   self.pwaLayerVisibilityCore = Object.freeze({
     SUPPRESSION: SUPPRESSION,
+    STEPS: STEPS,
+    DEFAULT_STEP: DEFAULT_STEP,
+    nearestStep: nearestStep,
     create: create,
     choose: choose,
     setPreference: setPreference,
     suppress: suppress,
     unsuppress: unsuppress,
     isEffective: isEffective,
+    effectiveOpacity: effectiveOpacity,
     regionsFillLayout: regionsFillLayout,
     seedFromLegacy: seedFromLegacy,
   });

@@ -306,31 +306,6 @@ Optional context:
                         {% trans "Micro regions" %}
                     </button>
                 </li>
-                {# SNOW-656: the bulletin DATA painted onto the micro-region  #}
-                {# geography — the danger choropleth and the dissolved        #}
-                {# boundary of every region sharing one bulletin — split out  #}
-                {# of the Micro regions row above, which now carries the      #}
-                {# geography alone. Two reasons they are separate rows: the   #}
-                {# borders never interfere with anything and can stay up      #}
-                {# throughout, and the choropleth is mutually exclusive with  #}
-                {# the downloads sheet's "Show areas on the map" (both paint  #}
-                {# the same polygons). Flipping either control visibly flips  #}
-                {# the other — see window.pwaLayerVisibilityCore.             #}
-                {# Persisted under snowdesk.map.overlay.bulletins, seeded     #}
-                {# once from the old .l4 value so a device that had the tier  #}
-                {# switched off comes back with both rows off.                #}
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="bulletins"
-                        aria-checked="true"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Bulletins" %}
-                    </button>
-                </li>
                 {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
                 {# circle pins above the L4 choropleth. Off by default;  #}
                 {# state persists in localStorage under                  #}
@@ -502,6 +477,66 @@ Optional context:
         {# needs a fixed-height box wrapping an auto-height one.                #}
         <div id="map-controls-collapsible">
             <div class="map-controls-collapsible-inner">
+                {# SNOW-656: bulletin-fill strength — a roundel whose flyout     #}
+                {# opens to the LEFT with five opacity steps. It governs the     #}
+                {# danger choropleth (regions-fill) and the dissolved boundary   #}
+                {# of every region sharing one bulletin: the bulletin DATA,      #}
+                {# split from the Micro regions row, which now carries the       #}
+                {# geography alone.                                              #}
+                {#                                                               #}
+                {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth should be #}
+                {# is not a binary — it depends on the basemap under it and on   #}
+                {# whether the reader is after the danger or the terrain. 0 is   #}
+                {# the off position, so this subsumes the toggle it replaces     #}
+                {# rather than sitting beside one. Discrete steps rather than a  #}
+                {# range input because each is then a one-tap 44px target and    #}
+                {# the stored value is one of five known numbers. Persisted      #}
+                {# under snowdesk.map.overlay.bulletins, seeded once from the    #}
+                {# old .l4 value so a device that had the tier switched off      #}
+                {# comes back at 0.                                              #}
+                {#                                                               #}
+                {# Mutually exclusive with the downloads sheet's "Show areas on  #}
+                {# the map" (both paint the same polygons) — moving either       #}
+                {# visibly moves the other. See window.pwaLayerVisibilityCore.   #}
+                {#                                                               #}
+                {# FIRST in the collapsible group, so it sits directly below the #}
+                {# always-visible locate roundel and hides with the strip. A     #}
+                {# flyout rather than inline on the canvas: five 44px targets is #}
+                {# 220px, which does not fit beside the date pill at 375px, and  #}
+                {# a control this size should not be permanently on the map.     #}
+                <div
+                    class="map-utility-pill map-utility-pill--fill"
+                    id="map-fill-pill"
+                    data-state="collapsed"
+                >
+                    <button
+                        id="map-fill-toggle"
+                        type="button"
+                        class="map-utility-button"
+                        aria-label='{% trans "Bulletin fill strength" %}'
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        aria-controls="map-fill-flyout"
+                    >
+                        {# A half-filled square: the control sets how strongly    #}
+                        {# the choropleth paints, and the icon is that idea at    #}
+                        {# rest. Outline plus a half-tone wedge, so it reads at   #}
+                        {# 18px without a label.                                  #}
+                        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect
+                                x="3"
+                                y="3"
+                                width="18"
+                                height="18"
+                                rx="4"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            />
+                            <path d="M3 12h18v5a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z" fill="currentColor" />
+                        </svg>
+                    </button>
+                </div>
                 {# SNOW-522: "Download this area" — a user-framed custom-area    #}
                 {# basemap download, taking the slot the per-region download     #}
                 {# control (_map_download_control.html) vacated when it moved    #}
@@ -607,6 +642,72 @@ Optional context:
         {# so it never moves — the group grows and shrinks upward out of it.   #}
         {# aria-controls/aria-expanded are kept in sync by                     #}
         {# mapControlsCollapseInit, which also persists the choice.            #}
+        {# The flyout. Opens LEFT of the roundel column, the same     #}
+        {# side and offset the basemap menu uses, so every panel      #}
+        {# in this stack appears from the same edge.                  #}
+        {% trans "Bulletins off" as step_label_0 %}
+        {% trans "Bulletins at 25%" as step_label_25 %}
+        {% trans "Bulletins at 50%" as step_label_50 %}
+        {% trans "Bulletins at 75%" as step_label_75 %}
+        {% trans "Bulletins at full strength" as step_label_100 %}
+        <div
+            id="map-fill-flyout"
+            class="map-fill-flyout"
+            role="group"
+            aria-label='{% trans "Bulletin fill strength" %}'
+            hidden
+        >
+            <button
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-label="{{ step_label_0 }}"
+                class="map-fill-step"
+                data-bulletins-step="0"
+            >
+                <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
+            </button>
+            <button
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-label="{{ step_label_25 }}"
+                class="map-fill-step"
+                data-bulletins-step="0.25"
+            >
+                <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
+            </button>
+            <button
+                type="button"
+                role="radio"
+                aria-checked="true"
+                aria-label="{{ step_label_50 }}"
+                class="map-fill-step"
+                data-bulletins-step="0.5"
+            >
+                <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
+            </button>
+            <button
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-label="{{ step_label_75 }}"
+                class="map-fill-step"
+                data-bulletins-step="0.75"
+            >
+                <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
+            </button>
+            <button
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-label="{{ step_label_100 }}"
+                class="map-fill-step"
+                data-bulletins-step="1"
+            >
+                <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
+            </button>
+        </div>
         <button
             type="button"
             id="map-controls-toggle"
@@ -829,53 +930,61 @@ Optional context:
     {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
     {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
     <ul id="map-help-steps" hidden>
-        <li data-help-target="#region-readout" data-help-title='{% trans "Status ribbon" %}'>
-            {% trans "Names the region selected and its danger for the day." %}
+        <li data-help-target="#region-readout" data-help-title='{% trans "Region name" %}'>
+            {% trans "Display the name of the selected region and its risk level on the displayed date." %}
         </li>
         {# SNOW-522: reworded for the ribbon-header position (it briefly lived  #}
         {# in the bottom-right stack under SNOW-521) and moved next to          #}
         {# #region-readout — it now sits between that pill and                 #}
         {# #region-readout-action in the DOM, so walking the tour top-to-       #}
         {# bottom no longer zig-zags top-left → bottom-right → top-left.        #}
-        <li data-help-target="#map-download-control" data-help-title='{% trans "Download this region" %}'>
-            {% trans "Download the focused region's basemap for offline access." %}
+        <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
+            {% trans "Make the selected region available offline." %}
         </li>
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
-            {% trans "Click through to the bulletin detail page." %}
+            {% trans "View the selected region bulletin detail page." %}
         </li>
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
-            {% trans "Search by name to jump straight to a region." %}
+            {% trans "Search regions and resorts by name." %}
         </li>
         {# The bottom-right stack, walked top to bottom in DOM order. #}
-        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Basemap and layers" %}'>
-            {% trans "Switch base maps and toggle country outlines, region overlays and resorts." %}
+        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
+            {% trans "Switch base maps and toggle overlays and map location data." %}
         </li>
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
             {% trans "Centre the map on your current position." %}
         </li>
+        {# SNOW-656: bulletin-fill strength. Sits here because the tour walks    #}
+        {# the bottom-right stack in DOM order and this roundel is the first    #}
+        {# item in the collapsible group, directly under locate. The tour       #}
+        {# force-opens that group while it runs, so the target is on screen     #}
+        {# even for a user who had the strip collapsed.                         #}
+        <li data-help-target="#map-fill-toggle" data-help-title='{% trans "Bulletin display" %}'>
+            {% trans "Control the opacity of the bulletin colour shading." %}
+        </li>
         {# SNOW-522: the new custom-area download — takes the bottom-right      #}
         {# slot the per-region control vacated when it moved to the ribbon      #}
         {# header (the step above).                                            #}
-        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Download a custom area" %}'>
-            {% trans "Draw and download a custom area of the map for offline access." %}
+        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
+            {% trans "View and manage offline regions, download custom areas and manage storage." %}
         </li>
         <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
-            {% trans "Pin a spot to your favourites for quick access later." %}
+            {% trans "Pin a spot to your favourites for easy future access." %}
         </li>
-        <li data-help-target="#report-btn" data-help-title='{% trans "Report conditions" %}'>
-            {% trans "Share a quick field observation with other visitors." %}
+        <li data-help-target="#report-btn" data-help-title='{% trans "Report warning sign" %}'>
+            {% trans "Share a field observation or condition warning." %}
         </li>
         {# The tour explains its own trigger. It was the only control in the   #}
         {# stack with no step, which read as an oversight once every           #}
         {# neighbour had one — and this is where a user who has just been      #}
         {# shown the tour learns how to get back to it.                        #}
         <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Reopen this tour whenever you need it." %}
+            {% trans "Reopen this tour." %}
         </li>
         {# The tour force-opens the collapsible group while it runs, so this   #}
         {# step lands on a toggle whose chevron is pointing "close".           #}
         <li data-help-target="#map-controls-toggle" data-help-title='{% trans "Hide the controls" %}'>
-            {% trans "Collapse the controls to clear the map; your choice is remembered." %}
+            {% trans "Collapse the controls to clear the map." %}
         </li>
         <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
             {% trans "Run through the season day by day." %}

@@ -134,70 +134,73 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
-    <div id="basemap-pill" data-state="collapsed">
-      <button id="basemap-toggle" aria-expanded="false"></button>
-      <ul id="basemap-menu" hidden>
-        <li role="none">
-          <button
-            type="button"
-            class="basemap-menu-item"
-            data-basemap-key="openfreemap_liberty"
-            data-basemap-url="https://tiles.example.invalid/liberty.json"
-            aria-checked="true"
-          >Standard</button>
-        </li>
-        <li role="none">
-          <button class="basemap-menu-item basemap-menu-item--overlay"
-                  data-overlay-key="l4" aria-checked="true">Micro regions</button>
-        </li>
-        <li role="none">
-          <button class="basemap-menu-item basemap-menu-item--overlay"
-                  data-overlay-key="bulletins" aria-checked="true">Bulletins</button>
-        </li>
-      </ul>
+    <div class="map-controls-br" id="map-controls-br" data-expanded="true">
+      <div id="basemap-pill" data-state="collapsed">
+        <button id="basemap-toggle" aria-expanded="false"></button>
+        <ul id="basemap-menu" hidden>
+          <li role="none">
+            <button
+              type="button"
+              class="basemap-menu-item"
+              data-basemap-key="openfreemap_liberty"
+              data-basemap-url="https://tiles.example.invalid/liberty.json"
+              aria-checked="true"
+            >Standard</button>
+          </li>
+          <li role="none">
+            <button class="basemap-menu-item basemap-menu-item--overlay"
+                    data-overlay-key="l4" aria-checked="true">Micro regions</button>
+          </li>
+        </ul>
+      </div>
+      <div id="map-controls-collapsible">
+        <div class="map-controls-collapsible-inner">
+          <div class="map-utility-pill map-utility-pill--fill" id="map-fill-pill" data-state="collapsed">
+            <button id="map-fill-toggle" aria-expanded="false" aria-controls="map-fill-flyout"></button>
+          </div>
+        </div>
+      </div>
+      <div id="map-fill-flyout" class="map-fill-flyout" role="group" hidden>
+        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0"></button>
+        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.25"></button>
+        <button role="radio" aria-checked="true" class="map-fill-step" data-bulletins-step="0.5"></button>
+        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.75"></button>
+        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="1"></button>
+      </div>
     </div>`;
 }
 
-/** The Bulletins row's live checked state, as a user would read it. */
-function rowChecked() {
-  return document
-    .querySelector('#basemap-menu [data-overlay-key="bulletins"]')
-    .getAttribute('aria-checked');
+/** The step the control currently reads, as a user would see it. */
+function checkedStep() {
+  const seg = document.querySelector('[data-bulletins-step][aria-checked="true"]');
+  return seg ? Number(seg.dataset.bulletinsStep) : null;
 }
 
 /** `regions-fill`'s layout + paint, the pair the hit-test depends on. */
 function fillState(map) {
+  const opacity = map.getPaintProperty('regions-fill', 'fill-opacity');
   return {
     visibility: map.getLayoutProperty('regions-fill', 'visibility'),
-    opacity: map.getPaintProperty('regions-fill', 'fill-opacity'),
+    // A `case` expression when painted (resting value last), a flat 0 when not.
+    opacity: Array.isArray(opacity) ? opacity[opacity.length - 1] : opacity,
   };
 }
 
 /**
- * Click a layers-menu row for real, if it isn't already in the wanted state.
+ * Click a step for real, through map_basemap_picker.js's own handler.
  *
- * A genuine `click()` rather than a hand-dispatched CustomEvent:
- * `map_basemap_picker.js` is a bundle member, so its click handler is live
- * here, and routing through it is what makes this an integration test — the
- * picker deciding to delegate rather than flip the layer itself is half of
- * what SNOW-656 changed.
- *
- * @param {string} key A `data-overlay-key` value.
- * @param {boolean} next The state the row should end up in.
+ * A genuine `click()` rather than a hand-dispatched CustomEvent: the picker
+ * is a bundle member, so its handler is live here, and routing through it is
+ * what makes this an integration test.
  */
-function setRow(key, next) {
-  const row = document.querySelector(`#basemap-menu [data-overlay-key="${key}"]`);
+function clickStep(step) {
+  document.querySelector(`[data-bulletins-step="${step}"]`).click();
+}
+
+/** Flip the Micro regions row the way map_basemap_picker.js does. */
+function setMicroRegions(next) {
+  const row = document.querySelector('#basemap-menu [data-overlay-key="l4"]');
   if ((row.getAttribute('aria-checked') === 'true') !== next) row.click();
-}
-
-/** Click the Bulletins row. */
-function clickBulletinsRow(next) {
-  setRow('bulletins', next);
-}
-
-/** Click the Micro regions row. */
-function clickMicroRegionsRow(next) {
-  setRow('l4', next);
 }
 
 let mapStub;
@@ -236,114 +239,134 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  // Every test starts from the default map: both rows on, no overlay.
+  // Every test starts from the default map: Micro regions on, the fill at its
+  // default step, no downloads overlay.
   window.pwaDownloadedOverlay.hide();
-  clickMicroRegionsRow(true);
-  clickBulletinsRow(true);
+  setMicroRegions(true);
+  clickStep(0.5);
 });
 
-describe('the Bulletins row paints regions-fill', () => {
-  it('paints an opaque fill when it is on', () => {
+describe('the step control paints regions-fill', () => {
+  it('paints at the chosen step', () => {
+    clickStep(1);
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 1 });
+
+    clickStep(0.25);
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.25 });
   });
 
-  it('goes transparent, NOT hidden, when it is switched off', () => {
+  it('goes transparent, NOT hidden, at the off step', () => {
     // The regression this file exists for: `visibility: none` here would
     // silently kill region selection, since queryRenderedFeatures returns
     // nothing from a hidden layer but everything from a transparent one.
-    clickBulletinsRow(false);
+    clickStep(0);
 
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
   });
 
-  it('drops the fill entirely only when neither row is on', () => {
-    clickBulletinsRow(false);
-    clickMicroRegionsRow(false);
+  it('drops the fill entirely only when the off step meets Micro regions off', () => {
+    clickStep(0);
+    setMicroRegions(false);
 
     expect(fillState(mapStub)).toEqual({ visibility: 'none', opacity: 0 });
   });
 
-  it('keeps the fill when Micro regions is off but Bulletins is on', () => {
-    clickMicroRegionsRow(false);
+  it('keeps the fill when Micro regions is off but a step is chosen', () => {
+    setMicroRegions(false);
+    clickStep(0.75);
 
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 1 });
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.75 });
   });
 
-  it('persists the preference, not the effective value', () => {
-    clickBulletinsRow(false);
-    expect(localStorage.getItem(BULLETINS_KEY)).toBe('false');
+  it('emphasises a selected region proportionally at every step', () => {
+    // The emphasis used to be a heavier blend weight; with the fill
+    // translucent it is opacity, and it has to scale with the step rather
+    // than sit at a fixed value that could fall below the resting one.
+    clickStep(0.5);
+    const expr = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+    expect(expr[0]).toBe('case');
+    expect(expr[2]).toBeGreaterThan(expr[expr.length - 1]);
+  });
 
-    clickBulletinsRow(true);
-    expect(localStorage.getItem(BULLETINS_KEY)).toBe('true');
+  it('persists the step, not merely on/off', () => {
+    clickStep(0.25);
+    expect(localStorage.getItem(BULLETINS_KEY)).toBe('0.25');
+
+    clickStep(1);
+    expect(localStorage.getItem(BULLETINS_KEY)).toBe('1');
   });
 });
 
 describe('mutual exclusion with "Show areas on the map"', () => {
-  it('switching the overlay ON hides the choropleth and unchecks the row', async () => {
+  it('switching the overlay ON hides the choropleth and drops the control to 0', async () => {
+    clickStep(0.75);
+
     await window.pwaDownloadedOverlay.show();
 
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
-    expect(rowChecked()).toBe('false');
+    expect(checkedStep()).toBe(0);
   });
 
-  it('switching the overlay OFF brings the choropleth back', async () => {
-    await window.pwaDownloadedOverlay.show();
-    window.pwaDownloadedOverlay.hide();
-
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 1 });
-    expect(rowChecked()).toBe('true');
-  });
-
-  it('does NOT switch Bulletins on for a user who had already switched it off', async () => {
-    // The restore case: the overlay comes and goes over a preference that
-    // was already false, and must leave it false.
-    clickBulletinsRow(false);
+  it('switching the overlay OFF restores the exact step', async () => {
+    clickStep(0.75);
 
     await window.pwaDownloadedOverlay.show();
     window.pwaDownloadedOverlay.hide();
 
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
-    expect(rowChecked()).toBe('false');
-    expect(localStorage.getItem(BULLETINS_KEY)).toBe('false');
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.75 });
+    expect(checkedStep()).toBe(0.75);
   });
 
-  it('switching Bulletins on from the layers menu switches the overlay off', async () => {
+  it('does NOT switch Bulletins on for a user who had already chosen 0', async () => {
+    clickStep(0);
+
+    await window.pwaDownloadedOverlay.show();
+    window.pwaDownloadedOverlay.hide();
+
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
+    expect(checkedStep()).toBe(0);
+    expect(localStorage.getItem(BULLETINS_KEY)).toBe('0');
+  });
+
+  it('choosing a step while areas are showing switches the overlay off', async () => {
     await window.pwaDownloadedOverlay.show();
 
-    clickBulletinsRow(true);
+    clickStep(0.5);
 
     expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 1 });
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.5 });
   });
 
-  it('leaves the overlay alone when Bulletins is switched OFF — both may be off', async () => {
+  it('leaves the overlay alone when the OFF step is chosen — both may be off', async () => {
     await window.pwaDownloadedOverlay.show();
 
-    clickBulletinsRow(false);
+    clickStep(0);
 
     expect(window.pwaDownloadedOverlay.isVisible()).toBe(true);
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
   });
 
-  it('broadcasts every change so the sheet\'s own switch can mirror it', async () => {
+  it("broadcasts every change so the sheet's own switch can mirror it", async () => {
     const seen = [];
     const listener = (e) => seen.push(e.detail.visible);
     document.addEventListener('snowdesk:downloaded-overlay-changed', listener);
 
     await window.pwaDownloadedOverlay.show();
-    clickBulletinsRow(true);
+    clickStep(0.5);
     document.removeEventListener('snowdesk:downloaded-overlay-changed', listener);
 
-    // On for the show, off again when the layers menu took the map back.
+    // On for the show, off again when the step control took the map back.
     expect(seen).toEqual([true, false]);
   });
 });
 
 describe('resort-edit mode uses the same suppression', () => {
-  it('suppresses without touching the preference, and stacks with the overlay', async () => {
+  it('suppresses without touching the step, and stacks with the overlay', async () => {
+    clickStep(0.75);
+
     window.pwaBulletinsLayer.setSuppressed('edit-resorts', true);
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
-    expect(localStorage.getItem(BULLETINS_KEY)).toBe('true');
+    expect(localStorage.getItem(BULLETINS_KEY)).toBe('0.75');
 
     // The downloads overlay coming and going must not lift edit mode's
     // suppression — whichever reason clears second is the one that restores.
@@ -352,12 +375,12 @@ describe('resort-edit mode uses the same suppression', () => {
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
 
     window.pwaBulletinsLayer.setSuppressed('edit-resorts', false);
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 1 });
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.75 });
   });
 });
 
-describe('the legacy l4 key seeds the Bulletins preference once', () => {
-  it('brings a device that had the whole tier switched off back with both rows off', async () => {
+describe('the legacy l4 key seeds the step once', () => {
+  it('brings a device that had the whole tier switched off back at 0', async () => {
     // Rebooting the bundle is the only way to exercise a boot-time seed.
     localStorage.clear();
     localStorage.setItem(L4_KEY, 'false');
@@ -370,7 +393,22 @@ describe('the legacy l4 key seeds the Bulletins preference once', () => {
     loadMapBundle();
     for (const handler of mapStub.handlers.load || []) await handler();
 
-    expect(rowChecked()).toBe('false');
+    expect(checkedStep()).toBe(0);
     expect(fillState(mapStub)).toEqual({ visibility: 'none', opacity: 0 });
+  });
+
+  it('starts a fresh device at the default step', async () => {
+    localStorage.clear();
+    buildFixture();
+    mapStub = stubMapLibre();
+    vi.resetModules();
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/search_core.js');
+    await import('../../static/js/choropleth_core.js');
+    loadMapBundle();
+    for (const handler of mapStub.handlers.load || []) await handler();
+
+    expect(checkedStep()).toBe(0.5);
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.5 });
   });
 });

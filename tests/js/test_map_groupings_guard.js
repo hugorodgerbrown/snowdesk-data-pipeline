@@ -146,19 +146,23 @@ async function commitDate(dateKey) {
   await tick(PAST_SETTLE_MS);
 }
 
-/** Toggle the Bulletins row the way the layers menu does. */
-function toggleBulletins(next) {
+/**
+ * Set the bulletin-fill step the way the flyout control does.
+ *
+ * `next` is an opacity step: 0 is the off position, anything above it is on.
+ */
+function setBulletinsStep(next) {
   document.dispatchEvent(
-    new CustomEvent('snowdesk:bulletins-toggle', { detail: { next } }),
+    new CustomEvent('snowdesk:bulletins-step', { detail: { step: next } }),
   );
 }
 
 beforeAll(async () => {
   buildFixture();
   stubMapLibre();
-  // Bulletins starts on, as it does for a user who has never touched the
-  // picker.
-  localStorage.setItem(BULLETINS_STORAGE_KEY, 'true');
+  // Bulletins starts at its default step, as it does for a user who has never
+  // touched the control.
+  localStorage.setItem(BULLETINS_STORAGE_KEY, '0.5');
   vi.stubGlobal(
     'fetch',
     vi.fn(() =>
@@ -192,16 +196,16 @@ beforeEach(() => {
 });
 
 describe('bulletin-groupings refetch on a scrubbed date', () => {
-  it('does not fetch once the picker has toggled Bulletins off', async () => {
-    toggleBulletins(false);
+  it('does not fetch once the fill control is set to the off step', async () => {
+    setBulletinsStep(0);
 
     await commitDate('2026-05-20');
 
     expect(groupingsFetches()).toEqual([]);
   });
 
-  it('still fetches while Bulletins is on', async () => {
-    toggleBulletins(true);
+  it('still fetches at any step above off', async () => {
+    setBulletinsStep(0.5);
     globalThis.fetch.mockClear();
 
     await commitDate('2026-05-19');
@@ -214,7 +218,7 @@ describe('bulletin-groupings refetch on a scrubbed date', () => {
     // suppression, not a toggle. A boundary the user cannot see because the
     // download squares have taken the map is no more worth fetching than one
     // they switched off.
-    toggleBulletins(true);
+    setBulletinsStep(0.5);
     await window.pwaDownloadedOverlay.show();
     globalThis.fetch.mockClear();
 

@@ -449,6 +449,7 @@
     box-shadow: inset 0 0 0 2px var(--color-card);
 }
 
+
 /* Disabled overlay (Micro regions — required, can't be toggled). The
    tick still reads as "on" but the row signals it isn't actionable:
    not-allowed cursor, dimmed text, no hover highlight. */
@@ -806,6 +807,102 @@
    toggle idiom; map.js fills the text and toggles [hidden]. */
 .map-date-ribbon[hidden] {
     display: none;
+}
+
+/* SNOW-656: the bulletin-fill flyout — five opacity steps, opening to the
+   LEFT of the bottom-right roundel column from #map-fill-toggle.
+
+   Left, at right:48px, is the same side and offset .basemap-menu uses, so
+   every panel in this stack appears from the same edge.
+
+   It is a child of .map-controls-br, NOT of the roundel it belongs to. The
+   roundel sits inside #map-controls-collapsible, which is `overflow: hidden`
+   for its height animation — and that clips both axes, so a panel extending
+   left out of that box would simply be cut off. Anchoring to the stack keeps
+   it out of the clip; mapFillControlInit sets `top` from the roundel's own
+   offset on open, so it still lines up with the control that opened it.
+
+   Five 44px targets is 220px, which is why this is a flyout at all: it does
+   not fit inline on the canvas at 375px, and a control this size has no
+   business being permanently on the map. */
+.map-fill-flyout {
+    position: absolute;
+    right: 48px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    z-index: 5;
+}
+
+.map-fill-flyout[hidden] {
+    display: none;
+}
+
+.map-fill-step {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    /* Rounded square, not a circle: everything inside this control — the
+       swatches and the selection ring — is a rounded square, and a circular
+       hover blob around them read as a different family of shape. */
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.map-fill-step:hover {
+    background: var(--color-bg);
+}
+
+.map-fill-step:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -3px;
+}
+
+/* The swatch IS the preview: each step paints the same colour at the opacity
+   that step applies, so the control shows what it does rather than naming it.
+   A percentage label would need translating in five places to say what the
+   ramp says on its own — and every button carries an accessible name for
+   anyone who can't see it. */
+.map-fill-step-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1px solid var(--color-border);
+    background: var(--color-text-1);
+}
+
+.map-fill-step-swatch[data-step="0"] { background: transparent; }
+.map-fill-step-swatch[data-step="0.25"] { opacity: 0.25; }
+.map-fill-step-swatch[data-step="0.5"] { opacity: 0.5; }
+.map-fill-step-swatch[data-step="0.75"] { opacity: 0.75; }
+.map-fill-step-swatch[data-step="1"] { opacity: 1; }
+
+/* The selected step.
+   The ring hangs off the SWATCH, not the 44px button. On the button it was a
+   heavy circle at the full target size, which both fought the rounded-square
+   swatch inside it and sat flush against the pill's own edge — reading as if
+   the selection had broken out of the ribbon.
+   Two box-shadow rings, both taking the swatch's own border-radius so they
+   are concentric with it: a card-coloured gap, then a hairline in the muted
+   text tone rather than full black. 27px overall inside a 44px target leaves
+   8.5px of clear space on every side, so it stays visibly within the pill
+   while the tap target is untouched. */
+.map-fill-step[aria-checked="true"] .map-fill-step-swatch {
+    box-shadow:
+        0 0 0 3px var(--color-card),
+        0 0 0 4.5px var(--color-text-2);
 }
 
 .map-date-ribbon {

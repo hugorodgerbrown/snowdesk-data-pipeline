@@ -14,6 +14,7 @@ own integration tests in ``test_map_api.py``.
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.conf import settings
@@ -135,28 +136,84 @@ def test_map_page_renders_micro_regions_overlay_toggle() -> None:
 
 
 @pytest.mark.django_db
-def test_map_page_renders_bulletins_overlay_toggle() -> None:
+def test_map_page_renders_bulletin_fill_control() -> None:
     """
     SNOW-656: the danger choropleth and the dissolved bulletin boundary are
-    their own overlay row, split out of Micro regions so the borders can stay
-    up while the infill yields to the downloaded-areas overlay.
+    governed by a five-step opacity control, not the Micro regions row.
 
-    Default is ``aria-checked="true"`` — the choropleth is still visible on
-    first paint — and it renders immediately after the Micro regions row, so
-    the two halves of the old single tier read as a pair.
+    It is a roundel in the bottom-right stack whose flyout opens to the left.
+    The five steps are 0 / 0.25 / 0.5 / 0.75 / 1 — 0 being the off position,
+    so the control subsumes the toggle it replaced — and 0.5 is pre-checked,
+    matching ``layer_visibility_core``'s DEFAULT_STEP for a device with
+    nothing stored.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    assert 'data-overlay-key="bulletins"' in content
-    bulletins_idx = content.index('data-overlay-key="bulletins"')
-    button_close_idx = content.index("</button>", bulletins_idx)
-    button_scope = content[bulletins_idx:button_close_idx]
-    assert 'aria-checked="true"' in button_scope
-    assert "Bulletins" in button_scope
+    assert 'id="map-fill-toggle"' in content
+    assert 'id="map-fill-flyout"' in content
 
-    assert content.index('data-overlay-key="l4"') < bulletins_idx
+    for step in ("0", "0.25", "0.5", "0.75", "1"):
+        assert f'data-bulletins-step="{step}"' in content, step
+
+    # Exactly one step is pre-checked, and it is the default one. Each step is
+    # a <button …>, so scoping to the tag that carries the step attribute is
+    # what tells the checked one from its four siblings.
+    buttons = re.findall(r"<button[^>]*data-bulletins-step=\"[\d.]+\"[^>]*>", content)
+    assert len(buttons) == 5, buttons
+    checked = [b for b in buttons if 'aria-checked="true"' in b]
+    assert len(checked) == 1, checked
+    assert 'data-bulletins-step="0.5"' in checked[0]
+
+
+@pytest.mark.django_db
+def test_bulletin_fill_control_is_inside_the_collapsible_group() -> None:
+    """
+    SNOW-656: the roundel sits in ``#map-controls-collapsible``, so it hides
+    with the strip — and it is the FIRST item there, directly below the
+    always-visible locate roundel.
+
+    The flyout itself is deliberately OUTSIDE that wrapper: the wrapper is
+    ``overflow: hidden`` for its height animation, which clips both axes, so
+    a panel opening leftward out of it would be cut off.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    collapsible_idx = content.index('id="map-controls-collapsible"')
+    inner_end_idx = content.index('id="map-fill-flyout"')
+    roundel_idx = content.index('id="map-fill-toggle"')
+    locate_idx = content.index('id="locate-toggle"')
+
+    assert locate_idx < collapsible_idx < roundel_idx, (
+        "the fill roundel must follow locate, inside the collapsible group"
+    )
+    assert roundel_idx < inner_end_idx, "the flyout must come after the roundel"
+
+    # The flyout is a sibling of the collapsible wrapper, not a descendant:
+    # everything between the roundel and the flyout closes the wrapper.
+    between = content[roundel_idx:inner_end_idx]
+    assert between.count("</div>") >= 3, (
+        "the flyout appears to still be inside #map-controls-collapsible, "
+        "where overflow:hidden would clip it"
+    )
+
+
+@pytest.mark.django_db
+def test_bulletin_fill_control_is_in_the_help_tour() -> None:
+    """SNOW-656: the control carries a coachmark step, between locate and the
+    custom-area download — the roundel's own position in the stack.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    steps = re.findall(r'data-help-target="([^"]+)"', content)
+    assert "#map-fill-toggle" in steps
+    assert steps.index("#locate-toggle") < steps.index("#map-fill-toggle")
+    assert steps.index("#map-fill-toggle") < steps.index("#map-custom-download-control")
 
 
 @pytest.mark.django_db
@@ -455,25 +512,29 @@ def test_map_layer_menu_section_order() -> None:
 @pytest.mark.django_db
 def test_map_layer_menu_renders_sync_status_dots() -> None:
     """
-    SNOW-505: each always-rendered overlay row (l1/l2/l4/bulletins/resorts)
-    carries a server-rendered ``.sync-dot`` starting at
-    ``data-sync-state="unknown"`` — ``map_layer_sync_status.js`` resolves it
-    to cached/uncached the first time the popover opens.
+    SNOW-505: each always-rendered overlay row (l1/l2/l4/resorts) carries
+    a server-rendered ``.sync-dot`` starting at ``data-sync-state="unknown"``
+    — ``map_layer_sync_status.js`` resolves it to cached/uncached the first
+    time the popover opens.
 
     SNOW-521 dropped the L3 (bulletin groupings) overlay row entirely.
-    SNOW-656 added the Bulletins row, whose dot reports the ratings feed
-    rather than the region geometry the l4 row already answers for.
+    SNOW-656 briefly added a Bulletins row and then removed it again: the
+    bulletin-fill control is a roundel on the map, not a row in this menu, so
+    it has no dot here. Its feed (``/api/ratings/``) is one of the four a
+    country load fetches, so a country missing it already shows red on its
+    own row.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    for key in ("l1", "l2", "l4", "bulletins", "resorts"):
+    for key in ("l1", "l2", "l4", "resorts"):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_close_idx = content.index("</button>", key_idx)
         button_scope = content[key_idx:button_close_idx]
         assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
     assert 'data-overlay-key="l3"' not in content
+    assert 'data-overlay-key="bulletins"' not in content
 
 
 @pytest.mark.django_db

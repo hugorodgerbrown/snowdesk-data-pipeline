@@ -851,14 +851,13 @@ custom-area roundel to switch it off again. A fresh page load always
 starts it off — `OVERLAY_STORAGE_KEY.downloaded` (`static/js/map_state.js`)
 is documented dead rather than revived.
 
-**And it is mutually exclusive with the Bulletins layer (SNOW-656).** The
+**And it is mutually exclusive with the bulletin fill (SNOW-656).** The
 squares are translucent and are drawn over the same polygons the danger
-choropleth fills opaquely, so the two together are unreadable. Turning "Show
-areas on the map" on therefore switches the layers menu's **Bulletins** row
-off, and turning it off returns that row to whatever the user's stored
-preference was; switching Bulletins back on from the layers menu switches the
-squares off. The two controls visibly mirror each other, so the colour never
-just goes missing. `show()`/`hide()` are the single choke point — they are
+choropleth fills, so the two together are unreadable. Turning "Show areas on
+the map" on therefore drops the bulletin-fill control (`#map-fill-toggle`'s
+flyout) to its 0 step, and turning it off restores the exact step the user had;
+choosing any step above 0 switches the squares off. The two controls visibly
+mirror each other, so the colour never just goes missing. `show()`/`hide()` are the single choke point — they are
 already the only writers of this overlay's visibility, so every caller
 inherits the lockstep — and the binding is deliberately to THAT visibility
 rather than to the sheet's open/closed lifecycle, for exactly the reason the
@@ -1474,13 +1473,20 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
 
-**It now drives the map overlay too (SNOW-645, reworked twice more).**
-Opening the sheet calls `window.pwaDownloadedOverlay.show()`. Closing the
-sheet does NOT call `.hide()` — a `[data-downloads-overlay-toggle]` switch
-(see "The overlay switch" below) is the only thing that does. `render()`
-sets it from `window.pwaDownloadedOverlay.isVisible()` on every open, so a
-freshly opened sheet always shows it already on — see "No longer a
-layers-menu toggle" above for why closing no longer implies off.
+**It drives the map overlay through its switch, and only through its switch
+(SNOW-645, reworked twice more; SNOW-656).** Opening the sheet used to call
+`window.pwaDownloadedOverlay.show()` unconditionally, so the overlay appeared
+the moment the sheet did. SNOW-656 removed that: the squares and the danger
+choropleth are now mutually exclusive, so the auto-show meant merely OPENING
+this sheet took the choropleth off the map and unchecked the layers menu's
+Bulletins row — an implicit action undoing an explicit one, in exchange for
+discoverability. The overlay now starts off and waits to be asked.
+
+Closing the sheet does NOT call `.hide()` either — the
+`#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is
+the only thing that does. `render()` sets it from
+`window.pwaDownloadedOverlay.isVisible()` on every open, so the sheet always
+reflects the overlay's real state rather than one it just imposed.
 
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:
@@ -1579,12 +1585,12 @@ reading as a view control for the map BEHIND the sheet rather than a fact
 about what is stored, which is also why it leads the sheet ahead of the
 list it governs.
 
-It is no longer the only writer of that state (SNOW-656): switching the
-layers menu's **Bulletins** row on switches this off, since the two are
-mutually exclusive. `map_downloads_manager.js` therefore listens for
+It is no longer the only writer of that state (SNOW-656): choosing any
+bulletin-fill step above 0 switches this off, since the two are mutually
+exclusive. `map_downloads_manager.js` therefore listens for
 `snowdesk:downloaded-overlay-changed` and sets the checkbox from it —
 `render()`'s read-back of `isVisible()` on every open covers a sheet being
-opened, but not one already open behind the layers menu.
+opened, but not one already open behind another control.
 
 **A real bug shipped in this control's first cut, found by Hugo clicking
 it in a live browser (not by `render_to_string`, which cannot show a
