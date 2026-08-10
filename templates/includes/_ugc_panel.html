@@ -119,7 +119,19 @@ state should not have to remember to bring its own.
         <p class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
         {% if header_template %}{% include header_template %}{% endif %}
     </div>
-    <div class="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto">
+    {# `-mx-1.5 px-1.5` is the row label's clipping fix (SNOW-658), not     #}
+    {# spacing: it moves 6px of this box from its content edge to its      #}
+    {# padding, so what renders is unchanged. A scroll container clips at  #}
+    {# its PADDING box, and declaring `overflow-y` computes `overflow-x`   #}
+    {# to `auto` as well — so the row label's own -6px bleed (see          #}
+    {# includes/_ugc_panel_row.html, where the bleed puts the label's TEXT #}
+    {# on the row's left edge rather than 6px in) fell outside this box    #}
+    {# and had its left border, its hover fill and 6px of its first letter #}
+    {# cut off. Measured in Chromium: the label's box started at x=11 in a #}
+    {# scroll box whose content began at x=17. Hugo: "The favourites name  #}
+    {# element is cut off at the left". The design it came from had no     #}
+    {# scroll container, which is why it worked there.                     #}
+    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
         {# The section label belongs to the list it heads, so the two sit   #}
         {# in one tight group rather than 18px apart at the scroll region's #}
         {# own rhythm. Downloads passes no `section_label`: it has two      #}

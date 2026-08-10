@@ -310,6 +310,52 @@ class TestUgcPanelSkeleton:
         body = _panel_body(home_html, template_id)
         assert body.count("data-panel-add") == 1
 
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_scroll_region_allows_the_row_labels_bleed(
+        self, home_html: str, template_id: str
+    ) -> None:
+        """The scroll region carries the padding a row label bleeds into.
+
+        includes/_ugc_panel_row.html pulls the label (and the rename
+        editor) 6px left of the row, so the label's TEXT lands on the row's
+        own left edge rather than 6px inside it. A scroll container clips
+        at its PADDING box, and declaring ``overflow-y`` computes
+        ``overflow-x`` to ``auto`` as well — so with no padding here, that
+        6px fell outside the box and was cut off: measured in Chromium, the
+        label's box started at x=11 in a scroll box whose content began at
+        x=17. Hugo: "The favourites name element is cut off at the left."
+
+        The fix is 6px of padding on this box, pulled back by an equal
+        negative margin so nothing MOVES — the bleed simply lands inside
+        the clip. Both halves are asserted: padding alone would shift every
+        row right, and the margin alone would shift the panel left.
+        """
+        body = _panel_body(home_html, template_id)
+        scroll = [c for c in _class_strings(body) if "overflow-y-auto" in c]
+        assert len(scroll) == 1, scroll
+        assert "px-1.5" in scroll[0]
+        assert "-mx-1.5" in scroll[0]
+
+    def test_row_label_and_its_editor_share_one_box(self, home_html: str) -> None:
+        """Committing a rename must not make the row jump.
+
+        The label and the hidden editor beside it are meant to be the same
+        box: same padding, same radius, same bleed. ``w-full`` on the
+        editor broke that on the right — width:100% PLUS the -6px margins
+        left it 12px narrower than the label (measured in Chromium: label
+        11-373, editor 11-361) — so it is gone, and the two now differ only
+        in the border colour that says one of them is editable.
+        """
+        row = render_to_string(
+            "includes/_ugc_panel_row.html",
+            {"label": "Verbier", "renameable": True, "rename_label": "Name"},
+        )
+        classes = [c for c in _class_strings(row) if "-mx-1.5" in c]
+        assert len(classes) == 2, classes
+        for shared in ("-mx-1.5", "px-1.5", "py-0.5", "rounded-pill", "text-label"):
+            assert all(shared in c for c in classes), shared
+        assert not any("w-full" in c for c in classes)
+
     def test_every_panel_title_is_the_same_size(self, home_html: str) -> None:
         """One title size across the three, not one per panel.
 

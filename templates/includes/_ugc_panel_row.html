@@ -130,6 +130,12 @@ Parameters (passed via {% include … with … %}):
             {# Hidden until inline_rename.js reveals it. Rendered here      #}
             {# rather than created in JS so its own copy (the aria-label)   #}
             {# passes through a template, where makemessages can see it.    #}
+            {#                                                              #}
+            {# No `w-full`: as a stretched flex child this box already      #}
+            {# fills the line, and `width: 100%` PLUS the -6px margins made #}
+            {# it 12px narrower than the label on the right — the two are   #}
+            {# meant to be the same box (measured in Chromium: label        #}
+            {# 11–373, editor 11–361).                                      #}
             <input
                 type="text"
                 data-row-rename-input
@@ -137,7 +143,7 @@ Parameters (passed via {% include … with … %}):
                 value="{{ label }}"
                 maxlength="100"
                 aria-label="{{ rename_label }}"
-                class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
+                class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
             >
         {% endif %}
         {% if meta or js_filled %}
