@@ -19,7 +19,7 @@
  * while the roundel opened a DIFFERENT surface directly (the "Download a
  * custom area" framing overlay); SNOW-634 collapsed the two — that menu
  * row is gone, and "Download a custom area" moved INTO this sheet instead,
- * as the ``[data-downloads-add]`` trigger handled below.
+ * as the ``[data-panel-add]`` trigger handled below.
  *
  * ## What it reads and writes
  *
@@ -112,7 +112,7 @@
  * Everything this sheet does to what is ALREADY stored — listing, sizing,
  * renaming, deleting — works offline, and must: storage pressure is felt
  * exactly when there is no connection to relieve it. Starting a NEW
- * download is the one thing that cannot, so ``[data-downloads-add]`` is
+ * download is the one thing that cannot, so ``[data-panel-add]`` is
  * disabled and relabelled while ``navigator.onLine`` is false, keeping the
  * control visible rather than hiding it (the treatment
  * map_layer_sync_status.js established for uncached rows offline).
@@ -167,7 +167,7 @@
  *                                Mirroring its three DOM writes here would
  *                                be a duplicate free to drift.
  *   window.pwaCustomAreaDownload SNOW-634's third bridge: ``openFraming()``,
- *                                called by ``[data-downloads-add]`` below
+ *                                called by ``[data-panel-add]`` below
  *                                once this sheet has hidden itself. Optional
  *                                — without it the trigger is a dead click,
  *                                which is no worse than the sheet failing
@@ -225,7 +225,7 @@
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
     'remove-failed': "That download couldn't be removed. Try again.",
-    // SNOW-634: [data-downloads-add]'s offline refusal.
+    // SNOW-634: [data-panel-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
     // SNOW-637: the same refusal as the disabled trigger's own label — the
     // toast above is phrased as a reply to a tap, which reads wrong on a
@@ -553,7 +553,7 @@
     // offline branch needs writing for the same reason: the next render
     // starts from a pristine clone, so coming back online restores the
     // enabled control and its original label without an else.
-    const addButton = sheet.querySelector('[data-downloads-add]');
+    const addButton = sheet.querySelector('[data-panel-add]');
     if (addButton && !navigator.onLine) {
       addButton.setAttribute('disabled', '');
       // Alongside the native property, not instead of it: `disabled` is
@@ -812,7 +812,7 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    const addButton = target.closest('[data-downloads-add]');
+    const addButton = target.closest('[data-panel-add]');
     if (addButton) {
       if (!navigator.onLine) {
         window.MapSheet.toast(STRINGS['add-offline']);

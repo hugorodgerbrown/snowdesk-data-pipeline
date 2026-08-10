@@ -1393,6 +1393,82 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# UGC panel + row (SNOW-658) ---------------------------------------------------
+# The skeleton and row shape shared by the three map panels that manage a
+# user's own data — downloads, favourites, field observations. Extracted
+# from the "Manage downloads" sheet, which is the reference design; the
+# other two conform to it.
+#
+# `rows_template` takes a template PATH because Django has no slot
+# mechanism (see includes/_ugc_panel.html's own header). The library hands
+# it a demo template rendering two static rows — every real caller's list
+# either loads over HTMX or is filled by JS, and this page runs neither.
+
+UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Favourites panel (no header extra)",
+        "context": {
+            "title": "Favourites",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            "cta_label": "Add a favourite",
+            "toggle_id": "component-library-ugc-panel-toggle-favourites",
+            "toggle_label": "Show favourites on the map",
+        },
+    },
+    {
+        "caption": "Downloads panel (budget block in the header slot)",
+        "context": {
+            "title": "Downloads on this device",
+            "header_template": "public/partials/_map_downloads_header.html",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            "cta_label": "Download a custom area",
+            "toggle_id": "component-library-ugc-panel-toggle-downloads",
+            "toggle_label": "Show areas on the map",
+        },
+    },
+)
+
+
+UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Plain row — primary line, secondary line, menu",
+        "context": {
+            "label": "Arolla ridge",
+            "subtitle": "Val d'Hérens",
+            "trigger_id": "component-library-ugc-row-plain-trigger",
+            "menu_id": "component-library-ugc-row-plain-menu",
+            "trigger_label": "More actions for Arolla ridge",
+            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+        },
+    },
+    {
+        "caption": "Linked row — the primary line navigates (a GET is a link)",
+        "context": {
+            "label": "Cabane des Dix",
+            "subtitle": "Val des Dix",
+            "label_href": "/favourites/",
+            "trigger_id": "component-library-ugc-row-linked-trigger",
+            "menu_id": "component-library-ugc-row-linked-menu",
+            "trigger_label": "More actions for Cabane des Dix",
+            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+        },
+    },
+    {
+        "caption": "Downloads row — colour rule and trailing size",
+        "context": {
+            "label": "Verbier",
+            "subtitle": "Snowdesk Terrain",
+            "meta": "18.2 MB",
+            "rule": True,
+            "trigger_id": "component-library-ugc-row-download-trigger",
+            "menu_id": "component-library-ugc-row-download-menu",
+            "trigger_label": "More actions for Verbier",
+            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+        },
+    },
+)
+
+
 TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Error (HTMX banner shape) — no CTA, not dismissible",

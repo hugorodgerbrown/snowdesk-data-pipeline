@@ -413,7 +413,7 @@ Optional context:
                 {# sheet (public/partials/_map_custom_download_control.html #}
                 {# — its behaviour, not its glyph, changed), and "Download  #}
                 {# a custom area" moved INTO the sheet as its own action    #}
-                {# ([data-downloads-add], _map_downloads_sheet.html) rather #}
+                {# ([data-panel-add], _map_downloads_sheet.html) rather      #}
                 {# than the roundel's own click. This row is therefore      #}
                 {# gone — the roundel is the way in now, matching every     #}
                 {# other roundel-opens-its-own-surface pattern on the map   #}
@@ -1191,7 +1191,7 @@ Optional context:
         </div>
     {% endif %}
     {# SNOW-522: framing overlay for "Download a custom area" — reached      #}
-    {# (SNOW-634) via [data-downloads-add] inside the downloads sheet        #}
+    {# (SNOW-634) via [data-panel-add] inside the downloads sheet            #}
     {# (public/partials/_map_downloads_sheet.html), not directly from        #}
     {# #map-custom-download-control any more — that roundel opens the sheet  #}
     {# itself now. A Google-Maps-style dim mask with a fixed, centred frame  #}

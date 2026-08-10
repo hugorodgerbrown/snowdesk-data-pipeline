@@ -67,6 +67,8 @@ from apps.public._component_fixtures import (
     TENDENCY_OUTLOOK_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
+    UGC_PANEL_ROW_VARIANTS,
+    UGC_PANEL_VARIANTS,
     WEATHER_HEADER_VARIANTS,
     WEATHER_PANEL_VARIANTS,
 )
@@ -1188,6 +1190,40 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_map_overlay_toggle.html",
         variants=MAP_OVERLAY_TOGGLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel",
+        label="UGC panel",
+        description=(
+            "The skeleton shared by the three map panels that manage a "
+            "user's own data (SNOW-658) — downloads, favourites, field "
+            "observations. Sheet header at one size, a scrolling rows "
+            "region, a bordered add-CTA and the map-overlay switch at the "
+            "foot, all at the 18px rhythm. Extracted from the Manage "
+            "downloads sheet, which is the reference design; the other two "
+            "conform to it. The rows region takes a template path, since "
+            "Django has no slot mechanism."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel.html",
+        variants=UGC_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel-row",
+        label="UGC panel row",
+        description=(
+            "One row inside a UGC panel's list (SNOW-658): a primary line, "
+            "a muted secondary line, an optional trailing figure, and the "
+            "'…' overflow menu that holds every state-changing action "
+            "(Rename, Remove). A row that navigates makes its primary line "
+            "the link — a GET is a link, never a menu button faking one. "
+            "Serves both a server-side loop and a JS-cloned <template>."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel_row.html",
+        variants=UGC_PANEL_ROW_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

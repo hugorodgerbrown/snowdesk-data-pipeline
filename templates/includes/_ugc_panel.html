@@ -1,0 +1,115 @@
+{% load i18n components %}
+{% comment %}
+templates/includes/_ugc_panel.html — the shared skeleton for the three
+map panels that manage a user's own data (SNOW-658).
+
+Downloads, favourites and field observations all answer the same
+question — "what have I got here, and how do I add to it or get rid of
+one?" — and all three sit on the same map behind the same kind of
+roundel. Until this partial they shared exactly one element (the
+"Show X on the map" switch) and diverged at every other point of
+contact: three sheet-scroll models, two title sizes, three body
+wrappers, three row shapes. Hugo, opening all three side by side:
+"they serve the same function… and yet they are all different."
+
+The "Manage downloads" sheet is the reference — it came from Hugo's own
+mock (see the SNOW-645/SNOW-635 notes in
+public/partials/_map_downloads_sheet.html), so its skeleton is what got
+extracted here and the other two conform to it, not the reverse.
+
+What the skeleton owns, top to bottom:
+
+  * the outer flex column at the 18px (`gap-4.5`) rhythm, with
+    `min-h-0 flex-1` so it fills — and is allowed to SHRINK inside —
+    the bounded box includes/_overlay_sheet.html's `scroll_body=True`
+    renders. `min-h-0` is load-bearing: a flex child defaults to
+    `min-height: auto` ("never shrink below my content"), and without
+    the override the list refuses to scroll and pushes the CTA and the
+    switch off-screen instead;
+  * includes/_sheet_header.html at ONE size for all three panels
+    (`text-lg font-semibold`) — fixed here rather than exposed as a
+    parameter, because a per-caller title size is precisely the drift
+    this partial exists to end;
+  * the scroll region — the only part that scrolls, so the header above
+    and the CTA/switch below stay pinned;
+  * the bordered "add one more" CTA;
+  * includes/_map_overlay_toggle.html at the foot, so the map BEHIND
+    the sheet is the last thing read rather than the first.
+
+Composition. Django has no slot mechanism, and the three shapes we need
+to vary (a rows region, an optional header extra) are markup, not
+strings. Of the three ways to do this — a caller-side wrapper that
+duplicates the chrome, a custom templatetag, or a template PATH passed
+in and `{% include %}`d — only the third leaves no class string
+duplicated across the three call sites and adds no new mechanism to the
+codebase: includes/_collapsible_panel.html's `body_template` already
+does exactly this, for exactly this reason. So each caller owns a small
+rows template and passes its path.
+
+The CTA's hook is `data-panel-add`, one name for all three panels,
+replacing `data-downloads-add` / `data-favourites-add` /
+`data-report-add`. Three names for one control is the same divergence
+this partial exists to remove, in attribute form. Each owning module
+binds its listener on its OWN sheet element (map_downloads_manager.js,
+favourites.js, report.js all delegate on the sheet, because the body is
+re-cloned on every open), so one shared hook is unambiguous — there is
+never more than one panel body in a given sheet.
+
+Parameters (passed via {% include … with … %}):
+  title           (string) — the sheet header's title. Required.
+  rows_template   (string) — template path rendered inside the scroll
+                  region. Owns the panel's list and, for a panel whose
+                  rows load over HTMX, the container they land in.
+                  Required.
+  header_template (string, optional) — template path rendered inside
+                  the title block, directly under the sheet header, so
+                  the pair reads as one unit at its own tighter rhythm
+                  rather than at the outer `gap-4.5`. Downloads' budget
+                  bar is the only user: it is the one legitimate
+                  per-panel extra, since neither of the other two costs
+                  the device anything to hold.
+  cta_label       (string) — the add-CTA's visible, translated label.
+                  Required.
+  toggle_id       (string) — DOM id for the overlay switch. Required.
+  toggle_label    (string) — the switch's visible, translated label.
+                  Required.
+
+The CTA carries `disabled:` utilities unconditionally. Only downloads
+ever sets `disabled` on it today (SNOW-637: starting a download needs a
+connection), but the styling of a disabled control is chrome, and
+chrome is this partial's job — a panel that later grows a disabled
+state should not have to remember to bring its own.
+{% endcomment %}
+<div class="flex min-h-0 flex-1 flex-col gap-4.5">
+    <div>
+        {% include "includes/_sheet_header.html" with title=title close_action="dismiss" title_class="text-lg font-semibold" %}
+        {% if header_template %}{% include header_template %}{% endif %}
+    </div>
+    <div class="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto">
+        {% include rows_template %}
+    </div>
+    <div class="border-t border-border pt-3">
+        <button
+            type="button"
+            data-panel-add
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50'
+        >
+            {# A stroked SVG plus, not a literal "+" glyph — the same        #}
+            {# stroke-based idiom every other icon in this design uses.      #}
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+            >
+                <path d="M12 5v14M5 12h14" />
+            </svg>
+            {{ cta_label }}
+        </button>
+    </div>
+    {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=toggle_label %}
+</div>

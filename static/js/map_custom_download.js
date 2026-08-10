@@ -82,7 +82,7 @@
 // several custom areas possibly on disk, picking one to jump to would be
 // arbitrary, so framing always starts from wherever the map currently
 // sits. The "Download a custom area" trigger lives in the sheet
-// ([data-downloads-add], map_downloads_manager.js), not the roundel's own
+// ([data-panel-add], map_downloads_manager.js), not the roundel's own
 // click.
 //
 // SNOW-586 gave a confirmed run TWO distinct evictions it might trigger:

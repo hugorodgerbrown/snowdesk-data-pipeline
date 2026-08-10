@@ -1,0 +1,20 @@
+{% comment %}
+public/partials/_ugc_panel_demo_rows.html — the component library's
+stand-in for a real panel's `rows_template` (SNOW-658).
+
+includes/_ugc_panel.html takes its list as a template PATH (Django has no
+slot mechanism — see that partial's own header for why this is the shape
+chosen), so the library needs a path to hand it. Every real caller's rows
+template either loads its rows over HTMX or is filled by JS, and neither
+paints anything on a page that runs no JS and makes no requests; this one
+renders two static rows instead, so the panel's scroll region is not an
+empty box in the library.
+
+Mirrors public/partials/_season_calendar_demo.html and
+public/partials/_status_page_demo.html — a demo-only template living
+beside the real ones, never included from a real surface.
+{% endcomment %}
+<ul class="flex flex-col">
+    {% include "includes/_ugc_panel_row.html" with label="Verbier" subtitle="Snowdesk Terrain" meta="18.2 MB" trigger_id="component-library-ugc-panel-row-1-trigger" menu_id="component-library-ugc-panel-row-1-menu" trigger_label="More actions for Verbier" menu_items_template="includes/_map_downloads_row_menu_items.html" %}
+    {% include "includes/_ugc_panel_row.html" with label="Arolla ridge" subtitle="Val d'Hérens" trigger_id="component-library-ugc-panel-row-2-trigger" menu_id="component-library-ugc-panel-row-2-menu" trigger_label="More actions for Arolla ridge" menu_items_template="includes/_map_downloads_row_menu_items.html" %}
+</ul>

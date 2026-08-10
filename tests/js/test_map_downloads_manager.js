@@ -108,7 +108,7 @@ function buildFixture() {
           <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
         </div>
         <div>
-          <button type="button" data-downloads-add>Download a custom area</button>
+          <button type="button" data-panel-add>Download a custom area</button>
         </div>
         <div>
           <label for="map-downloads-overlay-toggle">Show areas on the map</label>
@@ -829,7 +829,7 @@ describe('the budget readout', () => {
 
 describe('the add-trigger', () => {
   // SNOW-634: "Download a custom area" moved from the roundel's own click
-  // into this sheet, as [data-downloads-add] above the list.
+  // into this sheet, as [data-panel-add] above the list.
 
   it('hides the sheet and opens framing when online', async () => {
     seed({});
@@ -837,7 +837,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
@@ -854,7 +854,7 @@ describe('the add-trigger', () => {
     await settle();
     setOnline(false);
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
@@ -874,7 +874,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(true);
     expect(add.getAttribute('aria-disabled')).toBe('true');
     expect(add.textContent).toBe('Downloading needs a connection');
@@ -886,7 +886,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(false);
     expect(add.hasAttribute('aria-disabled')).toBe(false);
     expect(add.textContent).toBe('Download a custom area');
@@ -899,7 +899,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
@@ -912,7 +912,7 @@ describe('the add-trigger', () => {
     openSheet();
     await settle();
     expect(
-      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+      document.querySelector('[data-panel-add]').hasAttribute('disabled'),
     ).toBe(false);
 
     setOnline(false);
@@ -922,7 +922,7 @@ describe('the add-trigger', () => {
     await settle();
 
     expect(
-      document.querySelector('[data-downloads-add]').hasAttribute('disabled'),
+      document.querySelector('[data-panel-add]').hasAttribute('disabled'),
     ).toBe(true);
   });
 
@@ -939,7 +939,7 @@ describe('the add-trigger', () => {
     );
     await settle();
 
-    const add = document.querySelector('[data-downloads-add]');
+    const add = document.querySelector('[data-panel-add]');
     expect(add.hasAttribute('disabled')).toBe(false);
     expect(add.textContent).toBe('Download a custom area');
   });
@@ -971,7 +971,7 @@ describe('the add-trigger', () => {
     await settle();
     delete window.pwaCustomAreaDownload;
 
-    document.querySelector('[data-downloads-add]').click();
+    document.querySelector('[data-panel-add]').click();
     await settle();
 
     // Optional chaining swallows the missing bridge; the sheet still

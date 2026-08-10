@@ -22,7 +22,7 @@ buried in a menu about map layers.
 SNOW-634 collapses them: clicking this roundel now opens the downloads
 sheet (public/partials/_map_downloads_sheet.html) — the layers-menu row
 is gone, this IS the way in — and "Download a custom area" is an action
-inside that sheet ([data-downloads-add]) rather than the roundel's own
+inside that sheet ([data-panel-add]) rather than the roundel's own
 click. The roundel is therefore reduced to two states (data-download-
 state: idle | done), driven by static/js/map.js's
 mapCustomDownloadControlInit's `_renderControl`: "done" means the DEVICE

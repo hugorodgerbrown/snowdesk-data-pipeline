@@ -1,0 +1,79 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_downloads_header.html — the "Manage downloads"
+panel's header extra: the budget control, the running total and its
+segmented bar, plus the over-budget warning (SNOW-645 review; lifted out
+of _map_downloads_sheet.html verbatim by SNOW-658).
+
+includes/_ugc_panel.html's `header_template` slot — it renders inside
+that partial's title block, directly under the sheet header, so the pair
+reads as one unit. This is the one legitimate per-panel extra: neither
+favourites nor field observations cost the device anything to hold, so
+neither has a budget to state.
+
+The bar/track/select hooks (data-downloads-bar/-track/-budget/-summary)
+are unchanged; map_downloads_manager.js's render() populates them exactly
+as it always has.
+
+The budget <select>'s options are NOT rendered here — they are built by
+map_downloads_manager.js from pwaBasemapManageCore.BUDGET_CHOICES_MB, so
+the offered sizes live in one place (next to the floor that pins them to
+DOWNLOAD_CEILING_MB) instead of being duplicated into markup that could
+drift from it. Their labels are pure numerals plus "MB", so nothing
+translatable is lost by generating them.
+
+SNOW-645 review sizing, reconciled against the design and unchanged by
+the extraction: the `-mt-0.5` (-2px) below trims _sheet_header.html's
+shared `pb-3` (12px) to the design's own 10px net gap; the bar is 8px
+tall on a `bg-chip` track; the <select> is mono on `bg-tag` at
+`rounded-tag`.
+{% endcomment %}
+<div class="-mt-0.5 flex flex-col gap-2.5">
+    <div class="flex items-center gap-2">
+        <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip" aria-hidden="true">
+            <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
+        </div>
+        {# The bar is decorative (aria-hidden, above) — the same figure is  #}
+        {# stated in words here, so a screen reader gets the number rather  #}
+        {# than a percentage role. The used figure is two spans: the        #}
+        {# number+unit in mono/medium/text-1 (data-downloads-summary-value, #}
+        {# set by render() directly — core.formatMegabytes() is a           #}
+        {# locale-invariant numeral, not translatable text), then a plain   #}
+        {# " of" in text-2, a STATIC translated node since "of" alone never #}
+        {# changes and needs no JS to populate it.                          #}
+        <p data-downloads-summary class="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-xs">
+            <span data-downloads-summary-value class="font-mono font-medium text-text-1"></span>
+            <span class="text-text-2">{% trans "of" %}</span>
+        </p>
+        <select
+            id="map-downloads-budget"
+            data-downloads-budget
+            class="shrink-0 rounded-tag border border-border bg-tag px-1.5 py-0.75 font-mono text-xs text-text-1 focus:outline-none"
+        >
+        </select>
+    </div>
+    <p class="text-xs text-text-3">
+        {% trans "Downloads and budget stay on this device." %}
+    </p>
+    {# Shown only when stored downloads exceed the budget — reachable by    #}
+    {# lowering the budget below what is already held, which is allowed     #}
+    {# deliberately: the alternative is refusing a setting on a device that #}
+    {# has run out of room. Nothing is evicted here; the next download is   #}
+    {# what reconciles it (SNOW-586), so the copy says what will happen     #}
+    {# rather than warning about what has.                                  #}
+    {#                                                                      #}
+    {# SNOW-658: this was a sibling of the header block, one step out at    #}
+    {# includes/_ugc_panel.html's own `gap-4.5` rhythm. Inside the header   #}
+    {# block now, with an explicit `mt-4.5` reproducing that same 18px —    #}
+    {# identical rendering (the element is `hidden` by default, and         #}
+    {# `display: none` contributes neither a flex gap nor a margin), and it #}
+    {# saves the shared panel a second optional slot for one caller's one   #}
+    {# paragraph.                                                           #}
+    <p
+        data-downloads-over
+        hidden
+        class="mt-4.5 rounded-tag bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text"
+    >
+        {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
+    </p>
+</div>

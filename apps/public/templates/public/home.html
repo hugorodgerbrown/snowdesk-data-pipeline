@@ -97,6 +97,13 @@ in addition to the shared map assets.
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# SNOW-658: the "…" row overflow menu. Loaded from the downloads sheet #}
+    {# alone until every UGC panel's rows grew one (they share              #}
+    {# includes/_ugc_panel_row.html now) — hoisted here so all three        #}
+    {# surfaces below get it once, the same reason htmx/place_picker/       #}
+    {# map_sheet are loaded here. The module is delegated and              #}
+    {# instance-agnostic, so one copy drives every row on the page.        #}
+    <script defer src="{% static 'js/overflow_menu.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}
