@@ -1475,7 +1475,8 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``favourites_eligible``, ``favourites_geojson_url``,
-        ``favourite_create_url``, ``favourite_rename_url_template``,
+        ``favourite_create_url``, ``favourite_list_url``,
+        ``favourite_rename_url_template``,
         ``favourite_delete_url_template``, and ``favourites_signin_url``.
 
     """
@@ -1488,6 +1489,9 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourites_eligible": favourites_eligible,
         "favourites_geojson_url": reverse("favourites:geojson"),
         "favourite_create_url": reverse("favourites:create"),
+        # SNOW-658: the roundel opens a panel listing the user's own pins
+        # before it offers to add one, so the panel needs the list endpoint.
+        "favourite_list_url": reverse("favourites:list"),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

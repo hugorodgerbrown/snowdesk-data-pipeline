@@ -1,4 +1,4 @@
-{% load i18n static %}
+{% load i18n static components %}
 {% comment %}
 public/partials/_favourites_surface.html — Favourite-pin sheet + JS (SNOW-414).
 
@@ -32,6 +32,53 @@ Context expected:
 {# same shape as #report-sheet so the two surfaces read as one family. #}
 {% trans "Favourite" as favourite_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label %}
+{# SNOW-658: the panel the roundel now opens — the user's saved pins, a     #}
+{# CTA to add another, and the map-overlay switch that used to be a row in  #}
+{# the layers menu. Cloned by favourites.js on every open (so a stale row   #}
+{# can never survive a re-open), which then loads the rows themselves over  #}
+{# HTMX from favourites:list — the SAME endpoint and the same partials the  #}
+{# manage page uses, so each row arrives with its rename/delete wiring       #}
+{# already attached and this file needs no copy of it.                       #}
+{#                                                                           #}
+{# Adding a pin is an action INSIDE the panel now ([data-favourites-add]),   #}
+{# not the roundel's own click — the shape SNOW-634 set for downloads, and   #}
+{# the reason the roundel's aria-label says "manage" rather than "add".      #}
+{#                                                                           #}
+{# The rows container starts with a loading line rather than empty: the      #}
+{# request can fail (this panel is reachable offline, its list is not), and  #}
+{# an empty container would read as "you have no favourites" — a wrong       #}
+{# statement about the user's own data. favourites.js swaps in a distinct    #}
+{# error line on htmx:responseError / htmx:sendError for that target.        #}
+<template id="favourite-list-template">
+    <div class="flex flex-col gap-3 px-2 py-4">
+        {% trans "Favourites" as favourite_list_title %}
+        {% include "includes/_sheet_header.html" with title=favourite_list_title close_action="dismiss" %}
+        <div data-favourites-rows class="flex flex-col gap-2">
+            <p class="text-sm text-text-2">{% trans "Loading your favourites…" %}</p>
+        </div>
+        <button
+            type="button"
+            data-favourites-add
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex items-center justify-center gap-1.5'
+        >
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+            >
+                <path d="M12 5v14M5 12h14" />
+            </svg>
+            {% trans "Add a favourite" %}
+        </button>
+        {% trans "Show favourites on the map" as favourites_overlay_toggle_label %}
+        {% include "includes/_map_overlay_toggle.html" with id="map-favourites-overlay-toggle" label=favourites_overlay_toggle_label %}
+    </div>
+</template>
 {# Create-form template — cloned by favourites.js once a pin has been  #}
 {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}
 {# submit is intercepted by favourites.js and routed through the client #}
@@ -119,11 +166,19 @@ Context expected:
 {# it. Read back via window.pwaStrings.read(); the module keeps the English  #}
 {# literal as the fallback. See static/js/i18n_strings.js.                   #}
 <template id="favourites-strings-template">
-    <span data-string="sheet-title">{% trans "Favourite" %}</span>
-    <span data-string="close">{% trans "Close" %}</span>
+    {# SNOW-658: "sheet-title" / "close" lived here for favourites.js's own    #}
+    {# DOM-built sheet header. Every state the module renders now clones a     #}
+    {# template that includes the real includes/_sheet_header.html, so both    #}
+    {# strings went with that copy.                                            #}
     <span data-string="signin-prompt">{% trans "Sign in to save a favourite." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
     <span data-string="unnamed-pin">{% trans "Unnamed pin" %}</span>
     <span data-string="name-label">{% trans "Favourite name" %}</span>
     <span data-string="remove">{% trans "Remove" %}</span>
+    {# SNOW-658: the panel's own failure line. Distinct from the empty state  #}
+    {# favourites:list renders ("You have no saved favourites yet.") on       #}
+    {# purpose: this panel opens offline, its list does not load offline, and #}
+    {# telling a user they have no pins when the request merely failed is a   #}
+    {# wrong statement about their own data.                                  #}
+    <span data-string="list-failed">{% trans "Your favourites couldn't be loaded — check your connection." %}</span>
 </template>

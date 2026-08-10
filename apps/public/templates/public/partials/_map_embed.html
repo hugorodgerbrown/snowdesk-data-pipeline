@@ -545,22 +545,28 @@ Optional context:
                 {# sibling above), so the group's height never changes under the  #}
                 {# user. See public/partials/_map_custom_download_control.html.   #}
                 {% include "public/partials/_map_custom_download_control.html" %}
-                {# SNOW-414: "Add favourite" control — rendered regardless of           #}
+                {# SNOW-414: "Favourites" control — rendered regardless of              #}
                 {# authentication state, so anonymous visitors see the affordance and  #}
                 {# get a sign-in CTA on tap (favourites.js branches on                 #}
                 {# data-favourites-eligible, mirroring #report-btn's                   #}
                 {# data-report-eligible anon branch).                                  #}
+                {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
+                {# favourite" CTA, and the "Show favourites on the map" switch that     #}
+                {# used to be a layers-menu row — rather than jumping straight into     #}
+                {# pin placement. The id is unchanged (favourites.js binds it by id,    #}
+                {# and map_help.js targets it), but the label is: it manages now.       #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
                         type="button"
                         class="map-utility-button"
                         data-favourite-create-url="{{ favourite_create_url }}"
+                        data-favourite-list-url="{{ favourite_list_url }}"
                         data-favourite-rename-url-template="{{ favourite_rename_url_template }}"
                         data-favourite-delete-url-template="{{ favourite_delete_url_template }}"
                         data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
                         data-signin-url="{{ favourites_signin_url }}"
-                        aria-label='{% trans "Add a favourite pin" %}'
+                        aria-label='{% trans "Your favourites" %}'
                     >
                         <svg
                             width="18"
@@ -968,11 +974,15 @@ Optional context:
         <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
             {% trans "View and manage offline regions, download custom areas and manage storage." %}
         </li>
-        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Add a favourite" %}'>
-            {% trans "Pin a spot to your favourites for easy future access." %}
+        {# SNOW-658: both roundels open a panel that LISTS what the user has    #}
+        {# already saved before offering to add another, and each panel owns    #}
+        {# the map-overlay switch that used to be a layers-menu row — so both   #}
+        {# steps describe managing, not only adding.                            #}
+        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Your favourites" %}'>
+            {% trans "See your saved pins, add another, and show or hide them on the map." %}
         </li>
-        <li data-help-target="#report-btn" data-help-title='{% trans "Report warning sign" %}'>
-            {% trans "Share a field observation or condition warning." %}
+        <li data-help-target="#report-btn" data-help-title='{% trans "Field observations" %}'>
+            {% trans "See your reports, share a new field observation, and show or hide the community's on the map." %}
         </li>
         {# The tour explains its own trigger. It was the only control in the   #}
         {# stack with no step, which read as an oversight once every           #}

@@ -11,15 +11,26 @@
  *   data-favourite-rename-url-template="<url>"   — __UUID__-templated rename endpoint.
  *   data-favourite-delete-url-template="<url>"   — __UUID__-templated delete endpoint.
  *
+ * SNOW-658: the roundel opens a PANEL, not the create form. The panel
+ * (#favourite-list-template, in _favourites_surface.html) lists the user's
+ * own pins — loaded over HTMX from favourites:list, the same endpoint and
+ * partials the manage page uses, so each row arrives with its own
+ * rename/delete wiring — offers [data-favourites-add] to place another, and
+ * carries the "Show favourites on the map" switch that used to be a row in
+ * the layers menu (it drives window.pwaFavouritesOverlay in map.js). This
+ * follows SNOW-634's downloads pattern: user-generated data gets its own
+ * roundel, its own panel, and its panel owns the overlay switch.
+ *
  * Flow when eligible (authenticated), using the shared place-picker
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
  * which on touch screens is occluded by the dragging finger:
- *   1. Tap #favourite-add-btn — opens the sheet, shows the create form
- *      immediately (cloned from #favourite-create-template, which carries a
- *      real {% csrf_token %} rendered server-side — there is no per-request
- *      form-load endpoint here, unlike report_form_url), seeded from the
- *      map's current centre, and arms PlacePicker.activate() so the fixed
- *      centre pin appears and the form's coords track every pan.
+ *   1. Tap #favourite-add-btn — opens the sheet on the list panel; tap
+ *      [data-favourites-add] inside it to show the create form (cloned from
+ *      #favourite-create-template, which carries a real {% csrf_token %}
+ *      rendered server-side — there is no per-request form-load endpoint
+ *      here, unlike report_form_url), seeded from the map's current centre,
+ *      and arm PlacePicker.activate() so the fixed centre pin appears and
+ *      the form's coords track every pan.
  *   2. writeCreateCoords (PlacePicker's onChange) keeps the form's hidden
  *      lat/lon inputs in sync with the map centre.
  *   3. Save is intercepted (SNOW-479) and routed through
@@ -50,8 +61,11 @@
  *   hx-post/hx-target/hx-swap wiring with no further JS involved.
  *
  * Flow when not eligible (anonymous):
- *   Tap opens the sheet with a sign-in / sign-up CTA pointing at the
- *   sign-in page (data-signin-url) — no map interaction is armed.
+ *   Tap opens the panel with a sign-in / sign-up CTA pointing at the
+ *   sign-in page (data-signin-url) in place of the list and the add CTA —
+ *   no map interaction is armed. The overlay switch stays: it is a view
+ *   control for a layer that simply has nothing in it yet, and a control
+ *   that vanishes reads as a bug (SNOW-658).
  */
 
 (function () {
@@ -61,6 +75,9 @@
   const sheet = document.getElementById('favourite-sheet');
   const createTemplate = document.getElementById('favourite-create-template');
   if (!btn || !sheet || !createTemplate) return;
+  // SNOW-658: the panel body. Optional on purpose — a surface that renders
+  // the create template but not this one still gets the create flow.
+  const listTemplate = document.getElementById('favourite-list-template');
 
   // SNOW-620: server-translated copy, read back from the template
   // _favourites_surface.html renders. This module builds its whole sheet in
@@ -68,18 +85,19 @@
   // could not see them. The literals are the English fallback — see
   // static/js/i18n_strings.js.
   const STRINGS = self.pwaStrings.read('favourites-strings-template', {
-    // Mirrors includes/_sheet_header.html, which this module reimplements
-    // in JS rather than clones.
-    close: 'Close',
-    'sheet-title': 'Favourite',
+    // SNOW-658: 'close' and 'sheet-title' went with buildSheetHeader — every
+    // state this module renders now clones a template that includes the real
+    // includes/_sheet_header.html.
     'signin-prompt': 'Sign in to save a favourite.',
     'signin-cta': 'Sign in',
     'unnamed-pin': 'Unnamed pin',
     'name-label': 'Favourite name',
     remove: 'Remove',
+    'list-failed': "Your favourites couldn't be loaded — check your connection.",
   });
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
+  const LIST_URL = btn.dataset.favouriteListUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.favouriteRenameUrlTemplate;
   const DELETE_URL_TEMPLATE = btn.dataset.favouriteDeleteUrlTemplate;
   const SIGNIN_URL = btn.dataset.signinUrl;
@@ -140,28 +158,11 @@
     if (controller.isOpen()) closeSheet();
   });
 
-  /** Build a sheet-header row (title + persistent × close button), mirroring
-   * templates/includes/_sheet_header.html for states built via DOM APIs
-   * rather than server-rendered markup (pin-detail, anonymous sign-in CTA).
-   * @param {string} titleText
-   * @returns {HTMLDivElement}
-   */
-  function buildSheetHeader(titleText) {
-    const header = document.createElement('div');
-    header.className = 'flex items-center justify-between px-2 pt-1 pb-3';
-    const title = document.createElement('span');
-    title.className = 'text-sm font-semibold text-text-1';
-    title.textContent = titleText;
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('data-action', 'dismiss');
-    closeBtn.setAttribute('aria-label', STRINGS.close);
-    closeBtn.className = 'text-text-2 hover:text-text-1 text-lg leading-none px-1';
-    closeBtn.textContent = '×';
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-    return header;
-  }
+  // SNOW-658: ``buildSheetHeader`` lived here — a DOM-API reimplementation of
+  // templates/includes/_sheet_header.html for the one state that had no
+  // server-rendered markup, the anonymous sign-in CTA. That state is now
+  // rendered inside #favourite-list-template, which includes the real partial,
+  // so the copy has no callers and the two can no longer drift.
 
   // ---------------------------------------------------------------------------
   // Create flow — show the create form and arm the place-picker (SNOW-475).
@@ -197,43 +198,86 @@
     // itself, so the form is still reachable from the keyboard.
   }
 
-  btn.addEventListener('click', function () {
-    // Anonymous users: open the sheet with a sign-in CTA; no map interaction.
-    if (!IS_ELIGIBLE) {
-      openSheet();
-      // Build the sign-in CTA with createElement (matching buildDetailRow)
-      // rather than innerHTML string concatenation — the same DOM-not-markup
-      // discipline the rest of this module uses for anything URL/name-bearing.
-      sheet.replaceChildren();
-      sheet.appendChild(buildSheetHeader(STRINGS['sheet-title']));
-      if (SIGNIN_URL) {
-        const wrap = document.createElement('div');
-        wrap.className = 'px-2 py-4';
-        const p = document.createElement('p');
-        p.className = 'text-sm text-text-2 mb-3';
-        p.textContent = STRINGS['signin-prompt'];
-        const a = document.createElement('a');
-        a.setAttribute('href', SIGNIN_URL);
-        a.className =
-          'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
-        a.textContent = STRINGS['signin-cta'];
-        wrap.appendChild(p);
-        wrap.appendChild(a);
-        sheet.appendChild(wrap);
-      } else {
-        const p = document.createElement('p');
-        p.className = 'px-2 py-4 text-sm text-text-2';
-        p.textContent = STRINGS['signin-prompt'];
-        sheet.appendChild(p);
-      }
-      return;
+  /** Build the anonymous sign-in CTA — a prompt plus a link to the sign-in
+   * page. Built with createElement (matching buildDetailRow) rather than
+   * innerHTML string concatenation: the same DOM-not-markup discipline the
+   * rest of this module uses for anything URL/name-bearing.
+   * @returns {HTMLDivElement}
+   */
+  function buildSigninCta() {
+    const wrap = document.createElement('div');
+    const p = document.createElement('p');
+    p.className = 'text-sm text-text-2 mb-3';
+    p.textContent = STRINGS['signin-prompt'];
+    wrap.appendChild(p);
+    if (SIGNIN_URL) {
+      const a = document.createElement('a');
+      a.setAttribute('href', SIGNIN_URL);
+      a.className =
+        'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
+      a.textContent = STRINGS['signin-cta'];
+      wrap.appendChild(a);
     }
+    return wrap;
+  }
 
+  // ---------------------------------------------------------------------------
+  // The panel (SNOW-658) — the sheet's default body: the user's own pins, a
+  // CTA to add another, and the map-overlay switch that used to be a layers-
+  // menu row.
+  //
+  // Re-cloned from the template on every open rather than updated in place,
+  // mirroring map_downloads_manager.js's render(): a stale row can then never
+  // survive a re-open. That is exactly why every listener below is delegated
+  // on the SHEET — a per-element listener would have to be rebound each time.
+  // ---------------------------------------------------------------------------
+
+  /** Clone #favourite-list-template into the sheet and populate it.
+   *
+   * Eligible: the rows load over HTMX from favourites:list. Anonymous: the
+   * rows and the add CTA are removed and a sign-in CTA takes their place —
+   * but the overlay switch stays, because it is a view control for the map
+   * behind the sheet, not a row in a list the visitor doesn't have.
+   *
+   * @returns {boolean} Whether the panel was rendered — false when the
+   *   surface carries no list template, so the caller can fall back.
+   */
+  function showListPanel() {
+    if (!listTemplate) return false;
+    sheet.replaceChildren();
+    sheet.appendChild(listTemplate.content.cloneNode(true));
+
+    // Reflect the overlay's REAL state rather than a flag of this module's
+    // own, the way map_downloads_manager.js's render() reads isVisible().
+    const toggle = sheet.querySelector('#map-favourites-overlay-toggle');
+    if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isVisible?.();
+
+    const rows = sheet.querySelector('[data-favourites-rows]');
+    if (!IS_ELIGIBLE) {
+      const addButton = sheet.querySelector('[data-favourites-add]');
+      if (addButton) addButton.remove();
+      if (rows) rows.replaceChildren(buildSigninCta());
+      return true;
+    }
+    if (rows && LIST_URL && typeof htmx !== 'undefined') {
+      htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
+    }
+    return true;
+  }
+
+  btn.addEventListener('click', function () {
+    openSheet();
+    if (showListPanel()) return;
+    // No list template on this surface — the create flow is still reachable.
+    if (IS_ELIGIBLE) startCreateFlow();
+  });
+
+  /** Show the create form seeded from the map centre and arm the place-picker.
+   * @returns {void}
+   */
+  function startCreateFlow() {
     const map = getMap();
     if (!map) return;
-
-    openSheet();
-
     // SNOW-475: show the create form immediately, seeded from the map's
     // current centre, then arm the shared place-picker so the fixed centre
     // pin appears and writeCreateCoords tracks every pan.
@@ -246,7 +290,54 @@
       onChange: writeCreateCoords,
       occludedBy: sheet,
     });
+  }
+
+  // SNOW-658: "Add a favourite" — what the roundel itself used to do.
+  // Delegated on the sheet so it survives the body being re-cloned.
+  //
+  // stopPropagation is load-bearing, not caution. MapSheet's click-outside
+  // dismissal asks ``sheet.contains(event.target)`` from a DOCUMENT listener,
+  // which runs after this one — and by then this handler has replaced the
+  // sheet's body, so the button that was clicked is detached and no longer
+  // "inside" anything. The sheet would close itself the instant the create
+  // form appeared, with nothing on screen to explain it.
+  sheet.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (!target.closest('[data-favourites-add]')) return;
+    event.stopPropagation();
+    if (!IS_ELIGIBLE) return;
+    startCreateFlow();
   });
+
+  // SNOW-658: the overlay switch drives window.pwaFavouritesOverlay directly —
+  // show()/hide() are the only writers of that overlay's visibility, and
+  // showListPanel() reads isVisible() back, so the two can never drift. No
+  // re-render: nothing else in the panel depends on this state.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches) return;
+    if (!target.matches('#map-favourites-overlay-toggle')) return;
+    if (target.checked) window.pwaFavouritesOverlay?.show();
+    else window.pwaFavouritesOverlay?.hide();
+  });
+
+  // SNOW-658: the list is fetched, and this panel opens offline while its
+  // list does not load offline. Say so, rather than leaving the loading line
+  // up forever — and never fall through to favourites:list's own empty state,
+  // which would tell the user they have no pins when the request merely
+  // failed. Both htmx failure events are covered: responseError is a non-2xx
+  // reply, sendError is no reply at all (the offline case).
+  for (const name of ['htmx:responseError', 'htmx:sendError']) {
+    document.addEventListener(name, function (event) {
+      const rows = sheet.querySelector('[data-favourites-rows]');
+      if (!rows || !event.detail || event.detail.target !== rows) return;
+      const p = document.createElement('p');
+      p.className = 'text-sm text-text-2';
+      p.textContent = STRINGS['list-failed'];
+      rows.replaceChildren(p);
+    });
+  }
 
   // ---------------------------------------------------------------------------
   // Pin-detail flow — rename / delete an existing favourite.
