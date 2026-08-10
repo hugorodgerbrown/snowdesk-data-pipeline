@@ -42,17 +42,17 @@ from __future__ import annotations
 
 import posthog
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 
 @pytest.fixture(autouse=True)
-def _force_sync_weather_fetch(settings: SettingsWrapper) -> None:
+def _force_sync_weather_fetch(settings: Settings) -> None:
     """Force synchronous weather fetch in tests by default (SNOW-164)."""
     settings.WEATHER_FETCH_ASYNC = False
 
 
 @pytest.fixture(autouse=True)
-def _disable_posthog(settings: SettingsWrapper) -> None:
+def _disable_posthog(settings: Settings) -> None:
     """Guarantee no test run reaches PostHog over the network (SNOW-548).
 
     Pins both halves of the analytics configuration rather than trusting

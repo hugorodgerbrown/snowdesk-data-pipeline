@@ -19,7 +19,7 @@ from django.conf import settings
 from django.core import mail
 from django.core.mail import EmailMultiAlternatives
 from django.test import RequestFactory
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.accounts.services.email import (
     send_account_access_email,
@@ -39,7 +39,7 @@ class TestSendAccountAccessEmail:
     """Tests for send_account_access_email."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Switch to the locmem backend so outbox works."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -123,7 +123,7 @@ class TestSendSubscriptionConfirmationEmail:
     """Tests for send_subscription_confirmation_email."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Switch to the locmem backend so outbox is available."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -232,7 +232,7 @@ class TestEmailServiceLogging:
     """SNOW-311: email worker functions log masked email, never the plaintext address."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Switch to the locmem backend so outbox is populated inline."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 

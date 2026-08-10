@@ -70,7 +70,7 @@ lint = [
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
     # docs/coding-standards.md §6.5.
-    "ruff==0.16.1",
+    "ruff==0.16.2",
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [

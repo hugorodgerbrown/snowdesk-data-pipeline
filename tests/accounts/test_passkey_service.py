@@ -24,7 +24,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.accounts.models import Account, PasskeyCredential
 from apps.accounts.services.passkey import (
@@ -119,7 +119,7 @@ class TestGenerateRegistrationOptions:
         generate_registration_options(user, session)
         assert "webauthn_reg_challenge" in session
 
-    def test_rp_id_matches_settings(self, settings: SettingsWrapper) -> None:
+    def test_rp_id_matches_settings(self, settings: Settings) -> None:
         settings.WEBAUTHN_RP_ID = "test.example.com"
         user = UserFactory.create()
         session: Any = {}

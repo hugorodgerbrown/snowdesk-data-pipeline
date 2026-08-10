@@ -24,7 +24,7 @@ from django.core import mail
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.accounts.models import Account
 from apps.accounts.services.token import (
@@ -37,7 +37,7 @@ _MAX_AGE = 86400
 
 
 @pytest.fixture(autouse=True)
-def _locmem_email(settings: SettingsWrapper) -> None:
+def _locmem_email(settings: Settings) -> None:
     """Use the locmem email backend so mail.outbox is populated inline."""
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 

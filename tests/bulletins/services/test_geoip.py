@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from django.conf import settings as django_settings
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.bulletins.services import geoip as geoip_module
 from apps.bulletins.services.geoip import (
@@ -109,7 +109,7 @@ class TestGeoLookup:
         assert geo_lookup("999.999.999.999") is None
 
     def test_missing_mmdb_returns_none(
-        self, settings: SettingsWrapper, tmp_path: Path
+        self, settings: Settings, tmp_path: Path
     ) -> None:
         """When GEOIP_PATH points to a non-existent file, return None."""
         settings.GEOIP_PATH = tmp_path / "nonexistent.mmdb"
@@ -117,7 +117,7 @@ class TestGeoLookup:
         result = geo_lookup("8.8.8.8")
         assert result is None
 
-    def test_geoip_path_none_returns_none(self, settings: SettingsWrapper) -> None:
+    def test_geoip_path_none_returns_none(self, settings: Settings) -> None:
         """When GEOIP_PATH is None/unset, return None gracefully."""
         settings.GEOIP_PATH = None
         reset_reader_for_testing()
@@ -133,9 +133,7 @@ class TestGeoLookup:
         if result1 is not None and result2 is not None:
             assert result1.country == result2.country
 
-    def test_reset_reader_for_testing_clears_cache(
-        self, settings: SettingsWrapper
-    ) -> None:
+    def test_reset_reader_for_testing_clears_cache(self, settings: Settings) -> None:
         """reset_reader_for_testing() allows a fresh reader to be opened."""
         # First call populates the cache.
         geo_lookup("8.8.8.8")
