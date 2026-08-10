@@ -1247,6 +1247,24 @@ class TestFavouriteCardProblems:
 # ---------------------------------------------------------------------------
 
 
+def _row_meta(html: str) -> str:
+    """Return the text of the first row's muted meta line.
+
+    The map row renders it as the shared row partial's
+    ``[data-row-meta]`` span (includes/_ugc_panel_row.html).
+
+    Args:
+        html: A rendered favourites list.
+
+    Returns:
+        The span's text content.
+
+    """
+    match = re.search(r"<span data-row-meta[^>]*>([^<]*)</span>", html)
+    assert match is not None, "no [data-row-meta] in the rendered list"
+    return match.group(1).strip()
+
+
 @pytest.mark.django_db
 class TestFavouriteList:
     """favourite_list — owner-scoped favourites list (SNOW-415)."""
@@ -1377,11 +1395,12 @@ class TestFavouriteList:
 
         response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
 
-        content = response.content.decode()
-        assert "Saved 3 Feb 2026" in content
-        # The coordinates are gone entirely, not merely demoted.
-        assert f"{favourite.latitude:.4f}" not in content
-        assert f"{favourite.longitude:.4f}" not in content
+        assert _row_meta(response.content.decode()) == "Saved 3 Feb 2026"
+        # The coordinates are gone entirely, not merely demoted. Asserted
+        # against the row's own meta line rather than the whole body: the
+        # roster sidecar this list still carries for offline reads
+        # (SNOW-418) is JSON, and legitimately holds the coordinates.
+        assert f"{favourite.latitude:.4f}" not in _row_meta(response.content.decode())
 
     def test_map_variant_meta_line_prefixes_the_region(self, client: Client) -> None:
         """A pin that matched a region reads "<region> · saved <date>".
@@ -1398,7 +1417,7 @@ class TestFavouriteList:
 
         response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
 
-        assert "Alpstein · saved 3 Feb 2026" in response.content.decode()
+        assert _row_meta(response.content.decode()) == "Alpstein · saved 3 Feb 2026"
 
     def test_map_variant_label_is_not_a_rename_trigger(self, client: Client) -> None:
         """The label carries no click affordance — the pencil is the trigger.
