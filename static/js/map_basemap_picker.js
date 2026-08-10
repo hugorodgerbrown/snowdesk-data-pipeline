@@ -179,12 +179,13 @@
     // never was one.
     l4: ['regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
-    favourites: ['favourites-pin', 'favourites-label'],
-    community_reports: [
-      'community-reports-clusters',
-      'community-reports-cluster-count',
-      'community-reports-point',
-    ],
+    // SNOW-658: the 'favourites' and 'community_reports' entries went with
+    // their menu rows. Both overlays are switched from the panel their own
+    // roundel opens now, through window.pwaFavouritesOverlay /
+    // window.pwaCommunityReportsOverlay — bridges INSIDE map.js's main IIFE,
+    // which is why they need nothing here at all: the visibility loop below
+    // exists only to let this separate IIFE reach layers it cannot otherwise
+    // touch.
     // SNOW-645: the 'downloaded' entry that lived here (cached-tiles-fill/
     // -line) went with the layers-menu row — the overlay is now bound to
     // the "Manage downloads" sheet being open, not a togglable layer (see
@@ -239,15 +240,11 @@
           return;
         }
 
-        // SNOW-414: notify telemetry when the favourites overlay is flipped.
-        if (overlayKey === 'favourites') {
-          window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: next });
-        }
-        // SNOW-419: notify telemetry when the community-reports overlay is
-        // flipped.
-        if (overlayKey === 'community_reports') {
-          window.pwaTelemetry?.emit('map.community_reports.overlay_toggled', { visible: next });
-        }
+        // SNOW-658: the favourites and community-reports telemetry emits that
+        // sat here moved to their bridges in map.js, with the switches that
+        // now drive them. Leaving them would not have double-counted — the
+        // rows are gone, so these branches were simply unreachable — but the
+        // next reader wiring a row back would have found two emitters.
         // SNOW-573: notify telemetry when the weather overlay is flipped.
         if (overlayKey === 'weather') {
           window.pwaTelemetry?.emit('map.weather.overlay_toggled', { visible: next });
@@ -255,7 +252,7 @@
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'favourites' || overlayKey === 'community_reports' || overlayKey === 'weather')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'weather')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE
@@ -291,17 +288,13 @@
               }
             }
           }
-          // SNOW-499: bridge to the main IIFE so the resort layer's
-          // favourited-resort exclusion is recomputed against the new
-          // favourites visibility — otherwise a favourited resort stays
-          // hidden (no dot, no star) when the overlay is switched off.
-          // Dispatched for both directions; the toggle-on lazy path is
-          // also covered by the overlay-load handler once its fetch settles.
-          if (overlayKey === 'favourites') {
-            document.dispatchEvent(
-              new CustomEvent('snowdesk:favourites-visibility-changed'),
-            );
-          }
+          // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood
+          // here, recomputing the resort layer's favourited-resort exclusion
+          // whenever the favourites overlay was flipped from this menu.
+          // SNOW-658 took that row away; window.pwaFavouritesOverlay calls
+          // applyResortsFavouritedFilter directly on both edges instead, being
+          // inside the IIFE that owns it. The listener itself stays — other
+          // callers still fire that event.
         }
         return;
       }
