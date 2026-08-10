@@ -192,12 +192,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'frame-readout-done': '%(mb)s downloaded',
   'frame-budget-banner': '%(used)s / %(budget)s downloaded',
   'action-close': 'Close',
-  // SNOW-634: the custom-area roundel's own two labels — it now opens the
-  // downloads sheet rather than framing directly (see
-  // mapCustomDownloadControlInit's `_renderControl`), so its copy is about
-  // what is on THIS DEVICE generally, not this one area.
-  'custom-control-idle': 'Manage offline downloads',
-  'custom-control-done': 'Offline downloads available',
+  // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
+  // custom-area roundel's two labels for a state it no longer has (see
+  // map_custom_download.js's header). Its label is server-rendered now,
+  // and the one thing that varies is composed onto it by
+  // map_roundel_overlay_state.js from its own strings template.
   // SNOW-635: an unrenamed custom area's default display name, filled in
   // by basemapDownloadedAreas() itself — see that function's own comment.
   'default-custom-name': 'Custom area %(n)s',

@@ -1205,13 +1205,13 @@ Optional context:
     {# data-run-state (SNOW-634): mirrors the run in flight — 'idle' |       #}
     {# 'busy' | 'done' | 'error' | 'offline' — written by map.js's           #}
     {# `paintRun`. It exists because #map-custom-download-control's own      #}
-    {# `data-download-state` stopped tracking a run in flight at all (it is  #}
-    {# now derived from storage and only ever reads 'idle'/'done'), and that #}
-    {# roundel is hidden for the overlay's entire open life anyway           #}
-    {# (.map-framing hides #map-controls-br, static/css/map.css) — so a run  #}
-    {# needed an observable surface that IS visible while it runs. Not       #}
-    {# decoration: an e2e test reads this to synchronise on a run in         #}
-    {# progress, in place of the roundel state it used to poll.              #}
+    {# `data-download-state` stopped tracking a run in flight (it became     #}
+    {# storage-derived, and SNOW-658 removed it outright), and that roundel  #}
+    {# is hidden for the overlay's entire open life anyway (.map-framing     #}
+    {# hides #map-controls-br, static/css/map.css) — so a run needed an      #}
+    {# observable surface that IS visible while it runs. Not decoration: an  #}
+    {# e2e test reads this to synchronise on a run in progress, in place of  #}
+    {# the roundel state it used to poll.                                    #}
     <div
         id="map-frame-overlay"
         hidden
@@ -1414,12 +1414,11 @@ Optional context:
     <span data-string="frame-readout-done">{% blocktrans %}%(mb)s downloaded{% endblocktrans %}</span>
     <span data-string="frame-budget-banner">{% blocktrans %}%(used)s / %(budget)s downloaded{% endblocktrans %}</span>
     <span data-string="action-close">{% trans "Close" %}</span>
-    {# SNOW-634: #map-custom-download-control's own two labels. It now      #}
-    {# opens the downloads sheet rather than framing directly, so its copy #}
-    {# is about what is on THIS DEVICE generally, not this one area — see  #}
-    {# mapCustomDownloadControlInit's `_renderControl`.                    #}
-    <span data-string="custom-control-idle">{% trans "Manage offline downloads" %}</span>
-    <span data-string="custom-control-done">{% trans "Offline downloads available" %}</span>
+    {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
+    {# #map-custom-download-control's two labels for a downloads state it  #}
+    {# no longer carries. Its label is server-rendered on the button       #}
+    {# itself now, and the roundel's one live state is composed onto it    #}
+    {# from map-roundel-strings-template below.                            #}
     {# SNOW-635: an unrenamed custom area's default display name — filled  #}
     {# in by basemapDownloadedAreas() itself (in memory only, never        #}
     {# persisted) so every downstream reader (the eviction confirm banner, #}

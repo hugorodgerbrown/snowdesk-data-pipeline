@@ -1885,6 +1885,15 @@
     z-index: 1;
 }
 
+/* SNOW-658: the custom-area roundel has no `data-download-state` at all any
+   more (its idle/done meaning went — see its own template comment), so it
+   matches none of the state-keyed rules below and its glyph would never be
+   revealed. It has exactly one glyph and one appearance, so it is stated
+   unconditionally rather than given a state to satisfy a display rule. */
+#map-custom-download-control .map-download-control-icon--idle {
+    display: block;
+}
+
 .map-download-control[data-download-state="idle"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="no-region"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
@@ -1979,25 +1988,21 @@
    this roundel restating any part of that answer as a fill colour was
    always redundant with a surface that already answers it properly.
 
-   So: no fill, in either state, in either theme. content: none removes
-   the pseudo-element outright rather than leaving it transparent, so
-   nothing here can be re-lit by a future edit to the shared green
-   busy/done rule above (which still paints a REAL status fill for
-   #map-download-control, the region control — see its own docstring;
-   that one is unchanged and stays in scope). Scoped by id, so it wins
-   over the shared class rule without !important regardless of theme —
-   no `.dark` variant needed, because there is nothing left to invert. */
-#map-custom-download-control[data-download-state="busy"]::before,
-#map-custom-download-control[data-download-state="done"]::before {
-    content: none;
-}
+   Two `#map-custom-download-control[data-download-state="busy"|"done"]`
+   rules used to sit here (a `content: none` cancelling the shared fill,
+   and a `color: inherit` for the glyph on top of it). SNOW-658 deleted
+   them along with the attribute they were keyed on: this roundel no longer
+   has a download state to cancel the paint of. The paragraph above stays,
+   because the reasoning it records — a panel opener does not describe its
+   own contents — is what stops the fill coming back a fourth time. The
+   shared busy/done fill below still paints a REAL status for
+   #map-download-control, the region control; that one is unchanged. */
 
 /* Done: the fill is pinned full — a solid disc matching the sync dot's
-   colour language: green on the region roundel. (The custom-area control
-   used to share this fill mechanism under its own monochrome colour; see
-   the review comment above for why it now paints no fill at all — this
-   rule is region-control-only in practice again, the same as before that
-   detour.) */
+   colour language: green on the region roundel. The custom-area control
+   briefly shared this fill mechanism under its own monochrome colour; it
+   carries no download state at all now (SNOW-658), so this and the white
+   glyph below are region-control-only in fact as well as in intent. */
 .map-download-control[data-download-state="done"]::before {
     height: 100%;
 }
@@ -2008,21 +2013,6 @@
    see the display rules above for why. */
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle {
     color: #fff;
-}
-
-/* Review: the shared rule above is written for the REGION control's
-   coloured fill and would otherwise also paint #map-custom-download-
-   control's glyph white — on that control's now-plain glass chrome (no
-   fill at all, see above), a white glyph would be exactly the kind of
-   one-off, doesn't-match-its-neighbours treatment this whole review
-   exists to remove. `inherit` hands it back to the roundel's own base
-   `color` (--ink in light, --color-text-1 in dark under the .dark
-   .map-download-control rule below) — the SAME value idle and
-   other-basemap already use, in both themes, with no new token needed
-   here at all. Scoped by id so it wins over the shared rule above without
-   !important. */
-#map-custom-download-control[data-download-state="done"] .map-download-control-icon--idle {
-    color: inherit;
 }
 
 /* SNOW-645: 'other-basemap' — the region IS downloaded, just for a

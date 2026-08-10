@@ -368,11 +368,11 @@
     // basemap is available offline, which one fewer pinned bucket can
     // change.
     window.pwaLayerSyncStatus?.refresh();
-    // SNOW-634: and the roundel that opens this sheet — a delete can take
-    // the device from "done" (something downloaded) back to "idle"
-    // (nothing left), and nothing else re-probes it once this sheet is
-    // the only surface that ever changes what is on disk here.
-    window.pwaCustomAreaDownload?.refresh();
+    // SNOW-658 removed a `window.pwaCustomAreaDownload?.refresh()` here.
+    // SNOW-634 added it so a delete could take the roundel that opens this
+    // sheet from "done" back to "idle"; that state is gone (the roundel
+    // says whether its overlay is on the map, not what is on disk), and
+    // this sheet's own re-render is what reports the delete.
     return true;
   }
 

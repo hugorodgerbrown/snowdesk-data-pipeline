@@ -1307,9 +1307,13 @@ describe('deleting an area', () => {
 
     expect(window.pwaDownloadedOverlay.refresh).toHaveBeenCalled();
     expect(window.pwaLayerSyncStatus.refresh).toHaveBeenCalled();
-    // SNOW-634: and the roundel that opens this sheet — a delete can take
-    // the device from "done" back to "idle".
-    expect(window.pwaCustomAreaDownload.refresh).toHaveBeenCalled();
+    // SNOW-658: the roundel that opens this sheet is deliberately NOT
+    // refreshed. SNOW-634 refreshed it because a delete could take it from
+    // "done" back to "idle"; it carries no downloads state at all now (it
+    // says whether ITS overlay is on the map), so a delete is not its
+    // business — asserted rather than dropped, because re-adding the call
+    // would be re-adding the state.
+    expect(window.pwaCustomAreaDownload.refresh).not.toHaveBeenCalled();
   });
 
   it('names the area and the space freed in its confirmation', async () => {

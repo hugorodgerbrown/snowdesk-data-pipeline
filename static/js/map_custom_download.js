@@ -70,13 +70,16 @@
 // what keeps it translatable instead of frozen in whatever language was
 // active at download time.
 //
-// The roundel's "done" state (SNOW-634) does not probe any one area's own
-// bbox against the pinned cache's WHOLE tile set — that was `_probeDone`,
-// deleted before this ticket. Clicking the roundel opens the downloads
-// sheet (public/partials/_map_downloads_sheet.html), which lists EVERY
-// downloaded area, so "done" means "the device holds at least one
-// downloaded area" (basemapDownloadedAreas(), filtered to non-orphaned —
-// see _renderControl below), region or custom, of however many there are.
+// The roundel carries NO state derived from what is downloaded (SNOW-658).
+// It had two, in turn: "this one custom area is fully cached" (`_probeDone`,
+// deleted by SNOW-634) and then "the device holds at least one downloaded
+// area" (`_renderControl`, deleted here). It carries `data-overlay-shown`
+// instead — the same state, with the same meaning, as the favourites and
+// field-observation roundels: "the overlay my panel switches is on the map
+// right now" (static/js/map_roundel_overlay_state.js). Clicking it opens the
+// downloads sheet (public/partials/_map_downloads_sheet.html), and that sheet
+// is where "what have I downloaded" is answered — with a row list, per-area
+// swatches and a budget bar, rather than one bit on a roundel.
 //
 // openFraming no longer re-centres the map on a saved area on open — with
 // several custom areas possibly on disk, picking one to jump to would be
@@ -118,10 +121,9 @@
 // (window.pwaWarmCacheCancel(), posted from the overlay:dismissed
 // listener below) rather than merely hiding a run that carries on
 // unseen. A run that settles `cancelled` (basemap_download_runner.js's
-// `finish` docstring) is neither success nor failure: it records nothing,
-// so the roundel — re-derived from storage once `paintRun` (SNOW-634's
-// rename of `setState`) calls `renderControl()` on settling — reads idle,
-// never done. A SUCCESSFUL run no longer closes the overlay either — see
+// `finish` docstring) is neither success nor failure: it records nothing.
+// Nothing on the roundel reflects that either way any more (SNOW-658) —
+// only the sheet's own list does. A SUCCESSFUL run no longer closes the overlay either — see
 // paintRun's 'done' branch — it repaints the CTA in
 // place ("23.4 MB downloaded", Download hidden, Cancel relabelled Close)
 // and leaves closing it to the user, on the same dismiss idiom Cancel
@@ -163,10 +165,10 @@
   let currentRunAreaId = null;
 
   // SNOW-634: is-a-run-in-flight, replacing the six `btn.dataset.
-  // downloadState === 'busy'` reads this file used to have. The roundel's
-  // own `data-download-state` is now only ever 'idle'/'done' — derived
-  // from storage by `_renderControl`, never told what to paint by a run —
-  // so it stopped being a channel a run in flight could use at all.
+  // downloadState === 'busy'` reads this file used to have. The roundel
+  // stopped being a channel a run in flight could use when its state
+  // became storage-derived rather than run-driven, and carries no
+  // download state at all since SNOW-658.
   // Mirrored onto `#map-frame-overlay` as `data-run-state` by `paintRun`,
   // which IS visible for the run's whole life (`.map-framing` hides
   // `#map-controls-br`, the roundel's own container, for as long as the
@@ -239,9 +241,9 @@
    * visible: `.map-framing` hides `#map-controls-br` — the roundel's own
    * container — for the overlay's entire open life (static/css/map.css),
    * and since SNOW-632 a successful run leaves the overlay open, so
-   * 'busy'/'error' were painted onto an element nobody could see. The
-   * roundel's own state now comes from `_renderControl`, re-derived from
-   * storage rather than told what to paint — see its own docstring below.
+   * 'busy'/'error' were painted onto an element nobody could see. SNOW-658
+   * removed the roundel's storage-derived successor state too, so nothing
+   * a run does reaches the roundel at all now.
    *
    * Two things still only change on the busy transition EDGES — never on
    * a call that merely repeats the current state:
@@ -249,12 +251,10 @@
    *   Entering busy: locks the map underneath the overlay
    *   (_lockMapForRun) and starts the CTA's live "42% · 6.1 MB" readout.
    *
-   *   Leaving busy: unlocks the map (_unlockMapAfterRun), asks the
-   *   roundel to re-derive itself from storage now the run has settled
-   *   (`renderControl()`), and paints the CTA's outcome — "23.4 MB
-   *   downloaded" with Download hidden and Cancel relabelled Close for a
-   *   success, or a restored "Up to N MB" readout (via _updateReadout)
-   *   for anything else.
+   *   Leaving busy: unlocks the map (_unlockMapAfterRun) and paints the
+   *   CTA's outcome — "23.4 MB downloaded" with Download hidden and Cancel
+   *   relabelled Close for a success, or a restored "Up to N MB" readout
+   *   (via _updateReadout) for anything else.
    *
    * The edge check matters: this function used to ALSO be how the
    * background probe repainted 'done'/'idle'/'offline' whenever the
@@ -262,10 +262,9 @@
    * flip) — which can happen while the overlay is open for an unrelated
    * reason (the user reopened an already-'done' saved area). Gating the
    * CTA-specific work on `wasBusy` — true only for the single call where
-   * a REAL run just ended — keeps that background path from ever
-   * clobbering the CTA underneath it; the same gate still matters now
-   * that the background probe is `_renderControl` calling `renderControl()`
-   * rather than this function directly.
+   * a REAL run just ended — kept that background path from ever
+   * clobbering the CTA underneath it. The probe is gone (SNOW-658) but the
+   * gate stays: it is what stops a repeated 'busy' tick rewriting the CTA.
    *
    * @param {string} state - 'idle' | 'busy' | 'done' | 'error' | 'offline'.
    * @param {number} [pct] - Only meaningful for state 'busy'.
@@ -288,9 +287,10 @@
       _lockMapForRun();
     } else if (state !== 'busy' && wasBusy) {
       _unlockMapAfterRun();
-      // SNOW-634: the run has settled — ask the roundel to re-derive its
-      // own state from real storage rather than being told what to paint.
-      renderControl();
+      // SNOW-658 removed a `renderControl()` here. A settled run used to
+      // send the roundel back to storage to re-derive its own idle/done
+      // state; the roundel no longer has one to derive (see this file's
+      // header), so a run that lands changes nothing about it.
     }
 
     // The CTA sheet's own readout/button state. See the docstring above
@@ -346,64 +346,28 @@
     }
   }
 
-  /**
-   * (Re)probe the roundel against real storage.
+  /*
+   * SNOW-658 deleted `_renderControl` (and the `coalesceRenders` wrapper
+   * around it, its boot call, and the `refresh` member of this file's own
+   * bridge). It read every downloaded area out of IndexedDB on boot, after
+   * every settled run and after every delete, to paint the roundel
+   * `data-download-state="idle"|"done"` — "this device holds at least one
+   * downloaded area" — plus a matching aria-label.
    *
-   * SNOW-634: this used to probe THIS area's own saved bbox against the
-   * pinned cache's actual tile contents (`_probeDone`, now deleted) —
-   * "done" meant "the custom area is fully cached". The roundel now opens
-   * the downloads sheet rather than framing directly, and that sheet
-   * covers every downloaded area, not just this one, so "done" now means
-   * "the device holds at least one downloaded area" — a user with five
-   * downloaded regions and no custom area used to read `idle`, which was
-   * false; there IS something to manage offline. `basemapDownloadedAreas()`
-   * is the same reader `map_downloads_manager.js` lists from, so the
-   * roundel and the sheet can never disagree about what "done" means. An
-   * orphaned bucket (SNOW-612 — a failed part-download with no completed
-   * record) is excluded: it is not "you have this area offline", it is
-   * leftover quota waiting to be reclaimed from the sheet.
+   * That state went because the roundel now carries a DIFFERENT one, and a
+   * roundel may carry only one: `data-overlay-shown` (SNOW-658), which
+   * means the same thing here as on the favourites and observation
+   * roundels — "the overlay my panel switches is on the map right now".
+   * Two facts on one roundel, with no way to tell which you were reading,
+   * is the inconsistency this ticket exists to remove; the sheet this
+   * roundel opens already answers "what have I downloaded" properly, with
+   * a row list, per-area swatches and a budget bar.
    *
-   * Connectivity does not affect this — there is no tile-template
-   * dependency left to re-probe (the sheet lists and deletes offline,
-   * which is exactly when storage pressure is felt), so this control does
-   * not listen for `snowdesk:connectivity-changed` the way its `idle`/
-   * `offline`-carrying sibling does. It does not listen for
-   * `snowdesk:basemap-changed` either (SNOW-645 review, reversed) — see
-   * the comment in the body below for why this roundel carries no visual
-   * distinction between idle and done at all any more.
-   *
-   * @returns {Promise<void>}
+   * SNOW-645 had already taken the last PAINT off that state (three
+   * attempts at a fill, all reported as standing out among the glass
+   * roundels), leaving it driving only an aria-label — so this is the
+   * second half of a removal, not a new decision.
    */
-  async function _renderControl() {
-    if (runState === 'busy') return;
-    const areas = await basemapDownloadedAreas();
-    const kept = areas.filter((area) => !area.orphaned);
-    const done = kept.length > 0;
-    btn.dataset.downloadState = done ? 'done' : 'idle';
-    // SNOW-645 review — this roundel paints NO fill for either state, in
-    // map.css. It went through two failed attempts first: an ACTIVE
-    // basemap colour (fixing a report that it showed Standard's blue
-    // while Swisstopo was on screen, but describing the wrong thing — the
-    // sheet this roundel opens lists downloads across EVERY basemap at
-    // once), then a flat/inverting neutral fill (still a solid disc that
-    // stood out against every other roundel in the stack, in one theme or
-    // the other, no matter which neutral tone it used). The actual fix
-    // was realising the roundel never needed to signal "what have I
-    // downloaded" at all — it is a panel OPENER, and the panel it opens
-    // (the row list, the per-area swatches, the budget bar) already
-    // answers that properly. `data-download-state` still drives the aria
-    // label two lines down (screen readers still hear "done" vs "idle"),
-    // it just no longer drives any paint.
-    const text = done
-      ? MAP_STRINGS['custom-control-done']
-      : MAP_STRINGS['custom-control-idle'];
-    btn.setAttribute('aria-label', text);
-    btn.title = text;
-  }
-
-  // SNOW-613: overlapping renders coalesce onto one trailing pass — see
-  // `coalesceRenders`. Every trigger below calls this, not `_renderControl`.
-  const renderControl = coalesceRenders(_renderControl);
 
   /**
    * Pixel padding (top/right/bottom/left) that fits MAP.fitBounds() to
@@ -1356,40 +1320,34 @@
   // longer depends on the active basemap's tile template (no tile-cache
   // probe left to re-run). A later SNOW-645 pass briefly reinstated it to
   // track a per-basemap identity COLOUR this roundel carried for a while,
-  // then a monochrome fill after that colour was reverted — both are gone
-  // now (see _renderControl's own comment: this roundel paints no fill at
-  // all, for either state, in either theme), so there is no longer
-  // anything here for a basemap switch to invalidate. Do not re-add this
-  // listener without a real dependency to justify it — the previous THREE
-  // round-trips on this exact line are the reason for this comment.
+  // then a monochrome fill after that colour was reverted. SNOW-658
+  // removed the idle/done state itself, so a basemap switch now has
+  // nothing here to invalidate at all. Do not re-add this listener without
+  // a real dependency to justify it — the previous THREE round-trips on
+  // this exact line are the reason for this comment.
 
   // Offline-integrity: re-validate the open CTA's Download button on every
   // connectivity transition — SNOW-632: a run in flight owns the CTA (see
   // paintRun), so this is skipped while busy, exactly like the 'move'
-  // handler above. The roundel itself no longer has an offline state to
-  // re-render here either (see _renderControl).
+  // handler above. The roundel itself has no state left for this to
+  // re-render (SNOW-658).
   document.addEventListener('snowdesk:connectivity-changed', () => {
     if (pendingBbox && runState !== 'busy') _updateReadout();
   });
 
-  // Boot: probe the roundel against real storage. SNOW-634: unlike the old
-  // tile-cache probe, `basemapDownloadedAreas()` needs neither MAP nor the
-  // active basemap's tile template, so this doesn't wait on
-  // MAP_READY_PROMISE — that used to be a SEPARATE trigger for a second,
-  // map-dependent probe. SNOW-635: no longer preceded by loading a saved
-  // area either — see openFraming's own docstring for why there is none
-  // left to load.
-  renderControl();
+  // SNOW-658: no boot probe. This was `renderControl()`, reading every
+  // downloaded area out of IndexedDB to decide the roundel's idle/done
+  // state; the roundel derives nothing from storage any more, so the read
+  // went with it.
 
   window.pwaCustomAreaDownload = Object.freeze({
     // SNOW-634: the sheet's add-trigger reaches framing through this —
     // same frozen-global idiom as pwaBasemapDownloads/pwaLayersMenu/
     // pwaDownloadedOverlay.
+    //
+    // SNOW-658 removed the second member, `refresh`, which let a delete in
+    // the sheet settle the roundel's idle/done state immediately. There is
+    // no such state now, and the sheet's own list is what reports a delete.
     openFraming: openFraming,
-    // So a delete in the sheet settles the roundel immediately, without
-    // waiting for the next basemap switch (SNOW-645: now its own trigger,
-    // above) or connectivity flip (still not a trigger for this roundel —
-    // see _renderControl's own docstring).
-    refresh: renderControl,
   });
 })();

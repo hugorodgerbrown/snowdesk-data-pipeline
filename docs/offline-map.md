@@ -1194,49 +1194,43 @@ SNOW-635 mints a fresh id per confirm (`generateCustomAreaId`, a
 independent area with its own bucket. A pre-SNOW-635 device's one area is
 lazily migrated into the array on first read (`map.js`'s
 `_readCustomAreas`, inside the same `basemapDownloadedAreas()` the
-roundel already calls on boot), keeping id `'custom'` — Cache Storage has
+downloads sheet and the eviction planner both go through), keeping id
+`'custom'` — Cache Storage has
 no rename, so that id has to survive unchanged for its existing bucket to
 keep resolving.
 
-The roundel's `done` state is **read from storage, not probed** — this is
-where it stops resembling the per-region control. SNOW-634 deleted the
-custom control's `_probeDone` (which checked every tile of the one saved
-bbox against the pinned caches via `blobFullyCached`) along with the
-single saved area it was about. `done` now means "the device holds at
-least one downloaded area", region **or** custom, counted straight off
-`basemapDownloadedAreas()` — the same reader the downloads sheet lists
-from, so the roundel and the sheet can never disagree. A user with five
-downloaded regions and no custom area used to read `idle`, which was
-false: there is plainly something to manage offline. Orphaned buckets
-(SNOW-612 — a failed part-download with no completed record) are excluded;
-they are reclaimable quota, not an area you have offline.
+**The roundel says nothing about what is downloaded (SNOW-658).** It has
+had two such states in turn, and both are gone. SNOW-634 deleted
+`_probeDone` (every tile of the one saved bbox checked against the pinned
+caches via `blobFullyCached`) along with the single saved area it was
+about, and replaced it with a storage READ: `data-download-state="done"`
+meaning "the device holds at least one downloaded area", region **or**
+custom, counted off `basemapDownloadedAreas()`. SNOW-645 then removed that
+state's paint after three attempts at a fill (an active-basemap colour,
+then a flat neutral, then a theme-inverting one) each drew the same
+report — a solid disc among glass roundels reads as an alert, not a
+status — leaving the attribute driving only an aria-label. SNOW-658
+removed the attribute itself, together with `_renderControl`, its boot
+probe, and the `refresh` member of `window.pwaCustomAreaDownload`.
 
-Two consequences worth naming. Neither connectivity nor the active
-basemap affects the roundel's `done`/`idle` STATE any more, so it has no
-style-settle retry (there is no tile-template dependency left to wait on)
-and does not listen for `snowdesk:connectivity-changed`. And switching
-basemap no longer flips `done` back to `idle` — the bucket still holds the
-*previous* basemap's tiles, so the device does hold an offline area, just
-not one for the basemap now selected. That per-basemap DETAIL (which area,
-under which basemap) lives in the sheet; the roundel's `done`/`idle` signal
-is deliberately coarser.
+What it carries instead is `data-overlay-shown`, and that means here
+exactly what it means on the favourites and field-observation roundels:
+the overlay this roundel's panel switches is drawn on the map right now
+(see "Overlay roundel state" in
+[`docs/map-page-functional-spec.md`](map-page-functional-spec.md)). One
+roundel, one state, the same state on all three. The question the old one
+answered is answered properly by the sheet the roundel opens — a row list,
+per-area swatches, a budget bar — which is where it belonged.
 
-Its COLOUR is a different story (SNOW-645 review). Hugo's report: on the
-Swisstopo map, the roundel painted Standard's blue, because his custom
-areas had all been downloaded under Standard — an earlier version of this
-ticket aggregated the colour over the stored areas' own basemap keys. The
-fix aligns this roundel with every other one on the map: its colour is
-`activeBasemapKey()`, unconditionally, the same rule the per-region
-roundel's `setState` uses — never an aggregate over what is stored (see
-"Basemap identity colour (SNOW-645)" above). That reintroduces exactly the
-dependency the `done`/`idle` state does NOT have, so the
-`snowdesk:basemap-changed` listener SNOW-634 removed is back too — calling
-the same coalesced `renderControl` every other trigger in this file uses.
-`_renderControl`'s own busy guard (unchanged) already stops a basemap
-switch mid-run from clobbering anything: the roundel sits inside
-`#map-controls-br`, hidden for a run's whole life, so there is nothing on
-screen for a repaint to interfere with, and the run's own settle path
-already calls `renderControl()` once it finishes.
+Two consequences worth naming. The roundel has no style-settle retry and
+listens for neither `snowdesk:connectivity-changed` nor
+`snowdesk:basemap-changed`: there is no tile-template dependency, no
+storage read, and no colour left for either to invalidate. (The
+`snowdesk:basemap-changed` listener has been removed, reinstated and
+removed again across SNOW-634/645/658 — do not re-add it without a real
+dependency.) And a basemap switch changes nothing about the roundel at
+all, where it once flipped `done` back to `idle`; which area is held under
+which basemap is a per-basemap DETAIL, and details live in the sheet.
 
 Opening framing no longer re-centres the map on any previously-downloaded
 area either — SNOW-586 through SNOW-634 did this via `MAP.fitBounds`, back
@@ -1718,10 +1712,9 @@ renders disabled
 is re-cloned from its `<template>` on every open, and re-applied on every
 `snowdesk:connectivity-changed` so an open sheet reacts in place); online
 it hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()`
-— map.js's own bridge for it. The roundel's own two states (`idle`/`done`)
-are driven by `_renderControl` reading `basemapDownloadedAreas()` — "done"
-means the device holds at least one downloaded area, region or custom, not
-that this one custom area is fully cached.
+— map.js's own bridge for it, and since SNOW-658 its only member. The
+roundel carries no state describing what is downloaded; see "The roundel
+says nothing about what is downloaded" above.
 
 **Why it lives on the map, not under account settings.** Downloading
 happens here, so managing downloads belongs here too. It also has to be
