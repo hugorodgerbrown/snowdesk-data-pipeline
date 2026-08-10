@@ -107,6 +107,7 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
 from apps.core.utils import html_to_markdown
+from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
@@ -1496,7 +1497,12 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourite_create_url": reverse("favourites:create"),
         # SNOW-658: the roundel opens a panel listing the user's own pins
         # before it offers to add one, so the panel needs the list endpoint.
-        "favourite_list_url": reverse("favourites:list"),
+        # ``?variant=map`` asks for the sheet's lean row template — same
+        # rows and offline sidecar, without the manage page's in-page card
+        # panel or its "view on the map" link.
+        "favourite_list_url": (
+            f"{reverse('favourites:list')}?variant={FAVOURITE_LIST_MAP_VARIANT}"
+        ),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

@@ -1,0 +1,58 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_list_map.html — Owner favourites list, map sheet.
+
+Rendered by apps.favourites.views.favourite_list for ``?variant=map`` and
+swapped into [data-favourites-rows] inside the map's favourites panel
+(public/partials/_favourites_surface.html) by static/js/favourites.js.
+
+The lean sibling of _favourite_list.html. Same rows, same roster sidecar,
+three things dropped — each because the sheet is not the manage page:
+
+  #favourite-card-panel   the sheet is height-bounded and scrolls, so
+                          swapping a full detail card into it is the wrong
+                          shape. Without a panel to target, the detail
+                          control here is a plain link — a GET, navigating,
+                          which is what it always was.
+  "View favourites on the map →"
+                          it would point at the page the user is already
+                          looking at. The sheet's own "Show favourites on
+                          the map" switch is the control that changes what
+                          the map shows.
+
+Kept: the roster_payload sidecar. static/js/favourites_offline.js writes it
+through into data:favourites on htmx:afterOnLoad, and offline reads matter
+more on the map than on the manage page, not less.
+
+Target shape, matching the field-observations panel this sheet sits beside:
+editable name · Remove · one detail link.
+
+Context:
+    favourites     : list[Favourite] — the requesting user's own
+                     favourites (Favourite.objects.for_user()).
+    roster_payload : list[dict] — SNOW-418 offline-cache records, one per
+                     favourite; written through into data:favourites by
+                     favourites_offline.js.
+{% endcomment %}
+<div class="flex flex-col gap-2" data-testid="favourite-list">
+    {{ roster_payload|json_script:"favourites-roster-cache" }}
+
+    {% for favourite in favourites %}
+        <div class="flex items-center gap-2" data-testid="favourite-list-row">
+            <div class="flex-1">
+                {% include "favourites/partials/_favourite.html" with favourite=favourite %}
+            </div>
+            <a
+                href="{% url 'favourites:detail' favourite.uuid %}"
+                class="shrink-0 text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                data-testid="favourite-list-detail-link"
+            >
+                {% trans "Details →" %}
+            </a>
+        </div>
+    {% empty %}
+        <p class="text-sm text-text-2" data-testid="favourite-list-empty">
+            {% trans "You have no saved favourites yet." %}
+        </p>
+    {% endfor %}
+</div>

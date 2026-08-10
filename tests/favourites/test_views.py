@@ -43,8 +43,13 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; non-HTMX → 400;
                     empty state when the user has none (SNOW-415); each
-                    row carries an "Open page →" link to favourites:detail
-                    (SNOW-507).
+                    row carries one detail link to favourites:detail,
+                    hx-get-enhanced onto the card panel (SNOW-507,
+                    SNOW-658); ``?variant=map`` renders the sheet's lean
+                    template instead — same rows and roster sidecar, a
+                    plain detail link, no card panel and no "view on the
+                    map" link — and an unknown variant falls back to the
+                    manage-page template.
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
@@ -1263,7 +1268,7 @@ class TestFavouriteList:
         assert str(mine.uuid) in content
 
     def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
-        """Each row carries an "Open page →" permalink to favourites:detail (SNOW-507)."""
+        """Each row carries one detail link to favourites:detail (SNOW-507)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
@@ -1272,8 +1277,99 @@ class TestFavouriteList:
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="favourite-list-open-page-link"' in content
+        assert 'data-testid="favourite-list-detail-link"' in content
         assert _detail_url(favourite.uuid) in content
+
+    def test_detail_link_is_htmx_enhanced_onto_the_card_panel(
+        self, client: Client
+    ) -> None:
+        """The manage page's detail link hx-gets the card into the panel.
+
+        SNOW-658 collapsed the "Details" button and the "Open page →" link
+        into this one element: an href for the no-JS navigation, an hx-get
+        so the card still renders in-page — and so favourites_offline.js
+        still sees an HTMX swap to write through (SNOW-418).
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        hx_get = f'hx-get="{_card_url(favourite.uuid)}"'
+        assert hx_get in content
+        assert 'hx-target="#favourite-card-panel"' in content
+        assert 'data-testid="favourite-card-panel"' in content
+        # The GET is carried by a link, never a button: a GET is a link, a
+        # POST is an active control. (The row's own buttons — rename,
+        # Remove — are POSTs, so they stay buttons.)
+        opener = content[: content.index(hx_get)].rsplit("<", 1)[1]
+        assert opener.startswith("a ") or opener.startswith("a\n")
+
+    def test_default_variant_offers_the_map_link(self, client: Client) -> None:
+        """The manage-page template keeps its "view on the map" navigation."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert b"View favourites on the map" in response.content
+
+    def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
+        """``?variant=map`` drops the card panel and the map link (SNOW-658)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Mine" in content
+        assert 'data-testid="favourite-card-panel"' not in content
+        assert f'hx-get="{_card_url(favourite.uuid)}"' not in content
+        assert "View favourites on the map" not in content
+
+    def test_map_variant_keeps_the_detail_link_and_roster_sidecar(
+        self, client: Client
+    ) -> None:
+        """The sheet still links to the detail page and caches for offline."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert 'data-testid="favourite-list-detail-link"' in content
+        assert _detail_url(favourite.uuid) in content
+        assert 'id="favourites-roster-cache"' in content
+
+    def test_map_variant_empty_state(self, client: Client) -> None:
+        """A user with no favourites sees the empty-state copy in the sheet."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert b"no saved favourites" in response.content.lower()
+
+    @pytest.mark.parametrize("variant", ["", "unknown", "../../etc/passwd"])
+    def test_unknown_variant_falls_back_to_the_manage_template(
+        self, client: Client, variant: str
+    ) -> None:
+        """An unrecognised variant never reaches a template path."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant={variant}", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert b'data-testid="favourite-card-panel"' in response.content
 
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy."""

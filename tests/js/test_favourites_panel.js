@@ -11,6 +11,13 @@
  *
  *   - the rows come from favourites:list over HTMX, so each arrives with its
  *     own rename/delete wiring rather than a JS-built copy of it;
+ *   - the request goes to the URL the surface handed the module VERBATIM,
+ *     query string and all. The server appends ``?variant=map`` so the sheet
+ *     gets the lean row template (no in-page card panel, no "view on the map"
+ *     link); a module that rebuilt the path from the URL name would silently
+ *     drop it and the sheet would render the manage page's markup. What that
+ *     template contains is asserted server-side, in
+ *     tests/favourites/test_views.py::TestFavouriteList;
  *   - the add CTA and the switch are DELEGATED on the sheet, because the body
  *     is re-cloned on every open — a per-element listener would be bound to
  *     an element the next open throws away;
@@ -31,7 +38,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 
-const LIST_URL = '/favourites/partials/list/';
+// As apps.public.views._favourites_context builds it — the map sheet asks for
+// the lean row variant (SNOW-658).
+const LIST_URL = '/favourites/partials/list/?variant=map';
 
 document.body.innerHTML = `
   <button id="favourite-add-btn"
@@ -113,7 +122,10 @@ describe('tapping the roundel opens the panel, not the create form', () => {
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
     const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
     expect(method).toBe('GET');
+    // Verbatim, query string included — the ?variant=map the server put on
+    // it is what makes the sheet get the lean row template.
     expect(url).toBe(LIST_URL);
+    expect(url).toContain('variant=map');
     expect(opts.target).toBe(rows());
     expect(opts.swap).toBe('innerHTML');
   });
