@@ -2398,15 +2398,15 @@
         (isBootCountry || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
       if (allFeedsLoaded) {
         // SNOW-658: the ROW's key, not the code's — AT and IT share the ALBINA
-      // row, whose dot may only green once both have landed. markCached is
-      // optimistic for a single-country row and would be a lie for this one,
-      // so a grouped row hands off to a real probe instead.
-      const rowKey = overlayKeyForCountry(code);
-      if (countryCodesFor(rowKey).length === 1) {
-        window.pwaLayerSyncStatus?.markCached(rowKey);
-      } else {
-        window.pwaLayerSyncStatus?.refresh();
-      }
+        // row, whose dot may only green once both have landed. markCached is
+        // optimistic for a single-country row and would be a lie for this one,
+        // so a grouped row hands off to a real probe instead.
+        const rowKey = overlayKeyForCountry(code);
+        if (countryCodesFor(rowKey).length === 1) {
+          window.pwaLayerSyncStatus?.markCached(rowKey);
+        } else {
+          window.pwaLayerSyncStatus?.refresh();
+        }
       } else {
         // Partial load — let a real probe decide, rather than leaving the row
         // pulsing forever after an optimistic markSyncing.
@@ -2428,17 +2428,45 @@
         window.pwaLayerSyncStatus?.refresh();
         return;
       }
-      countryState[code] = false;
-      COUNTRY_STATE[code] = false;
-      writeStorage(COUNTRY_STORAGE_KEY(code), 'false');
-      // SNOW-658: the row that owns this code, which for AT or IT is the one
-      // ALBINA row rather than a row of its own. Unchecking it is honest
-      // either way — the row claims every code it switches, and one of them
-      // has just failed to load.
+      // SNOW-658: the revert is GROUP-ATOMIC — every code the failing code's
+      // row switches, not just the one that threw.
+      //
+      // A row is one bulletin provider, and ALBINA's covers two countries, so
+      // one tap fires two of these loads. Reverting only the failing code left
+      // the row unchecked while the country that HAD loaded stayed on the map,
+      // and persisted, so it survived a reload: boot's ``every()`` seed
+      // computes the row as off while still seeding countryState.at = true and
+      // drawing Austria. The user could not clear it either — re-toggling
+      // short-circuits on ``loadedCountries.has('at')``, so the drift only
+      // resolved if a later retry of ``it`` happened to succeed. Reverting the
+      // whole group means the row reads off and shows nothing, which is the
+      // only pair of states a reader can act on.
+      //
+      // ``loadedCountries`` is deliberately untouched: the country that loaded
+      // really is cached, and only the ENABLED state is being reverted.
+      const rowKey = overlayKeyForCountry(code);
+      const groupCodes = countryCodesFor(rowKey);
+      for (const member of groupCodes) {
+        countryState[member] = false;
+        COUNTRY_STATE[member] = false;
+        writeStorage(COUNTRY_STORAGE_KEY(member), 'false');
+      }
       const row = document.querySelector(
-        `#basemap-menu [data-overlay-key="${overlayKeyForCountry(code)}"]`,
+        `#basemap-menu [data-overlay-key="${rowKey}"]`,
       );
-      if (row) row.setAttribute('aria-checked', 'false');
+      // Derived, not hardcoded to 'false': the row is checked only when every
+      // code it switches is on, which is the same rule the boot seed applies.
+      // Identical to 'false' today — the loop above just cleared them all —
+      // but it cannot drift if the group grows a third member or the revert
+      // semantics change.
+      if (row) {
+        row.setAttribute(
+          'aria-checked',
+          groupCodes.every((member) => countryState[member]) ? 'true' : 'false',
+        );
+      }
+      // Now removes every member of the group from the map, including one that
+      // loaded successfully moments ago.
       applyCountryFilters();
       // SNOW-524: the country is no longer enabled, so re-probe to re-judge the
       // country-scoped tier dots without it — otherwise they'd stay stuck grey

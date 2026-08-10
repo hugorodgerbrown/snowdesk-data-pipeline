@@ -499,6 +499,13 @@
   // sheet's body, so the button that was clicked is detached and no longer
   // "inside" anything. The sheet would close itself the instant the locating
   // state appeared, with nothing on screen to explain it.
+  //
+  // The trade-off: this hides the click from EVERY document-level listener,
+  // not just that one (map_basemap_picker.js's outside-click close,
+  // map_legend.js, overflow_menu.js, overlays.js's [data-action="dismiss"]).
+  // None of them needs it today — each of those surfaces has already closed by
+  // the time this sheet is open — but a future document-level listener that
+  // must see clicks inside this sheet would fail silently here.
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;

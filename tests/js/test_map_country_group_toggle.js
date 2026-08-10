@@ -38,6 +38,7 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 function stubMapLibre() {
   const handlers = {};
   const layouts = new Map();
+  const filters = new Map();
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -47,15 +48,21 @@ function stubMapLibre() {
     addControl: () => {},
     removeControl: () => {},
     getLayer: (id) => (layouts.has(id) ? { id } : null),
-    getFilter: () => null,
+    getFilter: (id) => filters.get(id) ?? null,
     getLayoutProperty: (id, prop) => (layouts.get(id) || {})[prop],
     getPaintProperty: () => undefined,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
     getSource: () => null,
     addSource: () => {},
-    addLayer: (def) => layouts.set(def.id, { ...(def.layout || {}) }),
-    removeLayer: (id) => layouts.delete(id),
+    addLayer: (def) => {
+      layouts.set(def.id, { ...(def.layout || {}) });
+      if (def.filter !== undefined) filters.set(def.id, def.filter);
+    },
+    removeLayer: (id) => {
+      layouts.delete(id);
+      filters.delete(id);
+    },
     removeSource: () => {},
     moveLayer: () => {},
     setLayoutProperty: (id, prop, value) => {
@@ -64,7 +71,9 @@ function stubMapLibre() {
       layouts.set(id, layout);
     },
     setPaintProperty: () => {},
-    setFilter: () => {},
+    setFilter: (id, filter) => {
+      filters.set(id, filter);
+    },
     setFeatureState: () => {},
     removeFeatureState: () => {},
     setStyle: () => {},
@@ -158,6 +167,54 @@ let toggles;
 let removeListener;
 
 let mapStub;
+
+/** Poll `predicate` until it holds or the budget runs out. */
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return predicate();
+}
+
+/**
+ * Re-boot the whole bundle with a fetch stub that fails ONE country's
+ * micro-region feed.
+ *
+ * A fresh boot is the only way to reach the failure branch at all:
+ * `loadedCountries` is module state, and the tests above have already loaded
+ * both ALBINA codes successfully, so `ensureCountryLoaded` would short-circuit
+ * before it ever fetched. `localStorage` is cleared for the same reason — the
+ * boot seed reads it.
+ *
+ * @param {string} failCode - the country code whose regions fetch 404s.
+ * @returns {Promise<void>}
+ */
+async function bootWithFailingCountry(failCode) {
+  localStorage.clear();
+  buildFixture();
+  mapStub = stubMapLibre();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url) => {
+      const href = String(url);
+      // Only the L4 feed rejects on !ok without its own catch, so this is the
+      // one that actually reaches ensureCountryLoaded's catch block.
+      if (href.includes('regions.geojson') && href.includes(`country=${failCode}`)) {
+        return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(EMPTY_FC) });
+    }),
+  );
+  vi.resetModules();
+  await import('../../static/js/basemap_download_core.js');
+  await import('../../static/js/search_core.js');
+  await import('../../static/js/choropleth_core.js');
+  loadMapBundle();
+  for (const handler of mapStub.handlers.load || []) await handler();
+}
+
 
 beforeAll(async () => {
   localStorage.clear();
@@ -261,5 +318,67 @@ describe('a single-country provider row still behaves as it did', () => {
 
     expect(toggles).toEqual([{ code: 'ch', next: false }]);
     expect(localStorage.getItem(CH_KEY)).toBe('false');
+  });
+});
+
+// The group-atomic revert (SNOW-658 review). One tap on a provider row starts
+// one load PER CODE, and they can disagree: the reported failure was AT
+// loading while IT failed, which reverted IT alone and left the row reading
+// off with Austria still drawn — persisted, so it survived a reload, and
+// unclearable by re-toggling because `loadedCountries.has('at')` short-
+// circuits the retry. A half-applied row is worse than a failed one: it shows
+// coverage the control denies.
+//
+// These tests boot their own bundle (see bootWithFailingCountry) and so must
+// stay last in the file.
+describe('a member country whose fetch fails', () => {
+  it('reverts the WHOLE group, and takes the loaded country off the map', async () => {
+    await bootWithFailingCountry('it');
+
+    row('country.albina').click();
+    await waitFor(() => localStorage.getItem(IT_KEY) === 'false');
+
+    // Austria loaded successfully and was persisted `true` on the click; the
+    // revert has to undo that too, not only Italy's own key.
+    expect(localStorage.getItem(AT_KEY)).toBe('false');
+    expect(localStorage.getItem(IT_KEY)).toBe('false');
+    expect(row('country.albina').getAttribute('aria-checked')).toBe('false');
+
+    // State alone is not the assertion worth making — the map has to agree.
+    // applyCountryFilters composes the enabled codes into every region layer's
+    // filter, so Austria's absence there is what "not drawn" actually means.
+    const filter = JSON.stringify(mapStub.getFilter('regions-fill'));
+    expect(filter).not.toContain('"AT"');
+    expect(filter).not.toContain('"IT"');
+    expect(filter).toContain('"CH"');
+  });
+
+  it('reverts the same way whichever member fails', async () => {
+    // The mirror case: the failing code is the one dispatched FIRST this time,
+    // so the revert runs before its sibling's load has settled.
+    await bootWithFailingCountry('at');
+
+    row('country.albina').click();
+    await waitFor(() => localStorage.getItem(AT_KEY) === 'false');
+
+    expect(localStorage.getItem(AT_KEY)).toBe('false');
+    expect(localStorage.getItem(IT_KEY)).toBe('false');
+    expect(row('country.albina').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('leaves a single-country row reverting exactly as it always did', async () => {
+    // A group of one takes the identical path, so the pre-merge behaviour has
+    // to be unchanged: only France goes, and Switzerland is untouched.
+    await bootWithFailingCountry('fr');
+    // France has no row in this fixture; drive the same handler the picker
+    // does, which is what a row click amounts to.
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:country-toggle', { detail: { code: 'fr', next: true } }),
+    );
+    await waitFor(() => localStorage.getItem('snowdesk.map.overlay.country.fr') === 'false');
+
+    expect(localStorage.getItem('snowdesk.map.overlay.country.fr')).toBe('false');
+    expect(row('country.ch').getAttribute('aria-checked')).toBe('true');
+    expect(JSON.stringify(mapStub.getFilter('regions-fill'))).toContain('"CH"');
   });
 });
