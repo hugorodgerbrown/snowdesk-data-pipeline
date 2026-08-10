@@ -50,7 +50,12 @@ ingests:
 | Italy — South Tyrol & Trentino (IT) | ALBINA / avalanche.report | Off (toggle on) |
 
 Switzerland is the launch focus and the only country shown at first
-paint; the other three are one toggle away in the layer menu, and their
+paint; the other three are one toggle away in the layer menu — where the
+rows are **one per provider**, so Austria and Italy share a single "ALBINA
+(AT, IT)" row (SNOW-658): a row switches one warning service's bulletins on,
+and ALBINA issues one EUREGIO bulletin covering both. Tapping it turns both
+countries on together, and its offline-status dot goes green only once both
+countries' data is cached. Their
 region geometry is fetched lazily the first time a visitor turns them on
 (so a CH-only visitor never pays for data they don't look at). Region
 coverage is data-shaped, not prefix-based — a cross-border ALBINA
@@ -81,7 +86,7 @@ page, not on the map. See
 Avalanche warnings are issued against a hierarchy of geographic regions
 defined by the EAWS (European Avalanche Warning Services). Snowdesk
 exposes three tiers of that hierarchy plus a derived "bulletin
-groupings" layer. All are toggled from the **Overlays** section of the
+groupings" layer. All are toggled from the **Boundaries** section of the
 layer menu; each remembers its state per-device in `localStorage`.
 
 | Layer | EAWS tier | What it is | Default |
@@ -276,14 +281,38 @@ favourite pins too.
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
-| Favourites | Signed in | Owner only, 10/min | On (eligible users) | Private, per-user |
+| Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
 | Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
-| Community reports | Public | via Report flow below | Off | Anonymised, public |
+| Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
 `edit_map` remains a superuser-scoped feature flag during rollout;
 [`feature-flags.md`](feature-flags.md) is the operator reference.
+
+---
+
+## 3.6 What the layer menu lists (SNOW-658)
+
+The layer menu (the stacked-layers roundel) is the map's **view controls for
+published data**. Its sections say what their rows are:
+
+| Section | Rows | What a row switches |
+|---------|------|---------------------|
+| **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for |
+| **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
+| **Locations** | Resorts | Named places geocoded onto regions |
+| **Conditions** | Weather (flag-gated) | Forecast symbols at each point |
+| **Base map** | one row per basemap | The geographic backdrop |
+
+**Favourites and community reports are not in it.** Both are
+user-generated, and each already has a roundel of its own, so each toggle
+lives in the panel that roundel opens — "Show favourites on the map" and
+"Show community reports on the map" — alongside the list of what the user
+has saved and the control to add another. That is the pattern SNOW-634 set
+for offline downloads, generalised: one subject, one way in. Their
+offline-status dots did not move with them; see
+[`offline-map.md`](offline-map.md).
 
 ---
 

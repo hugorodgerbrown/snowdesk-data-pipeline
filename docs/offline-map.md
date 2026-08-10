@@ -1874,6 +1874,33 @@ DOM element `_overlayDot('l3')` returned `null` and the whole branch was
 guarded out, so SNOW-532 removed it along with the hollow
 "never cacheable" dot state it was the only user of.
 
+**Favourites and community reports are absent too, from SNOW-658.** Both had
+a row here with its own IndexedDB-backed dot (`kind: 'idb'` in
+`OVERLAY_RESOURCES`). SNOW-658 moved each overlay's toggle into the panel its
+own roundel opens — "Show favourites on the map", "Show community reports on
+the map" — so there is no row left to hang a dot on, and both entries were
+dropped from `OVERLAY_RESOURCES` rather than relocated. That follows the call
+SNOW-645 made for the downloaded-areas row: **a panel is not a cache-state
+dashboard**, and this menu's invariant is about the rows it lists.
+
+Nothing was lost that the dashboard was answering. Both overlays are per-user
+or near-real-time data that a device fetches on demand and caches
+write-through (`window.pwaMapOverlayCache`); neither is something a user
+deliberately downloads for a trip, which is what the dots exist to report on.
+`map.js` still calls `markCached('favourites')` on the lazy-load path — it
+no-ops now, because `OVERLAY_RESOURCES` membership is the allowlist and
+`_overlayDot` returns `null` for a row that is not there.
+
+**One country row can cover two countries (SNOW-658).** The menu lists
+bulletin PROVIDERS, and ALBINA publishes for Austria and Italy, so its single
+row carries `data-country-codes="at it"`. Its dot goes green only when all
+four feeds are cached for **both** codes: tapping that row switches both
+countries on, so a green dot with only Austria cached would promise an
+offline map that comes up missing Italy — exactly the class of lie SNOW-524
+built these dots to prevent. The enabled-country set the tier dots (l1/l2/l4)
+are judged against is flat-mapped over each checked row's codes for the same
+reason.
+
 The boundary's offline state is therefore **not surfaced**, by choice: it is
 a companion outline with no control and no user action attached to its cache
 state, and when it is missing offline the layer simply doesn't draw while the
