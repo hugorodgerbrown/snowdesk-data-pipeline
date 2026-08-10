@@ -1227,3 +1227,67 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .slf-prose p   { margin: 4px 0; }
 .slf-prose ul  { margin: 4px 0; padding-left: 1.2em; }
 .slf-prose li  { margin: 2px 0; }
+
+
+/* —— Interactive affordance (SNOW-658) ——————
+   ONE hover treatment for every clickable control
+   on the map and in its panels: the pointer
+   cursor, and a translucent infill under it.
+
+   Hugo: "The affordances are inconsistent - for
+   all interactive elements (roundels, 'x'
+   closure, 'add' buttons) it should be consistent
+   on hover - change the mouse pointer, and add
+   infill - see the overlay close and trash cans
+   for examples."  There were four treatments in
+   play: the sheet close and the row trash filled
+   with --color-chip-strong, the roundels ran a
+   barely-perceptible filter: brightness(1.04) on
+   glass, the layers-menu rows filled with a
+   hardcoded rgba(0,0,0,.04) that had no dark
+   counterpart, and the bulletin-fill steps filled
+   with --color-bg.  Each was written at its own
+   call site, which is how four of them happened.
+
+   Applied as a class in markup rather than as a
+   selector list here, so a control gets the
+   treatment by carrying the class rather than by
+   this file learning its name.
+
+   The fill is a background-IMAGE layer, not a
+   background-color: half these controls already
+   paint a background (the roundels' frosted
+   --color-glass), and this has to sit on top of
+   it rather than replace it.
+
+   Native <button> does not take the pointer
+   cursor from the browser, which is most of why
+   the four diverged — every control that needed
+   it had to remember to say so.
+   ————————————————————————————————————————— */
+
+.hover-affordance {
+  cursor: pointer;
+  transition: background-image 120ms ease;
+}
+
+.hover-affordance:hover,
+.hover-affordance:focus-visible {
+  background-image: linear-gradient(
+    var(--color-chip-strong),
+    var(--color-chip-strong)
+  );
+}
+
+/* A control that cannot be pressed says so, and takes no fill: the
+   roundels use aria-disabled (their own [data-download-state] rules
+   already set this cursor), the panel CTA a real disabled attribute. */
+.hover-affordance:disabled,
+.hover-affordance[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.hover-affordance:disabled:hover,
+.hover-affordance[aria-disabled="true"]:hover {
+  background-image: none;
+}

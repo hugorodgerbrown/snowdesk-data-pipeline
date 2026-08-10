@@ -61,11 +61,17 @@ _BUTTON_SIZE_CLASSES: dict[str, str] = {
 # 44×44 is the tap-target minimum, and the design applies it to the header
 # close and to each row action alike; ``shrink-0`` keeps it at that size
 # inside the row's flex line, where the label beside it is the part allowed
-# to give.  The hover backdrop is the same ``bg-chip-strong`` the sheet
-# header's × already used.
+# to give.
+#
+# The hover treatment is ``hover-affordance`` (src/css/main.css), the one
+# class every clickable control on the map and in its panels carries —
+# pointer cursor plus a translucent infill.  It replaces this string's own
+# ``transition-colors hover:bg-chip-strong``, which painted the same fill
+# and gave no cursor: a native ``<button>`` does not take the pointer from
+# the browser, so these controls read as inert under the mouse.
 _ICON_BUTTON_BASE = (
-    "flex h-11 w-11 shrink-0 items-center justify-center rounded-tag"
-    " text-text-2 transition-colors hover:bg-chip-strong"
+    "hover-affordance flex h-11 w-11 shrink-0 items-center justify-center"
+    " rounded-tag text-text-2 transition-colors"
 )
 
 # ``destructive`` is Remove, the one action every panel's rows have.  It

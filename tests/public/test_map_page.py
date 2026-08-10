@@ -709,3 +709,79 @@ def test_report_unverified_for_authenticated_unverified_user() -> None:
     assert "report-btn" in content
     assert 'data-report-eligible="false"' in content
     assert 'data-report-unverified="true"' in content
+
+
+# ---------------------------------------------------------------------------
+# Hover affordance (SNOW-658)
+# ---------------------------------------------------------------------------
+
+# Every clickable control on the map, by the class that identifies it. Each
+# one had its own hover treatment before this ticket — four of them across
+# these seven names — and each now carries the shared ``hover-affordance``
+# class instead (src/css/main.css: pointer cursor plus a translucent
+# infill).
+MAP_CONTROL_CLASSES = (
+    "map-utility-button",
+    "basemap-menu-item",
+    "map-fill-step",
+    "map-download-control",
+    "map-legend-toggle",
+    "map-controls-toggle",
+)
+
+_CLASS_ATTR_RE = re.compile(r'class="([^"]*)"')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("control", MAP_CONTROL_CLASSES)
+def test_every_map_control_carries_the_shared_hover_affordance(
+    control: str,
+) -> None:
+    """A control a user can click says so under the pointer, the same way.
+
+    Hugo: "The affordances are inconsistent - for all interactive elements
+    (roundels, 'x' closure, 'add' buttons) it should be consistent on hover
+    - change the mouse pointer, and add infill." The treatment lives in one
+    class rather than in a hover pair per call site, which is what let four
+    of them drift apart; this test is what stops a new control — or a new
+    copy of an existing one — shipping without it.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    occurrences = [
+        classes
+        for classes in _CLASS_ATTR_RE.findall(content)
+        if control in classes.split()
+    ]
+    assert occurrences, f"no {control} rendered — has it been renamed?"
+    for classes in occurrences:
+        assert "hover-affordance" in classes.split(), classes
+
+
+@pytest.mark.django_db
+@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+@freeze_time("2026-02-17")
+def test_ribbon_action_carries_the_shared_hover_affordance() -> None:
+    """The ribbon's "view bulletin" roundel takes the same treatment.
+
+    It sits in the ribbon header beside the per-region download roundel, so
+    the two disagreeing on hover would be a new inconsistency in the very
+    row this ticket set out to make consistent. It renders only with a
+    focused region's season data, which is why it is not in the
+    parametrised sweep above.
+    """
+    region = MicroRegionFactory.create(region_id="CH-4115")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    client = Client()
+
+    content = client.get(reverse("public:home")).content.decode()
+
+    action = [
+        classes
+        for classes in _CLASS_ATTR_RE.findall(content)
+        if "region-readout-action" in classes.split()
+    ]
+    assert action, "the ribbon did not render — has its data gate changed?"
+    for classes in action:
+        assert "hover-affordance" in classes.split(), classes

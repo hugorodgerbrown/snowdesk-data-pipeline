@@ -98,7 +98,7 @@ Optional context:
             <button
                 id="search-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Find a region" %}'
                 aria-expanded="false"
                 aria-controls="search-input"
@@ -173,7 +173,7 @@ Optional context:
             <button
                 id="basemap-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Choose basemap" %}'
                 aria-haspopup="menu"
                 aria-expanded="false"
@@ -223,7 +223,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="country.ch"
                         data-country-codes="ch"
                         aria-checked="true"
@@ -238,7 +238,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="country.fr"
                         data-country-codes="fr"
                         aria-checked="false"
@@ -251,7 +251,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="country.albina"
                         data-country-codes="at it"
                         aria-checked="false"
@@ -279,7 +279,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l1"
                         aria-checked="false"
                     >
@@ -293,7 +293,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l2"
                         aria-checked="false"
                     >
@@ -305,7 +305,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="l4"
                         aria-checked="true"
                     >
@@ -329,7 +329,7 @@ Optional context:
                     <button
                         type="button"
                         role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                         data-overlay-key="resorts"
                         aria-checked="false"
                     >
@@ -373,7 +373,7 @@ Optional context:
                         <button
                             type="button"
                             role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay"
+                            class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                             data-overlay-key="weather"
                             aria-checked="false"
                         >
@@ -428,7 +428,7 @@ Optional context:
                         <button
                             type="button"
                             role="menuitemradio"
-                            class="basemap-menu-item"
+                            class="basemap-menu-item hover-affordance"
                             data-basemap-key="{{ bm.key }}"
                             data-basemap-url="{{ bm.url }}"
                             aria-checked="false"
@@ -453,7 +453,7 @@ Optional context:
             <button
                 id="locate-toggle"
                 type="button"
-                class="map-utility-button"
+                class="map-utility-button hover-affordance"
                 aria-label='{% trans "Locate me" %}'
             >
                 <svg
@@ -509,7 +509,7 @@ Optional context:
                     <button
                         id="map-fill-toggle"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         aria-label='{% trans "Bulletin fill strength" %}'
                         aria-haspopup="true"
                         aria-expanded="false"
@@ -556,7 +556,7 @@ Optional context:
                     <button
                         id="favourite-add-btn"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         data-favourite-create-url="{{ favourite_create_url }}"
                         data-favourite-list-url="{{ favourite_list_url }}"
                         data-favourite-rename-url-template="{{ favourite_rename_url_template }}"
@@ -585,7 +585,7 @@ Optional context:
                     <button
                         id="report-btn"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         data-report-form-url="{{ report_form_url }}"
                         data-report-list-url="{{ report_list_url }}"
                         data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
@@ -608,7 +608,7 @@ Optional context:
                     <button
                         id="map-help-toggle"
                         type="button"
-                        class="map-utility-button"
+                        class="map-utility-button hover-affordance"
                         aria-label='{% trans "How to use the map" %}'
                     >
                         <svg
@@ -654,7 +654,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_0 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0"
             >
                 <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
@@ -664,7 +664,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_25 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.25"
             >
                 <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
@@ -674,7 +674,7 @@ Optional context:
                 role="radio"
                 aria-checked="true"
                 aria-label="{{ step_label_50 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.5"
             >
                 <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
@@ -684,7 +684,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_75 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="0.75"
             >
                 <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
@@ -694,7 +694,7 @@ Optional context:
                 role="radio"
                 aria-checked="false"
                 aria-label="{{ step_label_100 }}"
-                class="map-fill-step"
+                class="map-fill-step hover-affordance"
                 data-bulletins-step="1"
             >
                 <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
@@ -703,7 +703,7 @@ Optional context:
         <button
             type="button"
             id="map-controls-toggle"
-            class="map-utility-pill map-controls-toggle"
+            class="map-utility-pill map-controls-toggle hover-affordance"
             aria-controls="map-controls-collapsible"
             aria-expanded="true"
             aria-label='{% trans "Hide map controls" %}'
@@ -858,7 +858,7 @@ Optional context:
         <button
             id="map-legend-toggle"
             type="button"
-            class="map-legend-toggle"
+            class="map-legend-toggle hover-affordance"
             aria-label='{% trans "Map information" %}'
             aria-expanded="false"
             aria-controls="map-legend-card"

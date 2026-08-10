@@ -40,6 +40,8 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
+from apps.public.templatetags.components import icon_button_classes
+
 # The three panel bodies, by the <template> id each surface renders them
 # in, each with the glyph its own roundel carries — one distinctive path
 # from includes/_icon_*.html. The header icon is the panel's only identity
@@ -355,6 +357,45 @@ class TestUgcPanelSkeleton:
         for shared in ("-mx-1.5", "px-1.5", "py-0.5", "rounded-pill", "text-label"):
             assert all(shared in c for c in classes), shared
         assert not any("w-full" in c for c in classes)
+
+    @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
+    def test_every_button_in_a_panel_says_it_is_clickable(
+        self, home_html: str, template_id: str
+    ) -> None:
+        """One hover treatment for every control, on every panel.
+
+        Hugo: "The affordances are inconsistent - for all interactive
+        elements (roundels, 'x' closure, 'add' buttons) it should be
+        consistent on hover - change the mouse pointer, and add infill."
+        The panels had two of the four treatments in play — the close and
+        the row trash filled with ``bg-chip-strong`` and gave no cursor at
+        all (a native ``<button>`` does not take the pointer from the
+        browser), the add CTA shifted opacity. Both now carry the shared
+        ``hover-affordance`` class, which is also what the map's own
+        roundels carry (tests/public/test_map_page.py).
+        """
+        body = _panel_body(home_html, template_id)
+        buttons = re.findall(r"<button\b[^>]*>", body)
+        assert buttons
+        for button in buttons:
+            assert "hover-affordance" in button, button
+
+    def test_the_icon_control_tag_carries_the_affordance(self) -> None:
+        """Both variants of the shared 44x44 icon control, at the source.
+
+        The close, the pencil and the trash all come from
+        ``icon_button_classes`` (apps/public/templatetags/components.py) —
+        five templates in three apps — so the treatment is asserted on the
+        tag rather than on each of them. The destructive variant keeps its
+        own hover COLOUR: it is the one control that should name itself as
+        destructive under the pointer about to press it.
+        """
+        neutral = icon_button_classes()
+        destructive = icon_button_classes(variant="destructive")
+
+        assert "hover-affordance" in neutral.split()
+        assert "hover-affordance" in destructive.split()
+        assert "hover:text-status-error-text" in destructive.split()
 
     def test_every_panel_title_is_the_same_size(self, home_html: str) -> None:
         """One title size across the three, not one per panel.

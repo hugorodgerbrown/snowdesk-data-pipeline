@@ -158,9 +158,6 @@
     cursor: pointer;
 }
 
-.map-controls-toggle:hover {
-    filter: brightness(1.04);
-}
 
 /* Chevron points up when collapsed ("open upward") and flips to point down
    when expanded ("close downward"), so it always indicates what the next tap
@@ -214,9 +211,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--basemap:hover {
-    filter: brightness(1.04);
-}
 
 /* SNOW-328: Locate-me roundel — same geometry as the basemap pill: a
    40×40 flex-centred circle that anchors the #locate-toggle button. No
@@ -227,9 +221,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--locate:hover {
-    filter: brightness(1.04);
-}
 
 /* Hide the MapLibre GeolocateControl's own rendered control — our
    #locate-toggle pill is the visible affordance. Hiding only the button left
@@ -329,9 +320,6 @@
     box-shadow: inset 0 0 0 2.5px var(--color-card);
 }
 
-.basemap-menu-item:hover {
-    background: rgba(0, 0, 0, 0.04);
-}
 
 .basemap-menu-item:focus-visible {
     outline: 2px solid var(--color-text-1);
@@ -474,6 +462,10 @@
 .basemap-menu-item[disabled]:hover,
 .basemap-menu-item[aria-disabled="true"]:hover {
     background: transparent;
+    /* SNOW-658: and no shared hover infill either — `.hover-affordance`
+       covers `[aria-disabled]` itself, but an offline row uses the plain
+       `disabled` attribute, and this rule is the one that knows that. */
+    background-image: none;
 }
 
 /* Search pill — collapsed to a round 40×40 by default; on expansion
@@ -506,6 +498,14 @@
     cursor: pointer;
 }
 
+/* SNOW-658: the shared hover fill paints THIS element (the 40x40 button),
+   which sits inside the pill's own 40x40 circle — so it has to be a circle
+   too, or the fill renders as a square inside a round roundel. The radius
+   was already stated for :focus-visible below, for the same reason. */
+.map-utility-button {
+    border-radius: 999px;
+}
+
 .map-utility-button:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
@@ -535,9 +535,6 @@
     justify-content: center;
 }
 
-.map-report-control:hover {
-    filter: brightness(1.04);
-}
 
 /* SNOW-414: "Add favourite" pill — same 40x40 icon-button geometry as
    the basemap / locate pills, stacked inside #map-controls-br (not
@@ -549,9 +546,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--favourite:hover {
-    filter: brightness(1.04);
-}
 
 /* Search input inside the expanded pill — hidden until the pill is
    in the expanded state. Width/opacity transition in sync with the
@@ -872,9 +866,6 @@
     cursor: pointer;
 }
 
-.map-fill-step:hover {
-    background: var(--color-bg);
-}
 
 .map-fill-step:focus-visible {
     outline: 2px solid var(--color-text-1);
@@ -1606,18 +1597,13 @@
     text-decoration: none;
 }
 
-/* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
-   a bigger box-shadow — a bespoke hover treatment invented for this control
-   alone, with no dark-mode counterpart either. Every .map-utility-pill
-   variant (basemap/locate/favourite/help — same 40×40 glass-roundel family)
-   already has a hover idiom that needs no light/dark counterpart at all:
-   filter: brightness(1.04), which brightens whatever is actually painted
-   rather than assuming what colour it is. Matched here rather than inventing
-   a parallel one. */
-.region-readout-action:hover,
-.region-readout-action:focus-visible {
-    filter: brightness(1.04);
-}
+/* This control has had three hover treatments. It began with a bespoke
+   lighter rgba(255, 255, 255, …) background plus a bigger box-shadow, with
+   no dark-mode counterpart; the post-SNOW-645 review matched it to the
+   roundel family's filter: brightness(1.04); SNOW-658 replaced that family
+   idiom, here and everywhere, with the shared `.hover-affordance` class the
+   markup now carries — see the note above `.map-download-control`, the
+   roundel this one sits beside in the same ribbon header. */
 
 /* SNOW-642: disabled — nothing is focused, so there is no bulletin to open.
    map.js sets aria-disabled and drops the href; this is the matching visual.
@@ -1771,10 +1757,17 @@
    …` this rule used to animate and the `prefers-reduced-motion` override
    that existed only to cancel it — a plain filter swap needs neither,
    matching every sibling .map-utility-pill--* hover exactly. */
-.map-download-control:hover,
-.map-download-control:focus-visible {
-    filter: brightness(1.04);
-}
+/* SNOW-658: the hover treatment for every control in this file now comes
+   from the one shared `.hover-affordance` class (src/css/main.css) that the
+   markup carries — pointer cursor plus a translucent --color-chip-strong
+   infill. Four treatments were removed to get there: `filter:
+   brightness(1.04)` on the glass roundels (a ~4% lift on a frosted
+   background, close to invisible), a hardcoded `rgba(0, 0, 0, 0.04)` on the
+   layers-menu rows (no dark-mode counterpart), `--color-bg` on the
+   bulletin-fill steps, and the panels' own `hover:bg-chip-strong`. Hugo:
+   "The affordances are inconsistent... it should be consistent on hover -
+   change the mouse pointer, and add infill". A new control here takes the
+   class rather than growing a fifth. */
 
 /* Review (post-SNOW-645, Hugo's dark-mode report): --ink/--muted-coloured
    TEXT and glyphs sitting directly on top of the glass surfaces just above
@@ -2397,9 +2390,6 @@
     justify-content: center;
 }
 
-.map-utility-pill--help:hover {
-    filter: brightness(1.04);
-}
 
 #map-help-overlay {
     position: fixed;

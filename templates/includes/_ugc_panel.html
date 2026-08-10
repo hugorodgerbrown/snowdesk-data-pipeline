@@ -153,7 +153,12 @@ state should not have to remember to bring its own.
             {# `h-11.5` is the design's own 46px — stated as a height       #}
             {# rather than more padding, so the CTA is the same size on     #}
             {# every panel whatever its label wraps to.                     #}
-            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex h-11.5 items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50'
+            {# `hover-affordance` (src/css/main.css) is the one hover        #}
+            {# treatment every clickable control on the map and in these     #}
+            {# panels carries — pointer plus a translucent infill. The       #}
+            {# shared button chrome brings only an opacity shift, which on   #}
+            {# an outlined CTA is close to invisible, and no cursor at all.  #}
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5 disabled:opacity-50'
         >
             {# A stroked SVG plus, not a literal "+" glyph — the same        #}
             {# stroke-based idiom every other icon in this design uses.      #}
