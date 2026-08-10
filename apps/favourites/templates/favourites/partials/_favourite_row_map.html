@@ -7,38 +7,43 @@ The map variant of favourites/partials/_favourite.html. That file is NOT
 forked or changed: the account manage page renders it and keeps its
 always-visible rename field, which is right for a page whose whole purpose
 is managing favourites and wrong for a list glanced at on the map. This
-row is includes/_ugc_panel_row.html instead — the shape extracted from the
-"Manage downloads" sheet, so all three UGC panels' rows read alike at
-rest: one primary line, one muted secondary line, one "…" menu.
+row is includes/_ugc_panel_row.html instead — the shape Hugo's design
+gives all three UGC panels: label, muted meta line, icon actions.
 
-The primary line is the LINK to the favourite's own page. A GET is a link
-and a state change is a control, so navigation cannot become a menu item
-faking it; and making the title itself the link removes the separate
-"Details →" control that used to sit beside the row competing with it for
-the same tap. Rename and Remove — both POSTs — live in the menu
-(favourites/partials/_favourite_row_map_menu_items.html).
+Rename and Remove are the actions, both icon controls
+(_favourite_row_map_actions.html), pencil then trash. Rename is this
+panel's only extra: the pencil, or a click on the label, puts the label
+into an inline edit.
+
+There is no link on the primary line. It WAS one for a day — the row's
+title linking to the favourite's own detail page, replacing an even
+earlier "Details →" control beside it — and Hugo's design drops both: the
+label's click is the rename now, and a favourite's detail is reached by
+tapping its pin on the map, which is where the user already is.
 
 The row's id is what the Remove form's hx-target addresses, and it matches
 _favourite.html's own ``favourite-<uuid>`` so the two variants stay
 addressable the same way.
 
-Subtitle: the pin's region when one matched, else its coordinates. A pin
+Meta line: the pin's region when one matched, else its coordinates. A pin
 can fall outside every known boundary (region is nullable), and an
 unnamed pin's coordinates are the only thing distinguishing it from
 another — an empty secondary line would leave rows uneven and say
 nothing.
 
+No `value` slot: that column is for measured quantities (downloads' size)
+and a favourite has none. Leaving it out is the point — a column that
+means "size" on one panel and something else on another means nothing.
+
 Context:
     favourite : Favourite — the saved pin to render.
 {% endcomment %}
-{% with uuid=favourite.uuid|stringformat:"s" row_subtitle=favourite.region.name %}
+{% with uuid=favourite.uuid|stringformat:"s" row_meta=favourite.region.name %}
     {% if not favourite.region %}
-        {% blocktrans trimmed with lat=favourite.latitude|floatformat:4 lon=favourite.longitude|floatformat:4 asvar row_subtitle %}{{ lat }},
+        {% blocktrans trimmed with lat=favourite.latitude|floatformat:4 lon=favourite.longitude|floatformat:4 asvar row_meta %}{{ lat }},
             {{ lon }}{% endblocktrans %}
     {% endif %}
     {% trans "Unnamed pin" as unnamed_pin %}
-    {% url 'favourites:detail' favourite.uuid as favourite_detail_url %}
-    {% blocktrans trimmed with name=favourite.name|default:unnamed_pin asvar row_menu_label %}More actions for
-        {{ name }}{% endblocktrans %}
-    {% include "includes/_ugc_panel_row.html" with row_id="favourite-"|add:uuid label=favourite.name|default:unnamed_pin label_href=favourite_detail_url label_testid="favourite-list-detail-link" subtitle=row_subtitle trigger_id="favourite-menu-trigger-"|add:uuid menu_id="favourite-menu-"|add:uuid trigger_label=row_menu_label menu_items_template="favourites/partials/_favourite_row_map_menu_items.html" %}
+    {% trans "Favourite name" as rename_label %}
+    {% include "includes/_ugc_panel_row.html" with row_id="favourite-"|add:uuid label=favourite.name|default:unnamed_pin label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="favourites/partials/_favourite_row_map_actions.html" %}
 {% endwith %}

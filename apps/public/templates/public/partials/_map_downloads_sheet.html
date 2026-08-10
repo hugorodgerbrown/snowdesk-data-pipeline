@@ -91,29 +91,29 @@ sheet's own.
 <template id="map-downloads-body-template">
     {% trans "Downloads on this device" as downloads_sheet_title %}
     {% trans "Download a custom area" as downloads_add_label %}
-    {% trans "Show areas on the map" as downloads_overlay_toggle_label %}
-    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" toggle_label=downloads_overlay_toggle_label %}
+    {# The context strip: where this panel's data lives, in one line. It    #}
+    {# was a paragraph inside the budget block; the shared skeleton renders #}
+    {# it for every panel now, directly under the title, with the budget    #}
+    {# meter below it — the one place a panel may extend the strip.         #}
+    {% trans "Downloads and budget stay on this device." as downloads_context_line %}
+    {# No `section_label`: this panel has TWO groups (Regions, Custom       #}
+    {# areas) and renders both headings itself, through the same partial.   #}
+    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
 </template>
-{# One list row (includes/_ugc_panel_row.html — the shared shape SNOW-658   #}
-{# extracted from this sheet's own SNOW-645 design). `js_filled` renders     #}
-{# every [data-row-*] hook empty for buildRow to fill; `rule` adds the       #}
-{# coloured left-edge rule, which only this panel has (it carries the        #}
-{# basemap identity colour).                                                 #}
-{#                                                                           #}
-{# ``data-downloads-delete`` carries the area id so the delegated click       #}
-{# handler needs no closure over the rendered row; ``data-downloads-rename``  #}
-{# (SNOW-635) is removed outright by map_downloads_manager.js's ``buildRow``  #}
-{# for a row that isn't renameable (a region, or an orphaned bucket).         #}
-{#                                                                           #}
-{# The overflow menu's `trigger_id`/`menu_id` here ("row-overflow-…") are     #}
-{# NOT unique — they exist so includes/_overflow_menu.html has something to   #}
-{# render; buildRow rewrites both, and the trigger's aria-controls, to a      #}
-{# per-row id once cloned, the same way it already rewrites                   #}
-{# data-downloads-delete's value. (The favourite and observation rows need no #}
-{# such rewrite: a server loop has the row's uuid in hand and renders a       #}
-{# unique pair directly.)                                                     #}
+{# One list row (includes/_ugc_panel_row.html — the one anatomy Hugo's      #}
+{# design gives all three UGC panels). `js_filled` renders every            #}
+{# [data-row-*] hook empty for buildRow to fill, including the inline-      #}
+{# rename input; `rule` adds the coloured left-edge rule, which only this   #}
+{# panel has (it carries the basemap identity colour).                      #}
+{#                                                                          #}
+{# ``data-downloads-delete`` carries the area id so the delegated click      #}
+{# handler needs no closure over the rendered row; ``data-downloads-rename`` #}
+{# (SNOW-635) is removed outright by map_downloads_manager.js's ``buildRow`` #}
+{# for a row that isn't renameable (a region, or an orphaned bucket), along  #}
+{# with that row's own inline-edit affordance.                               #}
 <template id="map-downloads-row-template">
-    {% include "includes/_ugc_panel_row.html" with rule=True js_filled=True trigger_id="row-overflow-trigger" menu_id="row-overflow-menu" trigger_label="More actions" menu_items_template="includes/_map_downloads_row_menu_items.html" %}
+    {% trans "Area name" as downloads_rename_label %}
+    {% include "includes/_ugc_panel_row.html" with rule=True js_filled=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}

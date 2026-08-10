@@ -2,47 +2,59 @@
 templates/includes/_ugc_panel_row.html — one row inside a
 includes/_ugc_panel.html list (SNOW-658).
 
-The row shape the "Manage downloads" sheet arrived at in SNOW-645
-review, extracted so the favourites and field-observation panels use it
-instead of the two hand-imitated variants they had grown (a bordered
-box with an always-visible rename `<input>`; a bordered box with an
-inline link-styled Remove). One primary line, one muted secondary line,
-one optional trailing meta figure, and ONE trailing action slot — the
-"…" overflow menu. At rest the three panels' rows now read alike.
+Hugo's "Map panels — common format" design gives every UGC panel's rows
+one anatomy, five slots, always in this order:
 
-Every state-changing action lives in the overflow menu, on every panel:
-Rename + Remove for a downloaded custom area and for a favourite,
-Remove for a field observation. An inline destructive control sitting
-under the reader's thumb on a list they are scrolling is a mis-tap
-waiting to happen, and it was the loudest of the three panels'
-differences.
+  rule    an optional 3px bar, SEMANTIC only. Downloads keeps it (it
+          carries the basemap the download derives from); favourites and
+          observations have no equivalent, so they omit the slot
+          entirely rather than render it empty.
+  label   15px/500, truncates.
+  meta    13px muted, optional — region · date · location.
+  value   mono, optional, right-aligned, ONLY for a measured quantity
+          (downloads' size). The other two panels have none: a date is
+          not a measurement, and putting one here would make the column
+          mean two different things on two panels.
+  action  right-aligned icon controls, TRASH ALWAYS LAST. Remove is the
+          only action every panel has; favourites and a renameable
+          download add a pencil before it.
 
-A GET is a link. The one navigation a row can offer (a favourite's own
-detail page) is therefore the PRIMARY LINE itself, rendered as an
-`<a>` — not a menu item, which would be a button faking navigation, and
-not a second "Details →" control competing with the row's own title for
-the same tap. `label_href` is what switches it.
+Rows are not cards. There are no boxes inside a panel — each row draws a
+hairline (`border-t`) and nothing else, so a list reads as a list.
+
+WHAT REPLACED WHAT (this partial's first pass, earlier the same day, put
+every action in a "…" overflow menu and made the primary line a link to a
+detail page). Hugo's design removes both:
+
+  * no ellipsis menu. Remove is a visible trash control in the same place
+    on every row — one tap, not two, and the same shape on all three
+    panels;
+  * no inline "Remove" text button and no "Details →" link. A favourite's
+    detail page is reached by tapping its pin on the map, which is where
+    the user already is;
+  * rename happens IN PLACE on the label, not behind a window.prompt.
+    Pencil — or a click on the label itself — turns the label into an
+    inline edit; Enter or blur commits, Escape cancels, and a trimmed
+    empty input leaves the title unchanged (static/js/inline_rename.js
+    owns that state machine, and both panels that can rename share it).
 
 Serving both render paths. Downloads builds its rows in JS
 (map_downloads_manager.js's `buildRow` clones this markup out of a
 server-rendered `<template>` and fills `[data-row-label]`,
-`[data-row-subtitle]`, `[data-row-rule]` and `[data-row-size]`, then
-rewrites the overflow menu's ids per row); favourites and observations
-render theirs from a server-side loop, filling the same hooks directly.
-The hook NAMES are therefore unchanged from what `buildRow` already
-targets. `js_filled` is what reconciles the two: a server row omits an
-element it has no text for, while a JS-filled row needs every hook
+`[data-row-meta]`, `[data-row-rule]` and `[data-row-value]`); favourites
+and observations render theirs from a server-side loop, filling the same
+hooks directly. `js_filled` is what reconciles the two: a server row omits
+an element it has no text for, while a JS-filled row needs every hook
 present and empty for `buildRow` to find.
 
 Parameters (passed via {% include … with … %}):
   label         (string) — the primary line's text. Empty for a
                 JS-filled row.
-  label_href    (string, optional) — when present the primary line is a
-                link to it.
   label_testid  (string, optional) — `data-testid` on the primary line,
                 for a server-rendered row a pytest asserts on.
-  subtitle      (string, optional) — the muted secondary line.
-  meta          (string, optional) — trailing figure (downloads' size).
+  meta          (string, optional) — the muted secondary line.
+  value         (string, optional) — trailing mono figure (downloads'
+                size). Measured quantities only.
   rule          (bool, optional) — render the coloured vertical rule
                 down the left edge. Downloads only: it carries the
                 basemap identity colour (`.basemap-identity-fill` +
@@ -51,49 +63,72 @@ Parameters (passed via {% include … with … %}):
                 class's own keyless fallback is the "downloaded,
                 basemap unknown" green — a claim neither of them can
                 make.
-  js_filled     (bool, optional) — render `[data-row-subtitle]` and
-                `[data-row-size]` even with no text, because this copy
-                is a `<template>` that JS clones and fills.
+  renameable    (bool, optional) — render the inline-rename affordance:
+                the label gains a hover outline and a cursor, and a
+                hidden `[data-row-rename-input]` sits beside it for
+                inline_rename.js to reveal. The owning module supplies
+                the pencil in its own actions template, and commits.
+  rename_label  (string, optional) — the edit field's aria-label; the
+                revealed input has no visible label of its own.
+  js_filled     (bool, optional) — render every hook, and the rename
+                input, even with no text: this copy is a `<template>`
+                that JS clones and fills. buildRow strips the rename
+                affordance from a row that cannot be renamed.
   row_id        (string, optional) — DOM id. The favourite and
                 observation rows carry one so their Remove form can
                 `hx-target` exactly this row and swap it out on the
                 empty 200 the delete endpoints return.
-  trigger_id    (string) — overflow-menu trigger id.
-  menu_id       (string) — overflow-menu `<ul>` id.
-  trigger_label (string) — the trigger's aria-label; the "…" glyph
-                names nothing to a screen reader.
-  menu_items_template (string) — template path rendering the menu's
-                `<li>`s. Receives this include's full context, so a
-                server row's own object is in scope for the item's
-                hx-post URLs.
+  actions_template (string, optional) — template path rendering this
+                row's icon controls. Receives this include's full
+                context, so a server row's own object is in scope for
+                the action's hx-post URLs. Trash last, always.
 {% endcomment %}
-<li class="flex items-stretch gap-3 border-t border-border py-2.25" {% if row_id %}id="{{ row_id }}"{% endif %}>
+<li
+    class="flex items-center gap-2 border-t border-border py-2.25"
+    {% if row_id %}id="{{ row_id }}"{% endif %}
+    {% if renameable %}data-row-renameable{% endif %}
+>
     {% if rule %}
         <span
             data-row-rule
             aria-hidden="true"
-            class="basemap-identity-fill h-6.5 w-0.75 shrink-0 self-center rounded-xs"
+            class="basemap-identity-fill w-0.75 shrink-0 self-stretch rounded-pill"
         ></span>
     {% endif %}
-    <span class="flex min-w-0 flex-1 flex-col justify-center">
-        {% if label_href %}
-            <a
-                href="{{ label_href }}"
-                data-row-label
-                {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                class="truncate text-label font-medium text-text-1 hover:underline"
-            >{{ label }}</a>
-        {% else %}
-            <span data-row-label class="truncate text-label font-medium text-text-1">{{ label }}</span>
+    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+        {# The label's own box is the inline editor's box: identical        #}
+        {# padding, radius and negative margins in both states, so          #}
+        {# committing a rename does not make the row jump. A row that       #}
+        {# cannot be renamed carries the same box with a transparent        #}
+        {# border and no hover — the border is what would otherwise shift   #}
+        {# the text by a pixel between the two shapes.                      #}
+        <span
+            data-row-label
+            {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
+            class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1{% if renameable or js_filled %} cursor-text hover:border-border-strong{% endif %}"
+        >{{ label }}</span>
+        {% if renameable or js_filled %}
+            {# Hidden until inline_rename.js reveals it. Rendered here      #}
+            {# rather than created in JS so its own copy (the aria-label)   #}
+            {# passes through a template, where makemessages can see it.    #}
+            <input
+                type="text"
+                data-row-rename-input
+                hidden
+                value="{{ label }}"
+                maxlength="100"
+                aria-label="{{ rename_label }}"
+                class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
+            >
         {% endif %}
-        {% if subtitle or js_filled %}
-            <span data-row-subtitle class="truncate text-xs text-text-3">{{ subtitle }}</span>
-        {% endif %}
-    </span>
-    <span class="flex shrink-0 items-center gap-1">
         {% if meta or js_filled %}
-            <span data-row-size class="font-mono text-summary text-text-2">{{ meta }}</span>
+            <span data-row-meta class="truncate text-summary text-text-3">{{ meta }}</span>
         {% endif %}
-        {% include "includes/_overflow_menu.html" with trigger_id=trigger_id menu_id=menu_id trigger_label=trigger_label items_template=menu_items_template %}
     </span>
+    {% if value or js_filled %}
+        <span data-row-value class="shrink-0 font-mono text-summary text-text-2">{{ value }}</span>
+    {% endif %}
+    {% if actions_template %}
+        <span class="flex shrink-0 items-center">{% include actions_template %}</span>
+    {% endif %}
 </li>

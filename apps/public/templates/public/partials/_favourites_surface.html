@@ -60,8 +60,12 @@ Context expected:
 <template id="favourite-list-template">
     {% trans "Favourites" as favourite_list_title %}
     {% trans "Add a favourite" as favourite_add_label %}
-    {% trans "Show favourites on the map" as favourites_overlay_toggle_label %}
-    {% include "includes/_ugc_panel.html" with title=favourite_list_title rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" toggle_label=favourites_overlay_toggle_label %}
+    {# The context strip — where this panel's data lives. A favourite is    #}
+    {# the user's own and is never published, unlike a field observation;   #}
+    {# the strip is where each panel says so in its own words.              #}
+    {% trans "Favourites are private and not shared." as favourites_context_line %}
+    {% trans "Places" as favourites_section_label %}
+    {% include "includes/_ugc_panel.html" with title=favourite_list_title icon_template="includes/_icon_favourite.html" context_line=favourites_context_line section_label=favourites_section_label rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" %}
 </template>
 {# Create-form template — cloned by favourites.js once a pin has been  #}
 {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}

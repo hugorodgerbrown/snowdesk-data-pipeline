@@ -1,0 +1,40 @@
+{% load i18n components %}
+{% comment %}
+observations/partials/_observation_row_actions.html — the field-
+observation row's icon controls (SNOW-658).
+
+includes/_ugc_panel_row.html's `actions_template` slot, reached from
+_observation.html — which passes its own full context on, so
+``observation`` is in scope here for the delete endpoint's URL.
+
+Remove is the only control. There is no rename counterpart: an
+observation records what was seen and where, and none of that is editable
+after the fact — which is why the always-visible name field the
+favourites row used to carry never existed here.
+
+Still a plain HTMX form, not a JS-driven action — the delete endpoint
+returns an empty 200, so ``hx-target``/``hx-swap`` on this row's own id
+removes exactly this row and nothing on the page has to know which one
+was clicked.
+
+The aria-label names the row: "Remove" alone names nothing with a list of
+reports on screen. It interpolates ``label`` —
+includes/_ugc_panel_row.html's own parameter, in scope here — which for
+this panel is the observation's own type.
+
+Context:
+    observation : FieldObservation — the report this row describes.
+    label       : str — the row's display name (the shared row's own
+                  parameter): the observation type.
+{% endcomment %}
+{% blocktrans trimmed with kind=label asvar remove_aria_label %}Remove {{ kind }}{% endblocktrans %}
+<form
+    hx-post="{% url 'observations:delete' observation.uuid %}"
+    hx-target="#observation-{{ observation.uuid }}"
+    hx-swap="outerHTML"
+>
+    {% csrf_token %}
+    <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
+        {% include "includes/_icon_trash.html" only %}
+    </button>
+</form>

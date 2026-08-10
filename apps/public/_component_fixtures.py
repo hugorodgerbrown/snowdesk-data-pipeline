@@ -1330,17 +1330,23 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 
 MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Downloads sheet",
+        # SNOW-658: one string on all three panels now — "Show areas on
+        # the map" / "Show favourites on the map" / "Show community
+        # reports on the map" were three sentences for one control, and
+        # includes/_ugc_panel.html fixes the replacement rather than
+        # passing it in. The partial keeps its `label` parameter: it is a
+        # generic control, and this page is where its shape is reviewed.
+        "caption": "As every UGC panel renders it",
         "context": {
             "id": "component-library-map-overlay-toggle-downloads",
-            "label": "Show areas on the map",
+            "label": "Display on the map",
         },
     },
     {
-        "caption": "Favourites panel",
+        "caption": "A longer label, to check the switch holds its size",
         "context": {
             "id": "component-library-map-overlay-toggle-favourites",
-            "label": "Show favourites on the map",
+            "label": "Display the community's field observations on the map",
         },
     },
 )
@@ -1395,35 +1401,44 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # UGC panel + row (SNOW-658) ---------------------------------------------------
 # The skeleton and row shape shared by the three map panels that manage a
-# user's own data — downloads, favourites, field observations. Extracted
-# from the "Manage downloads" sheet, which is the reference design; the
-# other two conform to it.
+# user's own data — downloads, favourites, field observations. Hugo's "Map
+# panels — common format" design: five shell parts in a fixed order, one
+# row anatomy of five slots.
 #
-# `rows_template` takes a template PATH because Django has no slot
-# mechanism (see includes/_ugc_panel.html's own header). The library hands
-# it a demo template rendering two static rows — every real caller's list
+# `rows_template`, `icon_template` and `actions_template` all take a
+# template PATH because Django has no slot mechanism (see
+# includes/_ugc_panel.html's own header). The library hands the panel a
+# demo template rendering two static rows — every real caller's list
 # either loads over HTMX or is filled by JS, and this page runs neither.
+#
+# There is no `toggle_label`: the footer switch reads "Display on the map"
+# on all three panels, so the shared partial owns the string.
 
 UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Favourites panel (no header extra)",
         "context": {
             "title": "Favourites",
+            "icon_template": "includes/_icon_favourite.html",
+            "context_line": "Favourites are private and not shared.",
+            "section_label": "Places",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Add a favourite",
             "toggle_id": "component-library-ugc-panel-toggle-favourites",
-            "toggle_label": "Show favourites on the map",
         },
     },
     {
         "caption": "Downloads panel (budget block in the header slot)",
         "context": {
             "title": "Downloads on this device",
+            "icon_template": "includes/_icon_downloads.html",
+            "context_line": "Downloads and budget stay on this device.",
+            # No section_label: this panel groups its rows under two
+            # headings of its own, rendered from its rows template.
             "header_template": "public/partials/_map_downloads_header.html",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Download a custom area",
             "toggle_id": "component-library-ugc-panel-toggle-downloads",
-            "toggle_label": "Show areas on the map",
         },
     },
 )
@@ -1431,39 +1446,31 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 
 UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Plain row — primary line, secondary line, menu",
+        "caption": "Plain row — label, meta line, one action",
         "context": {
             "label": "Arolla ridge",
-            "subtitle": "Val d'Hérens",
-            "trigger_id": "component-library-ugc-row-plain-trigger",
-            "menu_id": "component-library-ugc-row-plain-menu",
-            "trigger_label": "More actions for Arolla ridge",
-            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+            "meta": "Val d'Hérens",
+            "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },
     {
-        "caption": "Linked row — the primary line navigates (a GET is a link)",
+        "caption": "Renameable row — the label itself is the edit target",
         "context": {
             "label": "Cabane des Dix",
-            "subtitle": "Val des Dix",
-            "label_href": "/favourites/",
-            "trigger_id": "component-library-ugc-row-linked-trigger",
-            "menu_id": "component-library-ugc-row-linked-menu",
-            "trigger_label": "More actions for Cabane des Dix",
-            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+            "meta": "Val des Dix",
+            "renameable": True,
+            "rename_label": "Favourite name",
+            "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },
     {
-        "caption": "Downloads row — colour rule and trailing size",
+        "caption": "Downloads row — colour rule and trailing measured value",
         "context": {
             "label": "Verbier",
-            "subtitle": "Snowdesk Terrain",
-            "meta": "18.2 MB",
+            "meta": "Snowdesk Terrain",
+            "value": "18.2 MB",
             "rule": True,
-            "trigger_id": "component-library-ugc-row-download-trigger",
-            "menu_id": "component-library-ugc-row-download-menu",
-            "trigger_label": "More actions for Verbier",
-            "menu_items_template": ("includes/_map_downloads_row_menu_items.html"),
+            "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },
 )

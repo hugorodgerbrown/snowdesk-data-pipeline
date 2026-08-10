@@ -14,10 +14,14 @@ empty heading. Within a group the order is unchanged —
 basemap_manage_core.js's manageRows sorts largest-first, groupRowsByKind
 only partitions that same order by kind.
 
-Heading style (reconciled against the design): mono, `font-medium`,
-`tracking-wide`, `text-xs`. `uppercase` stays a CSS transform on the
-rendered string, never applied to the translated msgid itself —
-"Regions"/"Custom areas" stay natural-cased and translatable.
+Heading style: includes/_eyebrow.html, the project's mono uppercase label
+primitive, with `font-medium` for the weight the design gives a panel's
+section label. SNOW-658: this file used to write that class string out by
+hand, and the other two panels had no section label at all; all four
+headings across the three panels come from the one partial now, so a
+change to the shape lands on every panel at once. `uppercase` stays a CSS
+transform on the rendered string, never applied to the translated msgid
+itself — "Regions"/"Custom areas" stay natural-cased and translatable.
 
 No border under a heading: each ROW carries its own `border-t`
 (includes/_ugc_panel_row.html), so the heading/first-row boundary is
@@ -26,16 +30,14 @@ gets a `border-b` on its own `<ul>`, closing the list off — which group
 counts as "last" is data-driven (either group can be empty/hidden), so
 render() sets it via a class toggle rather than a fixed CSS selector.
 {% endcomment %}
+{% trans "Regions" as regions_label %}
+{% trans "Custom areas" as custom_areas_label %}
 <div data-downloads-group="region" class="flex flex-col gap-1" hidden>
-    <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-        {% trans "Regions" %}
-    </p>
+    {% include "includes/_eyebrow.html" with tag="p" text=regions_label class_extra="pb-1 font-medium" %}
     <ul data-downloads-list-region class="flex flex-col"></ul>
 </div>
 <div data-downloads-group="custom" class="flex flex-col gap-1" hidden>
-    <p class="mt-1 pb-1 font-mono text-xs font-medium uppercase tracking-wide text-text-3">
-        {% trans "Custom areas" %}
-    </p>
+    {% include "includes/_eyebrow.html" with tag="p" text=custom_areas_label class_extra="pb-1 font-medium" %}
     <ul data-downloads-list-custom class="flex flex-col"></ul>
 </div>
 <p data-downloads-empty hidden class="py-2 text-sm text-text-2">

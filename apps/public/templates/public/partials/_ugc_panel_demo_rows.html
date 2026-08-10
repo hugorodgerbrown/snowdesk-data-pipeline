@@ -15,6 +15,6 @@ public/partials/_status_page_demo.html — a demo-only template living
 beside the real ones, never included from a real surface.
 {% endcomment %}
 <ul class="flex flex-col">
-    {% include "includes/_ugc_panel_row.html" with label="Verbier" subtitle="Snowdesk Terrain" meta="18.2 MB" trigger_id="component-library-ugc-panel-row-1-trigger" menu_id="component-library-ugc-panel-row-1-menu" trigger_label="More actions for Verbier" menu_items_template="includes/_map_downloads_row_menu_items.html" %}
-    {% include "includes/_ugc_panel_row.html" with label="Arolla ridge" subtitle="Val d'Hérens" trigger_id="component-library-ugc-panel-row-2-trigger" menu_id="component-library-ugc-panel-row-2-menu" trigger_label="More actions for Arolla ridge" menu_items_template="includes/_map_downloads_row_menu_items.html" %}
+    {% include "includes/_ugc_panel_row.html" with label="Verbier" meta="Snowdesk Terrain" value="18.2 MB" rule=True actions_template="includes/_map_downloads_row_actions.html" %}
+    {% include "includes/_ugc_panel_row.html" with label="Arolla ridge" meta="Val d'Hérens" actions_template="includes/_map_downloads_row_actions.html" %}
 </ul>

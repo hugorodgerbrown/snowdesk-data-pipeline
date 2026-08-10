@@ -5,26 +5,23 @@ observations/partials/_observation.html — One field-observation row (SNOW-658)
 Rendered by apps.observations.views.observation_list, one per row, inside the
 map's field-observation panel.
 
-SNOW-658 (second pass): the row is includes/_ugc_panel_row.html now — the
-shape extracted from the "Manage downloads" sheet, which is the reference
-design for all three UGC panels. It replaces the bordered box with an
-inline Remove link this file grew by imitating that sheet by hand: same
-primary/secondary lines, but Remove moved into the "…" overflow menu
-(observations/partials/_observation_row_menu_items.html), where every
-panel's state-changing actions now live.
+The row is includes/_ugc_panel_row.html — the one anatomy Hugo's design
+gives all three UGC panels. This panel uses the fewest of its slots: no
+rule (it has no per-row identity to carry), no value (a timestamp is not
+a measured quantity), and one action.
+
+Remove is that action — a trash icon control
+(observations/partials/_observation_row_actions.html), in the same place
+it sits on the other two panels. It was an inline link-styled button, then
+for one day a "…" menu item; the design has neither.
 
 The row keeps its own id, so the Remove form's
 ``hx-target="#observation-<uuid>"`` / ``hx-swap="outerHTML"`` still swaps
 out exactly this row on the empty body the delete endpoint returns, and
 nothing on the page has to know which row was clicked.
 
-The overflow menu's trigger/menu id pair is built from the uuid here.
-Downloads has to rewrite its own pair in JS after cloning a template; a
-server loop has the uuid in hand and renders a unique pair directly.
-
-There is no link on the primary line: an observation has no page of its
-own to navigate to. A favourite does, and that is what
-includes/_ugc_panel_row.html's ``label_href`` is for.
+The label is not a link and not renameable: an observation has no page of
+its own to navigate to, and nothing about it is editable after the fact.
 
 Context:
     observation : FieldObservation — the report to render.
@@ -35,13 +32,11 @@ Context:
     {# present rather than rendered as "unknown" — the date alone still  #}
     {# identifies the row. The date on its own is the default; the       #}
     {# translatable form only exists for the case that joins the two.    #}
-    {% with row_subtitle=when %}
+    {% with row_meta=when %}
         {% if observation.region %}
-            {% blocktrans trimmed with region=observation.region.name asvar row_subtitle %}{{ when }} ·
+            {% blocktrans trimmed with region=observation.region.name asvar row_meta %}{{ when }} ·
                 {{ region }}{% endblocktrans %}
         {% endif %}
-        {% blocktrans trimmed with kind=observation.get_observation_type_display asvar row_menu_label %}More actions for
-            {{ kind }}{% endblocktrans %}
-        {% include "includes/_ugc_panel_row.html" with row_id="observation-"|add:uuid label=observation.get_observation_type_display subtitle=row_subtitle trigger_id="observation-menu-trigger-"|add:uuid menu_id="observation-menu-"|add:uuid trigger_label=row_menu_label menu_items_template="observations/partials/_observation_row_menu_items.html" %}
+        {% include "includes/_ugc_panel_row.html" with row_id="observation-"|add:uuid label=observation.get_observation_type_display meta=row_meta actions_template="observations/partials/_observation_row_actions.html" %}
     {% endwith %}
 {% endwith %}

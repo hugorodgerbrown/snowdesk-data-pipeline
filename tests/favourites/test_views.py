@@ -1332,10 +1332,25 @@ class TestFavouriteList:
         assert f'hx-get="{_card_url(favourite.uuid)}"' not in content
         assert "View favourites on the map" not in content
 
-    def test_map_variant_keeps_the_detail_link_and_roster_sidecar(
-        self, client: Client
-    ) -> None:
-        """The sheet still links to the detail page and caches for offline."""
+    def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
+        """The sheet still caches the roster for offline reads."""
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert 'id="favourites-roster-cache"' in response.content.decode()
+
+    def test_map_variant_does_not_link_the_row_anywhere(self, client: Client) -> None:
+        """The map row has no navigation at all (SNOW-658, Hugo's design).
+
+        It had two, in turn, in one day: a "Details →" control beside the
+        title, then the title itself as a link. The design drops both — the
+        label's own click is the inline rename now, and a favourite's
+        detail page is reached by tapping its pin on the map, which is
+        where the user already is.
+        """
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
@@ -1343,16 +1358,17 @@ class TestFavouriteList:
         response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
 
         content = response.content.decode()
-        assert 'data-testid="favourite-list-detail-link"' in content
-        assert _detail_url(favourite.uuid) in content
-        assert 'id="favourites-roster-cache"' in content
+        assert _detail_url(favourite.uuid) not in content
+        assert "Details" not in content
 
-    def test_map_variant_links_from_the_rows_own_title(self, client: Client) -> None:
-        """The detail link IS the row's title (SNOW-658, second pass).
+    def test_map_variant_renames_in_place_on_the_label(self, client: Client) -> None:
+        """The row carries its own inline editor, hidden until asked for.
 
-        A GET is a link, so navigation cannot move into the "…" menu — and
-        making the title itself the link removes the separate "Details →"
-        control that competed with it for the same tap.
+        Not an always-visible field (that is the manage page's row, and a
+        list of live inputs is not a list at rest) and not a
+        ``window.prompt`` (which is what this row had for a day). The
+        editor is server-rendered so its aria-label passes through a
+        template, and static/js/inline_rename.js reveals it.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1361,23 +1377,23 @@ class TestFavouriteList:
         response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
 
         content = response.content.decode()
-        marker = 'data-testid="favourite-list-detail-link"'
-        opener = content[: content.index(marker)].rsplit("<", 1)[1]
-        assert opener.startswith("a ") or opener.startswith("a\n")
-        # It is the row's primary line, not a control beside it.
-        assert "data-row-label" in opener
-        assert "Details" not in content
+        assert "data-row-renameable" in content
+        assert "data-row-rename-input" in content
+        # Hidden at rest: the row reads as a row until the user asks.
+        editor = content[content.index("data-row-rename-input") :]
+        assert "hidden" in editor[: editor.index(">")]
+        # It is not a form field — the commit is a fetch, not a submit —
+        # so it carries no `name`, and the map variant still has none.
+        assert 'name="name"' not in content
 
-    def test_map_variant_puts_rename_and_remove_in_the_overflow_menu(
+    def test_map_variant_offers_rename_and_remove_as_icon_controls(
         self, client: Client
     ) -> None:
-        """Both POSTs are menu items on the map row (SNOW-658).
+        """Both actions are visible controls on the row, trash last.
 
-        The always-visible rename ``<input>`` is gone — the three UGC
-        panels' rows have to read alike at rest, and a field permanently in
-        edit mode is not at rest. Rename is a prompt-then-post driven by
-        favourites.js (``data-favourite-rename``); Remove stays a plain
-        HTMX form targeting the row's own id.
+        Hugo's design: no ellipsis menu on any panel. Remove is one tap in
+        the same place on every panel's rows, and Rename — this panel's own
+        extra — is the pencil immediately before it.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1386,13 +1402,14 @@ class TestFavouriteList:
         response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
 
         content = response.content.decode()
-        menu_start = content.index(f'id="favourite-menu-{favourite.uuid}"')
-        menu_end = content.index("</ul>", menu_start)
-        menu = content[menu_start:menu_end]
-        assert f'data-favourite-rename="{favourite.uuid}"' in menu
-        assert _delete_url(favourite.uuid) in menu
-        # No editable name field anywhere in the map variant.
-        assert 'name="name"' not in content
+        assert 'role="menu"' not in content
+        rename = content.index(f'data-favourite-rename="{favourite.uuid}"')
+        remove = content.index(_delete_url(favourite.uuid))
+        assert rename < remove
+        # Each names the row it acts on — "Rename" alone names nothing
+        # with a list of pins on screen.
+        assert 'aria-label="Rename Mine"' in content
+        assert 'aria-label="Remove Mine"' in content
 
     def test_manage_variant_keeps_its_always_visible_rename_field(
         self, client: Client

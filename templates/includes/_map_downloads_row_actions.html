@@ -1,0 +1,39 @@
+{% load i18n components %}
+{% comment %}
+templates/includes/_map_downloads_row_actions.html — the "Manage
+downloads" row's icon controls (SNOW-658).
+
+includes/_ugc_panel_row.html's `actions_template` slot. Replaces
+_map_downloads_row_menu_items.html, the "…" overflow menu this row carried
+for one day: Hugo's design has no ellipsis menu on any panel. Remove is a
+visible trash control in the same place on every row, and Rename — which
+only a custom area has — is a pencil before it that hands off to the row's
+own inline label edit.
+
+Both buttons are value-less here. This partial is rendered ONCE, inside
+the sheet's row `<template>`, and map_downloads_manager.js's buildRow
+stamps the area id onto `data-downloads-rename` / `data-downloads-delete`
+after cloning — exactly as it did on the old menu items. buildRow also
+removes the whole Rename button for a row that cannot be renamed (a
+region's name is its real name; an orphaned bucket has no record to write
+one onto), together with the row's own inline-edit affordance.
+
+Trash last, as on every panel: the destructive control is in the same
+place wherever a user meets it.
+{% endcomment %}
+<button
+    type="button"
+    data-downloads-rename
+    aria-label="{% trans 'Rename' %}"
+    class="{% icon_button_classes %}"
+>
+    {% include "includes/_icon_pencil.html" only %}
+</button>
+<button
+    type="button"
+    data-downloads-delete
+    aria-label="{% trans 'Remove' %}"
+    class="{% icon_button_classes variant='destructive' %}"
+>
+    {% include "includes/_icon_trash.html" only %}
+</button>

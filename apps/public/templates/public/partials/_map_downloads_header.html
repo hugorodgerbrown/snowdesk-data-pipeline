@@ -6,10 +6,15 @@ segmented bar, plus the over-budget warning (SNOW-645 review; lifted out
 of _map_downloads_sheet.html verbatim by SNOW-658).
 
 includes/_ugc_panel.html's `header_template` slot — it renders inside
-that partial's title block, directly under the sheet header, so the pair
-reads as one unit. This is the one legitimate per-panel extra: neither
-favourites nor field observations cost the device anything to hold, so
-neither has a budget to state.
+that partial's title block, under the context strip, so the pair reads as
+one unit. This is the one legitimate per-panel extra: neither favourites
+nor field observations cost the device anything to hold, so neither has a
+budget to state.
+
+SNOW-658 (Hugo's design): "Downloads and budget stay on this device." is
+no longer this file's paragraph. Every panel states where its data lives
+now, in one line directly under its title, so the sentence is the shared
+skeleton's `context_line` and this block is what EXTENDS it.
 
 The bar/track/select hooks (data-downloads-bar/-track/-budget/-summary)
 are unchanged; map_downloads_manager.js's render() populates them exactly
@@ -22,13 +27,13 @@ DOWNLOAD_CEILING_MB) instead of being duplicated into markup that could
 drift from it. Their labels are pure numerals plus "MB", so nothing
 translatable is lost by generating them.
 
-SNOW-645 review sizing, reconciled against the design and unchanged by
-the extraction: the `-mt-0.5` (-2px) below trims _sheet_header.html's
-shared `pb-3` (12px) to the design's own 10px net gap; the bar is 8px
-tall on a `bg-chip` track; the <select> is mono on `bg-tag` at
-`rounded-tag`.
+SNOW-645 review sizing, reconciled against the design: the bar is 8px
+tall on a `bg-chip` track and the <select> is mono on `bg-tag` at
+`rounded-tag`. The block's own `-mt-0.5` trim of _sheet_header.html's
+`pb-3` is gone with SNOW-658 — this block hangs off the context strip
+now, not the header, at that strip's own 16px.
 {% endcomment %}
-<div class="-mt-0.5 flex flex-col gap-2.5">
+<div class="mt-4 flex flex-col gap-2.5">
     <div class="flex items-center gap-2">
         <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip" aria-hidden="true">
             <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
@@ -52,9 +57,6 @@ tall on a `bg-chip` track; the <select> is mono on `bg-tag` at
         >
         </select>
     </div>
-    <p class="text-xs text-text-3">
-        {% trans "Downloads and budget stay on this device." %}
-    </p>
     {# Shown only when stored downloads exceed the budget — reachable by    #}
     {# lowering the budget below what is already held, which is allowed     #}
     {# deliberately: the alternative is refusing a setting on a device that #}

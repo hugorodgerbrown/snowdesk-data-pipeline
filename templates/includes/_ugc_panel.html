@@ -17,24 +17,35 @@ mock (see the SNOW-645/SNOW-635 notes in
 public/partials/_map_downloads_sheet.html), so its skeleton is what got
 extracted here and the other two conform to it, not the reverse.
 
-What the skeleton owns, top to bottom:
+SNOW-658 (Hugo's "Map panels — common format" design): the shell is five
+parts, always in this order, and what varies between the three panels is
+only ever their contents.
 
-  * the outer flex column at the 18px (`gap-4.5`) rhythm, with
-    `min-h-0 flex-1` so it fills — and is allowed to SHRINK inside —
-    the bounded box includes/_overlay_sheet.html's `scroll_body=True`
-    renders. `min-h-0` is load-bearing: a flex child defaults to
-    `min-height: auto` ("never shrink below my content"), and without
-    the override the list refuses to scroll and pushes the CTA and the
-    switch off-screen instead;
-  * includes/_sheet_header.html at ONE size for all three panels
-    (`text-lg font-semibold`) — fixed here rather than exposed as a
-    parameter, because a per-caller title size is precisely the drift
-    this partial exists to end;
-  * the scroll region — the only part that scrolls, so the header above
-    and the CTA/switch below stay pinned;
-  * the bordered "add one more" CTA;
-  * includes/_map_overlay_toggle.html at the foot, so the map BEHIND
-    the sheet is the last thing read rather than the first.
+  1. HEADER — includes/_sheet_header.html, carrying the icon of the
+     ROUNDEL that opens this panel and the sentence-case title at ONE
+     size for all three (`text-lg font-semibold`). Both are fixed here
+     rather than exposed as style parameters: a per-caller title size is
+     precisely the drift this partial exists to end, and the icon is the
+     panel's only identity mark — the thing that confirms which roundel
+     was tapped.
+  2. CONTEXT STRIP — one 13px muted line saying where this panel's data
+     lives ("…stay on this device", "…are private and not shared",
+     "…are shared with the community"). Downloads alone extends it, via
+     `header_template`, with its budget meter below that line.
+  3. LIST — a mono uppercase section label on a rule, then the rows,
+     which are separated by hairlines and are NOT cards: no boxes inside
+     the panel. The scroll region is the only part that scrolls, so the
+     header above and the CTA/switch below stay pinned.
+  4. ADD CTA — one full-width outlined button, exactly one per panel.
+  5. MAP TOGGLE — includes/_map_overlay_toggle.html at the foot, so the
+     map BEHIND the sheet is the last thing read rather than the first.
+
+The outer flex column runs at the 18px (`gap-4.5`) rhythm and carries
+`min-h-0 flex-1` so it fills — and is allowed to SHRINK inside — the
+bounded box includes/_overlay_sheet.html's `scroll_body=True` renders.
+`min-h-0` is load-bearing: a flex child defaults to `min-height: auto`
+("never shrink below my content"), and without the override the list
+refuses to scroll and pushes the CTA and the switch off-screen instead.
 
 Composition. Django has no slot mechanism, and the three shapes we need
 to vary (a rows region, an optional header extra) are markup, not
@@ -57,22 +68,40 @@ never more than one panel body in a given sheet.
 
 Parameters (passed via {% include … with … %}):
   title           (string) — the sheet header's title. Required.
+  icon_template   (string) — template path for the header glyph: the icon
+                  of the roundel that opens this panel
+                  (includes/_icon_downloads.html, _icon_favourite.html,
+                  _icon_observation.html). Required — a panel with no
+                  identity mark is a state the design set out to fix.
+  context_line    (string) — the context strip: where this panel's data
+                  lives, in one translated sentence. Required, for the
+                  same reason.
+  section_label   (string, optional) — the list's mono uppercase heading
+                  ("Places", "Reports"). Optional only because downloads
+                  has TWO groups (Regions, Custom areas) and renders both
+                  headings itself, in the same style, inside its own rows
+                  template.
   rows_template   (string) — template path rendered inside the scroll
                   region. Owns the panel's list and, for a panel whose
                   rows load over HTMX, the container they land in.
                   Required.
   header_template (string, optional) — template path rendered inside
-                  the title block, directly under the sheet header, so
-                  the pair reads as one unit at its own tighter rhythm
-                  rather than at the outer `gap-4.5`. Downloads' budget
-                  bar is the only user: it is the one legitimate
-                  per-panel extra, since neither of the other two costs
-                  the device anything to hold.
+                  the title block, under the context strip, so the pair
+                  reads as one unit at its own tighter rhythm rather
+                  than at the outer `gap-4.5`. Downloads' budget meter
+                  is the only user: it is the one legitimate per-panel
+                  extra, since neither of the other two costs the device
+                  anything to hold.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
   toggle_id       (string) — DOM id for the overlay switch. Required.
-  toggle_label    (string) — the switch's visible, translated label.
-                  Required.
+
+The overlay switch's LABEL is not a parameter. It is "Display on the map"
+on all three panels — the design's own wording, replacing "Show areas on
+the map" / "Show favourites on the map" / "Show community reports on the
+map". Three sentences for one control is the same divergence the shared
+`data-panel-add` hook removed in attribute form, so the string is fixed
+here, where no caller can restate it.
 
 The CTA carries `disabled:` utilities unconditionally. Only downloads
 ever sets `disabled` on it today (SNOW-637: starting a download needs a
@@ -82,17 +111,37 @@ state should not have to remember to bring its own.
 {% endcomment %}
 <div class="flex min-h-0 flex-1 flex-col gap-4.5">
     <div>
-        {% include "includes/_sheet_header.html" with title=title close_action="dismiss" title_class="text-lg font-semibold" %}
+        {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" %}
+        {# The context strip. `px-2` puts it under the title rather than    #}
+        {# under the title's own left edge plus the sheet header's padding; #}
+        {# `-mt-1.5` trims that header's `pb-3` (12px) to the design's own  #}
+        {# 6px, the same trim the budget block used to make for itself.     #}
+        <p class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
         {% if header_template %}{% include header_template %}{% endif %}
     </div>
     <div class="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto">
-        {% include rows_template %}
+        {# The section label belongs to the list it heads, so the two sit   #}
+        {# in one tight group rather than 18px apart at the scroll region's #}
+        {# own rhythm. Downloads passes no `section_label`: it has two      #}
+        {# groups and renders both headings through the same partial from   #}
+        {# inside its rows template.                                        #}
+        {% if section_label %}
+            <div class="flex flex-col gap-1">
+                {% include "includes/_eyebrow.html" with tag="p" text=section_label class_extra="pb-1 font-medium" %}
+                {% include rows_template %}
+            </div>
+        {% else %}
+            {% include rows_template %}
+        {% endif %}
     </div>
     <div class="border-t border-border pt-3">
         <button
             type="button"
             data-panel-add
-            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50'
+            {# `h-11.5` is the design's own 46px — stated as a height       #}
+            {# rather than more padding, so the CTA is the same size on     #}
+            {# every panel whatever its label wraps to.                     #}
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} inline-flex h-11.5 items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50'
         >
             {# A stroked SVG plus, not a literal "+" glyph — the same        #}
             {# stroke-based idiom every other icon in this design uses.      #}
@@ -111,5 +160,8 @@ state should not have to remember to bring its own.
             {{ cta_label }}
         </button>
     </div>
-    {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=toggle_label %}
+    {# One string for all three panels — see the note above the parameter  #}
+    {# list for why this is not a parameter.                               #}
+    {% trans "Display on the map" as overlay_toggle_label %}
+    {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
 </div>
