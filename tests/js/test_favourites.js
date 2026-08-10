@@ -1,27 +1,29 @@
 /*
- * tests/js/test_favourites.js — Vitest unit tests for static/js/favourites.js's
- * pin-detail HTMX request bookkeeping (finding M5 in
- * docs/code-reviews/2026-08-03-js-review.md).
+ * tests/js/test_favourites.js — Vitest unit tests for the card static/js/
+ * favourites.js builds for the popup anchored to a saved pin (SNOW-658).
  *
- * favourites.js listens for `htmx:beforeRequest` / `htmx:afterRequest` on
- * `document`, so every HTMX request anywhere on the page passes through both
- * handlers — including report.js's form-load `htmx.ajax()`, which shares the
- * map homepage with the favourites surface. The two tests below reproduce the
- * two interleavings that state showed to be indistinguishable when the
- * in-flight marker lived on the module rather than on the request.
+ * Hugo's brief, with the two pin popups side by side: "No need to have the
+ * editable name / remove in this dialogue - now it's in the favourites
+ * overlay. Add the timestamp as the subheader. Same as the observations."
+ * So the card is the pin's name, a muted relative time, and the popup's own
+ * close — and the tests below assert both what is there and what is not,
+ * since the whole point of the change is the two controls that left.
  *
- * The handlers read three fields off the event detail — `elt`, `xhr` and
- * `successful` — so the tests drive them with hand-built CustomEvents and no
- * htmx in the loop. `xhr` is a bare object: nothing here calls into it, it
- * only has to be the same identity across a request's two events, which is
- * what htmx guarantees.
+ * map.js owns the anchoring: it dispatches snowdesk:favourite-selected with
+ * an empty [data-favourite-detail] container, this module fills it, and map.js
+ * mounts it (that half is covered by tests/js/test_map_detail_popup_
+ * exclusivity.js). Driving the event by hand here needs no map in the loop.
+ *
+ * map_shared.js is evaluated through loadMapBundle rather than stubbed: it
+ * publishes window.snowdeskMapFormat.relativeTime, and the point of reading
+ * the formatter off that channel is that the favourite and observation popups
+ * age their timestamps through ONE implementation — a stub would assert the
+ * wiring while hiding a drift in the string.
  *
  * The module is an IIFE that returns early unless #favourite-add-btn,
  * #favourite-sheet and #favourite-create-template are all present, and it
  * captures those three elements once at load, so the fixture is built before
- * the dynamic import below and no test replaces it. The
- * [data-favourite-detail] container is re-queried on every afterRequest, so
- * each test owns its contents.
+ * the dynamic import below and no test replaces it.
  *
  * SNOW-608: favourites.js now attaches its sheet through the shared
  * window.MapSheet, so map_sheet.js is imported first — home.html loads it
@@ -29,10 +31,11 @@
  * covered in tests/js/test_map_sheet.js.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
+import { loadMapBundle } from './_load_map_bundle.js';
 
 document.body.innerHTML = `
   <button id="favourite-add-btn"
@@ -43,96 +46,107 @@ document.body.innerHTML = `
           data-favourite-delete-url-template="/favourites/__UUID__/delete/"></button>
   <div id="favourite-sheet" hidden></div>
   <template id="favourite-create-template"></template>
-  <div data-favourite-detail></div>
 `;
+
+// Publishes window.snowdeskMapFormat; nothing else in it runs at parse time.
+loadMapBundle(['map_shared.js']);
 
 await import('../../static/js/favourites.js');
 
-const detailContainer = document.querySelector('[data-favourite-detail]');
-const teardowns = [];
-
-afterEach(() => {
-  while (teardowns.length) teardowns.pop()();
-  delete window.pwaTelemetry;
-  detailContainer.innerHTML = '';
-});
-
 /**
- * Record every dispatch of a document-level custom event, and register the
- * listener's removal for the enclosing test's teardown.
+ * Open the pin popup for a favourite and return the container map.js would
+ * have anchored — empty if favourites.js declined to fill it.
  *
- * @param {string} name
- * @returns {Array<CustomEvent>} live array, appended to as the event fires
+ * @param {object} detail Event detail fields (uuid, name, created_at).
+ * @returns {HTMLDivElement}
  */
-function recordEvent(name) {
-  const seen = [];
-  const handler = (evt) => seen.push(evt);
-  document.addEventListener(name, handler);
-  teardowns.push(() => document.removeEventListener(name, handler));
-  return seen;
+function selectFavourite(detail) {
+  const container = document.createElement('div');
+  container.setAttribute('data-favourite-detail', '');
+  document.dispatchEvent(
+    new CustomEvent('snowdesk:favourite-selected', {
+      detail: { container, ...detail },
+    }),
+  );
+  return container;
 }
 
-/**
- * Dispatch one htmx lifecycle event on `document` with the given detail.
- *
- * @param {string} name
- * @param {object} detail
- */
-function fireHtmx(name, detail) {
-  document.dispatchEvent(new CustomEvent(name, { detail }));
+/** An ISO timestamp the given number of minutes before now. */
+function minutesAgo(minutes) {
+  return new Date(Date.now() - minutes * 60000).toISOString();
 }
 
-/** Put a rename form inside the detail popup and return it. */
-function openDetailPopup() {
-  detailContainer.innerHTML = '<form id="favourite-rename-form"></form>';
-  return detailContainer.querySelector('#favourite-rename-form');
-}
-
-describe('pin-detail htmx request correlation', () => {
-  it('still reports a rename when another surface starts a request mid-flight', () => {
-    const renameForm = openDetailPopup();
-    const renameXhr = {};
-    const reportXhr = {};
-    const changed = recordEvent('snowdesk:favourites-changed');
-
-    fireHtmx('htmx:beforeRequest', { elt: renameForm, xhr: renameXhr });
-    // report.js's loadForm() calls htmx.ajax() with no source element, so
-    // htmx reports document.body as the request's elt.
-    fireHtmx('htmx:beforeRequest', { elt: document.body, xhr: reportXhr });
-
-    // The rename lands: the server's _favourite.html (carrying
-    // [data-favourite-uuid]) swaps back into the container.
-    detailContainer.innerHTML = '<div data-favourite-uuid="a1b2"></div>';
-    fireHtmx('htmx:afterRequest', {
-      elt: renameForm,
-      xhr: renameXhr,
-      successful: true,
-    });
-
-    expect(changed).toHaveLength(1);
+describe('the saved-pin popup card', () => {
+  beforeEach(() => {
+    delete window.PlacePicker;
   });
 
-  it('does not report a delete when a request from another surface completes', () => {
-    const renameForm = openDetailPopup();
-    const renameXhr = {};
-    const reportXhr = {};
-    const emit = vi.fn();
-    window.pwaTelemetry = { emit };
-    const changed = recordEvent('snowdesk:favourites-changed');
-    const closed = recordEvent('snowdesk:favourite-detail-close');
-
-    fireHtmx('htmx:beforeRequest', { elt: renameForm, xhr: renameXhr });
-    // The user closes the popup while the rename is still in flight, then
-    // report.js's form load — started earlier — completes.
-    detailContainer.innerHTML = '';
-    fireHtmx('htmx:afterRequest', {
-      elt: document.body,
-      xhr: reportXhr,
-      successful: true,
+  it('shows the pin name as its title', () => {
+    const container = selectFavourite({
+      uuid: 'f-1',
+      name: 'Col des Gentianes',
+      created_at: minutesAgo(5),
     });
 
-    expect(emit).not.toHaveBeenCalled();
-    expect(changed).toHaveLength(0);
-    expect(closed).toHaveLength(0);
+    expect(container.textContent).toContain('Col des Gentianes');
+  });
+
+  it('shows the saved time as a relative subheader', () => {
+    const container = selectFavourite({
+      uuid: 'f-1',
+      name: 'Verbier',
+      created_at: minutesAgo(300),
+    });
+
+    // The same string map.js's observation popup renders — both go through
+    // map_shared.js's formatRelativeTime.
+    expect(container.textContent).toContain('5 h ago');
+  });
+
+  it('renders the name as text, never as markup', () => {
+    const container = selectFavourite({
+      uuid: 'f-1',
+      name: '<img src=x onerror="alert(1)">',
+      created_at: minutesAgo(1),
+    });
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('<img src=x onerror="alert(1)">');
+  });
+
+  it('falls back to a placeholder title for an unnamed pin', () => {
+    const container = selectFavourite({
+      uuid: 'f-1',
+      name: '',
+      created_at: minutesAgo(1),
+    });
+
+    expect(container.textContent).toContain('Unnamed pin');
+  });
+
+  it('offers no rename field and no remove control', () => {
+    const container = selectFavourite({
+      uuid: 'f-1',
+      name: 'Verbier',
+      created_at: minutesAgo(1),
+    });
+
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.textContent).not.toContain('Remove');
+  });
+
+  it('omits the subheader rather than showing a broken time', () => {
+    const container = selectFavourite({ uuid: 'f-1', name: 'Verbier' });
+
+    expect(container.textContent.trim()).toBe('Verbier');
+  });
+
+  it('fills nothing when the event carries no uuid', () => {
+    const container = selectFavourite({ name: 'Verbier', created_at: minutesAgo(1) });
+
+    // map.js reads the container back and mounts no popup when it is empty.
+    expect(container.childNodes).toHaveLength(0);
   });
 });

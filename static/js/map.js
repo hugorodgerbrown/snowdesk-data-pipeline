@@ -3923,12 +3923,15 @@
     };
 
     // SNOW-499: favourites.js dispatches this once a resort-popup favourite
-    // toggle (star tap), or a favourite rename/delete, has been submitted, so
-    // the popup — whose state was captured at open time — closes rather than
-    // showing stale content. The next tap on the same pin re-fetches fresh
-    // state.
+    // toggle (star tap) has been submitted, so the popup — whose state was
+    // captured at open time — closes rather than showing stale content. The
+    // next tap on the same pin re-fetches fresh state.
+    //
+    // SNOW-658: its sibling `snowdesk:favourite-detail-close` went with the
+    // rename/delete forms the favourite popup used to host. It existed to
+    // close a popup whose row had just deleted itself; the popup now shows
+    // only a name and a saved time, so nothing dispatched it any more.
     document.addEventListener('snowdesk:resort-popup-close', closeDetailPopup);
-    document.addEventListener('snowdesk:favourite-detail-close', closeDetailPopup);
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
     // app layer off the basemap while the user places a favourite, an
@@ -4154,21 +4157,33 @@
     };
 
     // SNOW-414 / SNOW-499: tapping an *existing* favourite pin opens its
-    // rename/delete detail in a popup anchored to the pin — a favourite is a
-    // point fixed to the map, so (like a resort or a region) its detail is a
-    // pinned popup, not the docked sheet the mobile create/placement pin
-    // uses. favourites.js owns the rename/delete markup + CSRF/URL wiring, so
-    // map.js hands it an empty [data-favourite-detail] container to fill (via
-    // the same snowdesk:favourite-selected contract), then anchors the filled
-    // container in a popup at the favourite's coordinates. If favourites.js
-    // isn't loaded (never happens for a rendered favourite pin — the layer is
+    // detail in a popup anchored to the pin — a favourite is a point fixed to
+    // the map, so (like a resort or a region) its detail is a pinned popup,
+    // not the docked sheet the mobile create/placement pin uses.
+    // favourites.js owns the popup's markup, so map.js hands it an empty
+    // [data-favourite-detail] container to fill (via the snowdesk:
+    // favourite-selected contract), then anchors the filled container in a
+    // popup at the favourite's coordinates. If favourites.js isn't loaded
+    // (never happens for a rendered favourite pin — the layer is
     // eligibility-gated), the container stays empty and no popup opens.
+    //
+    // SNOW-658: the detail carries created_at — the raw ISO timestamp off
+    // the feature, formatted into the popup's relative subheader by
+    // favourites.js exactly as the observation popup below formats
+    // observed_at. Reading it off the feature the map already holds is what
+    // lets the popup open offline; renaming and removing moved to the
+    // favourites panel, which is why nothing else rides this event now.
     const activateFavourite = (feature) => {
       const props = feature.properties;
       const container = document.createElement('div');
       container.setAttribute('data-favourite-detail', '');
       document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
-        detail: { uuid: props.uuid, name: props.name, container: container },
+        detail: {
+          uuid: props.uuid,
+          name: props.name,
+          created_at: props.created_at,
+          container: container,
+        },
       }));
       if (!container.childNodes.length) return;
       mountDetailPopup(feature.geometry.coordinates, { node: container });

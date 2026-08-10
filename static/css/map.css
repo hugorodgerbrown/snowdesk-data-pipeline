@@ -2943,20 +2943,20 @@ body.map-framing #map-legend {
     color: var(--color-text-1, #1a1a1a);
 }
 
-/* The existing-favourite popup hosts the client-built rename/delete row
- * (favourites.js buildDetailRow, and the _favourite.html the rename swaps
- * back in) — both carry their own card border/background for the manage-page
- * list. Inside the glass popup that reads as a box-in-box, so flatten it to
- * sit flush on the glass, matching the resort/region/observation content. */
-.detail-popup [data-favourite-uuid] {
-    border: 0;
-    background: transparent;
-    padding: 0;
-}
-
-/* Keep the editable name legible as a field on the glass — a subtle underline
- * signals "editable" without the full card border. */
-.detail-popup [data-favourite-uuid] input[name="name"] {
-    border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.18));
-    padding-bottom: 2px;
+/* SNOW-658: two rules lived here to flatten the client-built rename/delete
+ * row (and the _favourite.html a rename swapped in) against the glass, and
+ * to underline its editable name field. The favourite popup carries neither
+ * now — renaming and removing moved to the favourites panel, and what is
+ * left is a name plus a saved time, styled by the same token utilities as
+ * the observation popup's own two lines.
+ *
+ * The 200px floor above was sized for that rename field and its Remove
+ * button, and the resort popup still needs it — but a two-line favourite
+ * card in a box a third wider than the observation card it now mirrors
+ * reads as a different component. Keyed off the card's own attribute
+ * (favourites.js buildDetailCard) rather than a popup-level modifier class,
+ * so map.js's shared mountDetailPopup keeps one className for both. */
+.detail-popup .maplibregl-popup-content:has([data-favourite-card]) {
+    min-width: 0;
+    padding: 10px 34px 10px 14px;
 }

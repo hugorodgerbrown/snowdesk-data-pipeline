@@ -52,18 +52,19 @@
  *      pwa:mutation-failed-permanent listener below.
  *
  * Pin-detail flow (existing favourite, tapped on the map):
- *   map.js dispatches snowdesk:favourite-selected {uuid, name} on a
- *   'favourites-pin' click. There is no "fetch one favourite" GET endpoint
- *   (SNOW-413 only shipped POST create/rename/delete), so the rename/delete
- *   row is reconstructed here via DOM APIs (never innerHTML of the
- *   user-supplied name — SNOW-414 must not `mark_safe` untrusted content)
- *   using the __UUID__-templated URLs and the CSRF token value already
- *   present (inert) inside #favourite-create-template. The reconstructed
- *   row deliberately mirrors favourites/partials/_favourite.html's shape
- *   (same element id, same hx-target) so once the *first* rename or delete
- *   round-trips, the server's own partial slots back into the same place
- *   and every subsequent interaction is handled by its own embedded
- *   hx-post/hx-target/hx-swap wiring with no further JS involved.
+ *   map.js dispatches snowdesk:favourite-selected {uuid, name, created_at}
+ *   on a 'favourites-pin' click, and this module fills the container it
+ *   passes with the popup's card via DOM APIs (never innerHTML of the
+ *   user-supplied name — SNOW-414 must not `mark_safe` untrusted content).
+ *
+ *   SNOW-658: that card is the pin's name and the time it was saved, and
+ *   nothing else — the shape the observation pin's popup already had.
+ *   Renaming and removing a favourite happen in the panel below, so the
+ *   popup's editable name field and Remove button are gone, and with them
+ *   the __UUID__-templated forms, their CSRF inputs and the htmx lifecycle
+ *   bookkeeping that scoped rename/delete responses to the popup. Every
+ *   value the card needs rides on the feature the map already holds, so it
+ *   opens offline — which the panel's HTMX list does not.
  *
  * Flow when not eligible (anonymous):
  *   Tap opens the panel with a sign-in / sign-up CTA pointing at the
@@ -95,9 +96,11 @@
     // includes/_sheet_header.html.
     'signin-prompt': 'Sign in to save a favourite.',
     'signin-cta': 'Sign in',
+    // Still the pin popup's title for a favourite saved without a name.
+    // 'name-label' and 'remove' went with the popup's editable name field
+    // and Remove button (SNOW-658) — the panel owns both, and renders its
+    // own copy server-side.
     'unnamed-pin': 'Unnamed pin',
-    'name-label': 'Favourite name',
-    remove: 'Remove',
     // SNOW-658: the map row's Rename is an inline edit on the row's own
     // label now, so the prompt's copy is gone — the editor's aria-label is
     // rendered by the row template, where makemessages can see it. Only
@@ -455,16 +458,17 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Pin-detail flow — rename / delete an existing favourite.
+  // Pin-detail flow — the card shown in the popup anchored to a saved pin.
   // ---------------------------------------------------------------------------
 
   // Escaping untrusted content (the user-supplied favourite name) is avoided
-  // entirely below — every dynamic value is set via DOM properties (.value,
-  // .textContent) rather than string-templated innerHTML. See buildDetailRow().
+  // entirely below — every dynamic value is set via DOM properties
+  // (.textContent) rather than string-templated innerHTML. See
+  // buildDetailCard().
 
   /** Read the CSRF token value from the (inert) create-form template — reused
-   * for the dynamically-built rename/delete forms since Django issues one
-   * CSRF token per session, valid across every form on the page.
+   * for this module's plain-fetch rename and delete calls, since Django
+   * issues one CSRF token per session, valid across every form on the page.
    * @returns {string}
    */
   function getCsrfToken() {
@@ -474,75 +478,53 @@
     return input ? input.value : '';
   }
 
-  /** Build a hidden CSRF input for a dynamically-constructed form.
-   * @returns {HTMLInputElement}
-   */
-  function buildCsrfInput() {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'csrfmiddlewaretoken';
-    input.value = getCsrfToken();
-    return input;
-  }
-
-  /** Build the rename+delete row for an existing favourite, mirroring
-   * favourites/partials/_favourite.html's shape/ids so the server's own
-   * partial can slot back into the same #favourite-<uuid> element on the
-   * first successful round-trip.
-   * @param {string} favUuid
-   * @param {string} name
+  /** Build the pin popup's card: the favourite's name, and the time it was
+   * saved as a muted relative subheader.
+   *
+   * SNOW-658: this replaces a card that carried an editable name field and a
+   * Remove button. Both moved to the favourites panel, which is where every
+   * other saved pin is renamed and removed; a second, differently-shaped
+   * editor on the map was the odd one out. What is left is the shape the
+   * observation pin's popup already had (map.js's activateCommunityReport) —
+   * a bold label, a muted relative time, and the popup's own close.
+   * A favourite will gain content of its own later; it has none today, so
+   * there is no placeholder for it.
+   *
+   * ``relativeTime`` comes from map_shared.js via window.snowdeskMapFormat
+   * rather than being re-implemented here, so both popups age their
+   * timestamps identically. It is computed on open, not baked at fetch time,
+   * which keeps it honest when the pin comes from the offline cache.
+   *
+   * @param {string} name The favourite's user-supplied name, possibly empty.
+   * @param {string} savedAt ISO-8601 timestamp the favourite was saved at.
    * @returns {HTMLDivElement}
    */
-  function buildDetailRow(favUuid, name) {
-    const row = document.createElement('div');
-    row.id = 'favourite-' + favUuid;
-    row.dataset.favouriteUuid = favUuid;
-    row.className = 'flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm';
+  function buildDetailCard(name, savedAt) {
+    const card = document.createElement('div');
+    card.setAttribute('data-favourite-card', '');
 
-    const renameForm = document.createElement('form');
-    renameForm.setAttribute('hx-post', RENAME_URL_TEMPLATE.replace('__UUID__', favUuid));
-    renameForm.setAttribute('hx-target', '#favourite-' + favUuid);
-    renameForm.setAttribute('hx-swap', 'outerHTML');
-    renameForm.setAttribute('hx-trigger', 'change');
-    renameForm.className = 'flex-1';
-    renameForm.appendChild(buildCsrfInput());
+    const title = document.createElement('div');
+    title.className = 'text-sm font-semibold text-text-1';
+    title.textContent = name || STRINGS['unnamed-pin'];
+    card.appendChild(title);
 
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.name = 'name';
-    nameInput.value = name || '';
-    nameInput.placeholder = STRINGS['unnamed-pin'];
-    nameInput.setAttribute('aria-label', STRINGS['name-label']);
-    nameInput.className = 'w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none';
-    renameForm.appendChild(nameInput);
-
-    const deleteForm = document.createElement('form');
-    deleteForm.setAttribute('hx-post', DELETE_URL_TEMPLATE.replace('__UUID__', favUuid));
-    deleteForm.setAttribute('hx-target', '#favourite-' + favUuid);
-    deleteForm.setAttribute('hx-swap', 'outerHTML');
-    deleteForm.appendChild(buildCsrfInput());
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'submit';
-    removeBtn.className = 'shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text';
-    removeBtn.textContent = STRINGS.remove;
-    deleteForm.appendChild(removeBtn);
-
-    row.appendChild(renameForm);
-    row.appendChild(deleteForm);
-    return row;
+    const relative = window.snowdeskMapFormat?.relativeTime?.(savedAt) || '';
+    if (relative) {
+      const meta = document.createElement('div');
+      meta.className = 'mt-0.5 text-xs text-text-2';
+      meta.textContent = relative;
+      card.appendChild(meta);
+    }
+    return card;
   }
 
-  // SNOW-414 / SNOW-499: an existing favourite's rename/delete detail now
-  // opens in a popup anchored to the pin (a fixed point → pinned overlay),
-  // not the docked create sheet. map.js owns anchoring, so it passes an empty
+  // SNOW-414 / SNOW-499: an existing favourite's detail opens in a popup
+  // anchored to the pin (a fixed point → pinned overlay), not the docked
+  // create sheet. map.js owns anchoring, so it passes an empty
   // ``detail.container`` ([data-favourite-detail]) for this module to fill —
-  // keeping the CSRF/URL/DOM-not-innerHTML wiring here — then anchors the
-  // filled container in the popup. The container id/attribute is what the
-  // htmx rename/delete lifecycle below scopes to (it used to scope to the
-  // sheet).
+  // keeping the DOM-not-innerHTML rendering of the user-supplied name here —
+  // then anchors the filled container in the popup.
   document.addEventListener('snowdesk:favourite-selected', function (event) {
-    if (!RENAME_URL_TEMPLATE || !DELETE_URL_TEMPLATE) return;
     const detail = event.detail || {};
     const favUuid = detail.uuid;
     const container = detail.container;
@@ -554,27 +536,23 @@
     // own open to window.pwaMapOverlays, which closes this sheet along with
     // every other overlay — so the closing happens either way, and no longer
     // needs one surface to know about another.
-    container.appendChild(buildDetailRow(favUuid, detail.name || ''));
-    if (typeof htmx !== 'undefined') htmx.process(container);
+    container.appendChild(
+      buildDetailCard(detail.name || '', detail.created_at || ''),
+    );
   });
 
   // ---------------------------------------------------------------------------
-  // htmx response handling — rename success, delete success.
+  // htmx response handling — a row removed from the panel.
   //
   // Create is no longer htmx-driven: SNOW-479 routes it through the client
   // mutation queue (see the #favourite-create-form submit interceptor below).
-  // Only the pin-detail rename/delete forms built by buildDetailRow() still use
-  // hx-post, and (SNOW-499) they live in the anchored detail popup's
-  // [data-favourite-detail] container, not the create sheet. Two-step: mark on
-  // htmx:beforeRequest whether the element making the request lives inside that
-  // container (checked *before* any swap runs, so elt.closest() sees a properly
-  // attached tree — outerHTML swaps like the delete form's own row removal
-  // detach the element by the time a later event fires), then act on
-  // htmx:afterRequest (last event in htmx's lifecycle, so any swap has
-  // completed) by inspecting the container's current contents. A rename swaps
-  // its _favourite.html (carrying [data-favourite-uuid]) back into
-  // #favourite-<uuid> inside the container; a delete empties it, and we close
-  // the popup.
+  // The only htmx request this module still has to notice is the panel row's
+  // own Remove form, which posts and swaps itself out. Two-step: mark on
+  // htmx:beforeRequest whether the element making the request lives inside
+  // the panel's rows (checked *before* any swap runs, so elt.closest() sees a
+  // properly attached tree — an outerHTML swap like that row removal detaches
+  // the element by the time a later event fires), then act on
+  // htmx:afterRequest, the last event in htmx's lifecycle.
   //
   // The mark is stamped on the request's own XMLHttpRequest, not on a
   // module-level variable: both listeners are document-level, so every HTMX
@@ -584,23 +562,20 @@
   // correlate an afterRequest back to the beforeRequest that set it. htmx
   // carries the same xhr object on both events, so the mark rides the
   // request it describes.
+  //
+  // SNOW-658: the same idiom applied to the PIN POPUP's own rename/delete
+  // forms (DETAIL_REQUEST_MARK, scoped to [data-favourite-detail]). Those
+  // forms are gone — the popup is a name and a saved time now — and the
+  // panel row is the only htmx caller left, so that half went with them,
+  // along with the responseError toast that reported their failures.
   // ---------------------------------------------------------------------------
 
-  const DETAIL_REQUEST_MARK = 'snowdeskFavouriteDetailRequest';
-  // SNOW-658: the same mark idiom for a request made from a row INSIDE the
-  // panel — today only its Remove form, which posts and swaps itself out.
-  // Marked on beforeRequest for the same reason the detail one is: an
-  // outerHTML swap detaches the element, so by afterRequest there is no
-  // tree left to ask where it came from.
   const PANEL_ROW_REQUEST_MARK = 'snowdeskFavouritePanelRowRequest';
 
   document.addEventListener('htmx:beforeRequest', function (event) {
     const detail = event.detail || {};
     if (!detail.xhr) return;
     const elt = detail.elt;
-    detail.xhr[DETAIL_REQUEST_MARK] = !!(
-      elt && elt.closest && elt.closest('[data-favourite-detail]')
-    );
     detail.xhr[PANEL_ROW_REQUEST_MARK] = !!(
       elt && elt.closest && elt.closest('[data-favourites-rows]')
     );
@@ -616,34 +591,6 @@
     if (!event.detail.successful) return;
     window.pwaTelemetry?.emit('map.favourite.deleted', {});
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-  });
-
-  document.addEventListener('htmx:afterRequest', function (event) {
-    const xhr = event.detail && event.detail.xhr;
-    if (!xhr || !xhr[DETAIL_REQUEST_MARK]) return;
-    if (!event.detail.successful) return; // errors handled by responseError below
-
-    const container = document.querySelector('[data-favourite-detail]');
-    if (container && container.querySelector('[data-favourite-uuid]')) {
-      // Renamed successfully (the detail row's _favourite.html swapped back in).
-      document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-      return;
-    }
-    // No row left in the container => delete succeeded (favourites:delete
-    // returns an empty 200 body, removing the row). Close the popup.
-    window.pwaTelemetry?.emit('map.favourite.deleted', {});
-    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-    document.dispatchEvent(new CustomEvent('snowdesk:favourite-detail-close'));
-  });
-
-  document.addEventListener('htmx:responseError', function (event) {
-    const elt = event.detail && event.detail.elt;
-    if (!elt || !elt.closest) return;
-    if (!elt.closest('[data-favourite-detail]')) return;
-    const message =
-      (event.detail.xhr && event.detail.xhr.responseText) ||
-      'Something went wrong — please try again.';
-    showToast(message);
   });
 
   // ---------------------------------------------------------------------------

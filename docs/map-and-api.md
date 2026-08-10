@@ -169,24 +169,27 @@ toggle, since it's the user's own saved data rather than a public dataset.
 The `favourites-pin` layer is a `symbol` layer rendering a `★` glyph (no
 sprite image needed) plus a zoom-banded `favourites-label` showing each
 pin's name; tapping an *existing* pin dispatches `snowdesk:favourite-selected
-{uuid, name, container}` — map.js passes an empty `[data-favourite-detail]`
-container that `static/js/favourites.js` fills with the rename/delete markup,
+{uuid, name, created_at, container}` — map.js passes an empty
+`[data-favourite-detail]` container that `static/js/favourites.js` fills,
 then map.js anchors it in a MapLibre popup at the pin (SNOW-499: an existing
 favourite is a point fixed to the map, so its detail is a *pinned popup*, not
 the docked create/placement sheet — the sheet stays put only while the map
-pans a mobile pin under it during placement). A successful rename/delete
-round-trip dispatches `snowdesk:favourites-changed` (re-fetch geojson +
-`setData`), and delete additionally dispatches `snowdesk:favourite-detail-close`
-so map.js removes the popup. The "Add favourite" flow itself (placement,
-drag-to-refine, the create sheet, CSRF handling) is documented in
-`apps/favourites/views.py`'s module docstring and `static/js/favourites.js`'s
-header comment — there is no server-side "fetch one favourite" endpoint, so
-the pin-detail rename/delete markup is reconstructed client-side from the
-`__UUID__`-templated
-`favourite_rename_url_template` / `favourite_delete_url_template` context
-vars — the same reverse-with-a-dummy-id-then-string-replace trick
-`apps/public/views.py::home()` uses for `edit_save_url_template`
-(`api:edit_resort_save`).
+pans a mobile pin under it during placement).
+
+SNOW-658: that popup holds the pin's name, the time it was saved as a muted
+relative subheader, and the close — the same shape as the observation pin's
+popup, and it shares the one `formatRelativeTime` in `map_shared.js`
+(published for non-bundle modules as `window.snowdeskMapFormat.relativeTime`).
+`created_at` rides on the feature rather than behind a per-pin fetch so the
+popup opens offline. Renaming and removing a favourite live in the favourites
+panel, so the popup no longer carries the `__UUID__`-templated rename/delete
+forms it once reconstructed client-side, nor the `snowdesk:favourite-detail-close`
+event a delete used to dispatch. `favourite_rename_url_template` /
+`favourite_delete_url_template` remain in the page context — the panel's
+inline rename and the resort-popup star still post to them. The "Add
+favourite" flow itself (placement, drag-to-refine, the create sheet, CSRF
+handling) is documented in `apps/favourites/views.py`'s module docstring and
+`static/js/favourites.js`'s header comment.
 
 **Weather overlay (SNOW-573)**: a Meteocons condition symbol plus the
 day's max temperature at each resort-anchored (and, for a signed-in

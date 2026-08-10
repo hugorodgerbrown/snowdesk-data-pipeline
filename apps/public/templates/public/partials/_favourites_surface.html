@@ -170,9 +170,11 @@ Context expected:
     {# strings went with that copy.                                            #}
     <span data-string="signin-prompt">{% trans "Sign in to save a favourite." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
+    {# SNOW-658: the pin popup's title for a favourite saved without a name.  #}
+    {# "name-label" (the popup's editable name field) and "remove" (its       #}
+    {# Remove button) went with those controls — the panel renames and        #}
+    {# removes now, from server-rendered rows makemessages can already see.   #}
     <span data-string="unnamed-pin">{% trans "Unnamed pin" %}</span>
-    <span data-string="name-label">{% trans "Favourite name" %}</span>
-    <span data-string="remove">{% trans "Remove" %}</span>
     {# SNOW-658: the map row renames in place on its own label. The editor  #}
     {# is server-rendered (includes/_ugc_panel_row.html), so its aria-label #}
     {# needs nothing here — but the FAILURE line is written into a toast by #}
