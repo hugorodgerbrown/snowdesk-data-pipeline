@@ -60,21 +60,10 @@ Takes no context.
     {# plain download-arrow glyph the per-region control uses. Unchanged   #}
     {# by SNOW-634: only this roundel's labels and behaviour changed, not  #}
     {# its icon.                                                           #}
-    <svg
-        class="map-download-control-icon map-download-control-icon--idle"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-        <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-        <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-        <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-    </svg>
+    {#                                                                     #}
+    {# SNOW-658: the paths moved into includes/_icon_downloads.html. The   #}
+    {# panel this roundel opens now carries the SAME mark in its header —  #}
+    {# it is the panel's only identity mark, confirming which roundel was  #}
+    {# tapped — and one glyph rendered in two places needs one source.     #}
+    {% include "includes/_icon_downloads.html" with size=18 svg_class="map-download-control-icon map-download-control-icon--idle" only %}
 </button>

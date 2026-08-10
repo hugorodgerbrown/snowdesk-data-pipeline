@@ -1,0 +1,33 @@
+{% comment %}
+templates/includes/_icon_favourite.html — the favourites glyph: a star
+(SNOW-414; extracted here by SNOW-658).
+
+One source for one mark. The glyph identifies the favourites roundel
+(#favourite-add-btn, public/partials/_map_embed.html) AND, at 22px, the
+header of the panel that roundel opens — Hugo's design makes the roundel's
+own icon the panel's only identity mark, so a reader can confirm which
+roundel they tapped.
+
+Our own star, not the design mock's drawn one (confirmed with Hugo): the
+mock draws its glyphs from scratch, and matching the roundel a user
+actually tapped matters more than matching a mock's rendering of it.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            roundel size; the panel header passes 22.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+</svg>

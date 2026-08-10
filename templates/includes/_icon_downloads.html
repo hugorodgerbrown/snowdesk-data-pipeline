@@ -1,0 +1,37 @@
+{% comment %}
+templates/includes/_icon_downloads.html — the offline-downloads glyph: a
+viewfinder, four corner brackets (SNOW-522; extracted here by SNOW-658).
+
+One source for one mark. The glyph identifies the downloads roundel
+(public/partials/_map_custom_download_control.html) AND, at 22px, the
+header of the panel that roundel opens — Hugo's design makes the roundel's
+own icon the panel's only identity mark, so a reader can confirm which
+roundel they tapped. Pasting the paths into both places would leave two
+copies of the same mark free to drift; a partial cannot.
+
+Distinct from the per-region control's plain download arrow, deliberately:
+this one frames an area rather than pulling one down.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            roundel size; the panel header passes 22.
+  svg_class (string, optional) — classes on the <svg>. The roundel passes
+            its own state classes; the panel header passes none.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+</svg>
