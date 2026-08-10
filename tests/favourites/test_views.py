@@ -1345,11 +1345,12 @@ class TestFavouriteList:
     def test_map_variant_does_not_link_the_row_anywhere(self, client: Client) -> None:
         """The map row has no navigation at all (SNOW-658, Hugo's design).
 
-        It had two, in turn, in one day: a "Details →" control beside the
-        title, then the title itself as a link. The design drops both — the
-        label's own click is the inline rename now, and a favourite's
-        detail page is reached by tapping its pin on the map, which is
-        where the user already is.
+        It had three, in turn, in three days: a "Details →" control beside
+        the title, the title itself as a link, and the title as a
+        click-to-rename target. The row's primary line is inert now — a
+        favourite's detail page is reached by tapping its pin on the map,
+        which is where the user already is, and renaming is the pencil's
+        job.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1360,6 +1361,44 @@ class TestFavouriteList:
         content = response.content.decode()
         assert _detail_url(favourite.uuid) not in content
         assert "Details" not in content
+
+    def test_map_variant_meta_line_is_the_saved_date(self, client: Client) -> None:
+        """The row's second line dates the pin — it used to give coordinates.
+
+        SNOW-658, Hugo: "Replace the lat/lon on the favourite with the
+        timestamp." A pair of four-decimal numbers is precise, unmemorable
+        and impossible to place; the date is what orders a list of saved
+        places and tells two similar pins apart.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        with freeze_time("2026-02-03T09:00:00Z"):
+            favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "Saved 3 Feb 2026" in content
+        # The coordinates are gone entirely, not merely demoted.
+        assert f"{favourite.latitude:.4f}" not in content
+        assert f"{favourite.longitude:.4f}" not in content
+
+    def test_map_variant_meta_line_prefixes_the_region(self, client: Client) -> None:
+        """A pin that matched a region reads "<region> · saved <date>".
+
+        Hugo's own design for this row — "Alpstein · saved 3 Feb". Region
+        is nullable (a pin can fall outside every known boundary), which is
+        why the date alone is the default rather than the exception.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(name="Alpstein")
+        with freeze_time("2026-02-03T09:00:00Z"):
+            FavouriteFactory.create(user=user, name="Mine", region=region)
+
+        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+
+        assert "Alpstein · saved 3 Feb 2026" in response.content.decode()
 
     def test_map_variant_renames_in_place_on_the_label(self, client: Client) -> None:
         """The row carries its own inline editor, hidden until asked for.
