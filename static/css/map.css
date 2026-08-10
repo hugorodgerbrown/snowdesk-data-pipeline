@@ -268,7 +268,18 @@
        banner + the top safe-area). basemapPickerInit (static/js/map.js,
        SNOW-511) tightens max-height on open/resize to the measured room
        between #map's top and the menu's baseline so the top rows (the
-       Countries section) never clip behind the header on short viewports. */
+       Countries section) never clip behind the header on short viewports.
+
+       SNOW-656: that same JS ALSO lowers the baseline itself. The `bottom`
+       above is measured from the basemap pill, which is the FIRST roundel in
+       a bottom-anchored column — so on a tall column the pill sits high, the
+       baseline lands mid-screen, and the menu is squeezed into the room above
+       it while a large band below goes unused. On a 375x812 phone that was a
+       333px window over 580px of content: the menu opened already scrolled,
+       showing neither the Countries section nor its own heading. The JS drops
+       the baseline to just above the season scrubber, which roughly doubles
+       the room and removes the scroll entirely at that size. This value stays
+       as the no-JS fallback. */
     max-height: calc(100dvh - 96px);
     overflow-y: auto;
     background: var(--color-card);

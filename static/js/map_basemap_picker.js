@@ -48,13 +48,56 @@
   // its baseline before applying the cap is stable. Recomputed on each open
   // and on resize because the banner (conditional) and the top safe-area
   // inset both move #map's top.
+  //
+  // SNOW-656 lowers the BASELINE as well, because clamping alone was solving
+  // the wrong half of the problem. The CSS `bottom` is measured from the
+  // basemap pill, and that pill is the FIRST roundel in a bottom-anchored
+  // column — so the taller the column, the higher the pill sits and the
+  // higher the baseline lands. On a 375x812 phone it put the menu's lower
+  // edge at y=455 with the scrubber at y=707: a 333px window over 580px of
+  // content, opening already scrolled past its own Countries section, while
+  // 253px of map below it went unused. Dropping the baseline to just above
+  // the scrubber roughly doubles the room and removes the scroll at that
+  // size.
   const MENU_TOP_GAP = 8;
-  const clampMenuHeight = () => {
+  const MENU_BOTTOM_GAP = 8;
+
+  /**
+   * Place the menu's lower edge and cap its height to the room that leaves.
+   *
+   * Both halves are measured rather than declared: the column's height varies
+   * with the collapsible group and with which roundels are eligible, and
+   * `#map`'s top moves with the nav, the conditional off-season banner and
+   * the safe-area inset. Recomputed on every open and on resize for the same
+   * reason.
+   *
+   * @returns {void}
+   */
+  const positionMenu = () => {
     const mapEl = document.getElementById('map');
     if (!mapEl) return;
-    const mapTop = mapEl.getBoundingClientRect().top;
-    const menuBottom = menu.getBoundingClientRect().bottom;
-    const available = Math.max(0, Math.round(menuBottom - mapTop - MENU_TOP_GAP));
+    const mapBox = mapEl.getBoundingClientRect();
+
+    // The lowest the menu may reach. The scrubber owns the foot of the map,
+    // so stop above it; with no scrubber on the page, the map's own bottom
+    // edge is the floor.
+    const scrubber = document.getElementById('season-scrubber');
+    const floor = (scrubber ? scrubber.getBoundingClientRect().top : mapBox.bottom)
+      - MENU_BOTTOM_GAP;
+
+    // `bottom` is measured from the pill (the menu's containing block) and is
+    // negative downward, so this is the offset that puts the menu's lower
+    // edge on the floor. Falls back to the CSS value if the pill has no box
+    // yet — the menu is unhidden before this runs, but a display:none
+    // ancestor would still yield zeros.
+    const pillBottom = pill.getBoundingClientRect().bottom;
+    if (pillBottom > 0) {
+      menu.style.bottom = `${Math.round(pillBottom - floor)}px`;
+    }
+
+    // Then the height that baseline leaves above it, so the first rows never
+    // clip behind the header (SNOW-511's original point).
+    const available = Math.max(0, Math.round(floor - mapBox.top - MENU_TOP_GAP));
     menu.style.maxHeight = `${available}px`;
   };
 
@@ -69,8 +112,9 @@
     // bucket, so repeated opens coalesce inside `refresh()` rather than
     // each starting their own pass.
     if (open) window.pwaLayerSyncStatus?.refresh();
-    // SNOW-511: size the menu to the visible map area once it's laid out.
-    if (open) clampMenuHeight();
+    // SNOW-511/SNOW-656: place the baseline and size the menu to the visible
+    // map area, once it's laid out.
+    if (open) positionMenu();
   };
 
   // SNOW-588: let the "Manage downloads" sheet close this menu when it
@@ -88,7 +132,7 @@
   // SNOW-511: keep the cap correct if the viewport changes while the menu is
   // open (orientation flip, mobile URL-bar show/hide, desktop resize).
   window.addEventListener('resize', () => {
-    if (!menu.hidden) clampMenuHeight();
+    if (!menu.hidden) positionMenu();
   });
 
   toggle.addEventListener('click', (e) => {
