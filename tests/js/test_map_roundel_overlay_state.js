@@ -9,15 +9,26 @@
  * something else ("this device holds a downloaded area").
  *
  * What is worth testing here is not the attribute write — it is that the
- * state stays TRUE over time. Three paths can change an overlay's
+ * state stays TRUE over time. Five paths can change an overlay's
  * visibility, and only the first is obvious:
  *
  *   1. the panel switch, through the bridge (both directions, all three);
  *   2. the bulletins-exclusivity path, which switches the downloaded
  *      squares off from a control in a different surface entirely;
- *   3. the ``styledata`` re-seed after a basemap swap, which rewrites
- *      overlayState wholesale — the path an implementation that painted
- *      only at boot would still pass every other test here.
+ *   3. the ``styledata`` re-install after a basemap swap, which tears every
+ *      layer off the map and puts it back — the path an implementation that
+ *      painted only at boot would still pass every other test here;
+ *   4. a lazy overlay's own load settling, long after the switch that asked
+ *      for it: the layers appear (ring on) or never do (ring stays off);
+ *   5. a placement flow, which clears every app layer off the map without
+ *      going anywhere near a bridge.
+ *
+ * 4 and 5 are the SNOW-658 review's subject: ``isVisible()`` answers from
+ * the layers MapLibre is drawing, not from the stored preference, so the
+ * ring can only ever claim what is on screen. The preference lives on as
+ * ``isEnabled()``, which is what the panel switch reads — the two are
+ * asserted apart below, because the state where they disagree (asked for,
+ * not drawn) is the state this distinction exists to make visible.
  *
  * Booting map.js in jsdom follows test_map_favourites_overlay_bridge.js's
  * pattern — see its header, and test_map_download_bytes.js's, for the
@@ -27,7 +38,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
-import { loadMapBundle } from './_load_map_bundle.js';
+import { MAP_BUNDLE, loadMapBundle } from './_load_map_bundle.js';
 
 const DOWNLOADS_ROUNDEL = 'map-custom-download-control';
 const FAVOURITES_ROUNDEL = 'favourite-add-btn';
@@ -35,10 +46,18 @@ const REPORTS_ROUNDEL = 'report-btn';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/** Minimal MapLibre stub — layer layout only, which is all map.js needs here. */
+/**
+ * Minimal MapLibre stub — layer layout plus enough of the style graph for
+ * static/js/map_placement_focus.js, which decides what an "app overlay" is
+ * by looking for layers hanging off a geojson source.
+ */
 function stubMapLibre() {
   const handlers = {};
   const layouts = new Map();
+  // Layer id → its addLayer definition, and source id → its type, so
+  // getStyle() can report what has actually been installed.
+  const layerDefs = new Map();
+  const sourceTypes = new Map();
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -53,13 +72,20 @@ function stubMapLibre() {
     getPaintProperty: () => undefined,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
+    // Always null: map.js's install functions early-return on an existing
+    // source, and this suite wants each install call to run (that is how a
+    // freshly-fetched overlay gets back onto the map here).
     getSource: () => null,
-    addSource: () => {},
+    addSource: (id, def) => {
+      sourceTypes.set(id, (def && def.type) || 'geojson');
+    },
     addLayer: (def) => {
       layouts.set(def.id, { ...(def.layout || {}) });
+      layerDefs.set(def.id, def);
     },
     removeLayer: (id) => {
       layouts.delete(id);
+      layerDefs.delete(id);
     },
     removeSource: () => {},
     moveLayer: () => {},
@@ -74,7 +100,12 @@ function stubMapLibre() {
     removeFeatureState: () => {},
     setStyle: () => {},
     isStyleLoaded: () => true,
-    getStyle: () => ({ layers: [], sources: {} }),
+    getStyle: () => ({
+      layers: Array.from(layerDefs.values()),
+      sources: Object.fromEntries(
+        Array.from(sourceTypes.entries()).map(([id, type]) => [id, { type }]),
+      ),
+    }),
     getCanvas: () => ({ style: {} }),
     getContainer: () => document.getElementById('map'),
     loaded: () => true,
@@ -157,6 +188,11 @@ async function waitFor(predicate, timeoutMs = 1000) {
   return predicate();
 }
 
+/** Let every pending microtask (and the MutationObserver queue) drain. */
+async function settle() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** The `data-overlay-shown` value on one roundel. */
 function shown(id) {
   return document.getElementById(id).dataset.overlayShown;
@@ -192,7 +228,13 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
-  loadMapBundle();
+  // static/js/map_placement_focus.js rides along with the bundle: it reads
+  // the bare ``MAP`` binding map_state.js declares, which in the browser it
+  // reaches through the shared classic-script scope home.html gives it. Its
+  // own <script> tag is outside the bundle's contiguous run, so it is passed
+  // here rather than added to MAP_BUNDLE (which mirrors that run exactly,
+  // and is checked against the template by tests/public/test_map_script_order.py).
+  loadMapBundle(MAP_BUNDLE.concat(['map_placement_focus.js']));
   // MapLibre never fires 'load' in jsdom, and the styledata handler this
   // suite drives directly is registered from inside it.
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -205,22 +247,67 @@ afterAll(() => {
   delete globalThis.maplibregl;
 });
 
-beforeEach(() => {
-  // A known starting point for every case: nothing on the map.
+/** Take one overlay's layers off the map, as a load that never landed
+ * leaves them. */
+function uninstallLayers(...layerIds) {
+  for (const id of layerIds) mapStub.removeLayer(id);
+}
+
+/** Put the favourites pins back the way map.js does when a fetch lands —
+ * through the public event favourites.js fires after a save. */
+async function installFavouritesLayers() {
+  document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+  await waitFor(() => !!mapStub.getLayer('favourites-pin'));
+}
+
+beforeEach(async () => {
+  // A known starting point for every case: nothing on the map. The
+  // favourites re-install covers a case below that deliberately takes those
+  // layers away.
   window.pwaDownloadedOverlay.hide();
   window.pwaFavouritesOverlay.hide();
   window.pwaCommunityReportsOverlay.hide();
+  if (!mapStub.getLayer('favourites-pin')) await installFavouritesLayers();
+});
+
+// FIRST in the file on purpose: community reports are off by default, so
+// this is the only point at which nothing has fetched them yet and an
+// enable genuinely reaches the network. map.js loads each lazy overlay once
+// per session, so a later test could only ever exercise the short-circuit.
+describe('an overlay whose data never arrives', () => {
+  it('leaves the ring off when the fetch fails', async () => {
+    // Offline, first enable, no cached copy: the preference is written and
+    // nothing at all is installed. The user needs to see that this did not
+    // reach the map, which a ring reading the preference would hide.
+    globalThis.fetch.mockImplementationOnce(() => Promise.reject(new Error('offline')));
+
+    window.pwaCommunityReportsOverlay.show();
+    await settle();
+
+    expect(window.pwaCommunityReportsOverlay.isEnabled()).toBe(true);
+    expect(window.pwaCommunityReportsOverlay.isVisible()).toBe(false);
+    expect(shown(REPORTS_ROUNDEL)).toBe('false');
+
+    // The retry that succeeds does light it, from the same switch — so the
+    // "off" above was the missing layers, not a flag stuck on the failure.
+    window.pwaCommunityReportsOverlay.show();
+    await waitFor(() => shown(REPORTS_ROUNDEL) === 'true');
+    expect(shown(REPORTS_ROUNDEL)).toBe('true');
+  });
 });
 
 describe('the three roundels track their own overlay', () => {
-  it('paints the boot state, which is not simply "everything off"', () => {
-    // overlayState.favourites defaults to ON, so a roundel painted from an
-    // assumed-empty map would be wrong the moment the page settled. Re-seed
-    // the preference and re-run the boot paint the module does at parse time.
+  it('paints from the layers, not from the stored preference', async () => {
+    // The distinction the SNOW-658 review turns on: the preference below
+    // never moves, and the ring still goes out, because the pins did.
     window.pwaFavouritesOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+
+    mapStub.setLayoutProperty('favourites-pin', 'visibility', 'none');
     window.pwaRoundelOverlayState.refresh();
 
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
   });
 
   it('follows the downloads overlay in both directions', async () => {
@@ -231,33 +318,116 @@ describe('the three roundels track their own overlay', () => {
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
   });
 
-  it('follows the favourites overlay in both directions', () => {
+  it('follows the favourites overlay in both directions', async () => {
+    // show() is asynchronous by nature — it asks the lazy-load path for the
+    // layers and they are painted a tick later — so the ring lights on the
+    // announcement that load makes, not on the click.
     window.pwaFavouritesOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
     expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
 
     window.pwaFavouritesOverlay.hide();
     expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
   });
 
-  it('follows the community-reports overlay in both directions', () => {
+  it('follows the community-reports overlay in both directions', async () => {
     window.pwaCommunityReportsOverlay.show();
+    await waitFor(() => shown(REPORTS_ROUNDEL) === 'true');
     expect(shown(REPORTS_ROUNDEL)).toBe('true');
 
     window.pwaCommunityReportsOverlay.hide();
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
   });
 
-  it('leaves the other two roundels alone', () => {
+  it('leaves the other two roundels alone', async () => {
     window.pwaFavouritesOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
 
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
   });
 });
 
-describe('the state is announced, not only painted', () => {
-  it('composes each roundel\'s own name into its aria-label, and restores it', () => {
+describe('an overlay that was asked for but never drawn', () => {
+  it('reports not-shown while its layers are not installed', async () => {
+    // First enable offline: the preference is written and the fetch brings
+    // back nothing, so there is no layer to paint. A ring reading the
+    // preference would claim "shown" over a map with no pins on it.
+    uninstallLayers('favourites-pin', 'favourites-label');
+
     window.pwaFavouritesOverlay.show();
+    await settle();
+
+    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
+    expect(window.pwaFavouritesOverlay.isVisible()).toBe(false);
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+  });
+
+  it('lights the ring when the layers finally install', async () => {
+    uninstallLayers('favourites-pin', 'favourites-label');
+    window.pwaFavouritesOverlay.show();
+    await settle();
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+
+    // The data lands later — map.js installs the pins, and the install is
+    // what has to speak up, since nothing about the preference has changed.
+    await installFavouritesLayers();
+
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+  });
+
+});
+
+describe('a placement flow clears the map', () => {
+  it('drops the rings for its duration and gives them back', async () => {
+    // static/js/map_placement_focus.js hides every geojson-sourced layer
+    // without touching a bridge — the overlays genuinely are gone, so the
+    // rings have to go with them, and come back when the flow ends.
+    window.pwaFavouritesOverlay.show();
+    await window.pwaDownloadedOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+
+    window.PlacementFocus.enter();
+
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+    expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
+    // The user's own settings are untouched — this is the map being
+    // cleared, not their overlays being switched off.
+    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
+    expect(window.pwaDownloadedOverlay.isEnabled()).toBe(true);
+
+    window.PlacementFocus.exit();
+
+    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    expect(shown(DOWNLOADS_ROUNDEL)).toBe('true');
+  });
+
+  it('repaints once per transition, so the rings do not flicker', async () => {
+    // A ring that flickered — off, on, off — through every placement flow
+    // would be worse than one that lied, so count the repaints rather than
+    // reading the value at the end. Two announcements, one per transition,
+    // each already carrying the settled value (this module's own listener
+    // is registered first, so it has painted by the time this one runs).
+    window.pwaFavouritesOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+
+    const seen = [];
+    const record = () => seen.push(shown(FAVOURITES_ROUNDEL));
+    document.addEventListener('snowdesk:overlay-visibility-changed', record);
+
+    window.PlacementFocus.enter();
+    window.PlacementFocus.exit();
+    await settle();
+    document.removeEventListener('snowdesk:overlay-visibility-changed', record);
+
+    expect(seen).toEqual(['false', 'true']);
+  });
+});
+
+describe('the state is announced, not only painted', () => {
+  it('composes each roundel\'s own name into its aria-label, and restores it', async () => {
+    window.pwaFavouritesOverlay.show();
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
     expect(label(FAVOURITES_ROUNDEL)).toBe('Your favourites — shown on the map');
 
     window.pwaFavouritesOverlay.hide();
@@ -295,20 +465,23 @@ describe('changes from outside the panel', () => {
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
   });
 
-  it('survives the basemap-swap re-seed', async () => {
-    // The styledata handler rewrites overlayState wholesale from
-    // localStorage. A boot-only implementation passes every other case in
-    // this file and fails this one: the roundels would go on stating
-    // whatever was true before the swap for the rest of the session.
+  it('survives the basemap-swap re-install', async () => {
+    // setStyle tears every layer off the map and the styledata handler puts
+    // them back. A boot-only implementation passes every other case in this
+    // file and fails this one: the roundels would go on stating whatever was
+    // true before the swap for the rest of the session. It also pins the
+    // ORDER — announcing beside that handler's overlayState re-seed, before
+    // the re-installs, would read an empty style and report "not shown".
     window.pwaFavouritesOverlay.show();
     window.pwaCommunityReportsOverlay.hide();
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
 
     // Force the handler past its own guard (it early-returns while the
     // regions fill is still installed) and hand it the same DOM state a
     // real setStyle leaves behind.
     document.getElementById(FAVOURITES_ROUNDEL).dataset.overlayShown = 'false';
     mapStub.removeLayer('regions-fill');
+    uninstallLayers('favourites-pin', 'favourites-label');
     for (const handler of mapStub.handlers.styledata || []) await handler();
 
     await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');

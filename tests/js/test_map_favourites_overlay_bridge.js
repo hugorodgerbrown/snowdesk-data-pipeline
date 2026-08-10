@@ -10,7 +10,7 @@
  * covered by tests/js/test_map_downloaded_overlay_colour.js's own
  * show()/hide()/isVisible() block, whose structure this file follows.
  *
- * Three things have to hold, and only one of them is obvious:
+ * Four things have to hold, and only one of them is obvious:
  *
  *   1. show()/hide() persist the preference under the SAME localStorage key
  *      the menu row used, so a device carrying a stored preference from
@@ -22,6 +22,12 @@
  *      leaves the resort invisible — no star, no dot (SNOW-499). The
  *      picker got this right via a CustomEvent; the bridge has to do it
  *      directly.
+ *   4. The bridge answers two different questions and does not confuse
+ *      them (SNOW-658 review): isVisible() is what the map is drawing,
+ *      isEnabled() is what the user asked for. The roundel ring reads the
+ *      first, the panel switch the second, and they are allowed to
+ *      disagree — an overlay enabled with nothing to draw is precisely the
+ *      state the user has to be able to see.
  *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern —
  * see its header for the general rationale.
@@ -294,6 +300,22 @@ describe('window.pwaFavouritesOverlay', () => {
     expect(resortsExcludeFavourited(mapStub)).toBe(true);
   });
 
+  it('separates what is drawn from what was asked for', async () => {
+    // Something else clears the layers off the map — a placement flow does
+    // exactly this — without going near the preference. isVisible() follows
+    // the map; isEnabled() and the stored preference stay where the user
+    // left them, so nothing switches their overlay off behind their back.
+    expect(window.pwaFavouritesOverlay.isVisible()).toBe(true);
+
+    for (const id of FAVOURITE_LAYERS) {
+      mapStub.setLayoutProperty(id, 'visibility', 'none');
+    }
+
+    expect(window.pwaFavouritesOverlay.isVisible()).toBe(false);
+    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
+    expect(localStorage.getItem(FAVOURITES_KEY)).toBe('true');
+  });
+
   it('emits telemetry for each edge, as the menu row did', () => {
     const emit = vi.fn();
     window.pwaTelemetry = { emit };
@@ -317,11 +339,13 @@ describe('window.pwaCommunityReportsOverlay', () => {
     );
 
     expect(window.pwaCommunityReportsOverlay.isVisible()).toBe(true);
+    expect(window.pwaCommunityReportsOverlay.isEnabled()).toBe(true);
     expect(localStorage.getItem(COMMUNITY_REPORTS_KEY)).toBe('true');
 
     window.pwaCommunityReportsOverlay.hide();
 
     expect(window.pwaCommunityReportsOverlay.isVisible()).toBe(false);
+    expect(window.pwaCommunityReportsOverlay.isEnabled()).toBe(false);
     expect(localStorage.getItem(COMMUNITY_REPORTS_KEY)).toBe('false');
     expect(visibilities(mapStub, COMMUNITY_REPORT_LAYERS)).toEqual([
       'none',

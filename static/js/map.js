@@ -1329,6 +1329,60 @@
   // snowdesk:favourites-changed handler).
   let favouritedResortIds = [];
 
+  /**
+   * Broadcast that one of the three roundel-owned overlays has changed
+   * whether it is drawn on the map.
+   *
+   * SNOW-658: the downloads, favourites and field-observation roundels each
+   * carry a visible "my overlay is on the map" state, and one signal drives
+   * all three (static/js/map_roundel_overlay_state.js) rather than three
+   * hand-rolled ones — three separate signals is how the roundels diverged
+   * in the first place. No detail: the listener re-reads all three bridges'
+   * ``isVisible()``, so this only has to say "something moved", and a
+   * fourth overlay needs no new event.
+   *
+   * Fired from every writer of any of the three, and — since SNOW-658's
+   * review made ``isVisible()`` answer from paint rather than from the
+   * preference — from everything that changes what is DRAWN without the
+   * preference moving at all: ``showDownloadedOverlay`` /
+   * ``hideDownloadedOverlay`` (via ``announceDownloadedOverlay``, which the
+   * bulletins-exclusivity path also reaches), ``showPanelOverlay`` /
+   * ``hidePanelOverlay``, the settle of a lazy ``snowdesk:overlay-load``
+   * (success and failure alike), ``installFavouritesLayer`` /
+   * ``installCommunityReportsLayer``, once at boot when the bridges are
+   * published, and again after the ``styledata`` handler a basemap swap runs
+   * has re-installed the layers. static/js/map_placement_focus.js dispatches
+   * the same event directly — it hides every app layer without going through
+   * any bridge, so it is a writer of all three at once.
+   *
+   * Declared up here beside ``layerPainted`` rather than beside the bridges
+   * at the foot of this IIFE: the install functions below call it, and a
+   * ``const`` referenced before its own line has run is a temporal-dead-zone
+   * throw waiting for the first caller that runs at parse time.
+   *
+   * @returns {void}
+   */
+  const announceOverlayVisibility = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+  };
+
+  /**
+   * Whether one layer is currently painted on the map.
+   *
+   * SNOW-658: the one place this question is answered, because it is asked
+   * from two directions now — the resort exclusion just below, and the three
+   * overlay bridges' ``isVisible()`` at the foot of this IIFE. A layer that
+   * was never installed (a lazy overlay whose fetch has not landed, or
+   * failed) is not painted, which is why the ``getLayer`` guard is part of
+   * the answer rather than a defensive wrapper around it.
+   *
+   * @param {string} layerId - A MapLibre layer id.
+   * @returns {boolean} True when the layer exists and is not hidden.
+   */
+  const layerPainted = (layerId) =>
+    !!map.getLayer(layerId) &&
+    map.getLayoutProperty(layerId, 'visibility') !== 'none';
+
   // SNOW-499: whether the favourites overlay is currently drawn. The resort
   // exclusion below is only justified while the favourite star is actually
   // visible to stand in for the hidden resort dot — with the favourites
@@ -1336,9 +1390,7 @@
   // back to its plain resort dot rather than vanishing from the map
   // entirely. Reads the live layer state, so it is correct however the
   // caller reached here (boot, toggle on, toggle off).
-  const favouritesLayerVisible = () =>
-    !!map.getLayer('favourites-pin') &&
-    map.getLayoutProperty('favourites-pin', 'visibility') !== 'none';
+  const favouritesLayerVisible = () => layerPainted('favourites-pin');
 
   // SNOW-499: apply (or clear) the resorts-layer exclusion filter for the
   // current favouritedResortIds. Composes with each layer's pristine base
@@ -1496,6 +1548,13 @@
       },
     });
     raiseMarkerLayers();
+    // SNOW-658 review: the pins are on the map (or explicitly hidden) only
+    // as of this line, and every path that gets them there ends here — the
+    // boot restore, the lazy load, the user's very first saved favourite,
+    // and the re-install after a basemap swap. Announcing from the one
+    // install function covers all four; announcing from each caller is how
+    // one of them would eventually be forgotten and leave a stale ring.
+    announceOverlayVisibility();
   };
 
   // SNOW-472: shared flag-icon id for every unclustered community-report
@@ -1728,6 +1787,9 @@
       },
     });
     raiseMarkerLayers();
+    // SNOW-658 review: as for the favourites install above — the flags are
+    // on the map only as of this line, and the roundel's ring reads paint.
+    announceOverlayVisibility();
   };
 
   // ---------------------------------------------------------------------
@@ -2702,6 +2764,21 @@
     weather: ['weather-point'],
   };
 
+  /**
+   * Whether a panel-driven overlay is actually drawn on the map right now.
+   *
+   * SNOW-658: the FIRST id in each group above is that overlay's principal
+   * layer — the one carrying its markers ('favourites-pin',
+   * 'community-reports-clusters'). Every id in a group is installed by one
+   * function and flipped by one loop, so the principal layer answers for the
+   * group; reading it off the table rather than naming a second literal
+   * keeps the group definition the only place layer ids are written down.
+   *
+   * @param {string} key - ``'favourites'`` or ``'community_reports'``.
+   * @returns {boolean} True when that overlay's layers are on the map.
+   */
+  const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYER_IDS_MAIN[key][0]);
+
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
   // the user enables an overlay tier that hasn't been fetched yet.
   // We fetch the GeoJSON, install the layers, then make them visible.
@@ -2784,7 +2861,18 @@
       // over-claims on a failed load; markCached itself no-ops for l3
       // (network-only, genuinely never cached) so that dot stays grey.
       if (overlayLoaded[key]) window.pwaLayerSyncStatus?.markCached(key);
-    }).catch(() => {});
+      // SNOW-658 review: this is where a lazy overlay's paint actually
+      // changes — the caller that dispatched this event announced a tick
+      // ago, before the fetch above had installed anything, so without this
+      // the roundel ring would stay off for an overlay now on the map (or,
+      // on a re-enable of an already-loaded layer, off for a layer this
+      // handler's own loop has just made visible). A settled fetch that
+      // installed nothing announces too: it says "still not drawn", which
+      // is the state this whole distinction exists to keep honest.
+      announceOverlayVisibility();
+    }).catch(() => {
+      announceOverlayVisibility();
+    });
   });
 
   // ==== SNOW-656: the Bulletins row ====
@@ -3079,31 +3167,6 @@
   };
 
   /**
-   * Broadcast that one of the three roundel-owned overlays has changed
-   * whether it is drawn on the map.
-   *
-   * SNOW-658: the downloads, favourites and field-observation roundels each
-   * carry a visible "my overlay is on the map" state, and one signal drives
-   * all three (static/js/map_roundel_overlay_state.js) rather than three
-   * hand-rolled ones — three separate signals is how the roundels diverged
-   * in the first place. No detail: the listener re-reads all three bridges'
-   * ``isVisible()``, so this only has to say "something moved", and a
-   * fourth overlay needs no new event.
-   *
-   * Fired from every writer of any of the three: ``showDownloadedOverlay``
-   * / ``hideDownloadedOverlay`` (via ``announceDownloadedOverlay`` below,
-   * which the bulletins-exclusivity path also reaches),
-   * ``showPanelOverlay`` / ``hidePanelOverlay``, once at boot when the
-   * bridges are published, and again after the ``styledata`` re-seed a
-   * basemap swap runs.
-   *
-   * @returns {void}
-   */
-  const announceOverlayVisibility = () => {
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
-  };
-
-  /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
    * SNOW-656: the "Display on the map" switch inside the downloads sheet
@@ -3196,15 +3259,24 @@
   // in-sheet "Available offline" toggle is the only thing that calls
   // hide(), and it is a genuine session-scoped inspection mode: close the
   // sheet with it on, look at the map, reopen the always-on-screen roundel
-  // to switch it off again. isVisible() is read by that toggle (and by
-  // render() on every open, so a freshly opened sheet shows the toggle
-  // already checked) — a function, not a plain frozen property, since
-  // downloadedOverlayVisible changes after this object is built.
+  // to switch it off again. Both reads below are functions, not plain frozen
+  // properties, since what they answer changes after this object is built.
+  //
+  // SNOW-658 review: ``isVisible()`` reads the SQUARES, not the flag that
+  // asked for them — see the isVisible/isEnabled note beside the two
+  // panel-driven bridges below for why the pair exists. The flag and the
+  // paint agree everywhere show()/hide() are the only writers, which was the
+  // whole of this overlay's life until placement focus (which clears every
+  // app layer off the map without touching any bridge). ``isEnabled()``
+  // publishes the flag itself — the inspection mode, this overlay's
+  // equivalent of the other two's persisted preference — which is what the
+  // in-sheet "Display on the map" switch reads on every open.
   window.pwaDownloadedOverlay = Object.freeze({
     refresh: refreshDownloadedOverlay,
     show: showDownloadedOverlay,
     hide: hideDownloadedOverlay,
-    isVisible: () => downloadedOverlayVisible,
+    isVisible: () => layerPainted('cached-tiles-fill'),
+    isEnabled: () => downloadedOverlayVisible,
   });
 
   // ==== SNOW-658: the two user-data overlays, driven from their own panels ====
@@ -3245,6 +3317,12 @@
     // and ``ensureOverlayLoaded`` short-circuits for an already-loaded layer,
     // so on a re-enable nothing would call it at all.
     if (key === 'favourites') applyResortsFavouritedFilter();
+    // SNOW-658 review: nothing is painted yet — the handler above sets
+    // visibility a microtask later at the earliest — so this announcement
+    // says "asked for, not drawn", and the one at the end of that handler
+    // says "drawn" (or, on a failed fetch, "still not drawn"). Both are
+    // wanted: the pair is what makes an overlay that never arrives
+    // distinguishable from one that has.
     announceOverlayVisibility();
   };
 
@@ -3271,6 +3349,27 @@
     announceOverlayVisibility();
   };
 
+  // ==== SNOW-658 review: isVisible() means PAINT, isEnabled() means INTENT ====
+  //
+  // All three bridges answer two different questions, and conflating them was
+  // the defect this pair of methods removes. ``isVisible()`` is "these layers
+  // are drawn on the map right now" — read off MapLibre, never off a flag.
+  // ``isEnabled()`` is "the user asked for this overlay" — the persisted
+  // preference (or, for downloads, the session's inspection mode), which is
+  // what decides what to restore at boot and what the panel switch shows as
+  // its own checked state on open.
+  //
+  // The two can legitimately disagree, and the case they disagree in is the
+  // one that matters: enable favourites offline with nothing cached and the
+  // switch reads ON (the preference took) while the roundel's ring stays off
+  // (nothing was drawn). That is not a glitch to paper over — it is the only
+  // way the user can see that their request has not reached the map. A ring
+  // claiming "shown" over a blank map would be the same defect class as a
+  // sync dot claiming a layer is cached when it isn't.
+  //
+  // So: status indicators (the roundel ring) read isVisible(); controls that
+  // state what the user asked for (the panel switches) read isEnabled().
+
   window.pwaFavouritesOverlay = Object.freeze({
     show() {
       showPanelOverlay('favourites');
@@ -3280,7 +3379,8 @@
       hidePanelOverlay('favourites');
       window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: false });
     },
-    isVisible: () => !!overlayState.favourites,
+    isVisible: () => panelOverlayPainted('favourites'),
+    isEnabled: () => !!overlayState.favourites,
   });
 
   window.pwaCommunityReportsOverlay = Object.freeze({
@@ -3296,16 +3396,22 @@
         visible: false,
       });
     },
-    isVisible: () => !!overlayState.community_reports,
+    isVisible: () => panelOverlayPainted('community_reports'),
+    isEnabled: () => !!overlayState.community_reports,
   });
 
-  // SNOW-658: all three bridges now exist and carry the boot-seeded state
-  // (``overlayState.favourites`` defaults to ON, so this is not a
-  // formality — a roundel painted from "nothing is on yet" would be wrong
-  // the moment the page settled). Announced HERE rather than beside the
-  // seed loop near the top of this IIFE, because a listener that hears it
-  // will immediately call ``isVisible()`` on all three, and two of them do
-  // not exist until the lines above have run.
+  // SNOW-658: all three bridges now exist, so a listener can safely be told
+  // to read them. Announced HERE rather than beside the seed loop near the
+  // top of this IIFE, because a listener that hears it will immediately call
+  // ``isVisible()`` on all three, and two of them do not exist until the
+  // lines above have run.
+  //
+  // SNOW-658 review: this announcement now says "nothing is drawn yet", and
+  // that is the truth at parse time — no overlay layer has been installed,
+  // whatever ``overlayState.favourites`` (default ON) says the user wants.
+  // The rings light as each install lands, from the install functions
+  // themselves. Still worth making: it settles the roundels against a live
+  // read on a page where the map never finishes booting.
   announceOverlayVisibility();
 
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
@@ -4922,12 +5028,6 @@
         bulletinsVisibility, overlayState.bulletins,
       );
       overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
-      // SNOW-658: the three roundels' "my overlay is on the map" state is
-      // read straight off the same bridges the two lines above have just
-      // rewritten, so it has to be repainted here or a basemap swap leaves
-      // it stating the pre-swap answer for the rest of the session. This is
-      // the path a boot-only implementation passes without.
-      announceOverlayVisibility();
 
       // SNOW-478: the new basemap has its own glyph server and fonts, so
       // re-derive the overlay label font before re-installing any layer.
@@ -4997,6 +5097,20 @@
       // accurately reflects what's already merged into the caches above —
       // nothing further to load.
       applyCountryFilters();
+
+      // SNOW-658: the three roundels' "my overlay is on the map" state has to
+      // be repainted here or a basemap swap leaves it stating the pre-swap
+      // answer for the rest of the session — the path a boot-only
+      // implementation passes without.
+      //
+      // SNOW-658 review: announced AFTER the re-installs above, not beside
+      // the overlayState re-seed at the top of this handler. setStyle has
+      // torn every app layer off the map by then, so a ring painted at that
+      // point would read the empty style and report "not shown" for an
+      // overlay that is about to be re-installed a few lines later — now
+      // that the bridges answer from paint rather than from the preference
+      // this handler had just re-read.
+      announceOverlayVisibility();
 
       if (selectedId !== null) {
         map.setFeatureState(

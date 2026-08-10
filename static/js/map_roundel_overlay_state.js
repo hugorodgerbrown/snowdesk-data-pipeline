@@ -20,13 +20,26 @@
  * signals is how they diverged in the first place; a fourth roundel joins by
  * adding a line to ROUNDELS.
  *
+ * PAINT, not preference. Each bridge's ``isVisible()`` answers from the
+ * layers MapLibre is actually drawing (SNOW-658 review), so an overlay the
+ * user has switched on but whose data never arrived — offline, first enable,
+ * a failed fetch — leaves its ring off, and a placement flow that clears the
+ * map down to the basemap takes all three off for its duration. The panel
+ * switch inside each roundel's own panel reads the bridge's ``isEnabled()``
+ * instead and can therefore read ON while the ring is off: the switch states
+ * what was asked for, the ring states what happened. A ring that claimed
+ * "shown" over a blank map would be this project's oldest status-indicator
+ * defect wearing a new hat.
+ *
  * The state is LIVE, not boot-only. ``snowdesk:overlay-visibility-changed``
  * (static/js/map.js's ``announceOverlayVisibility``) fires from every writer
  * of any of the three overlays: the panel switches, the bulletins-exclusivity
  * path that switches the downloaded squares off from the layers menu, the
- * boot seed, and the ``styledata`` re-seed after a basemap swap. The event
- * carries no detail — this module re-reads all three bridges — so a new
- * writer only has to announce, never to describe.
+ * boot seed, the ``styledata`` re-install after a basemap swap, each lazy
+ * overlay's install (and the settle of a load that installed nothing), and
+ * static/js/map_placement_focus.js. The event carries no detail — this module
+ * re-reads all three bridges — so a new writer only has to announce, never to
+ * describe.
  *
  * Accessibility: the ring is decorative-but-meaningful, so the state is also
  * in the roundel's own ``aria-label``, which is the idiom these roundels
