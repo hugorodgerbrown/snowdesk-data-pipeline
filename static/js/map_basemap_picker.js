@@ -59,8 +59,11 @@
   // 253px of map below it went unused. Dropping the baseline to just above
   // the scrubber roughly doubles the room and removes the scroll at that
   // size.
-  const MENU_TOP_GAP = 8;
-  const MENU_BOTTOM_GAP = 8;
+  // SNOW-658: both gaps, and the floor/cap arithmetic that used them, moved
+  // to static/js/map_overlay_bounds.js — the three UGC sheets need the same
+  // answer, and a second copy of it would be free to drift from this one.
+  // What stays here is the translation into the menu's own coordinate base,
+  // which is the half the sheets cannot share (see that module's header).
 
   /**
    * Place the menu's lower edge and cap its height to the room that leaves.
@@ -74,16 +77,8 @@
    * @returns {void}
    */
   const positionMenu = () => {
-    const mapEl = document.getElementById('map');
-    if (!mapEl) return;
-    const mapBox = mapEl.getBoundingClientRect();
-
-    // The lowest the menu may reach. The scrubber owns the foot of the map,
-    // so stop above it; with no scrubber on the page, the map's own bottom
-    // edge is the floor.
-    const scrubber = document.getElementById('season-scrubber');
-    const floor = (scrubber ? scrubber.getBoundingClientRect().top : mapBox.bottom)
-      - MENU_BOTTOM_GAP;
+    const bounds = window.pwaOverlayBounds?.compute();
+    if (!bounds) return;
 
     // `bottom` is measured from the pill (the menu's containing block) and is
     // negative downward, so this is the offset that puts the menu's lower
@@ -92,13 +87,12 @@
     // ancestor would still yield zeros.
     const pillBottom = pill.getBoundingClientRect().bottom;
     if (pillBottom > 0) {
-      menu.style.bottom = `${Math.round(pillBottom - floor)}px`;
+      menu.style.bottom = `${Math.round(pillBottom - bounds.floorY)}px`;
     }
 
     // Then the height that baseline leaves above it, so the first rows never
     // clip behind the header (SNOW-511's original point).
-    const available = Math.max(0, Math.round(floor - mapBox.top - MENU_TOP_GAP));
-    menu.style.maxHeight = `${available}px`;
+    menu.style.maxHeight = `${bounds.maxHeight}px`;
   };
 
   const setMenuOpen = (open) => {
