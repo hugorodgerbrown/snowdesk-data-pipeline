@@ -59,6 +59,7 @@ beforeEach(() => {
   delete window.PlacePicker;
   delete window.pwaDb;
   delete window.pwaMutationQueue;
+  delete window.pwaOverlayBounds;
 });
 
 afterEach(() => {
@@ -90,6 +91,32 @@ describe('attach — open', () => {
     // The favourites sheet uses this to close the anchored detail popup, so
     // it must land before the sheet is on screen, not after.
     expect(hiddenWhenCalled).toBe(true);
+  });
+
+  it('places the sheet inside the map area on the way in (SNOW-658)', () => {
+    // The geometry itself belongs to static/js/map_overlay_bounds.js and is
+    // covered in tests/js/test_map_overlay_sheet_position.js. What this
+    // controller owns is making the call, once the sheet is unhidden — a
+    // hidden element has no box, and the sheets it drives would otherwise
+    // open over the season scrubber and the roundel column.
+    const positionSheet = vi.fn();
+    window.pwaOverlayBounds = { positionSheet };
+    const { sheet, controller } = attachSheet();
+
+    controller.open();
+
+    expect(positionSheet).toHaveBeenCalledWith(sheet);
+  });
+
+  it('opens without the bounds module on the page', () => {
+    // Every other page that includes a sheet surface loads it, but a missing
+    // module must not stop the sheet opening — an unplaced sheet still falls
+    // back to the partial's own corner.
+    const { sheet, controller } = attachSheet();
+
+    controller.open();
+
+    expect(sheet.hasAttribute('hidden')).toBe(false);
   });
 });
 

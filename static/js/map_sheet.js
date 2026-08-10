@@ -155,6 +155,16 @@
     function open() {
       if (opts.onBeforeOpen) opts.onBeforeOpen();
       el.removeAttribute('hidden');
+      // SNOW-658: on desktop the sheet is a floating card, and
+      // includes/_overlay_sheet.html can only put it in a fixed viewport
+      // corner — which is where the season scrubber and the bottom-right
+      // roundel column already are. window.pwaOverlayBounds measures the room
+      // those leave (the same measurement the layers menu makes) and insets
+      // the sheet into it. Opt-in per sheet rather than a sweep over
+      // [data-overlay]: the same partial renders inline in the component
+      // library. A no-op below the `sm` breakpoint, where the bottom dock is
+      // the right shape.
+      window.pwaOverlayBounds?.positionSheet(el);
       el.focus();
     }
 

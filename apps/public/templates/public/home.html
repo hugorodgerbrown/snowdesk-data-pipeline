@@ -97,6 +97,14 @@ in addition to the shared map assets.
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# SNOW-658: where a map overlay may reach — the floor above the season   #}
+    {# scrubber, the height cap below #map's top edge, and the inset past the #}
+    {# bottom-right roundel column (window.pwaOverlayBounds). Shared by the   #}
+    {# layers menu (map_basemap_picker.js, in the bundle below) and the three #}
+    {# UGC sheets. Loaded here, outside the bundle's contiguous run: every    #}
+    {# consumer calls it from a user-triggered handler, never at parse time,  #}
+    {# so it only has to be on the page.                                      #}
+    <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
     {# SNOW-658: the "…" row overflow menu. Loaded from the downloads sheet #}
     {# alone until every UGC panel's rows grew one (they share              #}
     {# includes/_ugc_panel_row.html now) — hoisted here so all three        #}

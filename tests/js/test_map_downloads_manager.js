@@ -406,6 +406,7 @@ afterEach(() => {
   delete window.pwaDownloadsManager;
   delete window.pwaBasemapDownloads;
   delete window.pwaCustomAreaDownload;
+  delete window.pwaOverlayBounds;
   delete window.MapSheet;
 });
 
@@ -443,6 +444,23 @@ describe('opening the sheet', () => {
     expect(
       document.querySelector('[data-downloads-budget]').value,
     ).toBe('500');
+  });
+
+  it('places itself inside the map area (SNOW-658)', async () => {
+    // The geometry belongs to static/js/map_overlay_bounds.js and is covered
+    // in tests/js/test_map_overlay_sheet_position.js. This module is the one
+    // sheet that does NOT go through MapSheet.attach() — it owns
+    // `sheet.hidden` itself — so its own open() is the only place the call
+    // can be made, and the only thing that can be asserted here.
+    window.pwaOverlayBounds = { positionSheet: vi.fn() };
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(window.pwaOverlayBounds.positionSheet).toHaveBeenCalledWith(
+      document.getElementById('map-downloads-sheet'),
+    );
   });
 
   it('closes the layers menu it was opened from', async () => {

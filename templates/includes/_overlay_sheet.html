@@ -59,6 +59,20 @@ up with the stack above it, on notched devices too. Being inset on all
 sides, it also takes a full border and radius rather than the top-only
 pair it used while it was docked flush to the bottom.
 
+Desktop placement is refined in JS (SNOW-658). The ``sm:`` classes below
+put the sheet in a fixed viewport corner, which knows nothing about the
+season scrubber along the foot of the map or the roundel column at its
+right edge — so on desktop the sheet opened over both. Each map caller
+(map_sheet.js's ``open()`` for the favourite and report sheets,
+map_downloads_manager.js's own ``open()`` for downloads) hands the
+element to ``window.pwaOverlayBounds.positionSheet``
+(static/js/map_overlay_bounds.js), which measures the room those leave
+and writes ``bottom`` / ``right`` / ``max-height`` inline. The classes
+here stay as the fallback: they are what renders with JS unavailable,
+below the ``sm`` breakpoint (where nothing is written and any previous
+inline value is cleared), and for the ``static`` component-library
+render, which is inline rather than fixed and is never positioned.
+
 Bounded height (SNOW-645 review). This element used to set no
 max-height at all — content-driven height on a ``fixed``, bottom-docked
 box, so a sheet with enough content (the "Manage downloads" sheet with

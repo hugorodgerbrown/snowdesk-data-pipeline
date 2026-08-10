@@ -785,6 +785,11 @@
     // than a state this function just imposed.
     await render();
     sheet.hidden = false;
+    // SNOW-658: inset the sheet past the scrubber and the roundel column on
+    // desktop — the same call MapSheet.attach()'s own open() makes for the
+    // other two UGC sheets. This module does not go through that controller
+    // (it owns `sheet.hidden` itself), so it makes the call directly.
+    window.pwaOverlayBounds?.positionSheet(sheet);
     // SNOW-634: the roundel (#map-custom-download-control) is the only way
     // in now, but the layers menu can still be open behind it — a user who
     // opened the menu, then clicked the roundel without closing it first —
