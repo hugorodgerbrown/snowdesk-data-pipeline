@@ -2104,6 +2104,55 @@
     display: none;
 }
 
+/* SNOW-658: "the overlay this roundel's panel switches is on the map right
+   now" — the one state shared by all three overlay roundels (downloads,
+   favourites, field observations), painted from one attribute by one module
+   (static/js/map_roundel_overlay_state.js). Keyed on the attribute alone,
+   with no class in the selector, deliberately: the downloads roundel is a
+   .map-download-control and the other two are .map-utility-buttons inside a
+   pill, and a per-family rule is exactly how the three signals diverged
+   before this ticket. A fourth roundel gets this by carrying the attribute.
+
+   WHY A RING AND NOT A FILL. SNOW-645 removed a FILLED disc from
+   #map-custom-download-control after three attempts at it (an active-basemap
+   colour, then a flat neutral, then a theme-inverting neutral) all drew the
+   same complaint: a solid disc among glass roundels reads as an error or an
+   alert, not as a status. The lesson there was that the problem was painting
+   a colour at all, not which colour — so this deliberately does not reach
+   for a fill again. A 2px inset ring leaves the glass chrome and the glyph
+   exactly as they are in the off state and changes only the rim, which is
+   the same "third answer, not a shade of the other two" device the
+   'other-basemap' state above already uses on the region roundel.
+
+   The colour is --color-accent, and it is not a new choice: it is the ON
+   colour of the switch that drives this state (the track in
+   templates/includes/_switch.html is `peer-checked:bg-accent`). The control
+   and its remote indicator say the same thing in the same colour, in both
+   themes — main.css mirrors --color-accent under .dark.
+
+   Drawn on ::after rather than the element's own box-shadow so it cannot
+   contend with .map-download-control's drop shadow or with the ::before that
+   busy/done/other-basemap already own. `border-radius: inherit` gives the
+   pseudo-element its own circular geometry rather than leaning on a host
+   clip — see the 'other-basemap' rule's own comment for the bug that
+   reasoning shipped last time. If a stale static/css/output.css leaves
+   --color-accent undefined the ring simply does not paint; the state is
+   still in each roundel's aria-label, which is the accessible expression it
+   carries for its own sake. */
+[data-overlay-shown="true"] {
+    position: relative;
+}
+
+[data-overlay-shown="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 2px var(--color-accent);
+    pointer-events: none;
+    z-index: 1;
+}
+
 /* The max-width:640px rule that hid the major/minor download icons went with
    them. Only the micro control exists, it now lives in the bottom-right stack
    rather than beside the breadcrumb, and that stack is not breakpoint-dependent. */

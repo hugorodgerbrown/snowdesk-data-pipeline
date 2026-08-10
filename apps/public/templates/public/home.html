@@ -222,6 +222,14 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_autozoom.js' %}"></script>
     <script defer src="{% static 'js/map_geolocate.js' %}"></script>
     <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
+    {# SNOW-658: the three overlay roundels' shared "my overlay is on the    #}
+    {# map" state (data-overlay-shown). Reads window.pwaDownloadedOverlay /  #}
+    {# pwaFavouritesOverlay / pwaCommunityReportsOverlay, which map.js       #}
+    {# publishes at parse time — hence AFTER the bundle. Deliberately        #}
+    {# outside the bundle's contiguous run (it is not a bundle member: no    #}
+    {# bundle module reads it), which is what                                #}
+    {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
+    <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}

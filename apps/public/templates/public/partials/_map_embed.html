@@ -564,6 +564,13 @@ Optional context:
                         data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
                         data-signin-url="{{ favourites_signin_url }}"
                         aria-label='{% trans "Your favourites" %}'
+                        {# SNOW-658: "the favourites overlay is on the map right  #}
+                        {# now" — one attribute, one meaning, on all three        #}
+                        {# overlay roundels. Server-rendered false because that   #}
+                        {# is the truth with JS off (nothing draws the overlay);  #}
+                        {# map_roundel_overlay_state.js paints the real answer at #}
+                        {# boot and on every change.                              #}
+                        data-overlay-shown="false"
                     >
                         {# SNOW-658: the star's paths live in                    #}
                         {# includes/_icon_favourite.html — the favourites panel  #}
@@ -592,6 +599,9 @@ Optional context:
                         data-report-unverified="{{ report_unverified|yesno:'true,false' }}"
                         data-signin-url="{{ report_signin_url }}"
                         aria-label='{% trans "Your field observations" %}'
+                        {# SNOW-658: see #favourite-add-btn above — same          #}
+                        {# attribute, same meaning, same painter.                 #}
+                        data-overlay-shown="false"
                     >
                         {# SNOW-658: the triangle's paths live in                #}
                         {# includes/_icon_observation.html — the field-          #}
@@ -1459,4 +1469,19 @@ Optional context:
     {# attribute) for any scrubbed date outside the stored forecast       #}
     {# window — see updateWeatherRowAvailability in map.js.               #}
     <span data-string="weather-out-of-window">{% trans "No forecast for this date" %}</span>
+</template>
+{# SNOW-658: the three overlay roundels' shared "…and its overlay is on the #}
+{# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}
+{# string, not one pair per roundel: each roundel keeps its own name        #}
+{# ("Your favourites", "Manage offline downloads") as the server-rendered   #}
+{# aria-label, and this composes the state onto it — so the shared fact is  #}
+{# stated once and translated once. blocktrans, because a locale is free    #}
+{# to put the name anywhere in the sentence.                                #}
+{#                                                                          #}
+{# Its own template rather than a key inside map-strings-template above:    #}
+{# tests/test_js_strings_are_translatable.py maps each template id to the   #}
+{# ONE module that reads it, so a second reader of that id would make its   #}
+{# own keys look orphaned.                                                  #}
+<template id="map-roundel-strings-template">
+    <span data-string="roundel-overlay-shown">{% blocktrans %}%(label)s — shown on the map{% endblocktrans %}</span>
 </template>

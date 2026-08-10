@@ -3079,6 +3079,31 @@
   };
 
   /**
+   * Broadcast that one of the three roundel-owned overlays has changed
+   * whether it is drawn on the map.
+   *
+   * SNOW-658: the downloads, favourites and field-observation roundels each
+   * carry a visible "my overlay is on the map" state, and one signal drives
+   * all three (static/js/map_roundel_overlay_state.js) rather than three
+   * hand-rolled ones — three separate signals is how the roundels diverged
+   * in the first place. No detail: the listener re-reads all three bridges'
+   * ``isVisible()``, so this only has to say "something moved", and a
+   * fourth overlay needs no new event.
+   *
+   * Fired from every writer of any of the three: ``showDownloadedOverlay``
+   * / ``hideDownloadedOverlay`` (via ``announceDownloadedOverlay`` below,
+   * which the bulletins-exclusivity path also reaches),
+   * ``showPanelOverlay`` / ``hidePanelOverlay``, once at boot when the
+   * bridges are published, and again after the ``styledata`` re-seed a
+   * basemap swap runs.
+   *
+   * @returns {void}
+   */
+  const announceOverlayVisibility = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+  };
+
+  /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
    * SNOW-656: the "Display on the map" switch inside the downloads sheet
@@ -3094,6 +3119,7 @@
     document.dispatchEvent(new CustomEvent('snowdesk:downloaded-overlay-changed', {
       detail: { visible: downloadedOverlayVisible },
     }));
+    announceOverlayVisibility();
   };
 
   /**
@@ -3219,6 +3245,7 @@
     // and ``ensureOverlayLoaded`` short-circuits for an already-loaded layer,
     // so on a re-enable nothing would call it at all.
     if (key === 'favourites') applyResortsFavouritedFilter();
+    announceOverlayVisibility();
   };
 
   /**
@@ -3241,6 +3268,7 @@
     // star is hidden, or it disappears from the map entirely — the side effect
     // the picker's own off-path used to trigger by CustomEvent.
     if (key === 'favourites') applyResortsFavouritedFilter();
+    announceOverlayVisibility();
   };
 
   window.pwaFavouritesOverlay = Object.freeze({
@@ -3270,6 +3298,15 @@
     },
     isVisible: () => !!overlayState.community_reports,
   });
+
+  // SNOW-658: all three bridges now exist and carry the boot-seeded state
+  // (``overlayState.favourites`` defaults to ON, so this is not a
+  // formality — a roundel painted from "nothing is on yet" would be wrong
+  // the moment the page settled). Announced HERE rather than beside the
+  // seed loop near the top of this IIFE, because a listener that hears it
+  // will immediately call ``isVisible()`` on all three, and two of them do
+  // not exist until the lines above have run.
+  announceOverlayVisibility();
 
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
   // scope and cannot reference countryState / ensureCountryLoaded directly.
@@ -4885,6 +4922,12 @@
         bulletinsVisibility, overlayState.bulletins,
       );
       overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+      // SNOW-658: the three roundels' "my overlay is on the map" state is
+      // read straight off the same bridges the two lines above have just
+      // rewritten, so it has to be repainted here or a basemap swap leaves
+      // it stating the pre-swap answer for the rest of the session. This is
+      // the path a boot-only implementation passes without.
+      announceOverlayVisibility();
 
       // SNOW-478: the new basemap has its own glyph server and fonts, so
       // re-derive the overlay label font before re-installing any layer.
