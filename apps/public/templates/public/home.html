@@ -99,8 +99,9 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
     {# SNOW-658: only one overlay is open over the map at a time              #}
     {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
-    {# three UGC sheets, the anchored detail popup — registers with it and    #}
-    {# announces its own open, and it closes the rest. It replaces the        #}
+    {# three UGC sheets, the anchored detail popup, the legend card and the   #}
+    {# help coachmark — registers with it and announces its own open, and it  #}
+    {# closes the rest. It replaces the                                       #}
     {# hand-wired pairs each surface used to carry, which covered three of    #}
     {# the fifteen relationships between them. Loaded HERE, ahead of every    #}
     {# registering module: map_sheet.js registers from attach(), and both     #}
