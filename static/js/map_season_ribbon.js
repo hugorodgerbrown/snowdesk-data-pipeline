@@ -54,18 +54,35 @@
     return INT_TO_RATING[n];
   };
 
-  // Focus state. Empty region => no focus (grey track, hidden readout, no
-  // map highlight).
+  // Focus state. Empty region => no focus (grey track, "No region selected"
+  // readout, no map highlight).
+  //
+  // SNOW-656: the focus starts EMPTY. It used to be seeded from
+  // ``data-default-region-id`` (CH-4115, Martigny-Verbier), which meant every
+  // visitor arrived at a homepage presenting one arbitrary region as though
+  // they had chosen it: the chip named it and carried its danger swatch, the
+  // season ribbon was painted for it, the download roundel was armed for it,
+  // and — until this ticket's first pass — the map outlined it too. Nothing
+  // on the page explained why that region and not another, and its swatch
+  // colour read as a statement about the map rather than about one region.
+  //
+  // The empty state this falls back to is not a gap; SNOW-642 designed it
+  // deliberately, with a "No region selected" leaf and both header controls
+  // visible-but-disabled rather than hidden. The date is still seeded, since
+  // the timeline has a day whether or not a region is focused.
+  //
+  // ``data-default-region-id`` is still rendered and is still read by
+  // ``map_region_download.js``'s own seed — see the note there.
   let cache = null;
-  let regionId = ribbonEl.dataset.defaultRegionId || null;
-  let regionName = ribbonEl.dataset.defaultRegionName || null;
-  let regionSlug = ribbonEl.dataset.defaultRegionSlug || null;
+  let regionId = null;
+  let regionName = null;
+  let regionSlug = null;
   let dateKey = ribbonEl.dataset.defaultDate || null;
-  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb. Seeded
-  // from data attributes for the pre-selected region, then overwritten on every
-  // region-selected event (which carries the full hierarchy).
-  let regionSubName = ribbonEl.dataset.defaultSubregionName || '';
-  let regionMajorName = ribbonEl.dataset.defaultMajorName || '';
+  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb.
+  // Populated on every region-selected event, which carries the full
+  // hierarchy; empty until the visitor picks a region.
+  let regionSubName = '';
+  let regionMajorName = '';
   // Which region tiers are visible on the map (l1=Major, l2=Minor); the chip
   // breadcrumb mirrors these. Seeded from the persisted overlay state, updated
   // on snowdesk:overlays-changed. The leaf is the region name; it remains in
