@@ -346,8 +346,9 @@
 // It lives in this file because this is where every map-chrome control that
 // delegates to the main IIFE is wired. The delegation follows the shape
 // `country.*` already uses: the value is a persisted preference AND-ed with
-// whatever is suppressing it (the downloads overlay, resort-edit mode), and
-// choosing any step above 0 has to switch the downloads overlay off. All of
+// whatever is suppressing it (resort-edit mode — the downloads overlay used
+// to suppress it too, and no longer does: the squares are a hatch the
+// choropleth reads through, so both can be on). All of
 // that lives in the main IIFE, so this contributes the click and nothing
 // else — no localStorage write, and no optimistic `aria-checked`, because the
 // main IIFE mirrors the EFFECTIVE step back onto all five segments and a

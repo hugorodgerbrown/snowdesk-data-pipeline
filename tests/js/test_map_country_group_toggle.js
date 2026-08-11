@@ -11,7 +11,7 @@
  * map_basemap_picker.js dispatching `snowdesk:country-toggle` once PER CODE.
  *
  * That is what this file pins down: a real click on the row (the integration
- * style of tests/js/test_map_bulletins_exclusivity.js — the picker is a bundle
+ * style of tests/js/test_map_bulletins_layer.js — the picker is a bundle
  * member, so its handler is live here) yields two dispatches and two persisted
  * keys, and the row's checked state answers to both codes rather than either.
  *

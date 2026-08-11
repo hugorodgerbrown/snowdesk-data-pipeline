@@ -11,9 +11,15 @@
  * to follow Micro regions (L4) because one key drove the whole tier; it now
  * follows Bulletins, because the dissolved outline of the regions sharing a
  * bulletin is a bulletin concept and, like the choropleth and unlike the
- * micro-region geography, is date-bound. "Hidden" also gained a second
- * cause: the downloaded-areas overlay suppresses Bulletins while it is on,
- * and a boundary hidden for that reason must not be refetched either.
+ * micro-region geography, is date-bound. "Hidden" also covers a
+ * SUPPRESSION — resort-edit mode takes the Bulletins layers off the map
+ * without touching the user's step — and a boundary hidden for that reason
+ * must not be refetched either.
+ *
+ * The downloaded-areas overlay was the other suppression until the two
+ * layers stopped being exclusive. It is now a plain non-event for this
+ * guard, which is worth a test of its own: an overlay that no longer hides
+ * the boundary must no longer withhold its data.
  *
  * The 2026-08-03 JS review (finding M9) is why this file exists: the guard
  * then read `overlayState.l4`, an in-memory copy only a toggle-ON refreshed,
@@ -213,26 +219,39 @@ describe('bulletin-groupings refetch on a scrubbed date', () => {
     expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-19`]);
   });
 
-  it('does not fetch while the downloaded-areas overlay is suppressing it', async () => {
-    // SNOW-656: Bulletins' own preference is still on here — this is the
-    // suppression, not a toggle. A boundary the user cannot see because the
-    // download squares have taken the map is no more worth fetching than one
-    // they switched off.
+  it('keeps fetching while the downloaded-areas overlay is on', async () => {
+    // The squares no longer take the boundary off the map — they are a
+    // hatch drawn over it — so the data behind it is still worth having.
     setBulletinsStep(0.5);
     await window.pwaDownloadedOverlay.show();
     globalThis.fetch.mockClear();
 
     await commitDate('2026-05-18');
 
-    expect(groupingsFetches()).toEqual([]);
+    expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-18`]);
   });
 
-  it('fetches again once the overlay is switched off and the preference returns', async () => {
+  it('does not fetch while a suppression is holding the boundary off the map', async () => {
+    // Bulletins' own preference is still on here — this is the
+    // suppression, not a toggle. A boundary the user cannot see because
+    // resort-edit mode has the map is no more worth fetching than one they
+    // switched off.
     window.pwaDownloadedOverlay.hide();
+    setBulletinsStep(0.5);
+    window.pwaBulletinsLayer.setSuppressed('edit-resorts', true);
     globalThis.fetch.mockClear();
 
     await commitDate('2026-05-17');
 
-    expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-17`]);
+    expect(groupingsFetches()).toEqual([]);
+  });
+
+  it('fetches again once the suppression lifts and the preference returns', async () => {
+    window.pwaBulletinsLayer.setSuppressed('edit-resorts', false);
+    globalThis.fetch.mockClear();
+
+    await commitDate('2026-05-16');
+
+    expect(groupingsFetches()).toEqual([`${GROUPINGS_URL}?d=2026-05-16`]);
   });
 });

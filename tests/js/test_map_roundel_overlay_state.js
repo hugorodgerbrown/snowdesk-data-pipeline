@@ -450,10 +450,12 @@ describe('the state is announced, not only painted', () => {
 });
 
 describe('changes from outside the panel', () => {
-  it('follows the downloaded overlay off when Bulletins takes the map back', async () => {
-    // SNOW-656: the two paint the same polygons, so turning Bulletins on
-    // switches the squares off — from a control in another surface entirely,
-    // with this roundel nowhere near the interaction.
+  it('stays lit when Bulletins takes a step — the two share the map now', async () => {
+    // SNOW-656 had these two paint the same polygons as competing tints, so
+    // raising the fill step switched the squares off and this roundel with
+    // them. The squares are a hatch the choropleth reads through now, and
+    // the roundel has to report what is actually drawn: dimming it here
+    // would tell the user their downloads had gone when they had not.
     await window.pwaDownloadedOverlay.show();
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('true');
 
@@ -461,8 +463,8 @@ describe('changes from outside the panel', () => {
       new CustomEvent('snowdesk:bulletins-step', { detail: { step: 1 } }),
     );
 
-    expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
-    expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(true);
+    expect(shown(DOWNLOADS_ROUNDEL)).toBe('true');
   });
 
   it('survives the basemap-swap re-install', async () => {
