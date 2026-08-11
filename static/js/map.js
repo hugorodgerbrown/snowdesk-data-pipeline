@@ -265,14 +265,13 @@
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
-  // whatever is currently suppressing it (the downloads overlay, resort-edit
-  // mode). Reassigned wholesale by the transitions in
-  // static/js/layer_visibility_core.js, which are pure; every write is
-  // followed by applyBulletinsVisibility() so the map and both toggles
-  // cannot drift from it. Seeded below, once overlayState has been read out
-  // of localStorage.
+  // whatever is currently suppressing it (resort-edit mode; the downloads
+  // overlay no longer does, see showDownloadedOverlay). Reassigned wholesale
+  // by the transitions in static/js/layer_visibility_core.js, which are pure;
+  // every write is followed by applyBulletinsVisibility() so the map and both
+  // toggles cannot drift from it. Seeded below, once overlayState has been
+  // read out of localStorage.
   const BULLETINS_CORE = self.pwaLayerVisibilityCore;
-  const BULLETINS_SUPPRESSION = BULLETINS_CORE.SUPPRESSION;
   let bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
 
   // SNOW-645 review, twice over: NOT persisted and NOT seeded from
@@ -759,9 +758,29 @@
   // feedback demanding attention. Drawn at the band's detail floor, the
   // same zoom the download grid uses, so the two describe the same
   // squares.
-  const CACHED_TILES_OPACITY = 0.22;
+  const CACHED_TILES_OPACITY = 0.55;
   const CACHED_TILES_LINE_OPACITY = 0.4;
   const CACHED_TILES_ZOOM = 14;
+
+  // The squares are a diagonal HATCH rather than a flat tint, and that is
+  // what lets them share the map with the choropleth.
+  //
+  // SNOW-656 made the two mutually exclusive because a translucent green
+  // wash over a translucent danger-scale fill is unreadable — worse than
+  // unreadable, actually misleading: a green tint over yellow reads as a
+  // danger colour the region does not have. A hatch is not a colour claim.
+  // It covers a third of the area in hard-edged strokes and leaves the rest
+  // of the polygon showing the choropleth's own colour untouched, which is
+  // how any atlas draws one area layer over another. Screen-space at a fixed
+  // period (fill-pattern does not scale with zoom), so contiguous downloaded
+  // country reads as texture at z6 and as stripes across a single square at
+  // z14 — the same mark at both ends.
+  //
+  // Sized so the period divides the image edge exactly: anything else leaves
+  // a seam where the tile wraps.
+  const CACHED_TILES_HATCH_SIZE = 12;
+  const CACHED_TILES_HATCH_PERIOD = 6;
+  const CACHED_TILES_HATCH_WIDTH = 2;
 
   // SNOW-645 review (Hugo's explicit call, overruling the plan's own
   // non-goal, then widened again once the overlay itself was rebuilt to
@@ -786,6 +805,92 @@
     if (!keys || !keys.length) return fallback;
     const expr = ['match', ['get', 'basemapKey']];
     for (const key of keys) expr.push(key, basemapIdentityColour(key));
+    expr.push(fallback);
+    return expr;
+  };
+
+  /**
+   * The id of the hatch image for one basemap key. ``null``/unknown gets the
+   * fallback image, painted in the same colour ``basemapIdentityColour``
+   * falls back to, so the two expressions agree arm for arm.
+   *
+   * @param {?string} key A settings.BASEMAP_STYLES key, or null.
+   * @returns {string} A map image id.
+   */
+  const hatchImageId = (key) => `cached-tiles-hatch-${key || 'default'}`;
+
+  /**
+   * Build the hatch image for one identity colour, as raw RGBA.
+   *
+   * The colour arrives as whatever CSS value the token holds — currently
+   * `oklch()`, which no amount of string-slicing will turn into three
+   * channels — so a 1×1 canvas fill does the parsing, and the stripes
+   * themselves are written by hand. Alpha is binary (opaque stroke or
+   * nothing) and `fill-opacity` is the single knob for how strong the whole
+   * hatch reads, rather than the two multiplying and neither being the
+   * number you tune.
+   *
+   * @param {string} colour Any CSS colour value.
+   * @returns {{width: number, height: number, data: Uint8ClampedArray}}
+   *   A MapLibre StyleImage.
+   */
+  const buildHatchImage = (colour) => {
+    const size = CACHED_TILES_HATCH_SIZE;
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    const ctx = probe.getContext('2d');
+    ctx.fillStyle = colour;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    const data = new Uint8ClampedArray(size * size * 4);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const i = (y * size + x) * 4;
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+        // A 45° stroke is the set of pixels where x + y is congruent to the
+        // first few values mod the period — seamless in both directions
+        // because the period divides the image edge.
+        data[i + 3] = (x + y) % CACHED_TILES_HATCH_PERIOD < CACHED_TILES_HATCH_WIDTH ? 255 : 0;
+      }
+    }
+    return { width: size, height: size, data: data };
+  };
+
+  /**
+   * Register the hatch image for one key if the style is not already holding
+   * it. ``setStyle`` drops every image along with every layer, so this is
+   * called again from both re-install paths rather than once at boot;
+   * ``hasImage`` is what makes the repeat calls free.
+   *
+   * @param {?string} key A settings.BASEMAP_STYLES key, or null.
+   * @returns {void}
+   */
+  const ensureHatchImage = (key) => {
+    const id = hatchImageId(key);
+    if (map.hasImage(id)) return;
+    // pixelRatio 2: the period above is in device pixels, so this is a 6px
+    // hatch on screen — fine enough to read as texture, coarse enough that
+    // the choropleth colour is visible between the strokes.
+    map.addImage(id, buildHatchImage(basemapIdentityColour(key)), { pixelRatio: 2 });
+  };
+
+  /**
+   * The `fill-pattern` counterpart to ``downloadedTilesColourExpression`` —
+   * same match on each tile's own ``basemapKey``, resolving to that
+   * basemap's hatch image instead of its flat colour. Every image named
+   * here must already be registered; a missing one paints nothing at all.
+   *
+   * @param {string[]} keys Distinct non-empty basemapKey values present.
+   * @returns {string|Array} An image id, or a `match` expression.
+   */
+  const downloadedTilesPatternExpression = (keys) => {
+    const fallback = hatchImageId(null);
+    if (!keys || !keys.length) return fallback;
+    const expr = ['match', ['get', 'basemapKey']];
+    for (const key of keys) expr.push(key, hatchImageId(key));
     expr.push(fallback);
     return expr;
   };
@@ -1047,6 +1152,10 @@
         data: { type: 'FeatureCollection', features: [] },
       });
     }
+    // The pattern below names this image, and a `fill-pattern` pointing at an
+    // image the style does not hold paints nothing — so it is registered
+    // before the layer that uses it, on every re-install.
+    ensureHatchImage(null);
     map.addLayer({
       id: 'cached-tiles-fill',
       type: 'fill',
@@ -1054,10 +1163,10 @@
       layout: { visibility: downloadedOverlayVisible ? 'visible' : 'none' },
       paint: {
         // No tiles painted yet at (re)install time, so nothing to match on
-        // — the flat fallback colour. refreshDownloadedOverlay repaints
-        // this with the real per-basemap match expression once it has
-        // something to key off.
-        'fill-color': downloadedTilesColourExpression([]),
+        // — the fallback hatch. refreshDownloadedOverlay repaints this with
+        // the real per-basemap match expression once it has something to
+        // key off.
+        'fill-pattern': downloadedTilesPatternExpression([]),
         'fill-opacity': CACHED_TILES_OPACITY,
       },
     });
@@ -1345,8 +1454,8 @@
    * review made ``isVisible()`` answer from paint rather than from the
    * preference — from everything that changes what is DRAWN without the
    * preference moving at all: ``showDownloadedOverlay`` /
-   * ``hideDownloadedOverlay`` (via ``announceDownloadedOverlay``, which the
-   * bulletins-exclusivity path also reaches), ``showPanelOverlay`` /
+   * ``hideDownloadedOverlay`` (via ``announceDownloadedOverlay``),
+   * ``showPanelOverlay`` /
    * ``hidePanelOverlay``, the settle of a lazy ``snowdesk:overlay-load``
    * (success and failure alike), ``installFavouritesLayer`` /
    * ``installCommunityReportsLayer``, once at boot when the bridges are
@@ -2878,13 +2987,11 @@
   // ==== SNOW-656: the Bulletins row ====
   //
   // Everything that can change what the choropleth and the bulletin boundary
-  // are doing funnels through ``applyBulletinsVisibility``: the layers-menu
-  // row, the downloads panel's "Display on the map" switch, resort-edit
-  // mode, and every re-install after a basemap swap. Three independent
-  // writers of one layer's visibility is how this drifts — before this
-  // ticket there were already two (the picker's toggle loop and
-  // map_edit_resorts.js's direct hide), and the download exclusivity would
-  // have been the third.
+  // are doing funnels through ``applyBulletinsVisibility``: the step control,
+  // resort-edit mode, and every re-install after a basemap swap. Three
+  // independent writers of one layer's visibility is how this drifts —
+  // before SNOW-656 there were already two (the picker's toggle loop and
+  // map_edit_resorts.js's direct hide).
 
   /**
    * Paint the two Bulletins layers from ``bulletinsVisibility``, and mirror
@@ -2897,8 +3004,8 @@
    * ``regionsFillLayout``'s own docstring for the four-quadrant table.
    *
    * The row shows the EFFECTIVE value, not the stored preference, so a user
-   * whose choropleth just vanished behind the download squares can see why
-   * rather than finding it mysteriously missing.
+   * whose choropleth has been taken off the map by a mode they are in
+   * (resort-edit) can see why rather than finding it mysteriously missing.
    *
    * @returns {void}
    */
@@ -2917,8 +3024,8 @@
     // Mirror the EFFECTIVE step onto the control's five segments, the same
     // direct-DOM idiom the weather row's availability gate uses — the control
     // is wired in a sibling IIFE and IS its own state. Effective, not
-    // preferred: while the downloads overlay is suppressing the choropleth the
-    // control must read 0, so the user can see why the colour went.
+    // preferred: while something is suppressing the choropleth the control
+    // must read 0, so the user can see why the colour went.
     //
     // Document-wide, not scoped to the layers menu — SNOW-656 moved the
     // control onto the canvas beside the scrubbed date.
@@ -2935,9 +3042,9 @@
    * Exposed to the sibling IIFEs that need it — ``map_edit_resorts.js``
    * suppresses for the length of resort-edit mode — so they never reach for
    * ``setLayoutProperty('regions-fill', …)`` themselves. The downloads
-   * exclusivity uses it from inside this IIFE, through show()/hide() below.
+   * overlay used to be the other caller; it no longer suppresses anything.
    *
-   * @param {string} reason A ``BULLETINS_SUPPRESSION`` value.
+   * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
    * @param {boolean} active Whether the reason is now in force.
    * @returns {void}
    */
@@ -2973,20 +3080,19 @@
   });
 
   // Bridge for basemapPickerInit, mirroring the snowdesk:country-toggle one
-  // below: the picker owns the click, this IIFE owns the state. It is a
-  // ``choose`` rather than a mechanical write, so turning Bulletins on here
-  // switches the downloads overlay off — the other half of the exclusivity,
-  // and the reason both directions can be read in one place.
+  // below: the picker owns the click, this IIFE owns the state.
+  //
+  // The downloads half of the exclusivity is gone — raising the step no
+  // longer switches the squares off, because the hatch and the infill are
+  // legible together. ``choose`` is still the transition used rather than
+  // ``setPreference``: it clears a DOWNLOADS suppression nothing sets any
+  // more (a harmless no-op) and, unlike the mechanical write, it is the one
+  // that means "the user just chose this".
   document.addEventListener('snowdesk:bulletins-step', (e) => {
     const next = BULLETINS_CORE.nearestStep(e.detail && e.detail.step);
     bulletinsVisibility = BULLETINS_CORE.choose(bulletinsVisibility, next);
     overlayState.bulletins = bulletinsVisibility.preference;
     writeStorage(OVERLAY_STORAGE_KEY.bulletins, String(overlayState.bulletins));
-    // ``choose`` has already dropped the downloads suppression from the
-    // state; this switches the squares themselves off and mirrors the
-    // sheet's own switch. hideDownloadedOverlay re-enters
-    // setBulletinsSuppressed, which is idempotent, so the ordering is safe.
-    if (next > 0 && downloadedOverlayVisible) hideDownloadedOverlay();
     applyBulletinsVisibility();
     // The boundary is per-date and lazily fetched: a first enable has never
     // loaded it, and a re-enable may be holding a day the user scrubbed past
@@ -3148,9 +3254,15 @@
       // holding whichever keys were present at the LAST refresh, drifting
       // the moment a new basemap's downloads appear or an old one's are
       // evicted entirely.
-      const colourExpr = downloadedTilesColourExpression(Array.from(presentKeys));
+      const keys = Array.from(presentKeys);
+      const colourExpr = downloadedTilesColourExpression(keys);
       if (map.getLayer('cached-tiles-fill')) {
-        map.setPaintProperty('cached-tiles-fill', 'fill-color', colourExpr);
+        // Every arm of the pattern expression has to resolve to an image the
+        // style is already holding, so the images come first.
+        for (const key of keys) ensureHatchImage(key);
+        map.setPaintProperty(
+          'cached-tiles-fill', 'fill-pattern', downloadedTilesPatternExpression(keys),
+        );
       }
       if (map.getLayer('cached-tiles-line')) {
         map.setPaintProperty('cached-tiles-line', 'line-color', colourExpr);
@@ -3169,12 +3281,11 @@
   /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
-   * SNOW-656: the "Display on the map" switch inside the downloads sheet
-   * is no longer the only thing that can change this — turning the Bulletins
-   * row on from the layers menu switches the squares off, and the user has
-   * to see the switch move rather than reopen the sheet to find out. The
-   * sheet owns its own DOM, so it listens for this instead of this IIFE
-   * reaching into it.
+   * The "Display on the map" switch inside the downloads sheet is not the
+   * only thing that can change this — placement focus clears every app layer
+   * off the map — and the switch has to move rather than sit there claiming
+   * a state the map does not have. The sheet owns its own DOM, so it listens
+   * for this instead of this IIFE reaching into it.
    *
    * @returns {void}
    */
@@ -3189,19 +3300,21 @@
    * Switch the overlay on and (re)probe it. Called only from
    * window.pwaDownloadedOverlay.show() — see that export for callers.
    *
-   * SNOW-656: this is also where the choropleth yields. The download squares
-   * are translucent and are drawn over the same polygons the choropleth
-   * fills, so the two together are unreadable — and in practice they are
-   * mutually exclusive anyway, since downloading is a date-independent
-   * utility about having the map available offline. show()/hide() are the
-   * ONLY writers of this overlay's visibility, which makes them the single
-   * choke point for the lockstep: every caller inherits it, including any
-   * added later. Note that it is bound to the overlay's own visibility and
-   * NOT to the sheet's open/closed lifecycle — closing the sheet calls
-   * nothing, so binding to the sheet would leave the squares and the infill
-   * painted together the moment it was dismissed. SNOW-656 also stopped
-   * open() calling show(): with the exclusivity in place, opening the sheet
-   * would otherwise have taken the choropleth off the map unasked.
+   * SNOW-656 made this the point where the choropleth yielded: two
+   * translucent fills over the same polygons were unreadable together, so
+   * showing the squares suppressed the infill. That exclusivity is GONE —
+   * the squares are a diagonal hatch now (see ``buildHatchImage``), an
+   * annotation the danger colour reads through rather than a second tint
+   * competing with it, so the two coexist and neither toggle touches the
+   * other's state. Both remain independently switchable, which is what the
+   * user asked for: "which days are dangerous" and "which areas do I have
+   * offline" are different questions and can be on screen at once.
+   *
+   * Visibility is bound to the overlay itself and NOT to the sheet's
+   * open/closed lifecycle — closing the sheet calls nothing, so the squares
+   * survive a dismissal (the sheet covers them on mobile). SNOW-656 also
+   * stopped open() calling show(); that stays, since opening a sheet should
+   * not repaint the map on its own.
    *
    * @returns {Promise<void>}
    */
@@ -3210,7 +3323,6 @@
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
     }
-    setBulletinsSuppressed(BULLETINS_SUPPRESSION.DOWNLOADS, true);
     announceDownloadedOverlay();
     return refreshDownloadedOverlay();
   };
@@ -3219,11 +3331,9 @@
    * Switch the overlay off. No re-probe needed — hidden means nothing on
    * screen to be wrong, same as the toggle-off branch this replaces.
    *
-   * SNOW-656: lifting the suppression restores the Bulletins row to whatever
-   * the user's stored PREFERENCE was, which is why the preference is the
-   * only persisted value and there is no remembered second copy — a user who
-   * had already switched Bulletins off does not get it switched back on for
-   * them here.
+   * Nothing to unsuppress any more: the Bulletins layers were never touched
+   * on the way in, so the choropleth is already at whatever step the user
+   * chose.
    *
    * @returns {void}
    */
@@ -3232,7 +3342,6 @@
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
     }
-    setBulletinsSuppressed(BULLETINS_SUPPRESSION.DOWNLOADS, false);
     announceDownloadedOverlay();
   };
 

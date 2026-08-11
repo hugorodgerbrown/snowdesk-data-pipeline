@@ -781,12 +781,12 @@
     // overlay nobody knows about is an overlay nobody uses. That was a cheap
     // side effect while the squares were the only thing it changed.
     //
-    // It is not cheap any more. The squares and the danger choropleth paint
-    // the same polygons, so they are now mutually exclusive — and with the
-    // auto-show in place, merely OPENING this sheet took the choropleth off
-    // the map and unchecked the layers menu's Bulletins row, neither of which
-    // the user asked for. An implicit action is a poor trade for
-    // discoverability when it silently undoes an explicit one.
+    // It stopped being cheap when the squares and the danger choropleth
+    // became mutually exclusive: merely OPENING this sheet took the
+    // choropleth off the map, which nobody asked for. The exclusivity has
+    // since gone (the squares are a hatch the choropleth reads through), but
+    // the auto-show has not come back — an implicit repaint of the map is
+    // still a poor trade for discoverability.
     //
     // So the overlay is now entirely the switch's business: it starts off,
     // the user turns it on, and it stays on until they turn it off (closing
@@ -1001,12 +1001,11 @@
     }
   });
 
-  // SNOW-656: the in-sheet switch is no longer the only thing that can turn
-  // the overlay off. Bulletins and "Display on the map" are mutually
-  // exclusive and the two controls MIRROR each other, so switching Bulletins
-  // on from the layers menu switches the squares off — and a sheet that is
-  // still open behind that menu has to show it, rather than sitting on a
-  // checked switch for an overlay that is no longer drawn.
+  // The in-sheet switch is not the only thing that can turn the overlay off
+  // — placement focus clears every app layer off the map — and a sheet still
+  // open behind that has to show it, rather than sitting on a checked switch
+  // for an overlay that is no longer drawn. (The Bulletins step control was
+  // the other such writer until the two layers stopped being exclusive.)
   //
   // Sets the checkbox rather than re-rendering: render() re-clones the whole
   // body template and re-reads IndexedDB, and nothing else on the sheet
