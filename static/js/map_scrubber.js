@@ -164,21 +164,12 @@
     thumb.style.left = pct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
     if (ratingsCache) repaintRegionsForDate(dateKey, ratingsCache);
-    if (!opts.silent) {
-      // ``replaceState`` (never push) so a long scrub doesn't bury the
-      // back button under dozens of intermediate dates. Use the current
-      // pathname (not a hardcoded /map/) so scrubbing on the homepage keeps
-      // the visitor on ``/`` instead of silently rewriting to ``/map/``.
-      //
-      // SNOW-660: ``?d=`` is written for EVERY committed day, today
-      // included. It used to be stripped for today, on the reasoning that a
-      // bare URL was the canonical one for "now" — but a bare querystring
-      // now means "no day has been asked for", and the two cannot be the
-      // same URL: reloading after choosing today would come back to a blank
-      // map. Bare ``/`` means exactly one thing, and choosing a day always
-      // says which.
-      history.replaceState(null, '', location.pathname + '?d=' + dateKey + location.hash);
-    }
+    // SNOW-660: one URL write, shared with the timelapse — see
+    // ``writeUrlDateParam`` in map_shared.js for the replaceState idiom and
+    // for why the two surfaces call it at different rates. Every commit
+    // writes, today included; ``opts.silent`` still skips it, so re-applying
+    // a browser-back-restored ``?d=`` doesn't re-write history.
+    if (!opts.silent) writeUrlDateParam(dateKey);
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
       detail: { date: dateKey, source: 'scrubber' },
     }));

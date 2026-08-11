@@ -83,6 +83,12 @@ async function loadScrubber() {
     return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
   };
   globalThis.repaintRegionsForDate = (dateKey) => { repaints.push(dateKey); };
+  // The shared URL writer (map_shared.js). Stubbed with the same
+  // replaceState it performs, so the assertions below read the address bar
+  // rather than a spy — what a visitor's reload sees is the point.
+  globalThis.writeUrlDateParam = (dateKey) => {
+    history.replaceState(null, '', location.pathname + '?d=' + dateKey + location.hash);
+  };
 
   const commits = [];
   document.addEventListener('snowdesk:date-changed', (e) => { commits.push(e.detail); });
@@ -116,6 +122,7 @@ afterEach(() => {
   delete globalThis.getSeasonRatings;
   delete globalThis.readUrlDateParam;
   delete globalThis.repaintRegionsForDate;
+  delete globalThis.writeUrlDateParam;
 });
 
 describe('boot with no ?d=', () => {

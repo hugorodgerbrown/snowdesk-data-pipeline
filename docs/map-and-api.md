@@ -2,7 +2,7 @@
 name: map-and-api
 description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, forecast-weather)
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-08-11
 ---
 
 # Map page and JSON API
@@ -151,8 +151,12 @@ Nov–May window, but rests there **without committing a date** (SNOW-660):
 an empty querystring means no day has been asked for, so the map opens
 uncoloured and `#map-date-ribbon` reads "No date selected" until a drag,
 a playback frame or a `?d=` link chooses one. Every commit writes `?d=`,
-today included, so a chosen day survives a reload. Dragging recolours
-every region from the
+today included, so a chosen day survives a reload — the scrubber on every
+commit, the timelapse only where playback *settles* (a stop, and the
+skip-to-start/skip-to-end jumps), because Safari throttles
+`history.replaceState` by throwing and five frames a second would hit that
+limit inside half a minute. Both go through `writeUrlDateParam` in
+`static/js/map_shared.js`. Dragging recolours every region from the
 `/api/ratings/?country=ch` payload to show how danger evolved on the
 selected date, and pressing the play button steps through the season as
 a timelapse. The drawer (when open) follows the scrubber via the

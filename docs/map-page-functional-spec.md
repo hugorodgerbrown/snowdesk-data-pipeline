@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), weather overlay, basemaps
 status: current
-last-reviewed: 2026-08-08
+last-reviewed: 2026-08-11
 ---
 
 # Map page — functional specification

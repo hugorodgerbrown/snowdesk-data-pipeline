@@ -2439,18 +2439,30 @@
           // Paint the currently-displayed date for the new country's regions.
           // We use the display date from countryRatings directly rather than
           // relying on the season cache promise completing first.
-          // Which date is currently being displayed, read from the URL.
+          // Which date is currently being displayed — the committed date
+          // first, ``?d=`` behind it, exactly as a basemap swap resolves it.
           //
-          // SNOW-660: the URL is authoritative for every chosen day —
-          // ``commitDate`` now writes ``?d=`` even for today, so there is no
-          // chosen date this read can miss. (It used to strip the param for
-          // today, which is why this site described itself as a cross-scope
-          // fallback for ``currentDisplayedDate``.) A null therefore means
-          // nothing has been chosen, and a country toggled on before the
-          // visitor has picked a day paints no frame at all rather than one
-          // the map chose for them — the paint is skipped, not the country
-          // load, so the sync-dot bookkeeping below still runs.
-          const paintDate = readUrlDateParam();
+          // SNOW-660: this used to read ``readUrlDateParam()`` alone, on the
+          // reasoning that ``commitDate`` now writes ``?d=`` for every
+          // chosen day. It does — but it is not the only thing that commits
+          // one. The timelapse paints a frame per tick and only syncs the
+          // URL where playback settles, so a country toggled on mid-playback
+          // would find a bare URL, skip its paint, and leave the new
+          // country's regions grey beside correctly-graded neighbours. The
+          // precedence helper is the codebase's existing answer to exactly
+          // this question, and using it keeps the two callers from drifting.
+          //
+          // ``currentDisplayedDate`` is declared at this IIFE's top level,
+          // below this function but above every call site (a country toggle
+          // click and the map's 'load' handler), so it is initialised by the
+          // time this runs.
+          //
+          // Null still means nothing has been chosen: the paint is skipped
+          // rather than invented — and only the paint, so the sync-dot
+          // bookkeeping below still runs.
+          const paintDate = self.pwaChoroplethCore.repaintDateForStyleSwap(
+            currentDisplayedDate, readUrlDateParam(),
+          );
           if (MAP && paintDate) {
             const frame = countryRatings[paintDate] || {};
             // Mirror the paintTodayRatings guard: setFeatureState is a no-op

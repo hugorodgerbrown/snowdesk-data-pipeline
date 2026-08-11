@@ -8,7 +8,7 @@
  * Three of the duplications the SNOW-606 review found were exactly that.
  *
  * What lives here: the rating wire-format table, the date-key regex and
- * `?d=` reader, the try/catch localStorage trio, the popup date and
+ * the `?d=` reader/writer pair, the try/catch localStorage trio, the popup date and
  * relative-time formatters, the memoised season-ratings and
  * bulletin-groupings fetches, and `repaintRegionsForDate` — the one
  * choropleth repaint every date-changing surface calls.
@@ -35,6 +35,36 @@ const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const readUrlDateParam = () => {
   const d = new URL(location.href).searchParams.get('d');
   return d && DATE_KEY_RE.test(d) ? d : null;
+};
+
+// SNOW-660: write ``?d=YYYY-MM-DD`` for the day now on screen.
+//
+// ``replaceState``, never ``push``: a long scrub or a season's playback
+// would otherwise bury the back button under dozens of intermediate dates.
+// ``location.pathname`` (not a hardcoded /map/) keeps a visitor scrubbing on
+// the homepage on ``/``, and the hash is preserved because it carries the
+// selected region.
+//
+// EVERY committed day is written, today included. Today used to be spelt as
+// a bare URL, on the reasoning that it was the canonical one for "now" — but
+// a bare querystring now means "no day has been asked for", and the two
+// cannot be the same URL or a reload would blank the map the visitor had
+// just chosen to look at.
+//
+// Two callers, at deliberately different rates:
+//
+//   - map_scrubber.js's ``commitDate`` writes on EVERY commit. A drag
+//     already coalesces onto one commit per release, so that is one write
+//     per user action.
+//   - map_timelapse.js writes only at SETTLE points — where playback stops,
+//     and the skip-to-start/skip-to-end jumps — never per frame. Playback
+//     commits several frames a second, and Safari throttles
+//     ``replaceState`` (~100 calls per 30s) by THROWING, which would take
+//     down the running timer mid-season. The intermediate frames are also
+//     not days anyone asked to keep: the day that matters is the one
+//     playback leaves on screen.
+const writeUrlDateParam = (dateKey) => {
+  history.replaceState(null, '', location.pathname + '?d=' + dateKey + location.hash);
 };
 
 // localStorage guarded by try/catch — private mode / disabled storage / quota
