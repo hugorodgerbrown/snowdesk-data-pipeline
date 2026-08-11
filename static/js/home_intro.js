@@ -19,10 +19,6 @@
  *     from the address bar on dismissal so the panel stays dismissed across
  *     a reload. Unlike '#about' it survives a server round-trip, which makes
  *     it the handle to reach for in QA, screenshots and bug reports.
- *   - SNOW-660: a load with no '?d=' also forces it open. No day has been
- *     asked for, so the map behind it is deliberately uncoloured — the panel
- *     is what says why, and the dismiss flag stays set for the dated loads
- *     that follow.
  *   - prefers-reduced-motion: transitions are skipped by removing the
  *     animation class before any state change.
  *
@@ -110,34 +106,6 @@
   };
 
   /**
-   * Whether the URL asks for no particular day (SNOW-660).
-   *
-   * The map no longer paints a day nobody asked for: with no `?d=` the
-   * choropleth is uncoloured and the date ribbon reads "No date selected".
-   * That is precisely the moment the intro earns its place back — it is the
-   * panel that explains what the map is and points at the timeline — so a
-   * dateless load forces it open regardless of the one-shot dismiss flag,
-   * exactly as `#about` and `?intro=1` do (and, like them, without clearing
-   * the flag: choosing a day and coming back leaves it dismissed).
-   *
-   * `?d=` is read here with `URLSearchParams` rather than via
-   * `readUrlDateParam()`: this module is not part of the map bundle, so that
-   * binding is not in its scope. Presence is all that matters — a malformed
-   * `?d=` is a day the visitor asked for, however badly, and the map's own
-   * validation decides what to do with it.
-   *
-   * @returns {boolean}
-   */
-  const noDateRequested = () => {
-    try {
-      return !new URLSearchParams(location.search).get('d');
-    } catch (_) {
-      // No URLSearchParams (very old browser) — fall back to not forcing.
-      return false;
-    }
-  };
-
-  /**
    * Strip the force-open parameter from the address bar, preserving any
    * other query parameters, so a dismissal is not undone by a reload or a
    * back/forward step.
@@ -156,9 +124,9 @@
 
   // ---- Initial state ----
 
-  if (hashIsAbout() || forceOpenRequested() || noDateRequested()) {
-    // /#about, ?intro=1 and (SNOW-660) a load with no ?d= all force the
-    // overlay open regardless of the persisted state.
+  if (hashIsAbout() || forceOpenRequested()) {
+    // /#about and ?intro=1 both force the overlay open regardless of the
+    // persisted state.
     show();
   } else {
     let persisted = null;

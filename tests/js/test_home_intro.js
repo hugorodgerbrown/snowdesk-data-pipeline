@@ -21,12 +21,6 @@
  * dispatch 'snowdesk:map-help-requested' — the event static/js/map_help.js
  * listens for to open the coachmark tour. Both are covered below; the
  * fixture carries both buttons.
- *
- * SNOW-660 added a third force-open reason: a load with no '?d='. The map no
- * longer paints a day nobody asked for, so a bare '/' is a deliberately
- * uncoloured map and the panel is what says why. That makes the URL each
- * test runs at load-bearing — several below now carry a '?d=' precisely so
- * they still test the thing they are named for.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -132,43 +126,7 @@ describe('"Explore the map" also requests the map-help tour', () => {
 
 describe('reload with the dismissed flag set', () => {
   it('starts hidden without needing another dismiss', async () => {
-    // On a DATED load. SNOW-660 made "no ?d=" its own force-open reason (see
-    // below), so a bare '/' no longer exercises the persisted flag at all —
-    // asserting this here would pass for the wrong reason.
     localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    history.replaceState(null, '', '/?d=2026-01-15');
-    buildFixture();
-    await loadModules();
-
-    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(true);
-  });
-});
-
-describe('SNOW-660: a load with no ?d=', () => {
-  it('re-shows the panel for a visitor who dismissed it', async () => {
-    // No day has been asked for, so the map behind the panel is deliberately
-    // uncoloured. The panel is what explains that; leaving it dismissed
-    // would leave a blank map with nothing saying why.
-    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    buildFixture();
-    await loadModules();
-
-    expect(document.getElementById('home-intro').hasAttribute('hidden')).toBe(false);
-  });
-
-  it('does not clear the dismissed flag, so a dated load stays dismissed', async () => {
-    // Force-open, like '#about' and '?intro=1' — not a reset. The visitor
-    // dismissed it once and does not have to again the moment they pick a day.
-    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    buildFixture();
-    await loadModules();
-
-    expect(localStorage.getItem(STORAGE_KEY)).toBe(DISMISSED_VALUE);
-  });
-
-  it('leaves a dismissed panel hidden once a day IS asked for', async () => {
-    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    history.replaceState(null, '', '/?d=2026-01-15');
     buildFixture();
     await loadModules();
 
@@ -219,10 +177,8 @@ describe('?intro=1 force-open parameter', () => {
   });
 
   it('ignores other values, so ?intro=0 leaves a dismissed overlay hidden', async () => {
-    // Carries a '?d=' so the SNOW-660 dateless force-open isn't what keeps
-    // the panel up — the assertion is about '?intro=0' not being a force.
     localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
-    history.replaceState(null, '', '/?d=2026-01-15&intro=0');
+    history.replaceState(null, '', '/?intro=0');
     buildFixture();
     await loadModules();
 
