@@ -2636,29 +2636,33 @@
       // (no settle delay; that only applies while the scrubber is moving).
       if (!BULLETIN_GROUPINGS_URL) return;
       // SNOW-660: the boundary is per-day, so with no day asked for there is
-      // nothing to fetch. Install the source EMPTY rather than not at all:
-      // this tier loads once, and `drawGroupings` silently no-ops without a
-      // source — so skipping the install would leave the boundary blank for
-      // the rest of the session, including after the visitor picks a day.
+      // nothing to fetch. Install the source EMPTY rather than not at all,
+      // and fall THROUGH to the `overlayLoaded[key] = true` below rather
+      // than returning: `drawGroupings` silently no-ops without a source,
+      // and the date-changed handler that would fill it in is gated on the
+      // tier being loaded — so either shortcut would leave the boundary
+      // blank for the rest of the session, including after a day is chosen.
       const dateKey = currentDisplayedDate;
       if (!dateKey) {
         installBulletinGroupingsLayer(null);
-        return;
+      } else {
+        const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
+        if (!fc) {
+          // Deliberately silent, unlike every other tier here. Those load in
+          // response to the user clicking their toggle, so a failure owes
+          // them an explanation. This one loads automatically alongside L4 —
+          // and its endpoint is network-only (per-date data, excluded from
+          // sw.js's STATIC_PATHS), so it fails on every offline boot.
+          // Toasting that would fire an "unavailable offline" message at a
+          // user who asked for nothing and whose choropleth is working fine.
+          // Returns (unlike the no-date case above) so the tier stays
+          // unloaded and a later enable can retry the fetch.
+          return;
+        }
+        installBulletinGroupingsLayer(fc);
+        currentGroupingsFC = fc;
+        groupingsDrawn = true;
       }
-      const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
-      if (!fc) {
-        // Deliberately silent, unlike every other tier here. Those load in
-        // response to the user clicking their toggle, so a failure owes them
-        // an explanation. This one loads automatically alongside L4 — and its
-        // endpoint is network-only (per-date data, excluded from sw.js's
-        // STATIC_PATHS), so it fails on every offline boot. Toasting that
-        // would fire an "unavailable offline" message at a user who asked for
-        // nothing and whose choropleth is working fine.
-        return;
-      }
-      installBulletinGroupingsLayer(fc);
-      currentGroupingsFC = fc;
-      groupingsDrawn = true;
     } else if (key === 'resorts') {
       if (!RESORTS_GEOJSON_URL) return;
       const data = await fetch(RESORTS_GEOJSON_URL)

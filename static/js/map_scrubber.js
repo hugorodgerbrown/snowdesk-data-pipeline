@@ -15,6 +15,13 @@
 // a ``?d=YYYY-MM-DD`` so the page is linkable. Loading ``/map/?d=…``
 // on page boot drops the thumb on that date.
 //
+// SNOW-660: the scrubber no longer commits a date the visitor did not ask
+// for. An empty querystring means no day has been chosen, and this module
+// leaves it that way — the thumb rests at today's position over an
+// uncoloured map until a drag, a playback frame or a ``?d=`` link chooses
+// one. Every commit writes ``?d=``, today included, so the URL always says
+// which day is showing and a reload comes back to it.
+//
 // The scrubber owns no data of its own — it consumes the same
 // season-ratings payload as the timelapse via getSeasonRatings(), and
 // announces date commits via the ``snowdesk:date-changed`` CustomEvent
@@ -120,20 +127,16 @@
     sortedDates = Object.keys(data).sort();
     scrubber.dataset.state = 'ready';
 
-    // SNOW-236: Compute the country-aware effective last date and snap
-    // the thumb to it if the page has not been loaded with an explicit
-    // ?d= param (i.e. the user hasn't deep-linked to a specific date).
-    // Always commit silently so the date pill (server-rendered with today)
-    // is corrected to the effective date — including the post-season case
-    // where newEffective === BOOT_DATE_KEY but the pill still shows today.
-    const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
-    effectiveTodayKey = newEffective;
-    if (!readUrlDateParam()) {
-      // Snap silently — no history entry, just reposition the thumb and repaint.
-      Promise.all([MAP_READY_PROMISE]).then(() => {
-        commitDate(newEffective, { silent: true });
-      });
-    }
+    // SNOW-236: compute the country-aware effective last date — the latest
+    // day in the merged cache carrying a visible country.
+    //
+    // SNOW-660: it is now a SNAP TARGET ONLY, no longer a date this
+    // silently commits. Committing it here was literally "the map seeds the
+    // last date carrying ratings": on a cold boot with an empty querystring
+    // the choropleth painted a day the visitor had not asked for, and
+    // nothing on screen named it. It is still what a release-without-a-drag
+    // lands on (see `release` below), because that is a user action.
+    effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
   }).catch(() => {
     scrubber.dataset.state = 'error';
     const loadingEl = scrubber.querySelector('.season-scrubber-loading');
@@ -157,19 +160,24 @@
   // the URL write — used by the popstate handler so re-applying a
   // browser-back-restored ``?d=`` doesn't re-write history.
   const commitDate = (dateKey, opts = {}) => {
-    const isToday = dateKey === todayKey;
     const pct = dateKeyToPct(dateKey);
     thumb.style.left = pct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
     if (ratingsCache) repaintRegionsForDate(dateKey, ratingsCache);
     if (!opts.silent) {
       // ``replaceState`` (never push) so a long scrub doesn't bury the
-      // back button under dozens of intermediate dates. Today clears the
-      // ``?d=`` param entirely, matching the canonical URL. Use the current
+      // back button under dozens of intermediate dates. Use the current
       // pathname (not a hardcoded /map/) so scrubbing on the homepage keeps
       // the visitor on ``/`` instead of silently rewriting to ``/map/``.
-      const search = isToday ? '' : '?d=' + dateKey;
-      history.replaceState(null, '', location.pathname + search + location.hash);
+      //
+      // SNOW-660: ``?d=`` is written for EVERY committed day, today
+      // included. It used to be stripped for today, on the reasoning that a
+      // bare URL was the canonical one for "now" — but a bare querystring
+      // now means "no day has been asked for", and the two cannot be the
+      // same URL: reloading after choosing today would come back to a blank
+      // map. Bare ``/`` means exactly one thing, and choosing a day always
+      // says which.
+      history.replaceState(null, '', location.pathname + '?d=' + dateKey + location.hash);
     }
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
       detail: { date: dateKey, source: 'scrubber' },
@@ -291,29 +299,42 @@
   }
 
   // ---- Browser back/forward ----
+  //
+  // SNOW-660: a step back onto a URL with no valid ``?d=`` restores the
+  // UNCHOSEN state rather than committing effectiveTodayKey. That fallback
+  // made back-nav out of a chosen day land on a day the map picked itself —
+  // the same invented-date problem the boot path had, reached by a different
+  // route. Every region goes to ``no_rating`` (``repaintRegionsForDate``
+  // clears the ones the empty frame omits), the thumb returns to today's
+  // position, and the ``date: null`` commit tells the ribbon, the weather
+  // layer and the groupings boundary to stand down with it.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
-    // SNOW-236: fall back to effectiveTodayKey (country-aware last populated
-    // date) rather than todayKey so back-nav restores a coloured choropleth
-    // when today is past the season end.
-    const target = d && isInSeason(d) ? d : effectiveTodayKey;
-    commitDate(target, { silent: true });
+    if (d && isInSeason(d)) {
+      commitDate(d, { silent: true });
+      return;
+    }
+    if (ratingsCache) repaintRegionsForDate(null, ratingsCache);
+    thumb.style.left = todayPct + '%';
+    scrubber.setAttribute('aria-valuenow', String(Math.round(todayPct)));
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: null, source: 'scrubber' },
+    }));
   });
 
   // ---- SNOW-236: Re-derive effective today on country ratings load ----
   // ensureCountryLoaded dispatches this event after merging a new country's
   // ratings into the shared cache. Re-run the effective-last computation so
-  // the scrubber snaps to the correct date for the newly-active country set.
+  // a release without a drag snaps to the correct date for the newly-active
+  // country set.
+  //
+  // SNOW-660: re-derives, and nothing more. It used to commit the new
+  // effective date silently whenever the URL carried no ``?d=`` — so
+  // toggling a country on could move the visitor's day for them, and with
+  // no day chosen it invented one outright.
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     if (!sortedDates || !ratingsCache) return;
-    const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
-    const prevEffective = effectiveTodayKey;
-    effectiveTodayKey = newEffective;
-    // Only snap if the page is in "today mode" — no explicit ?d= in the URL
-    // and the effective date has actually changed.
-    if (!readUrlDateParam() && newEffective !== prevEffective) {
-      commitDate(newEffective, { silent: true });
-    }
+    effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
   });
 
 })();

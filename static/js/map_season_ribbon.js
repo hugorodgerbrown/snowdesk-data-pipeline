@@ -73,11 +73,23 @@
   //
   // ``data-default-region-id`` is still rendered and is still read by
   // ``map_region_download.js``'s own seed — see the note there.
+  //
+  // SNOW-660: the DATE now starts empty too. It was seeded from
+  // ``data-default-date`` (server-rendered today) on the reasoning that the
+  // timeline has a day whether or not a region is focused — but the map was
+  // painting that day's choropleth to match, so a visitor who had asked for
+  // nothing arrived at a coloured map explained by a date they never chose.
+  // The one source for "which day" is ``?d=``, and null means none yet.
   let cache = null;
   let regionId = null;
   let regionName = null;
   let regionSlug = null;
-  let dateKey = ribbonEl.dataset.defaultDate || null;
+  // ``readUrlDateParam`` is map_shared.js's, shared as a bare identifier by
+  // the classic-script bundle. The typeof guard is for the unit tests, which
+  // load this module on its own against a stubbed scope: map_shared.js owns
+  // the ``?d=`` validation and this file must not grow a second copy of it,
+  // so standalone it reads "no date" rather than reimplementing the parse.
+  let dateKey = typeof readUrlDateParam === 'function' ? readUrlDateParam() : null;
   // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb.
   // Populated on every region-selected event, which carries the full
   // hierarchy; empty until the visitor picks a region.
@@ -194,12 +206,23 @@
   const updateReadout = () => {
     // Bottom date ribbon — day-first, title-case date ("18 May 2026") matching
     // the popup card; deliberately not the uppercase scrubber format.
+    //
+    // SNOW-660: with no day chosen it says "No date selected" rather than
+    // hiding. The map is uncoloured in that state, and a blank choropleth
+    // beside a ribbon that has silently disappeared reads as a broken page;
+    // the prompt names the state and points at the timeline that resolves it.
     if (dateRibbonEl) {
-      dateRibbonEl.hidden = !dateKey;
-      if (dateKey) dateRibbonEl.textContent = formatDatePopup(dateKey);
+      dateRibbonEl.hidden = false;
+      dateRibbonEl.textContent = dateKey
+        ? formatDatePopup(dateKey)
+        : MAP_STRINGS['map-date-none'];
     }
     if (!readoutEl) return;
-    const hasRegion = !!(dateKey && regionId && regionName);
+    // SNOW-660: region and date are independent. A region picked with no day
+    // chosen still names itself — the chip answers "which region", and
+    // making that answer wait on a date the visitor has not given would
+    // report "No region selected" about a region they just tapped.
+    const hasRegion = !!(regionId && regionName);
     // SNOW-642: no `readoutEl.hidden = !hasRegion` any more — see the note
     // above. The template no longer ships `hidden` either, so the chip is
     // visible from first paint rather than appearing on first selection.
@@ -214,6 +237,10 @@
         if (overlayVisible.l2 && regionSubName) crumbs.push(regionSubName);
         readoutCrumbs.textContent = crumbs.length ? crumbs.join(' › ') + ' › ' : '';
       }
+      // SNOW-660: no day chosen ⇒ no rating to show. `cache[null]` is
+      // already undefined, so this resolves to 'no_rating' and the swatch
+      // below goes transparent — the chip names the region without claiming
+      // a danger level for a day nobody asked for.
       const ratingInt = cache && cache[dateKey] ? cache[dateKey][regionId] : null;
       const key = intToKey(ratingInt);
       // The swatch is its own element (a colour block that divides date from
@@ -224,16 +251,19 @@
       }
       // Point the action roundel at the bulletin: /<region_id>/<slug>/<date>/.
       // Region id is lowercased to match the canonical URL form.
+      // SNOW-660: a bulletin is one region on one DAY, so with no day chosen
+      // there is no URL to build — the roundel sits disabled, exactly as it
+      // does for a region with no slug below.
       if (readoutAction) {
-        if (regionSlug) {
+        if (regionSlug && dateKey) {
           readoutAction.setAttribute(
             'href',
             '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
           );
           _setActionEnabled(readoutAction, true);
         } else {
-          // Focused, but with no slug there is still no bulletin URL to
-          // build — so the roundel is as dead as it is with nothing
+          // Focused, but with no slug (or no day) there is still no bulletin
+          // URL to build — so the roundel is as dead as it is with nothing
           // selected, and says so the same way.
           readoutAction.removeAttribute('href');
           _setActionEnabled(readoutAction, false);
@@ -316,8 +346,12 @@
 
   // Scrubber commit / live drag preview → update the readout's date, and
   // re-assert the highlight (playback destroys the popup and its outline).
+  // SNOW-660: `|| null`, not `|| dateKey`. A commit carrying `date: null`
+  // (the scrubber's popstate handler, stepping back to a URL with no `?d=`)
+  // means the day has been UNchosen, and keeping the previous one here would
+  // leave the ribbon naming a date the map is no longer painted for.
   document.addEventListener('snowdesk:date-changed', (e) => {
-    dateKey = (e.detail && e.detail.date) || dateKey;
+    dateKey = (e.detail && e.detail.date) || null;
     updateReadout();
     setHighlight();
   });
