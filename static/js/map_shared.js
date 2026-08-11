@@ -69,18 +69,30 @@ const formatDatePopup = (dateKey) => {
   return `${parseInt(d, 10)} ${POPUP_MONTHS[parseInt(m, 10) - 1]} ${y}`;
 };
 
-// SNOW-419: ISO timestamp -> coarse relative-time string ("2 h ago",
-// "12 min ago", "just now") for the community-reports popup. Deliberately
-// coarse (minutes/hours only, no seconds) to match the server's own
-// 15-minute truncation of observed_at — the popup shouldn't imply more
-// precision than the wire payload actually carries.
+// SNOW-419: ISO timestamp -> relative-time string ("2 hours ago") for the
+// community-reports and favourite-pin popups.
+//
+// It formats nothing itself any more. It had its own ladder — "just now",
+// "12 min ago", "2 h ago" — which was three English literals `makemessages`
+// could never see, and which said a different thing from the panel row for
+// the same report ("5 h ago" against "5 hours ago"). The words now come
+// from static/js/relative_time.js, so a report reads identically whether
+// the user reached it by tapping the pin or by opening the panel, and the
+// wording is the platform's own for the page's locale rather than ours.
+//
+// It also used to take a granularity argument and shift by half of it,
+// because the server floored observed_at to a quarter hour before sending.
+// That floor is gone (see the note above community_reports_geojson in
+// apps/public/api.py) and so is the correction.
+//
+// Returns '' when relative_time.js has not loaded, which both callers
+// already treat as "no subheader" — home.html loads it, and every caller
+// runs from a user gesture long after parse, so this is a guard rather
+// than a case.
 const formatRelativeTime = (isoString) => {
   const then = new Date(isoString).getTime();
-  if (Number.isNaN(then)) return '';
-  const diffMinutes = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (diffMinutes < 1) return 'just now';
-  if (diffMinutes < 60) return `${diffMinutes} min ago`;
-  return `${Math.round(diffMinutes / 60)} h ago`;
+  if (Number.isNaN(then) || !window.pwaRelativeTime) return '';
+  return window.pwaRelativeTime.format(then - Date.now());
 };
 
 // SNOW-658: the favourite pin's popup carries the same relative-time

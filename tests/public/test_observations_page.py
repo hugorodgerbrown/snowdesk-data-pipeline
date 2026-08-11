@@ -5,8 +5,9 @@ Covers:
   * Anonymous → 200 with a sign-in CTA and no observation rows.
   * Signed in → own report renders with a "You" chip and a full-precision
     timestamp.
-  * Another user's report is present with its timestamp floored to the
-    preceding 15-minute mark.
+  * Another user's report is present, with its timestamp at full precision
+    too — nothing on this page is attributed to a name, so there is nothing
+    for a blunted time to protect.
   * The 48-hour window excludes an older report.
   * Rows render newest-first.
   * A null ``region`` falls back to the "unknown region" label with no link.
@@ -70,12 +71,20 @@ class TestObservationsPageSignedIn:
         # Full precision — the exact minute survives, not floored to :00/:15/etc.
         assert observed_at.strftime("%H:%M") in content
 
-    def test_other_users_report_present_with_floored_timestamp(
+    def test_other_users_report_present_with_full_timestamp(
         self, client: Client
     ) -> None:
+        """Another user's report keeps its exact minute, like the viewer's own.
+
+        It was floored to the preceding quarter hour until the note above
+        ``community_reports_geojson``: the page shows no names, so a precise
+        time identifies nobody, and blunting it made one report read two
+        different ages across two surfaces.
+        """
         viewer = UserFactory.create()
         other = UserFactory.create()
-        # 07 minutes past the hour floors to 00.
+        # 07 minutes past the hour — the minute a quarter-hour floor would
+        # have discarded.
         observed_at = timezone.now().replace(
             minute=7, second=30, microsecond=0
         ) - datetime.timedelta(hours=1)
@@ -86,9 +95,7 @@ class TestObservationsPageSignedIn:
 
         assert b'data-testid="observation-row"' in response.content
         content = response.content.decode()
-        floored = observed_at.replace(minute=0)
-        assert floored.strftime("%H:%M") in content
-        assert observed_at.strftime("%H:%M") not in content
+        assert observed_at.strftime("%H:%M") in content
 
     def test_48h_cutoff_excludes_older_report(self, client: Client) -> None:
         user = UserFactory.create()

@@ -1,0 +1,49 @@
+{% load humanize i18n %}
+{% comment %}
+observations/partials/_observation_meta.html — the secondary line of one
+field-observation row: where the report was made, and how long ago.
+
+includes/_ugc_panel_row.html's `meta_template` slot. Place first, age
+second: the user is looking at a list of their OWN reports on a map, and
+the region is what tells two of them apart.
+
+"<region> · <age>", and nothing else — no "reported" verb. The map's own
+pin popup renders the same two fields in the same order (map.js's
+activateCommunityReport), so one report reads the same whichever way the
+user reaches it.
+
+The age is relative ("2 hours ago"), not an absolute stamp ("11 Aug 2026,
+05:29") — the reader should not have to do the arithmetic. ``naturaltime``
+is Django's own, so the words are translated for every locale rather than
+by us.
+
+A relative age is only true when it is rendered, and this one is rendered
+on the server. The list reloads from observations:list on every panel open,
+so it is right whenever the panel is opened WITH SIGNAL — and that is
+exactly the condition a bulletin app cannot assume. Away from signal the
+endpoint is network-only (sw.js), nothing re-renders, and a row read four
+hours later would still claim "1 hour ago". Hence the `<time>` element:
+the instant is in `datetime`, and static/js/relative_time.js recomputes
+the text from it on a tick and, more to the point, whenever the page comes
+back into view after a phone has been in a pocket. That arithmetic needs
+no network.
+
+The markup sits INSIDE the blocktrans rather than the sentence being
+assembled from two halves around it — a locale is free to put the age
+before the place, and only a whole-sentence msgid lets it.
+
+Context:
+    observation : FieldObservation — the report this row is for.
+{% endcomment %}
+{% with age=observation.observed_at|naturaltime iso=observation.observed_at|date:"c" %}
+    {% if observation.region %}
+        {% blocktrans trimmed with region=observation.region.name %}
+            {{ region }} · <time datetime="{{ iso }}" data-relative-time>{{ age }}</time>
+        {% endblocktrans %}
+    {% else %}
+        {# Region is best-effort on this model — a pin outside every known #}
+        {# boundary is accepted with region=None — so the line is the age  #}
+        {# alone rather than rendering "unknown".                          #}
+        <time datetime="{{ iso }}" data-relative-time>{{ age }}</time>
+    {% endif %}
+{% endwith %}

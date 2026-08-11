@@ -51,6 +51,11 @@ document.body.innerHTML = `
 // Publishes window.snowdeskMapFormat; nothing else in it runs at parse time.
 loadMapBundle(['map_shared.js']);
 
+// window.pwaRelativeTime — the words snowdeskMapFormat.relativeTime returns.
+// home.html loads it alongside the map bundle; without it the popup renders
+// no subheader at all, which is the guard, not the behaviour under test.
+await import('../../static/js/relative_time.js');
+
 await import('../../static/js/favourites.js');
 
 /**
@@ -98,9 +103,10 @@ describe('the saved-pin popup card', () => {
       created_at: minutesAgo(300),
     });
 
-    // The same string map.js's observation popup renders — both go through
-    // map_shared.js's formatRelativeTime.
-    expect(container.textContent).toContain('5 h ago');
+    // The same string map.js's observation popup and the field-observation
+    // panel row both render: map_shared.js's formatRelativeTime delegates to
+    // relative_time.js, so there is one wording for an age across the app.
+    expect(container.textContent).toContain('5 hours ago');
   });
 
   it('renders the name as text, never as markup', () => {

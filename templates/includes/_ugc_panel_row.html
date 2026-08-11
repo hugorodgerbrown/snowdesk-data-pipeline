@@ -54,7 +54,14 @@ Parameters (passed via {% include … with … %}):
                 JS-filled row.
   label_testid  (string, optional) — `data-testid` on the primary line,
                 for a server-rendered row a pytest asserts on.
-  meta          (string, optional) — the muted secondary line.
+  meta          (string, optional) — the muted secondary line, as text.
+  meta_template (string, optional) — template path rendering the secondary
+                line instead of `meta`, for a line that needs markup rather
+                than a string. Receives this include's full context. The
+                observation row uses it for the `<time data-relative-time>`
+                its age sits in (static/js/relative_time.js keeps that age
+                true on a page left open, which a plain string cannot be).
+                `meta` and `meta_template` are alternatives — pass one.
   value         (string, optional) — trailing mono figure (downloads'
                 size). Measured quantities only.
   rule          (bool, optional) — render the coloured vertical rule
@@ -146,8 +153,14 @@ Parameters (passed via {% include … with … %}):
                 class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
             >
         {% endif %}
-        {% if meta or js_filled %}
-            <span data-row-meta class="truncate text-summary text-text-3">{{ meta }}</span>
+        {% if meta or meta_template or js_filled %}
+            <span data-row-meta class="truncate text-summary text-text-3">
+                {% if meta_template %}
+                    {% include meta_template %}
+                {% else %}
+                    {{ meta }}
+                {% endif %}
+            </span>
         {% endif %}
     </span>
     {% if value or js_filled %}

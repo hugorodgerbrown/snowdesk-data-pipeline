@@ -2557,8 +2557,18 @@ class TestCommunityReportsGeojson:
         coords = response.json()["features"][0]["geometry"]["coordinates"]
         assert coords == [7.988, 46.123]
 
-    def test_observed_at_truncated_to_nearest_quarter_hour(self) -> None:
-        """observed_at is floored to the nearest 15-minute mark."""
+    def test_observed_at_is_sent_at_full_precision(self) -> None:
+        """observed_at crosses the wire as recorded, to the second.
+
+        It was floored to the preceding quarter hour as part of the SNOW-419
+        anonymisation. Nothing in this payload names a reporter, so the floor
+        identified nobody — it only made the map's own popup read up to
+        fifteen minutes older than the same report in the reporter's panel,
+        and always in that direction. Precision is the thing that keeps the
+        two surfaces agreeing; the anonymity is carried by the rounded
+        coordinates and the absent identity fields, which the tests either
+        side of this one cover.
+        """
         observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
         # Freeze "now" alongside the fixed observed_at so the report stays
         # inside the endpoint's 48h window regardless of the wall-clock date
@@ -2567,8 +2577,7 @@ class TestCommunityReportsGeojson:
             FieldObservationFactory.create(observed_at=observed_at)
             response = Client().get(reverse("api:community_reports_geojson"))
         properties = response.json()["features"][0]["properties"]
-        expected = observed_at.replace(minute=30, second=0).isoformat()
-        assert properties["observed_at"] == expected
+        assert properties["observed_at"] == observed_at.isoformat()
 
     def test_response_never_exposes_raw_coordinates_or_identity(self) -> None:
         """No full-precision coord, gps_*, user, or pk fields cross the wire."""

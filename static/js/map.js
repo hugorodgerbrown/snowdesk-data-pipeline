@@ -4335,10 +4335,15 @@
     // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
     // small popup with the observation type and a relative time — built via
     // DOM methods (not setHTML) since these values, though server-controlled,
-    // don't need string-interpolated HTML. No region name: the pin's own
-    // position on the map already conveys where the report is, so a place
-    // label is redundant (and, since the FK region can be coarser or
-    // cross-border than the visible spot, occasionally misleading).
+    // don't need string-interpolated HTML.
+    //
+    // The popup is the field-observation panel's row, in a popup: a bold
+    // label over "<region> · <age>", the same two lines in the same order.
+    // The region used to be left out here on the grounds that the pin's own
+    // position says where the report is — true, but it made the two surfaces
+    // read differently for one report, and the panel row names the region
+    // anyway. One format, whichever way the user reaches the report.
+    //
     // Emits a marker-tapped telemetry signal with only the observation
     // type — no location or identity data.
     const activateCommunityReport = (feature) => {
@@ -4360,12 +4365,29 @@
       // Relative time is computed live from the absolute observed_at against
       // Date.now() (formatRelativeTime), so it stays accurate even when the
       // overlay is served from the offline cache — only the age-fade opacity
-      // is baked at fetch time, not this text.
+      // is baked at fetch time, not this text. observed_at is the instant as
+      // recorded, so this reads identically to the same report's row in the
+      // field-observation panel.
+      //
+      // The age goes in a `<time data-relative-time>`, which is
+      // static/js/relative_time.js's hook: a popup left open while the user
+      // reads the map keeps its age current instead of freezing at the
+      // moment it was tapped. Same element, same module, as the panel row.
       const relative = formatRelativeTime(props.observed_at);
-      if (relative) {
+      if (relative || props.region_name) {
         const metaEl = document.createElement('div');
         metaEl.className = 'community-report-popup__meta';
-        metaEl.textContent = relative;
+        if (props.region_name) {
+          metaEl.append(props.region_name);
+          if (relative) metaEl.append(' · ');
+        }
+        if (relative) {
+          const timeEl = document.createElement('time');
+          timeEl.setAttribute('datetime', props.observed_at);
+          timeEl.setAttribute('data-relative-time', '');
+          timeEl.textContent = relative;
+          metaEl.appendChild(timeEl);
+        }
         container.appendChild(metaEl);
       }
 
