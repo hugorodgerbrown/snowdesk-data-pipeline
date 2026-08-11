@@ -35,7 +35,7 @@ from django.urls import reverse
 from django_ratelimit.core import _get_window, _split_rate
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.bulletins.models import BulletinShareClick
 from apps.core.models import RequestLog
@@ -333,9 +333,7 @@ class TestShareRedirectAbuseBounds:
     """The endpoint writes three rows on arrival; those writes are bounded."""
 
     @pytest.fixture(autouse=True)
-    def _live_rate_limit(
-        self, settings: SettingsWrapper
-    ) -> Iterator[FrozenDateTimeFactory]:
+    def _live_rate_limit(self, settings: Settings) -> Iterator[FrozenDateTimeFactory]:
         """Switch the rate limiter on, and pin the two things it counts against.
 
         ``config.settings.development`` sets ``RATELIMIT_ENABLE = False``,

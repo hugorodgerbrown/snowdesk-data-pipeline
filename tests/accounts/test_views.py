@@ -47,7 +47,7 @@ from django.core import mail
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 from waffle.testutils import override_flag
 
 from apps.accounts.models import Account, Subscription
@@ -95,7 +95,7 @@ class TestSubscribePartial:
     """Tests for the subscribe_partial HTMX view — four-case matrix."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -384,7 +384,7 @@ class TestSubscribePartialRequestLog:
     """Tests for RequestLog capture and FK wiring in subscribe_partial."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -554,7 +554,7 @@ class TestSubscribePartialGeoMatch:
     """
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -820,7 +820,7 @@ class TestSignInViewRequestLog:
     """Tests for RequestLog capture in sign_in_view."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -882,7 +882,7 @@ class TestAccountView:
     """Tests for the account_view."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend to avoid real dispatch."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -1074,7 +1074,7 @@ class TestSignInView:
     """Tests for the dedicated sign_in_view."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -1893,7 +1893,7 @@ class TestEmailNormalisation:
     """
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -2358,7 +2358,7 @@ class TestAnalyticsSubscriptionStarted:
     """analytics.track('subscription_started') fires on Case A only."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -2513,7 +2513,7 @@ class TestAnalyticsRegionAdded:
     """analytics.track('region_added') fires in add_region and subscribe Case C."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -2652,7 +2652,7 @@ class TestAnalyticsSignInRequested:
     """analytics.track('sign_in_requested') fires when sign_in_view POST succeeds."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -2710,7 +2710,7 @@ class TestSubscribePartialLogging:
     """SNOW-311: subscribe_partial logs pk, never the plaintext email address."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
@@ -2792,7 +2792,7 @@ class TestSignInViewLogging:
     """SNOW-311: sign_in_view POST logs pk=, never the plaintext email address."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+    def use_locmem_backend(self, settings: Settings) -> None:
         """Use in-memory email backend so mail.outbox is populated."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 

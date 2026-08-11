@@ -27,7 +27,7 @@ from unittest.mock import Mock, patch
 import pytest
 from django.contrib.auth.models import User
 from django.db import connection
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.favourites.models import Favourite
 from apps.favourites.services import (
@@ -199,9 +199,7 @@ class TestCreateResortFavourite:
         assert first.pk == second.pk
         assert Favourite.objects.filter(user=user, resort=resort).count() == 1
 
-    def test_cap_is_shared_with_plain_pin_favourites(
-        self, settings: SettingsWrapper
-    ) -> None:
+    def test_cap_is_shared_with_plain_pin_favourites(self, settings: Settings) -> None:
         """A user already at the cap cannot favourite a resort either."""
         settings.FAVOURITES_MAX_PER_USER = 1
         user = UserFactory.create()
@@ -224,7 +222,7 @@ class TestCreateResortFavourite:
 
         assert Favourite.objects.for_user(user).count() == 1
 
-    def test_in_transaction_recheck_raises(self, settings: SettingsWrapper) -> None:
+    def test_in_transaction_recheck_raises(self, settings: Settings) -> None:
         """The in-transaction re-check also raises, even if the first check passed.
 
         Mirrors ``TestCreateFavouriteCap.test_race_narrows_via_in_transaction_recheck``
@@ -317,7 +315,7 @@ class TestCreateFavouriteCap:
         ):
             return create_favourite(user, latitude, longitude)
 
-    def test_25th_favourite_is_allowed(self, settings: SettingsWrapper) -> None:
+    def test_25th_favourite_is_allowed(self, settings: Settings) -> None:
         """A user with 24 existing favourites can create a 25th."""
         settings.FAVOURITES_MAX_PER_USER = 25
         user = UserFactory.create()
@@ -327,7 +325,7 @@ class TestCreateFavouriteCap:
         assert favourite.pk is not None
         assert Favourite.objects.for_user(user).count() == 25
 
-    def test_26th_favourite_raises(self, settings: SettingsWrapper) -> None:
+    def test_26th_favourite_raises(self, settings: Settings) -> None:
         """A user with 25 existing favourites cannot create a 26th."""
         settings.FAVOURITES_MAX_PER_USER = 25
         user = UserFactory.create()
@@ -337,9 +335,7 @@ class TestCreateFavouriteCap:
             self._create(user, 25)
         assert Favourite.objects.for_user(user).count() == 25
 
-    def test_race_narrows_via_in_transaction_recheck(
-        self, settings: SettingsWrapper
-    ) -> None:
+    def test_race_narrows_via_in_transaction_recheck(self, settings: Settings) -> None:
         """The in-transaction re-check also raises, even if the first check passed.
 
         Simulates another request creating a favourite between the first
@@ -372,9 +368,7 @@ class TestCreateFavouriteCap:
             "Postgres test database."
         ),
     )
-    def test_concurrent_creates_cannot_exceed_the_cap(
-        self, settings: SettingsWrapper
-    ) -> None:
+    def test_concurrent_creates_cannot_exceed_the_cap(self, settings: Settings) -> None:
         """Two concurrent creates at cap-1 → exactly one success, one rejected.
 
         Without the user-row lock, both transactions could count below the cap

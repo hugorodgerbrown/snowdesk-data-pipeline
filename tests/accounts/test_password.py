@@ -20,7 +20,7 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import Client
 from django.urls import reverse
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from tests.factories import AccountFactory, UserFactory
 
@@ -28,7 +28,7 @@ _STRONG = "Str0ngPassw0rd!"
 
 
 @pytest.fixture(autouse=True)
-def _locmem_email(settings: SettingsWrapper) -> None:
+def _locmem_email(settings: Settings) -> None:
     """Use the locmem email backend so the magic-link path does not hit SMTP."""
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 

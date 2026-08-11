@@ -21,7 +21,7 @@ from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 from django.utils.translation import override as language_override
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.accounts.models import Account
 from apps.bulletins.models import Bulletin
@@ -944,7 +944,7 @@ class TestDebuggingAids:
         assert "X-Bulletin-Id" not in response
 
     def test_raw_data_embedded_when_debug_true(
-        self, client: Client, region: MicroRegion, settings: SettingsWrapper
+        self, client: Client, region: MicroRegion, settings: Settings
     ) -> None:
         """DEBUG=True → raw_data JSON embedded in page source."""
         settings.DEBUG = True
@@ -973,7 +973,7 @@ class TestDebuggingAids:
         client: Client,
         simple_bulletin: Bulletin,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """DEBUG=False → no raw_data script tag, header still present."""
         settings.DEBUG = False
@@ -985,7 +985,7 @@ class TestDebuggingAids:
         assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
 
     def test_script_breakout_payload_is_escaped(
-        self, client: Client, region: MicroRegion, settings: SettingsWrapper
+        self, client: Client, region: MicroRegion, settings: Settings
     ) -> None:
         """A ``</script>`` substring in raw_data must not break out of the tag."""
         settings.DEBUG = True
@@ -1015,7 +1015,7 @@ class TestDebuggingAids:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Superuser sees raw_data script even when DEBUG=False."""
         settings.DEBUG = False
@@ -1044,7 +1044,7 @@ class TestDebuggingAids:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Regular (non-superuser) authenticated user does not see raw_data."""
         settings.DEBUG = False
@@ -1072,7 +1072,7 @@ class TestDebuggingAids:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Anonymous visitor does not see raw_data script when DEBUG=False."""
         settings.DEBUG = False
@@ -1107,7 +1107,7 @@ class TestSuperuserDebugAffordances:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Superuser sees the debug block with the correct data-testid."""
         settings.DEBUG = False
@@ -1133,7 +1133,7 @@ class TestSuperuserDebugAffordances:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """PDF link is rendered when bulletin.pdf_url is truthy."""
         settings.DEBUG = False
@@ -1162,7 +1162,7 @@ class TestSuperuserDebugAffordances:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """PDF link is not rendered when bulletin.pdf_url is empty."""
         settings.DEBUG = False
@@ -1190,7 +1190,7 @@ class TestSuperuserDebugAffordances:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Anonymous visitor does not see the debug block."""
         settings.DEBUG = False
@@ -1213,7 +1213,7 @@ class TestSuperuserDebugAffordances:
         self,
         client: Client,
         region: MicroRegion,
-        settings: SettingsWrapper,
+        settings: Settings,
     ) -> None:
         """Staff-but-not-superuser does not see the debug block."""
         settings.DEBUG = False
