@@ -146,8 +146,13 @@ deploy. Live self-hosting — CORS, PMTiles range requests, and the
 subdomain — is tracked in SNOW-485.
 
 **Season scrubber and timelapse**: a horizontal scrubber sits at the
-bottom of the map. The thumb defaults to today's position within the
-Nov–May window; dragging recolours every region from the
+bottom of the map. The thumb rests at today's position within the
+Nov–May window, but rests there **without committing a date** (SNOW-660):
+an empty querystring means no day has been asked for, so the map opens
+uncoloured and `#map-date-ribbon` reads "No date selected" until a drag,
+a playback frame or a `?d=` link chooses one. Every commit writes `?d=`,
+today included, so a chosen day survives a reload. Dragging recolours
+every region from the
 `/api/ratings/?country=ch` payload to show how danger evolved on the
 selected date, and pressing the play button steps through the season as
 a timelapse. The drawer (when open) follows the scrubber via the
@@ -355,7 +360,7 @@ appeared first.
 
 | URL | Name | Response |
 |-----|------|----------|
-| `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). Cold open uses `?d=<today>&country=ch` (~2 KB); first scrubber interaction uses `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
+| `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). A cold open with a `?d=` uses `?d=<that date>&country=ch` (~2 KB); a cold open without one issues no ratings request at all (SNOW-660 — no day asked for, nothing to paint); first scrubber interaction uses `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review`, `tier` (SNOW-543 — `CORE`/`STANDARD`/`MINOR`, the curated map-prominence verdict the pin radius is interpolated from) |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name`, plus `properties.download` (SNOW-521 — see below) when the region has a precomputed offline-basemap size. |
@@ -398,8 +403,11 @@ returning client can still be served an old rectangle blob for up to 24h
 after a deploy. See [`offline-map.md`](offline-map.md) for the full
 client-side download flow.
 
-The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
-`regions.geojson?country=ch` in parallel. Once both resolve, it calls
+The data flow on map load is: `map.js` fetches `regions.geojson?country=ch`
+and — **only when the URL carries a `?d=`** (SNOW-660) — `?d=<that
+date>&country=ch`, in parallel. With no `?d=` the ratings leg is skipped
+entirely and nothing is painted: the map has not been asked for a day, and
+inventing one is the bug that ticket removed. Once both resolve, it calls
 `map.setFeatureState({source: 'regions', id: numericFeatureId}, {rating})` for
 each region, so the choropleth fill layer reads exclusively from feature-state
 (no property-based fallback). Regions with no bulletin today are absent from the
@@ -410,10 +418,11 @@ Because rating is feature-state, and `MAP.setStyle()` (the basemap picker)
 wipes feature-state along with the source, **every basemap swap has to
 repaint the whole choropleth** — otherwise every region falls through to
 `no_rating` and the map goes grey. `map.js`'s `repaintAfterStyleSwap` does
-that, taking the date from `currentDisplayedDate` in preference to `?d=`:
-`?d=` is absent on the ordinary visit, because the scrubber strips it for
-today and never writes one for the out-of-season snap to the season's last
-populated day.
+that, taking the date from `currentDisplayedDate` in preference to `?d=`
+(the two can differ mid-session — a timelapse frame commits a date without
+writing one). When neither is known, no day has been asked for and the swap
+repaints **nothing**: the wiped feature-state is the correct, uncoloured map
+(SNOW-660).
 
 The fill itself is painted **opaque**, with the translucency baked into the
 colours by `compositeOverBackdrop()` in `static/js/choropleth_core.js` — a

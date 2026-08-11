@@ -1,24 +1,23 @@
 /*
- * tests/js/test_map_boot_date_paint.js — the boot ratings paint must not
- * overwrite a `?d=` deep link's own day (SNOW-656).
+ * tests/js/test_map_boot_date_paint.js — the boot ratings paint covers the
+ * day the URL asked for, and only that day (SNOW-656, SNOW-660).
  *
- * map.js's boot fetches ratings for `bootDateKey` — min(today, seasonEnd) —
- * and paints them once the regions source emits 'data'. On a `?d=` deep link
- * that lands asynchronously, typically AFTER the scrubber has already
- * repainted the map for the requested date.
+ * map.js's boot fetches ratings once and paints them when the regions source
+ * emits 'data'. SNOW-656 fetched them for `bootDateKey` — min(today,
+ * seasonEnd) — so on a `?d=` deep link the frame landed late and silently
+ * overwrote exactly those regions the BOOT day had a rating for, leaving
+ * them showing the wrong day's colour beside correct neighbours. The guard
+ * that fixed it was one line; this file exists because the failure is
+ * invisible without a per-region comparison against the frame, and nothing
+ * else in the suite makes one.
  *
- * The paint runs with `clearMissing: false`, so it does not blank the map;
- * it silently overwrites exactly those regions the BOOT day has a rating
- * for, leaving them showing the wrong day's colour beside correct
- * neighbours. Nothing on screen explains the discrepancy, and the regions
- * affected are whichever ones the boot day happens to cover — which is why
- * it read as "one region is the wrong colour" against a seeded dev database
- * whose last populated day carries a single region, and would repaint most
- * of the map against a full season.
- *
- * The guard is one line in `paintTodayRatings`; this file is here because
- * the failure is invisible without a per-region comparison against the
- * frame, and nothing else in the suite makes one.
+ * SNOW-660 removed the boot day itself. There is no date but the one the
+ * URL asked for, so the two cases below are the two halves of that rule:
+ * `?d=` is the day fetched and painted, and an empty querystring paints
+ * nothing at all rather than a day the map picked for the visitor. The
+ * second case is the one this ticket changed — it used to assert the
+ * opposite, which is what "the map opens showing Martigny-Verbier coloured
+ * for a day nobody asked for" looked like from here.
  */
 
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,12 +25,21 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
-const BOOT_DATE = '2026-04-30';
+// The season's last populated day — what map.js used to open on, and what
+// nothing may open on now. Named for what it is rather than for the removed
+// `bootDateKey` it used to seed.
+const SEASON_END_DATE = '2026-04-30';
 const DEEP_LINK_DATE = '2026-02-09';
 
-/** The boot day covers ONE region; the deep-linked day covers three. */
+/**
+ * The season's last day covers ONE region; the deep-linked day covers three.
+ *
+ * The asymmetry is the point: one rated region is exactly the shape of the
+ * off-season map SNOW-660 was reported against, so a paint that leaks
+ * through shows up here as a single coloured polygon.
+ */
 const RATINGS = {
-  [BOOT_DATE]: { 'CH-4115': 1 },
+  [SEASON_END_DATE]: { 'CH-4115': 1 },
   [DEEP_LINK_DATE]: { 'CH-4115': 3, 'CH-4114': 4, 'CH-4113': 2 },
 };
 
@@ -120,7 +128,7 @@ function buildFixture() {
          data-ratings-url="/api/ratings/"
          data-resorts-url="/api/resorts.json"
          data-default-basemap-key="openfreemap_liberty"
-         data-season-end="${BOOT_DATE}"></div>
+         data-season-end="${SEASON_END_DATE}"></div>
     <div id="search-pill" data-state="collapsed">
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
@@ -130,7 +138,12 @@ function buildFixture() {
 
 /**
  * Boot the bundle at `url`, run the map's load handlers, and return the
- * rating painted onto each region.
+ * rating painted onto each region plus every URL fetched.
+ *
+ * The fetches matter as much as the paint: SNOW-660 skips the ratings leg
+ * entirely when no day was asked for, so "painted nothing" and "asked for
+ * nothing" are two separate assertions, and a request for a day the visitor
+ * never chose would be a bug even if its answer were dropped on the floor.
  */
 async function bootAt(url) {
   window.history.replaceState({}, '', url);
@@ -164,7 +177,10 @@ async function bootAt(url) {
   for (const [regionID, feature] of Object.entries(byRegion)) {
     painted[regionID] = mapStub.getFeatureState({ id: feature.id }).rating || 'no_rating';
   }
-  return painted;
+  const ratingsFetches = globalThis.fetch.mock.calls
+    .map((call) => String(call[0]))
+    .filter((href) => href.includes('/api/ratings/'));
+  return { painted, ratingsFetches };
 }
 
 afterAll(() => {
@@ -177,33 +193,43 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe('the boot ratings paint vs a ?d= deep link', () => {
-  it('stands down entirely when a ?d= owns the date', async () => {
-    // The assertion is the absence of the boot day's colour, not the
-    // presence of the deep-linked one: repainting for `?d=` is the
-    // scrubber's job (`repaintRegionsForDate`, covered by its own tests) and
-    // the scrubber is not mounted in this fixture. What is being pinned here
-    // is that the boot frame no longer arrives late and overwrites it.
-    //
-    // CH-4115 is the one region the boot day covers, so it is the one the
-    // unguarded paint clobbered — 'low' instead of the requested day's
-    // 'considerable'. Its neighbours were never at risk, which is exactly
-    // what made the bug look region-specific rather than date-specific.
-    const painted = await bootAt(`/?d=${DEEP_LINK_DATE}`);
+describe('the boot ratings paint', () => {
+  it('paints the day a ?d= deep link asked for, and no other', async () => {
+    // CH-4115 is the one region the season's last day covers, so it is the
+    // one a boot frame fetched for that day used to clobber — 'low' instead
+    // of the requested day's 'considerable'. Its neighbours were never at
+    // risk, which is exactly what made the bug look region-specific rather
+    // than date-specific. Since SNOW-660 the boot leg fetches the requested
+    // day itself, so all three carry that day's colours.
+    const { painted, ratingsFetches } = await bootAt(`/?d=${DEEP_LINK_DATE}`);
 
+    expect(painted).toEqual({
+      'CH-4115': 'considerable',
+      'CH-4114': 'high',
+      'CH-4113': 'moderate',
+    });
     expect(painted['CH-4115']).not.toBe('low');
+    expect(ratingsFetches).toContain(`/api/ratings/?d=${DEEP_LINK_DATE}&country=ch`);
+    expect(ratingsFetches.join(' ')).not.toContain(SEASON_END_DATE);
+  });
+
+  it('paints nothing when no ?d= asks for a day', async () => {
+    // SNOW-660. This case used to assert the opposite — that the map paints
+    // the season's last populated day on a cold boot — and that assertion
+    // WAS the bug: one coloured polygon, off season, standing for a day the
+    // visitor never chose and which nothing on screen named.
+    //
+    // Both halves are asserted because either alone can pass while the
+    // behaviour is wrong: a paint with no fetch would mean a stale frame
+    // leaked through, and a fetch with no paint would still cost the request
+    // and leave the answer one line away from being painted.
+    const { painted, ratingsFetches } = await bootAt('/');
+
     expect(painted).toEqual({
       'CH-4115': 'no_rating',
       'CH-4114': 'no_rating',
       'CH-4113': 'no_rating',
     });
-  });
-
-  it('still paints the boot day when there is no ?d= to supersede it', async () => {
-    // The guard must not disable the boot paint outright — without a deep
-    // link it is the only thing that colours the map on first load.
-    const painted = await bootAt('/');
-
-    expect(painted['CH-4115']).toBe('low');
+    expect(ratingsFetches.filter((href) => href.includes('d='))).toEqual([]);
   });
 });

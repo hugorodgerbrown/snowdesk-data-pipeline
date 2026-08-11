@@ -253,8 +253,10 @@ describe('repaintDateForStyleSwap', () => {
   });
 
   it('returns null when neither is known', () => {
-    // Signals "no date" to the caller, which then repaints its boot frame
-    // rather than leaving the choropleth wiped.
+    // Signals "no date" to the caller. SNOW-660: the caller now paints
+    // NOTHING on that answer rather than falling back to a boot frame —
+    // neither known means no day has been asked for, and a style swap has
+    // already wiped feature-state, so an uncoloured map is the correct one.
     expect(core.repaintDateForStyleSwap(null, null)).toBeNull();
   });
 
