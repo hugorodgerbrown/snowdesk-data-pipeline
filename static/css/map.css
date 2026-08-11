@@ -199,13 +199,17 @@
    ticket reintroduces an icon-only utility pill, recreate the rule
    then rather than carrying it as dead CSS. */
 
-/* Basemap layer picker (SNOW-58) — round 40×40 pill that anchors a
-   popover of basemap radio options. ``position: relative`` so the
-   absolutely-positioned ``.basemap-menu`` tracks the pill rather than
-   the cluster, which keeps the popover under the pill even after the
-   search pill expands and shifts the layout. */
+/* Basemap layer picker (SNOW-58) — round 40×40 pill that opens the layers
+   popover. Same geometry as every other roundel in the column.
+
+   SNOW-664: it no longer ANCHORS that popover. The pill moved into
+   #map-controls-collapsible, which is `overflow: hidden` for its height
+   animation; a menu absolutely positioned inside it would be clipped the
+   moment it opened leftward. ``.basemap-menu`` is a child of
+   .map-controls-br now and is positioned against that, so the
+   ``position: relative`` this rule used to carry is gone with the job it
+   did. */
 .map-utility-pill--basemap {
-    position: relative;
     width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
@@ -242,13 +246,18 @@
     /* PROTOTYPE: the basemap pill lives in the bottom-right stack, so the menu
        opens to the LEFT of the roundel column and is bottom-anchored —
        mirroring the info panel, which opens to the right of the bottom-left
-       (i). right:48px clears the 40px pill + 8px gap. bottom:-96px drops the
-       menu's lower edge down past the locate pill (40px) + gap (8px) + the
-       report-roundel offset so it lines up with the legend/report baseline
-       (bottom:60px) — the safe-area inset cancels out — giving the menu the
-       full screen height to grow into. */
+       (i). right:48px clears the 40px pill + 8px gap.
+
+       SNOW-664: `bottom` is measured from .map-controls-br now, not from
+       #basemap-pill — the pill moved inside #map-controls-collapsible, whose
+       `overflow: hidden` would clip this menu, so it is a child of the stack
+       (like .map-fill-flyout, SNOW-656). `bottom: 0` therefore lines its
+       lower edge up with the foot of the roundel column, level with the
+       legend/report baseline (bottom:60px). This is the no-JS value; on a
+       real load basemapPickerInit overwrites it with the measured floor just
+       above the season scrubber. */
     right: 48px;
-    bottom: -96px;
+    bottom: 0;
     margin: 0;
     padding: 4px;
     list-style: none;
@@ -262,15 +271,18 @@
        Countries section) never clip behind the header on short viewports.
 
        SNOW-656: that same JS ALSO lowers the baseline itself. The `bottom`
-       above is measured from the basemap pill, which is the FIRST roundel in
-       a bottom-anchored column — so on a tall column the pill sits high, the
-       baseline lands mid-screen, and the menu is squeezed into the room above
-       it while a large band below goes unused. On a 375x812 phone that was a
-       333px window over 580px of content: the menu opened already scrolled,
-       showing neither the Countries section nor its own heading. The JS drops
-       the baseline to just above the season scrubber, which roughly doubles
-       the room and removes the scroll entirely at that size. This value stays
-       as the no-JS fallback. */
+       above was then measured from the basemap pill, the FIRST roundel in a
+       bottom-anchored column — so on a tall column the pill sat high, the
+       baseline landed mid-screen, and the menu was squeezed into the room
+       above it while a large band below went unused. On a 375x812 phone that
+       was a 333px window over 580px of content: the menu opened already
+       scrolled, showing neither the Countries section nor its own heading.
+       The JS drops the baseline to just above the season scrubber, which
+       roughly doubles the room and removes the scroll entirely at that size.
+       SNOW-664 re-based the offset on the stack, which removes the pill's
+       height from the arithmetic, but not the reason for measuring it: the
+       stack's own foot still sits above the scrubber by a margin that varies
+       with the safe-area inset. These values stay as the no-JS fallback. */
     max-height: calc(100dvh - 96px);
     overflow-y: auto;
     background: var(--color-card);

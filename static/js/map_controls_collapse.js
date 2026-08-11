@@ -2,14 +2,22 @@
  * static/js/map_controls_collapse.js — collapsible bottom-right map control
  * group.
  *
- * Six roundels in one column read as clutter over the map. Layers, locate and
- * the toggle stay out; the other four (basemap download, favourite,
- * observations, help) collapse into the toggle.
+ * Six roundels in one column read as clutter over the map. Locate and the
+ * toggle stay out; the other five (layers, bulletin fill, basemap download,
+ * favourite, observations, help) collapse into the toggle.
+ *
+ * SNOW-664 moved LAYERS in. It used to stay out alongside locate, which made a
+ * collapsed column two roundels plus a toggle and left the question of why
+ * those two. "Where am I" is worth a permanent control on a map the user is
+ * standing in; "what is the map showing" is a choice, and a choice can wait
+ * behind the toggle. So a minimised column is locate and the toggle, nothing
+ * else — and this module's child count follows the DOM, so the move needed no
+ * change here beyond the count it already reads.
  *
  * The toggle is the LAST child of #map-controls-br, so the bottom-anchored
  * stack grows and shrinks upward out of it: the toggle never moves under the
- * finger pressing it, and the revealed controls appear directly beneath layers
- * and locate in their existing stack order.
+ * finger pressing it, and the revealed controls appear directly beneath locate
+ * in their existing stack order.
  *
  * The animation itself is pure CSS (static/css/map.css) driven off
  * data-expanded on the stack. This module owns only the state, the persisted

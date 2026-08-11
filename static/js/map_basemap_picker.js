@@ -69,6 +69,15 @@
   // answer, and a second copy of it would be free to drift from this one.
   // What stays here is the translation into the menu's own coordinate base,
   // which is the half the sheets cannot share (see that module's header).
+  //
+  // SNOW-664 changed that base. The menu is a child of .map-controls-br now,
+  // not of #basemap-pill: the pill moved into #map-controls-collapsible, which
+  // is `overflow: hidden` for its height animation and clips both axes, so a
+  // menu opening leftward out of it would simply be cut off. That is the same
+  // move SNOW-656 made for #map-fill-flyout, for the same reason. The floor
+  // and the cap are unchanged; only the box the `bottom` offset is measured
+  // from is, which is why the pill's own height no longer enters into it.
+  const stack = document.getElementById('map-controls-br');
 
   /**
    * Place the menu's lower edge and cap its height to the room that leaves.
@@ -85,14 +94,14 @@
     const bounds = window.pwaOverlayBounds?.compute();
     if (!bounds) return;
 
-    // `bottom` is measured from the pill (the menu's containing block) and is
-    // negative downward, so this is the offset that puts the menu's lower
-    // edge on the floor. Falls back to the CSS value if the pill has no box
-    // yet — the menu is unhidden before this runs, but a display:none
-    // ancestor would still yield zeros.
-    const pillBottom = pill.getBoundingClientRect().bottom;
-    if (pillBottom > 0) {
-      menu.style.bottom = `${Math.round(pillBottom - bounds.floorY)}px`;
+    // `bottom` is measured from the STACK — the menu's containing block since
+    // SNOW-664 — and is negative downward, so this is the offset that puts the
+    // menu's lower edge on the floor. Falls back to the CSS value if the stack
+    // has no box yet — the menu is unhidden before this runs, but a
+    // display:none ancestor would still yield zeros.
+    const anchorBottom = stack ? stack.getBoundingClientRect().bottom : 0;
+    if (anchorBottom > 0) {
+      menu.style.bottom = `${Math.round(anchorBottom - bounds.floorY)}px`;
     }
 
     // Then the height that baseline leaves above it, so the first rows never
@@ -138,6 +147,18 @@
     if (!menu.hidden) positionMenu();
   });
 
+  // SNOW-664: the collapsible strip closing must take the menu with it —
+  // #basemap-pill lives inside that strip now, so a menu left open would be
+  // floating beside a roundel that is no longer on screen. The strip
+  // dispatches no event (map_controls_collapse.js only writes `data-expanded`
+  // on the stack), so observe that attribute — the same shape
+  // mapFillControlInit below already uses for its own roundel.
+  if (stack && typeof MutationObserver === 'function') {
+    new MutationObserver(() => {
+      if (stack.dataset.expanded !== 'true') setMenuOpen(false);
+    }).observe(stack, { attributes: true, attributeFilter: ['data-expanded'] });
+  }
+
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     setMenuOpen(menu.hidden);
@@ -145,9 +166,16 @@
 
   // Outside-click dismiss. Use click (not pointerdown) so an item
   // selection inside the menu fires before this handler can close.
+  //
+  // SNOW-664: the menu has to be named here as well as the pill. It used to be
+  // a DESCENDANT of the pill, so `pill.contains` covered both; it is a sibling
+  // of the collapsible group now. Item clicks stop propagation and so never
+  // reach this handler either way — but this menu is mostly not items. A tap
+  // on a section heading, a separator, the 4px padding or the scrollbar would
+  // otherwise read as "outside" and close the menu the user was reading.
   document.addEventListener('click', (e) => {
     if (menu.hidden) return;
-    if (pill.contains(e.target)) return;
+    if (pill.contains(e.target) || menu.contains(e.target)) return;
     setMenuOpen(false);
   });
 

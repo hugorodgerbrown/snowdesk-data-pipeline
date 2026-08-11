@@ -171,8 +171,9 @@ def test_map_page_renders_bulletin_fill_control() -> None:
 def test_bulletin_fill_control_is_inside_the_collapsible_group() -> None:
     """
     SNOW-656: the roundel sits in ``#map-controls-collapsible``, so it hides
-    with the strip — and it is the FIRST item there, directly below the
-    always-visible locate roundel.
+    with the strip. SNOW-664 put the layers roundel in above it, so it is the
+    second item there rather than the first — still below the always-visible
+    locate roundel, which is what the assertion is about.
 
     The flyout itself is deliberately OUTSIDE that wrapper: the wrapper is
     ``overflow: hidden`` for its height animation, which clips both axes, so
@@ -202,6 +203,76 @@ def test_bulletin_fill_control_is_inside_the_collapsible_group() -> None:
 
 
 @pytest.mark.django_db
+def test_locate_is_the_only_roundel_outside_the_collapsible_group() -> None:
+    """
+    SNOW-664: a minimised control column is locate and the toggle, nothing
+    else.
+
+    "Where am I" is the one question worth a permanent control on a map the
+    user is standing in; everything else in the column is a choice about what
+    the map shows, and a choice can wait behind the toggle. The layers roundel
+    used to stay out alongside locate — it is one slot down, inside the group,
+    and FIRST there so it lands directly under locate when the group is open.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    stack_idx = content.index('id="map-controls-br"')
+    locate_idx = content.index('id="locate-toggle"')
+    collapsible_idx = content.index('id="map-controls-collapsible"')
+    layers_idx = content.index('id="basemap-pill"')
+    fill_idx = content.index('id="map-fill-pill"')
+
+    assert stack_idx < locate_idx < collapsible_idx, (
+        "locate must be the first child of the stack, outside the group"
+    )
+    assert collapsible_idx < layers_idx < fill_idx, (
+        "the layers roundel must be the first item INSIDE the collapsible "
+        "group, above the bulletin-fill roundel"
+    )
+
+    # Only locate stands between the stack opening and the group: any other
+    # roundel here would still be on screen with the column minimised.
+    before_group = content[stack_idx:collapsible_idx]
+    assert before_group.count("map-utility-pill--") == 1, (
+        "a second always-visible roundel has appeared beside locate"
+    )
+
+
+@pytest.mark.django_db
+def test_layers_menu_is_outside_the_collapsible_group() -> None:
+    """
+    SNOW-664: ``#basemap-menu`` is a child of the stack, not of the
+    ``#basemap-pill`` that opens it.
+
+    The pill moved into ``#map-controls-collapsible``, which is
+    ``overflow: hidden`` for its height animation — and that clips both axes,
+    so a menu opening leftward out of it would be cut off with no other
+    symptom. Same move, same reason, as ``#map-fill-flyout`` (SNOW-656).
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    pill_idx = content.index('id="basemap-pill"')
+    menu_idx = content.index('id="basemap-menu"')
+    flyout_idx = content.index('id="map-fill-flyout"')
+
+    assert pill_idx < menu_idx < flyout_idx, (
+        "the menu must sit between the collapsible group and the fill flyout"
+    )
+
+    # Everything between the pill and the menu closes the pill, the inner and
+    # the wrapper — if the menu were still nested, it would not.
+    between = content[pill_idx:menu_idx]
+    assert between.count("</div>") >= 3, (
+        "the layers menu appears to still be inside #map-controls-collapsible, "
+        "where overflow:hidden would clip it"
+    )
+
+
+@pytest.mark.django_db
 def test_bulletin_fill_control_is_in_the_help_tour() -> None:
     """SNOW-656: the control carries a coachmark step, between locate and the
     custom-area download — the roundel's own position in the stack.
@@ -214,6 +285,25 @@ def test_bulletin_fill_control_is_in_the_help_tour() -> None:
     assert "#map-fill-toggle" in steps
     assert steps.index("#locate-toggle") < steps.index("#map-fill-toggle")
     assert steps.index("#map-fill-toggle") < steps.index("#map-custom-download-control")
+
+
+@pytest.mark.django_db
+def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
+    """
+    SNOW-664: locate leads the bottom-right leg of the tour, then layers.
+
+    The tour is a top-to-bottom walk of the page, so its order is a
+    projection of the DOM's. When the two roundels swapped, the steps had to
+    swap with them or the highlight ring would jump up the column and back
+    down again.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    steps = re.findall(r'data-help-target="([^"]+)"', content)
+    assert steps.index("#locate-toggle") < steps.index("#basemap-toggle")
+    assert steps.index("#basemap-toggle") < steps.index("#map-fill-toggle")
 
 
 @pytest.mark.django_db
