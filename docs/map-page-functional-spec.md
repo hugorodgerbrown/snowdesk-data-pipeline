@@ -244,8 +244,11 @@ users so they can be used independently:
   **Off by default** — a user opts into a shared layer rather than having
   other people's reports appear unannounced.
 - **Privacy.** The feed is deliberately coarse: coordinates are rounded to
-  ~100 m, timestamps are floored to the nearest 15 minutes, and no user
-  identity, exact location, GPS fix, or accuracy is ever exposed.
+  ~100 m, and no user identity, exact location, GPS fix, or accuracy is
+  ever exposed. Timestamps are **not** blunted — they were floored to the
+  nearest 15 minutes until it became clear the floor protected nothing (no
+  surface attributes a report to anyone) while making the map read up to a
+  quarter hour older than the reporter's own panel for the same report.
 
 (A third surface, the `/observations/` page — a signed-in 48-hour stream
 of reports — always shows the viewer's own reports plus other users'

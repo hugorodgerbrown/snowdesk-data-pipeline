@@ -130,6 +130,13 @@ in addition to the shared map assets.
     {# partial both remain — retiring a primitive is not this ticket's      #}
     {# call — and the component library still renders it.                   #}
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
+    {# Keeps every `<time data-relative-time>` on this page true for as     #}
+    {# long as the page is open — the field-observation rows' "reported 2   #}
+    {# hours ago". This is the map: it is opened at the car park and read   #}
+    {# again hours later, out of signal, with nothing re-rendering it.      #}
+    {# Loaded here rather than from _report_surface.html so it binds once   #}
+    {# and is available to any other surface that grows a relative age.     #}
+    <script defer src="{% static 'js/relative_time.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}

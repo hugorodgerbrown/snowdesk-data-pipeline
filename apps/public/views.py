@@ -1197,11 +1197,11 @@ def observations_list(request: HttpRequest) -> HttpResponse:
     anonymous visitor sees a sign-in call to action instead of the list. A
     signed-in viewer sees their own reports plus other users' reports.
 
-    Other users' timestamps are floored to the preceding 15-minute mark
-    (the same anonymisation the map overlay applies) via
-    ``apps.public.api._truncate_to_quarter_hour``, imported at function level
-    to avoid a module-level import cycle between ``apps.public.views`` and
-    ``apps.public.api``. Own timestamps render at full precision.
+    Every row renders its timestamp as recorded, whoever filed it. Other
+    users' were floored to the preceding 15-minute mark until the note
+    above ``community_reports_geojson`` in ``apps.public.api``: this page
+    shows no names either, so the floor identified nobody and only made
+    one report read two ages across two surfaces.
 
     Args:
         request: The incoming HTTP request.
@@ -1210,8 +1210,6 @@ def observations_list(request: HttpRequest) -> HttpResponse:
         The rendered observations page.
 
     """
-    from apps.public.api import _truncate_to_quarter_hour
-
     window_hours = 48
     since = timezone.now() - datetime.timedelta(hours=window_hours)
     rows: list[dict[str, Any]] = []
@@ -1236,11 +1234,7 @@ def observations_list(request: HttpRequest) -> HttpResponse:
                         if observation.region is not None
                         else None
                     ),
-                    "observed_at": (
-                        observation.observed_at
-                        if is_own
-                        else _truncate_to_quarter_hour(observation.observed_at)
-                    ),
+                    "observed_at": observation.observed_at,
                     "is_own": is_own,
                 }
             )

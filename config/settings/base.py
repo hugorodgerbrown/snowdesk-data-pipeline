@@ -138,6 +138,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Provides the ``naturaltime`` filter — the relative "2 hours ago" form
+    # the map's field-observation rows report their age in.
+    "django.contrib.humanize",
     # Required by django.contrib.sitemaps (SNOW-218).
     "django.contrib.sites",
     "django.contrib.sitemaps",

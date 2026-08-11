@@ -1324,24 +1324,25 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
 # ---------------------------------------------------------------------------
 
 
-def _truncate_to_quarter_hour(value: datetime) -> datetime:
-    """Floor a timezone-aware datetime to the preceding 15-minute mark.
-
-    Coarsens ``FieldObservation.observed_at`` before it crosses the wire —
-    part of the SNOW-419 anonymisation contract alongside coordinate
-    rounding, so the timestamp alone cannot be combined with other public
-    data to pin down exactly when a specific report was filed.
-
-    Args:
-        value: A timezone-aware datetime.
-
-    Returns:
-        ``value`` with ``minute`` floored to the nearest lower multiple of
-        15, and ``second``/``microsecond`` zeroed. ``tzinfo`` is preserved.
-
-    """
-    floored_minute = (value.minute // 15) * 15
-    return value.replace(minute=floored_minute, second=0, microsecond=0)
+# ``_truncate_to_quarter_hour`` stood here — it floored ``observed_at`` to
+# the preceding 15-minute mark on the way out, as part of the SNOW-419
+# anonymisation contract. It is gone, and both its callers (this endpoint
+# and ``views.observations_list``) now send the instant as recorded.
+#
+# It was protecting nothing. No surface attributes a report to anyone: the
+# feed carries no user, no pk, and no name, and neither does the
+# /observations page. A timestamp only helps identify a reporter when
+# there is a name beside it to attach it to.
+#
+# What it did cost was accuracy, in one direction. Flooring never moves an
+# instant forward, so every pin read up to fifteen minutes older than it
+# was — most visibly on a report just filed, which the map called "5 min
+# ago" while the user's own panel, holding the true instant, said "29
+# seconds ago". Two ages for one report, on screen together, and the
+# blunter one was wrong.
+#
+# Anonymity still rests on what it always rested on: coordinates rounded
+# to 3 dp (~80-110 m), and no identity, GPS fix or accuracy on the wire.
 
 
 # SNOW-459: private/no-store, NOT public — CDN/proxy caching of this
@@ -1362,9 +1363,13 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
 
     * ``coordinates`` are ``[longitude, latitude]`` rounded to 3 decimal
       places (~80-110 m), never the raw ``latitude``/``longitude`` fields.
-    * ``observed_at`` is floored to the nearest 15 minutes.
     * ``gps_latitude``/``gps_longitude``/``accuracy_radius_km``/``user``/
       the row's primary key are never serialised.
+
+    ``observed_at`` is sent as recorded. It was floored to a quarter hour
+    until the note above this function — with no name anywhere in the
+    payload there is nothing for a precise time to identify, and the floor
+    only made the map disagree with the reporter's own panel.
 
     Response shape::
 
@@ -1412,9 +1417,7 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "type": obs.observation_type,
                     "type_label": obs.get_observation_type_display(),
-                    "observed_at": _truncate_to_quarter_hour(
-                        obs.observed_at
-                    ).isoformat(),
+                    "observed_at": obs.observed_at.isoformat(),
                     "region_name": obs.region.name if obs.region is not None else None,
                 },
             }

@@ -39,7 +39,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import dateformat, timezone
 
 from apps.observations.models import FieldObservation
 from tests.factories import (
@@ -1049,6 +1049,81 @@ class TestObservationList:
         assert f"observation-{observation.uuid}" in content
         assert "Whumpfing" in content
         assert "Martigny" in content
+
+    def test_row_meta_leads_with_the_region_and_a_relative_age(
+        self, client: Client
+    ) -> None:
+        """The meta line reads "<region> · <age>", not a stamp.
+
+        Hugo's design: place first, age second, and the age stated rather
+        than left as arithmetic on an absolute timestamp. The absolute form
+        ("11 Aug 2026, 05:29") is gone from the row entirely.
+        """
+        user = _verified_user()
+        region = MicroRegionFactory.create(name="Martigny")
+        observed_at = timezone.now() - timedelta(hours=2)
+        FieldObservationFactory.create(
+            user=user, region=region, observed_at=observed_at
+        )
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        # The two fields, in order, with nothing between them but the
+        # separator — the same shape the map's pin popup renders.
+        assert "Martigny · <time" in content
+        assert "2\xa0hours ago" in content
+        # The stamp the row used to lead with. The instant itself is still
+        # on the row — in the <time datetime=…> attribute, which is machine
+        # -readable and never displayed — so this asserts on the rendered
+        # form rather than on the digits.
+        stamp = dateformat.format(timezone.localtime(observed_at), "j M Y, H:i")
+        assert stamp not in content
+
+    def test_row_meta_age_is_a_time_element_carrying_the_instant(
+        self, client: Client
+    ) -> None:
+        """The age sits in a ``<time datetime=…>`` the client can recompute.
+
+        A relative age is only true at the moment it is rendered, and this
+        list is network-only — offline, nothing re-renders it.
+        ``static/js/relative_time.js`` recomputes the text from this
+        attribute when the page wakes, which is the only thing keeping a row
+        read four hours later honest.
+        """
+        user = _verified_user()
+        observed_at = timezone.now() - timedelta(hours=2)
+        FieldObservationFactory.create(user=user, observed_at=observed_at)
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert (
+            f'<time datetime="{observed_at.isoformat()}" data-relative-time>' in content
+        )
+
+    def test_row_meta_falls_back_to_the_age_alone_without_a_region(
+        self, client: Client
+    ) -> None:
+        """A pin outside every known boundary still states when it was made.
+
+        ``region`` is best-effort on this model, so the row drops the place
+        rather than rendering "unknown".
+        """
+        user = _verified_user()
+        FieldObservationFactory.create(
+            user=user, region=None, observed_at=timezone.now() - timedelta(hours=2)
+        )
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "2\xa0hours ago" in content
+        # No orphaned separator where the region would have been.
+        assert "· <time" not in content
 
     def test_remove_is_a_trash_control_on_the_row(self, client: Client) -> None:
         """Remove is a visible icon control, not a menu item (SNOW-658).
