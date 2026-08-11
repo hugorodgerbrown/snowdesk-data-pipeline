@@ -2,7 +2,8 @@
  * static/js/choropleth_core.js — one choropleth paint routine (SNOW-623).
  *
  * `static/js/map.js` painted the region choropleth in three places —
- * `repaintRegionsForDate`, `paintNewCountry` and `paintTodayRatings` — with
+ * `repaintRegionsForDate`, `paintNewCountry` and `paintTodayRatings` (since
+ * SNOW-660: `paintBootRatings`) — with
  * the same `setFeatureState({source: 'regions', id}, {rating})` loop in
  * each. Finding D6.
  *
@@ -183,17 +184,22 @@
    * where the ratings live. Something has to repaint them, and it has to
    * know for which day.
    *
-   * `map.js` asked the URL's `?d=` and did nothing when it was absent. But
-   * absent is the *normal* state: the scrubber strips `?d=` whenever the
-   * displayed day is today (`commitDate`), and out of season it snaps
-   * silently to the season's last populated day without ever writing one.
-   * So the common visit — land on the map, change basemap — repainted
-   * nothing and every region fell back to `no_rating` grey.
+   * `map.js` asked the URL's `?d=` and did nothing when it was absent. At
+   * the time absent was the *normal* state: the scrubber stripped `?d=`
+   * whenever the displayed day was today (`commitDate`), and out of season
+   * it snapped silently to the season's last populated day without ever
+   * writing one. So the common visit — land on the map, change basemap —
+   * repainted nothing and every region fell back to `no_rating` grey.
    *
    * The committed date wins because it is the only one that survives both
    * of those paths; `?d=` is still read for a swap early enough that the
-   * scrubber has not committed anything yet. `null` means neither is
-   * known and the caller should fall back to its boot frame.
+   * scrubber has not committed anything yet.
+   *
+   * SNOW-660: `null` means neither is known — which now means no day has
+   * been asked for at all, and the caller paints NOTHING rather than
+   * falling back to a boot frame. There is no longer a boot frame to fall
+   * back to: the map fetches ratings only for a day the URL requested, so
+   * "no date" and "no colours" are the same state, deliberately.
    *
    * @param {?string} committed The last date `snowdesk:date-changed`
    *   carried (`map.js`'s `currentDisplayedDate`), or null.
