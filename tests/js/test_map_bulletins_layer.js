@@ -1,13 +1,17 @@
 /*
- * tests/js/test_map_bulletins_exclusivity.js — the Bulletins row against the
- * downloaded-areas overlay, wired end to end through map.js (SNOW-656).
+ * tests/js/test_map_bulletins_layer.js — the Bulletins fill control beside
+ * the downloaded-areas overlay, wired end to end through map.js (SNOW-656).
+ *
+ * Named for exclusivity until the two layers stopped being exclusive: the
+ * download squares became a hatch the danger colour reads through, so both
+ * can now be on at once and the second half of this file asserts that they
+ * leave each other alone.
  *
  * `tests/js/test_layer_visibility_core.js` covers the state machine in
  * isolation. This file covers the wiring: that `map.js` actually paints what
- * the machine says, that both toggles mirror each other, and that the two
- * entry points — the layers-menu row and the downloads panel's "Display on the map"
- * switch, which are separate IIFEs talking over CustomEvents — cannot get
- * out of step.
+ * the machine says, and that the two IIFEs involved — the fill-step control
+ * and the downloads panel's "Display on the map" switch, talking over
+ * CustomEvents — cannot get out of step.
  *
  * The assertion worth stating plainly is the fill's LAYOUT. `regions-fill`
  * is the map's hit-test target: region selection resolves through
@@ -297,17 +301,26 @@ describe('the step control paints regions-fill', () => {
   });
 });
 
-describe('mutual exclusion with "Display on the map"', () => {
-  it('switching the overlay ON hides the choropleth and drops the control to 0', async () => {
+describe('coexistence with "Display on the map"', () => {
+  // These two were mutually exclusive under SNOW-656, when both were flat
+  // translucent fills over the same polygons. The squares are a hatch now
+  // (static/js/hatch_core.js) — an annotation the danger colour reads
+  // through rather than a second tint competing with it — so neither
+  // control touches the other's state. Every assertion below is the
+  // inverse of the one it replaces, and that is the point of keeping them:
+  // the exclusivity had two directions and a regression could restore
+  // either one on its own.
+
+  it('switching the overlay ON leaves the choropleth exactly where it was', async () => {
     clickStep(0.75);
 
     await window.pwaDownloadedOverlay.show();
 
-    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0 });
-    expect(checkedStep()).toBe(0);
+    expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.75 });
+    expect(checkedStep()).toBe(0.75);
   });
 
-  it('switching the overlay OFF restores the exact step', async () => {
+  it('switching the overlay OFF leaves it there too', async () => {
     clickStep(0.75);
 
     await window.pwaDownloadedOverlay.show();
@@ -328,16 +341,16 @@ describe('mutual exclusion with "Display on the map"', () => {
     expect(localStorage.getItem(BULLETINS_KEY)).toBe('0');
   });
 
-  it('choosing a step while areas are showing switches the overlay off', async () => {
+  it('choosing a step while areas are showing leaves the squares on', async () => {
     await window.pwaDownloadedOverlay.show();
 
     clickStep(0.5);
 
-    expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
+    expect(window.pwaDownloadedOverlay.isVisible()).toBe(true);
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.5 });
   });
 
-  it('leaves the overlay alone when the OFF step is chosen — both may be off', async () => {
+  it('leaves the overlay alone when the OFF step is chosen too', async () => {
     await window.pwaDownloadedOverlay.show();
 
     clickStep(0);
@@ -352,10 +365,13 @@ describe('mutual exclusion with "Display on the map"', () => {
     document.addEventListener('snowdesk:downloaded-overlay-changed', listener);
 
     await window.pwaDownloadedOverlay.show();
+    // The step control is no longer a writer of this — the broadcast has
+    // to stay silent for it, or the sheet's switch would flip itself off
+    // for an overlay that is still drawn.
     clickStep(0.5);
+    window.pwaDownloadedOverlay.hide();
     document.removeEventListener('snowdesk:downloaded-overlay-changed', listener);
 
-    // On for the show, off again when the step control took the map back.
     expect(seen).toEqual([true, false]);
   });
 });

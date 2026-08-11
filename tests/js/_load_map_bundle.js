@@ -58,6 +58,14 @@ const STATIC_JS = path.resolve(
  * it belongs here rather than in an import every future suite has to
  * remember.
  *
+ * `hatch_core.js` is here for the near-miss version of the same reason. It
+ * IS reached from a call site — `installRegionsLayers`, which registers the
+ * downloaded-overlay hatch image before adding the layer that names it —
+ * but that call site is on the path of every suite that fires the `load`
+ * handler, which is most of them, and the failure it produces without this
+ * (`hatchPixels` of undefined, thrown from inside a MapLibre event handler)
+ * names nothing a reader could act on.
+ *
  * Deliberately declared BEFORE the bundle array below: SNOW-647's
  * `tests/public/test_map_script_order.py` parses that array out of this
  * file's text by splitting on its export statement, so anything above it is
@@ -67,7 +75,7 @@ const STATIC_JS = path.resolve(
  * quoting it: a second occurrence of the literal it splits on lands the
  * parse in the wrong half of the file and yields nothing.)
  */
-const PARSE_TIME_CORES = ['layer_visibility_core.js'];
+const PARSE_TIME_CORES = ['layer_visibility_core.js', 'hatch_core.js'];
 
 /** home.html's script order for the map bundle. */
 export const MAP_BUNDLE = [

@@ -763,24 +763,14 @@
   const CACHED_TILES_ZOOM = 14;
 
   // The squares are a diagonal HATCH rather than a flat tint, and that is
-  // what lets them share the map with the choropleth.
-  //
-  // SNOW-656 made the two mutually exclusive because a translucent green
-  // wash over a translucent danger-scale fill is unreadable — worse than
-  // unreadable, actually misleading: a green tint over yellow reads as a
-  // danger colour the region does not have. A hatch is not a colour claim.
-  // It covers a third of the area in hard-edged strokes and leaves the rest
-  // of the polygon showing the choropleth's own colour untouched, which is
-  // how any atlas draws one area layer over another. Screen-space at a fixed
-  // period (fill-pattern does not scale with zoom), so contiguous downloaded
+  // what lets them share the map with the choropleth: a hatch makes no
+  // colour claim, so the danger colour reads through it. The pixels — and
+  // the seam invariant that makes them tile — live in
+  // static/js/hatch_core.js; see its header. Screen-space at a fixed period
+  // (fill-pattern does not scale with zoom), so contiguous downloaded
   // country reads as texture at z6 and as stripes across a single square at
   // z14 — the same mark at both ends.
-  //
-  // Sized so the period divides the image edge exactly: anything else leaves
-  // a seam where the tile wraps.
-  const CACHED_TILES_HATCH_SIZE = 12;
-  const CACHED_TILES_HATCH_PERIOD = 6;
-  const CACHED_TILES_HATCH_WIDTH = 2;
+  const HATCH_CORE = self.pwaHatchCore;
 
   // SNOW-645 review (Hugo's explicit call, overruling the plan's own
   // non-goal, then widened again once the overlay itself was rebuilt to
@@ -822,20 +812,16 @@
   /**
    * Build the hatch image for one identity colour, as raw RGBA.
    *
-   * The colour arrives as whatever CSS value the token holds — currently
-   * `oklch()`, which no amount of string-slicing will turn into three
-   * channels — so a 1×1 canvas fill does the parsing, and the stripes
-   * themselves are written by hand. Alpha is binary (opaque stroke or
-   * nothing) and `fill-opacity` is the single knob for how strong the whole
-   * hatch reads, rather than the two multiplying and neither being the
-   * number you tune.
+   * The colour arrives as whatever CSS value the token holds — hex today,
+   * but `oklch()` is one Tailwind upgrade away and no amount of
+   * string-slicing turns that into three channels — so a 1×1 canvas fill
+   * does the parsing. Everything after that is `pwaHatchCore`'s.
    *
    * @param {string} colour Any CSS colour value.
    * @returns {{width: number, height: number, data: Uint8ClampedArray}}
    *   A MapLibre StyleImage.
    */
   const buildHatchImage = (colour) => {
-    const size = CACHED_TILES_HATCH_SIZE;
     const probe = document.createElement('canvas');
     probe.width = 1;
     probe.height = 1;
@@ -843,20 +829,7 @@
     ctx.fillStyle = colour;
     ctx.fillRect(0, 0, 1, 1);
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-    const data = new Uint8ClampedArray(size * size * 4);
-    for (let y = 0; y < size; y += 1) {
-      for (let x = 0; x < size; x += 1) {
-        const i = (y * size + x) * 4;
-        data[i] = r;
-        data[i + 1] = g;
-        data[i + 2] = b;
-        // A 45° stroke is the set of pixels where x + y is congruent to the
-        // first few values mod the period — seamless in both directions
-        // because the period divides the image edge.
-        data[i + 3] = (x + y) % CACHED_TILES_HATCH_PERIOD < CACHED_TILES_HATCH_WIDTH ? 255 : 0;
-      }
-    }
-    return { width: size, height: size, data: data };
+    return HATCH_CORE.hatchPixels(r, g, b);
   };
 
   /**

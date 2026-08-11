@@ -10,10 +10,18 @@
  * follow-up call, after the overlay itself was rebuilt to show downloads
  * across every basemap at once rather than emptying out on a basemap
  * switch (see refreshDownloadedOverlay's own "EVERY BASEMAP AT ONCE"
- * comment in map.js). The mechanism is now a MapLibre `match` PAINT
- * EXPRESSION keyed on each tile feature's own `basemapKey` property
- * (`downloadedTilesColourExpression`, map.js), not a flat colour
+ * comment in map.js). The mechanism is a MapLibre `match` PAINT EXPRESSION
+ * keyed on each tile feature's own `basemapKey` property, not a flat colour
  * re-resolved on a basemap-changed event — this file tests that shape.
+ *
+ * There are TWO such expressions now that the squares are a hatch rather
+ * than a tint (the mark that lets them share a polygon with the danger
+ * choropleth): `downloadedTilesColourExpression` still resolves each
+ * area's OUTLINE colour, and `downloadedTilesPatternExpression` resolves
+ * its FILL to one hatch image per basemap — the identity colour having
+ * moved into that image's pixels. Both are asserted, along with the
+ * registration of every image named, since a `fill-pattern` pointing at an
+ * image the style is not holding paints nothing at all and says nothing.
  *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern —
  * see its header for the general rationale. This file's stub additionally
@@ -50,6 +58,7 @@ function stubMapLibre() {
   const handlers = {};
   const layers = new Map();
   const layouts = new Map();
+  const images = new Map();
   let cachedTilesData = null;
   const map = {
     on: (ev, a, b) => {
@@ -108,9 +117,13 @@ function stubMapLibre() {
     getContainer: () => document.getElementById('map'),
     loaded: () => true,
     areTilesLoaded: () => true,
-    listImages: () => [],
-    hasImage: () => true,
-    addImage: () => {},
+    listImages: () => Array.from(images.keys()),
+    // Tracked for real, not stubbed true: a `fill-pattern` naming an image
+    // the style is not holding paints NOTHING — no error, no warning, just
+    // an overlay that silently fails to appear. `hasImage` lying would hide
+    // exactly that.
+    hasImage: (id) => images.has(id),
+    addImage: (id, image, options) => { images.set(id, { image, options }); },
     triggerRepaint: () => {},
     fitBounds: () => {},
     easeTo: () => {},
@@ -129,6 +142,7 @@ function stubMapLibre() {
     resize: () => {},
     handlers,
     layers,
+    images,
     getCachedTilesData: () => cachedTilesData,
   };
   globalThis.maplibregl = {
@@ -250,7 +264,41 @@ async function waitFor(predicate, timeoutMs = 1000) {
   return predicate();
 }
 
-/** Read a `['match', ['get', 'basemapKey'], key, colour, …, fallback]` expression as a plain object. */
+/**
+ * jsdom ships no 2D canvas, and `map.js` resolves an identity colour to
+ * three channels by filling a 1×1 one — the only way to parse every CSS
+ * colour syntax a token might hold. This is the narrowest double that keeps
+ * that path honest: it parses the `rgb(r, g, b)` values THIS file sets on
+ * the tokens, so an image built for the wrong basemap's colour still fails.
+ *
+ * @returns {() => void} Restores the original `getContext`.
+ */
+function stubCanvas2D() {
+  const original = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function getContext(type) {
+    if (type !== '2d') return original ? original.call(this, type) : null;
+    let channels = [0, 0, 0, 255];
+    return {
+      set fillStyle(value) {
+        const m = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/.exec(String(value));
+        channels = m ? [Number(m[1]), Number(m[2]), Number(m[3]), 255] : [0, 0, 0, 255];
+      },
+      get fillStyle() {
+        return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
+      },
+      fillRect: () => {},
+      getImageData: () => ({ data: Uint8ClampedArray.from(channels) }),
+    };
+  };
+  return () => { HTMLCanvasElement.prototype.getContext = original; };
+}
+
+/** The RGB a registered hatch image was built in, read back off its pixels. */
+function hatchColour(entry) {
+  return Array.from(entry.image.data.slice(0, 3));
+}
+
+/** Read a `['match', ['get', 'basemapKey'], key, value, …, fallback]` expression as a plain object. */
 function matchArms(expr) {
   if (!Array.isArray(expr)) return null;
   const arms = {};
@@ -259,9 +307,11 @@ function matchArms(expr) {
 }
 
 let mapStub;
+let restoreCanvas;
 
 beforeAll(async () => {
   buildFixture();
+  restoreCanvas = stubCanvas2D();
   document.documentElement.style.setProperty(
     '--color-basemap-openfreemap-liberty',
     LIBERTY_COLOUR,
@@ -340,6 +390,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  restoreCanvas();
   vi.unstubAllGlobals();
   document.documentElement.removeAttribute('style');
   delete globalThis.maplibregl;
@@ -347,23 +398,65 @@ afterAll(() => {
 });
 
 describe('downloaded-areas overlay colour (SNOW-645 review — every basemap at once)', () => {
-  it('paints a match expression with one arm per basemap actually downloaded', async () => {
+  it('outlines each area in a match expression with one arm per basemap', async () => {
     await waitFor(() => {
-      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-color'];
+      const expr = mapStub.layers.get('cached-tiles-line')?.['line-color'];
       return Array.isArray(expr) && expr[0] === 'match';
     });
 
-    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-color'];
     const lineExpr = mapStub.layers.get('cached-tiles-line')['line-color'];
-    expect(fillExpr[0]).toBe('match');
-    expect(fillExpr[1]).toEqual(['get', 'basemapKey']);
+    expect(lineExpr[0]).toBe('match');
+    expect(lineExpr[1]).toEqual(['get', 'basemapKey']);
 
-    const { arms, fallback } = matchArms(fillExpr);
+    const { arms, fallback } = matchArms(lineExpr);
     expect(arms.openfreemap_liberty).toBe(LIBERTY_COLOUR);
     expect(arms.swisstopo_winter).toBe(SWISSTOPO_COLOUR);
     expect(fallback).toBe(SYNC_OK_COLOUR);
+  });
 
-    expect(matchArms(lineExpr).arms).toEqual(arms);
+  it('fills each area with a hatch image in its own basemap identity colour', async () => {
+    // The fill carries a PATTERN, not a colour: the squares share their
+    // polygons with the danger choropleth, and a flat tint over it both
+    // obscured the danger colour and shifted it. The per-basemap identity
+    // survives the change — it moved from the arms of a colour expression
+    // into the pixels of one image per basemap.
+    await waitFor(() => {
+      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-pattern'];
+      return Array.isArray(expr) && expr[0] === 'match';
+    });
+
+    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-pattern'];
+    expect(fillExpr[1]).toEqual(['get', 'basemapKey']);
+
+    const { arms, fallback } = matchArms(fillExpr);
+    expect(arms.openfreemap_liberty).toBe('cached-tiles-hatch-openfreemap_liberty');
+    expect(arms.swisstopo_winter).toBe('cached-tiles-hatch-swisstopo_winter');
+    expect(fallback).toBe('cached-tiles-hatch-default');
+
+    expect(hatchColour(mapStub.images.get(arms.openfreemap_liberty))).toEqual([1, 2, 3]);
+    expect(hatchColour(mapStub.images.get(arms.swisstopo_winter))).toEqual([9, 8, 7]);
+    expect(hatchColour(mapStub.images.get(fallback))).toEqual([4, 5, 6]);
+  });
+
+  it('registers every image the pattern names — an absent one paints nothing', async () => {
+    await waitFor(() => {
+      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-pattern'];
+      return Array.isArray(expr) && expr[0] === 'match';
+    });
+
+    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-pattern'];
+    const { arms, fallback } = matchArms(fillExpr);
+    for (const id of [...Object.values(arms), fallback]) {
+      expect(mapStub.images.has(id)).toBe(true);
+    }
+  });
+
+  it('adds the hatch at pixelRatio 2, so the period is in device pixels', async () => {
+    await waitFor(() => mapStub.images.has('cached-tiles-hatch-default'));
+
+    const entry = mapStub.images.get('cached-tiles-hatch-default');
+    expect(entry.options).toEqual({ pixelRatio: 2 });
+    expect(entry.image.width).toBe(globalThis.pwaHatchCore.SIZE);
   });
 
   it('tags each feature with the basemapKey it was downloaded under', async () => {
@@ -374,14 +467,17 @@ describe('downloaded-areas overlay colour (SNOW-645 review — every basemap at 
 });
 
 describe('downloaded-areas overlay colour — nothing downloaded', () => {
-  it('falls back to a flat colour when no basemap keys are present at all', async () => {
+  it('falls back to a bare id and a flat colour with no keys to match on', async () => {
     installDbStub([], []);
     installCachesStub([]);
     window.pwaDownloadedOverlay.hide();
     await window.pwaDownloadedOverlay.show();
 
-    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-color'];
-    expect(fillExpr).toBe(SYNC_OK_COLOUR);
+    // Not a one-armed `match` — with nothing to key off, both properties
+    // take their fallback directly.
+    expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
+      .toBe('cached-tiles-hatch-default');
+    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(SYNC_OK_COLOUR);
   });
 });
 
